@@ -143,7 +143,6 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     error,
     hints: [
       { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
     focused,
   });

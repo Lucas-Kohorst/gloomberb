@@ -21,7 +21,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { changelogReleaseSharePayload, useCopyShareLink } from "../shared/article-share";
 import { usePersistedReadIds } from "../shared/read-state";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
-import { paneRefreshHint, paneSearchHint, paneShareHint } from "../shared/pane-footer";
+import { paneSearchHint, paneShareHint } from "../shared/pane-footer";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -370,7 +370,6 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     info: footerInfo,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(() => { void loadReleases(true); }),
       ...(linkRelease ? [paneShareHint(shareRelease)] : []),
     ],
     onOpen: linkRelease ? () => markRead(linkRelease.id) : undefined,

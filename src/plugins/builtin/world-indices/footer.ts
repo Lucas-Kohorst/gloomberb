@@ -38,13 +38,8 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
     () => {
       const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);
       if (errorMessage) info.push({ id: "reason", parts: [{ text: errorMessage, tone: "warning" }] });
-      return {
-        info,
-        hints: [
-          { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
-        ],
-      };
+      return { info };
     },
-    [errorMessage, focused, onRefresh, status.latestTs, status.loading, status.stale, status.unavailable],
+    [errorMessage, status.latestTs, status.loading, status.stale, status.unavailable],
   );
 }

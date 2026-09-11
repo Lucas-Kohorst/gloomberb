@@ -151,14 +151,6 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     label: "article",
     loading: (!skipJina && jina.loading) || (detail.loading && !knownBody),
     error: detail.error ?? jina.error,
-    hints: article
-      ? [{
-        id: "refresh",
-        key: "r",
-        label: "efresh",
-        onPress: skipJina ? () => loadDetail(article, true) : jina.refresh,
-      }]
-      : [],
     showOpenHint: true,
     trailingHints: [...shareHint, ...archiveHint],
   });

@@ -423,12 +423,8 @@ body.gloom-dragging {
 }
 [data-gloom-role="pane-hint"] {
   cursor: pointer;
-  border-radius: 4px;
   width: auto !important;
   min-width: 0 !important;
-}
-[data-gloom-role="pane-hint"]:hover {
-  background: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
 }
 [data-gloom-role="pane-float-toggle"],
 [data-gloom-role="pane-action"],
@@ -436,11 +432,6 @@ body.gloom-dragging {
   border-radius: 4px;
   padding-inline: 4px;
   min-width: 28px;
-}
-[data-gloom-role="pane-float-toggle"]:hover,
-[data-gloom-role="pane-action"]:hover,
-[data-gloom-role="pane-close"]:hover {
-  background: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
 }
 [data-gloom-role="resize-handle"] {
   color: var(--pane-border-color, var(--gloom-border));

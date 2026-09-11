@@ -16,7 +16,7 @@ import { formatCurrency, formatNumber, formatPercent } from "../../../utils/form
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
 function compactPeriod(period: string): string {
@@ -354,9 +354,8 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
     info: loadingErrorFooterInfo(loading, error),
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(reload),
     ],
-  }), [error, focusSearch, loading, reload]);
+  }), [error, focusSearch, loading]);
 
   if (loading) return <LoadingState title="Loading analyst data..." />;
   if (error || rows.length === 0) {

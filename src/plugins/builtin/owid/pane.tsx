@@ -25,7 +25,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { usePaneInstance } from "../../../state/app/context";
 import { usePluginPaneState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { parseOwidShortcutArg } from "../../../sources/owid/parse";
 import type { OwidChartPrint, OwidChartSearchHit, OwidObservation } from "../../../sources/owid/types";
@@ -283,7 +283,6 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(slug || selectedHit?.slug) || !(entity || selectedEntityId) },
       paneSearchHint(focusSearch),
-      paneRefreshHint(load),
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !(seriesPrint?.url || selectedHit?.url) },
     ],
   }), [entity, error, focusSearch, graphSelected, load, openSelected, selectedEntityId, selectedHit?.slug, selectedHit?.url, seriesPrint?.url, slug, status, updatedAgo]);

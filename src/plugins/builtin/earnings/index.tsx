@@ -13,7 +13,7 @@ import { nextSortPreference, type SortPreference } from "../../../utils/sort-val
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import type { PaneSettingsContext, PaneSettingsDef } from "../../../types/plugin";
 import { formatTickerListInput as formatTickers } from "../../../tickers/list";
 import {
@@ -198,7 +198,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(() => reload(true)),
     ],
   }), [error, focusSearch, loading, reload, stale]);
 

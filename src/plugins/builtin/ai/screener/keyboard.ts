@@ -40,7 +40,7 @@ export function useAiScreenerKeyboard({
     if (!focused) return;
 
     if (editorState) {
-      if (event.ctrl && event.name === "s") {
+      if ((event.ctrl && event.name === "s") || (!event.targetEditable && event.name === "s")) {
         event.stopPropagation?.();
         event.preventDefault?.();
         saveEditor();

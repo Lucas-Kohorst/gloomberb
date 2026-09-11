@@ -158,7 +158,7 @@ export function buildResearchSearchSettingsDef(
       },
       buildSortSelectField(
         SORT_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
-        { label: "Sort", description: "Relevance, or date. Header click on DATE also toggles newest/oldest." },
+        { label: "Sort", description: "Relevance from the MATCH header, or date from DATE." },
       ),
       buildColumnVisibilityField([...RESEARCH_SEARCH_COLUMN_DEFS]),
     ],

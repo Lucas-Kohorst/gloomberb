@@ -25,7 +25,6 @@ import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   paneDelayedStatus,
-  paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
 } from "../shared/pane-footer";
@@ -165,8 +164,14 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
       setKind((current) => nextKindFilter(current));
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void load();
+      return true;
+    }
     return false;
-  }, [focusSearch]);
+  }, [focusSearch, load]);
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(kind !== "all" ? [{ id: "kind", parts: [{ text: kind, tone: "muted" as const }] }] : []),
@@ -185,7 +190,6 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
     showOpenHint: !!selectedUrl,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(load, { disabled: status === "loading" && rows.length === 0 }),
       {
         id: "filter",
         key: "f",
@@ -201,6 +205,12 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void load();
     }
   }, { enabled: focused && !searchFocused });
 

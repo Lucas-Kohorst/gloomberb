@@ -297,12 +297,6 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         label: "pen",
         onPress: () => { void renderer.openExternal(channel.channelUrl); },
       },
-      {
-        id: "refresh",
-        key: "r",
-        label: "efresh",
-        onPress: refresh,
-      },
     ],
   }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
 

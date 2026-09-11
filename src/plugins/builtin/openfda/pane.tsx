@@ -208,7 +208,6 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
     showOpenHint: !error && !!detailUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
     ],
   });
 

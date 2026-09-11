@@ -113,6 +113,62 @@ describe("provider rows in the root result model", () => {
     expect(items.map((item) => item.id)).not.toContain(documentRow.id);
   });
 
+  test("keeps searching when a two-letter text prefix is only the first word", () => {
+    const screenerTemplate = {
+      id: "new-ai-screener-pane",
+      paneId: "ai-screener",
+      label: "AI Screener",
+      description: "Prompt-driven screener",
+      shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+    } as PaneTemplateDef;
+    const safetyPane: ResultItem = {
+      ...paneRow,
+      id: "pane-template:safety-monitor",
+      label: "Safety Monitor",
+      searchText: "ai safety workplace",
+    };
+    const { items, initialIdx } = buildRootResultModel(rootOptions({
+      rootQuery: "ai safety",
+      assist: {
+        enabled: true,
+        auto: true,
+        state: { status: "idle" },
+        onAsk: () => {},
+        onSignUp: () => {},
+        onRunCandidate: () => {},
+      },
+      getAvailablePaneShortcutTemplates: () => [screenerTemplate],
+      createPaneTemplateItem: (template) => ({
+        id: `pane-template:${template.id}`,
+        label: template.label,
+        detail: template.description,
+        category: "Panes",
+        kind: "action",
+        action: () => {},
+      }),
+      paneShortcutItems: () => [safetyPane],
+      nonShortcutPaneTemplateItems: () => [safetyPane],
+      providerResultItems: [documentRow],
+      rootShortcutIntent: {
+        kind: "complete",
+        source: "pane-template",
+        prefix: "AI",
+        label: "AI Screener",
+        description: "",
+        argKind: "text",
+        argText: "safety",
+        completionQuery: null,
+        template: screenerTemplate,
+      },
+    }));
+    const ids = items.map((item) => item.id);
+    expect(ids).toContain("pane-template:new-ai-screener-pane");
+    expect(ids).toContain(safetyPane.id);
+    expect(ids).toContain(documentRow.id);
+    expect(ids).toContain("assist:pending");
+    expect(ids[initialIdx]).toBe("pane-template:new-ai-screener-pane");
+  });
+
   test.each(["ART", "G", "CORR"])("retains relevant discovery rows for %s without unrelated providers", (prefix) => {
     const chartRow = { ...documentRow, id: "chart-series:example", category: "Chart Series" };
     const { items } = buildRootResultModel(rootOptions({

@@ -2,11 +2,11 @@ import { memo, useMemo, type RefObject } from "react";
 import {
   Box,
   ScrollBox,
+  SpinnerMark,
   Text,
   TextAttributes,
   type ScrollBoxRenderable,
 } from "../../../ui";
-import { Spinner } from "../../ui";
 import { t } from "../../../i18n";
 import { commandBarBadgeText, type CommandBarBadgeTone } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -304,8 +304,9 @@ export const CommandBarListBody = memo(function CommandBarListBody({
   onListScroll,
   onRowMouseDown,
 }: CommandBarListBodyProps) {
-  // Headings, messages and the spinner sit on the label edge: the badge column
-  // is a gutter for the rows, not an indent for everything else.
+  // Headings and messages sit on the label edge: the badge column is a gutter
+  // for the rows, not an indent for everything else. The spinner mark lives in
+  // that gutter so "Searching…" lines up with result titles.
   const labelEdgePadding = contentPadding + BADGE_INDENT;
   const labelEdgeWidth = Math.max(1, queryDisplayWidth - BADGE_INDENT);
   const visibleRows = useMemo(() => {
@@ -333,8 +334,35 @@ export const CommandBarListBody = memo(function CommandBarListBody({
         }
         if (row.kind === "spinner") {
           return (
-            <Box key={row.id} height={1} paddingLeft={labelEdgePadding} paddingRight={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Spinner label={t(row.label)} />
+            <Box
+              key={row.id}
+              height={1}
+              flexDirection="row"
+              alignItems="center"
+              paddingLeft={contentPadding}
+              paddingRight={contentPadding}
+              {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
+            >
+              <Box
+                width={BADGE_INDENT}
+                height={1}
+                flexDirection="row"
+                alignItems="center"
+              >
+                <Box
+                  width={BADGE_COLUMN_WIDTH}
+                  height={1}
+                  flexDirection="row"
+                  alignItems="center"
+                  {...(nativePaneChrome ? {
+                    style: { display: "flex", justifyContent: "flex-end", alignItems: "center" },
+                  } : {})}
+                >
+                  {!nativePaneChrome ? <Text fg={paletteSubtleText}>{" ".repeat(Math.max(0, BADGE_COLUMN_WIDTH - 1))}</Text> : null}
+                  <SpinnerMark name="dots" color={paletteSubtleText} />
+                </Box>
+              </Box>
+              <Text fg={paletteSubtleText}>{truncateText(t(row.label), labelEdgeWidth)}</Text>
             </Box>
           );
         }

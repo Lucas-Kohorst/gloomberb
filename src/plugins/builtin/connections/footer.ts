@@ -1,12 +1,11 @@
-import { useMemo } from "react";
-import { usePaneFooter, type PaneHint } from "../../../components";
+import { isPlainKey } from "../../../utils/keyboard";
+import { useShortcut } from "../../../react/input";
 
 export function useConnectionsFooter({ onRefresh }: { onRefresh: () => void }) {
-  const hints = useMemo<PaneHint[]>(() => [
-    { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
-  ], [onRefresh]);
-
-  usePaneFooter("connections", () => ({
-    hints,
-  }), [hints]);
+  useShortcut((event) => {
+    if (event.targetEditable || !isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    onRefresh();
+  });
 }

@@ -234,7 +234,6 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
       { id: "window", key: "p", label: "eriod", onPress: cycleWindow },
       { id: "correlation", key: "c", label: "orr", onPress: toggleCorrelation },
       { id: "regression", key: "f", label: "it line", onPress: toggleRegression },
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
     ],
   }), [
     cycleRange,

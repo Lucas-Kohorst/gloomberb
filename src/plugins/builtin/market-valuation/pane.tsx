@@ -14,7 +14,7 @@ import {
   type PaneFooterSegment,
   type StackSortPreference,
 } from "../../../components";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
@@ -277,7 +277,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     loading: state.status === "loading",
     error,
     info: footerInfo,
-    hints: [paneSearchHint(focusSearch), paneRefreshHint(refresh)],
+    hints: [paneSearchHint(focusSearch)],
     focused: focused && !searchFocused,
   });
 

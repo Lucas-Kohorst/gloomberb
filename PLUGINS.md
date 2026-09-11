@@ -1203,16 +1203,17 @@ Pane footers are the shared place for pane status and non-obvious keyboard actio
 ```typescript
 usePaneFooter("my-pane", () => ({
   info: [
-    { id: "status", parts: [{ text: "12 rows", tone: "muted" }] },
+    { id: "status", parts: [{ text: "stale", tone: "warning" }] },
   ],
   hints: [
-    { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    { id: "search", key: "/", label: "search", onPress: focusSearch },
+    { id: "open", key: "o", label: "pen", onPress: openSelected },
     { id: "filter", key: "f", label: "ilter", onPress: openFilter },
   ],
-}), [refresh, openFilter]);
+}), [focusSearch, openFilter, openSelected]);
 ```
 
-Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arrows, `up/down`, `left/right`, `j`, `k`, `j/k`, and tab-switching hints such as `h/l`. Keep only pane-specific actions such as `[r]efresh`, `[/]search`, `[f]ilter`, `[Ctrl+S]save`, `[Shift+R]force refresh`, or chart controls.
+Do not register `[r]efresh`; `r` is global. Bind pane reload with `useShortcut` / table `onRootKeyDown` if the pane needs its own fetch, but do not advertise `r` in the footer. Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arrows, `up/down`, `left/right`, `j/k`, and tab-switching hints such as `h/l`. Keep only pane-specific actions such as `[/]search`, `[o]pen`, and `[f]ilter`. Footer hint keys must be `/` or a single character — do not register `Ctrl+S`, `Shift+R`, or `1-8`.
 
 ### Plugin runtime hooks
 

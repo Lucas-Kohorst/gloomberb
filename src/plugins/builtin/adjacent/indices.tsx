@@ -322,13 +322,6 @@ function IndexDetail({
             },
           }]
           : []),
-        { id: "refresh", key: "r", label: "efresh", onPress: () => {
-          setLoading(true);
-          void searchRelatedNews(index.name).then((articles) => {
-            setNews(articles);
-            setLoading(false);
-          }).catch(() => setLoading(false));
-        } },
         ...(selectedArticle
           ? [{
             id: "pop-out",
@@ -345,9 +338,8 @@ function IndexDetail({
     return [
       { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
       { id: "open", key: "o", label: "pen", onPress: openTarget },
-      { id: "refresh", key: "r", label: "efresh", onPress: reloadDetail },
     ];
-  }, [detailTab, graphExpression, graphTarget, index.name, markArticleRead, openTarget, popOutArticle, reloadDetail, selectedArticle]);
+  }, [detailTab, graphExpression, graphTarget, markArticleRead, openTarget, popOutArticle, selectedArticle]);
   usePaneFooter("adjacent-indices-detail", () => ({
     info: [
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -356,6 +348,20 @@ function IndexDetail({
     hints: detailHints,
   }), [detailHints, error, loading]);
   usePaneFooterHintBindings(focused, detailHints);
+  useShortcut((event) => {
+    if (!focused || event.targetEditable || !isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    if (detailTab === "news") {
+      setLoading(true);
+      void searchRelatedNews(index.name).then((articles) => {
+        setNews(articles);
+        setLoading(false);
+      }).catch(() => setLoading(false));
+      return;
+    }
+    reloadDetail();
+  }, { enabled: focused });
 
   useEffect(() => {
     if (sortedConstituents.length === 0) {
@@ -760,7 +766,6 @@ export function AdjacentIndicesPane({
       ...(!detailOpen
         ? [{ id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow }]
         : []),
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "share", key: "y", label: "share", onPress: shareIndices },
       paneSearchHint(focusSearch),
     ],

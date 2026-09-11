@@ -16,7 +16,7 @@ import {
 } from "../../../components";
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { registerConnectionSource } from "../connections/register";
-import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import type { NewsArticle } from "../../../news/types";
 import { fetchEarningsTranscriptContent, fetchEarningsTranscripts } from "./client";
@@ -262,7 +262,6 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     showOpenHint: !error && !!openUrl,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(() => load(query)),
       ...(activeTranscript && !error ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }] : []),
     ],
   });

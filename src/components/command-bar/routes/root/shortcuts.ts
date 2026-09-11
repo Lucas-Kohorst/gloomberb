@@ -192,3 +192,27 @@ export function parseRootShortcutIntent({
     template: match.template!,
   };
 }
+
+/**
+ * Whether this intent owns the query so free-text search, assist, and
+ * providers should stand down. Ticker prefixes, ART, longer command tokens,
+ * and a bare prefix are command language. Two-letter text prefixes collide
+ * with ordinary words ("ai safety"): keep the shortcut row, but keep searching.
+ */
+export function shortcutClaimsQuery(intent: ShortcutIntent): boolean {
+  if (intent.kind === "none") return false;
+  if (!intent.argText) return true;
+  if (intent.argKind === "ticker" || intent.argKind === "ticker-list") return true;
+  if (intent.prefix === "ART") return true;
+  // "AI safety" / "PM election": a two-letter pane prefix plus a word is
+  // ordinary language, not a finished command. Keep the shortcut row, but
+  // don't swallow articles, assist, or other panes.
+  if (
+    intent.source === "pane-template"
+    && intent.argKind === "text"
+    && intent.prefix.length === 2
+  ) {
+    return false;
+  }
+  return true;
+}

@@ -4,14 +4,14 @@ import {
   EmptyState,
   PaneStatusBody,
   usePaneFooter,
-  type PaneHint,
 } from "../../../components";
 import { colors, blendHex } from "../../../theme/colors";
 import { formatNumber } from "../../../utils/format";
 import type { PricePoint } from "../../../types/financials";
 import { useAssetData } from "../../runtime";
 import { useBoundTicker, useTickerRequest } from "../shared/ticker-request";
-import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import { loadingErrorFooterInfo } from "../shared/table-pane";
 import {
   buildMomentumView,
@@ -86,16 +86,17 @@ export function MomentumSortinoPane({
 
   const refresh = useCallback(() => reload(), [reload]);
 
-  const hints = useMemo<PaneHint[]>(() => [
-    { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
-  ], [loading, refresh]);
+  useShortcut((event) => {
+    if (!focused || event.targetEditable || loading) return;
+    if (!isPlainKey(event, "r")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    refresh();
+  }, { enabled: focused && !loading });
 
   usePaneFooter("momentum-sortino", () => ({
     info: loadingErrorFooterInfo(loading, symbol ? error : null),
-    hints,
-  }), [error, hints, loading, symbol]);
-
-  usePaneFooterHintBindings(focused, hints);
+  }), [error, loading, symbol]);
 
   if (!symbol) {
     return (

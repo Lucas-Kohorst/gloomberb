@@ -238,7 +238,6 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
     showOpenHint: !error && !!detailEntry?.url,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
   });
 

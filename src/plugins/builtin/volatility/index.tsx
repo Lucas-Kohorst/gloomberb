@@ -7,6 +7,7 @@ import {
   EmptyState,
   Spinner,
   StaticChartSurface,
+  footerErrorChip,
   usePaneFooter,
   type PaneFooterSegment,
 } from "../../../components";
@@ -122,12 +123,15 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     } else return;
   }, { allowEditable: true, enabled: focused });
 
-  const footerInfo = useMemo<PaneFooterSegment[]>(() => [
+  const footerInfo = useMemo<PaneFooterSegment[]>(() => {
+    const errorChip = footerErrorChip(error);
+    return [
     ...(data ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-  ], [data, error, loading, stale]);
+    ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+  ];
+  }, [data, error, loading, stale]);
   usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (!data && loading) {

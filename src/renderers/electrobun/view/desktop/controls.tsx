@@ -414,7 +414,7 @@ export function WebSegmentedControl({
             flexDirection="row"
             alignItems="center"
             justifyContent="center"
-            backgroundColor="transparent"
+            backgroundColor={active && !option.disabled ? colors.bg : "transparent"}
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}

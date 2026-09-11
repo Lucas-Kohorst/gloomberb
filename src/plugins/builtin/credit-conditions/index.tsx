@@ -6,6 +6,7 @@ import {
   DataTableView,
   EmptyState,
   Spinner,
+  footerErrorChip,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -124,17 +125,19 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     event.stopPropagation?.();
   });
   const asOf = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
-  const footerInfo = useMemo<PaneFooterSegment[]>(() => [
+  const footerInfo = useMemo<PaneFooterSegment[]>(() => {
+    const errorChip = footerErrorChip(error);
+    return [
     ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
     ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-  ], [asOf, error, loading, rows.length, stale]);
+    ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+  ];
+  }, [asOf, error, loading, rows.length, stale]);
   usePaneFooter(paneId, () => ({
     info: footerInfo,
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: reload }],
-  }), [footerInfo, paneId, reload]);
+  }), [footerInfo, paneId]);
 
   if (rows.length === 0 && loading) {
     return (

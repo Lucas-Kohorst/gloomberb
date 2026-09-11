@@ -1,13 +1,29 @@
 import type { PluginModule } from "../plugin-module";
 import { parseOwidShortcutArg } from "../../../sources/owid/parse";
+import { registerConnectionSource } from "../connections/register";
 import { OwidPane } from "./pane";
-import { OWID_PANE_ID } from "./types";
+import { OWID_CONNECTION_ID, OWID_PANE_ID, OWID_PLUGIN_ID } from "./types";
 import { owidSeriesCatalog } from "./catalog";
+
+let disposeConnection: (() => void) | null = null;
 
 export const owidModule: PluginModule = {
   setup(ctx) {
     ctx.registerChartSeriesCatalog(owidSeriesCatalog);
+    disposeConnection = registerConnectionSource({
+      id: OWID_CONNECTION_ID,
+      name: "Our World in Data",
+      kind: "api",
+      pluginId: OWID_PLUGIN_ID,
+      authRequired: false,
+    });
   },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+
   panes: [
     {
       id: OWID_PANE_ID,

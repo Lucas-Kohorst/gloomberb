@@ -243,8 +243,7 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
 
   usePaneFooter("dividend-yield", () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  }), [error, loading, refresh]);
+  }), [error, loading]);
 
   const payments = data?.payments ?? [];
   const eps = financials?.fundamentals?.eps;

@@ -24,6 +24,7 @@ import { FooterSelectMenuPopover, openFooterSelectMenu } from "./select-menu";
 export {
   clipPaneFooterInfo,
   hasPaneFooterContent,
+  isBindableFooterHintKey,
   PANE_FOOTER_INFO_MAX_CHARS,
   type CombinedPaneFooter,
   type PaneFooterPressEvent,

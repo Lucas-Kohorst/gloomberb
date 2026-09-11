@@ -541,12 +541,6 @@ export function AdjacentFilingsPane({
     },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      {
-        id: "refresh",
-        key: "r",
-        label: "efresh",
-        onPress: () => (view === "chart" ? loadChart(query) : load(query)),
-      },
       ...(view === "list" && detailFiling
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),

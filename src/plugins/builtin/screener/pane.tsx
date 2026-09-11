@@ -35,7 +35,7 @@ import {
   type ScreenerSortPreference,
 } from "./model";
 import { renderScreenerCell } from "./table";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 
 export function ScreenerPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -184,7 +184,6 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
     hints: [
       paneSearchHint(activateSearch),
       { id: "open", key: "o", label: "pen", onPress: () => selectedSymbol && openSymbol(selectedSymbol), disabled: !selectedSymbol },
-      paneRefreshHint(refresh),
     ],
   }), [activateSearch, filterCount, loadError, loading, openSymbol, refresh, selectedSymbol]);
 

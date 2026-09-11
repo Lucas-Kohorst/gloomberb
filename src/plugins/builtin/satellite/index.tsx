@@ -22,7 +22,6 @@ import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   paneDelayedStatus,
-  paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
 } from "../shared/pane-footer";
@@ -187,8 +186,14 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void loadFires();
+      return true;
+    }
     return false;
-  }, [focusSearch]);
+  }, [focusSearch, loadFires]);
 
   const selectedBbox = selected
     ? `${selected.lon - 8},${selected.lat - 4},${selected.lon + 8},${selected.lat + 4}`
@@ -218,7 +223,6 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
     showOpenHint: tab === "fires" ? !!selected?.url : true,
     hints: [
       ...(tab === "fires" ? [paneSearchHint(focusSearch)] : []),
-      paneRefreshHint(loadFires, { disabled: status === "loading" && hotspots.length === 0 }),
       ...(tab === "imagery"
         ? [{ id: "layer", key: "l", label: "ayer", onPress: cycleLayer }]
         : []),
@@ -232,6 +236,13 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void loadFires();
+      return;
     }
     if (tab === "imagery" && isPlainKey(event, "l")) {
       event.preventDefault?.();

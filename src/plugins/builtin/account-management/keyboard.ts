@@ -48,6 +48,12 @@ export function useAccountManagementKeyboard({
       void saveProfile();
       return;
     }
+    if (!event.targetEditable && isPlainKey(event, "s")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void saveProfile();
+      return;
+    }
 
     if (isPlainKey(event, "tab") || (!event.targetEditable && isPlainKey(event, "down", "j"))) {
       event.preventDefault?.();

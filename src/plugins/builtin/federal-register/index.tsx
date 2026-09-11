@@ -177,7 +177,6 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     onOpen: () => { if (activeDoc) markArticleRead(activeDoc.documentNumber); },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
       ...(activeDoc ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }] : []),
     ],
   });

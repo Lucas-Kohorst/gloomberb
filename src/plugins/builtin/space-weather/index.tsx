@@ -393,9 +393,6 @@ function SpaceWeatherPane({ width, height, focused }: PaneProps) {
         : []),
     ],
     showOpenHint: !error,
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
-    ],
   });
 
   const handleRootKeyDown = useCallback(

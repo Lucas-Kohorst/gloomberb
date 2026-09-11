@@ -134,17 +134,21 @@ export function createDomUiHost(
     SpinnerMark: ({ color, ...props }) => (
       <span
         {...cleanDomProps(props)}
+        className="gloom-spinner-mark"
         aria-hidden="true"
         style={{
           color,
           display: "inline-block",
-          width: "1ch",
-          animation: "gloom-spin 0.9s steps(8) infinite",
+          width: 10,
+          height: 10,
+          boxSizing: "border-box",
+          border: `1.5px solid ${color ?? "currentColor"}`,
+          borderRightColor: "transparent",
+          borderRadius: "50%",
+          animation: "gloom-spin 0.7s linear infinite",
           ...(props.style as CSSProperties | undefined),
         }}
-      >
-        *
-      </span>
+      />
     ),
     AsciiText: (props) => <WebAsciiText {...props} desktopPlatform={desktopPlatform} />,
   };

@@ -26,7 +26,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { usePluginState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
-import { paneRefreshHint, paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import {
   EMPTY_WEATHER_ARCHIVE,
@@ -887,7 +887,6 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       ...(tab === "report"
         ? [{ id: "kind", key: "k", label: reportKind === "twc" ? "alshi implied" : " TWC forecast", onPress: () => setReportKind((current) => current === "twc" ? "implied" : "twc") }]
         : (!detailOpen ? [paneSearchHint(focusSearch)] : [])),
-      paneRefreshHint(() => load(scope)),
       { id: "open", key: "o", label: "pen", onPress: openSelected },
     ],
   });

@@ -89,7 +89,6 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "open", key: "o", label: "pen", onPress: openSource },
     ],
   }), [error, footerAge, loading, openSource, paneId, refresh, stale]);

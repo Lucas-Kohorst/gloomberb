@@ -8,6 +8,7 @@ import {
   InputSearchBar,
   Spinner,
   Tabs,
+  footerErrorChip,
   nextStackSortPreference,
   sortStackItems,
   usePaneFooter,
@@ -23,7 +24,7 @@ import { formatCompact, formatNumber } from "../../../utils/format";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { fetchLlmStatsData } from "./client";
 import {
   compareLlmStatsRows,
@@ -396,19 +397,21 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
     }
   }, { enabled: focused && !detailOpen && !searchFocused });
 
-  usePaneFooter("llm-stats", () => ({
+  usePaneFooter("llm-stats", () => {
+    const errorChip = footerErrorChip(error);
+    return {
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: `error: ${error}`, tone: "warning" as const }] }] : []),
+      ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
       ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(load),
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
     ],
-  }), [error, focusSearch, load, openSelected, searchQuery, selected?.url, status, updatedAgo]);
+    };
+  }, [error, focusSearch, load, openSelected, searchQuery, selected?.url, status, updatedAgo]);
 
   const renderCellFn = useCallback(
     (row: LlmStatsRow, column: BenchColumn, _index: number, rowState: { selected: boolean }) =>

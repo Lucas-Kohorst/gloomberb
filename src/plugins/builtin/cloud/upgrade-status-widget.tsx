@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { t, tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { useAppSelector } from "../../../state/app/context";
-import { colors, hoverBg } from "../../../theme/colors";
+import { colors } from "../../../theme/colors";
 import { Box, Text, useUiCapabilities } from "../../../ui";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { usePlanAccess } from "../shared/plan-access";
@@ -19,7 +18,6 @@ export function CloudUpgradeStatusWidget() {
   const openUpgrade = useCloudUpgradeAction();
   const openPlan = useCloudPlanAction();
   const access = usePlanAccess();
-  const [hovered, setHovered] = useState(false);
 
   if (cloudPluginDisabled || !access.signedIn || !access.accountKnown || access.isPayingPro) return null;
 
@@ -31,9 +29,6 @@ export function CloudUpgradeStatusWidget() {
       flexDirection="row"
       alignItems="center"
       paddingRight={nativePaneChrome ? 0 : 1}
-      backgroundColor={hovered ? hoverBg() : undefined}
-      onMouseOver={() => setHovered((current) => (current ? current : true))}
-      onMouseOut={() => setHovered((current) => (current ? false : current))}
       onMouseDown={trial ? openPlan : openUpgrade}
       data-gloom-role="status-upgrade"
       data-gloom-interactive="true"
@@ -44,7 +39,7 @@ export function CloudUpgradeStatusWidget() {
       {trial ? (
         <Text fg={tone}>{tf("Pro trial {days}d", { days: access.trialDaysLeft })}</Text>
       ) : (
-        <Text fg={hovered ? colors.textBright : tone}>
+        <Text fg={tone}>
           {nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`}
         </Text>
       )}

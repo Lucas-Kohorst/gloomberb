@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { cftcDetailToSearchDocument, cftcFilingToDocumentHit, normalizeCftcDocumentQuery } from "./document-search";
+import {
+  cftcDetailToSearchDocument,
+  cftcFilingToDocumentHit,
+  normalizeCftcDocumentQuery,
+  resolveCftcDocumentSearchQuery,
+} from "./document-search";
 import type { CftcFiling } from "./types";
 
 describe("CFTC document discovery", () => {
@@ -7,6 +12,8 @@ describe("CFTC document discovery", () => {
     expect(normalizeCftcDocumentQuery("ART CFTC Kalshi filings")).toBe("Kalshi");
     expect(normalizeCftcDocumentQuery("SRCH crude oil document")).toBe("crude oil");
     expect(normalizeCftcDocumentQuery("CFTC filings")).toBe("");
+    expect(resolveCftcDocumentSearchQuery("CFTC filings")).toBe("CFTC filings");
+    expect(resolveCftcDocumentSearchQuery("ART CFTC Kalshi filings")).toBe("Kalshi");
   });
 
   test("keeps the provider-local filing ID and metadata needed by the reader", () => {

@@ -219,6 +219,18 @@ describe("clipPaneFooterInfo", () => {
     expect(clipped.info[0]?.parts[0]?.text).toBe('{"finance":{"result":nul');
     expect(clipped.info[0]?.parts[0]?.text.length).toBe(24);
   });
+
+  test("caps trailing status the same way", () => {
+    const clipped = clipPaneFooterInfo({
+      info: [],
+      trailingInfo: [{
+        id: "warning",
+        parts: [{ text: "this trailing warning is far too long for the chip", tone: "warning" }],
+      }],
+      hints: [],
+    });
+    expect(clipped.trailingInfo[0]?.parts[0]?.text.length).toBe(24);
+  });
 });
 
 describe("PaneFooterBar", () => {

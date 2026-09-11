@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box } from "../../../ui";
-import { DataTableView, EmptyState, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
+import { DataTableView, EmptyState, Spinner, Tabs, footerErrorChip, usePaneFooter, type DataTableCell, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -266,15 +266,11 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
   usePaneFooter("sectors", () => {
     const info: PaneFooterSegment[] = [];
     if (loading) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
-    if (loadError) info.push({ id: "error", parts: [{ text: loadError, tone: "warning" }] });
+    const errorChip = footerErrorChip(loadError);
+    if (errorChip) info.push({ id: "error", parts: [errorChip] });
     if (updatedAgo) info.push({ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" }] });
-    return {
-      info,
-      hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: fetchAll },
-      ],
-    };
-  }, [fetchAll, loadError, loading, updatedAgo]);
+    return { info };
+  }, [loadError, loading, updatedAgo]);
 
   const rootBefore = (
     <Box height={1} paddingX={1}>

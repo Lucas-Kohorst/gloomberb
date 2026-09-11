@@ -271,7 +271,7 @@ test("renders a stale partial report with severity order, split observation, and
   // Footer carries changing state only, and the model stays an implementation detail.
   expect(frame).toContain("partial");
   expect(frame).toContain("stale");
-  expect(frame).toContain("efresh");
+  expect(frame).not.toContain("efresh");
   expect(frame).not.toContain("luna");
 });
 

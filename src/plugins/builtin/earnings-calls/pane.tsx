@@ -526,12 +526,10 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
               ? [{ id: "open", key: "o", label: "pen source", onPress: openSource }]
               : []),
             { id: "find", key: "/", label: "find", onPress: focusSearch },
-            { id: "refresh", key: "r", label: "efresh", onPress: () => fetchCalls(true) },
             { id: "qa", key: "q", label: "A", onPress: () => setReaderTab("qa") },
           ]
         : [
             { id: "search", key: "/", label: "search", onPress: focusSearch },
-            { id: "refresh", key: "r", label: "efresh", onPress: () => fetchCalls(true) },
           ];
 
       return { info, hints };

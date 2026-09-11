@@ -12,7 +12,8 @@ import {
 import type { CftcFiling, CftcFilingDetail } from "./types";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 
-const RESULT_LIMIT = 4;
+/** Matches the research-search pane page so CFTC actually fills SRCH, not a command-bar teaser. */
+const RESULT_LIMIT = 40;
 
 const ROUTING_TERMS = new Set([
   "art",
@@ -35,6 +36,11 @@ export function normalizeCftcDocumentQuery(query: string): string {
     .filter((term) => !ROUTING_TERMS.has(term.toLowerCase().replace(/[^a-z0-9]+/g, "")))
     .join(" ")
     .trim();
+}
+
+/** Pane search still needs a query when the typed text is only routing words. */
+export function resolveCftcDocumentSearchQuery(query: string): string {
+  return normalizeCftcDocumentQuery(query) || query.trim();
 }
 
 function filingSnippet(filing: CftcFiling): string {
@@ -102,7 +108,7 @@ export function createCftcDocumentSearchProvider(): DocumentSearchProvider {
     documentTypes: ["filing"],
     minQueryLength: 1,
     async search(rawQuery, signal) {
-      const query = normalizeCftcDocumentQuery(rawQuery);
+      const query = resolveCftcDocumentSearchQuery(rawQuery);
       if (!query || signal.aborted) return [];
       const page = await getSharedAdjacentClient().listFilings({
         search: query,

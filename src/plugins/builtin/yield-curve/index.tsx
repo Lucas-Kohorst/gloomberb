@@ -107,7 +107,6 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: chartCurve },
       { id: "open", key: "o", label: "pen", onPress: () => openUrl(YIELD_CURVE_URL) },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => { void load(); } },
     ],
     loading,
     error,

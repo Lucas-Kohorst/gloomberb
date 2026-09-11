@@ -121,7 +121,6 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
     showOpenHint: !!detail?.sourceUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
     ],
   });
   const rootBefore = <InputSearchBar value={query} focused={focused && !openId} active={searchFocused} width={width} focusToken={focusToken} inputRef={inputRef} placeholder="recipient or keyword" debounceMs={250} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={updateQuery} />;

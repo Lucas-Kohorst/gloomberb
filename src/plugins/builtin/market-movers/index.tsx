@@ -285,7 +285,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       }] : []),
     ],
     hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refreshMovers },
       ...(selectedSymbol ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedSymbol) }] : []),
     ],
   }), [feedStatus, loading, moversStale, openSymbol, refreshMovers, selectedSymbol, summaryQuotes]);

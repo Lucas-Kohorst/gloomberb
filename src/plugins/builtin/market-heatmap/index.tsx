@@ -323,7 +323,6 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       }] : []),
     ],
     hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ...(selectedAsset ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedAsset.symbol) }] : []),
     ],
   }), [feedStatus, loadError, loading, openSymbol, refresh, selectedAsset, updated]);

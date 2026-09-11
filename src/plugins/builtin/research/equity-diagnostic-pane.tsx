@@ -505,10 +505,7 @@ export function EquityDiagnosticView({ focused, width }: {
       ...(report?.stale ? [{ id: "stale", parts: [{ text: t("stale"), tone: "warning" as const }] }] : []),
       ...(report?.cached && !report.stale ? [{ id: "cached", parts: [{ text: t("cached"), tone: "muted" as const }] }] : []),
     ],
-    hints: canRefresh
-      ? [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }]
-      : [],
-  }), [canRefresh, failure, loading, refresh, report]);
+  }), [failure, loading, report]);
 
   const contentWidth = Math.max(12, width - 2);
 

@@ -538,10 +538,9 @@ export function AdjacentRatesPane({
     trailingInfo: [poll.segment],
     hints: [
       graphFooterHint(graphSelected, !!selectedRate),
-      { id: "refresh", key: "r", label: "efresh", onPress: handleRefresh },
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
     ],
-  }), [detailOpen, error, graphSelected, handleRefresh, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [detailOpen, error, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

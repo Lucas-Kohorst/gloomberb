@@ -404,9 +404,9 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = await waitForFrameToContain("[Ctrl+S] save");
-    expect(frame).toContain("[Ctrl+S] save");
-    expect(frame).toContain("[Esc] cancel");
+    const frame = await waitForFrameToContain("[s]ave");
+    expect(frame).toContain("[s]ave");
+    expect(frame).not.toContain("[Esc] cancel");
     expect(frame).toContain("Find quality compounders.");
   });
 

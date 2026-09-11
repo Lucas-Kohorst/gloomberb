@@ -184,7 +184,6 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "range", key: "t", label: "oggle range", onPress: cycleRange },
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
     ],
   }), [cycleRange, error, loading, range, reload]);
 

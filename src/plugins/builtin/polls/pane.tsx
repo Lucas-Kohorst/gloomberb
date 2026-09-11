@@ -615,12 +615,10 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     ],
     hints: detailOpen
       ? [
-          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ]
       : [
           { id: "search", key: "/", label: "search", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ],
   }), [error, detailOpen, focusSearch, openSelected, refreshActiveTab, selected?.url, status, updatedAgo]);

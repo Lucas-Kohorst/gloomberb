@@ -22,7 +22,7 @@ import { formatNumber } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { usePaneStatusFooter, paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { usePaneStatusFooter, paneSearchHint } from "../shared/pane-footer";
 import { getCachedStatsBundle, loadStatsBundle, type StatsBundle } from "./client";
 import { categoryLabel, changeColor, type StatCategoryId } from "./defs";
 import { StatDetail } from "./detail";
@@ -270,7 +270,7 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
     error,
     info: footerInfo,
     focused,
-    hints: [paneSearchHint(focusSearch), paneRefreshHint(refresh)],
+    hints: [paneSearchHint(focusSearch)],
   });
 
   if (!bundle && state.status !== "error") {

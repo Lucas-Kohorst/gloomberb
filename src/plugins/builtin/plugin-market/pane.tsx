@@ -23,7 +23,7 @@ import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { getSharedRegistry } from "../../registry";
 import { usePluginAppActions } from "../../runtime";
 import { isNonToggleableBuiltinPluginId } from "../../ownership";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { buildPluginColumns, type PluginColumn, type PluginColumnId } from "./columns";
 import {
   installPluginAsync,
@@ -454,12 +454,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: installMode
-      ? [
-          { id: "install-submit", key: "Enter", label: "install", onPress: handleInstallForm, disabled: busy || !installRef.trim() },
-          { id: "install-cancel", key: "Esc", label: "cancel", onPress: cancelInstall },
-        ]
+      ? []
       : [
-          paneRefreshHint(refresh, { disabled: busy }),
           paneSearchHint(focusSearch, { disabled: installMode }),
           { id: "toggle", key: "t", label: "oggle", onPress: toggleSelected, disabled: !canToggle || busy },
           ...(managementAvailable
@@ -487,9 +483,6 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     discoveryStatus,
     error,
     installMode,
-    handleInstallForm,
-    cancelInstall,
-    refresh,
     focusSearch,
     toggleSelected,
     installSelectedOrPrompt,
@@ -502,7 +495,6 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     selectedRow,
     updateSelected,
     removeSelected,
-    installRef,
   ]);
 
   if (installMode) {

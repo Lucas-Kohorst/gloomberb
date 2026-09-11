@@ -15,7 +15,7 @@ import { matchPrefix, type Command } from "../../commands/registry";
 import { isCollectionCommand } from "../../helpers";
 import { dedupeById } from "../../view-model";
 import type { ResultItem } from "../../list/model";
-import type { parseRootShortcutIntent } from "./shortcuts";
+import { shortcutClaimsQuery, type parseRootShortcutIntent } from "./shortcuts";
 import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
@@ -176,6 +176,36 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   const items: ResultItem[] = [];
   const match = matchPrefix(rootQuery, availableCommands);
   let initialIdx = 0;
+  const shortcutOwnsQuery = shortcutClaimsQuery(rootShortcutIntent);
+  const collectFreeTextMatches = (): ResultItem[] => {
+    const commandItems = availableCommands
+      .map((command) => commandToItem(command))
+      .filter((item): item is ResultItem => item !== null);
+    const allItems = [
+      ...commandItems,
+      ...buildLayoutItems("", { confirmDangerousActions: true }),
+      ...buildPaneSettingItems(state.focusedPaneId, rootQuery),
+      ...paneShortcutItems({ includePromptableTickerTemplates: true }),
+      ...nonShortcutPaneTemplateItems(),
+      ...tickerActionItems(),
+      ...pluginCommandItems(),
+    ];
+    const matchedItems = fuzzyFilter(
+      allItems,
+      rootQuery,
+      (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`,
+      (item) => item.label,
+    );
+    const shown = new Set(matchedItems.map((item) => item.id));
+    return [
+      ...matchedItems,
+      ...buildRelatedPaneItems(
+        [...paneShortcutItems({ includePromptableTickerTemplates: true }), ...nonShortcutPaneTemplateItems()],
+        rootQuery,
+        shown,
+      ),
+    ];
+  };
   const shortcutItem = buildRootShortcutItem({
     activeCollectionId,
     activeTickerSymbol,
@@ -204,6 +234,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       }).map((item) => ({ ...item, category: "Panes" }))
       : [];
     items.push(...templateItems, ...relatedTemplateItems);
+    if (!shortcutOwnsQuery) items.push(...collectFreeTextMatches());
   } else if (
     rootShortcutIntent.kind !== "none"
     && rootShortcutIntent.source === "plugin-command"
@@ -211,6 +242,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   ) {
     const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
     items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    if (!shortcutOwnsQuery) items.push(...collectFreeTextMatches());
   } else if (match && match.command.id === "layout") {
     items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
   } else if (match && match.command.id === "window-mode") {
@@ -250,48 +282,23 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...tickerActionItems());
     items.push(...pluginCommandItems());
   } else {
-    const commandItems = availableCommands
-      .map((command) => commandToItem(command))
-      .filter((item): item is ResultItem => item !== null);
-    const allItems = [
-      ...commandItems,
-      ...buildLayoutItems("", { confirmDangerousActions: true }),
-      ...buildPaneSettingItems(state.focusedPaneId, rootQuery),
-      ...paneShortcutItems({ includePromptableTickerTemplates: true }),
-      ...nonShortcutPaneTemplateItems(),
-      ...tickerActionItems(),
-      ...pluginCommandItems(),
-    ];
-    const matchedItems = fuzzyFilter(
-      allItems,
-      rootQuery,
-      (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`,
-      (item) => item.label,
-    );
-    items.push(...matchedItems);
-    const shown = new Set(items.map((item) => item.id));
-    items.push(...buildRelatedPaneItems(
-      [...paneShortcutItems({ includePromptableTickerTemplates: true }), ...nonShortcutPaneTemplateItems()],
-      rootQuery,
-      shown,
-    ));
+    items.push(...collectFreeTextMatches());
   }
 
-  const shortcutClaimedQuery = rootShortcutIntent.kind !== "none";
   // Counted before the provider rows: they arrive whenever the network answers,
   // and an assist offer must not appear and vanish as they land.
   const matchCount = items.length;
-  // A resolved prefix means the user is speaking the command language, so
-  // free-text providers stay out of the way.
-  if (!shortcutClaimedQuery) {
+  // A prefix that owns the query is command language, so free-text providers
+  // stay out of the way. Short text prefixes ("AI safety") keep searching.
+  if (!shortcutOwnsQuery) {
     items.push(...providerResultItems);
-  } else if (rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR") {
+  } else if (rootShortcutIntent.kind !== "none" && (rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR")) {
     items.push(...providerResultItems.filter((item) => item.id.startsWith("chart-series:")));
   }
 
   if (
     rootQuery.trim()
-    && !shortcutClaimedQuery
+    && !shortcutOwnsQuery
     && items.length === 0
     && providerResultItems.length === 0
     && onOpenPluginMarketplace
@@ -309,7 +316,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       assist,
       rootQuery,
       matchCount,
-      shortcutClaimedQuery,
+      shortcutOwnsQuery,
     )
     ? buildAssistResultItems({
       ...assist,
@@ -317,6 +324,14 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       hasLocalResults: matchCount > 0 || providerResultItems.length > 0,
     })
     : [];
+  // A short text prefix still offers its shortcut as the default Enter target
+  // so "AI quality compounders" opens the screener, not the Thinking row.
+  // Offer-only Ask AI rows are sorted to the bottom, so skipping them by count
+  // would land on whatever sits under the shortcut (RSS, articles).
+  if (!shortcutOwnsQuery && rootShortcutIntent.kind !== "none") {
+    const assistLeads = assistItems.some((item) => item.disabled !== true && item.defaultSelectable !== false);
+    if (assistLeads) initialIdx = assistItems.length;
+  }
 
   return {
     items: dedupeCatalogBrowseActions(dedupeById([...assistItems, ...items]), rootQuery),

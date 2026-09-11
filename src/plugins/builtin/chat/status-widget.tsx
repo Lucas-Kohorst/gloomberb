@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { tf } from "../../../i18n";
 import { useAppSelector } from "../../../state/app/context";
-import { colors, hoverBg } from "../../../theme/colors";
+import { colors } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
 import { InlineAuthActions } from "../cloud/auth-actions";
@@ -63,7 +63,6 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const unreadCount = getTotalUnreadCount(snapshot);
-  const [hovered, setHovered] = useState(false);
 
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
@@ -102,16 +101,13 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
         <Box
           flexDirection="row"
           alignItems="center"
-          backgroundColor={hovered ? hoverBg() : undefined}
-          onMouseOver={() => setHovered((current) => (current ? current : true))}
-          onMouseOut={() => setHovered((current) => (current ? false : current))}
           {...(nativePaneChrome ? {
             style: {
               display: "inline-flex",
               alignItems: "center",
               flexShrink: 0,
               whiteSpace: "nowrap",
-              gap: 10,
+              columnGap: 8,
             },
           } : {})}
         >
@@ -126,8 +122,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
                 alignItems: "center",
                 flexShrink: 0,
                 whiteSpace: "nowrap",
-                gap: 10,
                 cursor: "pointer",
+                columnGap: 8,
               },
             } : {})}
           >
@@ -143,7 +139,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               fg={unreadCount > 0 ? colors.text : colors.textDim}
               {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
             >
-              {nativePaneChrome ? "" : " "}
+              {nativePaneChrome ? null : " "}
               <Span fg={colors.positive}>@</Span>
               {username ? (
                 <>
@@ -155,7 +151,9 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           </Box>
           {unreadCount > 0 ? (
             <Box onMouseDown={openUnreadInbox} data-gloom-interactive="true">
-              <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadCount}]`}</Text>
+              <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+                {`${nativePaneChrome ? "" : " "}[${unreadCount}]`}
+              </Text>
             </Box>
           ) : null}
         </Box>

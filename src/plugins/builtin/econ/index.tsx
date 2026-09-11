@@ -36,7 +36,7 @@ import {
   type ImpactFilter,
 } from "./calendar-model";
 import { usePaneStatusFooter } from "../shared/pane-footer";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { registerConnectionSource } from "../connections/register";
 import { ECON_CALENDAR_CONNECTION_ID, ECON_CALENDAR_CONNECTION_NAME } from "./calendar-source";
 import { useAppActive } from "../../../state/app/activity";
@@ -288,7 +288,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     focused,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(() => load(true)),
       { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter },
       { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter },
     ],
