@@ -37,6 +37,7 @@ function entry(overrides: Partial<MarketplaceEntry> & Pick<MarketplaceEntry, "id
     enabled: false,
     toggleable: true,
     unsupportedHere: false,
+    local: false,
     repo: `gloom-sh/${overrides.id}`,
     ...overrides,
   };
@@ -55,6 +56,7 @@ function createController(overrides: Partial<PluginGalleryController> = {}): {
     query: "",
     setQuery: () => {},
     installed: [],
+    local: [],
     discover: [],
     selected: null,
     select: (id) => selections.push(id),
@@ -108,6 +110,29 @@ function pressButton(container: Element, label: string) {
     button.dispatchEvent(new testWindow.MouseEvent("mousedown", { bubbles: true, button: 0 }) as unknown as MouseEvent);
   });
 }
+
+test("local plugins sit between Installed and Discover", async () => {
+  const listed = entry({ id: "rss", name: "RSS", installed: true, enabled: true });
+  const local = entry({
+    id: "crt-sh",
+    name: "crt.sh",
+    installed: true,
+    enabled: false,
+    bundled: true,
+    local: true,
+  });
+  const available = entry({ id: "hackernews", name: "Hacker News" });
+  const { controller } = createController({
+    installed: [listed],
+    local: [local],
+    discover: [available],
+  });
+  const container = await renderGallery(controller);
+  const text = container.textContent ?? "";
+  expect(text.indexOf("INSTALLED")).toBeLessThan(text.indexOf("LOCAL"));
+  expect(text.indexOf("LOCAL")).toBeLessThan(text.indexOf("DISCOVER"));
+  expect(text).toContain("crt.sh");
+});
 
 test("sidebar rows select the preview instead of installing", async () => {
   const listed = entry({ id: "rss", name: "RSS", installed: true, enabled: true });
@@ -233,6 +258,7 @@ test("an empty gallery keeps a preview placeholder instead of a blank pane", asy
   expect(rows(container).length).toBe(0);
   const empty = container.querySelector('[data-gloom-role="plugin-gallery-preview-empty"]')!;
   expect(empty.textContent).toContain("No plugin selected.");
+  expect(container.textContent).toContain("Nothing left to install.");
   expect(container.querySelector('[data-gloom-role="plugin-gallery-preview"]')).toBeNull();
 });
 

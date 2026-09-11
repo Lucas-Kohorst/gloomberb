@@ -14,6 +14,7 @@ import { useMarketplaceListNavigation } from "../../../components/marketplace/si
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiHost, type InputRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatCompact } from "../../../utils/format";
@@ -26,6 +27,7 @@ import {
 } from "../../../utils/sort-values";
 import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { getCurrentPluginTarget } from "../../current-target";
+import { usePluginConfigState } from "../../runtime";
 import { loadRegistry, registryPluginUrl } from "./feed";
 import { PluginGalleryDesktop, type PluginGalleryController } from "./gallery-desktop";
 import {
@@ -148,11 +150,21 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const [registry, setRegistry] = useState<RegistryPlugin[]>([]);
+  const [cachedFeed, setCachedFeed] = usePluginConfigState<{
+    plugins: RegistryPlugin[];
+    fetchedAt: number;
+  } | null>("registryCache", null);
+  const seeded = Array.isArray(cachedFeed?.plugins)
+    && cachedFeed.plugins.every((plugin) => (
+      !!plugin && typeof plugin.id === "string" && typeof plugin.name === "string"
+    ))
+    ? cachedFeed
+    : null;
+  const [registry, setRegistry] = useState<RegistryPlugin[]>(seeded?.plugins ?? []);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
-  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(seeded?.fetchedAt ?? null);
   // Bumped after a toggle or install so the list is re-read from the host.
   const [localRevision, setLocalRevision] = useState(0);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -169,8 +181,11 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
       setFetchedAt(result.fetchedAt);
       setCatalogError(result.error);
       setStatus(result.error && result.plugins.length === 0 ? "error" : "ready");
+      if (!result.error && result.fetchedAt != null) {
+        setCachedFeed({ plugins: result.plugins, fetchedAt: result.fetchedAt });
+      }
     });
-  }, []);
+  }, [setCachedFeed]);
 
   useEffect(() => refresh(false), [refresh]);
 
@@ -198,17 +213,34 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   }, [entries, installedNow, query, sortPreference]);
 
   const selected = useMemo(
-    () => rows.find((entry) => entry.id === selectedId) ?? rows[0] ?? null,
-    [rows, selectedId],
+    () => rows.find((entry) => entry.id === selectedId)
+      ?? (status === "loading" ? null : rows[0] ?? null),
+    [rows, selectedId, status],
   );
-  const installed = useMemo(() => rows.filter((entry) => entry.installed === true), [rows]);
-  const discover = useMemo(() => rows.filter((entry) => entry.installed === false), [rows]);
+  const installed = useMemo(
+    () => rows.filter((entry) => entry.installed && !entry.local),
+    [rows],
+  );
+  const local = useMemo(() => rows.filter((entry) => entry.local), [rows]);
+  const discover = useMemo(
+    () => rows.filter((entry) => !entry.installed && !entry.bundled && !entry.local),
+    [rows],
+  );
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
     setSearchFocusToken((token) => token + 1);
   }, []);
   const blurSearch = useCallback(() => setSearchFocused(false), []);
+
+  useShortcut((event) => {
+    if (!focused || detailOpen || searchFocused) return;
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+    }
+  }, { enabled: focused && !detailOpen && !searchFocused });
 
   const toggle = useCallback((entry: MarketplaceEntry) => {
     const host = getMarketplaceHost();
@@ -280,7 +312,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (searchFocused) return false;
     if ((event as { targetEditable?: boolean }).targetEditable) return false;
-    if (isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -321,7 +353,10 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
 
   // The terminal table owns its own cursor; only the desktop sidebar needs this.
   // Items follow the sidebar's rendered order, not the table's sort order.
-  const sidebarItems = useMemo(() => [...installed, ...discover], [discover, installed]);
+  const sidebarItems = useMemo(
+    () => [...installed, ...local, ...discover],
+    [discover, installed, local],
+  );
   useMarketplaceListNavigation({
     enabled: isDesktop && focused,
     scope: "plugin-gallery",
@@ -367,7 +402,13 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const controller: PluginGalleryController = {
     query,
     setQuery,
+    searchFocused,
+    searchFocusToken,
+    searchInputRef,
+    onSearchFocus: focusSearch,
+    onSearchBlur: blurSearch,
     installed,
+    local,
     discover,
     selected,
     select: (id) => setSelectedId(id),
@@ -399,7 +440,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     );
   }
 
-  if (status === "loading" && entries.length === 0) {
+  if (status === "loading") {
     return (
       <Box flexDirection="column" width={width} height={height} backgroundColor={colors.bg}>
         <Box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">

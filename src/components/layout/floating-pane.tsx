@@ -29,6 +29,8 @@ interface FloatingPaneWrapperProps {
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
+  onRestoreMouseDown?: (event: any) => void;
+  fullscreen?: boolean;
   onTitleMouseDown?: (event: any) => void;
   onResizeMouseDown?: (corner: FloatingResizeCorner, event: any) => void;
   onResizeMouseDrag?: (event: any) => void;
@@ -149,6 +151,8 @@ export function FloatingPaneWrapper({
   onActionMouseDown,
   onFloatToggleMouseDown,
   onCloseMouseDown,
+  onRestoreMouseDown,
+  fullscreen = false,
   onTitleMouseDown,
   onResizeMouseDown,
   onResizeMouseDrag,
@@ -216,6 +220,8 @@ export function FloatingPaneWrapper({
         onActionMouseDown={onActionMouseDown}
         onFloatToggleMouseDown={onFloatToggleMouseDown}
         onCloseMouseDown={onCloseMouseDown}
+        onRestoreMouseDown={onRestoreMouseDown}
+        fullscreen={fullscreen}
         onTitleMouseDown={onTitleMouseDown}
         titleAccessory={titleAccessory}
         titleAccessoryWidth={titleAccessoryWidth}

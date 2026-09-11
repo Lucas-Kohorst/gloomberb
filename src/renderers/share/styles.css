@@ -4,31 +4,31 @@
  * the terminal stylesheet. That sheet locks scrolling and sizes everything
  * to a character grid, both wrong for a document a stranger reads on a phone.
  *
- * Tokens are the normalized Adjacent defaults the web host applies at boot.
+ * Tokens are the normalized White Phosphor defaults the web host applies at boot.
  * Cell-character / box-drawing borders stay in the OpenTUI renderer; here
  * chrome is real CSS (1px borders, radius, hover fills).
  */
 
 :root {
-  --gloom-bg: #16140f;
-  --gloom-panel: #0e2a1f;
-  --gloom-border: #2c4a3c;
-  --gloom-border-focused: #f4efd9;
-  --gloom-text: #ece9e2;
-  --gloom-text-dim: #c5c0b0;
-  --gloom-text-bright: #f4efd9;
+  --gloom-bg: #000000;
+  --gloom-panel: #0a0a0a;
+  --gloom-border: #333333;
+  --gloom-border-focused: #ffffff;
+  --gloom-text: #cccccc;
+  --gloom-text-dim: #7b7b7b;
+  --gloom-text-bright: #ffffff;
   /* Header/chip mute only (~3.6:1). Body copy uses --gloom-text / --gloom-text-dim. */
-  --gloom-text-muted: #8f978c;
-  --gloom-positive: #6aa3e6;
-  --gloom-negative: #e06256;
-  --gloom-neutral: #9aa39a;
-  --gloom-warning: #e3c27a;
-  --gloom-selected: #36556a;
-  --gloom-selected-text: #f4efd9;
-  --gloom-hover-bg: #26353d;
-  --gloom-pane-title-bg: #0e2a1f;
-  --gloom-pane-body-bg: #23211b;
-  --gloom-pane-footer-bg: #23211b;
+  --gloom-text-muted: #6a6a6a;
+  --gloom-positive: #00cc66;
+  --gloom-negative: #ff3333;
+  --gloom-neutral: #888888;
+  --gloom-warning: #ddaa00;
+  --gloom-selected: #3d3d3d;
+  --gloom-selected-text: #ffffff;
+  --gloom-hover-bg: #1f1f1f;
+  --gloom-pane-title-bg: #0a0a0a;
+  --gloom-pane-body-bg: #0f0f0f;
+  --gloom-pane-footer-bg: #0f0f0f;
   --cell-w: 8px;
   --cell-h: 18px;
   color-scheme: dark;

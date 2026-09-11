@@ -48,9 +48,10 @@ describe("theme appearance", () => {
 });
 
 describe("theme contrast", () => {
-  test("defaults to Adjacent and still ships Amber", () => {
-    if (DEFAULT_THEME !== "adjacent") throw new Error(`unexpected default theme ${DEFAULT_THEME}`);
-    if (!themes.adjacent) throw new Error("missing adjacent theme");
+  test("defaults to White Phosphor and still ships Amber", () => {
+    if (DEFAULT_THEME !== "white") throw new Error(`unexpected default theme ${DEFAULT_THEME}`);
+    if (!themes.white) throw new Error("missing white phosphor theme");
+    if (themes.white.name !== "White Phosphor") throw new Error(`unexpected white phosphor name ${themes.white.name}`);
     if (!themes.amber) throw new Error("missing amber theme");
   });
 

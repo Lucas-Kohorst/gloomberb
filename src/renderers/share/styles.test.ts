@@ -8,11 +8,11 @@ function cssRootToken(css: string, name: string): string | undefined {
 }
 
 describe("share page theme tokens", () => {
-  test("hardcodes the normalized Adjacent default so anonymous share pages match new installs", async () => {
-    expect(DEFAULT_THEME).toBe("adjacent");
+  test("hardcodes the normalized White Phosphor default so anonymous share pages match new installs", async () => {
+    expect(DEFAULT_THEME).toBe("white");
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
-    const theme = getTheme("adjacent");
-    const palette = getThemeColors("adjacent");
+    const theme = getTheme("white");
+    const palette = getThemeColors("white");
 
     expect(cssRootToken(css, "--gloom-bg")).toBe(theme.bg.toLowerCase());
     expect(cssRootToken(css, "--gloom-panel")).toBe(theme.panel.toLowerCase());

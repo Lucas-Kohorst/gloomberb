@@ -1,5 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
+import { DEFAULT_THEME } from "../theme/themes";
 
 export const CURRENT_CONFIG_VERSION = 23;
 
@@ -880,7 +881,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     seededPlugins: [],
     disabledSources: [],
     pluginConfig: {},
-    theme: "adjacent",
+    theme: DEFAULT_THEME,
     chartPreferences: {
       renderer: "auto",
     },

@@ -39,6 +39,7 @@ interface ShellPaneLayersProps {
   getPaneQuickSettings: (paneId: string) => PaneHeaderQuickSetting[];
   handleFloatingClose: (paneId: string) => void;
   handleFloatingCloseMouseDown: (paneId: string, event: any) => void;
+  handleRestoreFullscreen: (event: any) => void;
   handleNativeDrag: ShellMouseHandler;
   handleNativePaneContextMenu: (paneId: string, rect: LayoutBounds, event: any) => void;
   handleNativePaneMouseDown: (paneId: string, event: any) => void;
@@ -76,6 +77,7 @@ export function ShellPaneLayers({
   getPaneQuickSettings,
   handleFloatingClose,
   handleFloatingCloseMouseDown,
+  handleRestoreFullscreen,
   handleNativeDrag,
   handleNativePaneContextMenu,
   handleNativePaneMouseDown,
@@ -161,6 +163,8 @@ export function ShellPaneLayers({
                         onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
                         onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
                         onFloatToggleMouseDown={nativePaneChrome && !isFullscreenBase ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
+                        onRestoreMouseDown={isFullscreenBase ? handleRestoreFullscreen : undefined}
+                        fullscreen={isFullscreenBase}
                         onTitleMouseDown={onTitleMouseDown && !isArticleReaderPane(pane.instance.paneId)
                           ? (event) => onTitleMouseDown(leaf.instanceId, event)
                           : undefined}
@@ -234,7 +238,9 @@ export function ShellPaneLayers({
                       onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(pane.instance.instanceId, preview, event) : undefined}
                       onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
                       onFloatToggleMouseDown={nativePaneChrome && !isFullscreenBase ? (event) => handlePaneFloatToggle(pane.instance.instanceId, event) : undefined}
-                      onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
+                      onCloseMouseDown={isFullscreenBase ? undefined : (event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
+                      onRestoreMouseDown={isFullscreenBase ? handleRestoreFullscreen : undefined}
+                      fullscreen={isFullscreenBase}
                       onTitleMouseDown={onTitleMouseDown && !isArticleReaderPane(pane.instance.paneId)
                         ? (event) => onTitleMouseDown(pane.instance.instanceId, event)
                         : undefined}

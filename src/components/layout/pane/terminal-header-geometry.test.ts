@@ -22,4 +22,15 @@ describe("terminalPaneHeaderTitleHit", () => {
     expect(terminalPaneHeaderControlAt(geometry, action!.start)).toBe("action");
     expect(terminalPaneHeaderTitleHit(geometry, action!.start)).toBe(false);
   });
+
+  test("fullscreen header uses a restore control instead of close", () => {
+    const geometry = resolveTerminalPaneHeaderGeometry(40, {
+      floating: false,
+      focused: true,
+      showActions: true,
+      fullscreen: true,
+    });
+    expect(geometry.controls.toggle).toBeNull();
+    expect(geometry.controls.close?.text).toBe(" _ ");
+  });
 });

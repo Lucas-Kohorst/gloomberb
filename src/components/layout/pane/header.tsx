@@ -8,6 +8,7 @@ import {
   PANE_HEADER_CLOSE,
   PANE_HEADER_FLOATING,
   PANE_HEADER_GRIP,
+  PANE_HEADER_RESTORE,
   PANE_HEADER_TILED,
   resolveTerminalPaneHeaderGeometry,
 } from "./terminal-header-geometry";
@@ -18,6 +19,7 @@ export {
   PANE_HEADER_CLOSE,
   PANE_HEADER_FLOATING,
   PANE_HEADER_GRIP,
+  PANE_HEADER_RESTORE,
   PANE_HEADER_TILED,
 } from "./terminal-header-geometry";
 
@@ -29,6 +31,7 @@ interface PaneHeaderProps {
   focused: boolean;
   windowModeSelected?: boolean;
   floating?: boolean;
+  fullscreen?: boolean;
   titleAccessory?: ReactNode;
   titleAccessoryWidth?: number;
   showActions?: boolean;
@@ -41,6 +44,7 @@ interface PaneHeaderProps {
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
+  onRestoreMouseDown?: (event: any) => void;
   onTitleMouseDown?: (event: any) => void;
 }
 
@@ -94,24 +98,30 @@ export function DesktopPaneButton({
         appearance: "none",
         border: 0,
         borderRadius: 4,
-        display: "inline-flex",
+        display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        alignSelf: "stretch",
         height: "100%",
         minWidth: 28,
+        margin: 0,
+        padding: 0,
         paddingInline: 6,
+        lineHeight: 0,
         backgroundColor: "transparent",
         cursor: onActivate ? "pointer" : "default",
       }}
     >
       <Span
         style={{
-          display: "inline-flex",
+          display: "flex",
           alignItems: "center",
           justifyContent: "center",
           width: 12,
           height: 12,
-          color: colors.textDim,
+          lineHeight: 0,
+          overflow: "hidden",
+          color,
         }}
       >
         {icon}
@@ -152,6 +162,7 @@ export function PaneHeader({
   focused,
   windowModeSelected = false,
   floating = false,
+  fullscreen = false,
   titleAccessory,
   titleAccessoryWidth = 0,
   showActions = false,
@@ -164,6 +175,7 @@ export function PaneHeader({
   onActionMouseDown,
   onFloatToggleMouseDown,
   onCloseMouseDown,
+  onRestoreMouseDown,
   onTitleMouseDown,
 }: PaneHeaderProps) {
   const { cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
@@ -182,6 +194,7 @@ export function PaneHeader({
     floating,
     focused: visuallyFocused,
     showActions,
+    fullscreen,
   });
   const handleTerminalHeaderMouseDown = useCallback((event: any) => {
     capturePointerDrag(nativeRenderer, terminalHeaderRef.current);
@@ -294,11 +307,13 @@ export function PaneHeader({
           data-gloom-role="pane-header-actions"
           flexDirection="row"
           alignItems="center"
+          justifyContent="center"
+          height="100%"
           flexShrink={0}
           position="relative"
           zIndex={2}
         >
-          {uiKind === "opentui" ? (
+          {fullscreen ? null : uiKind === "opentui" ? (
             <TerminalPaneButton
               text={floatToggleText}
               fg={colors.textDim}
@@ -342,16 +357,33 @@ export function PaneHeader({
             )
           ) : <Box width={2} />}
         </Box>
-        {floating && (
-          <Box data-gloom-role="pane-close" marginLeft={1} position="relative" zIndex={2}>
+        {(fullscreen || floating) && (
+          <Box
+            data-gloom-role={fullscreen ? "pane-restore" : "pane-close"}
+            marginLeft={1}
+            height="100%"
+            alignItems="center"
+            justifyContent="center"
+            position="relative"
+            zIndex={2}
+          >
             {uiKind === "opentui" ? (
-              <TerminalPaneButton text={PANE_HEADER_CLOSE} fg={colors.textDim} role="pane-close" onMouseDown={onCloseMouseDown} />
+              <TerminalPaneButton
+                text={fullscreen ? PANE_HEADER_RESTORE : PANE_HEADER_CLOSE}
+                fg={colors.textDim}
+                role={fullscreen ? "pane-restore" : "pane-close"}
+                onMouseDown={fullscreen ? onRestoreMouseDown : onCloseMouseDown}
+              />
             ) : (
               <DesktopPaneButton
-                label="Close pane"
-                onActivate={onCloseMouseDown}
-                role="pane-close"
-                icon={(
+                label={fullscreen ? "Restore pane" : "Close pane"}
+                onActivate={fullscreen ? onRestoreMouseDown : onCloseMouseDown}
+                role={fullscreen ? "pane-restore" : "pane-close"}
+                icon={fullscreen ? (
+                  <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
+                    <path d="M2.5 6H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
+                  </svg>
+                ) : (
                   <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
                     <path
                       d="M3 3L9 9M9 3L3 9"
@@ -371,7 +403,7 @@ export function PaneHeader({
 
   const accessoryWidth = Math.max(0, Math.floor(titleAccessoryWidth));
 
-  if (visuallyFocused || floating) {
+  if (visuallyFocused || floating || fullscreen) {
     const borderColor = visuallyFocused ? colors.borderFocused : colors.border;
     const grip = truncateTitle(PANE_HEADER_GRIP, terminalGeometry.contentWidth);
     const titleWidth = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip) - accessoryWidth);
@@ -424,8 +456,8 @@ export function PaneHeader({
           <TerminalPaneButton
             text={terminalGeometry.controls.close.text}
             fg={textColor}
-            role="pane-close"
-            onMouseDown={onCloseMouseDown}
+            role={fullscreen ? "pane-restore" : "pane-close"}
+            onMouseDown={fullscreen ? onRestoreMouseDown : onCloseMouseDown}
           />
         )}
         <Text

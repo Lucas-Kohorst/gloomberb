@@ -2,6 +2,7 @@ import { displayWidth } from "../../../utils/format";
 
 export const PANE_HEADER_ACTION = " ... ";
 export const PANE_HEADER_CLOSE = " x ";
+export const PANE_HEADER_RESTORE = " _ ";
 export const PANE_HEADER_TILED = "T▦";
 export const PANE_HEADER_FLOATING = "F◇";
 export const PANE_HEADER_GRIP = ":: ";
@@ -40,17 +41,18 @@ function fitText(text: string, available: number): string {
 
 export function resolveTerminalPaneHeaderGeometry(
   width: number,
-  options: { floating: boolean; focused: boolean; showActions: boolean },
+  options: { floating: boolean; focused: boolean; showActions: boolean; fullscreen?: boolean },
 ): TerminalPaneHeaderGeometry {
   const safeWidth = Math.max(0, Math.floor(width));
-  const framed = options.focused || options.floating;
+  const framed = options.focused || options.floating || options.fullscreen === true;
   const leftBorder = framed ? fitText("┌─", safeWidth) : "";
   const rightBorder = framed ? fitText("─┐", safeWidth - displayWidth(leftBorder)) : "";
   const controlBudget = safeWidth - displayWidth(leftBorder) - displayWidth(rightBorder);
   const toggleText = options.floating ? PANE_HEADER_FLOATING : PANE_HEADER_TILED;
+  const closeText = options.fullscreen === true ? PANE_HEADER_RESTORE : PANE_HEADER_CLOSE;
   const candidates: Array<{ control: TerminalPaneHeaderControl; text: string }> = [
-    { control: "toggle", text: toggleText },
-    ...(options.floating ? [{ control: "close" as const, text: PANE_HEADER_CLOSE }] : []),
+    ...(options.fullscreen === true ? [] : [{ control: "toggle" as const, text: toggleText }]),
+    ...((options.floating || options.fullscreen === true) ? [{ control: "close" as const, text: closeText }] : []),
     ...(options.showActions ? [{ control: "action" as const, text: PANE_HEADER_ACTION }] : []),
   ];
   const visible = new Set<TerminalPaneHeaderControl>();
@@ -75,7 +77,7 @@ export function resolveTerminalPaneHeaderGeometry(
   const renderOrder: Array<{ control: TerminalPaneHeaderControl; text: string }> = [
     { control: "toggle", text: toggleText },
     { control: "action", text: PANE_HEADER_ACTION },
-    { control: "close", text: PANE_HEADER_CLOSE },
+    { control: "close", text: closeText },
   ];
 
   for (const candidate of renderOrder) {

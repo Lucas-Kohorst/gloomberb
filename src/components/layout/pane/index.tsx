@@ -25,6 +25,8 @@ interface PaneWrapperProps {
   onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
+  onRestoreMouseDown?: (event: any) => void;
+  fullscreen?: boolean;
   footer?: CombinedPaneFooter | null;
   titleAccessory?: ReactNode;
   titleAccessoryWidth?: number;
@@ -51,6 +53,8 @@ export function PaneWrapper({
   onHeaderContextMenu,
   onActionMouseDown,
   onFloatToggleMouseDown,
+  onRestoreMouseDown,
+  fullscreen = false,
   footer,
   titleAccessory,
   titleAccessoryWidth,
@@ -112,6 +116,8 @@ export function PaneWrapper({
           onHeaderContextMenu={onHeaderContextMenu}
           onActionMouseDown={onActionMouseDown}
           onFloatToggleMouseDown={onFloatToggleMouseDown}
+          onRestoreMouseDown={onRestoreMouseDown}
+          fullscreen={fullscreen}
           onTitleMouseDown={onTitleMouseDown}
           titleAccessory={titleAccessory}
           titleAccessoryWidth={titleAccessoryWidth}

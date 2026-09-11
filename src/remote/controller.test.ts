@@ -530,7 +530,7 @@ describe("createAppRemoteController", () => {
       expect(JSON.stringify(noOp)).not.toContain("broker-token-sentinel-001");
     }
     // The write itself still landed and preserved live secrets.
-    expect(getState().config.theme).toBe("adjacent");
+    expect(getState().config.theme).toBe("white");
     expect(getState().config.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
   });
 
