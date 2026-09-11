@@ -759,15 +759,15 @@ describe("loadConfig", () => {
     expect(config.pluginConfig).toEqual({});
   });
 
-  test("defaults missing theme to Adjacent without rewriting a saved Amber theme", async () => {
+  test("defaults missing theme to White Phosphor without rewriting a saved Amber theme", async () => {
     const missingDir = await createTempConfigDir();
     await writeConfigJson(missingDir, createSavedConfig({
       theme: undefined,
     }));
 
     const missingConfig = await loadConfig(missingDir);
-    expect(missingConfig.theme).toBe("adjacent");
-    expect(createDefaultConfig(missingDir).theme).toBe("adjacent");
+    expect(missingConfig.theme).toBe("white");
+    expect(createDefaultConfig(missingDir).theme).toBe("white");
 
     const savedDir = await createTempConfigDir();
     await writeConfigJson(savedDir, createSavedConfig({
