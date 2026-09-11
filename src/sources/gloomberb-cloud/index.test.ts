@@ -3,6 +3,7 @@ import { createGloomberbCloudCapabilities, GloomberbCloudProvider } from "./inde
 import { getRangeStartDate, toHistoryRequest } from "./normalizers";
 import type { NewsCapability } from "../../capabilities";
 import { apiClient, type AuthUser, type CloudNewsPayload } from "../../api-client";
+import { isProviderMiss } from "../provider-errors";
 
 const verifiedUser: AuthUser = {
   id: "user-1",
@@ -18,6 +19,7 @@ const verifiedUser: AuthUser = {
 const originalEnsureVerifiedSession = apiClient.ensureVerifiedSession.bind(apiClient);
 const originalGetCloudHistory = apiClient.getCloudHistory.bind(apiClient);
 const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
+const originalGetCloudQuotesBatch = apiClient.getCloudQuotesBatch.bind(apiClient);
 const originalGetCloudExchangeRate = apiClient.getCloudExchangeRate.bind(apiClient);
 const originalGetCloudHolders = apiClient.getCloudHolders.bind(apiClient);
 const originalGetCloudAnalystResearch = apiClient.getCloudAnalystResearch.bind(apiClient);
@@ -89,6 +91,7 @@ afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
   apiClient.getCloudHistory = originalGetCloudHistory;
   apiClient.getCloudQuote = originalGetCloudQuote;
+  apiClient.getCloudQuotesBatch = originalGetCloudQuotesBatch;
   apiClient.getCloudExchangeRate = originalGetCloudExchangeRate;
   apiClient.getCloudHolders = originalGetCloudHolders;
   apiClient.getCloudAnalystResearch = originalGetCloudAnalystResearch;
@@ -100,6 +103,26 @@ afterEach(() => {
 });
 
 describe("GloomberbCloudProvider", () => {
+  test("rejects stale batch items as provider misses while preserving healthy quotes", async () => {
+    const targets = [{ symbol: "AAPL", exchange: "NASDAQ" }, { symbol: "MSFT", exchange: "NASDAQ" }];
+    const quote = { symbol: "AAPL", price: 200, currency: "USD", change: 1, changePercent: 0.5, lastUpdated: 1 };
+    for (const status of ["success", "partial"] as const) {
+      apiClient.getCloudQuotesBatch = async () => ({
+        status: "success", stale: false, data: { items: [
+          { ...targets[0]!, status, stale: true, data: quote },
+          { ...targets[1]!, status: "success", stale: false, data: { ...quote, symbol: "MSFT", price: 400 } },
+        ] },
+      });
+      const results = await new GloomberbCloudProvider().getQuotesBatch(targets);
+      expect(results[0]?.target).toBe(targets[0]!);
+      expect(results[0]?.quote).toBeNull();
+      expect(isProviderMiss(results[0]?.error)).toBe(true);
+      expect(results[1]?.target).toBe(targets[1]!);
+      expect(results[1]?.quote).toMatchObject({ symbol: "MSFT", price: 400 });
+      expect(results[1]?.error).toBeUndefined();
+    }
+  });
+
   test("uses public delayed market routes anonymously but keeps research protected", async () => {
     let sessionChecks = 0;
     apiClient.ensureVerifiedSession = async () => {
