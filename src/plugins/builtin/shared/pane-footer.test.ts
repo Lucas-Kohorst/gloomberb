@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isBindableFooterHintKey,
   PANE_FOOTER_ACTION_KEYS,
   paneDelayedStatus,
   paneLiveStatus,
@@ -13,6 +14,17 @@ describe("pane footer action keys", () => {
     expect(PANE_FOOTER_ACTION_KEYS.refresh).toBe("r");
     expect(PANE_FOOTER_ACTION_KEYS.open).toBe("o");
     expect(PANE_FOOTER_ACTION_KEYS.share).toBe("y");
+  });
+
+  test("footer binder keys are / or a single character", () => {
+    expect(isBindableFooterHintKey("/")).toBe(true);
+    expect(isBindableFooterHintKey("s")).toBe(true);
+    expect(isBindableFooterHintKey("o")).toBe(true);
+    expect(isBindableFooterHintKey("Esc")).toBe(false);
+    expect(isBindableFooterHintKey("Enter")).toBe(false);
+    expect(isBindableFooterHintKey("Ctrl+S")).toBe(false);
+    expect(isBindableFooterHintKey("Shift+R")).toBe(false);
+    expect(isBindableFooterHintKey("1-8")).toBe(false);
   });
 
   test("search and refresh hint builders match the bound keys", () => {

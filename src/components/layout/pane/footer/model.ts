@@ -59,16 +59,33 @@ export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], trailingInfo: [], hi
 /** Empty-state / error copy in the 18px chrome band; never dump JSON. */
 export const PANE_FOOTER_INFO_MAX_CHARS = 24;
 
+/**
+ * Keys `usePaneFooterHintBindings` can actually press. `/` or a single
+ * character. Combos (`Ctrl+S`, `Shift+R`), `Esc`, `Enter`, and ranges
+ * (`1-8`) never bind through the footer.
+ */
+export function isBindableFooterHintKey(key: string): boolean {
+  return key === "/" || key.length === 1;
+}
+
+function clipFooterParts(parts: PaneFooterPart[]): PaneFooterPart[] {
+  return parts.map((part) => (
+    part.text.length <= PANE_FOOTER_INFO_MAX_CHARS
+      ? part
+      : { ...part, text: part.text.slice(0, PANE_FOOTER_INFO_MAX_CHARS) }
+  ));
+}
+
 export function clipPaneFooterInfo(footer: CombinedPaneFooter): CombinedPaneFooter {
   return {
     ...footer,
     info: footer.info.map((segment) => ({
       ...segment,
-      parts: segment.parts.map((part) => (
-        part.text.length <= PANE_FOOTER_INFO_MAX_CHARS
-          ? part
-          : { ...part, text: part.text.slice(0, PANE_FOOTER_INFO_MAX_CHARS) }
-      )),
+      parts: clipFooterParts(segment.parts),
+    })),
+    trailingInfo: footer.trailingInfo.map((segment) => ({
+      ...segment,
+      parts: clipFooterParts(segment.parts),
     })),
   };
 }

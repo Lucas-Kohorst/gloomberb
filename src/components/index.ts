@@ -28,7 +28,7 @@ export { FeedDataTableStackView } from "./feed-data-table/stack-view";
 export type { FeedDataTableItem } from "./feed-data-table/stack-view";
 export { activeStackIndex, nextStackSortPreference, sortStackItems } from "./feed-stack-controller";
 export type { StackSortPreference } from "./feed-stack-controller";
-export { PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
+export { isBindableFooterHintKey, PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
 export type { PaneFooterPressEvent, PaneFooterSelectMenu, PaneFooterSegment, PaneHint } from "./layout/pane/footer";
 export { usePaneHeaderAccessory } from "./layout/pane/header-accessory";
 export { useUpdatedAgo } from "./use-updated-ago";

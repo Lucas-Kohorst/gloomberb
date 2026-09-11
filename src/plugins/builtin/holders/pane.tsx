@@ -266,7 +266,6 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
         ...(fundMatching ? [{ id: "fund-matching", parts: [{ text: "13F matching", tone: "muted" as const }] }] : []),
       ],
       hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
         { id: "view", key: "s", label: "witch", onPress: toggleView },
         // `f` is the filter key in sibling panes, so opening a fund uses `o`.
         ...(selectedFundMatch ? [{ id: "fund", key: "o", label: "pen 13F", onPress: () => openFundDetail(selectedRow) }] : []),

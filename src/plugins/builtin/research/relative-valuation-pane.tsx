@@ -21,7 +21,7 @@ import { applySortPreference, compareSortValues, type SortDirection } from "../.
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 
 type RelativeColumnId = "symbol" | "price" | "change" | "marketCap" | "pe" | "forwardPe" | "evSales" | "fcfYield" | "revenueGrowth" | "margin";
@@ -257,10 +257,9 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     info: loadingErrorFooterInfo(loading, error),
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(refresh),
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !sortedRows[selectedIdx] },
     ],
-  }), [error, focusSearch, loading, openSelected, refresh, selectedIdx, sortedRows]);
+  }), [error, focusSearch, loading, openSelected, selectedIdx, sortedRows]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => (

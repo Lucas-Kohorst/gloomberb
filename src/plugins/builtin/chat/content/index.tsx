@@ -640,7 +640,6 @@ export function ChatContent({
     return {
       info,
       hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: retryMessages },
         { id: "search", key: "/", label: "search", onPress: openSearch },
         ...(
           !inputFocused

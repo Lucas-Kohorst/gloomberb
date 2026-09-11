@@ -111,3 +111,30 @@ test("keeps labels in place when a later section brings wider badges", async () 
   // The widest badge ends one gap short of the label edge it shares.
   expect(columnOf(after, "DERIV") + "DERIV".length).toBe(columnOf(after, "Call spread") - 1);
 });
+
+test("searching label shares the result title column", async () => {
+  testSetup = await testRender(
+    <ListHarness
+      nativeListRows={[
+        { kind: "heading", id: "heading", label: "Data Catalog" },
+        {
+          kind: "item",
+          globalIdx: 0,
+          item: item({
+            id: "catalog",
+            label: "Browse Data Catalog",
+            right: "CAT",
+          }),
+        },
+        { kind: "spinner", id: "searching", label: "Searching…" },
+      ]}
+    />,
+    { width: 60, height: 20 },
+  );
+  await testSetup.renderOnce();
+  const frame = testSetup.captureCharFrame();
+  const titleCol = columnOf(frame, "Browse Data Catalog");
+  expect(titleCol).toBeGreaterThan(0);
+  expect(columnOf(frame, "Searching…")).toBe(titleCol);
+  expect(columnOf(frame, "CAT") + "CAT".length).toBe(titleCol - 1);
+});

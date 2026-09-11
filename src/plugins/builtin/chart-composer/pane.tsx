@@ -580,8 +580,6 @@ function ChartComposerSurface({
   };
   const footerSeries = useCallback(() => { void currentActionsRef.current.openSeriesEditor(); }, []);
   const footerResolution = useCallback(() => { void currentActionsRef.current.openResolutionPicker(); }, []);
-  const footerReload = useCallback(() => { currentActionsRef.current.reload(); }, []);
-  const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
   const footerLog = useCallback(() => { setSpec(toggleMainPanelScale(spec)); }, [setSpec, spec]);
   const footerPercent = useCallback(() => { setSpec(toggleMainPanelPercentScale(spec)); }, [setSpec, spec]);
   const footerAuto = useCallback(() => { setSpec(toggleMainPanelAutoScale(spec)); }, [setSpec, spec]);
@@ -648,13 +646,11 @@ function ChartComposerSurface({
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
-      { id: "range", key: "1-8", label: "range", onPress: footerRange },
       { id: "log", key: "l", label: "og", onPress: footerLog },
       { id: "percent", key: "p", label: "%", onPress: footerPercent },
       { id: "auto", key: "g", label: " auto", onPress: footerAuto },
       { id: "compare", key: "c", label: "ompare", onPress: footerCompare, disabled: compareDisabled },
       { id: "timezone", key: "z", label: "one", onPress: footerTimeZone },
-      { id: "refresh", key: "r", label: "efresh", onPress: footerReload },
       ...(publicSharing
         ? [{ id: "share", key: "y", label: " share", onPress: shareChart, disabled: !shareData }]
         : []),
@@ -665,8 +661,6 @@ function ChartComposerSurface({
     footerCompare,
     footerLog,
     footerPercent,
-    footerRange,
-    footerReload,
     footerResolution,
     footerSeries,
     footerTimeZone,

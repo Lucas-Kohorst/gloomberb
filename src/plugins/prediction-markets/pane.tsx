@@ -169,7 +169,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !graphExpression },
         ...(!controller.detailOpen ? [
           { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: controller.actions.refreshCatalog },
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),

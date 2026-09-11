@@ -76,7 +76,7 @@ export const researchSearchPlugin: GloomPlugin = {
         const query = queryFromOptions(options);
         return {
           instanceId: researchSearchInstanceId(query),
-          title: query ? `Search ${query}` : "Research Search",
+          title: "Research Search",
           placement: "floating",
           settings: { query },
         };

@@ -26,7 +26,7 @@ export function useAccountManagementFooter({
   const footerHints = useMemo<PaneHint[]>(() => (
     activeTab === "ai"
       ? []
-      : [{ id: "save", key: "Ctrl+S", label: t("save"), onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession }]
+      : [{ id: "save", key: "s", label: "ave", onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession }]
   ), [activeTab, busy, hasSession, language, saveProfile]);
 
   usePaneFooter("account-management", () => ({

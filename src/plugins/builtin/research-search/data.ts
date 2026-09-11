@@ -45,6 +45,49 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+export interface SearchSourceFailure {
+  message: string;
+  status?: number;
+  /** Footer token. Named when one source failed beside others that returned hits. */
+  label: string;
+}
+
+/**
+ * One rejected provider in a mixed search is "source error" today — the table
+ * still has rows, so the message never surfaces. Name the source instead.
+ * Aborts from a superseded query are not failures.
+ */
+export function summarizeSearchFailures(
+  results: readonly PromiseSettledResult<unknown>[],
+  sourceNames: readonly string[],
+): SearchSourceFailure | null {
+  const failures: Array<{ name: string; message: string; status?: number }> = [];
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    if (result?.status !== "rejected") continue;
+    if (isAbortError(result.reason)) continue;
+    failures.push({
+      name: sourceNames[index] ?? "source",
+      message: errorMessage(result.reason),
+      status: statusOf(result.reason),
+    });
+  }
+  if (failures.length === 0) return null;
+  if (failures.length === 1) {
+    const failure = failures[0]!;
+    return {
+      message: failure.message,
+      status: failure.status,
+      label: `${failure.name} error`,
+    };
+  }
+  return {
+    message: failures.map((failure) => failure.name).join(", "),
+    status: failures[0]?.status,
+    label: `${failures.length} source errors`,
+  };
+}
+
 export function runDocumentSearch(
   params: CloudSearchParams,
   signal?: AbortSignal,

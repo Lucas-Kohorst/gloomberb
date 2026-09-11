@@ -33,7 +33,6 @@ import { isUsEquityTicker } from "../../../utils/sec";
 import { computeTTM } from "../ticker-detail/financials/aggregation";
 import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
-import { paneRefreshHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 import {
   documentContentKey,
@@ -727,8 +726,7 @@ export function CorporateActionsView({
 
   usePaneFooter(footerPaneId, () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [paneRefreshHint(reload)],
-  }), [error, footerPaneId, loading, reload]);
+  }), [error, footerPaneId, loading]);
 
   if (loading && rows.length === 0) return <LoadingState title="Loading events..." />;
   if (rows.length === 0) {

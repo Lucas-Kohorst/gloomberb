@@ -170,7 +170,6 @@ function CrtShPane({ width, height, focused }: PaneProps) {
     showOpenHint: !!activeRecord,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
     ],
   });
 

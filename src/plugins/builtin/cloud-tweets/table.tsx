@@ -39,7 +39,7 @@ import {
   type TweetLoadState,
   type TweetSortDirection,
 } from "./model";
-import { usePaneStatusLinkFooter, paneSearchHint, paneRefreshHint } from "../shared/pane-footer";
+import { usePaneStatusLinkFooter, paneSearchHint } from "../shared/pane-footer";
 import { tweetSharePayload, useCopyShareLink } from "../shared/article-share";
 import { useTwitterFetchStaleLabel } from "./footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
@@ -248,7 +248,6 @@ export function TweetSearchTable({
     showOpenHint: !!selectedTweet?.url,
     hints: [
       ...(onFocusSearch ? [paneSearchHint(onFocusSearch)] : []),
-      paneRefreshHint(reload),
     ],
     trailingHints,
     onOpen: () => {

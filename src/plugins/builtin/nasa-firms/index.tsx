@@ -299,7 +299,6 @@ function FirePane({ width, height, focused }: PaneProps) {
     hints: hasKey
       ? [
           { id: "search", key: "/", label: "search", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
         ]
       : [],
   });

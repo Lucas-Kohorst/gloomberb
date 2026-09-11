@@ -50,7 +50,7 @@ import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-compose
 import { isMarketFieldId } from "../../../time-series/field-catalog";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
-import { parseRootShortcutIntent } from "../routes/root/shortcuts";
+import { parseRootShortcutIntent, shortcutClaimsQuery } from "../routes/root/shortcuts";
 import { useCommandBarThemePreview } from "../theme-preview";
 import { CommandBarPanel } from "../panel";
 import { useCommandBarNavigationState } from "../routing/navigation-state";
@@ -222,6 +222,7 @@ export function CommandBar({
     paneTemplates: getAvailablePaneShortcutTemplates(rootQuery),
     activeTicker: activeTickerSymbol,
   }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
+  const shortcutOwnsQuery = shortcutClaimsQuery(rootShortcutIntent);
 
   const planAccess = usePlanAccess();
   const watchNews = looksLikeArticleQuery(rootQuery);
@@ -298,7 +299,7 @@ export function CommandBar({
     warmingNewsCache,
   ]);
   const predictionSearch = usePredictionInstrumentSearch(
-    !currentRoute && rootShortcutIntent.kind === "none" ? rootQuery : "",
+    !currentRoute && !shortcutOwnsQuery ? rootQuery : "",
   );
   const predictionResultItems = useMemo(() => buildPredictionMarketResultItems({
     markets: predictionSearch.markets,
@@ -317,7 +318,7 @@ export function CommandBar({
     },
   }), [closeAll, dispatch, pluginRegistry, predictionSearch.markets, state.tickers, tickerRepository]);
   const catalogChartQuery = !currentRoute
-    && rootShortcutIntent.kind === "none"
+    && !shortcutOwnsQuery
     && !looksLikeArticleQuery(rootQuery)
     && hasLocalChartSeriesCatalogMatch(rootQuery);
   const chartSeriesIntent = rootShortcutIntent.kind !== "none"
@@ -389,13 +390,13 @@ export function CommandBar({
     buildChartSeriesAssistContext(pluginRegistry.getAvailableChartSeriesCatalogs()),
   ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, pluginRegistry, state.config.pluginConfig.news, state.config.disabledPlugins, state.config.disabledSources]);
   // Only the root list asks on its own, and only for text the prefix parser
-  // could not claim — otherwise the user is mid-command, not mid-question.
+  // did not claim — otherwise the user is mid-command, not mid-question.
   const assistEnabled = planAccess.emailVerified
     || planAccess.hasProAccess
     || (planAccess.signedIn && !planAccess.accountKnown);
   const assistAutoAsk = !currentRoute
     && assistEnabled
-    && shouldAutoAskAssist({ query: rootQuery, hasShortcutIntent: rootShortcutIntent.kind !== "none" });
+    && shouldAutoAskAssist({ query: rootQuery, hasShortcutIntent: shortcutOwnsQuery });
   const { assistActive, assistState, askAssist, resetAssist } = useCommandBarAssist({
     autoAsk: assistAutoAsk,
     getInventory: buildAssistInventory,
@@ -480,8 +481,8 @@ export function CommandBar({
     () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins)
       .filter((provider) => /^\s*ART\b/i.test(rootQuery)
         ? provider.id.startsWith("research-search:")
-        : rootShortcutIntent.kind === "none"),
-    [pluginRegistry, rootShortcutIntent.kind, rootQuery, state.config.disabledPlugins],
+        : !shortcutOwnsQuery),
+    [pluginRegistry, shortcutOwnsQuery, rootQuery, state.config.disabledPlugins],
   );
   const searchProviderContext = useMemo(() => ({
     activeTicker: activeTickerSymbol,
@@ -493,7 +494,7 @@ export function CommandBar({
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
     query: rootQuery.replace(/^\s*ART\s+/i, ""),
-    enabled: !currentRoute && (rootShortcutIntent.kind === "none" || looksLikeArticleQuery(rootQuery)),
+    enabled: !currentRoute && (!shortcutOwnsQuery || looksLikeArticleQuery(rootQuery)),
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
   });

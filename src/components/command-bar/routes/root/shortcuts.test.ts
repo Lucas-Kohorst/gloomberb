@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandDef, PaneTemplateDef } from "../../../../types/plugin";
-import { parseRootShortcutIntent } from "./shortcuts";
+import { parseRootShortcutIntent, shortcutClaimsQuery } from "./shortcuts";
 
 function tickerTemplate(id: string, prefix: string): PaneTemplateDef {
   return {
@@ -166,6 +166,34 @@ describe("ticker data root shortcuts", () => {
     if (scoped.kind === "none") throw new Error("Expected shortcut intent");
     expect(scoped.source).toBe("plugin-command");
     expect(scoped.argText).toBe("AAPL,MSFT");
+  });
+
+  test("two-letter text prefixes do not swallow the rest of a search", () => {
+    const templates: PaneTemplateDef[] = [{
+      id: "new-ai-screener-pane",
+      paneId: "ai-screener",
+      label: "AI Screener",
+      description: "Prompt-driven screener",
+      shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+    }];
+    const intent = parseRootShortcutIntent({
+      query: "ai safety",
+      commands: [],
+      pluginCommands: [],
+      paneTemplates: templates,
+      activeTicker: null,
+    });
+    expect(intent.kind).toBe("complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.prefix).toBe("AI");
+    expect(intent.argText).toBe("safety");
+    expect(shortcutClaimsQuery(intent)).toBe(false);
+  });
+
+  test("ticker prefixes and bare tokens still own the query", () => {
+    expect(shortcutClaimsQuery(parse("FA AAPL"))).toBe(true);
+    expect(shortcutClaimsQuery(parse("GP"))).toBe(true);
+    expect(shortcutClaimsQuery(parse("SRCH apple inc"))).toBe(true);
   });
 
   test("pane shortcut aliases resolve to the same template", () => {

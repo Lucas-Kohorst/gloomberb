@@ -18,7 +18,6 @@ import { colors } from "../../../theme/colors";
 import { usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import {
-  paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
 } from "../shared/pane-footer";
@@ -176,7 +175,6 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
     showOpenHint: !error && !!openUrl,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(refresh),
     ],
   });
 

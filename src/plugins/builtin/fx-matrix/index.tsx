@@ -12,7 +12,6 @@ import {
   type StackSortPreference,
 } from "../../../components";
 import { Box } from "../../../ui";
-import { paneRefreshHint } from "../shared/pane-footer";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePaneSettingValue } from "../../../state/app/context";
@@ -173,8 +172,8 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
       });
     }
     if (updatedAgo) info.push({ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" }] });
-    return { info, hints: [paneRefreshHint(refresh)] };
-  }, [refresh, status.loading, status.unavailable, updatedAgo]);
+    return { info };
+  }, [status.loading, status.unavailable, updatedAgo]);
 
   if (status.loading > 0 && rates.size <= 1 && dataProvider) {
     return (

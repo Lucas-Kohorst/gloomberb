@@ -224,7 +224,6 @@ export function FdicBankPane({ width, height, focused }: PaneProps) {
     showOpenHint: !!detailUrl && !error,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
     ],
   });
 

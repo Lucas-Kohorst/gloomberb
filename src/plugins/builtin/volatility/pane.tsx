@@ -243,7 +243,6 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: chartVix },
       { id: "open", key: "o", label: "pen", onPress: () => openUrl(VIX_URL) },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
     ],
   });
 

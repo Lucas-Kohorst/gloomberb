@@ -105,11 +105,6 @@ export function useNewsArticleFooter({
     () => pollFooterTrailingInfo(showPoll, poll.segment),
     [poll.segment, showPoll],
   );
-  const hints = useMemo<PaneHint[]>(() => (
-    onRefresh
-      ? [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }]
-      : []
-  ), [onRefresh]);
   const trailingHints = useMemo<PaneHint[]>(() => {
     const trailing: PaneHint[] = [];
     if (onShare && article) {
@@ -168,7 +163,6 @@ export function useNewsArticleFooter({
     source: article?.source,
     info: footerInfo,
     trailingInfo,
-    hints,
     trailingHints,
     showOpenHint: true,
     loading,

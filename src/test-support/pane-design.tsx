@@ -3,9 +3,8 @@
  *
  * OpenTUI renders real text, so design regressions are machine-checkable:
  * render a pane with `renderAuditedPane`, then run the frame/footer
- * assertions below. New builtin panes must be added to
- * `src/plugins/pane-design-conformance.test.ts` (audited or explicitly
- * exempt) or the coverage gate fails CI.
+ * assertions below. `pane-design-conformance.test.ts` gates every builtin
+ * pane in the catalog; there is no exemption list.
  */
 import { act, useReducer, type ReactNode } from "react";
 import { expect } from "bun:test";
@@ -22,7 +21,12 @@ import {
   PaneFooterProvider,
   type CombinedPaneFooter,
 } from "../components/layout/pane/footer/registration";
-import { EMPTY_FOOTER, isPaneFooterLeftSegment } from "../components/layout/pane/footer/model";
+import {
+  EMPTY_FOOTER,
+  isBindableFooterHintKey,
+  isPaneFooterLeftSegment,
+  PANE_FOOTER_INFO_MAX_CHARS,
+} from "../components/layout/pane/footer/model";
 import { createTestPluginRuntime } from "./plugin-runtime";
 
 export interface AuditedPaneRender {
@@ -32,6 +36,7 @@ export interface AuditedPaneRender {
   footer: CombinedPaneFooter;
   renderOnce: () => Promise<void>;
   destroy: () => Promise<void>;
+  emitKeypress: (event: { name?: string; sequence?: string }) => Promise<void>;
 }
 
 function nextActionPattern(action: string): RegExp {
@@ -116,6 +121,22 @@ export async function renderAuditedPane(options: {
         setup.renderer.destroy();
       });
     },
+    emitKeypress: async (event) => {
+      await act(async () => {
+        setup.renderer.keyInput.emit("keypress", {
+          ctrl: false,
+          meta: false,
+          option: false,
+          shift: false,
+          eventType: "press",
+          repeated: false,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+          ...event,
+        } as never);
+        await setup.renderOnce();
+      });
+    },
   };
 }
 
@@ -178,27 +199,146 @@ export function assertFooterHasNoResultCounts(footer: CombinedPaneFooter, paneId
   ).toBeNull();
 }
 
-/**
- * AGENTS.md footers: hints are single-key (`/`, `r`, `o`, …). A multi-key
- * hint such as Ctrl+S can never bind through `usePaneFooterHintBindings`,
- * so it is a bug by construction.
- */
-/**
- * A hint key must be pressable: a single key, `/`, a digit range (`1-8`),
- * or Shift+key. Combos like Ctrl+S can never bind, so they fail.
- */
-export function isBindableFooterHintKey(key: string): boolean {
-  return key === "/" || key.length === 1 || /^\d-\d$/.test(key) || /^Shift\+.$/.test(key);
-}
+export { isBindableFooterHintKey };
 
 export function assertFooterHintKeysBindable(footer: CombinedPaneFooter, paneId: string): void {
   for (const hint of footer.hints) {
-    if (hint.disabled) continue;
     expect(
       isBindableFooterHintKey(hint.key),
       `${paneId}: footer hint key ${JSON.stringify(hint.key)} is not bindable`,
     ).toBe(true);
   }
+}
+
+const NAVIGATION_HINT_KEY = /^(esc|enter|return|tab|arrowup|arrowdown|arrowleft|arrowright|up|down|left|right|j\/k|h\/l|up\/down|left\/right)$/i;
+
+/**
+ * PLUGINS.md: do not register Esc, Enter, arrows, or tab-switch combos as
+ * footer hints. Dedicated `useShortcut` handlers stay; the footer does not
+ * advertise keys the binder cannot press.
+ */
+export function assertNoNavigationFooterHints(footer: CombinedPaneFooter, paneId: string): void {
+  for (const hint of footer.hints) {
+    expect(
+      NAVIGATION_HINT_KEY.test(hint.key),
+      `${paneId}: footer hint ${JSON.stringify(hint.key)} is navigation chrome`,
+    ).toBe(false);
+  }
+}
+
+/**
+ * Two hints with the same key steal each other's binding.
+ */
+export function assertNoDuplicateFooterHintKeys(footer: CombinedPaneFooter, paneId: string): void {
+  const seen = new Map<string, string>();
+  for (const hint of footer.hints) {
+    const key = hint.key.toLowerCase();
+    const previous = seen.get(key);
+    expect(
+      previous,
+      `${paneId}: footer hint key ${JSON.stringify(hint.key)} used by ${previous} and ${hint.id}`,
+    ).toBeUndefined();
+    seen.set(key, hint.id);
+  }
+}
+
+/**
+ * PR #589: `r` refreshes globally. A per-pane `[r]efresh` hint both
+ * duplicates the chrome and steals the key from the binder's siblings.
+ */
+export function assertNoPerPaneRefreshHint(footer: CombinedPaneFooter, paneId: string): void {
+  for (const hint of footer.hints) {
+    const refresh = hint.key.toLowerCase() === "r"
+      && (hint.id.toLowerCase().includes("refresh") || /efresh/i.test(hint.label));
+    expect(
+      refresh,
+      `${paneId}: per-pane [r]efresh hint — r is global, omit it from the footer`,
+    ).toBe(false);
+  }
+}
+
+/**
+ * Footer copy is a 24-char chip, never a JSON dump or a keyboard tutorial.
+ */
+export function assertFooterInfoFitsChrome(footer: CombinedPaneFooter, paneId: string): void {
+  for (const segment of [...footer.info, ...footer.trailingInfo]) {
+    for (const part of segment.parts) {
+      expect(
+        part.text.length <= PANE_FOOTER_INFO_MAX_CHARS,
+        `${paneId}: footer ${segment.id} exceeds ${PANE_FOOTER_INFO_MAX_CHARS} chars (${JSON.stringify(part.text)})`,
+      ).toBe(true);
+      expect(
+        /^\s*[{[]/.test(part.text),
+        `${paneId}: footer ${segment.id} looks like dumped JSON`,
+      ).toBe(false);
+      expect(
+        /\bpress\b|\bctrl\+|\bcmd\+|\bkeyboard\b/i.test(part.text),
+        `${paneId}: footer ${segment.id} is a generic keyboard hint`,
+      ).toBe(false);
+    }
+  }
+  for (const hint of footer.hints) {
+    expect(
+      /\bpress\b|\bctrl\+|\bcmd\+/i.test(hint.label),
+      `${paneId}: footer hint ${hint.id} label is a generic keyboard hint`,
+    ).toBe(false);
+  }
+}
+
+const CHIP_FILTER_LABEL = /(?:^|\s)(Range|Sort):\s*(All|7D|1M|3M|1Y|YTD|Relevance|Newest|Oldest|Match|Date)\b/i;
+
+/**
+ * Research-search chip row (`Types: All`, `Range: 7D`) is not shared pane
+ * chrome. SelectButton reads `Type All` / `Range All`.
+ */
+export function assertNoChipFilterChrome(frame: string, paneId: string): void {
+  expect(
+    frame.includes("Types:"),
+    `${paneId}: Types: chip chrome — use SelectButton`,
+  ).toBe(false);
+  expect(
+    frame.includes("Sources:"),
+    `${paneId}: Sources: chip chrome — use SelectButton`,
+  ).toBe(false);
+  const chip = frame.match(CHIP_FILTER_LABEL)?.[0] ?? null;
+  expect(
+    chip,
+    `${paneId}: ${JSON.stringify(chip)} chip chrome — use SelectButton`,
+  ).toBeNull();
+}
+
+/**
+ * Loading belongs in the footer, not a table-body spinner row.
+ */
+export function assertNoBodySearchSpinner(frame: string, paneId: string): void {
+  const match = frame.match(/\*\s*Searching\.\.\.|Searching\.\.\./)?.[0] ?? null;
+  expect(
+    match,
+    `${paneId}: search spinner in the body (${JSON.stringify(match)}) — use the footer loading chip`,
+  ).toBeNull();
+}
+
+/**
+ * Universal empty-state chrome every builtin pane must satisfy.
+ */
+export function assertUniversalPaneDesignGates(
+  frame: string,
+  footer: CombinedPaneFooter,
+  paneId: string,
+  paneName: string,
+): void {
+  assertNoBannedBullets(frame, paneId);
+  assertNoChipFilterChrome(frame, paneId);
+  assertNoBodySearchSpinner(frame, paneId);
+  assertFooterHintsBound(footer, paneId);
+  assertFooterHintKeysBindable(footer, paneId);
+  assertNoNavigationFooterHints(footer, paneId);
+  assertNoDuplicateFooterHintKeys(footer, paneId);
+  assertNoPerPaneRefreshHint(footer, paneId);
+  assertFooterInfoIsStatusOnly(footer, paneId);
+  assertFooterHasNoResultCounts(footer, paneId);
+  assertFooterInfoFitsChrome(footer, paneId);
+  assertBodyDoesNotRepeatPaneName(frame, paneId, paneName);
 }
 
 /**

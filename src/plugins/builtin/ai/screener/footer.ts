@@ -56,15 +56,9 @@ export function useAiScreenerFooter({
       ? [
           {
             id: "save",
-            key: "Ctrl+S",
-            label: t("save"),
+            key: "s",
+            label: "ave",
             onPress: onSaveEditor,
-          },
-          {
-            id: "cancel",
-            key: "Esc",
-            label: t("cancel"),
-            onPress: onCloseEditor,
           },
         ]
       : isRunningActiveTab

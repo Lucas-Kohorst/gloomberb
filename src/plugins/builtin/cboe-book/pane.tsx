@@ -259,7 +259,6 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
     showOpenHint: !!pageUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "market", key: "m", label: "arket", onPress: cycleMarket },
     ],
   });

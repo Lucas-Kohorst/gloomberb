@@ -351,7 +351,6 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
           ...(canDownloadModel ? [{ id: "download-model", key: "m", label: "odel", onPress: () => { void handleDownloadModel(); } }] : []),
           ...(canAddKey ? [{ id: "add-key", key: "k", label: "ey", onPress: handleAddKey }] : []),
           ...(canSignIn ? [{ id: "sign-in", key: "s", label: "ign in", onPress: () => { void handleSignIn(); } }] : []),
-          ...(canRefresh ? [{ id: "refresh", key: "r", label: "efresh", onPress: () => { void handleRefresh(); } }] : []),
           ...(canDisconnect ? [{ id: "disconnect", key: "d", label: "isconnect", onPress: () => { void handleDisconnect(); } }] : []),
           ...(canDeleteKey ? [{ id: "delete-key", key: "d", label: "elete key", onPress: handleDeleteKey }] : []),
         ],

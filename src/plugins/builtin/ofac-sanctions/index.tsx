@@ -193,7 +193,6 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
     showOpenHint: !!detailEntry && !error,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
     ],
   });
 

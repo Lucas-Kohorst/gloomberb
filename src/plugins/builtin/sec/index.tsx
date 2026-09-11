@@ -646,7 +646,6 @@ function SecPane({ width, height, focused }: PaneProps) {
     },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
       ...(canPopOut
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),

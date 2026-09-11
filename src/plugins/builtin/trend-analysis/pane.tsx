@@ -55,10 +55,7 @@ export function TrendAnalysisPane({ focused, width, height }: Pick<PaneProps, "f
 
   usePaneFooter("trend-analysis", () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
-    ],
-  }), [error, loading, reload]);
+  }), [error, loading]);
 
   if (!symbol) {
     return <EmptyState title="No ticker selected." message="Select a ticker to analyze trend strength." />;

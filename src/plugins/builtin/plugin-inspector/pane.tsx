@@ -312,7 +312,6 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
   usePaneFooter(paneId, () => ({
     info: [],
     hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ...(selectedRow?.path
         ? [{ id: "open", key: "o", label: "pen", onPress: openDetail }]
         : []),

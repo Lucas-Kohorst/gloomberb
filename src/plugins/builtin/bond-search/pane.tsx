@@ -25,7 +25,7 @@ import {
   usePluginPaneState,
   usePluginTickerActions,
 } from "../../runtime";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { withConnectionRequest } from "../connections/register";
 import { graphFooterHint } from "../shared/graph-pop-out";
 import { openUrl } from "../../../components/ui/external-link";
@@ -309,7 +309,6 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         ];
         const hints = [
           graphFooterHint(openSelectedHit, selectedHit?.kind === "series"),
-          paneRefreshHint(() => runSearch(searchQuery)),
           paneSearchHint(focusSearch),
         ];
         return { info, hints };
@@ -324,7 +323,6 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       const hints = [
         graphFooterHint(chartSelected, !!selectedEntry),
         ...(selectedEntry ? [{ id: "open" as const, key: "o" as const, label: "pen" as const, onPress: () => openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`) }] : []),
-        paneRefreshHint(() => load(true)),
       ];
       return { info, hints };
     },

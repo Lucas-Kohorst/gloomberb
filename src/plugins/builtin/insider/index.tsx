@@ -224,7 +224,6 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
   ], [nameFilter, pendingLabel, summary, width]);
   const footerHints = useMemo(() => ([
-    { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ...((selectedFilterName || nameFilter)
       ? [{
           id: "filter",

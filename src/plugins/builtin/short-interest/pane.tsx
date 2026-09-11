@@ -170,10 +170,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(status === "error" && error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-    ],
-  }), [error, refresh, status]);
+  }), [error, status]);
 
   if (!ticker || !symbol) {
     return <EmptyState title="No ticker selected." message="Select a ticker to view short interest." />;

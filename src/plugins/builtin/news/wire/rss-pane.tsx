@@ -543,7 +543,6 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       paneSearchHint(focusSearch),
-      { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedArticle }] : []),
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),

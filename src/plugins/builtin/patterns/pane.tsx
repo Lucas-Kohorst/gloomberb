@@ -102,10 +102,7 @@ export function PatternRecognitionPane({ focused, width, height }: Pick<PaneProp
 
   usePaneFooter("pattern-recognition", () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
-    ],
-  }), [error, loading, reload]);
+  }), [error, loading]);
 
   if (!symbol) {
     return <EmptyState title="No ticker selected." message="Select a ticker to detect chart patterns." />;

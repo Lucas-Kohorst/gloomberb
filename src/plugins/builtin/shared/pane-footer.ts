@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   footerErrorChip,
+  isBindableFooterHintKey,
   useExternalLinkFooter,
   usePaneFooter,
   type PaneFooterSegment,
@@ -70,10 +71,7 @@ function buildPaneStatusInfo({
   ];
 }
 
-function isBindableHintKey(key: string): boolean {
-  if (key === "/") return true;
-  return key.length === 1;
-}
+export { isBindableFooterHintKey };
 
 export function usePaneFooterHintBindings(
   focused: boolean,
@@ -84,7 +82,7 @@ export function usePaneFooterHintBindings(
   const bindable = (hints ?? EMPTY_HINTS).filter((hint) => (
     !hint.disabled
     && !!hint.onPress
-    && isBindableHintKey(hint.key)
+    && isBindableFooterHintKey(hint.key)
     && !skipKeys?.has(hint.key.toLowerCase())
   ));
   useShortcut((event) => {

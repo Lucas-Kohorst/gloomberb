@@ -188,7 +188,6 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   const footerHints = useMemo(
     () => [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
     [focusSearch, refresh],
   );

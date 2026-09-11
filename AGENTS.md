@@ -47,5 +47,6 @@ Pane footers:
 - `[o]`pen when the selected or detail item has an external URL (tweets, articles, polls, filings, markets, changelog, TV).
 - `[p]`op out for written articles (news, RSS, Substack).
 - `[s]`earch or `/` search when the list is long enough to filter.
-- `[r]`efresh for live or network-backed data.
+- `r` refreshes globally. Do not put `[r]`efresh in a per-pane footer (PR #589). Bind pane reload with `useShortcut` / table `onRootKeyDown` if the pane needs its own fetch, but do not advertise `r` in the chrome.
+- Footer hint keys must be `/` or a single character (`usePaneFooterHintBindings` cannot press `Ctrl+S`, `Esc`, `Enter`, or `1-8`). Do not register navigation hints (`Esc`, `Enter`, arrows, `j/k`, `h/l`).
 - Bind the hinted key. A footer hint with no handler is a bug.

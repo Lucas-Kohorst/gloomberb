@@ -25,7 +25,7 @@ import {
   nextSortPreference,
   type SortPreference,
 } from "../../../utils/sort-values";
-import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { getCurrentPluginTarget } from "../../current-target";
 import { usePluginConfigState } from "../../runtime";
 import { loadRegistry, registryPluginUrl } from "./feed";
@@ -389,7 +389,6 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     info,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(() => refresh(true)),
       ...(canInstall
         ? [{ id: "install", key: "i", label: "nstall", onPress: installSelected }]
         : canToggle

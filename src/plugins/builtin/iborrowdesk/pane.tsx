@@ -300,7 +300,6 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "view", key: "v", label: "iew movers/snapshot", onPress: toggleView },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
   });
 

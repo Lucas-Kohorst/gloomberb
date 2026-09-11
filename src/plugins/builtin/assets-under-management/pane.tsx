@@ -8,13 +8,11 @@ import {
   usePaneFooter,
   type DataTableCell,
   type DataTableKeyEvent,
-  type PaneHint,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import type { TickerFinancials } from "../../../types/financials";
 import { useAssetData } from "../../runtime";
 import { useBoundTicker, useTickerRequest } from "../shared/ticker-request";
-import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import {
   buildAumColumns,
@@ -64,15 +62,9 @@ export function AumPane({
 
   const refresh = useCallback(() => reload(), [reload]);
 
-  const hints = useMemo<PaneHint[]>(() => [
-    { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
-  ], [loading, refresh]);
-
   usePaneFooter("assets-under-management", () => ({
     info: loadingErrorFooterInfo(loading, symbol ? error : null),
-    hints,
-  }), [error, hints, loading, symbol]);
-  usePaneFooterHintBindings(focused, hints);
+  }), [error, loading, symbol]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextAumSort(current, columnId));

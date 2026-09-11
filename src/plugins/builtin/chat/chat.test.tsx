@@ -106,7 +106,7 @@ afterEach(async () => {
 });
 
 describe("ChatContent", () => {
-  test("shows a distinct error state and refresh hint when the load failed", async () => {
+  test("shows a distinct error state when the load failed", async () => {
     const controller = createController({
       sessionToken: "token-123",
       user: { id: "u0", username: "vince", emailVerified: true },
@@ -127,9 +127,9 @@ describe("ChatContent", () => {
     const frame = setup().captureCharFrame();
     expect(frame).toContain("Couldn't load messages");
     expect(frame).not.toContain("No messages yet");
-    // Footer surfaces the changeable error status and a bound refresh hint.
+    // Footer surfaces the changeable error status; r is global, not a per-pane hint.
     expect(frame).toContain("couldn't reach chat");
-    expect(frame).toContain("efresh");
+    expect(frame).not.toContain("efresh");
   });
 
   test("keeps a persisted DM selected while private channels refresh", async () => {
@@ -1492,6 +1492,8 @@ describe("ChatContent", () => {
     expect(frame).toContain("[1]");
 
     const line = frame.split("\n")[0] ?? "";
+    expect(line).toContain("@ vince [1]");
+    expect(line).not.toContain("vince[");
     const usernameCol = line.indexOf("vince");
 
     expect(usernameCol).toBeGreaterThanOrEqual(0);
@@ -1529,9 +1531,8 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const line = setup().captureCharFrame().split("\n")[0] ?? "";
-    expect(line).toContain("12 online");
-    expect(line).toContain("@ lucas");
-    expect(line.indexOf("12 online")).toBeLessThan(line.indexOf("@ lucas"));
+    expect(line).toContain("12 online @ lucas");
+    expect(line).not.toContain("online@");
   });
 
 });

@@ -5,7 +5,6 @@ import {
   DataTableStackView,
   EmptyState,
   InputSearchBar,
-  Spinner,
   Tabs,
   useExternalLinkFooter,
   useTableLoadMore,
@@ -31,6 +30,7 @@ import type {
 } from "../../../api-client";
 import { getSharedRegistry } from "../../registry";
 import { CloudAuthNotice } from "../cloud/auth-actions";
+import { paneSearchHint } from "../shared/pane-footer";
 import { useCloudPlanAction } from "../shared/cloud-upgrade";
 import { canUseCloudSearch, needsEmailVerification, usePlanAccess } from "../shared/plan-access";
 import {
@@ -42,6 +42,7 @@ import {
   loadSearchDocument,
   runDocumentSearch,
   statusOf,
+  summarizeSearchFailures,
   updateSavedSearch,
 } from "./data";
 import { useDocumentFocusRequest } from "./focus-handoff";
@@ -91,6 +92,7 @@ type ActiveField = "query" | "tickers" | null;
 interface RequestFailure {
   message: string;
   status?: number;
+  label?: string;
 }
 
 export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps) {
@@ -127,7 +129,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
 
   const [activeField, setActiveField] = useState<ActiveField>(null);
   const [fieldFocusToken, setFieldFocusToken] = useState(0);
-  const [typePickerOpen, setTypePickerOpen] = useState(false);
   const queryInputRef = useRef<InputRenderable | null>(null);
   const tickerInputRef = useRef<InputRenderable | null>(null);
   const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -194,9 +195,12 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         setHits(combined);
         setHasMore(cloudResponse?.hasMore === true);
         setNextOffset(cloudResponse?.nextOffset ?? (cloudResponse?.hits?.length ?? 0));
-        const rejected = results.find((result) => result.status === "rejected");
-        setFailure(rejected ? { message: errorMessage(rejected.reason), status: statusOf(rejected.reason) } : null);
-        setStatus(rejected && combined.length === 0 ? "error" : "loaded");
+        const failure = summarizeSearchFailures(results, [
+          "Gloom Cloud",
+          ...providers.map((provider) => provider.name),
+        ]);
+        setFailure(failure);
+        setStatus(failure && combined.length === 0 ? "error" : "loaded");
       });
   }, [access.emailVerified, access.hasProAccess, disabledDiscoveryKey, filters, trimmedQuery]);
 
@@ -477,7 +481,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
       runSearch();
       return true;
     }
-    if (event.ctrl && event.name === "s") {
+    if (isPlainKey(event, "s") || (event.ctrl && event.name === "s")) {
       stopSearchFocusNavigation(event);
       saveCurrentSearch();
       return true;
@@ -513,12 +517,14 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     if (proRequired) {
       info.push({ id: "pro", parts: [{ text: "pro required", tone: "warning" }] });
     }
-    // The results table and the document view each show their own failure, so
-    // only a status token belongs here. Saved-search writes have nowhere else.
+    // Partial failures keep the table; name the source so the chip is not a mystery.
     if (failure) {
       info.push({
         id: "error",
-        parts: [{ text: status === "error" ? "error" : "source error", tone: "warning" }],
+        parts: [{
+          text: status === "error" ? "error" : (failure.label ?? "source error"),
+          tone: "warning",
+        }],
       });
     }
     if (savedFailure) {
@@ -538,37 +544,27 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   const footerHints = useMemo<PaneHint[]>(() => {
     if (mode === "saved") {
       const selected = saved.find((entry) => entry.id === savedSelectedId);
-      const hints: PaneHint[] = [
-        { id: "refresh", key: "r", label: "efresh", onPress: refreshSaved },
-      ];
-      if (!selected) return hints;
+      if (!selected) return [];
       return [
-        ...hints,
         { id: "alert", key: "a", label: "lerts", onPress: () => toggleAlert(selected) },
         { id: "delete", key: "d", label: "elete", onPress: () => { void removeSaved(selected); } },
       ];
     }
     if (openHit) return [];
-    const hints: PaneHint[] = [
-      { id: "search", key: "/", label: "search", onPress: () => focusField("query") },
-      { id: "refresh", key: "r", label: "efresh", onPress: runSearch },
-    ];
+    const hints: PaneHint[] = [paneSearchHint(() => focusField("query"))];
     const sourceRestricted = (filters.sourceIds?.length ?? 0) > 0 && !filters.sourceIds?.includes("cloud");
     if (!trimmedQuery || sourceRestricted) return hints;
-    return [...hints, { id: "save", key: "Ctrl+S", label: "save search", onPress: saveCurrentSearch }];
+    return [...hints, { id: "save", key: "s", label: "ave", onPress: saveCurrentSearch }];
   }, [
     focusField,
     mode,
     openHit,
-    refreshSaved,
     removeSaved,
-    runSearch,
     saved,
     savedSelectedId,
     saveCurrentSearch,
     toggleAlert,
     trimmedQuery,
-    filters.docTypes,
     filters.sourceIds,
   ]);
 
@@ -623,7 +619,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
       ]}
       activeValue={mode}
       onSelect={(value) => setMode(value as PaneMode)}
-      focused={focused && !openHit && activeField === null && !typePickerOpen}
+      focused={focused && !openHit && activeField === null}
     />
   );
 
@@ -643,7 +639,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
           height={Math.max(1, height - 1)}
           emptyTitle={savedStatus === "loading"
             ? "Loading saved searches..."
-            : "Run a search, then press Ctrl+S to save it and get keyword alerts."}
+            : "Run a search, then press s to save it and get keyword alerts."}
         />
       </Box>
     );
@@ -671,7 +667,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     <Box flexDirection={compact ? "column" : "row"}>
       <InputSearchBar
         value={query}
-        focused={focused && !openHit && !typePickerOpen}
+        focused={focused && !openHit}
         active={activeField === "query"}
         width={compact ? width : Math.max(20, width - TICKER_FIELD_WIDTH)}
         focusToken={fieldFocusToken}
@@ -685,7 +681,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
       />
       <InputSearchBar
         value={filters.tickers.join(" ")}
-        focused={focused && !openHit && !typePickerOpen}
+        focused={focused && !openHit}
         active={activeField === "tickers"}
         width={compact ? width : TICKER_FIELD_WIDTH}
         focusToken={fieldFocusToken}
@@ -703,15 +699,17 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
 
   const emptyTitle = !trimmedQuery
     ? "Type a query to search transcripts, news, and filing metadata."
-    : failure
-      ? "Search failed."
-      : "No documents matched.";
+    : status === "loading"
+      ? ""
+      : failure
+        ? "Search failed."
+        : "No documents matched.";
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       <DataTableStackView<ResearchSearchHit, SearchColumn>
-        focused={focused && activeField === null && !typePickerOpen}
+        focused={focused && activeField === null}
         detailOpen={!!openHit}
         onBack={closeDetail}
         detailContent={openHit ? (
@@ -733,7 +731,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
             <SearchFilterBar
               filters={filters}
               onChange={setFilters}
-              onDialogOpenChange={setTypePickerOpen}
               width={width}
               sourceOptions={sourceOptions}
             />
@@ -772,9 +769,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         getRowRevision={(hit) => `${researchHitId(hit)}:${readIds.has(researchHitId(hit)) ? 1 : 0}`}
         renderCell={renderCell}
         showHorizontalScrollbar={false}
-        emptyContent={status === "loading" && hits.length === 0
-          ? <Spinner label="Searching..." />
-          : undefined}
         emptyStateTitle={emptyTitle}
         emptyStateHint={failure?.message ? `${failure.message} Press r to retry.` : undefined}
       />

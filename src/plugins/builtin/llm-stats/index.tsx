@@ -1,12 +1,32 @@
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
-import { LLM_STATS_PANE_ID } from "./types";
+import {
+  LLM_STATS_CONNECTION_ID,
+  LLM_STATS_PANE_ID,
+  LLM_STATS_PLUGIN_ID,
+} from "./types";
 import { llmStatsSeriesCatalog } from "./metrics";
+
+let disposeConnection: (() => void) | null = null;
 
 export const llmStatsModule: PluginModule = {
   setup(ctx) {
     ctx.registerChartSeriesCatalog(llmStatsSeriesCatalog);
+    disposeConnection = registerConnectionSource({
+      id: LLM_STATS_CONNECTION_ID,
+      name: "llm-stats.com",
+      kind: "api",
+      pluginId: LLM_STATS_PLUGIN_ID,
+      authRequired: false,
+    });
   },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+
   panes: [
     {
       id: LLM_STATS_PANE_ID,

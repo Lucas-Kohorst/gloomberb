@@ -84,10 +84,7 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
-    ],
-  }), [error, load, status]);
+  }), [error, status]);
 
   if (!entry && status !== "loading") {
     return (

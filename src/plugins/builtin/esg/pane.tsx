@@ -164,7 +164,6 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
         ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
       ],
       hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
         ...(data?.sourceUrl
           ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }]
           : []),

@@ -17,7 +17,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { paneRefreshHint, paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
 import { loadCdsActivity, type CdsActivity, type CdsActivityLoader } from "./client";
 import {
   buildIssuerColumns,
@@ -290,7 +290,6 @@ export function CdsPane({
     focused,
     hints: [
       ...(!issuerQuery ? [paneSearchHint(focusSearch)] : []),
-      paneRefreshHint(load),
     ],
   });
 

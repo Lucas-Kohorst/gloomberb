@@ -207,7 +207,6 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
   }), [data, error, focusSearch, loading, refresh]);
 

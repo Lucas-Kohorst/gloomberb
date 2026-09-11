@@ -22,7 +22,6 @@ import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   paneDelayedStatus,
-  paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
 } from "../shared/pane-footer";
@@ -198,8 +197,14 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
       cycleBbox();
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void load();
+      return true;
+    }
     return false;
-  }, [cycleBbox, focusSearch, kind]);
+  }, [cycleBbox, focusSearch, kind, load]);
 
   const bbox = findBbox(bboxId);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
@@ -218,7 +223,6 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
     showOpenHint: !!selected?.url,
     hints: [
       paneSearchHint(focusSearch),
-      paneRefreshHint(load, { disabled: status === "loading" && vehicles.length === 0 }),
       ...(kind === "aircraft"
         ? [{ id: "bbox", key: "b", label: "box", onPress: cycleBbox }]
         : []),
@@ -231,6 +235,12 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void load();
     }
   }, { allowEditable: true, enabled: focused && !searchFocused });
 

@@ -185,7 +185,6 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       info,
       hints: [
         { id: "search", key: "/", label: "search", onPress: focusSearch },
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ],
     };
   }, [
