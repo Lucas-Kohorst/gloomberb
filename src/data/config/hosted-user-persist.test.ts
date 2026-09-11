@@ -56,7 +56,7 @@ describe("hosted user config persist", () => {
     attachHostedUserWorkspaceExtras({ notes: { tickerNotes: { AAPL: "Imported note" } } });
     expect(peekHostedUserConfigStamp()?.updatedAt).toBe(record.updatedAt);
 
-    writeHostedUserConfig({ ...config, theme: "white" });
+    writeHostedUserConfig({ ...config, theme: "dark" });
     expect(peekHostedUserConfigStamp()?.updatedAt).not.toBe(record.updatedAt);
   });
 

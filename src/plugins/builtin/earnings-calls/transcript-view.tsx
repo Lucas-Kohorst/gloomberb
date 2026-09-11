@@ -139,7 +139,7 @@ function Section({
           width={width}
           color={colors.text}
           nativePaneChrome={nativePaneChrome}
-          prefix="• "
+          prefix={`${index + 1}. `}
         />
       ))}
     </Box>
