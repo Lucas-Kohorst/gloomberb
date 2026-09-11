@@ -1,3 +1,4 @@
+import { researchDataPlugins } from "./catalog-research";
 import type { GloomPlugin } from "../types/plugin";
 import type { LoadedExternalPlugin } from "./loader";
 import { newsPlugin } from "./builtin/news";
@@ -28,6 +29,7 @@ import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
  * first launch after the extraction.
  */
 export const uiBuiltinPlugins: GloomPlugin[] = [
+  ...researchDataPlugins,
   gloomberbCloudPlugin,
   coingeckoPlugin,
   yahooPlugin,

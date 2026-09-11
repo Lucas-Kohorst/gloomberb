@@ -164,7 +164,7 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
     id: "spore",
     name: "Spore",
     outputModes: ALL_OUTPUT_MODES,
-    // Live GET /models catalog. Runtime default is the first fetched community id.
+    // Live GET /models catalog puts Spore's declared community defaults first.
     preferredModelIds: [],
     fastModelIds: [],
   },

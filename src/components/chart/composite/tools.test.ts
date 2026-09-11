@@ -8,8 +8,10 @@ import {
   nextDrawingColor,
   shiftDrawing,
   formatMeasureSpan,
+  FIB_RETRACEMENT_RATIOS,
   resolveChartToolKind,
   resolveDrawingFromDrag,
+  snapChartPointer,
   resolveZoomBoxRange,
   summarizeMeasure,
 } from "./tools";
@@ -182,6 +184,7 @@ describe("chart drawings", () => {
     id: "main",
     height: 10,
     scale: "linear",
+    autoScale: true,
     axes: { left: { ...domain, side: "left" } },
     series: [{
       source: { id: "a", axis: "left" } as never,
@@ -205,6 +208,83 @@ describe("chart drawings", () => {
     // yRatio runs top-down, so 0.25 is three quarters up a 0..200 axis.
     expect(drawing?.points[0]?.value).toBeCloseTo(150, 6);
     expect(drawing?.points[1]?.value).toBeCloseTo(50, 6);
+  });
+
+  it("anchors a horizontal line from a click", () => {
+    const scene = calendarScene(10 * DAY);
+    const drawing = resolveDrawingFromDrag(scene, panel, {
+      kind: "hline",
+      startXRatio: 0.4,
+      startYRatio: 0.25,
+      endXRatio: 0.4,
+      endYRatio: 0.25,
+      path: [],
+    }, "#ffcc00", "h1");
+    expect(drawing?.kind).toBe("hline");
+    expect(drawing?.points[0]?.value).toBeCloseTo(150, 6);
+    expect(drawing?.points[0]?.time).toBe(START);
+    expect(drawing?.points[1]?.time).toBe(START + 10 * DAY);
+  });
+
+  it("stores a fib retracement and projects every ratio", () => {
+    const scene = calendarScene(10 * DAY);
+    const drawing = resolveDrawingFromDrag(scene, panel, {
+      kind: "fib",
+      startXRatio: 0.2,
+      startYRatio: 0.25,
+      endXRatio: 0.8,
+      endYRatio: 0.75,
+      path: [],
+    }, "#ffcc00", "f1");
+    expect(drawing?.kind).toBe("fib");
+    const vectors = buildChartToolVectors({
+      scene,
+      panel,
+      drawings: [drawing!],
+      selectedId: null,
+      colors: { positive: "#0f0", negative: "#f00", zoom: "#00f", draw: "#ff0" },
+      direction: "up",
+      drag: null,
+    });
+    expect(vectors).toHaveLength(FIB_RETRACEMENT_RATIOS.length + 1);
+    expect(vectors.map((shape) => shape.points.length)).toEqual([
+      2,
+      ...FIB_RETRACEMENT_RATIOS.map(() => 2),
+    ]);
+  });
+
+  it("snaps the pointer to the nearest open, high, low, or close", () => {
+    const scene = calendarScene(DAY);
+    const snappedScene: CompositeChartScene = {
+      ...scene,
+      dates: [new Date(START), new Date(START + DAY)],
+      dateRatios: [0, 1],
+    };
+    const snappedPanel: CompositePanelScene = {
+      ...panel,
+      series: [{
+        source: { id: "a", axis: "left" } as never,
+        points: [{
+          timestamp: START,
+          value: 100,
+          xRatio: 0,
+          yRatio: 0.5,
+          breakBefore: false,
+          point: {
+            date: new Date(START),
+            observedAt: new Date(START),
+            value: 100,
+            open: 90,
+            high: 120,
+            low: 80,
+            close: 100,
+          },
+        }],
+      }],
+    };
+    const snapped = snapChartPointer(snappedScene, snappedPanel, 0.04, 0.41);
+    expect(snapped.xRatio).toBe(0);
+    expect(snapped.yRatio).toBeCloseTo(0.4, 6);
   });
 
   it("redraws a stored line through the current viewport", () => {
@@ -256,6 +336,7 @@ describe("editing drawings", () => {
     id: "main",
     height: 10,
     scale: "linear",
+    autoScale: true,
     axes: { left: { ...domain, side: "left" } },
     series: [{ source: { id: "a", axis: "left" } as never, points: [] }],
   };
@@ -317,6 +398,7 @@ describe("vector overlays", () => {
     id: "main",
     height: 10,
     scale: "linear",
+    autoScale: true,
     axes: { left: { ...domain, side: "left" } },
     series: [{ source: { id: "a", axis: "left" } as never, points: [] }],
   };

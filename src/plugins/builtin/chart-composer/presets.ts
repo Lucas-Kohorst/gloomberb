@@ -6,6 +6,7 @@ import {
   type ChartSpec,
   type ChartStudyKind,
   type ChartStudySpec,
+  type PanelScale,
   type SeriesAxis,
   type SeriesPeriod,
   type SeriesStyle,
@@ -20,6 +21,7 @@ import {
   listTimeSeriesFields,
 } from "../../../time-series/field-catalog";
 import {
+  CHART_DISPLAY_TIME_ZONES,
   coerceSeriesInterpolationForStyle,
   coerceSeriesTransformForStyle,
   defaultChartSeriesPresentation,
@@ -1334,7 +1336,10 @@ function panelsForSeries(series: readonly ChartSeriesSpec[], studies: readonly C
     ...(id === "fundamentals" || /^fundamentals-\d+$/.test(id)
       ? { label: id === "fundamentals" ? "Fundamentals" : `Fundamentals ${id.slice("fundamentals-".length)}`, height: 0.35 }
       : {}),
-    ...(id === "rsi" || id === "macd" ? { label: id.toUpperCase(), height: 0.28 } : {}),
+    ...(id === "rsi" || id === "macd" || id === "atr" || id === "adx"
+      ? { label: id.toUpperCase(), height: 0.28 }
+      : {}),
+    ...(id === "stochastic" ? { label: "Stoch", height: 0.28 } : {}),
     ...(id === "formula" ? { label: "Formula", height: 0.3 } : {}),
     ...(id === "correlation" ? { label: "Correlation", height: 0.3 } : {}),
     ...(id === "drawdown" ? { label: "Drawdown", height: 0.3 } : {}),
@@ -1547,17 +1552,85 @@ export function buildBoundChartPreset(symbol: string): ChartSpec {
   return buildPriceChartPreset(trimmed);
 }
 
-export function toggleMainPanelScale(spec: ChartSpec): ChartSpec {
-  const current = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
-  const next = current === "log" ? "linear" : "log";
+export function setMainPanelScale(spec: ChartSpec, scale: PanelScale): ChartSpec {
+  if (scale !== "linear" && scale !== "log" && scale !== "percent") return spec;
   return {
     ...spec,
-    panels: spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale: next } : panel),
-    series: next === "log"
+    panels: spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale } : panel),
+    series: scale === "log"
       ? spec.series.map((series) => series.panelId === "main" && series.transform === "log"
         ? { ...series, transform: "raw" }
         : series)
       : spec.series,
+  };
+}
+
+export function toggleMainPanelScale(spec: ChartSpec): ChartSpec {
+  const current = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
+  return setMainPanelScale(spec, current === "log" ? "linear" : "log");
+}
+
+export function toggleMainPanelPercentScale(spec: ChartSpec): ChartSpec {
+  const current = spec.panels.find((panel) => panel.id === "main")?.scale;
+  return setMainPanelScale(spec, current === "percent" ? "linear" : "percent");
+}
+
+export function toggleMainPanelAutoScale(spec: ChartSpec): ChartSpec {
+  const enabled = spec.panels.find((panel) => panel.id === "main")?.autoScale !== false;
+  return {
+    ...spec,
+    panels: spec.panels.map((panel) => {
+      if (panel.id !== "main") return panel;
+      if (enabled) return { ...panel, autoScale: false };
+      const { autoScale: _autoScale, ...rest } = panel;
+      return rest;
+    }),
+  };
+}
+
+export function setChartDisplayTimeZone(spec: ChartSpec, timeZone: string): ChartSpec {
+  const next = (CHART_DISPLAY_TIME_ZONES as readonly string[]).includes(timeZone) ? timeZone : undefined;
+  return {
+    ...spec,
+    viewport: {
+      ...spec.viewport,
+      timeZone: next,
+    },
+  };
+}
+
+/** Overlay another ticker on the open chart and switch the main pane to percent. */
+export function appendCompareTicker(spec: ChartSpec, ticker: string): ChartSpec | null {
+  const instrument = normalizeInstrument(ticker, true);
+  if (!instrument || spec.series.length >= MAX_CHART_COMPOSER_SERIES) return null;
+  const nextKey = publicTickerKey(instrument.symbol, instrument.exchange);
+  const already = spec.series.some((entry) => (
+    entry.source.kind === "security"
+    && publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange) === nextKey
+    && (entry.source.fieldId === CHART_FIELD_IDS.price || entry.source.fieldId === CHART_FIELD_IDS.close)
+    && entry.panelId === "main"
+  ));
+  if (already) return null;
+  const converted = spec.series.map((entry) => (
+    entry.panelId === "main" && isOhlcSeriesStyle(entry.style)
+      ? applySeriesStyle(entry, "line")
+      : entry
+  ));
+  const built = buildSeriesSpec(
+    { kind: "security", ...instrument, fieldId: CHART_FIELD_IDS.close },
+    converted.length,
+    { style: "line", transform: "raw", axis: "left", panelId: "main" },
+  );
+  const series = { ...built, id: uniqueSeriesId(converted, built.id) };
+  const nextSeries = [...converted, series];
+  return {
+    ...spec,
+    series: nextSeries,
+    panels: ensureRequiredPanels(
+      spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale: "percent" as const } : panel),
+      nextSeries,
+      spec.studies,
+    ),
   };
 }
 
@@ -1649,6 +1722,9 @@ const STUDY_DEFAULTS = {
   vwap: { kind: "vwap", panelId: "main", parameters: {} },
   rsi14: { kind: "rsi", panelId: "rsi", parameters: { period: 14 } },
   macd: { kind: "macd", panelId: "macd", parameters: { fast: 12, slow: 26, signal: 9 } },
+  atr14: { kind: "atr", panelId: "atr", parameters: { period: 14 } },
+  stoch14: { kind: "stochastic", panelId: "stochastic", parameters: { period: 14, smooth: 3 } },
+  adx14: { kind: "adx", panelId: "adx", parameters: { period: 14 } },
 } as const satisfies Record<string, {
   kind: Exclude<ChartStudyKind, "ratio" | "spread" | "correlation">;
   panelId: string;

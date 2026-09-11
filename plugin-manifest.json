@@ -86,6 +86,57 @@
       }
     },
     {
+      "id": "cboe-book",
+      "name": "Cboe Book",
+      "description": "Equity level-2 bid/ask ladder from the Cboe Book Viewer (BZX, BYX, EDGX, EDGA) with spread and last trades.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "cboe-book"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "cfpb-complaints",
+      "name": "CFPB Complaints",
+      "description": "Consumer complaint volumes from the CFPB complaint database. Search by keyword and filter by product or company.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "complaints"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "clinical-trials",
+      "name": "Clinical Trials",
+      "description": "Track clinical trials from ClinicalTrials.gov. Search by condition, drug, or sponsor with phase and status.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "trials"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "coingecko",
       "name": "CoinGecko",
       "description": "Retired quote source. Crypto prices come from Yahoo.",
@@ -100,6 +151,40 @@
       }
     },
     {
+      "id": "comment-letters",
+      "name": "SEC Comment Letters",
+      "description": "SEC comment letters (CORRESP/UPLOAD) with keyword severity triage. Search by company to see recent informal SEC correspondence.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "comment-letters"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "courtlistener",
+      "name": "CourtListener",
+      "description": "Search federal and state court opinions by company name via the free CourtListener API. No API key required.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "courtlistener"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",
@@ -109,6 +194,74 @@
       "toggleable": true,
       "contributes": {
         "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "eia-energy",
+      "name": "EIA Energy",
+      "description": "U.S. energy inventories, production, and prices from the free EIA API v2. Crude stocks, gasoline and distillate inventories, natural gas storage, retail fuel prices, and crude production.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "energy"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "fdic-bank",
+      "name": "FDIC Bank Risk",
+      "description": "FDIC bank risk: search insured banks by name, certificate, or state, with failure and assistance records from the free BankFind API.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "fdic-bank"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "filing-diff",
+      "name": "Filing Diff",
+      "description": "Year-over-year 10-K diff: compare Risk Factors or MD&A text between two annual filings.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "filing-diff"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "foia-logs",
+      "name": "SEC FOIA Logs",
+      "description": "Search SEC FOIA logs for signs of undisclosed investigative activity: 7(A)-withheld requests and enforcement-record requests by company.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "foia-logs"
+        ],
         "capabilities": [],
         "broker": false
       }
@@ -134,6 +287,57 @@
           "asset-data.gloomberb-cloud",
           "news.gloomberb-cloud"
         ],
+        "broker": false
+      }
+    },
+    {
+      "id": "google-books",
+      "name": "Google Books",
+      "description": "Find what books say about companies, people, and topics via the free Google Books API. No API key required.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "books"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "iborrowdesk",
+      "name": "Borrow Rates",
+      "description": "Stock borrow fees and short availability from IBorrowDesk (Interactive Brokers data): per-ticker fee history and market-wide fee movers.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "iborrowdesk"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "levels-fyi",
+      "name": "Tech Salaries",
+      "description": "Tech salary bands and median total comp by level from Levels.fyi. Search by company.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "levels-fyi"
+        ],
+        "capabilities": [],
         "broker": false
       }
     },
@@ -233,6 +437,57 @@
       }
     },
     {
+      "id": "open-corporates",
+      "name": "OpenCorporates",
+      "description": "Look up companies and officers by name via the free OpenCorporates API. No API key required.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "companies"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "open-payments",
+      "name": "Open Payments",
+      "description": "Search pharma and device payments to physicians and hospitals from CMS Open Payments. Free, no API key required.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "open-payments"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "openfda",
+      "name": "openFDA Adverse Events",
+      "description": "Drug and device adverse events plus drug recalls from the free openFDA API. Search by drug, firm, or device.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "adverse-events"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "plugin-inspector",
       "name": "Plugin Inspector",
       "description": "Inspect all loaded plugins — source, status, registered panes, commands, capabilities, and shortcuts.",
@@ -285,6 +540,53 @@
       }
     },
     {
+      "id": "sec-8k-alerts",
+      "name": "SEC 8-K Alerts",
+      "description": "Alert condition that triggers when a symbol files a new 8-K with SEC EDGAR.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "sec-fts",
+      "name": "SEC Full-Text Search",
+      "description": "SEC EDGAR full-text search across 20 years of filings for SRCH/ART document lookup. No API key required.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "short-campaigns",
+      "name": "Short Campaigns",
+      "description": "Activist short campaigns scraped from ShortReportImpact: targets, sellers, dates, and performance.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "short-campaigns"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "ticker-research",
       "name": "Ticker Research",
       "description": "Company research workspace: overview, charts, financials, filings, ownership, options, analyst research, and events.",
@@ -316,6 +618,23 @@
           "short-interest",
           "thirteenf-funds",
           "ticker-research"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "workplace-signals",
+      "name": "Workplace Signals",
+      "description": "Employee-diligence signals from public Hacker News discussions: layoff, compensation, culture, and management themes per employer.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "workplace"
         ],
         "capabilities": [],
         "broker": false

@@ -100,6 +100,21 @@ describe("hosted config snapshot", () => {
     globalThis.localStorage?.clear();
   });
 
+  test("protects newer settings-only saves from a stale cloud snapshot", () => {
+    for (const patch of [
+      { baseCurrency: "EUR" },
+      { fontFamily: "monospace" },
+      { portfolios: [{ id: "custom", name: "Custom", currency: "EUR" }] },
+    ]) {
+      const local = Object.assign(createDefaultConfig("browser://local"), patch);
+      expect(isPlaceholderHostedConfig(local)).toBe(false);
+      expect(mergeRemoteConfigSnapshot(local, {
+        config: createDefaultConfig("browser://local") as unknown as Record<string, unknown>,
+        updatedAt: "2026-09-10T12:00:00Z",
+      }, "2026-09-11T12:00:00Z")).toBeNull();
+    }
+  });
+
   test("strips BYOK API keys from the snapshot", () => {
     const config = createDefaultConfig("cloud://users/user-1");
     config.pluginConfig = {

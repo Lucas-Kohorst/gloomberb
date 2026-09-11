@@ -4,7 +4,6 @@ import {
   positiveInt,
   toSeries,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -13,7 +12,7 @@ import {
  * Exponential Moving Average — close weighted with `k = 2 / (period + 1)`,
  * seeded from the SMA of the first `period` closes. Overlays the price pane.
  */
-export function ema(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function ema(data: OHLCV[], params: IndicatorParams = {}) {
   const period = positiveInt(params.period, 20);
   const closes = data.map((bar) => closePrice(bar) ?? Number.NaN);
   return { ema: toSeries(data, emaArray(closes, period)) };

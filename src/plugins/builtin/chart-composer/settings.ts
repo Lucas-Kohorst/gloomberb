@@ -13,7 +13,7 @@ import type {
   ChartStudySpec,
   SeriesStyle,
 } from "../../../time-series/types";
-import { isOhlcSeriesStyle } from "../../../time-series/spec";
+import { CHART_DISPLAY_TIME_ZONES, isOhlcSeriesStyle } from "../../../time-series/spec";
 import {
   applySeriesStyle,
   buildCustomChartPreset,
@@ -25,6 +25,8 @@ import {
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
   setBuiltinStudies,
+  setChartDisplayTimeZone,
+  setMainPanelScale,
   setPairStudies,
   type BuiltinStudySelection,
   type PairStudySelection,
@@ -46,6 +48,9 @@ export const CHART_STUDY_OPTIONS: Array<PaneSettingOption & { value: BuiltinStud
   { value: "vwap", label: "VWAP", description: "Session volume-weighted average price on the primary price series." },
   { value: "rsi14", label: "RSI 14", description: "14-bar Relative Strength Index in a lower panel." },
   { value: "macd", label: "MACD", description: "12/26/9 MACD in a lower panel." },
+  { value: "atr14", label: "ATR 14", description: "14-bar Average True Range in a lower panel." },
+  { value: "stoch14", label: "Stochastic 14", description: "14/3 Stochastic oscillator in a lower panel." },
+  { value: "adx14", label: "ADX 14", description: "14-bar Average Directional Index in a lower panel." },
 ];
 
 export const CHART_FORMULA_OPTIONS: Array<PaneSettingOption & { value: PairStudySelection }> = [
@@ -63,7 +68,18 @@ export const CHART_SETTING_KEYS = {
   resolution: "chartResolution",
   mode: "chartMode",
   scale: "chartScale",
+  timeZone: "chartTimeZone",
 } as const;
+
+export const CHART_TIME_ZONE_OPTIONS: Array<PaneSettingOption & { value: typeof CHART_DISPLAY_TIME_ZONES[number] }> = [
+  { value: "exchange", label: "Exchange", description: "Listing timezone of the primary series." },
+  { value: "UTC", label: "UTC", description: "Coordinated Universal Time." },
+  { value: "America/New_York", label: "New York", description: "America/New_York." },
+  { value: "America/Chicago", label: "Chicago", description: "America/Chicago." },
+  { value: "America/Los_Angeles", label: "Los Angeles", description: "America/Los_Angeles." },
+  { value: "Europe/London", label: "London", description: "Europe/London." },
+  { value: "Asia/Tokyo", label: "Tokyo", description: "Asia/Tokyo." },
+];
 
 function fallbackSpec(symbol: string | null | undefined): ChartSpec {
   return symbol ? buildBoundChartPreset(symbol) : buildEmptyChartPreset();
@@ -303,16 +319,18 @@ export function applyChartComposerPaneSetting(
     }
     case CHART_SETTING_KEYS.scale: {
       const scale = requireString(value, "Scale");
-      if (scale !== "linear" && scale !== "log") throw new Error("Choose a linear or logarithmic scale.");
-      nextSpec = {
-        ...spec,
-        panels: spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale } : panel),
-        series: scale === "log"
-          ? spec.series.map((series) => series.panelId === "main" && series.transform === "log"
-            ? { ...series, transform: "raw" }
-            : series)
-          : spec.series,
-      };
+      if (scale !== "linear" && scale !== "log" && scale !== "percent") {
+        throw new Error("Choose a linear, logarithmic, or percent scale.");
+      }
+      nextSpec = setMainPanelScale(spec, scale);
+      break;
+    }
+    case CHART_SETTING_KEYS.timeZone: {
+      const timeZone = requireString(value, "Timezone");
+      if (!(CHART_DISPLAY_TIME_ZONES as readonly string[]).includes(timeZone)) {
+        throw new Error("Choose a chart display timezone.");
+      }
+      nextSpec = setChartDisplayTimeZone(spec, timeZone);
       break;
     }
     default:
@@ -329,7 +347,8 @@ export function buildChartComposerPaneSettingsDef(
   const spec = parseChartSpecOr(settings[CHART_SPEC_SETTING_KEY], fallbackSpec(activeTicker));
   const inlineStyleTarget = getChartInlineStyleTarget(spec);
   const modes = getChartInlineStyles(spec);
-  const mainScale = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
+  const authoredScale = spec.panels.find((panel) => panel.id === "main")?.scale;
+  const mainScale = authoredScale === "log" || authoredScale === "percent" ? authoredScale : "linear";
 
   return {
     title: "Chart Settings",
@@ -342,6 +361,7 @@ export function buildChartComposerPaneSettingsDef(
       [CHART_SETTING_KEYS.resolution]: spec.viewport.resolution,
       [CHART_SETTING_KEYS.mode]: inlineStyleTarget?.style ?? "",
       [CHART_SETTING_KEYS.scale]: mainScale,
+      [CHART_SETTING_KEYS.timeZone]: spec.viewport.timeZone ?? "UTC",
     },
     fields: [
       {
@@ -401,12 +421,20 @@ export function buildChartComposerPaneSettingsDef(
       {
         key: CHART_SETTING_KEYS.scale,
         label: "Price scale",
-        description: "Linear or logarithmic scale on the main pane. Lightweight Charts supports both; full TradingView also has percent/indexed-to-100 as a dedicated axis mode.",
+        description: "Linear, logarithmic, or percent scale on the main pane.",
         type: "select",
         options: [
           { value: "linear", label: "Linear" },
           { value: "log", label: "Log" },
+          { value: "percent", label: "Percent" },
         ],
+      },
+      {
+        key: CHART_SETTING_KEYS.timeZone,
+        label: "Timezone",
+        description: "Display timezone for axis and cursor labels. Session packing stays on the listing clock.",
+        type: "select",
+        options: CHART_TIME_ZONE_OPTIONS,
       },
     ],
     applyValue: applyChartComposerPaneSetting,

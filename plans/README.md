@@ -72,6 +72,10 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 073  | Kalshi weather index and calibration provenance | P1 | M | existing weather/Kalshi clients | DONE |
 | 074  | Make pane tables flex instead of dropping columns | P1 | L | — | DONE |
 | 075  | Discover documents, chart series, and panes from ordinary search | P1 | L | — | TODO |
+| 076  | Disable unsupported chart interval and range tabs | P1 | M | — | DONE |
+| 077  | Advertise Yahoo 1m / 30m / 4h chart intervals | P1 | S | — | DONE |
+| 078  | Live quote tails update in place (no staircase) | P1 | S | — | DONE |
+| 079  | Show O H L C V on the chart crosshair | P1 | S | — | DONE |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 

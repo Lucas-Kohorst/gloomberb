@@ -12,7 +12,8 @@ import type {
 } from "./types";
 
 /** Pointer tools that take the drag away from panning while one is picked. */
-export type ChartToolKind = "measure" | "zoom" | "line" | "pencil";
+export type ChartToolKind = "measure" | "zoom" | "line" | "pencil" | "hline" | "fib";
+export type ChartDrawingKind = "path" | "hline" | "fib";
 
 export interface ChartDrawingPoint {
   time: number;
@@ -25,6 +26,7 @@ export interface ChartDrawing {
   panelId: string;
   points: ChartDrawingPoint[];
   color: string;
+  kind?: ChartDrawingKind;
 }
 
 export const CHART_DRAWINGS_SETTING_KEY = "chartDrawings";
@@ -38,7 +40,7 @@ export function parseChartDrawings(value: unknown): ChartDrawing[] {
   for (const entry of value) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const drawing = entry as Record<string, unknown>;
-    if (!Object.keys(drawing).every((key) => ["id", "panelId", "points", "color"].includes(key))) return [];
+    if (!Object.keys(drawing).every((key) => ["id", "panelId", "points", "color", "kind"].includes(key))) return [];
     if (
       typeof drawing.id !== "string"
       || drawing.id.length === 0
@@ -66,11 +68,15 @@ export function parseChartDrawings(value: unknown): ChartDrawing[] {
       ) return [];
       points.push({ time: raw.time, value: raw.value });
     }
+    const kind = drawing.kind === "hline" || drawing.kind === "fib" || drawing.kind === "path"
+      ? drawing.kind
+      : undefined;
     drawings.push({
       id: drawing.id,
       panelId: drawing.panelId,
       points,
       color: drawing.color,
+      ...(kind && kind !== "path" ? { kind } : {}),
     });
   }
   return drawings;
@@ -117,6 +123,58 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
+export const FIB_RETRACEMENT_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+
+export function snapChartPointer(
+  scene: CompositeChartScene,
+  panel: CompositePanelScene,
+  xRatio: number,
+  yRatio: number,
+): { xRatio: number; yRatio: number } {
+  if (scene.dateRatios.length === 0) return { xRatio, yRatio };
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const [index, ratio] of scene.dateRatios.entries()) {
+    const distance = Math.abs(ratio - xRatio);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+  const snappedX = scene.dateRatios[nearestIndex] ?? xRatio;
+  const date = scene.dates[nearestIndex];
+  const timestamp = date?.getTime();
+  const candidates: number[] = [];
+  for (const series of panel.series) {
+    const match = timestamp == null
+      ? null
+      : series.points.find((point) => point.timestamp === timestamp) ?? series.points[nearestIndex];
+    if (!match) continue;
+    for (const key of ["open", "high", "low", "close", "value"] as const) {
+      const value = key === "value" ? match.value : match.point[key];
+      const domain = panel.axes[series.source.axis];
+      if (!finiteNumber(value) || !domain) continue;
+      const projected = projectCompositeValue(value, domain);
+      if (projected !== null) candidates.push(projected);
+    }
+  }
+  if (candidates.length === 0) return { xRatio: snappedX, yRatio };
+  let snappedY = candidates[0]!;
+  let best = Math.abs(snappedY - yRatio);
+  for (const candidate of candidates) {
+    const distance = Math.abs(candidate - yRatio);
+    if (distance < best) {
+      best = distance;
+      snappedY = candidate;
+    }
+  }
+  return { xRatio: snappedX, yRatio: snappedY };
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function drawingPointFrom(
   scene: CompositeChartScene,
   domain: CompositeAxisDomain,
@@ -139,6 +197,20 @@ export function resolveDrawingFromDrag(
 ): ChartDrawing | null {
   const domain = resolveMeasureAxisDomain(panel);
   if (!domain || !isMeaningfulToolDrag(drag)) return null;
+  if (drag.kind === "hline") {
+    const point = drawingPointFrom(scene, domain, drag.endXRatio, drag.endYRatio);
+    if (!point) return null;
+    return {
+      id,
+      panelId: panel.id,
+      kind: "hline",
+      color,
+      points: [
+        { time: scene.startTime, value: point.value },
+        { time: scene.endTime, value: point.value },
+      ],
+    };
+  }
   const source = drag.kind === "pencil" && drag.path.length > 1
     ? drag.path
     : [
@@ -148,7 +220,14 @@ export function resolveDrawingFromDrag(
   const points = source
     .map((point) => drawingPointFrom(scene, domain, point.xRatio, point.yRatio))
     .filter((point): point is ChartDrawingPoint => point !== null);
-  return points.length < 2 ? null : { id, panelId: panel.id, points, color };
+  if (points.length < 2) return null;
+  return {
+    id,
+    panelId: panel.id,
+    points,
+    color,
+    ...(drag.kind === "fib" ? { kind: "fib" as const } : {}),
+  };
 }
 
 function projectDrawing(
@@ -158,6 +237,11 @@ function projectDrawing(
 ): Array<{ xRatio: number; yRatio: number }> | null {
   const domain = resolveMeasureAxisDomain(panel);
   if (!domain) return null;
+  if (drawing.kind === "hline") {
+    const yRatio = projectCompositeValue(drawing.points[0]?.value ?? Number.NaN, domain);
+    if (yRatio === null) return null;
+    return [{ xRatio: 0, yRatio }, { xRatio: 1, yRatio }];
+  }
   const projected: Array<{ xRatio: number; yRatio: number }> = [];
   for (const point of drawing.points) {
     const xRatio = projectCompositeTimestamp(scene.timeScale, point.time)?.ratio;
@@ -166,6 +250,36 @@ function projectDrawing(
     projected.push({ xRatio, yRatio });
   }
   return projected;
+}
+
+function projectDrawingShapes(
+  scene: CompositeChartScene,
+  panel: CompositePanelScene,
+  drawing: ChartDrawing,
+): Array<{ id: string; points: Array<{ x: number; y: number }> }> {
+  const domain = resolveMeasureAxisDomain(panel);
+  if (!domain) return [];
+  if (drawing.kind === "fib" && drawing.points.length >= 2) {
+    const start = drawing.points[0]!;
+    const end = drawing.points.at(-1)!;
+    const shapes: Array<{ id: string; points: Array<{ x: number; y: number }> }> = [];
+    const trend = projectDrawing(scene, panel, { ...drawing, kind: "path" });
+    if (trend) shapes.push({ id: drawing.id, points: trend.map((point) => ({ x: point.xRatio, y: point.yRatio })) });
+    for (const ratio of FIB_RETRACEMENT_RATIOS) {
+      const value = start.value + (end.value - start.value) * ratio;
+      const yRatio = projectCompositeValue(value, domain);
+      if (yRatio === null) continue;
+      shapes.push({
+        id: `${drawing.id}:${ratio}`,
+        points: [{ x: 0, y: yRatio }, { x: 1, y: yRatio }],
+      });
+    }
+    return shapes;
+  }
+  const projected = projectDrawing(scene, panel, drawing);
+  return projected
+    ? [{ id: drawing.id, points: projected.map((point) => ({ x: point.xRatio, y: point.yRatio })) }]
+    : [];
 }
 
 function distanceToSegment(
@@ -267,11 +381,13 @@ export function resolveChartToolKind(modifiers: {
 }
 
 export function isDrawingTool(tool: ChartToolKind | null): boolean {
-  return tool === "line" || tool === "pencil";
+  return tool === "line" || tool === "pencil" || tool === "hline" || tool === "fib";
 }
 
 function isMeaningfulToolDrag(drag: ChartToolDrag): boolean {
-  return Math.abs(drag.endXRatio - drag.startXRatio) >= MINIMUM_TOOL_DRAG_RATIO;
+  if (drag.kind === "hline") return true;
+  return Math.abs(drag.endXRatio - drag.startXRatio) >= MINIMUM_TOOL_DRAG_RATIO
+    || Math.abs(drag.endYRatio - drag.startYRatio) >= MINIMUM_TOOL_DRAG_RATIO;
 }
 
 /** Panel axis the measure readout reports against: the first plotted series wins. */
@@ -354,6 +470,7 @@ export function summarizeMeasure(input: {
 export function summarizeZoomSelection(
   scene: CompositeChartScene,
   drag: ChartToolDrag,
+  timeZone?: string,
 ): string | null {
   if (!isMeaningfulToolDrag(drag)) return null;
   const first = unprojectCompositeTimestamp(scene.timeScale, drag.startXRatio);
@@ -365,6 +482,7 @@ export function summarizeZoomSelection(
     new Date(timestamp),
     scene.startTime,
     scene.endTime,
+    timeZone,
   );
   return `${label(start)} → ${label(end)} · ${formatMeasureSpan(end - start)}`;
 }
@@ -413,16 +531,16 @@ export function buildChartToolVectors(input: {
 }): ChartVectorShape[] {
   const shapes: ChartVectorShape[] = [];
   for (const drawing of input.drawings) {
-    const projected = projectDrawing(input.scene, input.panel, drawing);
-    if (!projected) continue;
     const selected = input.selectedId === drawing.id;
-    shapes.push({
-      id: drawing.id,
-      points: projected.map((point) => ({ x: point.xRatio, y: point.yRatio })),
-      color: drawing.color,
-      strokeWidth: selected ? 2.4 : 1.6,
-      handles: selected && drawing.points.length === 2,
-    });
+    for (const shape of projectDrawingShapes(input.scene, input.panel, drawing)) {
+      shapes.push({
+        id: shape.id,
+        points: shape.points,
+        color: drawing.color,
+        strokeWidth: selected ? 2.4 : 1.6,
+        handles: selected && drawing.kind !== "fib" && drawing.kind !== "hline" && drawing.points.length === 2,
+      });
+    }
   }
 
   const drag = input.drag;
@@ -451,6 +569,28 @@ export function buildChartToolVectors(input: {
       strokeWidth: 1.2,
     });
     shapes.push({ id: "tool:measure-line", points: [start, end], color, strokeWidth: 1.4 });
+    return shapes;
+  }
+  if (drag.kind === "hline") {
+    shapes.push({
+      id: "tool:hline",
+      points: [{ x: 0, y: drag.endYRatio }, { x: 1, y: drag.endYRatio }],
+      color: input.colors.draw,
+      strokeWidth: 1.6,
+    });
+    return shapes;
+  }
+  if (drag.kind === "fib") {
+    for (const ratio of FIB_RETRACEMENT_RATIOS) {
+      const y = drag.startYRatio + (drag.endYRatio - drag.startYRatio) * ratio;
+      shapes.push({
+        id: `tool:fib:${ratio}`,
+        points: [{ x: 0, y }, { x: 1, y }],
+        color: input.colors.draw,
+        strokeWidth: ratio === 0 || ratio === 1 ? 1.6 : 1.1,
+      });
+    }
+    shapes.push({ id: "tool:fib-trend", points: [start, end], color: input.colors.draw, strokeWidth: 1.4 });
     return shapes;
   }
   const trail = drag.kind === "pencil" && drag.path.length > 1
@@ -484,26 +624,30 @@ export function drawChartToolOverlay(
   const maxY = Math.max(height - 1, 0);
 
   for (const drawing of drawings?.items ?? []) {
-    const shape = projectDrawing(drawings!.scene, drawings!.panel, drawing);
-    if (!shape) continue;
+    const shapes = projectDrawingShapes(drawings!.scene, drawings!.panel, drawing);
     const selected = drawings!.selectedId === drawing.id;
     const color = parseHex(drawing.color);
-    for (let index = 1; index < shape.length; index += 1) {
-      drawLine(
-        data,
-        width,
-        height,
-        shape[index - 1]!.xRatio * maxX,
-        shape[index - 1]!.yRatio * maxY,
-        shape[index]!.xRatio * maxX,
-        shape[index]!.yRatio * maxY,
-        color,
-        selected ? 2.2 : 1.4,
-      );
-    }
-    if (!selected) continue;
-    for (const handle of shape.length === 2 ? shape : [shape[0]!, shape.at(-1)!]) {
-      drawCircle(data, width, height, handle.xRatio * maxX, handle.yRatio * maxY, 3.2, color);
+    for (const shape of shapes) {
+      for (let index = 1; index < shape.points.length; index += 1) {
+        drawLine(
+          data,
+          width,
+          height,
+          shape.points[index - 1]!.x * maxX,
+          shape.points[index - 1]!.y * maxY,
+          shape.points[index]!.x * maxX,
+          shape.points[index]!.y * maxY,
+          color,
+          selected ? 2.2 : 1.4,
+        );
+      }
+      if (!selected || drawing.kind === "fib") continue;
+      const handles = shape.points.length === 2
+        ? shape.points
+        : [shape.points[0]!, shape.points.at(-1)!];
+      for (const handle of handles) {
+        drawCircle(data, width, height, handle.x * maxX, handle.y * maxY, 3.2, color);
+      }
     }
   }
   if (!drag) return { width, height, pixels: data };
@@ -533,6 +677,22 @@ export function drawChartToolOverlay(
         1.4,
       );
     }
+    return { width, height, pixels: data };
+  }
+
+  if (drag.kind === "hline") {
+    const color = parseHex(colors.draw);
+    drawLine(data, width, height, 0, y1, maxX, y1, color, 1.4);
+    return { width, height, pixels: data };
+  }
+
+  if (drag.kind === "fib") {
+    const color = parseHex(colors.draw);
+    for (const ratio of FIB_RETRACEMENT_RATIOS) {
+      const y = y0 + (y1 - y0) * ratio;
+      drawLine(data, width, height, 0, y, maxX, y, color, ratio === 0 || ratio === 1 ? 1.4 : 1);
+    }
+    drawLine(data, width, height, x0, y0, x1, y1, color, 1.3);
     return { width, height, pixels: data };
   }
 

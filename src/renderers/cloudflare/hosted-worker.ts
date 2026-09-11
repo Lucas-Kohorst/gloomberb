@@ -209,7 +209,8 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
     } catch {
       return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
     }
-    if (!body || !isPlainObject(body.config) || typeof body.updatedAt !== "string") {
+    if (!body || !isPlainObject(body.config) || typeof body.updatedAt !== "string"
+      || !Number.isFinite(Date.parse(body.updatedAt))) {
       return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
     }
 
@@ -218,7 +219,10 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
     let existingNotes: unknown;
     if (existingRaw) {
       try {
-        const existing = JSON.parse(existingRaw) as { tickers?: unknown; notes?: unknown };
+        const existing = JSON.parse(existingRaw) as { updatedAt?: string; tickers?: unknown; notes?: unknown };
+        if (existing.updatedAt && Date.parse(existing.updatedAt) > Date.parse(body.updatedAt)) {
+          return Response.json({ error: "A newer workspace snapshot is already saved." }, { status: 409 });
+        }
         existingTickers = existing.tickers;
         existingNotes = existing.notes;
       } catch {
@@ -686,6 +690,9 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
       }
       const next = validateByokTarget(new URL(location, current).toString());
       if ("error" in next) return Response.json({ ok: false, ...next });
+      if (next.url.origin !== current.origin) {
+        return Response.json({ ok: false, error: "Redirects to a different origin are not allowed. Use the final API URL directly.", errorType: "blocked-target" });
+      }
       current = next.url;
       response = await fetch(current.toString(), {
         method,

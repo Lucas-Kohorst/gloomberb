@@ -162,9 +162,12 @@ export function normalizeChartResolutionSupport(support: readonly ChartResolutio
 
 /** Yahoo-shaped support used for first paint when broker/provider support is async. */
 export const DEFAULT_CHART_RESOLUTION_SUPPORT: ChartResolutionSupport[] = normalizeChartResolutionSupport([
+  { resolution: "1m", maxRange: "1D" },
   { resolution: "5m", maxRange: "1W" },
   { resolution: "15m", maxRange: "1M" },
+  { resolution: "30m", maxRange: "1M" },
   { resolution: "1h", maxRange: "3M" },
+  { resolution: "4h", maxRange: "3M" },
   { resolution: "1d", maxRange: "5Y" },
   { resolution: "1wk", maxRange: "ALL" },
   { resolution: "1mo", maxRange: "ALL" },
@@ -258,6 +261,35 @@ export function isRangePresetSupported(
   }
   const maxRange = getSupportMaxRange(support as readonly ChartResolutionSupport[], resolution);
   return maxRange !== null && isTimeRangeAtOrBelow(range, maxRange);
+}
+
+function effectiveChartResolutionSupport(
+  support: readonly ChartResolutionSupport[] | undefined,
+): readonly ChartResolutionSupport[] {
+  return support && support.length > 0 ? support : DEFAULT_CHART_RESOLUTION_SUPPORT;
+}
+
+export function chartResolutionTabChoices(
+  range: TimeRange,
+  support: readonly ChartResolutionSupport[] | undefined,
+  dateWindow?: { start: string | Date; end: string | Date },
+): Array<{ resolution: ChartResolution; enabled: boolean }> {
+  const effectiveSupport = effectiveChartResolutionSupport(support);
+  const enabled = new Set(getSupportedChartResolutionsForViewport(range, effectiveSupport, dateWindow));
+  return CHART_RESOLUTIONS.map((resolution) => ({
+    resolution,
+    enabled: resolution === "auto" || enabled.has(resolution),
+  }));
+}
+
+export function chartRangeTabChoices(
+  support: readonly ChartResolutionSupport[] | undefined,
+): Array<{ range: TimeRange; enabled: boolean }> {
+  const effectiveSupport = effectiveChartResolutionSupport(support);
+  return TIME_RANGES.map((range) => ({
+    range,
+    enabled: isRangePresetSupported(range, effectiveSupport),
+  }));
 }
 
 const INTRADAY_TRADING_DAY_RATIO = 5 / 7;

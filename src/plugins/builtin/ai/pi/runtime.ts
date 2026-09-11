@@ -622,7 +622,8 @@ export class PiAiRuntime {
   run(request: PiPromptRequest): PiRunController<PiPromptResult> {
     const controller = new AbortController();
     const abortFromCaller = () => controller.abort();
-    request.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    if (request.signal?.aborted) abortFromCaller();
+    else request.signal?.addEventListener("abort", abortFromCaller, { once: true });
 
     const done = (async () => {
       try {

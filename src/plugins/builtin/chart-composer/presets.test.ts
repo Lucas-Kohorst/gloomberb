@@ -16,6 +16,7 @@ import {
   buildBoundChartPreset,
   buildPriceChartPreset,
   buildSeriesSpec,
+  appendCompareTicker,
   applySeriesStyle,
   applySeriesTimestampMode,
   formatCorrelationExpression,
@@ -32,7 +33,11 @@ import {
   rebindChartSecuritySymbol,
   resolveChartFieldAlias,
   setBuiltinStudies,
+  setChartDisplayTimeZone,
+  setMainPanelScale,
   setPairStudies,
+  toggleMainPanelAutoScale,
+  toggleMainPanelPercentScale,
 } from "./presets";
 import { applyChartComposerCapabilityOptions } from "./cli-options";
 import { defaultChartSeriesPresentation, validateChartSpec } from "../../../time-series/spec";
@@ -643,6 +648,28 @@ describe("chart composer presets and formulas", () => {
       { style: "line", transform: "percent" },
       { style: "line", transform: "percent" },
     ]);
+
+    const percent = toggleMainPanelPercentScale(buildPriceChartPreset("AAPL"));
+    expect(percent.panels.find((panel) => panel.id === "main")?.scale).toBe("percent");
+    expect(toggleMainPanelPercentScale(percent).panels.find((panel) => panel.id === "main")?.scale)
+      .toBe("linear");
+    expect(setMainPanelScale(percent, "log").panels.find((panel) => panel.id === "main")?.scale)
+      .toBe("log");
+
+    const autoOff = toggleMainPanelAutoScale(buildPriceChartPreset("AAPL"));
+    expect(autoOff.panels.find((panel) => panel.id === "main")?.autoScale).toBe(false);
+    expect(toggleMainPanelAutoScale(autoOff).panels.find((panel) => panel.id === "main")?.autoScale)
+      .toBeUndefined();
+
+    const compared = appendCompareTicker(buildPriceChartPreset("AAPL"), "MSFT");
+    expect(compared?.panels.find((panel) => panel.id === "main")?.scale).toBe("percent");
+    expect(compared?.series[0]).toMatchObject({ style: "line" });
+    expect(compared?.series.some((series) => (
+      series.source.kind === "security" && series.source.instrument.symbol === "MSFT"
+    ))).toBe(true);
+    expect(appendCompareTicker(compared!, "MSFT")).toBeNull();
+    expect(setChartDisplayTimeZone(buildPriceChartPreset("AAPL"), "Asia/Tokyo").viewport.timeZone)
+      .toBe("Asia/Tokyo");
 
     const fundamental = buildFundamentalChartPreset(["aapl"]);
     expect(fundamental.series[0]).toMatchObject({

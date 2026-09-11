@@ -5,7 +5,6 @@ import {
   positiveInt,
   toSeries,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -16,7 +15,7 @@ import {
  * Sub-panel oscillator. The MACD line starts once the slow EMA is seeded; the
  * signal line and histogram start `signal` bars after that.
  */
-export function macd(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function macd(data: OHLCV[], params: IndicatorParams = {}) {
   const fast = positiveInt(params.fast, 12);
   const slow = positiveInt(params.slow, 26);
   const signal = positiveInt(params.signal, 9);
@@ -26,15 +25,15 @@ export function macd(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutp
   const macdLine: (number | null)[] = closes.map((_, i) => {
     const f = emaFast[i];
     const s = emaSlow[i];
-    return f !== null && s !== null ? f - s : null;
+    return f != null && s != null ? f - s : null;
   });
   // EMA over the defined MACD values; nulls become gaps that emaArray skips.
-  const macdForEma = macdLine.map((value) => (value === null ? Number.NaN : value));
+  const macdForEma = macdLine.map((value) => (value == null ? Number.NaN : value));
   const signalLine = emaArray(macdForEma, signal);
   const histogram: (number | null)[] = closes.map((_, i) => {
     const m = macdLine[i];
     const s = signalLine[i];
-    return m !== null && s !== null && isFiniteNumber(m - s) ? m - s : null;
+    return m != null && s != null && isFiniteNumber(m - s) ? m - s : null;
   });
   return {
     macd: toSeries(data, macdLine),

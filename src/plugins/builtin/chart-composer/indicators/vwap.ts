@@ -2,7 +2,6 @@ import {
   isFiniteNumber,
   toSeries,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -24,7 +23,7 @@ function sessionKey(date: Date): string {
  * day. Overlays the price pane. Bars without volume (or a computable typical
  * price) yield `null` and do not advance the cumulative totals.
  */
-export function vwap(data: OHLCV[], _params: IndicatorParams = {}): IndicatorOutput {
+export function vwap(data: OHLCV[], _params: IndicatorParams = {}) {
   const values: (number | null)[] = new Array(data.length).fill(null);
   let day: string | null = null;
   let cumulativePv = 0;

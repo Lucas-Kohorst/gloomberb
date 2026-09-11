@@ -99,6 +99,7 @@ export function mapSporeModelsResponse(body: string): Model<"openai-completions"
   }
 
   const models: Model<"openai-completions">[] = [];
+  const defaultModelIds = new Set<string>();
   const seen = new Set<string>();
   for (const entry of (parsed as { data: unknown[] }).data) {
     if (!entry || typeof entry !== "object") continue;
@@ -109,6 +110,9 @@ export function mapSporeModelsResponse(body: string): Model<"openai-completions"
     const supportsThinking = record.supports_thinking === true;
     if (record.available !== false) {
       models.push(toSporeModel(id, supportsThinking, false));
+      if (record.catalog_role === "default" && !isSporePersonalModelId(id)) {
+        defaultModelIds.add(id);
+      }
     }
     if (!isSporePersonalModelId(id)) {
       const personalId = `${id}${SPORE_PERSONAL_SUFFIX}`;
@@ -118,7 +122,7 @@ export function mapSporeModelsResponse(body: string): Model<"openai-completions"
       }
     }
   }
-  return models;
+  return models.sort((left, right) => Number(defaultModelIds.has(right.id)) - Number(defaultModelIds.has(left.id)));
 }
 
 export async function fetchSporeModels(

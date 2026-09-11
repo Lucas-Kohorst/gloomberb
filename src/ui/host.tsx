@@ -255,6 +255,8 @@ export interface TradingViewChartProps extends BoxProps {
   vectors?: readonly ChartVectorShape[] | null;
   /** Keyboard-armed tool; the chart owns interaction for armed tools. */
   armedTool?: ChartToolKind | null;
+  /** IANA zone for axis tick labels. Omit for UTC. */
+  timeZone?: string;
 }
 
 /** The trackpad gesture that produced a viewport change. */

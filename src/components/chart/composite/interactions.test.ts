@@ -193,6 +193,9 @@ describe("composite chart interactions", () => {
     expect(resolveCompositeChartInteraction({ name: "Z", sequence: "Z" })).toBe("arm-zoom");
     expect(resolveCompositeChartInteraction({ name: "d", shift: true })).toBe("arm-line");
     expect(resolveCompositeChartInteraction({ name: "P", sequence: "P" })).toBe("arm-pencil");
+    expect(resolveCompositeChartInteraction({ name: "h", shift: true })).toBe("arm-hline");
+    expect(resolveCompositeChartInteraction({ name: "f", shift: true })).toBe("arm-fib");
+    expect(resolveCompositeChartInteraction({ name: "n", shift: true })).toBe("toggle-magnet");
     expect(resolveCompositeChartInteraction({ name: "backspace" })).toBe("delete-drawing");
     expect(resolveCompositeChartInteraction({ name: "c" })).toBe("cycle-colour");
     // Unshifted m and z stay with the pane that already owns them.

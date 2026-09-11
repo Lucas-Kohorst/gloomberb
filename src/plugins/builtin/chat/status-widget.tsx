@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { tf } from "../../../i18n";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, hoverBg } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
@@ -8,10 +9,11 @@ import {
   getPreferredChatOpenChannelId,
 } from "./channels";
 import { chatController, type ChatController } from "./controller";
+import { OnlinePresenceDot } from "./presence-dot";
 import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
-  controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
+  controller?: Pick<ChatController, "getSnapshot" | "refreshPresence" | "refreshSession" | "subscribe">;
 }
 
 type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
@@ -84,6 +86,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
       setHasSavedSession(nextSnapshot.hasSavedSession);
     });
     void controller.refreshSession().catch(() => {});
+    void controller.refreshPresence().catch(() => {});
     return unsubscribe;
   }, [controller]);
 
@@ -103,14 +106,60 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           backgroundColor={hovered ? hoverBg() : undefined}
           onMouseOver={() => setHovered((current) => (current ? current : true))}
           onMouseOut={() => setHovered((current) => (current ? false : current))}
+          {...(nativePaneChrome ? {
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+              gap: 10,
+            },
+          } : {})}
         >
           <Box
             flexDirection="row"
             alignItems="center"
             onMouseDown={openChat}
             data-gloom-interactive="true"
+            {...(nativePaneChrome ? {
+              style: {
+                display: "inline-flex",
+                alignItems: "center",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+                gap: 10,
+                cursor: "pointer",
+              },
+            } : {})}
           >
-            <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
+            <Box
+              flexDirection="row"
+              alignItems="center"
+              data-gloom-role="status-online-count"
+              {...(nativePaneChrome ? {
+                style: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                  gap: 8,
+                },
+              } : {})}
+            >
+              <OnlinePresenceDot />
+              <Text
+                fg={colors.textDim}
+                title={tf("{count} online", { count: snapshot.onlineCount })}
+                {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
+              >
+                {`${nativePaneChrome ? "" : " "}${tf("{count} online", { count: snapshot.onlineCount })}`}
+              </Text>
+            </Box>
+            <Text
+              fg={unreadCount > 0 ? colors.text : colors.textDim}
+              {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
+            >
+              {nativePaneChrome ? "" : " "}
               <Span fg={colors.positive}>@</Span>
               {username ? (
                 <>

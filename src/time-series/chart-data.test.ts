@@ -36,6 +36,68 @@ describe("appendLiveQuotePoint", () => {
     });
   });
 
+  test("updates a live quote tail in place instead of appending another print", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-05-04T00:00:00Z"), close: 56 },
+      { date: new Date("2026-05-11T00:00:00Z"), close: 68 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture(),
+      { now: Date.parse("2026-05-15T21:00:00Z") },
+    );
+
+    const updated = appendLiveQuotePoint(
+      extended,
+      quoteFixture({
+        lastUpdated: Date.parse("2026-05-15T20:35:00Z"),
+        price: 130,
+      }),
+      { now: Date.parse("2026-05-15T21:05:00Z") },
+    );
+
+    expect(updated).toHaveLength(3);
+    expect(updated.at(-1)).toEqual({
+      date: new Date("2026-05-15T20:35:00Z"),
+      close: 130,
+    });
+  });
+
+  test("two successive scalar quotes on an empty-OHLC tail replace rather than grow", () => {
+    const history: PricePoint[] = [
+      {
+        date: new Date("2026-05-15T20:00:00Z"),
+        open: 124,
+        high: 130,
+        low: 122,
+        close: 126,
+      },
+    ];
+
+    const first = appendLiveQuotePoint(
+      history,
+      quoteFixture({ lastUpdated: Date.parse("2026-05-15T20:30:00Z"), price: 129 }),
+      { now: Date.parse("2026-05-15T20:31:00Z") },
+    );
+    const second = appendLiveQuotePoint(
+      first,
+      quoteFixture({ lastUpdated: Date.parse("2026-05-15T20:40:00Z"), price: 131 }),
+      { now: Date.parse("2026-05-15T20:41:00Z") },
+    );
+
+    expect(first).toHaveLength(2);
+    expect(first.at(-1)).toEqual({
+      date: new Date("2026-05-15T20:30:00Z"),
+      close: 129,
+    });
+    expect(second).toHaveLength(2);
+    expect(second.at(-1)).toEqual({
+      date: new Date("2026-05-15T20:40:00Z"),
+      close: 131,
+    });
+  });
+
   test("merges a quote into the active OHLC bucket", () => {
     const history: PricePoint[] = [
       {

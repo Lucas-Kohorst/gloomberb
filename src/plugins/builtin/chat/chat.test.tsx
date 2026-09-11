@@ -1505,6 +1505,35 @@ describe("ChatContent", () => {
     expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: dmChannelId } }]);
   });
 
+  test("shows the online count to the left of the status username", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "lucas", emailVerified: true },
+    });
+    (controller as any).channelCatalog.applyPresence({ onlineCount: 12 });
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 48, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const line = setup().captureCharFrame().split("\n")[0] ?? "";
+    expect(line).toContain("● 12 online");
+    expect(line).toContain("@ lucas");
+    expect(line.indexOf("12 online")).toBeLessThan(line.indexOf("@ lucas"));
+  });
+
 });
 
 describe("chat public profiles and presence", () => {

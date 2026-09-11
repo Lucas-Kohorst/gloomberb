@@ -7,6 +7,9 @@ export type ChartComposerShortcut =
   | "reload"
   | "share"
   | "log"
+  | "percent"
+  | "auto"
+  | "timezone"
   | { type: "range"; index: number };
 
 export function resolveChartComposerShortcut(
@@ -20,6 +23,10 @@ export function resolveChartComposerShortcut(
   if (isPlainKey(event, "s")) return "series";
   if (isPlainKey(event, "r")) return "reload";
   if (isPlainKey(event, "t")) return "resolution";
+  if (isPlainKey(event, "l")) return "log";
+  if (isPlainKey(event, "p")) return "percent";
+  if (isPlainKey(event, "g")) return "auto";
+  if (isPlainKey(event, "z")) return "timezone";
   if (!isPlainKey(event, event.name ?? "")) return null;
 
   const rangeIndex = Number(event.name) - 1;

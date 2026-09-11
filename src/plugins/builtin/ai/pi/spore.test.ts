@@ -87,14 +87,20 @@ describe("Spore model catalog", () => {
     });
   });
 
-  test("does not ship a hardcoded catalog on the provider factory", () => {
-    const provider = sporeProvider();
-    expect(provider.id).toBe(SPORE_PROVIDER_ID);
-    expect(provider.baseUrl).toBe(SPORE_API_BASE_URL);
-    expect(provider.auth.apiKey?.name).toBe("Spore API key");
-    expect(provider.auth.oauth).toBeUndefined();
-    expect(provider.getModels()).toEqual([]);
-    expect(provider.refreshModels).toBeDefined();
+  test("prioritizes the available community default over earlier catalog roles", () => {
+    const models = mapSporeModelsResponse(JSON.stringify({ data: [
+      { id: "muse-glimmer-30b:128k", catalog_role: "reasoning", available: true },
+      { id: "offline:32k", catalog_role: "default", available: false },
+      { id: "qwen3.6-35b-a3b:128k", catalog_role: "default", available: true },
+      { id: "qwen3.6-35b-a3b:32k", catalog_role: "default", available: true },
+    ] }));
+
+    expect(models.slice(0, 2).map((model) => model.id)).toEqual([
+      "qwen3.6-35b-a3b:128k",
+      "qwen3.6-35b-a3b:32k",
+    ]);
+    expect(models.some((model) => model.id === "offline:32k")).toBe(false);
+    expect(models.some((model) => model.id === "offline:32k:personal")).toBe(true);
   });
 
   test("reads Spore auth errors as a raw string or OpenAI envelope", () => {

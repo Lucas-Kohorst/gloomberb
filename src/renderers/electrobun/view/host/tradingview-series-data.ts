@@ -1,3 +1,8 @@
+import {
+  buildCompositeTimeScale,
+  compositeTimeAtPosition,
+  compositeTimePosition,
+} from "../../../../components/chart/composite/time-scale";
 import { scalarPointValue } from "../../../../time-series/alignment";
 import { isOhlcSeriesStyle } from "../../../../time-series/spec";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
@@ -6,6 +11,50 @@ export type TradingViewSeriesType = "Line" | "Area" | "Bar" | "Candlestick" | "H
 
 export function utcTimestampSeconds(ms: number): number {
   return Math.floor(ms / 1000);
+}
+
+export interface ChartTimePacking {
+  toPackedSeconds(ms: number): number;
+  fromPackedSeconds(seconds: number): number;
+}
+
+const identityPacking: ChartTimePacking = {
+  toPackedSeconds: utcTimestampSeconds,
+  fromPackedSeconds: (seconds) => seconds * 1000,
+};
+const marketPackingCache = new WeakMap<object, ChartTimePacking>();
+
+export function identityChartTimePacking(): ChartTimePacking {
+  return identityPacking;
+}
+
+/** Collapse closed sessions the way the rasterizer does, so LWC does not plot weekend holes. */
+export function marketChartTimePacking(
+  series: readonly ResolvedSeries[],
+): ChartTimePacking {
+  const timeline = series.filter((entry) => entry.timeBasis?.kind === "market");
+  if (timeline.length === 0) return identityChartTimePacking();
+  const times = timeline.flatMap((entry) => entry.points.map((point) => point.date.getTime()))
+    .filter((value) => Number.isFinite(value));
+  if (times.length === 0) return identityChartTimePacking();
+  const start = Math.min(...times);
+  const end = Math.max(...times);
+  const scale = buildCompositeTimeScale(timeline, start, end);
+  if (scale.kind !== "market") return identityChartTimePacking();
+  const cadenceSeconds = scale.cadenceMs / 1000;
+  if (!(cadenceSeconds > 0)) return identityChartTimePacking();
+  const cached = marketPackingCache.get(scale.anchors);
+  if (cached) return cached;
+  const packing: ChartTimePacking = {
+    toPackedSeconds(ms) {
+      return Math.round(compositeTimePosition(scale, ms) * cadenceSeconds);
+    },
+    fromPackedSeconds(seconds) {
+      return compositeTimeAtPosition(scale, seconds / cadenceSeconds);
+    },
+  };
+  marketPackingCache.set(scale.anchors, packing);
+  return packing;
 }
 
 function finite(value: number | null | undefined): value is number {
@@ -24,11 +73,12 @@ export function hasOhlc(
  */
 export function orderedPointsBySecond(
   points: readonly TimeSeriesPoint[],
+  packing: ChartTimePacking = identityChartTimePacking(),
 ): Array<[number, TimeSeriesPoint]> {
   const byTime = new Map<number, TimeSeriesPoint>();
   for (const point of points) {
     const time = point.date.getTime();
-    if (Number.isFinite(time)) byTime.set(utcTimestampSeconds(time), point);
+    if (Number.isFinite(time)) byTime.set(packing.toPackedSeconds(time), point);
   }
   return [...byTime.entries()].sort(([left], [right]) => left - right);
 }
@@ -44,24 +94,31 @@ export function tradingViewSeriesTypeFor(series: ResolvedSeries): TradingViewSer
   return "Line";
 }
 
-export function tradingViewCandleData(points: readonly TimeSeriesPoint[]) {
-  return orderedPointsBySecond(points).flatMap(([time, point]) => (
+export function tradingViewCandleData(
+  points: readonly TimeSeriesPoint[],
+  packing: ChartTimePacking = identityChartTimePacking(),
+) {
+  return orderedPointsBySecond(points, packing).flatMap(([time, point]) => (
     hasOhlc(point)
       ? [{ time, open: point.open, high: point.high, low: point.low, close: point.close }]
       : []
   ));
 }
 
-export function tradingViewBarData(points: readonly TimeSeriesPoint[]) {
-  return tradingViewCandleData(points);
+export function tradingViewBarData(
+  points: readonly TimeSeriesPoint[],
+  packing: ChartTimePacking = identityChartTimePacking(),
+) {
+  return tradingViewCandleData(points, packing);
 }
 
 export function tradingViewHistogramData(
   points: readonly TimeSeriesPoint[],
   colors: { up: string; down: string },
+  packing: ChartTimePacking = identityChartTimePacking(),
 ) {
   let previousClose: number | null = null;
-  return orderedPointsBySecond(points).flatMap(([time, point]) => {
+  return orderedPointsBySecond(points, packing).flatMap(([time, point]) => {
     const value = scalarPointValue(point);
     if (value === null) return [];
     const close = finite(point.close) ? point.close : value;
@@ -71,8 +128,11 @@ export function tradingViewHistogramData(
   });
 }
 
-export function tradingViewScalarData(points: readonly TimeSeriesPoint[]) {
-  return orderedPointsBySecond(points).flatMap(([time, point]) => {
+export function tradingViewScalarData(
+  points: readonly TimeSeriesPoint[],
+  packing: ChartTimePacking = identityChartTimePacking(),
+) {
+  return orderedPointsBySecond(points, packing).flatMap(([time, point]) => {
     const value = scalarPointValue(point);
     return value !== null ? [{ time, value }] : [];
   });

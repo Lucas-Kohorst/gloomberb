@@ -234,6 +234,16 @@ describe("PiAiRuntime", () => {
     expect(runtime.hasProvider("factory")).toBe(false);
   });
 
+  test("does not contact the provider when the caller signal is already aborted", async () => {
+    const { faux, runtime } = createFauxRuntime();
+    let requests = 0;
+    faux.setResponses([() => { requests += 1; return fauxAssistantMessage("unexpected"); }]);
+    const signal = AbortSignal.abort();
+    await expect(runtime.runText({ providerId: "anthropic", prompt: "hello", signal }).done)
+      .rejects.toBeInstanceOf(PiRunCancelledError);
+    expect(requests).toBe(0);
+  });
+
   test("normalizes provider failures and cancellation", async () => {
     const failed = createFauxRuntime();
     failed.faux.setResponses([

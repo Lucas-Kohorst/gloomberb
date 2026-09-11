@@ -13,7 +13,7 @@ import { getYahooSymbolsToTry } from "./symbols";
 import type { ChartResult } from "./types";
 
 const RANGE_PARAMS: Record<TimeRange, { range: string; interval: ManualChartResolution }> = {
-  "1D": { range: "1d", interval: "5m" },
+  "1D": { range: "1d", interval: "1m" },
   "1W": { range: "5d", interval: "5m" },
   "1M": { range: "1mo", interval: "15m" },
   "3M": { range: "3mo", interval: "1h" },

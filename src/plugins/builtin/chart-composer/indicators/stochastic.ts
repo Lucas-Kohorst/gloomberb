@@ -5,7 +5,6 @@ import {
   smaArray,
   toSeries,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -17,7 +16,7 @@ import {
  * and for any window containing a missing high/low/close; `%D` follows `smooth`
  * bars later.
  */
-export function stochastic(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function stochastic(data: OHLCV[], params: IndicatorParams = {}) {
   const period = positiveInt(params.period, 14);
   const smooth = positiveInt(params.smooth, 3);
   const highs = data.map((bar) => (isFiniteNumber(bar.high) ? bar.high : Number.NaN));

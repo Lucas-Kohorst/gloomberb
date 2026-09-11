@@ -39,11 +39,11 @@ export function filingListTitle(filing: CftcFiling): string {
   return `${prefix} | ${filing.title}`;
 }
 
-/** When Adjacent first ingested the row, matching their SEEN column. */
+/** Most recent status date for the filing, matching the CFTC's own ordering. */
 export function filingListTimestamp(filing: CftcFiling): Date {
-  if (filing.firstSeenAt && filing.firstSeenAt.getTime() > 0) return filing.firstSeenAt;
+  if (filing.statusDate && filing.statusDate.getTime() > 0) return filing.statusDate;
   if (filing.lastSeenAt && filing.lastSeenAt.getTime() > 0) return filing.lastSeenAt;
-  return filing.statusDate;
+  return filing.firstSeenAt ?? new Date(0);
 }
 
 /**

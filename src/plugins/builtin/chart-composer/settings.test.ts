@@ -38,6 +38,7 @@ describe("chart composer pane settings", () => {
       CHART_SETTING_KEYS.resolution,
       CHART_SETTING_KEYS.mode,
       CHART_SETTING_KEYS.scale,
+      CHART_SETTING_KEYS.timeZone,
     ]);
     expect(definition.values).toMatchObject({
       [CHART_SETTING_KEYS.series]: "AAPL:market.ohlcv",
@@ -47,6 +48,7 @@ describe("chart composer pane settings", () => {
       [CHART_SETTING_KEYS.resolution]: "auto",
       [CHART_SETTING_KEYS.mode]: "candles",
       [CHART_SETTING_KEYS.scale]: "linear",
+      [CHART_SETTING_KEYS.timeZone]: "UTC",
     });
     expect(definition.fields.find((entry) => entry.key === CHART_SETTING_KEYS.mode)?.label)
       .toBe("Style (AAPL Price)");
@@ -162,5 +164,24 @@ describe("chart composer pane settings", () => {
       field(CHART_SETTING_KEYS.mode, "select"),
       "columns",
     )).toThrow("not compatible");
+  });
+
+  test("persists percent scale and display timezone on the chart spec", () => {
+    let settings: Record<string, unknown> = {
+      [CHART_SPEC_SETTING_KEY]: buildPriceChartPreset("AAPL"),
+    };
+    settings = applyChartComposerPaneSetting(
+      settings,
+      field(CHART_SETTING_KEYS.scale, "select"),
+      "percent",
+    );
+    settings = applyChartComposerPaneSetting(
+      settings,
+      field(CHART_SETTING_KEYS.timeZone, "select"),
+      "America/New_York",
+    );
+    const spec = settings[CHART_SPEC_SETTING_KEY] as ReturnType<typeof buildPriceChartPreset>;
+    expect(spec.panels.find((panel) => panel.id === "main")?.scale).toBe("percent");
+    expect(spec.viewport.timeZone).toBe("America/New_York");
   });
 });

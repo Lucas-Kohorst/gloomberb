@@ -8,6 +8,7 @@ import {
   formatCompositePointDetails,
   formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
+  formatOhlcvHud,
 } from "./format";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import {
@@ -69,6 +70,16 @@ describe("composite chart timestamp formatting", () => {
     expect(formatCompositeTimeAxisDate(cursor, weekly.startTime, weekly.endTime)).toBe("2025-01-04");
     expect(renderCompositeTimeAxis(weekly, 60)).toContain("Jan 1");
     expect(renderCompositeTimeAxis(weekly, 60)).toContain("Jan 8");
+  });
+
+  test("labels an intraday cursor in the display timezone", () => {
+    const intraday = scene("2025-01-02T09:30:00Z", "2025-01-02T16:00:00Z");
+    const cursor = new Date("2025-01-02T12:05:00Z");
+
+    expect(formatCompositeCursorDate(cursor, intraday.startTime, intraday.endTime, "America/New_York"))
+      .toBe("2025-01-02 07:05 EST");
+    expect(formatCompositeTimeAxisDate(cursor, intraday.startTime, intraday.endTime, "America/New_York"))
+      .toBe("07:05 EST");
   });
 
   test("renders recovery-shell dates directly from a viewport", () => {
@@ -180,5 +191,66 @@ describe("composite chart unit formatting", () => {
     expect(formatChartLegendValue(79_432.18, "USD", "price:USD")).toBe("$79,432.18");
     expect(formatCompositeCursorValue(79_432.18, domain)).toBe("$79,432.18");
     expect(formatCompositeAxisValue(79_432.18, domain)).toBe("$79K");
+  });
+});
+
+describe("formatOhlcvHud", () => {
+  test("formats full OHLCV with compact volume", () => {
+    const hud = formatOhlcvHud({
+      value: 326.37,
+      open: 326.10,
+      high: 328.40,
+      low: 325.20,
+      close: 326.37,
+      volume: 4_820_000,
+    }, "USD", "price:USD");
+    const o = formatChartLegendValue(326.10, "USD", "price:USD");
+    const h = formatChartLegendValue(328.40, "USD", "price:USD");
+    const l = formatChartLegendValue(325.20, "USD", "price:USD");
+    const c = formatChartLegendValue(326.37, "USD", "price:USD");
+
+    expect(hud).toBe(`O ${o}  H ${h}  L ${l}  C ${c}  V 4.8M`);
+    expect(hud).toContain("O ");
+    expect(hud).toContain("H ");
+    expect(hud).toContain("L ");
+    expect(hud).toContain("C ");
+    expect(hud).toContain("V ");
+  });
+
+  test("returns null for close-only points", () => {
+    expect(formatOhlcvHud({
+      value: 326.37,
+      close: 326.37,
+    }, "USD", "price:USD")).toBeNull();
+  });
+
+  test("omits open for HLC bars", () => {
+    const hud = formatOhlcvHud({
+      value: 326.37,
+      high: 328.40,
+      low: 325.20,
+      close: 326.37,
+    }, "USD", "price:USD");
+
+    expect(hud).not.toMatch(/\bO /);
+    expect(hud).toContain("H ");
+    expect(hud).toContain("L ");
+    expect(hud).toContain("C ");
+    expect(hud).toBe(
+      `H ${formatChartLegendValue(328.40, "USD", "price:USD")}  L ${formatChartLegendValue(325.20, "USD", "price:USD")}  C ${formatChartLegendValue(326.37, "USD", "price:USD")}`,
+    );
+  });
+
+  test("prints zero volume as V 0", () => {
+    const hud = formatOhlcvHud({
+      value: 10,
+      open: 10,
+      high: 11,
+      low: 9,
+      close: 10,
+      volume: 0,
+    }, "USD", "price:USD");
+    expect(hud).toContain("V 0");
+    expect(hud!.endsWith("  V 0")).toBe(true);
   });
 });
