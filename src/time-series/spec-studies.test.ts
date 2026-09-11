@@ -453,19 +453,27 @@ describe("study resolution", () => {
     expect(result.errors[0]).toContain("requires 2 valid input series");
   });
 
-  test("returns actionable errors for unimplemented study kinds instead of throwing", () => {
-    const result = resolveStudies([resolved("a")], [
-      study("atr", "atr", ["a"]),
-      study("stochastic", "stochastic", ["a"]),
-      study("adx", "adx", ["a"]),
+  test("resolves ATR, Stochastic, and ADX onto sub-panel series", () => {
+    const source = {
+      ...resolved("a"),
+      points: resolved("a").points.map((point, index) => ({
+        ...point,
+        open: (index + 1) - 0.4,
+        high: (index + 1) + 1.2,
+        low: (index + 1) - 0.8,
+        close: index + 1,
+      })),
+    };
+    const result = resolveStudies([source], [
+      study("atr", "atr", ["a"], { period: 3 }),
+      study("stochastic", "stochastic", ["a"], { period: 3, smooth: 2 }),
+      study("adx", "adx", ["a"], { period: 3 }),
     ]);
 
-    expect(result.series).toEqual([]);
-    expect(result.errors).toEqual([
-      "atr: atr study is not yet implemented.",
-      "stochastic: stochastic study is not yet implemented.",
-      "adx: adx study is not yet implemented.",
-    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.series.find((entry) => entry.id === "atr")?.points.length).toBeGreaterThan(0);
+    expect(result.series.find((entry) => entry.id === "stochastic:k")?.unitGroup).toBe("oscillator-0-100");
+    expect(result.series.find((entry) => entry.id === "adx:adx")?.label).toContain("ADX(3)");
   });
 
   test("preserves the derived unit when a raw ratio mixes dimensions in one currency", () => {

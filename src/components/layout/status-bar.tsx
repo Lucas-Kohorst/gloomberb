@@ -33,7 +33,7 @@ type SetHoveredControl = (updater: (current: HoveredControl) => HoveredControl) 
 /** Rendered width of the Tidy Windows control, including its leading gap. */
 const TIDY_WINDOWS_COLUMNS = 15;
 /** Space held back for the `status:widget` plugin slot, which sizes itself. */
-const STATUS_WIDGET_COLUMNS = 20;
+const STATUS_WIDGET_COLUMNS = 36;
 
 type LayoutTabItem = {
   label: string;
@@ -328,6 +328,7 @@ function NativeStatusBar({
         borderTop: `1px solid ${colors.border}`,
         boxShadow: `inset 0 1px 0 ${blendHex(colors.panel, colors.textBright, 0.03)}`,
         paddingInline: 8,
+        gap: 12,
       }}
     >
       <StatusBarLayoutControl nativePaneChrome {...props} />
@@ -446,7 +447,7 @@ function VersionChip({
   const colors = useThemeColors();
   const hovered = hoveredControl === "version";
   return (
-    <Box paddingRight={1} flexShrink={0}>
+    <Box paddingRight={nativePaneChrome ? 0 : 1} flexShrink={0}>
       <Text
         fg={hovered && openChangelog ? colors.text : colors.textDim}
         {...(!nativePaneChrome ? { bg: hovered && openChangelog ? hoverBg(colors) : undefined } : {})}

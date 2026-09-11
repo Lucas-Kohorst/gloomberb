@@ -95,6 +95,17 @@ function pluginConfigForFingerprint(config: AppConfig): Record<string, Record<st
 
 function workspaceFingerprint(config: AppConfig): string {
   return JSON.stringify(canonicalize({
+    baseCurrency: config.baseCurrency,
+    refreshIntervalMinutes: config.refreshIntervalMinutes,
+    portfolios: config.portfolios,
+    brokerInstances: stripBrokerOAuthForSnapshot(config.brokerInstances),
+    disabledPlugins: config.disabledPlugins,
+    disabledSources: config.disabledSources,
+    chartPreferences: config.chartPreferences,
+    valueFlashingEnabled: config.valueFlashingEnabled,
+    autoRefreshInterval: config.autoRefreshInterval,
+    fontFamily: config.fontFamily,
+    tickerSearchShortcut: config.tickerSearchShortcut,
     activeLayoutIndex: config.activeLayoutIndex,
     layouts: config.layouts.map((layout) => ({
       name: layout.name,

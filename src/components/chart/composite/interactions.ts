@@ -13,9 +13,12 @@ export interface CompositeViewportRange {
 
 export type CompositeChartInteraction =
   | "arm-line"
+  | "arm-hline"
+  | "arm-fib"
   | "arm-measure"
   | "arm-pencil"
   | "arm-zoom"
+  | "toggle-magnet"
   | "cycle-colour"
   | "clear-cursor"
   | "cursor-left"
@@ -378,6 +381,9 @@ export function resolveCompositeChartInteraction(event: {
   if (shifted && key === "m") return "arm-measure";
   if (shifted && key === "z") return "arm-zoom";
   if (shifted && key === "d") return "arm-line";
+  if (shifted && key === "h") return "arm-hline";
+  if (shifted && key === "f") return "arm-fib";
+  if (shifted && key === "n") return "toggle-magnet";
   if (shifted && key === "p") return "arm-pencil";
   if (key === "backspace") return "delete-drawing";
   if (key === "c" && !event.shift) return "cycle-colour";

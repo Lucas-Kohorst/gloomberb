@@ -1,3 +1,4 @@
+import { researchDataPlugins } from "./catalog-research";
 import {
   attachFredSeriesPersistence,
   resetFredSeriesPersistence,
@@ -135,6 +136,7 @@ const browserMacroPlugin = composeBuiltinPlugin({
  * browser-safe public API are absent rather than registered behind stubs.
  */
 export const browserBuiltinPlugins: readonly GloomPlugin[] = [
+  ...researchDataPlugins,
   browserGloomberbCloudPlugin,
   browserPortfolioPlugin,
   browserTickerResearchPlugin,

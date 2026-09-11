@@ -17,12 +17,16 @@ import {
   type MouseEventHandler,
   type Time,
   type TimeRangeChangeEventHandler,
-  type UTCTimestamp,
 } from "lightweight-charts";
 import type { TradingViewChartProps } from "../../../../ui/host";
-import { formatChartLegendValue } from "../../../../components/chart/composite/format";
+import {
+  formatChartLegendValue,
+  formatChartVolume,
+  formatCompositeTimeAxisDate,
+  formatOhlcvHud,
+} from "../../../../components/chart/composite/format";
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
-import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
+import type { PanelScale, ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 import {
   classifyWheelGesture,
   panVisibleTimeRange,
@@ -37,25 +41,22 @@ import {
 } from "./tradingview-interactions";
 import { cleanDomProps } from "./style";
 import {
+  marketChartTimePacking,
   tradingViewBarData,
   tradingViewCandleData,
   tradingViewHistogramData,
   tradingViewScalarData,
   tradingViewSeriesTypeFor,
-  utcTimestampSeconds,
+  type ChartTimePacking,
   type TradingViewSeriesType,
 } from "./tradingview-series-data";
-
-function timestamp(value: number): UTCTimestamp {
-  return utcTimestampSeconds(value) as UTCTimestamp;
-}
 
 function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function timeToMs(time: Time): number | null {
-  if (typeof time === "number") return time * 1000;
+function timeToMs(time: Time, packing: ChartTimePacking): number | null {
+  if (typeof time === "number") return packing.fromPackedSeconds(time);
   if (typeof time === "string") {
     const parsed = Date.parse(time);
     return Number.isNaN(parsed) ? null : parsed;
@@ -171,9 +172,10 @@ function syncSeriesData(
   type: TradingViewSeriesType,
   series: ResolvedSeries,
   colors: TradingViewChartProps["colors"],
+  packing: ChartTimePacking,
 ): void {
   if (type === "Candlestick" || type === "Bar") {
-    const data = (type === "Bar" ? tradingViewBarData : tradingViewCandleData)(series.points)
+    const data = (type === "Bar" ? tradingViewBarData : tradingViewCandleData)(series.points, packing)
       .map((point) => ({ ...point, time: point.time as Time }));
     api.setData(data);
     return;
@@ -182,10 +184,10 @@ function syncSeriesData(
     api.setData(tradingViewHistogramData(series.points, {
       up: series.color,
       down: colors.negative,
-    }).map((point) => ({ ...point, time: point.time as Time })));
+    }, packing).map((point) => ({ ...point, time: point.time as Time })));
     return;
   }
-  api.setData(tradingViewScalarData(series.points).map((point) => ({
+  api.setData(tradingViewScalarData(series.points, packing).map((point) => ({
     ...point,
     time: point.time as Time,
   })));
@@ -194,6 +196,13 @@ function syncSeriesData(
 interface MeasureState {
   start: { rx: number; ry: number; time: number; price: number };
   end: { rx: number; ry: number; time: number; price: number };
+}
+
+function lightweightPriceScaleMode(scale: PanelScale | undefined, panelId: string): PriceScaleMode {
+  if (panelId === "volume") return PriceScaleMode.Normal;
+  if (scale === "log") return PriceScaleMode.Logarithmic;
+  if (scale === "percent") return PriceScaleMode.Percentage;
+  return PriceScaleMode.Normal;
 }
 
 type SeriesEntry = {
@@ -206,6 +215,7 @@ type SeriesEntry = {
   unitGroup: string;
   /** Last data written, so a pan does not re-set identical points. */
   points: readonly TimeSeriesPoint[];
+  packing: ChartTimePacking;
   colorKey: string;
 };
 
@@ -218,6 +228,7 @@ export function WebTradingViewChart({
   onViewportChange,
   vectors,
   armedTool,
+  timeZone,
   style,
   ...props
 }: TradingViewChartProps) {
@@ -236,26 +247,31 @@ export function WebTradingViewChart({
   interactiveRef.current = interactive;
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
+  const timeZoneRef = useRef(timeZone);
+  timeZoneRef.current = timeZone;
   const seriesRef = useRef<SeriesEntry[]>([]);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
+  const packing = useMemo(() => marketChartTimePacking(seriesData), [seriesData]);
+  const packingRef = useRef(packing);
+  packingRef.current = packing;
   const applyVisibleRangeRef = useRef<
     (next: VisibleTimeRangeMs, report?: TrackpadGestureKind | null) => void
   >(() => {});
   applyVisibleRangeRef.current = (next, report = null) => {
     const chart = chartRef.current;
     if (!chart) return;
-    const from = timestamp(next.start);
-    const to = timestamp(next.end);
+    const from = packingRef.current.toPackedSeconds(next.start);
+    const to = packingRef.current.toPackedSeconds(next.end);
     if (to <= from) return;
     applyingRangeRef.current = true;
-    visibleMsRef.current = { start: from * 1000, end: to * 1000 };
+    visibleMsRef.current = next;
     rangeRef.current = `${from}:${to}`;
     chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
     applyingRangeRef.current = false;
     if (report) {
       onViewportChangeRef.current?.(
-        { start: new Date(from * 1000), end: new Date(to * 1000) },
+        { start: new Date(next.start), end: new Date(next.end) },
         report,
       );
     }
@@ -314,6 +330,14 @@ export function WebTradingViewChart({
         borderVisible: false,
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time) => {
+          if (typeof time !== "number") return "";
+          const ms = packingRef.current.fromPackedSeconds(time);
+          const view = viewportRef.current;
+          const start = view?.start.getTime() ?? ms;
+          const end = view?.end.getTime() ?? ms;
+          return formatCompositeTimeAxisDate(new Date(ms), start, end, timeZoneRef.current);
+        },
       },
       handleScroll: {
         // Wheel is owned below: LWC pinch is two TouchEvents, which a Mac
@@ -341,7 +365,10 @@ export function WebTradingViewChart({
       const end = typeof range.to === "number" ? Math.floor(range.to) : null;
       if (start === null || end === null) return;
       const key = `${start}:${end}`;
-      const next = { start: start * 1000, end: end * 1000 };
+      const next = {
+        start: packingRef.current.fromPackedSeconds(start),
+        end: packingRef.current.fromPackedSeconds(end),
+      };
       const previous = visibleMsRef.current;
       rangeRef.current = key;
       visibleMsRef.current = next;
@@ -368,12 +395,23 @@ export function WebTradingViewChart({
       }
       const values = seriesRef.current.flatMap((entry) => {
         const value = param.seriesData.get(entry.api) as
-          | { value?: number; close?: number }
+          | { value?: number; close?: number; open?: number; high?: number; low?: number }
           | undefined;
+        const hud = formatOhlcvHud({
+          open: value?.open,
+          high: value?.high,
+          low: value?.low,
+          close: value?.close,
+          volume: undefined,
+          value: value?.close ?? null,
+        }, entry.unit, entry.unitGroup);
+        if (hud) return [hud];
         const numeric = value?.value ?? value?.close;
-        return finite(numeric)
-          ? [`${entry.label}: ${formatChartLegendValue(numeric, entry.unit, entry.unitGroup)}`]
-          : [];
+        if (!finite(numeric)) return [];
+        if (entry.label.toLowerCase().includes("volume")) {
+          return [`V ${formatChartVolume(numeric)}`];
+        }
+        return [`${entry.label}: ${formatChartLegendValue(numeric, entry.unit, entry.unitGroup)}`];
       });
       if (values.length === 0) {
         tooltip.hidden = true;
@@ -398,6 +436,12 @@ export function WebTradingViewChart({
       chartRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const current = visibleMsRef.current;
+    if (!current) return;
+    applyVisibleRangeRef.current(current);
+  }, [chartEpoch, timeZone]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -447,9 +491,10 @@ export function WebTradingViewChart({
             applySeriesColors(existing.api, type, series, colors);
             existing.colorKey = colorKey;
           }
-          if (existing.points !== series.points) {
-            syncSeriesData(existing.api, type, series, colors);
+          if (existing.points !== series.points || existing.packing !== packing) {
+            syncSeriesData(existing.api, type, series, colors, packing);
             existing.points = series.points;
+            existing.packing = packing;
             dataChanged = true;
           }
           existing.style = series.style;
@@ -462,7 +507,7 @@ export function WebTradingViewChart({
         chart.removeSeries(existing.api);
       }
       const api = createSeries(chart, series, type, colors);
-      syncSeriesData(api, type, series, colors);
+      syncSeriesData(api, type, series, colors, packing);
       dataChanged = true;
       next.push({
         key: series.id,
@@ -473,6 +518,7 @@ export function WebTradingViewChart({
         unit: series.unit,
         unitGroup: series.unitGroup,
         points: series.points,
+        packing,
         colorKey,
       });
     }
@@ -483,23 +529,23 @@ export function WebTradingViewChart({
     seriesRef.current = next;
     const usesLeft = seriesData.some((series) => series.axis === "left");
     const usesRight = seriesData.some((series) => series.axis !== "left");
-    const logarithmic = panel.scale === "log" && panel.id !== "volume";
+    const mode = lightweightPriceScaleMode(panel.scale, panel.id);
+    const autoScale = panel.autoScale !== false;
     chart.applyOptions({
-      leftPriceScale: { visible: usesLeft },
+      leftPriceScale: { visible: usesLeft, autoScale },
       rightPriceScale: {
         visible: usesRight || !usesLeft,
-        mode: logarithmic ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+        mode,
+        autoScale,
       },
     });
     if (usesLeft) {
-      chart.priceScale("left").applyOptions({
-        mode: logarithmic ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-      });
+      chart.priceScale("left").applyOptions({ mode, autoScale });
     }
     // setData resets LWC's time scale. Keep the window the user was looking at.
     const restore = visibleMsRef.current;
     if (dataChanged && restore) applyVisibleRangeRef.current(restore);
-  }, [chartEpoch, colors, panel.id, panel.scale, seriesData]);
+  }, [chartEpoch, colors, packing, panel.autoScale, panel.id, panel.scale, seriesData]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -520,8 +566,8 @@ export function WebTradingViewChart({
     const visibleRangeMs = (): VisibleTimeRangeMs | null => {
       const range = chartRef.current?.timeScale().getVisibleRange();
       if (!range) return null;
-      const start = timeToMs(range.from);
-      const end = timeToMs(range.to);
+      const start = timeToMs(range.from, packingRef.current);
+      const end = timeToMs(range.to, packingRef.current);
       if (start === null || end === null || end <= start) return null;
       return { start, end };
     };
@@ -682,7 +728,7 @@ export function WebTradingViewChart({
     const rawTime = chart.timeScale().coordinateToTime(x);
     const price = seriesRef.current[0]?.api.coordinateToPrice(y) ?? null;
     if (rawTime === null || price === null) return;
-    const time = timeToMs(rawTime);
+    const time = timeToMs(rawTime, packingRef.current);
     if (time === null) return;
     event.preventDefault();
     const point = { rx: x / rect.width, ry: y / rect.height, time, price };
@@ -700,7 +746,7 @@ export function WebTradingViewChart({
     const rawTime = chart.timeScale().coordinateToTime(x);
     const price = seriesRef.current[0]?.api.coordinateToPrice(y) ?? null;
     if (rawTime === null || price === null) return;
-    const time = timeToMs(rawTime);
+    const time = timeToMs(rawTime, packingRef.current);
     if (time === null) return;
     setMeasure({ start, end: { rx: x / rect.width, ry: y / rect.height, time, price } });
   };

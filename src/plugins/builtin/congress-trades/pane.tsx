@@ -85,11 +85,11 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     setStatus((current) => (current === "loaded" && !refresh ? "loaded" : "loading"));
     setError(null);
     setLoadingMore(false);
-    apiClient.getCloudCongressHouse({
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "house", () => apiClient.getCloudCongressHouse({
       limit: CONGRESS_TRADE_LIMIT,
       filingLimit: CONGRESS_FILING_LIMIT,
       refresh,
-    })
+    }))
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => (
@@ -111,11 +111,11 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    apiClient.getCloudCongressHouse({
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "house", () => apiClient.getCloudCongressHouse({
       ...nextRequest,
       limit: CONGRESS_TRADE_LIMIT,
       filingLimit: CONGRESS_FILING_LIMIT,
-    })
+    }))
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => {

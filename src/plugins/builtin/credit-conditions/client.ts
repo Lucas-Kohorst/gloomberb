@@ -4,6 +4,7 @@ import {
   loadCachedFredSeries,
   type FredSeriesRequest,
 } from "../../../data/fred-series";
+import { withConnectionRequest } from "../connections/register";
 import {
   CREDIT_SERIES,
   normalizeCreditSeries,
@@ -16,6 +17,8 @@ export interface CreditConditionsLoadResult {
   stale: boolean;
   errors: string[];
 }
+
+export const CREDIT_CONDITIONS_CONNECTION_ID = "fred-credit-conditions";
 
 const HISTORY_LIMIT = 45;
 
@@ -73,7 +76,9 @@ async function loadSeries(
 
 export async function loadCreditConditions(
   force = false,
-  loader: CreditSeriesLoader = (seriesId, options) => apiClient.getCloudFredSeries(seriesId, options),
+  loader: CreditSeriesLoader = (seriesId, options) =>
+    withConnectionRequest(CREDIT_CONDITIONS_CONNECTION_ID, seriesId, () =>
+      apiClient.getCloudFredSeries(seriesId, options)),
 ): Promise<CreditConditionsLoadResult> {
   const settled = await Promise.allSettled(
     CREDIT_SERIES.map((definition) => loadSeries(definition, force, loader)),

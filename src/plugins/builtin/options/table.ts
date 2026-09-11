@@ -252,27 +252,46 @@ function formatOptionContractCell(
 
 export function optionSortValue(row: OptionTableRow, columnId: OptionColumnId): SortComparableValue {
   if (columnId === "strike") return row.strike;
-  const contract = columnId.startsWith("call") ? row.call : row.put;
-  if (!contract) return null;
+  const isCall = columnId.startsWith("call");
+  const contract = isCall ? row.call : row.put;
+  const greeks = isCall ? row.callGreeks : row.putGreeks;
+  if (!contract && !greeks) return null;
   switch (columnId) {
     case "callLast":
     case "putLast":
-      return contract.lastPrice ?? null;
+      return contract?.lastPrice ?? null;
     case "callBid":
     case "putBid":
-      return contract.bid ?? null;
+      return contract?.bid ?? null;
     case "callAsk":
     case "putAsk":
-      return contract.ask ?? null;
+      return contract?.ask ?? null;
     case "callVolume":
     case "putVolume":
-      return contract.volume ?? null;
+      return contract?.volume ?? null;
     case "callOpenInterest":
     case "putOpenInterest":
-      return contract.openInterest ?? null;
+      return contract?.openInterest ?? null;
     case "callIv":
     case "putIv":
-      return contract.impliedVolatility ?? null;
+      return contract?.impliedVolatility ?? null;
+    case "callDelta":
+    case "putDelta":
+      return greeks?.delta ?? null;
+    case "callGamma":
+    case "putGamma":
+      return greeks?.gamma ?? null;
+    case "callTheta":
+    case "putTheta":
+      return greeks?.thetaPerDay ?? null;
+    case "callVega":
+    case "putVega":
+      return greeks?.vegaPerPoint ?? null;
+    case "callRho":
+    case "putRho":
+      return greeks?.rhoPerPoint ?? null;
+    default:
+      return null;
   }
 }
 

@@ -290,7 +290,7 @@ function RateDetail({
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Rate detail unavailable." message={error} />
+          <EmptyState title="Rate detail unavailable." message={error} hint="Press r to retry." />
         </Box>
       </Box>
     );
@@ -379,6 +379,7 @@ export function AdjacentRatesPane({
   const [sourceMarkets, setSourceMarkets] = useState<AdjacentRateSource[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailRetryNonce, setDetailRetryNonce] = useState(0);
   const genRef = useRef(0);
   const detailGenRef = useRef(0);
   const paneInstance = usePaneInstance();
@@ -460,7 +461,7 @@ export function AdjacentRatesPane({
         setDetailError(err instanceof Error ? err.message : String(err));
         setDetailLoading(false);
       });
-  }, [client, selectedRate?.id]);
+  }, [client, detailRetryNonce, selectedRate?.id]);
 
   const renderCell = useCallback(
     (row: AdjacentRateRow, column: RateColumn, _index: number, rowState: { selected: boolean }) =>
@@ -481,6 +482,13 @@ export function AdjacentRatesPane({
     if (!selectedRate) return;
     popOutChart(`ADJ:${selectedRate.id}`);
   }, [popOutChart, selectedRate]);
+  const reloadDetail = useCallback(() => {
+    setDetailRetryNonce((value) => value + 1);
+  }, []);
+  const handleRefresh = useCallback(() => {
+    load();
+    if (detailOpen) reloadDetail();
+  }, [detailOpen, load, reloadDetail]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -493,7 +501,7 @@ export function AdjacentRatesPane({
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      load();
+      handleRefresh();
       return;
     }
     if (isPlainKey(event, "o") && rateUrl) {
@@ -513,9 +521,9 @@ export function AdjacentRatesPane({
     if (!isPlainKey(event, "r")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
-    load();
+    handleRefresh();
     return true;
-  }, [graphSelected, load, selectedRate]);
+  }, [graphSelected, handleRefresh, selectedRate]);
 
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const poll = useFeedPollInterval();
@@ -530,10 +538,10 @@ export function AdjacentRatesPane({
     trailingInfo: [poll.segment],
     hints: [
       graphFooterHint(graphSelected, !!selectedRate),
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
+      { id: "refresh", key: "r", label: "efresh", onPress: handleRefresh },
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
     ],
-  }), [error, graphSelected, load, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [detailOpen, error, graphSelected, handleRefresh, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

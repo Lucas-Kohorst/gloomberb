@@ -44,11 +44,11 @@ import { PriceAxisLabels } from "./price-axis-labels";
 import {
   compositeAxisTicks,
   formatCompositeAxisValue,
-  formatCompositeCursorDate,
   formatCompositeCursorValue,
   formatCompositePointDetails,
   formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
+  formatOhlcvHud,
   type CompositeAxisValueFormatter,
 } from "./format";
 import {
@@ -84,6 +84,7 @@ import {
   isDrawingTool,
   nextDrawingColor,
   parseChartDrawings,
+  snapChartPointer,
   resolveDrawingFromDrag,
   resolveZoomBoxRange,
   shiftDrawing,
@@ -372,6 +373,9 @@ const HAND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><
 const RULER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="1.4" y="4.6" width="13.2" height="6.8" rx="1.4" fill="none" stroke="#000" stroke-width="1.4"/><path d="M5 4.6v2.6M8 4.6v3.6M11 4.6v2.6" stroke="#000" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 const PEN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.4 13.6 4 9.9 10.6 3.3a1.6 1.6 0 0 1 2.3 0l0 0a1.6 1.6 0 0 1 0 2.3L6.2 12 2.4 13.6Z" fill="none" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
 const LINE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.2 12.8 12.8 3.2" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="3.2" cy="12.8" r="2" fill="none" stroke="#000" stroke-width="1.4"/><circle cx="12.8" cy="3.2" r="2" fill="none" stroke="#000" stroke-width="1.4"/></svg>`;
+const HLINE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2 8h12" stroke="#000" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="8" r="1.8" fill="none" stroke="#000" stroke-width="1.3"/></svg>`;
+const FIB_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2 3.2h12M2 6.2h12M2 9.2h12M2 12.8h12" stroke="#000" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+const MAGNET_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.2 2.4v6.2a3.8 3.8 0 0 0 7.6 0V2.4" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><path d="M4.2 5.2h2.2M9.6 5.2h2.2" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 const MARQUEE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.2 6V3.4a1.2 1.2 0 0 1 1.2-1.2H6M10 2.2h2.6a1.2 1.2 0 0 1 1.2 1.2V6M13.8 10v2.6a1.2 1.2 0 0 1-1.2 1.2H10M6 13.8H3.4a1.2 1.2 0 0 1-1.2-1.2V10" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
 const CHART_TOOLS: ReadonlyArray<{
@@ -416,6 +420,22 @@ const CHART_TOOLS: ReadonlyArray<{
     icon: LINE_ICON,
   },
   {
+    kind: "hline",
+    label: "Horizontal line",
+    shortcut: "Shift+H",
+    hint: "Click a price to draw a level across the chart",
+    glyph: "\u2500",
+    icon: HLINE_ICON,
+  },
+  {
+    kind: "fib",
+    label: "Fib retracement",
+    shortcut: "Shift+F",
+    hint: "Drag between two prices to drop Fibonacci levels",
+    glyph: "\u2263",
+    icon: FIB_ICON,
+  },
+  {
     kind: "pencil",
     label: "Freehand",
     shortcut: "Shift+P",
@@ -435,6 +455,8 @@ const ARMED_TOOL_BY_INTERACTION = {
   "arm-measure": "measure",
   "arm-zoom": "zoom",
   "arm-line": "line",
+  "arm-hline": "hline",
+  "arm-fib": "fib",
   "arm-pencil": "pencil",
 } as const satisfies Record<string, ChartToolKind>;
 
@@ -446,8 +468,9 @@ function nextDrawingId(): string {
   return `drawing:${nextDrawingSequence++}`;
 }
 
-/** Icon cells plus the gap between chips. */
-const CHART_TOOLBAR_WIDTH = CHART_TOOLS.length * 3 + (CHART_TOOLS.length - 1);
+/** Icon cells plus the gap between chips. Magnet sits after the tools. */
+const CHART_TOOLBAR_CHIP_COUNT = CHART_TOOLS.length + 1;
+const CHART_TOOLBAR_WIDTH = CHART_TOOLBAR_CHIP_COUNT * 3 + (CHART_TOOLBAR_CHIP_COUNT - 1);
 
 function ChartToolChip({
   tool,
@@ -572,21 +595,25 @@ function ChartColorSwatch({
 
 function ChartToolbar({
   armedTool,
+  magnet,
   isDesktopWeb,
   left,
   top,
   drawColor,
   showColors,
   onArmTool,
+  onToggleMagnet,
   onPickColor,
 }: {
   armedTool: ChartToolKind | null;
+  magnet: boolean;
   isDesktopWeb: boolean;
   left: number;
   top: number;
   drawColor: string;
   showColors: boolean;
   onArmTool: (tool: ChartToolKind | null) => void;
+  onToggleMagnet: () => void;
   onPickColor: (color: string) => void;
 }) {
   return (
@@ -621,6 +648,19 @@ function ChartToolbar({
           onPress={() => onArmTool(tool.kind)}
         />
       ))}
+      <ChartToolChip
+        tool={{
+          kind: null,
+          label: "Magnet",
+          shortcut: "Shift+N",
+          hint: "Snap drawings to the nearest open, high, low, or close",
+          glyph: "\u25c8",
+          icon: MAGNET_ICON,
+        }}
+        active={magnet}
+        isDesktopWeb={isDesktopWeb}
+        onPress={onToggleMagnet}
+      />
       {/* Colours only take space while something can use them. */}
       {showColors ? CHART_DRAWING_COLORS.map((color) => (
         <ChartColorSwatch
@@ -671,6 +711,7 @@ interface CompositePanelSurfaceProps {
   viewport: CompositeViewportRange;
   frame: CompositeNavigationFrame;
   armedTool: ChartToolKind | null;
+  magnet: boolean;
   drawings: readonly ChartDrawing[];
   selectedDrawingId: string | null;
   drawColor: string;
@@ -688,6 +729,7 @@ interface CompositePanelSurfaceProps {
   onSetViewport: (range: CompositeViewportRange) => void;
   onToolSpanChange: (span: ChartToolSpan | null) => void;
   showTextFallback: boolean;
+  timeZone?: string;
 }
 
 function CompositePanelSurface({
@@ -706,6 +748,7 @@ function CompositePanelSurface({
   viewport,
   frame,
   armedTool,
+  magnet,
   drawings,
   selectedDrawingId,
   drawColor,
@@ -719,6 +762,7 @@ function CompositePanelSurface({
   onSetViewport,
   onToolSpanChange,
   showTextFallback,
+  timeZone,
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
@@ -764,7 +808,7 @@ function CompositePanelSurface({
     if (toolDrag.kind === "zoom") {
       return {
         direction: "up" as const,
-        summary: summarizeZoomSelection(scene, toolDrag),
+        summary: summarizeZoomSelection(scene, toolDrag, timeZone),
         startValueLabel: null,
         endValueLabel: null,
       };
@@ -954,11 +998,14 @@ function CompositePanelSurface({
     const pointerTarget = plotRef.current as unknown as Parameters<typeof getLocalPlotPointer>[1];
     const pointer = getLocalPlotPointer(event, pointerTarget, renderer);
     if (!pointer) return null;
-    return {
+    const raw = {
       xRatio: plotWidth <= 1 ? 0 : Math.max(0, Math.min(1, pointer.cellX / (plotWidth - 1))),
       yRatio: panel.height <= 1 ? 0.5 : Math.max(0, Math.min(1, pointer.cellY / (panel.height - 1))),
     };
-  }, [panel.height, plotWidth, renderer]);
+    return magnet && isDrawingTool(armedTool)
+      ? snapChartPointer(scene, panel, raw.xRatio, raw.yRatio)
+      : raw;
+  }, [armedTool, magnet, panel, plotWidth, renderer, scene]);
   const updateCursor = useCallback((event: ChartMouseEvent): boolean => {
     const pointerTarget = plotRef.current as unknown as Parameters<typeof getLocalPlotPointer>[1];
     const pointer = getLocalPlotPointer(event, pointerTarget, renderer);
@@ -1233,6 +1280,7 @@ function CompositePanelSurface({
           interactive={interactive}
           vectors={vectors}
           armedTool={armedTool}
+          timeZone={timeZone}
           onViewportChange={onSetViewport}
           data-gloom-interactive={interactive ? "true" : undefined}
           data-gloom-role={COMPOSITE_PANEL_ROLE}
@@ -1337,16 +1385,24 @@ function CompositeLegend({
         && Number.isFinite(entry.latestChangePercent)
       ? ` ${formatPercentRaw(entry.latestChangePercent)}`
       : "";
+    const hud = cursorValue?.point
+      ? formatOhlcvHud(cursorValue.point, entry.unit, entry.unitGroup)
+      : null;
     const fullText = entry.points.length === 0
       ? `${entry.label}${entry.hidden ? "" : entry.error || entry.warning ? ` ${entry.error ?? entry.warning}` : " no data"}`
-      : `${entry.label} ${legendValue(
-        entry,
-        cursorValue?.value ?? null,
-        formatValue,
-      )}${changeText}`;
+      : hud
+        ? `${entry.label} ${hud}${changeText}`
+        : `${entry.label} ${legendValue(
+          entry,
+          cursorValue?.value ?? null,
+          formatValue,
+        )}${changeText}`;
     const details = formatCompositePointDetails(cursorValue?.point);
     const tooltip = details ? `${fullText} · ${details}` : fullText;
-    const textWidth = Math.max(1, Math.min(30, [...fullText].length));
+    const visibleCap = hud
+      ? Math.max(1, Math.min(72, width - 2))
+      : 30;
+    const textWidth = Math.max(1, Math.min(visibleCap, [...fullText].length));
     return {
       entry,
       text: truncateWithEllipsis(fullText, textWidth),
@@ -1589,8 +1645,10 @@ export function CompositeChart({
   onCursorDateChange,
   onViewportChange,
   onActivate,
+  onCompare,
   onToggleSeries,
   isSeriesToggleable,
+  timeZone,
 }: CompositeChartProps) {
   const activeThemeColors = useThemeColors();
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
@@ -1602,6 +1660,7 @@ export function CompositeChart({
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
   const [toolSpan, setToolSpan] = useState<ChartToolSpan | null>(null);
   const [armedTool, setArmedTool] = useState<ChartToolKind | null>(null);
+  const [magnet, setMagnet] = useState(false);
   const paneInstanceId = useOptionalPaneInstanceId();
   const [drawings, setDrawings] = useState<readonly ChartDrawing[]>(NO_DRAWINGS);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -1970,9 +2029,11 @@ export function CompositeChart({
       || ((interaction === "arm-measure"
         || interaction === "arm-zoom"
         || interaction === "arm-line"
+        || interaction === "arm-hline"
+        || interaction === "arm-fib"
         || interaction === "arm-pencil") && !scene)
       || (interaction === "delete-drawing" && drawings.length === 0)
-      || (interaction === "cycle-colour" && !isDrawingTool(armedTool) && !selectedDrawingId)
+      || (interaction === "cycle-colour" && !isDrawingTool(armedTool) && !selectedDrawingId && !onCompare)
       || ((interaction === "cursor-left" || interaction === "cursor-right") && !scene)
       || ((interaction === "zoom-in"
         || interaction === "zoom-out"
@@ -1987,14 +2048,24 @@ export function CompositeChart({
       case "arm-measure":
       case "arm-zoom":
       case "arm-line":
+      case "arm-hline":
+      case "arm-fib":
       case "arm-pencil":
         onActivate?.();
         armTool(ARMED_TOOL_BY_INTERACTION[interaction]);
+        return;
+      case "toggle-magnet":
+        onActivate?.();
+        setMagnet((current) => !current);
         return;
       case "delete-drawing":
         removeDrawing();
         return;
       case "cycle-colour":
+        if (!isDrawingTool(armedTool) && !selectedDrawingId) {
+          onCompare?.();
+          return;
+        }
         pickDrawColor(nextDrawingColor(drawColor));
         return;
       case "clear-cursor":
@@ -2108,7 +2179,7 @@ export function CompositeChart({
   const timeAxisCursorLabel = xAxis?.formatCursor && scene.cursorXRatio !== null
     ? xAxis.formatCursor(scene.cursorXRatio)
     : scene.cursorDate
-      ? formatCompositeTimeAxisDate(scene.cursorDate, scene.startTime, scene.endTime)
+      ? formatCompositeTimeAxisDate(scene.cursorDate, scene.startTime, scene.endTime, timeZone)
       : null;
   // The crosshair labels the moving end, so the axis only adds the anchor.
   const timeAxisMarkers = toolSpan
@@ -2118,6 +2189,7 @@ export function CompositeChart({
         new Date(unprojectCompositeTimestamp(scene.timeScale, toolSpan.startXRatio)),
         scene.startTime,
         scene.endTime,
+        timeZone,
       ),
       color: toolSpan.color,
     }]
@@ -2151,6 +2223,7 @@ export function CompositeChart({
       {interactive && navigable && plotWidth > CHART_TOOLBAR_WIDTH + 4 ? (
         <ChartToolbar
           armedTool={armedTool}
+          magnet={magnet}
           isDesktopWeb={isDesktopWeb}
           left={leftPadding}
           top={legendRows}
@@ -2159,6 +2232,10 @@ export function CompositeChart({
           onArmTool={(tool) => {
             onActivate?.();
             armTool(tool);
+          }}
+          onToggleMagnet={() => {
+            onActivate?.();
+            setMagnet((current) => !current);
           }}
           onPickColor={(color) => {
             onActivate?.();
@@ -2191,6 +2268,7 @@ export function CompositeChart({
           viewport={effectiveViewport!}
           frame={navigationFrame!}
           armedTool={armedTool}
+          magnet={magnet}
           drawings={drawings}
           selectedDrawingId={selectedDrawingId}
           drawColor={drawColor}
@@ -2204,6 +2282,7 @@ export function CompositeChart({
           onSetViewport={setViewportRange}
           onToolSpanChange={setToolSpan}
           showTextFallback={showTextFallback}
+          timeZone={timeZone}
         />
       ))}
       {xMarkers.length > 0 ? (

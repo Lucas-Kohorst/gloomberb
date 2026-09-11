@@ -37,7 +37,6 @@ import { HoldersTreemap } from "./treemap";
 import type { HolderColumn, HolderRow, SortPreference, ViewMode } from "./types";
 import { loadHolder13FMatches, type Holder13FMatch } from "./thirteenf-match";
 import { reportTickerRequestError } from "../shared/ticker-request";
-import { openUrl } from "../../../components/ui/external-link";
 
 export function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { nativePaneChrome } = useUiCapabilities();
@@ -181,12 +180,6 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       openFundDetail(selectedRow);
       return true;
     }
-    if (event.name === "o" && selectedFundMatch) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      openUrl(`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${selectedFundMatch.cik}&type=13F&dateb=&owner=include&count=40`);
-      return true;
-    }
     return false;
   }, [openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
@@ -224,11 +217,6 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       event.preventDefault?.();
       event.stopPropagation?.();
       openFundDetail(selectedRow);
-    }
-    if (isPlainKey(event, "o") && selectedFundMatch) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      openUrl(`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${selectedFundMatch.cik}&type=13F&dateb=&owner=include&count=40`);
     }
   });
 
@@ -278,12 +266,13 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
         ...(fundMatching ? [{ id: "fund-matching", parts: [{ text: "13F matching", tone: "muted" as const }] }] : []),
       ],
       hints: [
+        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
         { id: "view", key: "s", label: "witch", onPress: toggleView },
         // `f` is the filter key in sibling panes, so opening a fund uses `o`.
         ...(selectedFundMatch ? [{ id: "fund", key: "o", label: "pen 13F", onPress: () => openFundDetail(selectedRow) }] : []),
       ],
     };
-  }, [data?.asOf, fundMatching, loading, openFundDetail, selectedFundMatch, selectedRow, toggleView]);
+  }, [data?.asOf, fundMatching, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
   // Both views share one status; the treemap must not claim "no chartable
   // values" while the request is still in flight or the pane has no ticker.

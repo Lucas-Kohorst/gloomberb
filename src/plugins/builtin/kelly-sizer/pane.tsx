@@ -408,8 +408,9 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusTickerSearch },
       { id: "sensitivity", key: "s", label: showSensitivity ? "ensitivity off" : "ensitivity", onPress: toggleSensitivity },
+      { id: "edit", key: "e", label: "dit", onPress: () => activateInput(editableFields[safeSelectedFieldIndex]?.id ?? null) },
     ],
-  }), [focusTickerSearch, result.clipReasons, result.warnings, showSensitivity, toggleSensitivity]);
+  }), [activateInput, editableFields, focusTickerSearch, result.clipReasons, result.warnings, safeSelectedFieldIndex, showSensitivity, toggleSensitivity]);
 
   const portfolioTabs = useMemo(
     () => listAnalyticsCollections(config).map((collection) => ({ label: collection.name, value: collection.id })),

@@ -522,6 +522,7 @@ describe("composite chart renderers", () => {
       id: "main",
       height: 9,
       scale: "linear",
+      autoScale: true,
       axes: {
         left: {
           side: "left",

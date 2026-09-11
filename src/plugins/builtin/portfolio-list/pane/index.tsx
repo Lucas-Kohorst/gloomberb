@@ -399,6 +399,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
+    if (isPlainKey(event, "a") && canMutateCollection) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      toggleAdd();
+      return true;
+    }
+
     if (isPlainKey(event, "g")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -410,6 +417,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [
     canMutateCollection,
     cashDrawerExpanded,
+    chartSelectedTicker,
+    deleteSelectedTicker,
     flushCursorSymbol,
     focused,
     isPortfolioTab,
@@ -419,6 +428,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setCashDrawerExpanded,
     showCashDrawer,
     sortedTickers,
+    toggleAdd,
     toggleViewMode,
     focusSearch,
   ]);
@@ -519,6 +529,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         disabled: !selectedTicker,
       },
       paneSearchHint(focusSearch),
+      ...(isPortfolioTab ? [{ id: "view", key: "s", label: "witch view", onPress: toggleViewMode }] : []),
       ...(canMutateCollection ? [
         { id: "add", key: "a", label: "dd", onPress: toggleAdd },
         {
@@ -543,11 +554,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     cashDrawerExpanded,
     chartSelectedTicker,
     deleteSelectedTicker,
+    isPortfolioTab,
     selectedTicker,
     setCashDrawerExpanded,
     showCashDrawer,
     summaryFooterInfo,
     toggleAdd,
+    toggleViewMode,
     focusSearch,
   ]);
 

@@ -175,12 +175,13 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
     event: DataTableKeyEvent,
     context: DataTableRootKeyContext,
   ) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -226,7 +227,8 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || searchFocused) return;
-    if (tab === "fires" && (event.name === "s" || event.name === "/")) {
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
+    if (tab === "fires" && (isPlainKey(event, "s") || isPlainKey(event, "/"))) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -287,9 +289,9 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
 
   if (error && hotspots.length === 0) {
     return (
-      <Box flexDirection="column" width={width} height={height} padding={1}>
+      <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <EmptyState title={unavailableTitle("FIRMS")} message={dataErrorMessage(error)} />
+        <EmptyState title={unavailableTitle("FIRMS")} message={dataErrorMessage(error)} hint="Press r to retry." />
       </Box>
     );
   }

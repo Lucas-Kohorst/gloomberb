@@ -236,12 +236,12 @@ describe("AdjacentClient paths", () => {
     expect(url.searchParams.get("per_page")).toBe("10");
   });
 
-  test("asks Adjacent for newest ingested filings first", async () => {
+  test("asks Adjacent for most recent status-date filings first", async () => {
     setHosted(false);
     mockFetch({ data: [], meta: {} });
     await loadCftcFilings(new AdjacentClient(), "", 100);
     const url = new URL(requested[0]!.url);
-    expect(url.searchParams.get("sort")).toBe("first_seen");
+    expect(url.searchParams.get("sort")).toBe("status_date");
     expect(url.searchParams.get("sort_dir")).toBe("desc");
     expect(url.searchParams.get("per_page")).toBe("100");
   });
@@ -357,9 +357,9 @@ describe("filingListTitle", () => {
 });
 
 describe("filingListTimestamp", () => {
-  test("uses ingest time, not the CFTC status date", () => {
-    const statusDate = new Date("2026-09-03T00:00:00.000Z");
-    const firstSeenAt = new Date("2026-09-04T12:34:56.000Z");
+  test("uses status date over ingest time", () => {
+    const statusDate = new Date("2026-09-10T00:00:00.000Z");
+    const firstSeenAt = new Date("2026-08-27T12:34:56.000Z");
     const filing: CftcFiling = {
       id: 1,
       feed: "dcm_products",
@@ -371,10 +371,10 @@ describe("filingListTimestamp", () => {
       docCount: 1,
     };
 
-    expect(filingListTimestamp(filing)).toBe(firstSeenAt);
+    expect(filingListTimestamp(filing)).toBe(statusDate);
   });
 
-  test("falls back to lastSeenAt, then statusDate", () => {
+  test("falls back to lastSeenAt, then firstSeenAt", () => {
     const lastSeenAt = new Date("2026-09-04T12:34:56.000Z");
     const statusDate = new Date("2026-09-03T00:00:00.000Z");
     expect(filingListTimestamp({
@@ -386,16 +386,26 @@ describe("filingListTimestamp", () => {
       statusDate,
       lastSeenAt,
       docCount: 1,
-    })).toBe(lastSeenAt);
+    })).toBe(statusDate);
     expect(filingListTimestamp({
       id: 2,
       feed: "dcm_products",
       title: "A filing",
       orgCode: "KEX",
       status: "Certified",
-      statusDate,
+      statusDate: new Date(0),
+      lastSeenAt,
       docCount: 1,
-    })).toBe(statusDate);
+    })).toBe(lastSeenAt);
+    expect(filingListTimestamp({
+      id: 3,
+      feed: "dcm_products",
+      title: "A filing",
+      orgCode: "KEX",
+      status: "Certified",
+      statusDate: new Date(0),
+      docCount: 1,
+    }).getTime()).toBe(new Date(0).getTime());
   });
 });
 

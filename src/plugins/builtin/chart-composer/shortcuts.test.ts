@@ -36,7 +36,12 @@ describe("resolveChartComposerShortcut", () => {
     expect(resolveChartComposerShortcut(keyEvent("m"), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("r"), 8)).toBe("reload");
     expect(resolveChartComposerShortcut(keyEvent("t"), 8)).toBe("resolution");
+    expect(resolveChartComposerShortcut(keyEvent("l"), 8)).toBe("log");
+    expect(resolveChartComposerShortcut(keyEvent("p"), 8)).toBe("percent");
+    expect(resolveChartComposerShortcut(keyEvent("g"), 8)).toBe("auto");
+    expect(resolveChartComposerShortcut(keyEvent("z"), 8)).toBe("timezone");
     expect(resolveChartComposerShortcut(keyEvent("r", { shift: true }), 8)).toBeNull();
+    expect(resolveChartComposerShortcut(keyEvent("l", { shift: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("3"), 8)).toEqual({ type: "range", index: 2 });
     expect(resolveChartComposerShortcut(keyEvent("9"), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("3", { alt: true }), 8)).toBeNull();

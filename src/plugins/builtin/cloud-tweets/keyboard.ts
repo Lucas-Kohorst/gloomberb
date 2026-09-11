@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { useShortcut } from "../../../react/input";
+import { usePaneFooter } from "../../../components";
 import type { TwitterFeed } from "./model";
 
 export function useTwitterFeedKeyboard({
@@ -62,4 +64,22 @@ export function useTwitterFeedKeyboard({
       cycleFeeds(1);
     }
   }, { allowEditable: true });
+
+  const feedHints = useMemo(() => [
+    { id: "new-feed", key: "n", label: "ew feed", onPress: addFeed },
+    ...(activeFeed
+      ? [{
+        id: "delete-feed",
+        key: "d",
+        label: "elete feed",
+        onPress: () => removeFeed(activeFeed.id),
+      }]
+      : []),
+    { id: "prev-feed", key: "[", label: "prev", onPress: () => cycleFeeds(-1) },
+    { id: "next-feed", key: "]", label: "next", onPress: () => cycleFeeds(1) },
+  ], [activeFeed, addFeed, cycleFeeds, removeFeed]);
+
+  usePaneFooter("twitter-feed-feeds", () => ({
+    hints: feedHints,
+  }), [feedHints]);
 }

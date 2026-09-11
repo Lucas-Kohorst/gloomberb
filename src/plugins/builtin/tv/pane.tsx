@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Tabs, usePaneFooter, useUpdatedAgo } from "../../../components";
+import { Button, Spinner, Tabs, usePaneFooter, useUpdatedAgo } from "../../../components";
+import { isPlainKey } from "../../../utils/keyboard";
 import { updatePaneInstance } from "../../../pane-settings";
 import { useShortcut } from "../../../react/input";
 import {
@@ -222,38 +223,34 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   }, [isDesktop]);
 
   useShortcut((event) => {
-    if (!focused) return;
+    if (!focused || event.targetEditable) return;
     const channelIndex = Number(event.name) - 1;
-    if (Number.isInteger(channelIndex) && TV_CHANNEL_TABS[channelIndex]) {
+    if (event.name && Number.isInteger(channelIndex) && TV_CHANNEL_TABS[channelIndex] && isPlainKey(event, event.name)) {
       event.preventDefault?.();
       selectChannel(TV_CHANNEL_TABS[channelIndex]!.id);
       return;
     }
-    if (event.name === "o") {
+    if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       void renderer.openExternal(channel.channelUrl);
       return;
     }
-    if (event.name === "r") {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       refresh();
       return;
     }
-    if (event.name === "p" && stream) {
+    if (isPlainKey(event, "p") && stream) {
       event.preventDefault?.();
       void togglePlayback();
       return;
     }
-    if (event.name === "m" && stream) {
+    if (isPlainKey(event, "m") && stream) {
       event.preventDefault?.();
       toggleMute();
       return;
     }
-    if (event.name === "o") {
-      event.preventDefault?.();
-      void renderer.openExternal(channel.channelUrl);
-    }
-  });
+  }, { allowEditable: true, enabled: focused });
 
   const streamKind = stream?.isLive === false ? "latest replay" : "live";
   const replayDetail = stream?.isLive === false && stream.publishedText ? ` · ${stream.publishedText}` : "";
@@ -300,6 +297,12 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         label: "pen",
         onPress: () => { void renderer.openExternal(channel.channelUrl); },
       },
+      {
+        id: "refresh",
+        key: "r",
+        label: "efresh",
+        onPress: refresh,
+      },
     ],
   }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
 
@@ -342,7 +345,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
 
       {loading && !stream ? (
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>{`Resolving ${channel.name} live stream...`}</Text>
+          <Spinner label={`Resolving ${channel.name} live stream...`} />
         </Box>
       ) : error || !stream ? (
         <Box flexGrow={1} flexDirection="column" justifyContent="center" alignItems="center" gap={1}>

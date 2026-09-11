@@ -519,12 +519,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       if (proRequired || transcriptProRequired) {
         info.push({ id: "pro", parts: [{ text: "pro required", tone: "warning" }] });
       }
-      if (searchQuery.trim()) {
-        info.push({
-          id: "filter",
-          parts: [{ text: `"${searchQuery.trim()}"`, tone: "muted" }],
-        });
-      }
 
       const hints = detailOpen
         ? [
@@ -532,8 +526,13 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
               ? [{ id: "open", key: "o", label: "pen source", onPress: openSource }]
               : []),
             { id: "find", key: "/", label: "find", onPress: focusSearch },
+            { id: "refresh", key: "r", label: "efresh", onPress: () => fetchCalls(true) },
+            { id: "qa", key: "q", label: "A", onPress: () => setReaderTab("qa") },
           ]
-        : [{ id: "search", key: "/", label: "search", onPress: focusSearch }];
+        : [
+            { id: "search", key: "/", label: "search", onPress: focusSearch },
+            { id: "refresh", key: "r", label: "efresh", onPress: () => fetchCalls(true) },
+          ];
 
       return { info, hints };
     },
@@ -550,7 +549,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       transcriptProRequired,
       detailOpen,
       selected,
-      searchQuery,
       focusSearch,
       openSource,
       fetchCalls,

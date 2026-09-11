@@ -105,6 +105,26 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(body.updatedAt).toBe("2026-08-17T12:00:00.000Z");
   });
 
+  test("rejects older snapshots without overwriting config or workspace extras", async () => {
+    mockSessionUser = { id: "user-A" };
+    installMockFetch();
+    const env = makeEnv();
+    const newer = { config: { baseCurrency: "EUR" }, updatedAt: "2026-09-11T12:00:00Z", notes: { text: "new" } };
+    await workerModule.default.fetch(makeRequest("PUT", "/api/config", {
+      body: JSON.stringify(newer), origin: ORIGIN, sessionToken: "tok",
+    }), env);
+    const stale = await workerModule.default.fetch(makeRequest("PUT", "/api/config", {
+      body: JSON.stringify({ config: { baseCurrency: "USD" }, updatedAt: "2026-09-10T12:00:00Z" }),
+      origin: ORIGIN, sessionToken: "tok",
+    }), env);
+    expect(stale.status).toBe(409);
+    expect(JSON.parse(SNAPSHOTS.get("config:user-A")!)).toMatchObject(newer);
+    const invalid = await workerModule.default.fetch(makeRequest("PUT", "/api/config", {
+      body: JSON.stringify({ config: {}, updatedAt: "invalid" }), origin: ORIGIN, sessionToken: "tok",
+    }), env);
+    expect(invalid.status).toBe(400);
+  });
+
   test("stores tickers and notes beside the config without dropping them on a config-only PUT", async () => {
     mockSessionUser = { id: "user-A" };
     installMockFetch();
@@ -1598,5 +1618,27 @@ describe("hosted Robinhood OAuth routes", () => {
       makeEnv(),
     );
     expect(response?.status).toBe(401);
+  });
+});
+
+describe("BYOK redirect credentials", () => {
+  afterEach(restoreFetch);
+
+  test("does not forward credentials to a different origin", async () => {
+    const destinations: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/get-session")) return Response.json({ user: { id: "user-A" } });
+      destinations.push(url);
+      return destinations.length === 1
+        ? new Response(null, { status: 302, headers: { location: "https://other.example/collect" } })
+        : new Response("ok");
+    }) as typeof fetch;
+    const response = await workerModule.default.fetch(makeRequest("POST", "/api/byok/proxy", {
+      origin: ORIGIN, sessionToken: "tok",
+      body: JSON.stringify({ url: "https://vendor.example/data", headers: { Authorization: "Bearer fixture", "X-API-Key": "fixture" } }),
+    }), makeEnv());
+    expect((await response.json() as { ok: boolean }).ok).toBe(false);
+    expect(destinations).toEqual(["https://vendor.example/data"]);
   });
 });

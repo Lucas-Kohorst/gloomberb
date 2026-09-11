@@ -11,6 +11,7 @@ import { ScannerWaitingState } from "./waiting";
 import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerFlowEvent } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -129,6 +130,7 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const { selectTicker } = usePluginPaneActions();
   const { pinTicker } = usePluginTickerActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<SortPreference<string>>({ columnId: null, direction: "desc" });
 
   const [minPremium, setMinPremium] = usePaneSettingValue<FlowMinPremium>("minPremium", DEFAULT_FLOW_FILTERS.minPremium);
   const [side, setSide] = usePaneSettingValue<FlowSide>("side", DEFAULT_FLOW_FILTERS.side);
@@ -155,6 +157,34 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const emptyState = useMemo(
     () => flowEmptyState(feed.payload?.events.length ?? 0, events.length, feed.payload?.status),
     [events.length, feed.payload?.events.length, feed.payload?.status],
+  );
+
+  const sortedEvents = useMemo(
+    () => applySortPreference(events, sortPreference, (event, columnId) => {
+      switch (columnId) {
+        case "time":
+          return event.at;
+        case "ticker":
+          return event.underlying.toLowerCase();
+        case "type":
+          return `${event.right} ${event.kind}`.toLowerCase();
+        case "strike":
+          return event.strike;
+        case "expiry":
+          return event.expiry;
+        case "side":
+          return String(event.side).toLowerCase();
+        case "size":
+          return event.size;
+        case "premium":
+          return event.premium;
+        case "volOi":
+          return typeof event.volOi === "number" ? event.volOi : null;
+        default:
+          return null;
+      }
+    }),
+    [events, sortPreference],
   );
 
   useScannerStatusFooter("flow", feed, focused);
@@ -235,10 +265,14 @@ function FlowPane({ focused, width, height }: PaneProps) {
         rootWidth={width}
         rootHeight={Math.max(2, height - 1)}
         columns={columns}
-        items={events}
-        sortColumnId={null}
-        sortDirection="desc"
-        onHeaderClick={() => {}}
+        items={sortedEvents}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => {
+          setSortPreference((current) => nextSortPreference(current, columnId, {
+            defaultDirection: (id) => (id === "ticker" || id === "type" || id === "side" ? "asc" : "desc"),
+          }));
+        }}
         getItemKey={(event) => event.id}
         onActivate={(event) => pinTicker(event.underlying, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
         renderCell={(event, column, _index, rowState) => renderCell(event, column, rowState)}

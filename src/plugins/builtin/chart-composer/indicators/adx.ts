@@ -5,7 +5,6 @@ import {
   trueRange,
   wilderSmooth,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -16,7 +15,7 @@ import {
  * the same `period`. Sub-panel oscillator. +DI/−DI start at index `period`;
  * ADX starts at index `2*period − 1`.
  */
-export function adx(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function adx(data: OHLCV[], params: IndicatorParams = {}) {
   const period = positiveInt(params.period, 14);
   const plusDM: number[] = new Array(data.length).fill(Number.NaN);
   const minusDM: number[] = new Array(data.length).fill(Number.NaN);
@@ -44,7 +43,7 @@ export function adx(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutpu
     const sTR = smoothedTR[i];
     const sPlus = smoothedPlusDM[i];
     const sMinus = smoothedMinusDM[i];
-    if (sTR === null || sPlus === null || sMinus === null || sTR === 0) continue;
+    if (sTR == null || sPlus == null || sMinus == null || sTR === 0) continue;
     const pdi = (100 * sPlus) / sTR;
     const mdi = (100 * sMinus) / sTR;
     plusDI[i] = pdi;
@@ -53,7 +52,7 @@ export function adx(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutpu
     dx[i] = sum === 0 ? 0 : (100 * Math.abs(pdi - mdi)) / sum;
   }
   const adxValues = wilderSmooth(dx, period, 0).map((value) =>
-    value === null || !isFiniteNumber(value) ? null : value,
+    value == null || !isFiniteNumber(value) ? null : value,
   );
   return {
     adx: toSeries(data, adxValues),

@@ -399,7 +399,7 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
   usePaneFooter("llm-stats", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: `error: ${error}`, tone: "warning" as const }] }] : []),
       ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],

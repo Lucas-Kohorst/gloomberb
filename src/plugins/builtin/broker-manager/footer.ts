@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
-import { usePaneFooter, type PaneHint } from "../../../components";
+import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../../../components";
+import { isBrokerErrorMessage } from "./table";
 
 interface BrokerManagerFooterActions {
   connectSelected: () => Promise<void>;
@@ -17,12 +18,18 @@ export function useBrokerManagerFooter({
   canRemoveSelected,
   canUseSelectedBroker,
   editing,
+  busy,
+  message,
+  summary,
 }: {
   actions: BrokerManagerFooterActions;
   canOpenSelectedAction: boolean;
   canRemoveSelected: boolean;
   canUseSelectedBroker: boolean;
   editing: boolean;
+  busy: string | null;
+  message: string | null;
+  summary: string | null;
 }) {
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
@@ -51,7 +58,26 @@ export function useBrokerManagerFooter({
     return hints;
   }, [canOpenSelectedAction, canRemoveSelected, canUseSelectedBroker, editing]);
 
-  usePaneFooter("broker-manager", () => ({
-    hints: footerHints,
-  }), [footerHints]);
+  usePaneFooter("broker-manager", () => {
+    const info: PaneFooterSegment[] = [];
+    if (summary) {
+      info.push({ id: "summary", parts: [{ text: summary, tone: "muted" }] });
+    }
+    if (busy) {
+      info.push({ id: "loading", parts: [{ text: busy, tone: "muted" }] });
+    }
+    if (message) {
+      info.push({
+        id: "error",
+        parts: [{
+          text: message,
+          tone: isBrokerErrorMessage(message) ? "warning" : "muted",
+        }],
+      });
+    }
+    return {
+      info,
+      hints: footerHints,
+    };
+  }, [busy, footerHints, message, summary]);
 }

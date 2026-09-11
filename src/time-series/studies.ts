@@ -1,3 +1,10 @@
+import {
+  adx as computeAdx,
+  atr as computeAtr,
+  stochastic as computeStochastic,
+  type IndicatorSeries,
+  type OHLCV,
+} from "../plugins/builtin/chart-composer/indicators";
 import { alignTimeSeries, scalarPointValue } from "./alignment";
 import type {
   ChartStudyKind,
@@ -169,6 +176,11 @@ function studyWarmupPoints(spec: ChartStudySpec): number {
     return slow + signal - 2;
   }
   if (spec.kind === "correlation") return studyPeriod(spec, 20);
+  if (spec.kind === "atr") return studyPeriod(spec, 14);
+  if (spec.kind === "stochastic") {
+    return studyPeriod(spec, 14) + positiveInteger(spec.parameters.smooth, 3) - 2;
+  }
+  if (spec.kind === "adx") return studyPeriod(spec, 14) * 2 - 1;
   return 0;
 }
 
@@ -313,6 +325,112 @@ function resolveVolume(spec: ChartStudySpec, input: ResolvedSeries, color: strin
     style: "columns",
     axis: "left",
   })];
+}
+
+function toOhlcvBars(input: ResolvedSeries): OHLCV[] {
+  return [...input.points]
+    .sort((left, right) => left.date.getTime() - right.date.getTime())
+    .flatMap((point) => {
+      const close = finiteNumber(point.close) ? point.close : scalarPointValue(point);
+      if (close === null) return [];
+      const open = finiteNumber(point.open) ? point.open : close;
+      return [{
+        date: point.date,
+        open,
+        high: finiteNumber(point.high) ? point.high : Math.max(open, close),
+        low: finiteNumber(point.low) ? point.low : Math.min(open, close),
+        close,
+        volume: finiteNumber(point.volume) ? point.volume : undefined,
+      }];
+    });
+}
+
+function pointsFromIndicatorSeries(
+  input: ResolvedSeries,
+  output: IndicatorSeries,
+): TimeSeriesPoint[] {
+  const byTime = new Map(input.points.map((point) => [point.date.getTime(), point]));
+  const points: TimeSeriesPoint[] = [];
+  for (let index = 0; index < output.timestamps.length; index += 1) {
+    const value = output.values[index];
+    if (!finiteNumber(value)) continue;
+    const source = byTime.get(output.timestamps[index]!);
+    if (!source) continue;
+    points.push(derivedPoint({ point: source, value }, value));
+  }
+  return points;
+}
+
+function resolveAtr(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const period = studyPeriod(spec, 14);
+  const computed = computeAtr(toOhlcvBars(input), { period });
+  return [outputSeries(spec, input, {
+    label: `ATR(${period}) ${input.label}`,
+    points: pointsFromIndicatorSeries(input, computed.atr),
+    color,
+  })];
+}
+
+function resolveStochastic(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const period = studyPeriod(spec, 14);
+  const smooth = positiveInteger(spec.parameters.smooth, 3);
+  const computed = computeStochastic(toOhlcvBars(input), { period, smooth });
+  const label = `Stoch(${period},${smooth}) ${input.label}`;
+  return [
+    outputSeries(spec, input, {
+      id: `${spec.id}:k`,
+      label: `${label} %K`,
+      points: pointsFromIndicatorSeries(input, computed.k),
+      color,
+      unit: "index",
+      unitGroup: "oscillator-0-100",
+      axis: "left",
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:d`,
+      label: `${label} %D`,
+      points: pointsFromIndicatorSeries(input, computed.d),
+      color: STUDY_COLORS[1]!,
+      unit: "index",
+      unitGroup: "oscillator-0-100",
+      axis: "left",
+    }),
+  ];
+}
+
+function resolveAdx(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const period = studyPeriod(spec, 14);
+  const computed = computeAdx(toOhlcvBars(input), { period });
+  const label = `ADX(${period}) ${input.label}`;
+  return [
+    outputSeries(spec, input, {
+      id: `${spec.id}:adx`,
+      label,
+      points: pointsFromIndicatorSeries(input, computed.adx),
+      color,
+      unit: "index",
+      unitGroup: "oscillator-0-100",
+      axis: "left",
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:plusDI`,
+      label: `${label} +DI`,
+      points: pointsFromIndicatorSeries(input, computed.plusDI),
+      color: STUDY_COLORS[1]!,
+      unit: "index",
+      unitGroup: "oscillator-0-100",
+      axis: "left",
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:minusDI`,
+      label: `${label} -DI`,
+      points: pointsFromIndicatorSeries(input, computed.minusDI),
+      color: STUDY_COLORS[5]!,
+      unit: "index",
+      unitGroup: "oscillator-0-100",
+      axis: "left",
+    }),
+  ];
 }
 
 function typicalPrice(point: TimeSeriesPoint): number | null {
@@ -674,10 +792,9 @@ export function resolveStudies(
     else if (spec.kind === "drawdown") outputs = resolveDrawdown(spec, input, color);
     else if (spec.kind === "volatility") outputs = resolveRollingVolatility(spec, input, color);
     else if (spec.kind === "distance") outputs = resolveDistanceFromMovingAverage(spec, input, color);
-    else if (spec.kind === "atr" || spec.kind === "stochastic" || spec.kind === "adx") {
-      errors.push(`${spec.id}: ${spec.kind} study is not yet implemented.`);
-      return;
-    }
+    else if (spec.kind === "atr") outputs = resolveAtr(spec, input, color);
+    else if (spec.kind === "stochastic") outputs = resolveStochastic(spec, input, color);
+    else if (spec.kind === "adx") outputs = resolveAdx(spec, input, color);
     else {
       const pairedInput = inputs[1]!;
       const inputUnit = seriesUnit(input);

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   CHART_RESOLUTION_STEP_MS,
+  chartRangeTabChoices,
+  chartResolutionTabChoices,
+  DEFAULT_CHART_RESOLUTION_SUPPORT,
   getBestSupportedResolutionForVisibleWindow,
   getExpandedBufferRange,
   getPresetResolution,
@@ -9,9 +12,26 @@ import {
   normalizeChartResolution,
   sortChartResolutions,
 } from "./resolution";
-import { TIME_RANGES } from "./range";
+import { CHART_RESOLUTIONS, TIME_RANGES } from "./range";
 
 describe("chart-resolution", () => {
+  test("advertises Yahoo-shaped default intervals including 1m, 30m, and 4h", () => {
+    expect(DEFAULT_CHART_RESOLUTION_SUPPORT).toEqual([
+      { resolution: "1m", maxRange: "1D" },
+      { resolution: "5m", maxRange: "1W" },
+      { resolution: "15m", maxRange: "1M" },
+      { resolution: "30m", maxRange: "1M" },
+      { resolution: "1h", maxRange: "3M" },
+      { resolution: "4h", maxRange: "3M" },
+      { resolution: "1d", maxRange: "5Y" },
+      { resolution: "1wk", maxRange: "ALL" },
+      { resolution: "1mo", maxRange: "ALL" },
+    ]);
+    expect(DEFAULT_CHART_RESOLUTION_SUPPORT.map((entry) => entry.resolution)).not.toContain("45m");
+    expect(getSupportedChartResolutionsForViewport("1D", DEFAULT_CHART_RESOLUTION_SUPPORT))
+      .toEqual(["1m", "5m", "15m", "30m", "1h", "4h"]);
+  });
+
   test("maps range presets to their default manual resolutions", () => {
     expect(getPresetResolution("1W")).toBe("5m");
     expect(getPresetResolution("1M")).toBe("15m");
@@ -128,5 +148,41 @@ describe("chart-resolution", () => {
         expect(available.has(resolution)).toBe(rangeIndex <= resolutionIndex);
       }
     }
+  });
+
+  const yahooShaped = [
+    { resolution: "5m" as const, maxRange: "1W" as const },
+    { resolution: "15m" as const, maxRange: "1M" as const },
+    { resolution: "1h" as const, maxRange: "3M" as const },
+    { resolution: "1d" as const, maxRange: "5Y" as const },
+    { resolution: "1wk" as const, maxRange: "ALL" as const },
+    { resolution: "1mo" as const, maxRange: "ALL" as const },
+  ];
+
+  test("disables unsupported 1Y intervals without hiding them", () => {
+    const choices = chartResolutionTabChoices("1Y", yahooShaped);
+    expect(choices.map((choice) => choice.resolution)).toEqual([...CHART_RESOLUTIONS]);
+    expect(choices.filter((choice) => choice.enabled).map((choice) => choice.resolution))
+      .toEqual(["auto", "1d", "1wk", "1mo"]);
+    expect(choices.find((choice) => choice.resolution === "1m")?.enabled).toBe(false);
+    expect(choices.find((choice) => choice.resolution === "1h")?.enabled).toBe(false);
+  });
+
+  test("disables 1m and coarse 1d on a 1D viewport", () => {
+    const choices = chartResolutionTabChoices("1D", yahooShaped);
+    expect(choices.find((choice) => choice.resolution === "5m")?.enabled).toBe(true);
+    expect(choices.find((choice) => choice.resolution === "1m")?.enabled).toBe(false);
+    expect(choices.find((choice) => choice.resolution === "1d")?.enabled).toBe(false);
+  });
+
+  test("uses default support when the capability set is missing", () => {
+    expect(chartResolutionTabChoices("1Y", undefined))
+      .toEqual(chartResolutionTabChoices("1Y", DEFAULT_CHART_RESOLUTION_SUPPORT));
+  });
+
+  test("disables range presets whose default interval is unsupported", () => {
+    const choices = chartRangeTabChoices(yahooShaped);
+    expect(choices.find((choice) => choice.range === "1D")?.enabled).toBe(false);
+    expect(choices.find((choice) => choice.range === "1Y")?.enabled).toBe(true);
   });
 });

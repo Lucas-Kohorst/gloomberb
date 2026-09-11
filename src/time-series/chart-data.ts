@@ -59,6 +59,32 @@ function finiteOrFallback(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function isFiniteNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isCloseOnlyPoint(point: PricePoint): boolean {
+  return !isFiniteNumber(point.open) && !isFiniteNumber(point.high) && !isFiniteNumber(point.low);
+}
+
+const MS_PER_DAY = 24 * 60 * 60_000;
+
+function utcTimeOfDayMs(time: number): number {
+  return ((time % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY;
+}
+
+function isScalarLiveTail(
+  latest: PricePoint,
+  previous: PricePoint | undefined,
+  latestTime: number,
+): boolean {
+  if (!isCloseOnlyPoint(latest)) return false;
+  if (!previous) return false;
+  if (!isCloseOnlyPoint(previous)) return true;
+  // Close-only session bars share a UTC stamp; an already-appended quote print does not.
+  return utcTimeOfDayMs(latestTime) !== utcTimeOfDayMs(getPointTime(previous));
+}
+
 function mergeQuoteIntoLatestBar(latest: PricePoint, quotePrice: number): PricePoint {
   const open = finiteOrFallback(latest.open, latest.close);
   const high = finiteOrFallback(latest.high, Math.max(open, latest.close));
@@ -141,13 +167,17 @@ export function appendLiveQuotePoint(
     ];
   }
 
+  const liveTail = {
+    date: new Date(quoteTime),
+    close: quotePrice,
+  };
+
+  if (isScalarLiveTail(latest, previous, latestTime)) {
+    if (quoteTime === latestTime && latest.close === quotePrice) return points;
+    return [...points.slice(0, -1), liveTail];
+  }
+
   if (quoteTime === latestTime) return points;
 
-  return [
-    ...points,
-    {
-      date: new Date(quoteTime),
-      close: quotePrice,
-    },
-  ];
+  return [...points, liveTail];
 }

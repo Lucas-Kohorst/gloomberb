@@ -4,7 +4,6 @@ import {
   trueRange,
   wilderSmooth,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -14,7 +13,7 @@ import {
  * `period` bars. Sub-panel oscillator. `null` until `period` true ranges are
  * available (first value at index `period`).
  */
-export function atr(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function atr(data: OHLCV[], params: IndicatorParams = {}) {
   const period = positiveInt(params.period, 14);
   const tr = data.map((_, i) => trueRange(data, i));
   return { atr: toSeries(data, wilderSmooth(tr, period, 1)) };

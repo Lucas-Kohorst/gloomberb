@@ -16,6 +16,11 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
+import {
   filterWorldVenues,
   formatVenueCountdown,
   formatVenueLocalTime,
@@ -78,6 +83,10 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [selectedMic, setSelectedMic] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [sortPreference, setSortPreference] = useState<SortPreference<VenueColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
   const inputRef = useRef<InputRenderable | null>(null);
   const generationRef = useRef(0);
   const dataRef = useRef<CloudWorldVenueMapPayload | null>(null);
@@ -121,7 +130,28 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const venues = useMemo(() => filterWorldVenues(data?.venues ?? [], query), [data?.venues, query]);
+  const filteredVenues = useMemo(() => filterWorldVenues(data?.venues ?? [], query), [data?.venues, query]);
+  const venues = useMemo(() => applySortPreference(
+    filteredVenues,
+    sortPreference,
+    (venue, columnId) => {
+      switch (columnId) {
+        case "status":
+          return Number(venue.isOpen);
+        case "mic":
+          return venue.mic;
+        case "name":
+          return venue.title;
+        case "time":
+          return venue.timezone;
+      }
+    },
+  ), [filteredVenues, sortPreference]);
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextSortPreference(current, columnId as VenueColumnId, {
+      defaultDirection: (id) => (id === "mic" || id === "name" || id === "time" ? "asc" : "desc"),
+    }));
+  }, []);
   useEffect(() => {
     if (selectedMic && venues.some((venue) => venue.mic === selectedMic)) return;
     setSelectedMic(venues[0]?.mic ?? null);
@@ -252,9 +282,9 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
       rootBefore={sidebarHeader}
       columns={columns}
       items={venues}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={(venue) => venue.mic}
       renderCell={renderCell}
       emptyStateTitle={query.trim() ? "No matching venues." : "No venue data."}

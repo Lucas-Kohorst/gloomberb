@@ -4,7 +4,6 @@ import {
   smaArray,
   toSeries,
   type IndicatorDefinition,
-  type IndicatorOutput,
   type IndicatorParams,
   type OHLCV,
 } from "./index";
@@ -14,7 +13,7 @@ import {
  * Overlays the price pane. `null` until `period` closes are available (and for
  * any window that contains a missing close).
  */
-export function sma(data: OHLCV[], params: IndicatorParams = {}): IndicatorOutput {
+export function sma(data: OHLCV[], params: IndicatorParams = {}) {
   const period = positiveInt(params.period, 20);
   const closes = data.map((bar) => closePrice(bar) ?? Number.NaN);
   return { sma: toSeries(data, smaArray(closes, period)) };

@@ -38,7 +38,7 @@ const STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"
 const ECONOMIC_STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"]);
 const TRANSFORMS = new Set<SeriesTransform>(["raw", "percent", "index100", "yoy", "qoq", "log"]);
 const AXES = new Set<SeriesAxis>(["auto", "left", "right"]);
-const SCALES = new Set<PanelScale>(["linear", "log"]);
+const SCALES = new Set<PanelScale>(["linear", "log", "percent"]);
 const STUDIES = new Set<ChartStudyKind>([
   "volume",
   "sma",
@@ -284,6 +284,38 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
   };
 }
 
+export const CHART_DISPLAY_TIME_ZONES = [
+  "exchange",
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Asia/Tokyo",
+] as const;
+
+export type ChartDisplayTimeZone = typeof CHART_DISPLAY_TIME_ZONES[number];
+
+const DISPLAY_TIME_ZONES = new Set<string>(CHART_DISPLAY_TIME_ZONES);
+
+/** IANA zone for axis/cursor labels. `undefined` keeps the UTC formatter. */
+export function resolveChartDisplayTimeZone(
+  requested: string | undefined,
+  exchangeTimeZone?: string | null,
+): string | undefined {
+  if (!requested || requested === "UTC") return undefined;
+  if (requested === "exchange") {
+    const zone = exchangeTimeZone?.trim();
+    return zone || undefined;
+  }
+  return DISPLAY_TIME_ZONES.has(requested) ? requested : undefined;
+}
+
+function normalizedTimeZone(value: unknown): string | undefined {
+  const zone = nonEmptyString(value);
+  return zone && DISPLAY_TIME_ZONES.has(zone) ? zone : undefined;
+}
+
 function normalizedDateWindow(value: unknown): { start: string; end: string } | undefined {
   const window = record(value);
   const start = nonEmptyString(window?.start);
@@ -307,6 +339,7 @@ function normalizePanel(value: unknown, index: number, seen: Set<string>): Chart
     label: nonEmptyString(panel.label) ?? undefined,
     height,
     scale: SCALES.has(panel.scale as PanelScale) ? panel.scale as PanelScale : "linear",
+    ...(panel.autoScale === false ? { autoScale: false } : {}),
   };
 }
 
@@ -435,6 +468,7 @@ export function normalizeChartSpec(value: unknown, fallback: ChartSpec = DEFAULT
         && viewport.maxPoints > 0
         ? Math.min(10_000, Math.floor(viewport.maxPoints))
         : undefined,
+      timeZone: normalizedTimeZone(viewport?.timeZone),
     },
     panels,
     series,

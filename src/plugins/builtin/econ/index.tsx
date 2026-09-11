@@ -1,8 +1,9 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  InputSearchBar,
   SegmentedControl,
   type DataTableCell,
   type PaneFooterSegment,
@@ -35,6 +36,9 @@ import {
   type ImpactFilter,
 } from "./calendar-model";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { registerConnectionSource } from "../connections/register";
+import { ECON_CALENDAR_CONNECTION_ID, ECON_CALENDAR_CONNECTION_NAME } from "./calendar-source";
 import { useAppActive } from "../../../state/app/activity";
 import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import { fredSeriesCatalog } from "./fred-series-map";
@@ -67,6 +71,10 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const today = new Date(now);
   const appActive = useAppActive();
   const [detailEvent, setDetailEvent] = useState<EconEvent | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
 
   const fetchGenRef = useRef(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -111,8 +119,10 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   }, [appActive]);
 
   const filtered = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     const matching = events
       .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
+      .filter((ev) => !query || `${ev.event} ${ev.country} ${ev.actual ?? ""} ${ev.forecast ?? ""} ${ev.prior ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => b.date.getTime() - a.date.getTime());
     return applySortPreference(matching, sortPreference, (event, columnId) => {
       switch (columnId) {
@@ -125,7 +135,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
         case "prior": return event.prior;
       }
     });
-  }, [countryFilter, events, impactFilter, sortPreference]);
+  }, [countryFilter, events, impactFilter, searchQuery, sortPreference]);
 
   const { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx } = useMemo(() => {
     // Build display rows with separator headers and NOW marker
@@ -212,12 +222,23 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     setCountryFilter((prev) => COUNTRY_CYCLE[(COUNTRY_CYCLE.indexOf(prev) + 1) % COUNTRY_CYCLE.length]!);
     setSelectedIdx(0);
   }, [setCountryFilter]);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((token) => token + 1);
+  }, []);
+  const blurSearch = useCallback(() => setSearchFocused(false), []);
 
   const handleRootKeyDown = useCallback((event: {
     name?: string;
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => {
+    if (event.name === "/" || event.name === "s") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      focusSearch();
+      return true;
+    }
     if (event.name === "r") {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -235,7 +256,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [cycleCountryFilter, cycleImpactFilter, load]);
+  }, [cycleCountryFilter, cycleImpactFilter, focusSearch, load]);
 
   const columns = useMemo<EconCalendarColumn[]>(() => [
     { id: "time", label: "TIME", width: 6, align: "left" },
@@ -264,7 +285,13 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     loading,
     error,
     info: calendarStatus,
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
+    focused,
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(() => load(true)),
+      { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter },
+      { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter },
+    ],
   });
 
   const handleHeaderClick = useCallback((columnId: string) => {
@@ -358,6 +385,25 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       )}
     </Box>
   );
+  const rootBefore = (
+    <Box flexDirection="column">
+      <InputSearchBar
+        value={searchQuery}
+        focused={focused && !detailEvent}
+        active={searchFocused}
+        width={width}
+        focusToken={searchFocusToken}
+        inputRef={searchInputRef}
+        placeholder="filter events"
+        debounceMs={80}
+        onFocus={focusSearch}
+        onBlur={blurSearch}
+        onNavigateDown={blurSearch}
+        onQueryChange={(value) => { setSearchQuery(value); setSelectedIdx(0); }}
+      />
+      {filterControls}
+    </Box>
+  );
 
   const detailContent = detailEvent ? (
     <EconDetailView
@@ -372,13 +418,13 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableStackView<DisplayRow, EconCalendarColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={!!detailEvent}
       onBack={() => setDetailEvent(null)}
       detailContent={detailContent}
       rootWidth={width}
-      rootHeight={Math.max(1, height - 1)}
-      rootBefore={filterControls}
+      rootHeight={Math.max(1, height - 2)}
+      rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       selection={{
         kind: "index",
@@ -430,6 +476,13 @@ export const economicCalendarModule: PluginModule = {
   setup(ctx) {
     ctx.registerChartSeriesCatalog(fredSeriesCatalog);
     attachEconCalendarPersistence(ctx.persistence);
+    disposeEconCalendarConnection = registerConnectionSource({
+      id: ECON_CALENDAR_CONNECTION_ID,
+      name: ECON_CALENDAR_CONNECTION_NAME,
+      kind: "api",
+      pluginId: "econ",
+      authRequired: false,
+    });
   },
   dispose() {
     disposeEconCalendarConnection?.();

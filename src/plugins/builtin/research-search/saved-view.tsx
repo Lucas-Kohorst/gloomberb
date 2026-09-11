@@ -118,6 +118,7 @@ export function SavedSearchesView({
   }, [onToggleAlert]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     const selected = searches.find((search) => search.id === selectedId);
     if (!selected) return false;
     if (isPlainKey(event, "a")) {

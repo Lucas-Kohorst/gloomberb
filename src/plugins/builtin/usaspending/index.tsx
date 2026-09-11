@@ -1,7 +1,8 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GloomPlugin, PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import {
+  EmptyState,
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
@@ -11,7 +12,6 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { colors } from "../../../theme/colors";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
@@ -126,7 +126,7 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
   });
   const rootBefore = <InputSearchBar value={query} focused={focused && !openId} active={searchFocused} width={width} focusToken={focusToken} inputRef={inputRef} placeholder="recipient or keyword" debounceMs={250} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={updateQuery} />;
   if (status === "loading" && awards.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label="Loading federal spending..." /></Box></Box>;
-  if (error && awards.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><Text fg={colors.textDim}>Error: {error}</Text></Box></Box>;
+  if (error && awards.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Federal spending unavailable." message={error} hint="Press r to retry." /></Box></Box>;
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore} items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx} onOpenItemIdChange={setOpenId} onRootKeyDown={(event, context) => { if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; } if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; } if (event.name === "r") { event.preventDefault?.(); event.stopPropagation?.(); load(query); return true; } return false; }} markdown sourceLabel="Recipient" titleLabel="Agency" emptyStateTitle={query ? `No awards match ${query}.` : "No federal spending awards."} />;
 }
 

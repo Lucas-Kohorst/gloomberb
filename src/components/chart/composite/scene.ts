@@ -252,6 +252,43 @@ function sharedValueRange(series: readonly ResolvedSeries[]): { min: number; max
   return { min, max };
 }
 
+function percentFromBase(base: number, value: number): number {
+  return base === 0 ? 0 : ((value - base) / Math.abs(base)) * 100;
+}
+
+function rebasePointToPercent(point: TimeSeriesPoint, base: number): TimeSeriesPoint {
+  const rebase = (value: number | null | undefined) => (
+    finiteNumber(value) ? percentFromBase(base, value) : value
+  );
+  return {
+    ...point,
+    value: rebase(point.value) ?? null,
+    open: rebase(point.open),
+    high: rebase(point.high),
+    low: rebase(point.low),
+    close: rebase(point.close),
+  };
+}
+
+function rebaseSeriesToPercent(series: ResolvedSeries): ResolvedSeries {
+  const first = series.points.find((point) => finiteNumber(point.close) || finiteNumber(point.value));
+  const base = first ? (finiteNumber(first.close) ? first.close : first.value) : null;
+  if (!finiteNumber(base) || base === 0) return series;
+  return {
+    ...series,
+    unit: "%",
+    unitGroup: "percent",
+    points: series.points.map((point) => rebasePointToPercent(point, base)),
+  };
+}
+
+function applyPanelValueScale(
+  series: ResolvedSeries[],
+  scale: PanelScale,
+): ResolvedSeries[] {
+  return scale === "percent" ? series.map(rebaseSeriesToPercent) : series;
+}
+
 function paddedDomain(values: number[], scale: PanelScale): { min: number; max: number } {
   const usable = scale === "log" ? values.filter((value) => value > 0) : values;
   if (usable.length === 0) return scale === "log" ? { min: 1, max: 10 } : { min: 0, max: 1 };
@@ -531,12 +568,13 @@ export function buildCompositeChartScene(
   const panelHeights = allocateCompositePanelHeights(orderedPanels, options.height);
 
   const panelScenes: CompositePanelScene[] = orderedPanels.map((panel) => {
-    const panelSeries = usableSeries.filter((entry) => entry.panelId === panel.id);
     const scale = panel.scale ?? "linear";
+    const rawPanelSeries = usableSeries.filter((entry) => entry.panelId === panel.id);
+    const panelSeries = applyPanelValueScale(rawPanelSeries, scale);
     // With no in-view values, scale the axes to the loaded history rather than
     // the meaningless 0..1 fallback, so the panel keeps its gutter and grid.
-    const domainSeries = emptyRange || panelSeries.length === 0
-      ? dataSeries.filter((entry) => entry.panelId === panel.id)
+    const domainSeries = emptyRange || rawPanelSeries.length === 0
+      ? applyPanelValueScale(dataSeries.filter((entry) => entry.panelId === panel.id), scale)
       : panelSeries;
     const left = buildAxisDomain("left", domainSeries, scale);
     const right = buildAxisDomain("right", domainSeries, scale);
@@ -546,6 +584,7 @@ export function buildCompositeChartScene(
       label: panel.label,
       height: panelHeights.get(panel.id) ?? 1,
       scale,
+      autoScale: panel.autoScale !== false,
       axes,
       series: panelSeries.flatMap((entry) => {
         const domain = axes[entry.axis];

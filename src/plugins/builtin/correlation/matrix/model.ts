@@ -155,9 +155,7 @@ export function buildStatusSummary(
   if (errors.length > 0) parts.push(`No data: ${formatSeriesSymbolList(errors, seriesBySymbol)}`);
   if (insufficient.length > 0) parts.push(`Need history: ${formatSeriesSymbolList(insufficient, seriesBySymbol, true)}`);
 
-  if (sampleMin != null && sampleMax != null) {
-    parts.push(sampleMin === sampleMax ? `obs ${sampleMin}` : `obs ${sampleMin}-${sampleMax}`);
-  } else if (symbols.length >= 2) {
+  if (sampleMin == null && sampleMax == null && symbols.length >= 2 && parts.length === 0) {
     parts.push("No paired dates yet");
   }
 

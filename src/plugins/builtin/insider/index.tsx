@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
 import type { SecFilingItem } from "../../../types/data-provider";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import {
   useResolvedEntryValue,
   useSecFilingsQuery,
 } from "../../../market-data/hooks";
+import { useShortcut } from "../../../react/input";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
 import type { ScrollBoxRenderable } from "../../../ui";
@@ -179,18 +181,40 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     setSelectedIdx(0);
   }, [setNameFilter, setSelectedIdx]);
 
+  const refresh = useCallback(() => {
+    if (!instrument || !eligibleTicker) return;
+    void getSharedMarketDataCoordinator()
+      ?.loadSecFilings({ instrument, count: SEC_FILING_SCAN_LIMIT })
+      .catch(() => {});
+  }, [eligibleTicker, instrument]);
+
+  useShortcut((event) => {
+    if (!focused || event.targetEditable) return;
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refresh();
+    }
+  }, { enabled: focused });
+
   const handleRootKeyDown = useCallback((event: {
     name?: string;
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => {
+    if (event.name === "r") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      refresh();
+      return true;
+    }
     if (event.name !== "f") return false;
     if (!selectedTransaction) return false;
     event.stopPropagation?.();
     event.preventDefault?.();
     toggleNameFilter(selectedTransaction.reportedName);
     return true;
-  }, [selectedTransaction, toggleNameFilter]);
+  }, [refresh, selectedTransaction, toggleNameFilter]);
 
   const selectedFilterName = selectedTransaction?.reportedName ?? null;
   const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
@@ -199,8 +223,9 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     ...(nameFilter ? [{ id: "filter", parts: [{ text: `filter: ${truncateText(nameFilter, 24)}`, tone: "warning" as const }] }] : []),
     ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
   ], [nameFilter, pendingLabel, summary, width]);
-  const footerHints = useMemo(() => (
-    selectedFilterName || nameFilter
+  const footerHints = useMemo(() => ([
+    { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    ...((selectedFilterName || nameFilter)
       ? [{
           id: "filter",
           key: "f",
@@ -210,8 +235,8 @@ function InsiderView({ width, height, focused }: { width: number; height: number
             else if (selectedFilterName) toggleNameFilter(selectedFilterName);
           },
         }]
-      : []
-  ), [clearNameFilter, nameFilter, selectedFilterName, toggleNameFilter]);
+      : []),
+  ]), [clearNameFilter, nameFilter, refresh, selectedFilterName, toggleNameFilter]);
   useExternalLinkFooter({
     registrationId: "insider",
     focused,
@@ -234,7 +259,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     );
   }
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
-  if (error) return <EmptyState title="Insider filings unavailable." message={error} />;
+  if (error) return <EmptyState title="Insider filings unavailable." message={error} hint="Press r to retry." />;
   if (!loading && form4Filings.length === 0) {
     return <TickerEmptyState kind="insider" symbol={ticker.metadata.ticker} detail="Form 4 filings" />;
   }

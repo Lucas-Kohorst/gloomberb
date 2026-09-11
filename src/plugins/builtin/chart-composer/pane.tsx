@@ -6,6 +6,7 @@ import {
   usePaneFooter,
   type PaneFooterPressEvent,
 } from "../../../components";
+import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import {
   MultiSelectDialogButton,
   type MultiSelectDialogButtonHandle,
@@ -15,11 +16,12 @@ import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
 import type { ChartSeriesSource, ChartSpec, ResolvedSeries } from "../../../time-series/types";
 import {
-  getSupportedChartResolutionsForViewport,
+  chartRangeTabChoices,
+  chartResolutionTabChoices,
   type ManualChartResolution,
 } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
-import { defaultChartSeriesPresentation } from "../../../time-series/spec";
+import { defaultChartSeriesPresentation, resolveChartDisplayTimeZone } from "../../../time-series/spec";
 import { chartSeriesSourceKey } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
@@ -44,6 +46,7 @@ import {
   canToggleChartSeries,
   CHART_INTERACTION_VIEWPORT_SETTING_KEY,
   CHART_SPEC_SETTING_KEY,
+  MAX_CHART_COMPOSER_SERIES,
   parseChartInteractionViewport,
   parseChartSpecOr,
   projectVisibleChartSeries,
@@ -59,7 +62,11 @@ import {
   getSelectedPairStudies,
   setBuiltinStudies,
   setPairStudies,
+  appendCompareTicker,
   rebindChartSecuritySymbol,
+  setChartDisplayTimeZone,
+  toggleMainPanelAutoScale,
+  toggleMainPanelPercentScale,
   toggleMainPanelScale,
   type BuiltinStudySelection,
   type PairStudySelection,
@@ -68,8 +75,8 @@ import type { ChartInteractionViewport } from "./chart-spec";
 import {
   CHART_FORMULA_OPTIONS,
   CHART_RANGES as RANGES,
-  CHART_RESOLUTIONS as RESOLUTIONS,
   CHART_STUDY_OPTIONS,
+  CHART_TIME_ZONE_OPTIONS,
 } from "./settings";
 import { resolveChartComposerShortcut } from "./shortcuts";
 import { ChartSeriesQuickAdd } from "./quick-add";
@@ -78,7 +85,6 @@ import { usePublicShare } from "../shared/public-share";
 import { buildChartShareData } from "../../../shares/chart-snapshot";
 import { isPlainKey } from "../../../utils/keyboard";
 
-const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
 /** Bar pitch AUTO aims for; the coarser neighbour wins ties so bars stay readable. */
 const AUTO_RESOLUTION_BAR_PIXELS = 7;
@@ -212,29 +218,33 @@ function ChartComposerSurface({
     liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
   });
   currentResolutionRef.current = resolution.resolution ?? currentResolutionRef.current;
-  const availableResolutions = useMemo<ChartResolution[]>(() => {
-    if (!resolution.resolutionSupport) {
-      if (!resolution.loading) return RESOLUTIONS;
-      return spec.viewport.resolution === "auto"
-        ? ["auto"]
-        : ["auto", spec.viewport.resolution];
-    }
-    const supported = new Set(getSupportedChartResolutionsForViewport(
+  const resolutionChoices = useMemo(
+    () => chartResolutionTabChoices(
       spec.viewport.range,
       resolution.resolutionSupport,
       spec.viewport.dateWindow,
-    ));
-    return RESOLUTIONS.filter((value) => value === "auto" || supported.has(value));
-  }, [
-    resolution.loading,
-    resolution.resolutionSupport,
-    spec.viewport.dateWindow,
-    spec.viewport.range,
-    spec.viewport.resolution,
-  ]);
+    ),
+    [resolution.resolutionSupport, spec.viewport.dateWindow, spec.viewport.range],
+  );
   const resolutionTabs = useMemo(
-    () => availableResolutions.map((value) => ({ label: value.toUpperCase(), value })),
-    [availableResolutions],
+    () => resolutionChoices.map((choice) => ({
+      label: choice.resolution.toUpperCase(),
+      value: choice.resolution,
+      disabled: !choice.enabled,
+    })),
+    [resolutionChoices],
+  );
+  const rangeChoices = useMemo(
+    () => chartRangeTabChoices(resolution.resolutionSupport),
+    [resolution.resolutionSupport],
+  );
+  const rangeTabs = useMemo(
+    () => rangeChoices.map((choice, index) => ({
+      label: `${index + 1}:${choice.range}`,
+      value: choice.range,
+      disabled: !choice.enabled,
+    })),
+    [rangeChoices],
   );
   const resolutionTabsWidth = useMemo(
     () => resolutionTabs.reduce((total, tab) => total + [...tab.label].length + 1, 0),
@@ -425,16 +435,8 @@ function ChartComposerSurface({
   const setResolution = useCallback((next: ChartResolution) => {
     setSpec({ ...spec, viewport: { ...spec.viewport, resolution: next } });
   }, [setSpec, spec]);
-  useEffect(() => {
-    if (
-      spec.viewport.resolution === "auto"
-      || availableResolutions.includes(spec.viewport.resolution)
-    ) {
-      return;
-    }
-    setResolution("auto");
-  }, [availableResolutions, setResolution, spec.viewport.resolution]);
   const openRangePicker = useCallback(async () => {
+    const enabledRanges = rangeChoices.filter((choice) => choice.enabled).map((choice) => choice.range);
     setInteractionCaptured("prompt", true);
     try {
       const range = await dialog.prompt<string>({
@@ -444,7 +446,7 @@ function ChartComposerSurface({
             {...context}
             title="Chart Range"
             selectedChoiceId={spec.viewport.dateWindow ? undefined : spec.viewport.range}
-            choices={RANGES.map((value) => ({
+            choices={enabledRanges.map((value) => ({
               id: value,
               label: value,
               description: `Show the latest ${value === "ALL" ? "available history" : value}.`,
@@ -452,12 +454,15 @@ function ChartComposerSurface({
           />
         ),
       }).catch(() => "");
-      if (RANGES.includes(range as TimeRange)) setRange(range as TimeRange);
+      if (enabledRanges.includes(range as TimeRange)) setRange(range as TimeRange);
     } finally {
       setInteractionCaptured("prompt", false);
     }
-  }, [dialog, setInteractionCaptured, setRange, spec.viewport.dateWindow, spec.viewport.range]);
+  }, [dialog, rangeChoices, setInteractionCaptured, setRange, spec.viewport.dateWindow, spec.viewport.range]);
   const openResolutionPicker = useCallback(async () => {
+    const enabledResolutions = resolutionChoices
+      .filter((choice) => choice.enabled)
+      .map((choice) => choice.resolution);
     setInteractionCaptured("prompt", true);
     try {
       const next = await dialog.prompt<string>({
@@ -467,7 +472,7 @@ function ChartComposerSurface({
             {...context}
             title="Chart Resolution"
             selectedChoiceId={spec.viewport.resolution}
-            choices={availableResolutions.map((value) => ({
+            choices={enabledResolutions.map((value) => ({
               id: value,
               label: value.toUpperCase(),
               description: value === "auto"
@@ -477,17 +482,68 @@ function ChartComposerSurface({
           />
         ),
       }).catch(() => "");
-      if (availableResolutions.includes(next as ChartResolution)) setResolution(next as ChartResolution);
+      if (enabledResolutions.includes(next as ChartResolution)) setResolution(next as ChartResolution);
     } finally {
       setInteractionCaptured("prompt", false);
     }
   }, [
-    availableResolutions,
     dialog,
+    resolutionChoices,
     setInteractionCaptured,
     setResolution,
     spec.viewport.resolution,
   ]);
+  const openTimeZonePicker = useCallback(async () => {
+    setInteractionCaptured("prompt", true);
+    try {
+      const next = await dialog.prompt<string>({
+        closeOnClickOutside: true,
+        content: (context: PromptContext<string>) => (
+          <ChoiceDialog
+            {...context}
+            title="Chart Timezone"
+            selectedChoiceId={spec.viewport.timeZone ?? "UTC"}
+            choices={CHART_TIME_ZONE_OPTIONS.map((option) => ({
+              id: option.value,
+              label: option.label,
+              description: option.description,
+            }))}
+          />
+        ),
+      }).catch(() => "");
+      if (next && CHART_TIME_ZONE_OPTIONS.some((option) => option.value === next)) {
+        setSpec(setChartDisplayTimeZone(spec, next));
+      }
+    } finally {
+      setInteractionCaptured("prompt", false);
+    }
+  }, [dialog, setInteractionCaptured, setSpec, spec]);
+  const openCompareDialog = useCallback(async () => {
+    if (spec.series.length === 0 || spec.series.length >= MAX_CHART_COMPOSER_SERIES) return;
+    setInteractionCaptured("prompt", true);
+    try {
+      const ticker = await dialog.prompt<string>({
+        closeOnClickOutside: true,
+        content: (context: PromptContext<string>) => (
+          <PaneTemplateInputStep
+            {...context}
+            step={{
+              key: "compare",
+              label: "Compare ticker",
+              placeholder: "MSFT",
+              type: "text",
+              body: ["Overlay another symbol on this chart. The main pane switches to percent."],
+            }}
+          />
+        ),
+      }).catch(() => undefined);
+      if (!ticker) return;
+      const next = appendCompareTicker(spec, ticker);
+      if (next) setSpec(next);
+    } finally {
+      setInteractionCaptured("prompt", false);
+    }
+  }, [dialog, setInteractionCaptured, setSpec, spec]);
   const toggleSeries = useCallback((seriesId: string) => {
     const next = toggleChartSeries(spec, seriesId);
     if (next !== spec) setSpec(next);
@@ -510,18 +566,28 @@ function ChartComposerSurface({
     openSeriesEditor,
     openResolutionPicker,
     openRangePicker,
+    openTimeZonePicker,
+    openCompareDialog,
     reload: resolution.reload,
   });
   currentActionsRef.current = {
     openSeriesEditor,
     openResolutionPicker,
     openRangePicker,
+    openTimeZonePicker,
+    openCompareDialog,
     reload: resolution.reload,
   };
   const footerSeries = useCallback(() => { void currentActionsRef.current.openSeriesEditor(); }, []);
   const footerResolution = useCallback(() => { void currentActionsRef.current.openResolutionPicker(); }, []);
   const footerReload = useCallback(() => { currentActionsRef.current.reload(); }, []);
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
+  const footerLog = useCallback(() => { setSpec(toggleMainPanelScale(spec)); }, [setSpec, spec]);
+  const footerPercent = useCallback(() => { setSpec(toggleMainPanelPercentScale(spec)); }, [setSpec, spec]);
+  const footerAuto = useCallback(() => { setSpec(toggleMainPanelAutoScale(spec)); }, [setSpec, spec]);
+  const footerCompare = useCallback(() => { void currentActionsRef.current.openCompareDialog(); }, []);
+  const footerTimeZone = useCallback(() => { void currentActionsRef.current.openTimeZonePicker(); }, []);
+  const compareDisabled = spec.series.length === 0 || spec.series.length >= MAX_CHART_COMPOSER_SERIES;
 
   useShortcut((event) => {
     if (interactionCaptureRef.current || dialogOpen) return;
@@ -537,7 +603,8 @@ function ChartComposerSurface({
     event.stopPropagation();
 
     if (typeof shortcut !== "string") {
-      setRange(RANGES[shortcut.index]!);
+      const choice = rangeChoices[shortcut.index];
+      if (choice?.enabled) setRange(choice.range);
       return;
     }
     switch (shortcut) {
@@ -556,6 +623,15 @@ function ChartComposerSurface({
       case "log":
         setSpec(toggleMainPanelScale(spec));
         return;
+      case "percent":
+        setSpec(toggleMainPanelPercentScale(spec));
+        return;
+      case "auto":
+        setSpec(toggleMainPanelAutoScale(spec));
+        return;
+      case "timezone":
+        void openTimeZonePicker();
+        return;
     }
   }, { enabled: focused && !dialogOpen });
 
@@ -573,15 +649,27 @@ function ChartComposerSurface({
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
+      { id: "log", key: "l", label: "og", onPress: footerLog },
+      { id: "percent", key: "p", label: "%", onPress: footerPercent },
+      { id: "auto", key: "g", label: " auto", onPress: footerAuto },
+      { id: "compare", key: "c", label: "ompare", onPress: footerCompare, disabled: compareDisabled },
+      { id: "timezone", key: "z", label: "one", onPress: footerTimeZone },
+      { id: "refresh", key: "r", label: "efresh", onPress: footerReload },
       ...(publicSharing
         ? [{ id: "share", key: "y", label: " share", onPress: shareChart, disabled: !shareData }]
         : []),
     ],
   }), [
+    compareDisabled,
+    footerAuto,
+    footerCompare,
+    footerLog,
+    footerPercent,
     footerRange,
     footerReload,
     footerResolution,
     footerSeries,
+    footerTimeZone,
     formulasDisabled,
     indicatorsDisabled,
     openFormulas,
@@ -594,6 +682,11 @@ function ChartComposerSurface({
     resolution.warnings,
   ]);
 
+  const displayTimeZone = resolveChartDisplayTimeZone(
+    spec.viewport.timeZone,
+    plottedSeries.find((entry) => entry.timeBasis?.kind === "market")?.timeBasis?.timeZone
+      ?? resolution.timelineSeries?.find((entry) => entry.timeBasis?.kind === "market")?.timeBasis?.timeZone,
+  );
   const emptyMessage = spec.series.length === 0
     ? "Add a series to start the chart"
     : resolution.loading
@@ -613,7 +706,7 @@ function ChartComposerSurface({
           style={isDesktopWeb ? { maxWidth: "none", width: "auto" } : undefined}
         >
           <Tabs
-            tabs={RANGE_TABS}
+            tabs={rangeTabs}
             activeValue={spec.viewport.dateWindow ? null : spec.viewport.range}
             onSelect={(value) => setRange(value as TimeRange)}
             compact
@@ -689,8 +782,10 @@ function ChartComposerSurface({
           interactive={surfacePointerInteractive}
           allowHistoricalBackfill
           showLatestChangePercent={!spec.viewport.dateWindow && spec.viewport.range === "1D"}
+          timeZone={displayTimeZone}
           onViewportChange={handleChartViewportChange}
           onActivate={activatePane}
+          onCompare={compareDisabled ? undefined : openCompareDialog}
           onToggleSeries={toggleSeries}
           isSeriesToggleable={isSeriesToggleable}
           emptyMessage={emptyMessage}

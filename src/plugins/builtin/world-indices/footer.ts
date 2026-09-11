@@ -7,8 +7,6 @@ import {
   type BoardQuoteMap,
 } from "../shared/use-quote-board";
 
-const ERROR_MESSAGE_MAX_LENGTH = 48;
-
 /** The reason a board is empty, taken from the per-symbol errors the board records. */
 export function boardErrorMessage(quotes: BoardQuoteMap): string | null {
   let total = 0;
@@ -21,9 +19,7 @@ export function boardErrorMessage(quotes: BoardQuoteMap): string | null {
     message ??= state.error;
   }
   if (total === 0 || unavailable < total || !message) return null;
-  return message.length > ERROR_MESSAGE_MAX_LENGTH
-    ? `${message.slice(0, ERROR_MESSAGE_MAX_LENGTH - 1)}…`
-    : message;
+  return message;
 }
 
 export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void, focused: boolean) {
@@ -31,17 +27,23 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
   const errorMessage = boardErrorMessage(quotes);
 
   useShortcut((event) => {
-    if (!focused || !isPlainKey(event, "r")) return;
+    if (!focused || event.targetEditable || !isPlainKey(event, "r")) return;
     event.preventDefault?.();
+    event.stopPropagation?.();
     onRefresh();
-  }, { enabled: focused });
+  }, { allowEditable: true, enabled: focused });
 
   usePaneFooter(
     "world-indices",
     () => {
       const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);
       if (errorMessage) info.push({ id: "reason", parts: [{ text: errorMessage, tone: "warning" }] });
-      return { info };
+      return {
+        info,
+        hints: [
+          { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
+        ],
+      };
     },
     [errorMessage, focused, onRefresh, status.latestTs, status.loading, status.stale, status.unavailable],
   );

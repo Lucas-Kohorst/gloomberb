@@ -59,6 +59,40 @@ export function formatChartLegendValue(value: number, unit: string, unitGroup = 
   return trimmed && trimmed.length <= 6 ? `${compact}${trimmed.startsWith("/") ? "" : " "}${trimmed}` : compact;
 }
 
+function finiteHudSide(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Compact share/volume count for the OHLC HUD. Never treated as currency. */
+export function formatChartVolume(value: number): string {
+  return compactNumber(value);
+}
+
+export function formatOhlcvHud(
+  point: Pick<TimeSeriesPoint, "open" | "high" | "low" | "close" | "volume" | "value"> | null | undefined,
+  unit: string,
+  unitGroup = "",
+): string | null {
+  if (!point) return null;
+  const close = finiteHudSide(point.close ?? point.value);
+  if (close === undefined) return null;
+
+  const open = finiteHudSide(point.open);
+  const high = finiteHudSide(point.high);
+  const low = finiteHudSide(point.low);
+  if (open === undefined && high === undefined && low === undefined) return null;
+
+  const price = (value: number) => formatChartLegendValue(value, unit, unitGroup);
+  const tokens: string[] = [];
+  if (open !== undefined) tokens.push(`O ${price(open)}`);
+  if (high !== undefined) tokens.push(`H ${price(high)}`);
+  if (low !== undefined) tokens.push(`L ${price(low)}`);
+  tokens.push(`C ${price(close)}`);
+  const volume = finiteHudSide(point.volume);
+  if (volume !== undefined && volume >= 0) tokens.push(`V ${formatChartVolume(volume)}`);
+  return tokens.join("  ");
+}
+
 export function formatCompositeAxisValue(value: number, domain: CompositeAxisDomain): string {
   const compact = compactNumber(value);
   const group = domain.unitGroup.toLowerCase();
@@ -109,11 +143,75 @@ function isIntradaySpan(startTime: number, endTime: number): boolean {
     && Math.abs(endTime - startTime) <= INTRADAY_SPAN_MAX_MS;
 }
 
-/** Shared-cursor timestamp using the chart's explicit UTC convention. */
-export function formatCompositeCursorDate(date: Date, startTime: number, endTime: number): string {
+interface ZonedDateParts {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  zone: string;
+}
+
+function zonedDateParts(date: Date, timeZone: string): ZonedDateParts | null {
+  if (!timeZone || timeZone === "UTC" || timeZone === "exchange") return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      hourCycle: "h23",
+      timeZoneName: "short",
+    }).formatToParts(date);
+    const read = (type: Intl.DateTimeFormatPartTypes) => (
+      parts.find((part) => part.type === type)?.value ?? ""
+    );
+    const year = read("year");
+    const month = read("month");
+    const day = read("day");
+    const hour = read("hour");
+    const minute = read("minute");
+    if (!year || !month || !day || !hour || !minute) return null;
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      zone: read("timeZoneName") || timeZone,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function zonedDateLabel(parts: ZonedDateParts): string {
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function zonedTimeLabel(parts: ZonedDateParts): string {
+  return `${parts.hour}:${parts.minute}`;
+}
+
+/** Shared-cursor timestamp. Omit `timeZone` (or pass UTC) for the UTC labels. */
+export function formatCompositeCursorDate(
+  date: Date,
+  startTime: number,
+  endTime: number,
+  timeZone?: string,
+): string {
+  const zoned = timeZone ? zonedDateParts(date, timeZone) : null;
+  if (!zoned) {
+    return isIntradaySpan(startTime, endTime)
+      ? `${utcDate(date)} ${utcTime(date)} UTC`
+      : utcDate(date);
+  }
   return isIntradaySpan(startTime, endTime)
-    ? `${utcDate(date)} ${utcTime(date)} UTC`
-    : utcDate(date);
+    ? `${zonedDateLabel(zoned)} ${zonedTimeLabel(zoned)} ${zoned.zone}`
+    : zonedDateLabel(zoned);
 }
 
 function validUtcTimestamp(date: Date | undefined): string | null {
@@ -153,12 +251,26 @@ export function formatCompositePointDetails(point: TimeSeriesPoint | null | unde
   return details.join(" · ");
 }
 
-/** Compact UTC tick label selected from the full visible chart span. */
-export function formatCompositeTimeAxisDate(date: Date, startTime: number, endTime: number): string {
-  if (!isIntradaySpan(startTime, endTime)) return utcDate(date);
-  const startDate = utcDate(new Date(startTime));
-  const endDate = utcDate(new Date(endTime));
-  return startDate === endDate
-    ? `${utcTime(date)} UTC`
-    : `${utcDate(date).slice(5)} ${utcTime(date)} UTC`;
+/** Compact tick label selected from the full visible chart span. */
+export function formatCompositeTimeAxisDate(
+  date: Date,
+  startTime: number,
+  endTime: number,
+  timeZone?: string,
+): string {
+  const zoned = timeZone ? zonedDateParts(date, timeZone) : null;
+  if (!zoned) {
+    if (!isIntradaySpan(startTime, endTime)) return utcDate(date);
+    const startDate = utcDate(new Date(startTime));
+    const endDate = utcDate(new Date(endTime));
+    return startDate === endDate
+      ? `${utcTime(date)} UTC`
+      : `${utcDate(date).slice(5)} ${utcTime(date)} UTC`;
+  }
+  if (!isIntradaySpan(startTime, endTime)) return zonedDateLabel(zoned);
+  const start = zonedDateParts(new Date(startTime), timeZone!);
+  const end = zonedDateParts(new Date(endTime), timeZone!);
+  return start && end && start.year === end.year && start.month === end.month && start.day === end.day
+    ? `${zonedTimeLabel(zoned)} ${zoned.zone}`
+    : `${zoned.month}-${zoned.day} ${zonedTimeLabel(zoned)} ${zoned.zone}`;
 }

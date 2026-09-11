@@ -17,6 +17,7 @@ import {
 } from "../../../components";
 import { TickerBadgeList } from "../../../components/ticker/badge/list";
 import { colors } from "../../../theme/colors";
+import { useShortcut } from "../../../react/input";
 import { Box, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -455,6 +456,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     event: DataTableKeyEvent,
     context: DataTableRootKeyContext,
   ) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusField("query");
@@ -470,13 +472,29 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
       focusField("tickers");
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      stopSearchFocusNavigation(event);
+      runSearch();
+      return true;
+    }
     if (event.ctrl && event.name === "s") {
       stopSearchFocusNavigation(event);
       saveCurrentSearch();
       return true;
     }
     return false;
-  }, [focusField, saveCurrentSearch]);
+  }, [focusField, runSearch, saveCurrentSearch]);
+
+  // Saved-mode r refreshes the list; results-mode r retries the search via the
+  // table handler above. Both need a global binding because the footer hints it.
+  useShortcut((event) => {
+    if (!focused || mode !== "saved") return;
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    refreshSaved();
+  }, { enabled: focused && mode === "saved" });
 
   // Search is free and uncapped, so nothing is gated up front: the upsell only
   // appears if the server itself refuses the query.
@@ -520,25 +538,38 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   const footerHints = useMemo<PaneHint[]>(() => {
     if (mode === "saved") {
       const selected = saved.find((entry) => entry.id === savedSelectedId);
-      if (!selected) return [];
+      const hints: PaneHint[] = [
+        { id: "refresh", key: "r", label: "efresh", onPress: refreshSaved },
+      ];
+      if (!selected) return hints;
       return [
+        ...hints,
         { id: "alert", key: "a", label: "lerts", onPress: () => toggleAlert(selected) },
         { id: "delete", key: "d", label: "elete", onPress: () => { void removeSaved(selected); } },
       ];
     }
+    if (openHit) return [];
+    const hints: PaneHint[] = [
+      { id: "search", key: "/", label: "search", onPress: () => focusField("query") },
+      { id: "refresh", key: "r", label: "efresh", onPress: runSearch },
+    ];
     const sourceRestricted = (filters.sourceIds?.length ?? 0) > 0 && !filters.sourceIds?.includes("cloud");
-    if (openHit || !trimmedQuery || sourceRestricted) return [];
-    return [{ id: "save", key: "Ctrl+S", label: "save search", onPress: saveCurrentSearch }];
+    if (!trimmedQuery || sourceRestricted) return hints;
+    return [...hints, { id: "save", key: "Ctrl+S", label: "save search", onPress: saveCurrentSearch }];
   }, [
+    focusField,
     mode,
     openHit,
+    refreshSaved,
     removeSaved,
+    runSearch,
     saved,
     savedSelectedId,
     saveCurrentSearch,
     toggleAlert,
     trimmedQuery,
     filters.docTypes,
+    filters.sourceIds,
   ]);
 
   // The stack title already names the open document, so the footer carries what
@@ -683,7 +714,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         focused={focused && activeField === null && !typePickerOpen}
         detailOpen={!!openHit}
         onBack={closeDetail}
-        detailTitle={openHit ? researchHitTitle(openHit) : undefined}
         detailContent={openHit ? (
           <SearchDocumentView
             hit={openHit}
@@ -746,7 +776,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
           ? <Spinner label="Searching..." />
           : undefined}
         emptyStateTitle={emptyTitle}
-        emptyStateHint={failure?.message}
+        emptyStateHint={failure?.message ? `${failure.message} Press r to retry.` : undefined}
       />
     </Box>
   );

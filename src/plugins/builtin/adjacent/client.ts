@@ -671,7 +671,7 @@ export async function loadCftcFilings(
     ...(normalized ? { search: normalized } : {}),
     perPage,
     page,
-    sort: "first_seen",
+    sort: "status_date",
     sortDir: "desc",
   });
 }

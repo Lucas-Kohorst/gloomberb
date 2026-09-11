@@ -5,8 +5,8 @@ const PRESENCE_SLOT_STYLE = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: "1ch",
-  minWidth: 8,
+  width: 10,
+  minWidth: 10,
   height: "1em",
   flexShrink: 0,
 } as const;

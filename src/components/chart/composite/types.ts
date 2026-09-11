@@ -71,6 +71,7 @@ export interface CompositePanelScene {
   label?: string;
   height: number;
   scale: PanelScale;
+  autoScale: boolean;
   axes: Partial<Record<CompositeAxisSide, CompositeAxisDomain>>;
   series: CompositeProjectedSeries[];
 }
@@ -175,6 +176,10 @@ export interface CompositeChartProps {
     interaction: "pan" | "reset" | "zoom",
   ) => void;
   onActivate?: () => void;
+  /** Overlay another ticker when `c` is pressed with no drawing selected. */
+  onCompare?: () => void;
   onToggleSeries?: (seriesId: string) => void;
   isSeriesToggleable?: (series: ResolvedSeries) => boolean;
+  /** IANA zone for axis and cursor labels. Omit for UTC. */
+  timeZone?: string;
 }

@@ -228,12 +228,13 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
 
   const handleRootKeyDown = useCallback(
     (event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
+      if ((event as { targetEditable?: boolean }).targetEditable) return false;
       if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
         stopSearchFocusNavigation(event);
         focusSearch();
         return true;
       }
-      if (event.name === "s" || event.name === "/") {
+      if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         focusSearch();
@@ -264,7 +265,8 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();

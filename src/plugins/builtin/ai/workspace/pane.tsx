@@ -29,7 +29,7 @@ import { requestAccountManagementTab } from "../../account-management/navigation
 import { buildTickerAiContext } from "../ticker-context";
 import { extractActionReceipts, extractToolCards, extractTurnThinking, type AgentActionReceipt, type AgentToolCard, type AiAgentHistoryMessage } from "../agent-history";
 import { getInProcessRemoteHandle } from "../../../../remote/in-process-handle";
-import { resolveDefaultAiProviderId, type AiProvider } from "../providers";
+import { getAiProviderDisplayName, resolveDefaultAiProviderId, type AiProvider } from "../providers";
 import { useAiRuntimeProviders } from "../use-runtime-providers";
 import {
   formatAiRunnerSelection,
@@ -65,20 +65,7 @@ export const LOCAL_AGENT_WORKSPACE_STATE_KEY = "local-agent-workspace";
 export const LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION = 1;
 
 function providerLabel(providerId: string): string {
-  if (providerId === "anthropic") return "Claude";
-  if (providerId === "claude") return "Claude";
-  if (providerId === "google") return "Google Gemini";
-  if (providerId === "gemini") return "Gemini";
-  if (providerId === "openai-codex") return "OpenAI";
-  if (providerId === "codex") return "OpenAI";
-  if (providerId === "openai") return "OpenAI API";
-  if (providerId === "github-copilot") return "GitHub Copilot";
-  if (providerId === "xai") return "xAI / Grok";
-  if (providerId === "openrouter") return "OpenRouter";
-  if (providerId === "spore") return "Spore";
-  if (providerId === "opencode") return "OpenCode";
-  if (providerId === "pi") return "Pi";
-  return providerId;
+  return getAiProviderDisplayName(providerId);
 }
 
 function providerPrerequisite(provider: AiProvider): string {

@@ -663,11 +663,14 @@ export function createPiAiHost(options: CreatePiAiHostOptions): AiRunHost {
         const tracesDir = `${options.dataDir}/ai-runs`;
         const promptFile = writeAiRunPromptFile(runId, runOptions.prompt, tracesDir);
         const historyChars = JSON.stringify(runOptions.agentMessages ?? runOptions.messages ?? []).length;
+        // Auto runs resolve the default inside the runtime; log the same pick
+        // so traces answer "which model actually ran".
+        const traceModelId = runOptions.modelId?.trim() || summary.defaultModelId;
         const finishTrace = (error?: string) => writeAiRunTrace({
           id: runId,
           timestamp: started,
           providerId: runOptions.providerId,
-          modelId: runOptions.modelId,
+          modelId: traceModelId,
           outputMode: runOptions.outputMode,
           promptChars: runOptions.prompt.length,
           estimatedTokens: estimateTokens(runOptions.prompt),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 import {
+  marketChartTimePacking,
   orderedPointsBySecond,
   tradingViewCandleData,
   tradingViewScalarData,
@@ -30,6 +31,20 @@ function series(overrides: Partial<ResolvedSeries> & Pick<ResolvedSeries, "point
 }
 
 describe("tradingview series data", () => {
+  test("keeps packing stable on rerenders and invalidates it when anchor history expands", () => {
+    const anchor = series({ style: "line", timeBasis: { kind: "market", timeZone: "UTC", cadenceMs: 86_400_000 }, points: [
+      point("2026-09-07T00:00:00Z"), point("2026-09-08T00:00:00Z"),
+    ] });
+    const comparison = series({ id: "comparison", style: "line", points: [...anchor.points] });
+    const initial = marketChartTimePacking([anchor, comparison]);
+    expect(marketChartTimePacking([anchor, comparison])).toBe(initial);
+    const expanded = { ...anchor, points: [point("2026-09-04T00:00:00Z"), ...anchor.points] };
+    const next = marketChartTimePacking([expanded, comparison]);
+    expect(next).not.toBe(initial);
+    expect(tradingViewScalarData(comparison.points, next).at(-1)?.time).toBe(172800);
+    expect(tradingViewScalarData(comparison.points, initial).at(-1)?.time).toBe(86400);
+  });
+
   test("collapses duplicate UTC seconds to the latest reading", () => {
     const earlier = point("2024-01-01T12:00:00.100Z", { value: 10 });
     const later = point("2024-01-01T12:00:00.900Z", { value: 20 });
@@ -61,6 +76,22 @@ describe("tradingview series data", () => {
       low: 0.5,
       close: 2,
     }]);
+  });
+
+  test("packs Friday and Monday session bars one cadence apart", () => {
+    const friday = point("2026-01-02T21:00:00.000Z", { value: 100 });
+    const monday = point("2026-01-05T21:00:00.000Z", { value: 101 });
+    const packing = marketChartTimePacking([series({
+      style: "line",
+      timeBasis: { kind: "market", timeZone: "America/New_York", cadenceMs: 86_400_000 },
+      points: [friday, monday],
+    })]);
+    const packed = tradingViewScalarData([friday, monday], packing);
+    expect(packed).toHaveLength(2);
+    expect(packed[1]!.time - packed[0]!.time).toBe(86_400);
+    expect(packed[1]!.time - packed[0]!.time).toBeLessThan(
+      (monday.date.getTime() - friday.date.getTime()) / 1000,
+    );
   });
 
   test("maps styles to lightweight-charts series types", () => {

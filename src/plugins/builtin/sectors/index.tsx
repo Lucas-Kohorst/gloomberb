@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box } from "../../../ui";
-import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
+import { DataTableView, EmptyState, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -268,8 +268,13 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
     if (loading) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (loadError) info.push({ id: "error", parts: [{ text: loadError, tone: "warning" }] });
     if (updatedAgo) info.push({ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" }] });
-    return { info };
-  }, [loadError, loading, updatedAgo]);
+    return {
+      info,
+      hints: [
+        { id: "refresh", key: "r", label: "efresh", onPress: fetchAll },
+      ],
+    };
+  }, [fetchAll, loadError, loading, updatedAgo]);
 
   const rootBefore = (
     <Box height={1} paddingX={1}>
@@ -287,6 +292,29 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
       />
     </Box>
   );
+
+  const hasData = sortedRows.some((row) => row.price !== null);
+  if (loading && !hasData) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label="Loading sectors..." />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (loadError && !hasData) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
+          <EmptyState title={loadError} hint="Press r to retry." />
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <DataTableView<SectorRow, SectorColumn>
@@ -318,6 +346,7 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
       getRowRevision={(row) => `${row.etf}:${row.price}:${row.changePercent}:${row.return1M}:${row.return1Y}:${row.loading}`}
       renderCell={renderCell}
       emptyStateTitle={loadError ?? "No sectors selected."}
+      emptyStateHint={loadError ? "Press r to retry." : undefined}
     />
   );
 }

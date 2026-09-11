@@ -164,7 +164,7 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
     id: "spore",
     name: "Spore",
     outputModes: ALL_OUTPUT_MODES,
-    // Live GET /models catalog. Runtime default is the first fetched community id.
+    // Live GET /models catalog puts Spore's declared community defaults first.
     preferredModelIds: [],
     fastModelIds: [],
   },
@@ -276,6 +276,17 @@ export function getAiProviderDefinition(
   if (!providerId) return null;
   const canonicalId = migrateLegacyAiProviderId(providerId);
   return PROVIDER_DEFINITIONS.find((provider) => provider.id === canonicalId) ?? null;
+}
+
+/**
+ * Single display name for a provider id, used by thread titles, headers,
+ * and composer placeholders so they always match the Settings names.
+ * Legacy agent-plugin ids without definitions keep their historic labels.
+ */
+export function getAiProviderDisplayName(providerId: string): string {
+  if (providerId === "opencode") return "OpenCode";
+  if (providerId === "pi") return "Pi";
+  return getAiProviderDefinition(providerId)?.name ?? providerId;
 }
 
 export function getAiProviderDefinitions(): AiProviderDefinition[] {

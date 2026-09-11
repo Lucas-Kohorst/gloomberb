@@ -1,6 +1,11 @@
 import { apiClient, type CloudCdsResponse } from "../../../api-client";
 import type { InstrumentSearchResult } from "../../../types/instrument";
+import { withConnectionRequest } from "../connections/register";
 import { normalizeCdsTrades, type CdsTrade } from "./model";
+
+/** Connections inventory row for single-name CDS (DTCC via Gloom Cloud). */
+export const CDS_CONNECTION_ID = "gloom-cloud-cds";
+export const CDS_PLUGIN_ID = "cds";
 
 /** One trading week of public dissemination is what "recent activity" means here. */
 const CDS_HISTORY_DAYS = 5;
@@ -34,7 +39,11 @@ const TICKER_LIKE = /^[A-Za-z0-9][A-Za-z0-9.^:-]{0,11}$/;
  */
 export async function resolveIssuerName(
   issuer: string,
-  searchInstruments: InstrumentSearch,
+  searchInstruments: InstrumentSearch = (query, limit) => withConnectionRequest(
+    CDS_CONNECTION_ID,
+    "resolve-issuer",
+    () => apiClient.searchInstruments(query, limit),
+  ),
 ): Promise<string> {
   if (!TICKER_LIKE.test(issuer)) return issuer;
   try {
@@ -49,8 +58,16 @@ export async function resolveIssuerName(
 
 export async function loadCdsActivity(
   issuer: string | null,
-  fetchCds: CdsFetch = (params) => apiClient.getCloudCds(params),
-  searchInstruments: InstrumentSearch = (query, limit) => apiClient.searchInstruments(query, limit),
+  fetchCds: CdsFetch = (params) => withConnectionRequest(
+    CDS_CONNECTION_ID,
+    "cds",
+    () => apiClient.getCloudCds(params),
+  ),
+  searchInstruments: InstrumentSearch = (query, limit) => withConnectionRequest(
+    CDS_CONNECTION_ID,
+    "resolve-issuer",
+    () => apiClient.searchInstruments(query, limit),
+  ),
 ): Promise<CdsActivity> {
   const resolved = issuer ? await resolveIssuerName(issuer, searchInstruments) : null;
   const response = await fetchCds({

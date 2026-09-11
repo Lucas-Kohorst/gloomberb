@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import {
   Button,
   EmptyState,
@@ -104,23 +105,24 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   // closes follow the global cadence without refetching unchanged data.
   useAutoRefresh(lastUpdated, refresh);
   useShortcut((event) => {
-    if (!focused) return;
-    if (event.name === "r") {
+    if (!focused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
       if (loading) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
       reload();
-    } else if (["left", "up", "k"].includes(event.name ?? "")) setSelected((value) => Math.max(0, value - 1));
-    else if (["right", "down", "j"].includes(event.name ?? "")) setSelected((value) => Math.min(1, value + 1));
-    else return;
-    event.preventDefault();
-    event.stopPropagation();
-  });
+    } else if (isPlainKey(event, "left") || isPlainKey(event, "up") || isPlainKey(event, "k")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setSelected((value) => Math.max(0, value - 1));
+    } else if (isPlainKey(event, "right") || isPlainKey(event, "down") || isPlainKey(event, "j")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setSelected((value) => Math.min(1, value + 1));
+    } else return;
+  }, { allowEditable: true, enabled: focused });
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
-    ...(data?.termState && data.termState !== "partial" ? [{
-      id: "term-state",
-      parts: [{ text: data.termState.toUpperCase(), tone: data.termState === "inverted" ? "warning" as const : "value" as const, bold: true }],
-    }] : []),
-    ...(data?.termState === "partial" ? [{ id: "partial", parts: [{ text: "PARTIAL", tone: "warning" as const, bold: true }] }] : []),
     ...(data ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -138,18 +140,20 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   if (!data) {
     return (
       <Box width={width} height={height} padding={1} flexDirection="column" gap={1}>
-        <EmptyState title="Volatility data unavailable." message={error ?? undefined} />
+        <EmptyState title="Volatility data unavailable." message={error ?? undefined} hint="Press r to retry." />
       </Box>
     );
   }
 
   const selectedMetric = data.metrics[selected] ?? data.metrics[0]!;
+  const termStateLabel = data.termState === "partial" ? "PARTIAL" : data.termState.toUpperCase();
   return (
     <Box flexDirection="column" width={width} height={height} paddingBottom={1}>
           <Box paddingX={1}><Text fg={colors.textMuted}>FRED · daily close</Text></Box>
           <Box flexDirection="row" paddingX={1} marginTop={1}>
             <Text fg={colors.textDim}>3M/30D </Text>
             <Text fg={termColor(data.termState)} attributes={TextAttributes.BOLD}>{formatValue(data.ratio)}</Text>
+            <Text fg={termColor(data.termState)} attributes={TextAttributes.BOLD}>{`  ${termStateLabel}`}</Text>
             <Text fg={colors.textDim}>{`  ${slopeLabel(data.slope)}  as of ${data.termDate ?? "--"}`}</Text>
           </Box>
           <Box marginTop={1} paddingX={1}><Text fg={colors.textDim}>{selectedMetric.title}</Text></Box>

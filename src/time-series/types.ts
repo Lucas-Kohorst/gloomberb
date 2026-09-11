@@ -10,7 +10,7 @@ export type SeriesTransform = "raw" | "percent" | "index100" | "yoy" | "qoq" | "
 export type SeriesAxis = "auto" | "left" | "right";
 export type SeriesInterpolation = "none" | "step-after";
 export type SeriesTimestampMode = "available-at" | "period-end";
-export type PanelScale = "linear" | "log";
+export type PanelScale = "linear" | "log" | "percent";
 
 export interface SecuritySeriesSource {
   kind: "security";
@@ -138,6 +138,8 @@ export interface ChartPanelSpec {
   label?: string;
   height?: number;
   scale?: PanelScale;
+  /** When false, the desktop price scale keeps a manual range. Default true. */
+  autoScale?: boolean;
 }
 
 export interface ChartViewportSpec {
@@ -146,6 +148,8 @@ export interface ChartViewportSpec {
   dateWindow?: { start: string; end: string };
   /** Optional latest-observation cap, useful for period-based financial views. */
   maxPoints?: number;
+  /** Display timezone. `exchange` uses the listing TZ; otherwise an IANA name or `UTC`. */
+  timeZone?: string;
 }
 
 export interface ChartSpec {

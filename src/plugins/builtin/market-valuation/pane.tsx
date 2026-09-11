@@ -5,12 +5,16 @@ import {
   InputSearchBar,
   SegmentedControl,
   Spinner,
+  nextStackSortPreference,
+  sortStackItems,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
   type DataTableSelectionChangeReason,
   type PaneFooterSegment,
+  type StackSortPreference,
 } from "../../../components";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
@@ -44,6 +48,40 @@ type LoadState =
 
 type ColumnId = "name" | "value" | "zone" | "percentile" | "sigma";
 interface Column extends DataTableColumn { id: ColumnId }
+type ValuationSortPreference = StackSortPreference<ColumnId>;
+
+const DEFAULT_VALUATION_SORT: ValuationSortPreference = { columnId: "name", direction: "asc" };
+
+const ZONE_ORDER: Record<string, number> = {
+  "significantly-undervalued": 0,
+  "modestly-undervalued": 1,
+  fair: 2,
+  "modestly-overvalued": 3,
+  "significantly-overvalued": 4,
+};
+
+function compareValuationViews(
+  left: IndicatorViewModel,
+  right: IndicatorViewModel,
+  columnId: ColumnId,
+): number {
+  switch (columnId) {
+    case "name":
+      return left.indicator.shortLabel.localeCompare(right.indicator.shortLabel);
+    case "value":
+      return left.current.ratio - right.current.ratio;
+    case "zone":
+      return (ZONE_ORDER[left.zone.id] ?? 2) - (ZONE_ORDER[right.zone.id] ?? 2);
+    case "percentile":
+      return left.richPercentile - right.richPercentile;
+    case "sigma":
+      return left.richSigma - right.richSigma;
+  }
+}
+
+function defaultValuationSortDirection(columnId: ColumnId): "asc" | "desc" {
+  return columnId === "name" ? "asc" : "desc";
+}
 
 function bundleOf(state: LoadState): ValuationBundle | null {
   switch (state.status) {
@@ -131,6 +169,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [sortPreference, setSortPreference] = useState<ValuationSortPreference>(DEFAULT_VALUATION_SORT);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const generation = useRef(0);
 
@@ -189,10 +228,16 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     [bundle, range],
   );
   const normalizedQuery = query.trim().toLowerCase();
-  const visible = useMemo(
-    () => views.filter((view) => matchesQuery(view, normalizedQuery)),
-    [normalizedQuery, views],
-  );
+  const visible = useMemo(() => {
+    const filtered = views.filter((view) => matchesQuery(view, normalizedQuery));
+    return sortStackItems(filtered, sortPreference, compareValuationViews);
+  }, [normalizedQuery, sortPreference, views]);
+
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) =>
+      nextStackSortPreference(current, columnId as ColumnId, defaultValuationSortDirection(columnId as ColumnId)),
+    );
+  }, []);
   // Filtering narrows the list, but the detail keeps showing the chosen indicator
   // until the user picks another, so typing never blanks the chart.
   const selected = views.find((view) => view.indicator.id === indicatorId) ?? views[0] ?? null;
@@ -232,6 +277,8 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     loading: state.status === "loading",
     error,
     info: footerInfo,
+    hints: [paneSearchHint(focusSearch), paneRefreshHint(refresh)],
+    focused: focused && !searchFocused,
   });
 
   if (!bundle && state.status !== "error") {
@@ -245,7 +292,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
   if (!selected) {
     return (
       <Box width={width} height={height} padding={1} flexDirection="column" gap={1}>
-        <EmptyState title="Market valuation unavailable." message={error ?? undefined} />
+        <EmptyState title="Market valuation unavailable." message={error ?? undefined} hint="Press r to retry." />
       </Box>
     );
   }
@@ -281,19 +328,20 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
           rootHeight={tableHeight}
           columns={columns}
           items={visible}
-          sortColumnId={null}
-          sortDirection="asc"
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
           selection={{
             kind: "id",
             selectedId: selected.indicator.id,
             getId: (view) => view.indicator.id,
             onChange: (id, _item, _index, reason) => chooseIndicator(String(id), reason),
           }}
-          onHeaderClick={() => {}}
+          onHeaderClick={handleHeaderClick}
           onRootKeyDown={handlePaneKey}
           getItemKey={(view) => view.indicator.id}
           renderCell={(view, column) => cellsFor(view)[column.id]}
           emptyStateTitle={normalizedQuery ? "No indicator matches." : error ?? "No indicators."}
+          emptyStateHint={error && !normalizedQuery ? "Press r to retry." : undefined}
         />
       </Box>
     </Box>

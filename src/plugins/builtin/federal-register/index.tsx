@@ -1,9 +1,10 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NewsArticle } from "../../../news/types";
 import type { GloomPlugin, PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import {
   FeedDataTableStackView,
+  EmptyState,
   InputSearchBar,
   Spinner,
   useUpdatedAgo,
@@ -12,7 +13,6 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { isPlainKey } from "../../../utils/keyboard";
-import { colors } from "../../../theme/colors";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
@@ -158,7 +158,14 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
   const items = useMemo(() => itemsFor(docs, selectedIdx, detail, detailLoading), [docs, selectedIdx, detail, detailLoading]);
 
   useShortcut((event) => {
-    if (!focused || openId || searchFocused || event.targetEditable) return;
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "p") && activeDoc) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelected();
+      return;
+    }
+    if (openId) return;
     if (isPlainKey(event, "/")) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); }
     if (isPlainKey(event, "r")) { event.preventDefault?.(); event.stopPropagation?.(); load(query); }
   }, { allowEditable: true, enabled: focused });
@@ -180,15 +187,22 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)}
     onQueryChange={(value) => { setQuery(value); setSelectedIdx(0); setOpenId(null); }} />;
   if (status === "loading" && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label={query ? `Searching Federal Register for ${query}...` : "Loading Federal Register..."} /></Box></Box>;
-  if (error && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><Text fg={colors.textDim}>Error: {error}</Text></Box></Box>;
+  if (error && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Federal Register unavailable." message={error} hint="Press r to retry." /></Box></Box>;
+  const handlePopOutItem = useCallback((item: FeedDataTableItem) => {
+    const doc = docs.find((entry) => entry.documentNumber === item.id) ?? activeDoc;
+    if (!doc) return;
+    markArticleRead(doc.documentNumber);
+    popOut(toArticle(doc, doc.documentNumber === activeDoc?.documentNumber ? detail : cache.current.get(doc.documentNumber) ?? null));
+  }, [activeDoc, detail, docs, markArticleRead, popOut]);
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore}
     items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx}
     isItemRead={(item) => readArticleIds.has(item.id)}
     onItemRead={(item) => markArticleRead(item.id)}
-    onOpenItemIdChange={setOpenId} markdown onRootKeyDown={(event, context) => {
+    onOpenItemIdChange={setOpenId} markdown onPopOut={handlePopOutItem} onRootKeyDown={(event, context) => {
       if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; }
       if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
       if (event.name === "r") { event.preventDefault?.(); event.stopPropagation?.(); load(query); return true; }
+      if (event.name === "p" && activeDoc) { event.preventDefault?.(); event.stopPropagation?.(); popOutSelected(); return true; }
       return false;
     }} sourceLabel="Type / Agency" titleLabel="Document"
     emptyStateTitle={query ? `No Federal Register documents match ${query}.` : "No recent Federal Register documents."} />;

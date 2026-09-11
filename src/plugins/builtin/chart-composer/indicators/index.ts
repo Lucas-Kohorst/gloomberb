@@ -241,12 +241,12 @@ export function getIndicator(id: string): IndicatorDefinition | undefined {
 // Expression helper
 // ---------------------------------------------------------------------------
 
-export * from "./sma";
-export * from "./ema";
-export * from "./rsi";
-export * from "./macd";
-export * from "./bollinger";
-export * from "./vwap";
-export * from "./atr";
-export * from "./stochastic";
-export * from "./adx";
+export { sma } from "./sma";
+export { ema } from "./ema";
+export { rsi } from "./rsi";
+export { macd } from "./macd";
+export { bollinger } from "./bollinger";
+export { vwap } from "./vwap";
+export { atr } from "./atr";
+export { stochastic } from "./stochastic";
+export { adx } from "./adx";
