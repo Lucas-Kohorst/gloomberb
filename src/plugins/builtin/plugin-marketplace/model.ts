@@ -73,6 +73,8 @@ export interface MarketplaceEntry {
    * and working elsewhere.
    */
   unsupportedHere: boolean;
+  /** Not listed on plugins.gloom.sh — a first-party or side-loaded plugin. */
+  local: boolean;
 }
 
 const TIER_RANK: Record<PluginTier, number> = { official: 0, verified: 1, community: 2 };
@@ -155,6 +157,7 @@ export function mergeCatalog(options: {
       contributes: plugin.contributes,
       loadError: local?.loadError,
       unsupportedHere: !plugin.targets.includes(target),
+      local: false,
     });
   }
 
@@ -179,6 +182,7 @@ export function mergeCatalog(options: {
       installedVersion: local.version,
       loadError: local.loadError,
       unsupportedHere: !!local.unsupportedTarget,
+      local: true,
     });
   }
 

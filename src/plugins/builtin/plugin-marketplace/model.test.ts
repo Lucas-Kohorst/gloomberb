@@ -79,6 +79,25 @@ describe("mergeCatalog", () => {
     const sideloaded = entries.find((entry) => entry.id === "my-private-plugin");
     expect(sideloaded?.installed).toBe(true);
     expect(sideloaded?.categories).toEqual(["unlisted"]);
+    expect(sideloaded?.local).toBe(true);
+  });
+
+  test("marks a first-party plugin the registry has not listed as local", () => {
+    const [entry] = mergeCatalog({
+      registry: [],
+      installed: [installedPlugin({
+        id: "crt-sh",
+        name: "crt.sh",
+        source: "builtin",
+        enabled: false,
+      })],
+      target: "desktop",
+    });
+
+    expect(entry?.local).toBe(true);
+    expect(entry?.bundled).toBe(true);
+    expect(entry?.installed).toBe(true);
+    expect(entry?.enabled).toBe(false);
   });
 
   test("flags a plugin the current renderer cannot run without calling it uninstalled", () => {

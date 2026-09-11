@@ -1,3 +1,4 @@
+import { useEffect, type RefObject } from "react";
 import {
   PaneSidebar,
   PaneSidebarRow,
@@ -14,7 +15,7 @@ import { TextField } from "../../../components/ui/fields";
 import { Spinner } from "../../../components/ui/loading";
 import { t } from "../../../i18n";
 import { useThemeColors } from "../../../theme/theme-context";
-import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { formatCompact } from "../../../utils/format";
 import type { DockLayoutNode, LayoutConfig, PaneInstanceConfig } from "../../../types/config";
 import type { PaneDef } from "../../../types/plugin";
@@ -29,7 +30,13 @@ const ROW_ROLE = "plugin-gallery-row";
 export interface PluginGalleryController {
   query: string;
   setQuery: (query: string) => void;
+  searchFocused?: boolean;
+  searchFocusToken?: number;
+  searchInputRef?: RefObject<InputRenderable | null>;
+  onSearchFocus?: () => void;
+  onSearchBlur?: () => void;
   installed: MarketplaceEntry[];
+  local: MarketplaceEntry[];
   discover: MarketplaceEntry[];
   selected: MarketplaceEntry | null;
   select: (id: string) => void;
@@ -79,6 +86,7 @@ function EntryRow({
           minWidth={0}
           flexDirection="row"
           alignItems="center"
+          paddingX={1}
           role="button"
           tabIndex={0}
           aria-label={`${entry.name}, ${status.text}`}
@@ -153,7 +161,7 @@ function DiscoverStatus({ controller }: { controller: PluginGalleryController })
       <MarketplaceNote>
         {controller.query.trim()
           ? t("No plugins match this search.")
-          : t("No community plugins listed yet.")}
+          : t("Nothing left to install.")}
       </MarketplaceNote>
     );
   }
@@ -399,9 +407,33 @@ export function PluginGalleryDesktop({
   width?: number;
   height?: number;
 }) {
+  const colors = useThemeColors();
   const sidebarWidth = marketplaceSidebarWidth(width);
   const selected = controller.selected;
   useScrollMarketplaceRowIntoView(ROW_ROLE, selected?.id);
+
+  const searchFocused = controller.searchFocused ?? false;
+  const searchFocusToken = controller.searchFocusToken ?? 0;
+  const searchInputRef = controller.searchInputRef;
+  useEffect(() => {
+    if (focused && searchFocused) searchInputRef?.current?.focus?.();
+  }, [focused, searchFocused, searchFocusToken, searchInputRef]);
+
+  if (controller.status === "loading") {
+    return (
+      <Box
+        width={width}
+        height={height}
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        data-gloom-role="plugin-gallery"
+      >
+        <Spinner />
+        <Text fg={colors.textDim}>{t("Loading plugin catalog…")}</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -420,6 +452,10 @@ export function PluginGalleryDesktop({
                 placeholder={t("Search plugins")}
                 onChange={controller.setQuery}
                 width={Math.max(1, listWidth - 2)}
+                focused={focused && searchFocused}
+                inputRef={searchInputRef}
+                onMouseDown={controller.onSearchFocus}
+                onBlur={controller.onSearchBlur}
               />
             </Box>
             <ScrollBox
@@ -429,7 +465,7 @@ export function PluginGalleryDesktop({
               focusable={false}
               data-gloom-role="plugin-gallery-sidebar"
             >
-              <MarketplaceSection title="Installed" count={controller.installed.length} />
+              <MarketplaceSection title="Installed" count={controller.installed.length} flush />
               {controller.installed.length === 0 ? (
                 <MarketplaceNote>
                   {controller.query.trim()
@@ -437,6 +473,22 @@ export function PluginGalleryDesktop({
                     : t("No plugins installed yet.")}
                 </MarketplaceNote>
               ) : controller.installed.map((entry) => (
+                <EntryRow
+                  key={entry.id}
+                  entry={entry}
+                  controller={controller}
+                  selected={entry.id === selected?.id}
+                />
+              ))}
+
+              <MarketplaceSection title="Local" count={controller.local.length} />
+              {controller.local.length === 0 ? (
+                <MarketplaceNote>
+                  {controller.query.trim()
+                    ? t("No local plugins match this search.")
+                    : t("No local plugins.")}
+                </MarketplaceNote>
+              ) : controller.local.map((entry) => (
                 <EntryRow
                   key={entry.id}
                   entry={entry}

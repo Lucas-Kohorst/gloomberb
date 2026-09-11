@@ -66,10 +66,25 @@ export function useScrollMarketplaceRowIntoView(rowRole: string, selectedId: str
   }, [rowRole, selectedId]);
 }
 
-export function MarketplaceSection({ title, count }: { title: string; count: number }) {
+export function MarketplaceSection({
+  title,
+  count,
+  flush = false,
+}: {
+  title: string;
+  count: number;
+  flush?: boolean;
+}) {
   const colors = useThemeColors();
   return (
-    <Box height={1} flexDirection="row" alignItems="center" paddingX={1} flexShrink={0}>
+    <Box
+      height={1}
+      flexDirection="row"
+      alignItems="center"
+      paddingX={1}
+      marginTop={flush ? 0 : 1}
+      flexShrink={0}
+    >
       <Text fg={colors.textMuted} attributes={TextAttributes.BOLD}>
         {`${t(title).toUpperCase()} ${count}`}
       </Text>
@@ -80,7 +95,7 @@ export function MarketplaceSection({ title, count }: { title: string; count: num
 export function MarketplaceNote({ children }: { children: ReactNode }) {
   const colors = useThemeColors();
   return (
-    <Box flexDirection="row" paddingX={1} paddingY={1} flexShrink={0}>
+    <Box flexDirection="row" paddingX={1} flexShrink={0}>
       <Text fg={colors.textDim} wrapText>{children}</Text>
     </Box>
   );

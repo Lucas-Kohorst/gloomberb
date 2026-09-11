@@ -15,14 +15,18 @@ export const REGISTRY_ORIGIN = "https://plugins.gloom.sh";
 const REGISTRY_URL = `${REGISTRY_ORIGIN}/registry.json`;
 const FRESH_MS = 15 * 60_000;
 
-const registryFetch = createThrottledFetch({
-  requestsPerMinute: 20,
-  maxRetries: 2,
-  timeoutMs: 10_000,
-  backoffBaseMs: 500,
-  dedupeGetRequests: true,
-  defaultHeaders: { Accept: "application/json" },
-});
+function createRegistryFetch() {
+  return createThrottledFetch({
+    requestsPerMinute: 20,
+    maxRetries: 2,
+    timeoutMs: 10_000,
+    backoffBaseMs: 500,
+    dedupeGetRequests: true,
+    defaultHeaders: { Accept: "application/json" },
+  });
+}
+
+let registryFetch = createRegistryFetch();
 
 interface CacheEntry {
   plugins: RegistryPlugin[];
@@ -85,4 +89,11 @@ export async function loadRegistry(options: { force?: boolean } = {}): Promise<F
 
 export function registryPluginUrl(id: string): string {
   return `https://gloom.sh/plugins/${id}`;
+}
+
+/** Test helper: drop the in-memory feed so loading states render deterministically. */
+export function resetRegistryFeedCacheForTests(): void {
+  cache = null;
+  inFlight = null;
+  registryFetch = createRegistryFetch();
 }

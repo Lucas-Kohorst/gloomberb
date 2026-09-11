@@ -81,6 +81,7 @@ const SHOT_MODE_CSS = [
   "[data-gloom-role='composite-chart-toolbar']",
   "[data-gloom-role='chart-series-quick-add']",
   "[data-gloom-role='pane-close']",
+  "[data-gloom-role='pane-restore']",
 ].join(", ") + " { display: none !important; }\n"
   // Sits where the hidden close button was: one cell high, right-aligned in the title bar.
   + "[data-gloom-role='shot-watermark'] { position: fixed; top: 1px; right: 10px; height: var(--cell-h);"
