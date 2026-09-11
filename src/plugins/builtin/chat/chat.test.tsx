@@ -1529,7 +1529,7 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const line = setup().captureCharFrame().split("\n")[0] ?? "";
-    expect(line).toContain("● 12 online");
+    expect(line).toContain("12 online");
     expect(line).toContain("@ lucas");
     expect(line.indexOf("12 online")).toBeLessThan(line.indexOf("@ lucas"));
   });

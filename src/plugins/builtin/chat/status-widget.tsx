@@ -9,7 +9,6 @@ import {
   getPreferredChatOpenChannelId,
 } from "./channels";
 import { chatController, type ChatController } from "./controller";
-import { OnlinePresenceDot } from "./presence-dot";
 import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
@@ -132,29 +131,14 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               },
             } : {})}
           >
-            <Box
-              flexDirection="row"
-              alignItems="center"
+            <Text
+              fg={colors.textDim}
+              title={tf("{count} online", { count: snapshot.onlineCount })}
               data-gloom-role="status-online-count"
-              {...(nativePaneChrome ? {
-                style: {
-                  display: "inline-flex",
-                  alignItems: "center",
-                  flexShrink: 0,
-                  whiteSpace: "nowrap",
-                  gap: 8,
-                },
-              } : {})}
+              {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
             >
-              <OnlinePresenceDot />
-              <Text
-                fg={colors.textDim}
-                title={tf("{count} online", { count: snapshot.onlineCount })}
-                {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
-              >
-                {`${nativePaneChrome ? "" : " "}${tf("{count} online", { count: snapshot.onlineCount })}`}
-              </Text>
-            </Box>
+              {`${nativePaneChrome ? "" : " "}${tf("{count} online", { count: snapshot.onlineCount })}`}
+            </Text>
             <Text
               fg={unreadCount > 0 ? colors.text : colors.textDim}
               {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
