@@ -41,7 +41,7 @@ export function CashFlowPane({
 }) {
   const dataProvider = useAssetData();
   const { symbol, exchange, currency } = useBoundTicker();
-  const requestedPeriod = usePaneSettingValue<CashFlowPeriod>(
+  const [requestedPeriod] = usePaneSettingValue<CashFlowPeriod>(
     "period",
     CASH_FLOW_DEFAULTS.period,
   );

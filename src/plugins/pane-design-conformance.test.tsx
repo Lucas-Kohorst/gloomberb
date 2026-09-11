@@ -47,6 +47,12 @@ const AUDITED_PANES = new Set([
  * pane from here to AUDITED_PANES is always welcome.
  */
 const EXEMPT_PANES: Record<string, string> = {
+  "trend-analysis": "universal gates pass; needs ticker fixture for deep entry",
+  "momentum-sortino": "universal gates pass; needs ticker fixture for deep entry",
+  "technical-summary": "universal gates pass; needs ticker fixture for deep entry",
+  "pattern-recognition": "universal gates pass; needs ticker fixture for deep entry",
+  "cash-flow": "universal gates pass; needs ticker fixture for deep entry",
+  "assets-under-management": "universal gates pass; needs ticker fixture for deep entry",
   // Needs a data-provider fixture.
   "account-management": "universal gates pass; needs fixture for deep entry",
   "adjacent-indices": "universal gates pass; needs fixture for deep entry",
@@ -65,6 +71,7 @@ const EXEMPT_PANES: Record<string, string> = {
   "corporate-actions": "universal gates pass; needs fixture for deep entry",
   correlation: "universal gates pass; needs fixture for deep entry",
   "credit-conditions": "universal gates pass; needs fixture for deep entry",
+  "crt-sh": "universal gates pass; needs fixture for deep entry",
   "data-catalog": "universal gates pass; needs fixture for deep entry",
   "dividend-yield": "universal gates pass; needs fixture for deep entry",
   "earnings-calendar": "universal gates pass; needs fixture for deep entry",
@@ -134,6 +141,7 @@ const EXEMPT_PANES: Record<string, string> = {
   "complaints": "universal gates pass; needs fixture for deep entry",
   "companies": "universal gates pass; needs fixture for deep entry",
   "courtlistener": "universal gates pass; needs fixture for deep entry",
+  "earthquakes": "universal gates pass; needs fixture for deep entry",
   "energy": "universal gates pass; needs fixture for deep entry",
   "fdic-bank": "universal gates pass; needs fixture for deep entry",
   "filing-diff": "universal gates pass; needs fixture for deep entry",
