@@ -1,5 +1,6 @@
 import type { GloomPlugin } from "../types/plugin";
 import { cboeBookPlugin } from "./builtin/cboe-book";
+import { crtShPlugin } from "./builtin/crt-sh";
 import { cfpbComplaintsPlugin } from "./builtin/cfpb-complaints";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
@@ -17,6 +18,7 @@ import { openFdaPlugin } from "./builtin/openfda";
 import { sec8KAlertsPlugin } from "./builtin/sec-8k-alerts";
 import { secFtsPlugin } from "./builtin/sec-fts";
 import { shortCampaignsPlugin } from "./builtin/short-campaigns";
+import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
 import { workplaceSignalsPlugin } from "./builtin/workplace-signals";
 
 export const researchDataPlugins: readonly GloomPlugin[] = [
@@ -25,6 +27,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   clinicalTrialsPlugin,
   commentLettersPlugin,
   courtListenerPlugin,
+  crtShPlugin,
   eiaEnergyPlugin,
   fdicBankPlugin,
   filingDiffPlugin,
@@ -38,5 +41,6 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   sec8KAlertsPlugin,
   secFtsPlugin,
   shortCampaignsPlugin,
+  usgsEarthquakesPlugin,
   workplaceSignalsPlugin,
 ];

@@ -185,6 +185,23 @@
       }
     },
     {
+      "id": "crt-sh",
+      "name": "crt.sh",
+      "description": "Search Certificate Transparency logs for domains, subdomains, and certificate history.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "crt-sh"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",
@@ -597,6 +614,8 @@
       "contributes": {
         "panes": [
           "analyst-research",
+          "assets-under-management",
+          "cash-flow",
           "chart-composer",
           "corporate-actions",
           "data-catalog",
@@ -609,15 +628,36 @@
           "historical-prices",
           "holders",
           "insider",
+          "momentum-sortino",
           "options",
           "options-calculator",
           "options-vol-surface",
+          "pattern-recognition",
           "quote-monitor",
           "relative-valuation",
           "sec",
           "short-interest",
+          "technical-summary",
           "thirteenf-funds",
-          "ticker-research"
+          "ticker-research",
+          "trend-analysis"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "usgs-earthquakes",
+      "name": "USGS Earthquakes",
+      "description": "Real-time global earthquake data from USGS. Filter by magnitude and search by location.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "earthquakes"
         ],
         "capabilities": [],
         "broker": false
