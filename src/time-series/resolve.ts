@@ -308,6 +308,7 @@ function requestResolution(
   if (spec.viewport.resolution !== "auto") {
     const maxRange = getSupportMaxRange(sharedSupport, spec.viewport.resolution);
     const supported = sharedSupport.length === 0
+      || maxRange === "ALL"
       || (
         maxRange !== null
         && bounds.start !== null
