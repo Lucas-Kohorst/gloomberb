@@ -1515,6 +1515,20 @@ describe("app security headers", () => {
 });
 
 describe("share document serving", () => {
+  test("optional metadata failures still deliver the share shell", async () => {
+    const env = makeEnv();
+    env.ASSETS = { fetch: async () => new Response("<html><head><title>Share</title></head><body>reader</body></html>", {
+      headers: { "content-type": "text/html" },
+    }) } as unknown as Fetcher;
+    env.SHARES.get = async () => { throw new Error("KV unavailable"); };
+    const encoded = Buffer.from(JSON.stringify({ type: "news", id: "x", title: "Title", url: "", summary: {} })).toString("base64url");
+    for (const path of ["/news/provider-story", `/article?a=${encoded}`]) {
+      const response = await workerModule.default.fetch(makeRequest("GET", path), env);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("reader");
+    }
+  });
+
   test("GET /s/{id} fetches /share.html without Cookie or If-None-Match", async () => {
     const captured: Request[] = [];
     const env = makeEnv();

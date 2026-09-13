@@ -305,7 +305,8 @@ async function resolveSharePageMeta(
     if (!article) return null;
     return {
       title: article.title,
-      description: article.summary || article.previewText,
+      description: typeof article.summary === "string" ? article.summary
+        : typeof article.previewText === "string" ? article.previewText : undefined,
     };
   }
   const newsId = parseNewsArticleId(url.pathname);
@@ -719,11 +720,14 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     headers.delete("etag");
     headers.delete("last-modified");
     const status = response.status === 304 ? 200 : response.status;
-    const meta = status === 200 ? await resolveSharePageMeta(request, env) : null;
+    const meta = status === 200 ? await resolveSharePageMeta(request, env).catch(() => null) : null;
     if (meta) {
       const html = await response.text();
       headers.set("content-type", "text/html; charset=utf-8");
-      return new Response(injectShareDocumentMeta(html, meta), { status, headers });
+      return new Response(injectShareDocumentMeta(html, {
+        title: meta.title,
+        description: typeof meta.description === "string" ? meta.description : undefined,
+      }), { status, headers });
     }
     return new Response(response.body, { status, headers });
   }
