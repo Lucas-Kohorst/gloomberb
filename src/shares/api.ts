@@ -214,7 +214,7 @@ export async function lookupNewsShareId(
 
 /**
  * Point `/news/{articleId}` at a Cloud share whose stored article id matches.
- * First live mapping wins; a stale Cloud 404 can be replaced.
+ * Verified registrations use last-write-wins on the eventually consistent KV index.
  */
 export async function registerNewsShare(
   articleId: string,
