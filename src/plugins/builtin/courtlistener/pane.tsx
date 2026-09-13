@@ -77,6 +77,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -86,10 +87,12 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     (value: string) => {
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
+      moreAbortRef.current = null;
       const controller = new AbortController();
       abortRef.current = controller;
       setStatus("loading");
       setError(null);
+      setLoadMoreError(null);
       setNextUrl(null);
       setLoadingMore(false);
       void client
@@ -115,11 +118,11 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   );
 
   const loadMore = useCallback(() => {
-    if (loadingMore || !nextUrl || status !== "loaded") return;
-    moreAbortRef.current?.abort();
+    if (moreAbortRef.current || loadingMore || !nextUrl || status !== "loaded") return;
     const controller = new AbortController();
     moreAbortRef.current = controller;
     setLoadingMore(true);
+    setLoadMoreError(null);
     void client.searchLawsuitsPage(nextUrl, { signal: controller.signal })
       .then((page) => {
         if (moreAbortRef.current !== controller) return;
@@ -133,16 +136,19 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
       .catch((loadError) => {
         if (moreAbortRef.current !== controller) return;
         if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setNextUrl(null);
+        setLoadMoreError(loadError instanceof Error ? loadError.message : String(loadError));
       })
       .finally(() => {
-        if (moreAbortRef.current === controller) setLoadingMore(false);
+        if (moreAbortRef.current === controller) {
+          moreAbortRef.current = null;
+          setLoadingMore(false);
+        }
       });
   }, [client, loadingMore, nextUrl, status]);
 
   const onBodyScrollActivity = useTableLoadMore(
     tableScrollRef,
-    !!nextUrl && !loadingMore && status === "loaded" && !openItemId,
+    !!nextUrl && !loadingMore && !loadMoreError && status === "loaded" && !openItemId,
     loadMore,
   );
 
@@ -157,6 +163,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     () => () => {
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
+      moreAbortRef.current = null;
     },
     [],
   );
@@ -215,9 +222,10 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     url: activeLawsuit?.url || activeLawsuit?.downloadUrl || null,
     source: activeLawsuit?.courtCitation || activeLawsuit?.court,
     label: "opinion",
-    loading,
+    loading: loading || loadingMore,
     error,
     info: [
+      ...(loadMoreError ? [{ id: "load-more-error", parts: [{ text: `More results: ${loadMoreError}`, tone: "warning" as const }] }] : []),
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
@@ -225,6 +233,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     showOpenHint: !!activeLawsuit?.url,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(loadMoreError ? [{ id: "retry-page", key: "t", label: "try again", onPress: loadMore }] : []),
     ],
   });
 
