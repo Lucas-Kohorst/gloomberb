@@ -280,12 +280,53 @@ function isTableData(value: unknown): value is TableShareData {
       && Object.values(row).every(isCell));
 }
 
+function optionalChartString(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.length <= MAX_TITLE_LENGTH);
+}
+
+function finiteChartNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function chartPanels(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= MAX_CHART_SERIES && value.every((panel) => record(panel)
+    && shortString(panel.id)
+    && optionalChartString(panel.label)
+    && (panel.height === undefined || (finiteChartNumber(panel.height) && panel.height > 0))
+    && (panel.scale === undefined || ["linear", "log", "percent"].includes(String(panel.scale))));
+}
+
+function chartMetadata(value: Record<string, unknown>): boolean {
+  return optionalChartString(value.capturedAt)
+    && optionalChartString(value.subtitle)
+    && (value.panels === undefined || chartPanels(value.panels))
+    && (value.window === undefined || (record(value.window)
+      && typeof value.window.start === "string" && Number.isFinite(Date.parse(value.window.start))
+      && typeof value.window.end === "string" && Number.isFinite(Date.parse(value.window.end))))
+    && (value.spec === undefined || (record(value.spec) && value.spec.version === 2
+      && record(value.spec.viewport) && Array.isArray(value.spec.series)
+      && Array.isArray(value.spec.studies) && chartPanels(value.spec.panels)));
+}
+
+function chartSeriesMetadata(series: Record<string, unknown>): boolean {
+  return optionalChartString(series.color)
+    && optionalChartString(series.unit)
+    && optionalChartString(series.panelId)
+    && (series.axis === undefined || series.axis === "left" || series.axis === "right")
+    && (series.style === undefined || ["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"].includes(String(series.style)));
+}
+
+function chartOhlc(point: Record<string, unknown>): boolean {
+  return ["o", "h", "l", "c"].every((key) => point[key] === undefined || finiteChartNumber(point[key]));
+}
+
 function isChartData(value: unknown): value is ChartShareData {
   if (!record(value) || !shortString(value.title) || !safeOptionalUrl(value.sourceUrl)) return false;
-  return Array.isArray(value.series)
+  return chartMetadata(value) && Array.isArray(value.series)
     && value.series.length > 0
     && value.series.length <= MAX_CHART_SERIES
     && value.series.every((series) => record(series)
+      && chartSeriesMetadata(series)
       && shortString(series.name, 120)
       && Array.isArray(series.points)
       && series.points.length > 0
@@ -293,7 +334,8 @@ function isChartData(value: unknown): value is ChartShareData {
       && series.points.every((point) => record(point)
         && ((typeof point.x === "string" && point.x.length <= 100) || (typeof point.x === "number" && Number.isFinite(point.x)))
         && typeof point.y === "number"
-        && Number.isFinite(point.y)));
+        && Number.isFinite(point.y)
+        && chartOhlc(point)));
 }
 
 function isArticleData(value: unknown): value is ArticleShareData {
@@ -374,9 +416,15 @@ export function parseTableSharePayload(value: unknown): TableSharePayload | null
 }
 
 export function parseChartSharePayload(value: unknown): ChartSharePayload | null {
-  if (!record(value)) return null;
-  if (!Array.isArray(value.series) || !Array.isArray(value.panels)) return null;
-  if (!shortString(value.title)) return null;
+  if (!record(value) || !shortString(value.title) || !chartMetadata(value) || !chartPanels(value.panels)) return null;
+  if (!Array.isArray(value.series) || value.series.length > MAX_CHART_SERIES) return null;
+  if (!value.series.every((series) => record(series) && chartSeriesMetadata(series)
+    && shortString(series.id) && shortString(series.label, 120)
+    && typeof series.color === "string" && typeof series.style === "string"
+    && typeof series.axis === "string" && typeof series.panelId === "string"
+    && Array.isArray(series.points) && series.points.length <= MAX_CHART_POINTS
+    && series.points.every((point) => record(point) && finiteChartNumber(point.t)
+      && (point.v === undefined || point.v === null || finiteChartNumber(point.v)) && chartOhlc(point)))) return null;
   return value as unknown as ChartSharePayload;
 }
 
