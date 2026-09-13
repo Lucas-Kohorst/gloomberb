@@ -94,6 +94,7 @@ const PUBLIC_API: Record<string, readonly string[]> = {
     "footerErrorChip",
     "getMessageComposerBlockHeight",
     "getPaneSidebarWidth",
+    "isBindableFooterHintKey",
     "isNoDataError",
     "isTableScrollNearEnd",
     "loadingText",
