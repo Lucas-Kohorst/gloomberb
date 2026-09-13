@@ -16,6 +16,7 @@ import {
 import {
   SHARE_KINDS,
   articleShareFromStored,
+  articleShareStoreData,
   decodeArticleSharePayload,
   parseSharePayload,
   type ShareKind,
@@ -176,8 +177,9 @@ function newsIndexResponse(body: unknown, status = 200): Response {
 async function readCloudShare(
   env: Env,
   shareId: string,
+  token?: string | null,
 ): Promise<{ payload: SharePayload; body: Record<string, unknown> } | null> {
-  const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500 });
+  const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500, token });
   if (response.status === 404 || response.status === 410) return null;
   if (!response.ok) throw new Error("Cloud share unavailable");
   const body: unknown = await response.json();
@@ -200,11 +202,26 @@ async function loadIndexedNewsShare(
     await env.SHARES.delete(newsIndexKey(articleId));
     return null;
   }
-  return { shareId: record.shareId, payload: live.payload, body: live.body };
+  const payload = await readTrustedNewsArticle(env, articleId);
+  if (!payload) return null;
+  return { shareId: record.shareId, payload, body: live.body };
 }
 
-function cloudShareMatchesArticle(payload: SharePayload, articleId: string): boolean {
-  return payload.kind === "article" && payload.data.id === articleId;
+async function readTrustedNewsArticle(env: Env, articleId: string, token?: string | null): Promise<SharePayload | null> {
+  const response = await gloomFetch(env, `/news/${encodeURIComponent(articleId)}`, { token, timeoutMs: 2_500 });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("News provider unavailable");
+  const story: unknown = await response.json();
+  if (!isPlainObject(story) || story.id !== articleId
+    || typeof story.headline !== "string" || typeof story.summary !== "string"
+    || typeof story.primaryUrl !== "string" || typeof story.primarySource !== "string") {
+    throw new Error("Invalid news provider response");
+  }
+  // Canonical pages only display provider-owned content, never author snapshot fields.
+  return parseSharePayload({ kind: "article", data: articleShareStoreData({
+    type: "news", id: articleId, title: story.headline, summary: story.summary,
+    url: story.primaryUrl, source: story.primarySource,
+  }) });
 }
 
 async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promise<Response> {
@@ -237,6 +254,12 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
     return newsIndexResponse({ error: "Method not allowed." }, 405);
   }
 
+  if (!hasTrustedHostedOrigin(request, url)) return newsIndexResponse({ error: "Invalid origin" }, 403);
+  const token = readSessionCookie(request);
+  if (!token || !await fetchSessionUser(request, env)) {
+    return newsIndexResponse({ error: "Authentication required." }, 401);
+  }
+
   let requestedShareId: string | null = null;
   try {
     const raw = await request.text();
@@ -257,9 +280,11 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
     return newsIndexResponse({ shareId: existing.shareId });
   }
 
-  const live = await readCloudShare(env, requestedShareId);
+  const live = await readCloudShare(env, requestedShareId, token);
   if (!live) return newsIndexResponse({ error: "Share not found." }, 404);
-  if (!cloudShareMatchesArticle(live.payload, articleId)) {
+  if (live.body.ownedByViewer !== true) return newsIndexResponse({ error: "Only the share owner can register it." }, 403);
+  if (live.payload.kind !== "article" || live.payload.data.id !== articleId
+    || !await readTrustedNewsArticle(env, articleId, token)) {
     return newsIndexResponse({ error: "Share does not match this article." }, 409);
   }
 
