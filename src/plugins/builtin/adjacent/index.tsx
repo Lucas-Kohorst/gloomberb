@@ -7,6 +7,7 @@ import {
   AdjacentClient,
   attachAdjacentPersistence,
   getSharedAdjacentClient,
+  resolveAdjacentApiKey,
   resetAdjacentPersistence,
   setSharedAdjacentApiKeyResolver,
 } from "./client";
@@ -46,7 +47,8 @@ function useAdjacentClient(): AdjacentClient {
   const [pluginKey] = usePluginConfigState<string>(ADJACENT_API_KEY_CONFIG, "");
   const byokKeys = useAppSelector(byokKeysConfigSelector);
   const apiKey = byokKeys.find((entry) => entry.serviceId === "adjacent")?.apiKey?.trim()
-    || pluginKey
+    || pluginKey?.trim()
+    || resolveAdjacentApiKey()
     || "";
   const client = useMemo(
     () => getOrCreateClient(apiKey || null),

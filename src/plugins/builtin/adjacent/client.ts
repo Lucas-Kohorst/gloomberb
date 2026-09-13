@@ -721,7 +721,11 @@ export function setSharedAdjacentApiKeyResolver(resolver: () => string | null): 
   resolveSharedApiKey = resolver;
 }
 
-/** Returns an Adjacent client using the last shared API key, if any. */
+export function resolveAdjacentApiKey(): string | null {
+  return resolveSharedApiKey()?.trim() || process.env.ADJACENT_API_KEY?.trim() || null;
+}
+
+/** Returns an Adjacent client using the effective shared API key, if any. */
 export function getSharedAdjacentClient(): AdjacentClient {
-  return new AdjacentClient({ apiKey: resolveSharedApiKey() });
+  return new AdjacentClient({ apiKey: resolveAdjacentApiKey() });
 }
