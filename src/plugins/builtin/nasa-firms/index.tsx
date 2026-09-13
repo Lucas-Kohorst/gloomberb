@@ -25,7 +25,7 @@ import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { byokKeysConfigSelector } from "../account-management/ai-providers";
-import { FirmsClient, loadFires, setNasaFirmsMapKeyResolver } from "./client";
+import { FirmsClient, loadFires, resolveNasaFirmsMapKey, setNasaFirmsMapKeyResolver } from "./client";
 import {
   NASA_FIRMS_API_BASE_URL,
   NASA_FIRMS_BYOK_SERVICE_ID,
@@ -159,7 +159,8 @@ function FirePane({ width, height, focused }: PaneProps) {
   const [pluginKey] = usePluginConfigState<string>(NASA_FIRMS_MAP_KEY_CONFIG, "");
   const byokKeys = useAppSelector(byokKeysConfigSelector);
   const mapKey = byokKeys.find((entry) => entry.serviceId === NASA_FIRMS_BYOK_SERVICE_ID)?.apiKey?.trim()
-    || pluginKey
+    || pluginKey?.trim()
+    || resolveNasaFirmsMapKey()
     || "";
   const hasKey = !!mapKey;
   const client = useMemo(
