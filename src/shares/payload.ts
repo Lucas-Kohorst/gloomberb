@@ -293,7 +293,7 @@ function chartPanels(value: unknown): boolean {
     && shortString(panel.id)
     && optionalChartString(panel.label)
     && (panel.height === undefined || (finiteChartNumber(panel.height) && panel.height > 0))
-    && (panel.scale === undefined || ["linear", "log", "percent"].includes(String(panel.scale))));
+    && (panel.scale === undefined || (typeof panel.scale === "string" && ["linear", "log", "percent"].includes(panel.scale))));
 }
 
 function chartMetadata(value: Record<string, unknown>): boolean {
@@ -313,7 +313,7 @@ function chartSeriesMetadata(series: Record<string, unknown>): boolean {
     && optionalChartString(series.unit)
     && optionalChartString(series.panelId)
     && (series.axis === undefined || series.axis === "left" || series.axis === "right")
-    && (series.style === undefined || ["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"].includes(String(series.style)));
+    && (series.style === undefined || (typeof series.style === "string" && ["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"].includes(series.style)));
 }
 
 function chartOhlc(point: Record<string, unknown>): boolean {

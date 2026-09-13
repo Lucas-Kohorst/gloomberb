@@ -6,10 +6,10 @@ const data = { title: "Prices", series: [{ name: "AAPL", points: [{ x: 1, y: 2 }
 test("rejects malformed stored chart metadata before conversion", () => {
   for (const metadata of [
     { panels: "bad" }, { panels: [null] }, { panels: [{ id: "p", height: "big" }] },
-    { panels: [{ id: "p", scale: "bad" }] }, { capturedAt: {} },
+    { panels: [{ id: "p", scale: "bad" }] }, { panels: [{ id: "p", scale: ["linear"] }] }, { capturedAt: {} },
     { window: { start: 1, end: "bad" } }, { spec: { panels: "bad" } },
   ]) expect(parseSharePayload({ kind: "chart", data: { ...data, ...metadata } })).toBeNull();
-  for (const metadata of [{ unit: {} }, { color: [] }, { style: "bad" }, { axis: "bad" }, { panelId: {} }]) {
+  for (const metadata of [{ unit: {} }, { color: [] }, { style: "bad" }, { style: ["line"] }, { axis: "bad" }, { panelId: {} }]) {
     expect(parseSharePayload({ kind: "chart", data: { ...data, series: [{ ...data.series[0], ...metadata }] } })).toBeNull();
   }
   for (const key of ["o", "h", "l", "c"]) {
