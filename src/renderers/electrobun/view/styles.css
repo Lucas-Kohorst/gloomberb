@@ -91,6 +91,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   background: transparent;
 }
 [data-gloom-role="data-table-column-resize"]:hover::after,
+[data-gloom-role="data-table-column-resize"]:focus-visible::after,
 [data-gloom-role="data-table-column-resize"][data-active="true"]::after {
   background: var(--gloom-border-focused, #8b8fa3);
 }
