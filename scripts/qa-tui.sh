@@ -85,10 +85,21 @@ if [ "${GLOOM_QA_STREAMS:-0}" = "1" ]; then
 fi
 
 if [ "${GLOOM_QA_COMMAND_BAR:-0}" = "1" ]; then
-  pilotty key -s "$SESSION" Ctrl+P >/dev/null
-  sleep 0.6
-  BAR="$(pilotty snapshot -s "$SESSION" --format text --settle 400)"
-  if ! echo "$BAR" | grep -aE '\[S\]earch or run a command|Commands|Command or plain English' >/dev/null; then
+  BAR_PATTERN='\[S\]earch or run a command|Commands|Command or plain English|Pane Settings|Layout Actions'
+  for attempt in 1 2; do
+    pilotty key -s "$SESSION" Ctrl+P >/dev/null
+    pilotty wait-for -s "$SESSION" -t 5000 -r "$BAR_PATTERN" >/dev/null || true
+    BAR="$(pilotty snapshot -s "$SESSION" --format text --settle 400)"
+    if echo "$BAR" | grep -aE "$BAR_PATTERN" >/dev/null; then
+      break
+    fi
+    if echo "$BAR" | grep -aE -f "$ASSERTIONS" >/dev/null; then
+      break
+    fi
+    # Boot can paint the prompt before its keyboard handler is ready.
+    if [ "$attempt" = "1" ]; then pilotty key -s "$SESSION" Escape >/dev/null; fi
+  done
+  if ! echo "$BAR" | grep -aE "$BAR_PATTERN" >/dev/null; then
     echo "qa-tui: Ctrl+P did not open the command bar" >&2
     echo "$BAR" >&2
     exit 1
