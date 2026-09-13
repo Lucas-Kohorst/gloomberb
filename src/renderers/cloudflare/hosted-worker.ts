@@ -127,14 +127,21 @@ async function allocateShareId(env: Env): Promise<string | null> {
   return null;
 }
 
-function relayCloudShareResponse(upstream: Response): Response {
+async function relayCloudShareResponse(upstream: Response, method: string): Promise<Response> {
   const headers = new Headers();
   const contentType = upstream.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
   const location = upstream.headers.get("location");
   if (location) headers.set("location", location);
   headers.set("cache-control", "private, no-store");
-  return new Response(upstream.body, { status: upstream.status, headers });
+  const rotated = extractSessionToken(upstream.headers);
+  if (rotated) {
+    headers.set("Set-Cookie", sessionCookieHeader(rotated));
+    headers.set("x-gloom-hosted-session", "1");
+  }
+  const bodyless = method === "HEAD" || [204, 205, 304].includes(upstream.status);
+  const body = bodyless ? null : rotated ? await stripUpstreamTokenBody(upstream) : upstream.body;
+  return new Response(body, { status: upstream.status, headers });
 }
 
 /** Public Cloud share API on this origin so the slim page does not call api.gloom.sh from the browser. */
@@ -155,7 +162,7 @@ async function handleCloudSharesProxy(request: Request, env: Env, url: URL): Pro
     token,
     timeoutMs: GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   });
-  return relayCloudShareResponse(upstream);
+  return relayCloudShareResponse(upstream, request.method);
 }
 
 const NEWS_INDEX_CORS = {
