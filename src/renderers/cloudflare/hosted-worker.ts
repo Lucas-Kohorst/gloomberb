@@ -284,11 +284,6 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
     return newsIndexResponse({ error: "Invalid share id." }, 400);
   }
 
-  const existing = await loadIndexedNewsShare(env, articleId);
-  if (existing) {
-    return newsIndexResponse({ shareId: existing.shareId });
-  }
-
   const live = await readCloudShare(env, requestedShareId, token);
   if (!live) return newsIndexResponse({ error: "Share not found." }, 404);
   if (live.body.ownedByViewer !== true) return newsIndexResponse({ error: "Only the share owner can register it." }, 403);
@@ -297,6 +292,7 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
     return newsIndexResponse({ error: "Share does not match this article." }, 409);
   }
 
+  // KV has no compare-and-set: verified registrations intentionally use last-write-wins.
   await env.SHARES.put(newsIndexKey(articleId), serializeNewsIndexRecord(requestedShareId, verifiedArticle), {
     expirationTtl: NEWS_INDEX_TTL_SECONDS,
   });

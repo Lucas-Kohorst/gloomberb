@@ -661,10 +661,10 @@ describe("canonical news share index", () => {
     });
   });
 
-  test("first live mapping wins and a mismatched article id is rejected", async () => {
+  test("verified registrations replace live mappings and mismatched ids are rejected", async () => {
     installCloudShares({
       [shareId]: cloudArticle,
-      [otherShareId]: { ...cloudArticle, data: { ...cloudArticle.data, id: "other-story" } },
+      [otherShareId]: cloudArticle,
     });
     const env = makeEnv();
     await workerModule.default.fetch?.(
@@ -675,8 +675,9 @@ describe("canonical news share index", () => {
       makeRequest("PUT", `/api/news/${articleId}`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId: otherShareId }) }),
       env,
     );
-    expect(replay?.status).toBe(200);
-    expect(await replay?.json()).toEqual({ shareId });
+    expect(replay?.status).toBe(201);
+    expect(await replay?.json()).toEqual({ shareId: otherShareId });
+    expect(JSON.parse(SNAPSHOTS.get(`news:${articleId}`)!)).toMatchObject({ shareId: otherShareId });
 
     const mismatch = await workerModule.default.fetch?.(
       makeRequest("PUT", `/api/news/other-story`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }) }),
