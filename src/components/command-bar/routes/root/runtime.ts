@@ -302,7 +302,14 @@ export function useCommandBarRootRuntime({
       }
       // Untouched, the selection follows the best row on offer.
       const defaultIdx = orderedRootResults.findIndex(isDefaultSelectable);
-      return clampSelectedIdx(Math.max(rootResultModel.initialIdx, defaultIdx), resultIds.length);
+      // Category grouping can move the exact shortcut away from its initial index.
+      const preferredItem = rootResultModel.items[rootResultModel.initialIdx];
+      const shortcutIdx = rootShortcutIntent.kind !== "none"
+        && rootShortcutIntent.source === "pane-template"
+        && preferredItem?.id.startsWith(`pane-template:${rootShortcutIntent.template.id}:`)
+        ? orderedRootResults.findIndex((item) => item.id === preferredItem.id && isDefaultSelectable(item))
+        : -1;
+      return clampSelectedIdx(shortcutIdx >= 0 ? shortcutIdx : Math.max(rootResultModel.initialIdx, defaultIdx), resultIds.length);
     });
   }, [
     activeMatch?.command.id,
@@ -311,6 +318,8 @@ export function useCommandBarRootRuntime({
     rootModeKind,
     rootQuery,
     rootResultModel.initialIdx,
+    rootResultModel.items,
+    rootShortcutIntent,
     rootSelectionNavigatedRef,
     setRootHoveredIdx,
     setRootSelectedIdx,
