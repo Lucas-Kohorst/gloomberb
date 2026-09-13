@@ -513,6 +513,7 @@ describe("canonical news share index", () => {
   const shareId = "0123456789abcdef0123456789abcdef";
   const otherShareId = "abcdef0123456789abcdef0123456789";
   const cloudArticle = {
+    ownedByViewer: true,
     kind: "article",
     data: {
       title: "BRIEF",
@@ -532,6 +533,10 @@ describe("canonical news share index", () => {
   function installCloudShares(records: Record<string, unknown>) {
     globalThis.fetch = (async (input: URL | RequestInfo) => {
       const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+      if (url.pathname === "/auth/get-session") return Response.json({ user: { id: "owner" } });
+      if (url.pathname === `/news/${encodeURIComponent(articleId)}`) return Response.json({
+        id: articleId, headline: "BRIEF", summary: "Trusted provider body", primaryUrl: "https://reuters.com/story", primarySource: "Reuters News",
+      });
       const match = url.pathname.match(/^\/shares\/([a-f0-9]{32})$/);
       const record = match ? records[match[1]!] : undefined;
       if (record) return Response.json(record);
@@ -555,12 +560,42 @@ describe("canonical news share index", () => {
     expect(SNAPSHOTS.has(`news:${articleId}`)).toBe(false);
   });
 
+  test("registration rejects nonowners and canonical reads ignore invented snapshot content", async () => {
+    installCloudShares({ [shareId]: { ...cloudArticle, ownedByViewer: false } });
+    const env = makeEnv();
+    const denied = await workerModule.default.fetch(makeRequest("PUT", `/api/news/${articleId}`, {
+      origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }),
+    }), env);
+    expect(denied.status).toBe(403);
+    expect(SNAPSHOTS.size).toBe(0);
+    SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
+    const response = await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env);
+    expect((await response.json() as { data: { text: string } }).data.text).toBe("Trusted provider body");
+  });
+
+  test("registered canonical articles remain public when the provider requires authentication", async () => {
+    installCloudShares({ [shareId]: cloudArticle });
+    const env = makeEnv();
+    const registered = await workerModule.default.fetch(makeRequest("PUT", `/api/news/${articleId}`, {
+      origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }),
+    }), env);
+    expect(registered.status).toBe(201);
+    const provider = globalThis.fetch;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      if (String(input).includes("/news/")) return new Response("{}", { status: 401 });
+      return provider(input, init);
+    }) as typeof fetch;
+    const response = await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as { data: { text: string } }).data.text).toBe("Trusted provider body");
+  });
+
   test("PUT then GET resolves the Cloud snapshot by article id", async () => {
     installCloudShares({ [shareId]: cloudArticle });
     const env = makeEnv();
     const put = await workerModule.default.fetch?.(
       makeRequest("PUT", `/api/news/${articleId}`, {
-        body: JSON.stringify({ shareId }),
+        origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }),
       }),
       env,
     );
@@ -587,18 +622,18 @@ describe("canonical news share index", () => {
     });
     const env = makeEnv();
     await workerModule.default.fetch?.(
-      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId }) }),
+      makeRequest("PUT", `/api/news/${articleId}`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }) }),
       env,
     );
     const replay = await workerModule.default.fetch?.(
-      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId: otherShareId }) }),
+      makeRequest("PUT", `/api/news/${articleId}`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId: otherShareId }) }),
       env,
     );
     expect(replay?.status).toBe(200);
     expect(await replay?.json()).toEqual({ shareId });
 
     const mismatch = await workerModule.default.fetch?.(
-      makeRequest("PUT", `/api/news/other-story`, { body: JSON.stringify({ shareId }) }),
+      makeRequest("PUT", `/api/news/other-story`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }) }),
       env,
     );
     expect(mismatch?.status).toBe(409);
@@ -609,7 +644,7 @@ describe("canonical news share index", () => {
     const env = makeEnv();
     SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
     const put = await workerModule.default.fetch?.(
-      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId: otherShareId }) }),
+      makeRequest("PUT", `/api/news/${articleId}`, { origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId: otherShareId }) }),
       env,
     );
     expect(put?.status).toBe(201);

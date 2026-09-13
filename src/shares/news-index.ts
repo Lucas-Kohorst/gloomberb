@@ -5,6 +5,7 @@
  * resolve without a public news corpus keyed by article id.
  */
 
+import { parseSharePayload, type SharePayload } from "./payload";
 import { isStoredShareId } from "./routes";
 
 export const NEWS_INDEX_KEY_PREFIX = "news:";
@@ -16,6 +17,7 @@ export function newsIndexKey(articleId: string): string {
 
 export interface NewsIndexRecord {
   shareId: string;
+  verifiedArticle?: SharePayload;
 }
 
 export function parseNewsIndexRecord(value: unknown): NewsIndexRecord | null {
@@ -30,9 +32,12 @@ export function parseNewsIndexRecord(value: unknown): NewsIndexRecord | null {
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const shareId = (value as { shareId?: unknown }).shareId;
-  return typeof shareId === "string" && isStoredShareId(shareId) ? { shareId } : null;
+  if (typeof shareId !== "string" || !isStoredShareId(shareId)) return null;
+  const object = value as Record<string, unknown>;
+  const article = object.provenanceVersion === 1 ? parseSharePayload(object.verifiedArticle) : null;
+  return { shareId, ...(article?.kind === "article" ? { verifiedArticle: article } : {}) };
 }
 
-export function serializeNewsIndexRecord(shareId: string): string {
-  return JSON.stringify({ shareId } satisfies NewsIndexRecord);
+export function serializeNewsIndexRecord(shareId: string, verifiedArticle?: SharePayload): string {
+  return JSON.stringify({ shareId, ...(verifiedArticle ? { provenanceVersion: 1, verifiedArticle } : {}) });
 }
