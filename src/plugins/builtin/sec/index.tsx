@@ -477,7 +477,8 @@ function SecPane({ width, height, focused }: PaneProps) {
   const { ticker } = usePaneTicker();
   const [storedQuery] = usePaneSettingValue("query", "");
   const [formsSetting] = usePaneSettingValue("forms", "");
-  const formFilter = parseFormsSetting(String(formsSetting ?? ""));
+  const forms = String(formsSetting ?? "");
+  const formFilter = useMemo(() => parseFormsSetting(forms), [forms]);
   const initialQuery = String(storedQuery ?? "").trim() || ticker?.metadata.ticker || "";
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
   const [searchFocused, setSearchFocused] = useState(false);
