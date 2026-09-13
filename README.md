@@ -238,6 +238,8 @@ Desktop builds also accept `Cmd/Ctrl+K` for the command bar, the matching `Cmd` 
 
 ## Command Reference
 
+In terminal tables, double-click a column resize handle to restore its width. `Alt+0` restores the sorted column (or the first column when unsorted) in the focused pane.
+
 Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar prefixes are listed here for quick scanning.
 
 ### Company Research
