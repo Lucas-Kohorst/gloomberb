@@ -27,6 +27,7 @@ const originalFetch = globalThis.fetch;
 
 function makeEnv(): Env {
   return {
+    ANONYMOUS_SHARE_WRITES: { limit: async () => ({ success: true }) },
     SHARES: {
       get: async (key: string) => SNAPSHOTS.get(key) ?? null,
       put: async (key: string, value: string) => { SNAPSHOTS.set(key, value); },
@@ -383,6 +384,24 @@ describe("hosted share Worker endpoint", () => {
     restoreFetch();
   });
 
+  test("rejects malformed and oversized anonymous envelopes before allocating KV", async () => {
+    const env = makeEnv();
+    for (const [data, status] of [[{ title: "bad", text: {} }, 400], [{ title: "large", text: "x", extra: "x".repeat(140_000) }, 413]] as const) {
+      const response = await workerModule.default.fetch(makeRequest("POST", "/api/share", {
+        body: JSON.stringify({ kind: "article", data }),
+      }), env);
+      expect(response.status).toBe(status);
+      expect(SNAPSHOTS.size).toBe(0);
+    }
+    let budgetKey = "";
+    env.ANONYMOUS_SHARE_WRITES.limit = async ({ key }) => { budgetKey = key; return { success: false }; };
+    const request = makeRequest("POST", "/api/share", { body: JSON.stringify({ kind: "article", data: { title: "A", text: "B" } }) });
+    request.headers.set("CF-Connecting-IP", "192.0.2.1");
+    expect((await workerModule.default.fetch(request, env)).status).toBe(429);
+    expect(budgetKey).toBe("192.0.2.1");
+    expect(SNAPSHOTS.size).toBe(0);
+  });
+
   test("creates an anonymous article share with a short id", async () => {
     mockSessionUser = null;
     installMockFetch();
@@ -399,6 +418,7 @@ describe("hosted share Worker endpoint", () => {
             url: "",
             source: "Gloomberb Changelog",
             summary: "One release note.",
+            text: "One release note.",
           },
         }),
       }),
@@ -444,7 +464,7 @@ describe("hosted share Worker endpoint", () => {
         origin: ORIGIN,
         body: JSON.stringify({
           kind: "chart",
-          data: { title: "SPY", panels: [], series: [], capturedAt: "2026-08-17T00:00:00.000Z" },
+          data: { title: "SPY", panels: [], series: [{ name: "SPY", points: [{ x: 1, y: 2 }] }], capturedAt: "2026-08-17T00:00:00.000Z" },
         }),
       }),
       makeEnv(),
@@ -462,7 +482,7 @@ describe("hosted share Worker endpoint", () => {
         sessionToken: "tok",
         body: JSON.stringify({
           kind: "chart",
-          data: { title: "SPY", panels: [], series: [], capturedAt: "2026-08-17T00:00:00.000Z" },
+          data: { title: "SPY", panels: [], series: [{ name: "SPY", points: [{ x: 1, y: 2 }] }], capturedAt: "2026-08-17T00:00:00.000Z" },
         }),
       }),
       env,

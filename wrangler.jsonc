@@ -19,6 +19,9 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "ratelimits": [
+    { "name": "ANONYMOUS_SHARE_WRITES", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ],
   "kv_namespaces": [
     {
       "binding": "SHARES",
