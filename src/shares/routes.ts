@@ -57,8 +57,60 @@ export function buildInlineArticleShareUrl(encodedPayload: string): string {
  * KV read before the first byte of HTML, and an unresolvable share still needs
  * a page to say so on.
  */
+const LAYOUT_SHARE_PATH = /^\/l\/[a-f0-9]{32}\/?$/;
+
+export function isLayoutSharePath(pathname: string): boolean {
+  return LAYOUT_SHARE_PATH.test(pathname);
+}
+
+export const MAX_NEWS_ARTICLE_ID_LENGTH = 500;
+
+/**
+ * Godel-style public article page: `/news/reuters-urn:…`.
+ *
+ * Colons stay visible (RFC 3986 allows them in path segments). Everything else
+ * that would break a path is percent-encoded.
+ */
+export function isCanonicalNewsId(id: string): boolean {
+  return id.length > 0
+    && id.length <= MAX_NEWS_ARTICLE_ID_LENGTH
+    && id === id.trim()
+    && !id.includes("/")
+    && !id.includes("?")
+    && !id.includes("#")
+    && !id.includes("\0");
+}
+
+export function encodeNewsPathId(id: string): string {
+  return encodeURIComponent(id).replace(/%3A/gi, ":").replace(/%40/g, "@");
+}
+
+export function parseNewsArticleId(pathname: string): string | null {
+  const path = pathname.startsWith("/api/news/")
+    ? `/news/${pathname.slice("/api/news/".length)}`
+    : pathname;
+  if (!path.startsWith("/news/")) return null;
+  const raw = path.slice("/news/".length).replace(/\/$/, "");
+  if (!raw || raw.includes("/")) return null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  return isCanonicalNewsId(decoded) ? decoded : null;
+}
+
+export function publicNewsUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string {
+  if (!isCanonicalNewsId(id)) throw new Error("Invalid news id.");
+  return new URL(`/news/${encodeNewsPathId(id)}`, origin).toString();
+}
+
 export function isShareDocumentPath(pathname: string): boolean {
-  return pathname === "/article" || parseShortShareId(pathname) !== null;
+  return pathname === "/article"
+    || parseShortShareId(pathname) !== null
+    || isLayoutSharePath(pathname)
+    || parseNewsArticleId(pathname) !== null;
 }
 
 /**

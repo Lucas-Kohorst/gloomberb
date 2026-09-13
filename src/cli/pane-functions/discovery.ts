@@ -87,6 +87,7 @@ function buildDiscoveryContext({
     registerCommandBarSearchProvider: () => () => {},
     registerDocumentSearchProvider: () => () => {},
     registerChartSeriesCatalog: () => () => {},
+    registerByokService: () => () => {},
     registerAlertCondition: () => {},
     listAlertConditions: () => [],
     createAlert: () => {},

@@ -19,6 +19,7 @@ import {
   type NewsSortPreference,
 } from "./wire/news/table";
 import { useNewsArticleFooter } from "./wire/news/footer";
+import { useCopyShareLink, newsArticleSharePayload } from "../shared/article-share";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
@@ -125,6 +126,10 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     : detailArticle;
   const selectedArticle = news.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailWithSummary ?? selectedArticle;
+  const copyShareLink = useCopyShareLink();
+  const shareArticle = readableArticle
+    ? () => copyShareLink(newsArticleSharePayload(readableArticle))
+    : undefined;
 
   useNewsArticleFooter({
     registrationId: "news",
@@ -137,6 +142,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     ],
     updatedAt: equityNews ? newsState.updatedAt : lastUpdated,
     onPopOut: () => popOutArticle(readableArticle),
+    onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
     onRefresh: equityNews && instrument
       ? () => {
@@ -208,6 +214,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
       onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

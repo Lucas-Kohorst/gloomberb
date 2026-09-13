@@ -46,6 +46,7 @@ describe("static Cloudflare host", () => {
     for (const url of [
       published, `${published}/`, "https://terminal.kohor.st/s/Xk9mQ2nLp4Ab",
       "https://terminal.kohor.st/article?a=legacy", `https://terminal.kohor.st/l/${id}`,
+      "https://terminal.kohor.st/news/reuters-urn:newsml:reuters.com:20260911:nFWN4530A2",
     ]) {
       const { env, requests } = fixture();
       const response = await handleRequest(new Request(url), env);

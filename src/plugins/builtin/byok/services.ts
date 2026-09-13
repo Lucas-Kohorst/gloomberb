@@ -45,6 +45,18 @@ const registeredServices = new Map<string, ByokKnownService>(
   BUILTIN_SERVICES.map((service) => [service.id, service]),
 );
 
+const listeners = new Set<() => void>();
+let servicesVersion = 0;
+
+function notifyByokKnownServices(): void {
+  servicesVersion += 1;
+  for (const listener of listeners) listener();
+}
+
+export function getByokKnownServicesVersion(): number {
+  return servicesVersion;
+}
+
 /** Returns all known services (built-in + registered), sorted by name. */
 export function getByokKnownServices(): ByokKnownService[] {
   return [...registeredServices.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -56,11 +68,28 @@ export function getByokKnownService(serviceId: string): ByokKnownService | null 
 }
 
 /**
- * Registers an additional known service so it appears in the BYOK settings pane.
- * Plugins should call this during `setup()` to surface their own API integrations.
+ * Registers an additional known service so it appears in ACM Keys and the
+ * BYOK settings pane. Returns a disposer that withdraws this registration.
+ * Plugins should call {@link GloomPluginContext.registerByokService} instead
+ * so the owning plugin id is stamped automatically.
  */
-export function registerByokKnownService(service: ByokKnownService): void {
-  registeredServices.set(service.id, service);
+export function registerByokKnownService(service: ByokKnownService): () => void {
+  const id = service.id.trim();
+  if (!id) return () => {};
+  const entry: ByokKnownService = { ...service, id };
+  registeredServices.set(id, entry);
+  notifyByokKnownServices();
+  return () => {
+    if (registeredServices.get(id) !== entry) return;
+    registeredServices.delete(id);
+    notifyByokKnownServices();
+  };
+}
+
+/** Subscribe to plugin BYOK service registrations. */
+export function subscribeByokKnownServices(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 /** Options for the "custom" service entry shown in the add-key form. */

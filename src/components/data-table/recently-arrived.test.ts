@@ -70,6 +70,24 @@ describe("observeItemIds", () => {
     expect(tracker.seenIds.at(-1)).toBe(`id-${MAX_TRACKED_SEEN_IDS - 1}`);
   });
 
+  test("with timestamps, only rows newer than the previous head flash", () => {
+    const times = new Map<string, number>([
+      ["a", 1_000],
+      ["b", 2_000],
+    ]);
+    let tracker = observeItemIds(createArrivalTracker(), ["a", "b"], 10_000, times);
+    expect(tracker.arrivals).toEqual([]);
+    expect(tracker.newestAt).toBe(2_000);
+
+    times.set("c", 1_500);
+    times.set("d", 2_500);
+    tracker = observeItemIds(tracker, ["d", "a", "b", "c"], 11_000, times);
+
+    expect(tracker.arrivals.map((entry) => entry.id)).toEqual(["d"]);
+    expect(tracker.newestAt).toBe(2_500);
+    expect(tracker.seenIds.slice(0, 4)).toEqual(["d", "a", "b", "c"]);
+  });
+
   test("expires arrivals and reports the next timer boundary", () => {
     let tracker = observeItemIds(createArrivalTracker(), ["a"], 1_000);
     tracker = observeItemIds(tracker, ["a", "b"], 2_000);

@@ -36,7 +36,9 @@ import { BYOK_VIEWER_TEMPLATE_ID } from "./viewer";
 import { getAiRuntimeCatalogSnapshot, subscribeAiRuntimeCatalog } from "../ai/runner";
 import { useSyncExternalStore } from "react";
 
-const ALL_SERVICES = [CUSTOM_SERVICE_OPTION, ...getByokKnownServices()];
+function allKnownServices() {
+  return [CUSTOM_SERVICE_OPTION, ...getByokKnownServices()];
+}
 
 type FormMode = "idle" | "add" | "edit";
 type FormFieldKey = "serviceId" | "name" | "apiKey" | "apiUrl" | "dataFormat" | "openApiSpecUrl" | "openApiSpecBody";
@@ -54,7 +56,7 @@ interface FormDraft {
 
 function emptyDraft(): FormDraft {
   return {
-    serviceId: ALL_SERVICES[0]!.id,
+    serviceId: allKnownServices()[0]!.id,
     name: "",
     apiKey: "",
     apiUrl: "",
@@ -567,7 +569,7 @@ function ByokEditForm({
             </Text>
             <SegmentedControl
               value={draft.serviceId}
-              options={ALL_SERVICES.map((s) => ({ label: s.name, value: s.id }))}
+              options={allKnownServices().map((s) => ({ label: s.name, value: s.id }))}
               onChange={(value) => updateField("serviceId", value)}
             />
           </Box>

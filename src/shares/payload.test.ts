@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  articleShareFromStored,
+  articleShareStoreData,
   decodeArticleSharePayload,
   encodeArticleSharePayload,
+  chartShareFromStored,
   isSpecOnlyChartShare,
   parseSharePayload,
   type ArticleSharePayload,
@@ -40,6 +43,34 @@ describe("article share codec", () => {
   });
 });
 
+describe("stored article snapshots", () => {
+  test("round-trips reader fields through the Cloud envelope", () => {
+    const stored = articleShareStoreData(article);
+    expect(parseSharePayload({ kind: "article", data: stored })?.kind).toBe("article");
+    expect(articleShareFromStored(stored)).toMatchObject({
+      type: "news",
+      id: "story-1",
+      title: article.title,
+      source: "Reuters",
+      url: article.url,
+      summary: article.summary,
+    });
+  });
+
+  test("rebuilds a legacy title-and-text share for the reader", () => {
+    expect(articleShareFromStored({
+      title: "BRIEF",
+      text: "Sept 11 (Reuters) - body",
+      sourceUrl: "https://www.reuters.com/a",
+    })).toMatchObject({
+      type: "news",
+      title: "BRIEF",
+      url: "https://www.reuters.com/a",
+      summary: "Sept 11 (Reuters) - body",
+    });
+  });
+});
+
 describe("parseSharePayload", () => {
   test("accepts each kind with its required shape", () => {
     expect(parseSharePayload("article", article)?.kind).toBe("article");
@@ -51,6 +82,36 @@ describe("parseSharePayload", () => {
     expect(parseSharePayload("layout", {})).toBeNull();
     expect(parseSharePayload("chart", article)).toBeNull();
     expect(parseSharePayload("table", { title: "T", columns: [] })).toBeNull();
+  });
+});
+
+describe("stored chart snapshots", () => {
+  test("round-trips color, candles, and panels for the public chart", () => {
+    const stored = {
+      title: "AAPL",
+      capturedAt: "2026-09-11T00:00:00Z",
+      series: [{
+        name: "AAPL",
+        color: "#e0a458",
+        style: "candles" as const,
+        axis: "left" as const,
+        panelId: "price",
+        points: [{ x: "2025-01-02T00:00:00.000Z", y: 10, o: 8, h: 12, l: 7, c: 10 }],
+      }],
+      panels: [{ id: "price", label: "Price" }],
+    };
+    expect(parseSharePayload({ kind: "chart", data: stored })?.kind).toBe("chart");
+    expect(chartShareFromStored(stored)).toMatchObject({
+      title: "AAPL",
+      panels: [{ id: "price", label: "Price" }],
+      series: [{
+        label: "AAPL",
+        color: "#e0a458",
+        style: "candles",
+        panelId: "price",
+        points: [{ v: 10, o: 8, h: 12, l: 7, c: 10 }],
+      }],
+    });
   });
 });
 

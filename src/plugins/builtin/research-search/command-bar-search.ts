@@ -189,7 +189,7 @@ function createCorpusSearchProvider(
         {
           id: "search-all",
           label: "Search all documents →",
-          detail: "Earnings calls, news, SEC filings, and CFTC metadata",
+          detail: "Earnings calls, news, SEC filings, CFTC, and CourtListener",
           badge: "DOCS",
           right: "SRCH",
           execute: () => openSearchPane(query),

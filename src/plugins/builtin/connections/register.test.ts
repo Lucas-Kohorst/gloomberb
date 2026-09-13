@@ -180,6 +180,8 @@ describe("connection source registry", () => {
       registerCommandBarSearchProvider() {},
       registerDocumentSearchProvider: () => () => {},
       registerChartSeriesCatalog: () => () => {},
+      registerByokService: () => () => {},
+      getApiKey: () => undefined,
       registerAgentPromptFragment() {},
       notify() {},
       resume: { setPaneState() {} },

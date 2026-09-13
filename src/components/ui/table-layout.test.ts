@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildTableGridTemplateColumns,
+  expandTableColumns,
   fitTableCellText,
   fitTableHeaderText,
   getTableWidth,
@@ -42,6 +43,18 @@ describe("table layout", () => {
     expect(tableColumnWidth({ width: 4, label: "AS OF" })).toBe(7);
     expect(tableColumnWidth({ width: 12, label: "SECTOR" })).toBe(12);
     expect(getTableWidth([{ width: 2, label: "OI" }, { width: 4, label: "ENDS" }], 1, 0)).toBe(12);
+  });
+
+  test("lets a user-resized column shrink below its header label", () => {
+    expect(tableColumnWidth({ width: 4, label: "SOURCE", lockWidth: true })).toBe(4);
+  });
+
+  test("does not give leftover space to a locked flex column", () => {
+    const columns = [
+      { id: "time", width: 6 },
+      { id: "title", width: 10, flexGrow: 1, lockWidth: true },
+    ];
+    expect(expandTableColumns(columns, 40, 1, 1)).toEqual(columns);
   });
 
   test("marks clipped cells so a cut number cannot read as a smaller value", () => {
@@ -87,5 +100,29 @@ describe("table layout", () => {
     ], false);
 
     expect(template).toBe("minmax(calc(8 * var(--cell-w)), calc(12 * var(--cell-w))) minmax(calc(8 * var(--cell-w)), calc(8 * var(--cell-w)))");
+  });
+
+  test("keeps a user-resized column fixed while a flex column still fills", () => {
+    const template = buildTableGridTemplateColumns([
+      { width: 10, lockWidth: true },
+      { width: 40, flexGrow: 1 },
+      { width: 8, align: "right" },
+    ]);
+
+    expect(template).toBe(
+      "minmax(calc(8 * var(--cell-w)), calc(10 * var(--cell-w))) minmax(calc(14 * var(--cell-w)), 40fr) minmax(calc(8 * var(--cell-w)), calc(8 * var(--cell-w)))",
+    );
+  });
+
+  test("does not stretch remaining columns after the flex column is locked", () => {
+    const template = buildTableGridTemplateColumns([
+      { width: 6 },
+      { width: 22, flexGrow: 0, lockWidth: true },
+      { width: 8, align: "right" },
+    ]);
+
+    expect(template).toBe(
+      "minmax(calc(6 * var(--cell-w)), calc(6 * var(--cell-w))) minmax(calc(8 * var(--cell-w)), calc(22 * var(--cell-w))) minmax(calc(8 * var(--cell-w)), calc(8 * var(--cell-w)))",
+    );
   });
 });

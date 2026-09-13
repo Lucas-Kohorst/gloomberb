@@ -21,7 +21,7 @@ describe("packFooterHintRows", () => {
       hint("res", "r", "es"),
       hint("range", "1-8", "range"),
       hint("reload", "Shift+R", "reload"),
-      hint("share", "y", "share"),
+      hint("share", "s", "hare"),
     ];
     const width = 42;
     expect(totalHintsWidth(hints)).toBeGreaterThan(width);
@@ -37,7 +37,7 @@ describe("measurePaneFooterHintRows", () => {
     const footer: CombinedPaneFooter = {
       info: [],
       trailingInfo: [],
-      hints: [hint("share", "y", "share"), hint("reload", "Shift+R", "reload")],
+      hints: [hint("share", "s", "hare"), hint("reload", "Shift+R", "reload")],
     };
     expect(measurePaneFooterHintRows(footer, 8, { focused: true, nativePaneChrome: true })).toBe(1);
   });
@@ -64,7 +64,7 @@ describe("measurePaneFooterHintRows", () => {
         hint("res", "r", "es"),
         hint("range", "1-8", "range"),
         hint("reload", "Shift+R", "reload"),
-        hint("share", "y", "share"),
+        hint("share", "s", "hare"),
       ],
     };
     const focusedRows = measurePaneFooterHintRows(footer, 42, { focused: true });

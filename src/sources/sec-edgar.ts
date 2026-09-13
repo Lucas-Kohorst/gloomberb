@@ -11,6 +11,8 @@ import { httpFetch } from "../utils/http-transport";
 
 export { extractFilingContent } from "./sec-edgar/content";
 
+export const SEC_EDGAR_BYOK_SERVICE_ID = "sec-edgar";
+
 const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const SUBMISSIONS_URL = "https://data.sec.gov/submissions";
 const COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts";
@@ -67,14 +69,43 @@ function contactEmailDomain(host: string): string {
   return sanitized;
 }
 
-const DEFAULT_SEC_FROM =
-  getEnv("SEC_FROM_EMAIL")?.trim()
-  || extractEmail(getEnv("SEC_USER_AGENT"))
-  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${contactEmailDomain(runtimeHostName)}`;
+let resolveContactEmail: () => string | undefined = () => (
+  getEnv("SEC_EDGAR_EMAIL")?.trim() || getEnv("SEC_FROM_EMAIL")?.trim() || undefined
+);
 
-const DEFAULT_SEC_USER_AGENT =
-  getEnv("SEC_USER_AGENT")?.trim()
-  || `Gloomberb/0.1 (${sanitizeIdentityPart(runtimeHostName, "localhost")}; contact=${DEFAULT_SEC_FROM})`;
+/** Live contact email for the SEC User-Agent / From headers (BYOK or env). */
+export function setSecContactEmailResolver(resolver: () => string | undefined): void {
+  resolveContactEmail = resolver;
+}
+
+function fallbackSecFrom(): string {
+  return extractEmail(getEnv("SEC_USER_AGENT"))
+    || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${contactEmailDomain(runtimeHostName)}`;
+}
+
+export function resolveSecFromEmail(): string {
+  return resolveContactEmail()?.trim()
+    || getEnv("SEC_EDGAR_EMAIL")?.trim()
+    || getEnv("SEC_FROM_EMAIL")?.trim()
+    || fallbackSecFrom();
+}
+
+export function resolveSecUserAgent(from = resolveSecFromEmail()): string {
+  return getEnv("SEC_USER_AGENT")?.trim()
+    || `Gloomberb/0.1 (${sanitizeIdentityPart(runtimeHostName, "localhost")}; contact=${from})`;
+}
+
+export function secRequestHeaders(): Record<string, string> {
+  const from = resolveSecFromEmail();
+  return {
+    "User-Agent": resolveSecUserAgent(from),
+    From: from,
+    Accept: "application/json,text/plain,*/*",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://www.sec.gov/",
+  };
+}
 
 type LookupEntry = {
   cik: string;
@@ -729,14 +760,7 @@ export class SecEdgarClient {
   private lookupPromise: Promise<Map<string, LookupEntry>> | null = null;
 
   private defaultHeaders() {
-    return {
-      "User-Agent": DEFAULT_SEC_USER_AGENT,
-      From: DEFAULT_SEC_FROM,
-      Accept: "application/json,text/plain,*/*",
-      "Accept-Encoding": "gzip, deflate",
-      "Accept-Language": "en-US,en;q=0.9",
-      Referer: "https://www.sec.gov/",
-    };
+    return secRequestHeaders();
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
@@ -847,19 +871,28 @@ export class SecEdgarClient {
     }));
   }
 
-  async getLatestFilings(count = 40): Promise<SecFilingItem[]> {
+  async getLatestFilings(
+    count = 40,
+    options: { forms?: readonly string[]; windowDays?: number } = {},
+  ): Promise<SecFilingItem[]> {
+    const forms = options.forms && options.forms.length > 0 ? options.forms : LATEST_FILING_FORMS;
+    const windowDays = options.windowDays && options.windowDays > 0 ? options.windowDays : 7;
     const payload = await this.fetchJson<unknown>(buildEftsSearchUrl({
-      forms: LATEST_FILING_FORMS,
-      startDate: isoDateDaysAgo(7),
+      forms,
+      startDate: isoDateDaysAgo(windowDays),
       endDate: isoDateDaysAgo(0),
       size: count,
     }));
     return parseEftsFilings(payload, count);
   }
 
-  async searchFilings(query: string, count = 40): Promise<SecFilingItem[]> {
+  async searchFilings(
+    query: string,
+    count = 40,
+    options: { forms?: readonly string[]; windowDays?: number } = {},
+  ): Promise<SecFilingItem[]> {
     const normalizedQuery = query.trim();
-    if (!normalizedQuery) return this.getLatestFilings(count);
+    if (!normalizedQuery) return this.getLatestFilings(count, options);
 
     const ticker = normalize(normalizedQuery);
     const lookup = await this.loadLookup();
@@ -869,6 +902,7 @@ export class SecEdgarClient {
 
     const payload = await this.fetchJson<unknown>(buildEftsSearchUrl({
       query: normalizedQuery,
+      forms: options.forms && options.forms.length > 0 ? options.forms : undefined,
       size: count,
     }));
     return parseEftsFilings(payload, count);

@@ -2,6 +2,7 @@ import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
 
 export const EIA_ENERGY_PLUGIN_ID = "eia-energy";
 export const EIA_ENERGY_CONNECTION_ID = "eia-energy";
+export const EIA_BYOK_SERVICE_ID = "eia-energy";
 export const EIA_CHART_CAPABILITY_ID = "eia-energy";
 export const EIA_API_BASE_URL = "https://api.eia.gov/v2";
 /** Public demo key with strict rate limits. Works out of the box; users can drop in a free key. */

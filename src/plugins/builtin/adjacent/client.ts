@@ -671,7 +671,7 @@ export async function loadCftcFilings(
     ...(normalized ? { search: normalized } : {}),
     perPage,
     page,
-    sort: "status_date",
+    sort: "first_seen",
     sortDir: "desc",
   });
 }
@@ -706,6 +706,7 @@ export async function loadCftcFilingsFeed(
 export { getCached as getAdjacentCached, setCached as setAdjacentCached };
 
 let sharedApiKey: string | null = null;
+let resolveSharedApiKey: () => string | null = () => sharedApiKey;
 
 /**
  * Records the Adjacent API key for cross-plugin consumers (e.g. the
@@ -713,9 +714,18 @@ let sharedApiKey: string | null = null;
  */
 export function setSharedAdjacentApiKey(apiKey: string | null): void {
   sharedApiKey = apiKey;
+  resolveSharedApiKey = () => apiKey;
 }
 
-/** Returns an Adjacent client using the last shared API key, if any. */
+export function setSharedAdjacentApiKeyResolver(resolver: () => string | null): void {
+  resolveSharedApiKey = resolver;
+}
+
+export function resolveAdjacentApiKey(): string | null {
+  return resolveSharedApiKey()?.trim() || process.env.ADJACENT_API_KEY?.trim() || null;
+}
+
+/** Returns an Adjacent client using the effective shared API key, if any. */
 export function getSharedAdjacentClient(): AdjacentClient {
-  return new AdjacentClient({ apiKey: sharedApiKey });
+  return new AdjacentClient({ apiKey: resolveAdjacentApiKey() });
 }

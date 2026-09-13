@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { resolveHeaderPromptGeometry } from "./shell/chrome";
-import { resolveMarketSummaryFit } from "./market-summary";
+import { formatMarketLabel, resolveMarketSummaryFit } from "./market-summary";
 
-/** "PRE-MKT · 1h 17m  SPY 762.43 -0.60%  USD", each part with its trailing gap. */
+/** Fixture widths for shed order, not the live label. */
 const CLUSTER = {
   baseCurrencyWidth: 4,
   countdownWidth: 9,
@@ -11,6 +11,13 @@ const CLUSTER = {
 };
 
 describe("header market cluster", () => {
+  test("joins the countdown with a space, not a middot", () => {
+    expect(formatMarketLabel("OPEN", "60m")).toBe("OPEN 60m");
+    expect(formatMarketLabel("PRE-MKT", "1h 17m")).toBe("PRE-MKT 1h 17m");
+    expect(formatMarketLabel("OPEN", "60m")).not.toContain("·");
+    expect(formatMarketLabel("CLOSED", null)).toBe("CLOSED");
+  });
+
   /**
    * The cluster shares the header with the command prompt, so a narrow window
    * has to take it apart in an order the eye can follow: the countdown suffix

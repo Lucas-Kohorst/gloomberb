@@ -6,8 +6,9 @@ import type {
 } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
 import { CourtListenerPane } from "./pane";
-import { createCourtListenerDocumentSearchProvider } from "./client";
+import { createCourtListenerDocumentSearchProvider, setCourtListenerApiTokenResolver } from "./client";
 import {
+  COURTLISTENER_BYOK_SERVICE_ID,
   COURTLISTENER_CONNECTION_ID,
   COURTLISTENER_PLUGIN_ID,
 } from "./types";
@@ -40,7 +41,7 @@ export const courtListenerPlugin: GloomPlugin = {
   name: "CourtListener",
   version: "1.0.0",
   description:
-    "Search federal and state court opinions by company name via the free CourtListener API. No API key required.",
+    "Federal PACER dockets and opinions via CourtListener. Empty search is the last week of new cases; LAW Kalshi searches that party.",
   toggleable: true,
 
   panes: [
@@ -61,9 +62,10 @@ export const courtListenerPlugin: GloomPlugin = {
       paneId: "courtlistener",
       label: "Lawsuits",
       description:
-        "Search federal and state court opinions by company name via the free CourtListener API. No API key required.",
+        "Recent federal dockets from CourtListener RECAP. Search a company or case, or open LAW with no argument for the latest filings.",
       keywords: [
         "courtlistener",
+        "law",
         "lawsuit",
         "lawsuits",
         "litigation",
@@ -82,7 +84,7 @@ export const courtListenerPlugin: GloomPlugin = {
       category: "Data",
       shortcut: {
         prefix: "LAW",
-        argPlaceholder: "company",
+        argPlaceholder: "company or case",
         argKind: "text",
         argOptional: true,
       },
@@ -93,6 +95,17 @@ export const courtListenerPlugin: GloomPlugin = {
   ],
 
   setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: COURTLISTENER_BYOK_SERVICE_ID,
+      name: "CourtListener",
+      apiUrl: "https://www.courtlistener.com/api/rest/v4",
+      authType: "header",
+      authKey: "Authorization",
+      envVar: "COURTLISTENER_API_KEY",
+      description:
+        "Free Law Project token from courtlistener.com/profile/api-token/. New accounts are 5/min, 50/hr, 125/day; membership raises those caps. Anonymous search still works without a key.",
+    });
+    setCourtListenerApiTokenResolver(() => ctx.getApiKey(COURTLISTENER_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: COURTLISTENER_CONNECTION_ID,
       name: "CourtListener",

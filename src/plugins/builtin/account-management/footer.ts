@@ -24,7 +24,7 @@ export function useAccountManagementFooter({
 }) {
   const language = useAppLanguage();
   const footerHints = useMemo<PaneHint[]>(() => (
-    activeTab === "ai"
+    activeTab === "ai" || activeTab === "byok"
       ? []
       : [{ id: "save", key: "s", label: "ave", onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession }]
   ), [activeTab, busy, hasSession, language, saveProfile]);

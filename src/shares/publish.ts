@@ -1,5 +1,6 @@
-import { createShare } from "./api";
+import { createHostedShare, createShare, lookupNewsShareId, registerNewsShare } from "./api";
 import {
+  articleShareStoreData,
   encodeArticleSharePayload,
   MAX_TABLE_ROWS,
   parseSharePayload,
@@ -7,35 +8,86 @@ import {
   type SharePayload,
   type TableSharePayload,
 } from "./payload";
-import { buildInlineArticleShareUrl, publicShareUrl } from "./routes";
+import {
+  buildInlineArticleShareUrl,
+  buildShortShareUrl,
+  isCanonicalNewsId,
+  isStoredShareId,
+  publicNewsUrl,
+  publicShareUrl,
+} from "./routes";
 
 type ShareCreator = typeof createShare;
+
+export interface NewsShareIndex {
+  lookup(articleId: string): Promise<string | null>;
+  register(articleId: string, shareId: string): Promise<boolean>;
+}
+
+const hostedNewsIndex: NewsShareIndex = {
+  lookup: lookupNewsShareId,
+  register: registerNewsShare,
+};
+
+const noopNewsIndex: NewsShareIndex = {
+  lookup: async () => null,
+  register: async () => false,
+};
+
+type HostedShareCreator = (payload: SharePayload) => Promise<{ id: string } | null>;
+
+const hostedShareCreator: HostedShareCreator = (payload) => createHostedShare(payload);
+const noopHostedShareCreator: HostedShareCreator = async () => null;
+
+function publicUrlForShareId(id: string): string {
+  return isStoredShareId(id) ? publicShareUrl(id) : buildShortShareUrl(id);
+}
 
 export async function publishShare(payload: SharePayload, create: ShareCreator = createShare): Promise<string> {
   const { id } = await create(payload);
   return publicShareUrl(id);
 }
 
-/** Rich articles retain their snapshot in the supported inline reader. */
+/**
+ * Prefer a canonical `/news/{articleId}` page when the story has a stable id.
+ * Cloud still stores the snapshot; the hosted worker indexes article id →
+ * share id so the same story keeps the same public URL.
+ *
+ * Inline `/article?a=` is only the fallback when Cloud rejects or the payload
+ * will not fit the stored envelope (huge Substack HTML).
+ */
 export async function publishArticleShare(
   article: ArticleSharePayload,
   create: ShareCreator = createShare,
+  newsIndex: NewsShareIndex = create === createShare ? hostedNewsIndex : noopNewsIndex,
+  hostedCreate: HostedShareCreator = create === createShare ? hostedShareCreator : noopHostedShareCreator,
 ): Promise<string> {
   const inlineUrl = () => buildInlineArticleShareUrl(encodeArticleSharePayload(article));
-  if (article.bodyHtml || article.imageUrls?.length || article.items?.length) return inlineUrl();
-  const text = [
-    article.subtitle,
-    [article.source || article.publicationName, article.publishedAt].filter(Boolean).join(" · "),
-    article.summary || article.previewText,
-  ].filter(Boolean).join("\n\n");
-  try {
-    return await publishShare({
-      kind: "article",
-      data: { title: article.title, text, ...(article.url ? { sourceUrl: article.url } : {}) },
-    }, create);
-  } catch {
-    return inlineUrl();
+  const articleId = article.id.trim();
+  const canonical = isCanonicalNewsId(articleId);
+  if (canonical && await newsIndex.lookup(articleId)) return publicNewsUrl(articleId);
+  const candidates = [
+    articleShareStoreData(article),
+    articleShareStoreData({ ...article, bodyHtml: undefined }),
+  ];
+  for (const data of candidates) {
+    const envelope = parseSharePayload({ kind: "article", data });
+    if (!envelope) continue;
+    try {
+      const { id } = await create(envelope);
+      if (canonical && await newsIndex.register(articleId, id)) return publicNewsUrl(articleId);
+      return publicUrlForShareId(id);
+    } catch {
+      // Cloud auth/size/network: try a smaller body, then hosted KV, then inline.
+    }
   }
+  for (const data of candidates) {
+    const envelope = parseSharePayload({ kind: "article", data });
+    if (!envelope) continue;
+    const hosted = await hostedCreate(envelope);
+    if (hosted) return publicUrlForShareId(hosted.id);
+  }
+  return inlineUrl();
 }
 
 /** Preserve displayed cell values when crossing into the stored table contract. */

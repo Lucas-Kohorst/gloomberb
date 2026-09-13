@@ -201,9 +201,14 @@ export function parseRootShortcutIntent({
  */
 export function shortcutClaimsQuery(intent: ShortcutIntent): boolean {
   if (intent.kind === "none") return false;
-  if (!intent.argText) return true;
+  if (!intent.argText) {
+    // Bare text prefixes ("LAW", "SEC", "CFTC") collide with tickers and ordinary
+    // words. Keep the shortcut row, but do not hide symbol search.
+    if (intent.source === "pane-template" && intent.argKind === "text") return false;
+    return true;
+  }
   if (intent.argKind === "ticker" || intent.argKind === "ticker-list") return true;
-  if (intent.prefix === "ART") return true;
+  if (intent.prefix === "ART" || intent.prefix === "LAW" || intent.prefix === "ETF") return true;
   // "AI safety" / "PM election": a two-letter pane prefix plus a word is
   // ordinary language, not a finished command. Keep the shortcut row, but
   // don't swallow articles, assist, or other panes.

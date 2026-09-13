@@ -19,13 +19,22 @@ export function looksLikeCftcQuery(query: string): boolean {
   return /\b(cftc|dcm|dco)\b/i.test(query);
 }
 
+export function looksLikeLawsuitQuery(query: string): boolean {
+  return /\b(law|lawsuit|lawsuits|litigation|courtlistener|docket)\b/i.test(query);
+}
+
 /**
  * Whether the query should search the written-text corpus (articles, filings,
  * CFTC). The broad fallback — any token of 3+ chars — means free-text queries
  * also trigger a local wire lookup, not only ART/filing/CFTC-shaped ones.
  */
 export function shouldSearchWrittenCorpus(query: string): boolean {
-  if (looksLikeArticleQuery(query) || looksLikeFilingQuery(query) || looksLikeCftcQuery(query)) {
+  if (
+    looksLikeArticleQuery(query)
+    || looksLikeFilingQuery(query)
+    || looksLikeCftcQuery(query)
+    || looksLikeLawsuitQuery(query)
+  ) {
     return true;
   }
   return query.trim().split(/\s+/).some((token) => token.length >= 3);

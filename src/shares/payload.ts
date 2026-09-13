@@ -35,15 +35,51 @@ export interface ChartShareData {
   title: string;
   series: Array<{
     name: string;
-    points: Array<{ x: string | number; y: number }>;
+    points: Array<{
+      x: string | number;
+      y: number;
+      o?: number;
+      h?: number;
+      l?: number;
+      c?: number;
+    }>;
+    color?: string;
+    style?: SeriesStyle;
+    axis?: "left" | "right";
+    panelId?: string;
+    unit?: string;
   }>;
   sourceUrl?: string;
+  capturedAt?: string;
+  panels?: ChartSharePanel[];
+  spec?: ChartSpec;
+  window?: { start: string; end: string };
 }
 
 export interface ArticleShareData {
   title: string;
   text: string;
   sourceUrl?: string;
+  /** Reader fields persisted on Cloud so `/s/{id}` can render ArticleShareView. */
+  type?: "news" | "substack";
+  id?: string;
+  source?: string;
+  publishedAt?: string;
+  summary?: string;
+  items?: ArticleShareStoryItem[];
+  subtitle?: string;
+  publicationName?: string;
+  publicationBaseUrl?: string;
+  slug?: string;
+  previewText?: string;
+  bodyHtml?: string;
+  imageUrls?: string[];
+  wordCount?: number;
+  readMinutes?: number;
+  topics?: string[];
+  categories?: string[];
+  tickers?: string[];
+  importance?: number;
 }
 
 export interface ArticleShareStoryItem {
@@ -244,12 +280,53 @@ function isTableData(value: unknown): value is TableShareData {
       && Object.values(row).every(isCell));
 }
 
+function optionalChartString(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.length <= MAX_TITLE_LENGTH);
+}
+
+function finiteChartNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function chartPanels(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= MAX_CHART_SERIES && value.every((panel) => record(panel)
+    && shortString(panel.id)
+    && optionalChartString(panel.label)
+    && (panel.height === undefined || (finiteChartNumber(panel.height) && panel.height > 0))
+    && (panel.scale === undefined || (typeof panel.scale === "string" && ["linear", "log", "percent"].includes(panel.scale))));
+}
+
+function chartMetadata(value: Record<string, unknown>): boolean {
+  return optionalChartString(value.capturedAt)
+    && optionalChartString(value.subtitle)
+    && (value.panels === undefined || chartPanels(value.panels))
+    && (value.window === undefined || (record(value.window)
+      && typeof value.window.start === "string" && Number.isFinite(Date.parse(value.window.start))
+      && typeof value.window.end === "string" && Number.isFinite(Date.parse(value.window.end))))
+    && (value.spec === undefined || (record(value.spec) && value.spec.version === 2
+      && record(value.spec.viewport) && Array.isArray(value.spec.series)
+      && Array.isArray(value.spec.studies) && chartPanels(value.spec.panels)));
+}
+
+function chartSeriesMetadata(series: Record<string, unknown>): boolean {
+  return optionalChartString(series.color)
+    && optionalChartString(series.unit)
+    && optionalChartString(series.panelId)
+    && (series.axis === undefined || series.axis === "left" || series.axis === "right")
+    && (series.style === undefined || (typeof series.style === "string" && ["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"].includes(series.style)));
+}
+
+function chartOhlc(point: Record<string, unknown>): boolean {
+  return ["o", "h", "l", "c"].every((key) => point[key] === undefined || finiteChartNumber(point[key]));
+}
+
 function isChartData(value: unknown): value is ChartShareData {
   if (!record(value) || !shortString(value.title) || !safeOptionalUrl(value.sourceUrl)) return false;
-  return Array.isArray(value.series)
+  return chartMetadata(value) && Array.isArray(value.series)
     && value.series.length > 0
     && value.series.length <= MAX_CHART_SERIES
     && value.series.every((series) => record(series)
+      && chartSeriesMetadata(series)
       && shortString(series.name, 120)
       && Array.isArray(series.points)
       && series.points.length > 0
@@ -257,7 +334,8 @@ function isChartData(value: unknown): value is ChartShareData {
       && series.points.every((point) => record(point)
         && ((typeof point.x === "string" && point.x.length <= 100) || (typeof point.x === "number" && Number.isFinite(point.x)))
         && typeof point.y === "number"
-        && Number.isFinite(point.y)));
+        && Number.isFinite(point.y)
+        && chartOhlc(point)));
 }
 
 function isArticleData(value: unknown): value is ArticleShareData {
@@ -338,9 +416,15 @@ export function parseTableSharePayload(value: unknown): TableSharePayload | null
 }
 
 export function parseChartSharePayload(value: unknown): ChartSharePayload | null {
-  if (!record(value)) return null;
-  if (!Array.isArray(value.series) || !Array.isArray(value.panels)) return null;
-  if (!shortString(value.title)) return null;
+  if (!record(value) || !shortString(value.title) || !chartMetadata(value) || !chartPanels(value.panels)) return null;
+  if (!Array.isArray(value.series) || value.series.length > MAX_CHART_SERIES) return null;
+  if (!value.series.every((series) => record(series) && chartSeriesMetadata(series)
+    && shortString(series.id) && shortString(series.label, 120)
+    && typeof series.color === "string" && typeof series.style === "string"
+    && typeof series.axis === "string" && typeof series.panelId === "string"
+    && Array.isArray(series.points) && series.points.length <= MAX_CHART_POINTS
+    && series.points.every((point) => record(point) && finiteChartNumber(point.t)
+      && (point.v === undefined || point.v === null || finiteChartNumber(point.v)) && chartOhlc(point)))) return null;
   return value as unknown as ChartSharePayload;
 }
 
@@ -433,4 +517,130 @@ export function decodeArticleSharePayload(encoded: string): ArticleSharePayload 
 
 export function encodeArticleSharePayload(payload: ArticleSharePayload): string {
   return base64urlEncode(JSON.stringify(payload));
+}
+
+/** Envelope body Cloud will store. Keeps `title`/`text` for old readers. */
+export function articleShareStoreData(article: ArticleSharePayload): ArticleShareData {
+  const text = [
+    article.subtitle,
+    article.summary || article.previewText,
+  ].filter((value): value is string => !!value?.trim()).join("\n\n").slice(0, MAX_TEXT_LENGTH);
+  return {
+    title: article.title.slice(0, MAX_ARTICLE_TITLE_LENGTH),
+    text: text || article.title.slice(0, MAX_TEXT_LENGTH),
+    ...(article.url ? { sourceUrl: article.url } : {}),
+    type: article.type,
+    id: article.id,
+    source: article.source,
+    ...(article.publishedAt ? { publishedAt: article.publishedAt } : {}),
+    ...(article.summary ? { summary: article.summary } : {}),
+    ...(article.items?.length ? { items: article.items } : {}),
+    ...(article.subtitle ? { subtitle: article.subtitle } : {}),
+    ...(article.publicationName ? { publicationName: article.publicationName } : {}),
+    ...(article.publicationBaseUrl ? { publicationBaseUrl: article.publicationBaseUrl } : {}),
+    ...(article.slug ? { slug: article.slug } : {}),
+    ...(article.previewText ? { previewText: article.previewText } : {}),
+    ...(article.bodyHtml ? { bodyHtml: article.bodyHtml } : {}),
+    ...(article.imageUrls?.length ? { imageUrls: article.imageUrls } : {}),
+    ...(article.wordCount ? { wordCount: article.wordCount } : {}),
+    ...(article.readMinutes ? { readMinutes: article.readMinutes } : {}),
+    ...(article.topics?.length ? { topics: article.topics } : {}),
+    ...(article.categories?.length ? { categories: article.categories } : {}),
+    ...(article.tickers?.length ? { tickers: article.tickers } : {}),
+    ...(article.importance != null ? { importance: article.importance } : {}),
+  };
+}
+
+/** Rebuild the reader payload from a Cloud envelope, including legacy title+text shares. */
+export function articleShareFromStored(data: ArticleShareData): ArticleSharePayload {
+  const url = data.sourceUrl ?? "";
+  const parsed = parseArticleSharePayload({
+    type: data.type ?? "news",
+    id: data.id ?? data.title,
+    title: data.title,
+    url,
+    source: data.source ?? data.publicationName ?? "",
+    summary: data.summary ?? data.previewText ?? data.text,
+    publishedAt: data.publishedAt,
+    items: data.items,
+    subtitle: data.subtitle,
+    publicationName: data.publicationName,
+    publicationBaseUrl: data.publicationBaseUrl,
+    slug: data.slug,
+    previewText: data.previewText,
+    bodyHtml: data.bodyHtml,
+    imageUrls: data.imageUrls,
+    wordCount: data.wordCount,
+    readMinutes: data.readMinutes,
+    topics: data.topics,
+    categories: data.categories,
+    tickers: data.tickers,
+    importance: data.importance,
+  });
+  if (parsed) {
+    return {
+      ...parsed,
+      url: parsed.url || url,
+      summary: parsed.summary || data.text,
+    };
+  }
+  return {
+    type: "news",
+    id: data.title,
+    title: data.title,
+    url,
+    source: data.source ?? "",
+    summary: data.text,
+    publishedAt: data.publishedAt,
+  };
+}
+
+const CHART_SHARE_FALLBACK_COLORS = ["#00cc66", "#4ea1ff", "#e0a458", "#c56cf0", "#e06256"];
+
+export function chartShareFromStored(data: ChartShareData): ChartSharePayload {
+  const series = data.series.map((entry, index) => ({
+    id: `s${index}`,
+    label: entry.name,
+    color: entry.color || CHART_SHARE_FALLBACK_COLORS[index % CHART_SHARE_FALLBACK_COLORS.length]!,
+    style: entry.style ?? "line",
+    axis: entry.axis ?? "left",
+    panelId: entry.panelId ?? "main",
+    ...(entry.unit ? { unit: entry.unit } : {}),
+    points: entry.points.map((point) => ({
+      t: typeof point.x === "number" ? point.x : Date.parse(String(point.x)) || 0,
+      v: point.y,
+      ...(point.o != null ? { o: point.o } : {}),
+      ...(point.h != null ? { h: point.h } : {}),
+      ...(point.l != null ? { l: point.l } : {}),
+      ...(point.c != null ? { c: point.c } : {}),
+    })),
+  }));
+  const panelIds = [...new Set(series.map((entry) => entry.panelId))];
+  return {
+    title: data.title,
+    capturedAt: data.capturedAt ?? "",
+    panels: data.panels?.length
+      ? data.panels
+      : panelIds.map((id) => ({ id })),
+    series,
+    ...(data.window ? { window: data.window } : {}),
+    ...(data.spec ? { spec: data.spec } : {}),
+  };
+}
+
+export function tableShareFromStored(data: TableShareData): TableSharePayload {
+  const sourceKey = data.columns.some((column) => column.key === "source") ? "source" : null;
+  const columns = data.columns.filter((column) => column.key !== sourceKey);
+  return {
+    title: data.title,
+    capturedAt: "",
+    columns: columns.map((column) => ({ id: column.key, label: column.label })),
+    rows: data.rows.map((row) => {
+      const url = sourceKey && typeof row[sourceKey] === "string" ? String(row[sourceKey]) : "";
+      return {
+        cells: columns.map((column) => ({ text: String(row[column.key] ?? "") })),
+        ...(url ? { url } : {}),
+      };
+    }),
+  };
 }

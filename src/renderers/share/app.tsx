@@ -8,16 +8,29 @@ import {
 import type { LayoutMarketplaceEntry } from "../../layout-marketplace/payload";
 import {
   deleteShare,
+  getNewsShare,
   getShare,
   openLiveShareUrl,
   parseShareId,
   type ShareRecord,
 } from "../../shares/api";
 import { LayoutShareView } from "./layout-view";
-import { ShareView } from "./view";
+import { OwnerActions, ShareView } from "./view";
 import { ArticleShareView } from "./article-view";
-import { decodeArticleSharePayload } from "../../shares/payload";
-import { buildTerminalArticleUrl, parseShortShareId } from "../../shares/routes";
+import { ChartShareView } from "./chart-view";
+import { TableShareView } from "./table-view";
+import {
+  articleShareFromStored,
+  chartShareFromStored,
+  decodeArticleSharePayload,
+  tableShareFromStored,
+} from "../../shares/payload";
+import {
+  buildTerminalArticleUrl,
+  buildTerminalShareUrl,
+  parseNewsArticleId,
+  parseShortShareId,
+} from "../../shares/routes";
 
 function LayoutApp({ id }: { id: string }) {
   const [state, setState] = useState<{
@@ -44,7 +57,49 @@ function LayoutApp({ id }: { id: string }) {
     : <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared layout..."}</p></main>;
 }
 
-function ContentShareApp({ id }: { id: string }) {
+function ShareRecordView({
+  share,
+  shareId,
+  origin,
+}: {
+  share: ShareRecord;
+  shareId: string;
+  origin: string;
+}) {
+  const openInTerminalHref = buildTerminalShareUrl(shareId, origin);
+  if (share.kind === "article") {
+    return (
+      <ArticleShareView
+        payload={articleShareFromStored(share.data)}
+        openInTerminalHref={openInTerminalHref}
+      />
+    );
+  }
+  if (share.kind === "chart") {
+    return (
+      <ChartShareView
+        payload={chartShareFromStored(share.data)}
+        openInTerminalHref={openInTerminalHref}
+      />
+    );
+  }
+  if (share.kind === "table") {
+    return (
+      <TableShareView
+        payload={tableShareFromStored(share.data)}
+        openInTerminalHref={openInTerminalHref}
+      />
+    );
+  }
+  return (
+    <ShareView
+      share={share}
+      openLiveUrl={openLiveShareUrl(shareId)}
+    />
+  );
+}
+
+function ContentShareApp({ id, origin }: { id: string; origin: string }) {
   const [state, setState] = useState<{
     share?: ShareRecord;
     error?: string;
@@ -74,15 +129,44 @@ function ContentShareApp({ id }: { id: string }) {
   };
   if (state.deleted) return <main><h1>Share deleted</h1><p>This link is no longer available.</p></main>;
   if (state.share) {
-    return (
-      <ShareView
-        share={state.share}
-        openLiveUrl={openLiveShareUrl(id)}
-        deleting={state.deleting === true}
-        deleteError={state.error}
-        onDelete={state.share.ownedByViewer ? remove : undefined}
-      />
-    );
+    if (state.share.kind === "pane") {
+      return (
+        <ShareView
+          share={state.share}
+          openLiveUrl={openLiveShareUrl(id)}
+          deleting={state.deleting === true}
+          deleteError={state.error}
+          onDelete={state.share.ownedByViewer ? remove : undefined}
+        />
+      );
+    }
+    return <>
+      <OwnerActions deleting={state.deleting === true} error={state.error} onDelete={state.share.ownedByViewer ? remove : undefined} />
+      <ShareRecordView share={state.share} shareId={id} origin={origin} />
+    </>;
+  }
+  return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
+}
+
+function NewsShareApp({ articleId, origin }: { articleId: string; origin: string }) {
+  const [state, setState] = useState<{
+    share?: ShareRecord;
+    shareId?: string;
+    error?: string;
+  }>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    getNewsShare(articleId, (url, init) => fetch(url, { ...init, signal: controller.signal }))
+      .then((share) => setState(share
+        ? { share, shareId: share.id }
+        : { error: "This article is unavailable or has expired." }))
+      .catch(() => {
+        if (!controller.signal.aborted) setState({ error: "This article could not be loaded." });
+      });
+    return () => controller.abort();
+  }, [articleId]);
+  if (state.share && state.shareId) {
+    return <ShareRecordView share={state.share} shareId={state.shareId} origin={origin} />;
   }
   return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
 }
@@ -101,9 +185,11 @@ export function SocialShareApp({ location = window.location }: {
   const layoutId = parseMarketplaceLayoutId(pathname);
   if (layoutId) return <LayoutApp id={layoutId} />;
   if (pathname.startsWith("/l/")) return <main><h1>Gloomberb</h1><p>Invalid layout link.</p></main>;
-  const shareId = parseShareId(pathname);
-  return shareId
-    ? <ContentShareApp id={shareId} />
+  const newsId = parseNewsArticleId(pathname);
+  if (newsId) return <NewsShareApp articleId={newsId} origin={location.origin} />;
+  const shareId = parseShareId(pathname) ?? parseShortShareId(pathname);
+  return shareId && shareId.length >= 8
+    ? <ContentShareApp id={shareId} origin={location.origin} />
     : <main><h1>Gloomberb</h1><p>{parseShortShareId(pathname)
       ? "This older share link is unavailable. Ask the sender for a new link."
       : "Invalid share link."}</p></main>;

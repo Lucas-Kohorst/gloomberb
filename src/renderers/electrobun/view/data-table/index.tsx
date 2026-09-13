@@ -49,6 +49,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   sortColumnId,
   sortDirection,
   onHeaderClick,
+  onColumnResize,
+  onColumnResizeEnd,
+  onColumnResizeReset,
   headerScrollRef,
   scrollRef,
   syncHeaderScroll: _syncHeaderScroll,
@@ -334,6 +337,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             onTableMouseDown={onTableMouseDown}
             gridTemplateColumns={gridTemplateColumns}
             onHeaderClick={onHeaderClick}
+            onColumnResize={onColumnResize}
+            onColumnResizeEnd={onColumnResizeEnd}
+            onColumnResizeReset={onColumnResizeReset}
             sortColumnId={sortColumnId}
             sortDirection={sortDirection}
           />

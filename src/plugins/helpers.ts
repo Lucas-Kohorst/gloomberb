@@ -27,6 +27,7 @@ import type {
   GloomPluginContext,
   PaneDef,
   PaneTemplateDef,
+  PluginByokService,
   TickerResearchTabDef,
 } from "../types/plugin";
 import { chartSeriesProvider, newsProvider } from "../capabilities";
@@ -50,6 +51,8 @@ export interface ConnectionOptions {
   authRequired?: boolean;
   priority?: number;
   isWebSocket?: boolean;
+  /** Personal API key this connection can attach. Listed in ACM Keys on local. */
+  byok?: Omit<PluginByokService, "id" | "name"> & { name?: string };
 }
 
 function registerConnection(
@@ -58,7 +61,7 @@ function registerConnection(
   name: string,
   options?: ConnectionOptions,
 ): () => void {
-  return registerConnectionSource({
+  const disposeConnection = registerConnectionSource({
     id,
     name,
     kind: options?.kind ?? "api",
@@ -67,6 +70,22 @@ function registerConnection(
     priority: options?.priority,
     isWebSocket: options?.isWebSocket,
   });
+  const disposeByok = options?.byok
+    ? ctx.registerByokService({
+      id,
+      name: options.byok.name ?? name,
+      description: options.byok.description,
+      apiUrl: options.byok.apiUrl,
+      authType: options.byok.authType,
+      authKey: options.byok.authKey,
+      envVar: options.byok.envVar,
+      keyPrefix: options.byok.keyPrefix,
+    })
+    : () => {};
+  return () => {
+    disposeByok();
+    disposeConnection();
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -295,7 +295,10 @@ function ChartComposerSurface({
     ),
     [resolution.bufferedSeries, resolution.legendSeries, resolution.series, spec],
   );
-  const shareData = useMemo(() => buildChartShareData(plottedSeries), [plottedSeries]);
+  const shareData = useMemo(
+    () => buildChartShareData(plottedSeries, { spec }),
+    [plottedSeries, spec],
+  );
   const createPublicShare = usePublicShare();
   const shareChart = useCallback(() => {
     if (shareData) void createPublicShare({ kind: "chart", data: shareData });
@@ -647,12 +650,12 @@ function ChartComposerSurface({
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
       { id: "log", key: "l", label: "og", onPress: footerLog },
-      { id: "percent", key: "p", label: "%", onPress: footerPercent },
-      { id: "auto", key: "g", label: " auto", onPress: footerAuto },
+      { id: "percent", key: "p", label: "ercent", onPress: footerPercent },
+      { id: "auto", key: "a", label: "uto", onPress: footerAuto },
       { id: "compare", key: "c", label: "ompare", onPress: footerCompare, disabled: compareDisabled },
       { id: "timezone", key: "z", label: "one", onPress: footerTimeZone },
       ...(publicSharing
-        ? [{ id: "share", key: "y", label: " share", onPress: shareChart, disabled: !shareData }]
+        ? [{ id: "share", key: "y", label: "ank", onPress: shareChart, disabled: !shareData }]
         : []),
     ],
   }), [

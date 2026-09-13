@@ -23,10 +23,12 @@ export interface ArrivalTracker {
   /** Most-recently-seen first; capped for memory. */
   seenIds: string[];
   arrivals: ArrivalEntry[];
+  /** Newest `timestamps` value observed after prime; backfill older than this does not flash. */
+  newestAt: number | null;
 }
 
 export function createArrivalTracker(): ArrivalTracker {
-  return { primed: false, seenIds: [], arrivals: [] };
+  return { primed: false, seenIds: [], arrivals: [], newestAt: null };
 }
 
 function rememberIds(current: readonly string[], ids: readonly string[]): string[] {
@@ -54,20 +56,41 @@ function pruneArrivals(arrivals: readonly ArrivalEntry[], now: number): ArrivalE
   return arrivals.filter((entry) => entry.expiresAt > now);
 }
 
+function newestTimestamp(
+  ids: readonly string[],
+  timestamps: ReadonlyMap<string, number> | undefined,
+  fallback: number | null,
+): number | null {
+  if (!timestamps || timestamps.size === 0) return fallback;
+  let newest = fallback;
+  for (const id of ids) {
+    const at = timestamps.get(id);
+    if (at == null || !Number.isFinite(at)) continue;
+    newest = newest == null ? at : Math.max(newest, at);
+  }
+  return newest;
+}
+
 /**
  * Observe the current visible (or full) id list. First observation primes
  * without arrivals. Later observations mark unseen ids as rolling in, with
  * a short stagger so a batch reads as a cascade rather than a flash.
+ *
+ * When `timestamps` is provided (publishedAt / event time), only ids newer
+ * than the previously newest row highlight. Older backfill — RSS feeds
+ * landing 10 rows down — is remembered silently.
  */
 export function observeItemIds(
   tracker: ArrivalTracker,
   ids: readonly string[],
   now: number,
+  timestamps?: ReadonlyMap<string, number>,
 ): ArrivalTracker {
   const observed = ids.length > MAX_TRACKED_SEEN_IDS
     ? ids.slice(0, MAX_TRACKED_SEEN_IDS)
     : ids;
   const arrivals = pruneArrivals(tracker.arrivals, now);
+  const newestAt = newestTimestamp(observed, timestamps, tracker.newestAt);
 
   if (!tracker.primed) {
     // Stay unprimed on an empty list so the first real hydrate does not
@@ -77,15 +100,21 @@ export function observeItemIds(
       primed: true,
       seenIds: rememberIds([], observed),
       arrivals: [],
+      newestAt,
     };
   }
 
   const seen = new Set(tracker.seenIds);
+  const previousNewest = tracker.newestAt;
   const fresh: string[] = [];
   for (const id of observed) {
     if (seen.has(id)) continue;
     seen.add(id);
-    fresh.push(id);
+    const at = timestamps?.get(id);
+    const isLiveHead = timestamps == null
+      || previousNewest == null
+      || (at != null && Number.isFinite(at) && at > previousNewest);
+    if (isLiveHead) fresh.push(id);
   }
 
   const newArrivals = fresh.map((id, index) => {
@@ -97,7 +126,7 @@ export function observeItemIds(
     };
   });
 
-  if (fresh.length === 0 && arrivals.length === tracker.arrivals.length) {
+  if (fresh.length === 0 && arrivals.length === tracker.arrivals.length && newestAt === tracker.newestAt) {
     const nextSeen = rememberIds(tracker.seenIds, observed);
     if (
       nextSeen.length === tracker.seenIds.length
@@ -105,13 +134,14 @@ export function observeItemIds(
     ) {
       return tracker;
     }
-    return { ...tracker, seenIds: nextSeen, arrivals };
+    return { ...tracker, seenIds: nextSeen, arrivals, newestAt };
   }
 
   return {
     primed: true,
     seenIds: rememberIds(tracker.seenIds, observed),
     arrivals: [...arrivals, ...newArrivals],
+    newestAt,
   };
 }
 

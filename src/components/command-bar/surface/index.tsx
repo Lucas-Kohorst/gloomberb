@@ -477,12 +477,13 @@ export function CommandBar({
     startAuthFlow,
   ]);
 
+  const corpusPrefixQuery = /^\s*(ART|LAW|ETF)\b/i.test(rootQuery);
   const searchProviders = useMemo(
     () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins)
-      .filter((provider) => /^\s*ART\b/i.test(rootQuery)
+      .filter((provider) => corpusPrefixQuery
         ? provider.id.startsWith("research-search:")
         : !shortcutOwnsQuery),
-    [pluginRegistry, shortcutOwnsQuery, rootQuery, state.config.disabledPlugins],
+    [pluginRegistry, shortcutOwnsQuery, corpusPrefixQuery, state.config.disabledPlugins],
   );
   const searchProviderContext = useMemo(() => ({
     activeTicker: activeTickerSymbol,
@@ -493,8 +494,8 @@ export function CommandBar({
   }, [closeAll]);
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
-    query: rootQuery.replace(/^\s*ART\s+/i, ""),
-    enabled: !currentRoute && (!shortcutOwnsQuery || looksLikeArticleQuery(rootQuery)),
+    query: rootQuery.replace(/^\s*(ART|LAW|ETF)\s+/i, ""),
+    enabled: !currentRoute && (!shortcutOwnsQuery || looksLikeArticleQuery(rootQuery) || corpusPrefixQuery),
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
   });

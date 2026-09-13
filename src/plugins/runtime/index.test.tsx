@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import { act, useEffect, useReducer, type SetStateAction } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
@@ -84,30 +84,28 @@ describe("plugin runtime hooks", () => {
       return <text>{selection}</text>;
     }
 
-    testSetup = await testRender(<HookHarness />, { width: 40, height: 5 });
+    jest.useFakeTimers();
+    const committedSelection = () => stateRef.current?.paneState["prediction-markets:main"]
+      ?.pluginState?.["prediction-markets"]?.selectedRowKey;
+    try {
+      await act(async () => {
+        testSetup = await testRender(<HookHarness />, { width: 40, height: 5 });
+      });
+      await act(async () => { setSelection?.("row-b"); });
+      expect(committedSelection()).toBeUndefined();
 
-    await act(async () => {
-      await testSetup!.renderOnce();
-    });
-
-    await act(async () => {
-      setSelection?.("row-b");
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    expect(
-      stateRef.current?.paneState["prediction-markets:main"]?.pluginState?.["prediction-markets"]?.selectedRowKey,
-    ).toBeUndefined();
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      await testSetup!.renderOnce();
-    });
-
-    expect(
-      stateRef.current?.paneState["prediction-markets:main"]?.pluginState?.["prediction-markets"]?.selectedRowKey,
-    ).toBe("row-b");
+      await act(async () => { jest.advanceTimersByTime(19); });
+      expect(committedSelection()).toBeUndefined();
+      await act(async () => { setSelection?.("row-c"); });
+      await act(async () => { jest.advanceTimersByTime(19); });
+      expect(committedSelection()).toBeUndefined();
+      await act(async () => { jest.advanceTimersByTime(1); });
+      expect(committedSelection()).toBe("row-c");
+    } finally {
+      await act(async () => { testSetup?.renderer.destroy(); });
+      testSetup = undefined;
+      jest.useRealTimers();
+    }
   });
 
   test("updates pane, global resume, and config state through the plugin hooks", async () => {

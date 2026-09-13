@@ -1,11 +1,15 @@
 import type {
   GloomPlugin,
+  GloomPluginContext,
   PaneTemplateContext,
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
+import { setOpenCorporatesApiTokenResolver } from "./client";
 import { OpenCorporatesPane } from "./pane";
 import {
+  OPEN_CORPORATES_API_BASE_URL,
+  OPEN_CORPORATES_BYOK_SERVICE_ID,
   OPEN_CORPORATES_CONNECTION_ID,
   OPEN_CORPORATES_PLUGIN_ID,
 } from "./types";
@@ -60,7 +64,18 @@ export const openCorporatesPlugin: GloomPlugin = {
       return createCompaniesInstance(options);
     },
   }],
-  setup() {
+  setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: OPEN_CORPORATES_BYOK_SERVICE_ID,
+      name: "OpenCorporates",
+      apiUrl: OPEN_CORPORATES_API_BASE_URL,
+      authType: "query",
+      authKey: "api_token",
+      envVar: "OPENCORPORATES_API_TOKEN",
+      description:
+        "Optional api_token. Anonymous search works but is heavily rate-limited; a token raises the cap.",
+    });
+    setOpenCorporatesApiTokenResolver(() => ctx.getApiKey(OPEN_CORPORATES_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: OPEN_CORPORATES_CONNECTION_ID,
       name: "OpenCorporates",

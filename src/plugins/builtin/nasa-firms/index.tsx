@@ -2,6 +2,7 @@ import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GloomPlugin,
+  GloomPluginContext,
   PaneProps,
   PaneTemplateCreateOptions,
   PaneTemplateContext,
@@ -19,12 +20,15 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useDebouncedPluginPaneState, usePluginPaneState, usePluginConfigState } from "../../runtime";
-import { usePaneSettingValue } from "../../../state/app/context";
+import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { FirmsClient, loadFires } from "./client";
+import { byokKeysConfigSelector } from "../account-management/ai-providers";
+import { FirmsClient, loadFires, resolveNasaFirmsMapKey, setNasaFirmsMapKeyResolver } from "./client";
 import {
+  NASA_FIRMS_API_BASE_URL,
+  NASA_FIRMS_BYOK_SERVICE_ID,
   NASA_FIRMS_CONNECTION_ID,
   NASA_FIRMS_MAP_KEY_CONFIG,
   NASA_FIRMS_PLUGIN_ID,
@@ -152,7 +156,12 @@ function createFireInstance(
 // ---------------------------------------------------------------------------
 
 function FirePane({ width, height, focused }: PaneProps) {
-  const [mapKey] = usePluginConfigState<string>(NASA_FIRMS_MAP_KEY_CONFIG, "");
+  const [pluginKey] = usePluginConfigState<string>(NASA_FIRMS_MAP_KEY_CONFIG, "");
+  const byokKeys = useAppSelector(byokKeysConfigSelector);
+  const mapKey = byokKeys.find((entry) => entry.serviceId === NASA_FIRMS_BYOK_SERVICE_ID)?.apiKey?.trim()
+    || pluginKey?.trim()
+    || resolveNasaFirmsMapKey()
+    || "";
   const hasKey = !!mapKey;
   const client = useMemo(
     () => new FirmsClient({ mapKey: mapKey || undefined }),
@@ -349,7 +358,7 @@ function FirePane({ width, height, focused }: PaneProps) {
     return (
       <EmptyState
         title="NASA FIRMS key missing"
-        message="Add a free MAP_KEY to load fire detections."
+        message="Add a free MAP_KEY in Account Management → BYOK to load fire detections."
         hint={FIRMS_REGISTER_URL}
       />
     );
@@ -461,7 +470,21 @@ export const nasaFirmsPlugin: GloomPlugin = {
     },
   ],
 
-  setup() {
+  setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: NASA_FIRMS_BYOK_SERVICE_ID,
+      name: "NASA FIRMS",
+      apiUrl: NASA_FIRMS_API_BASE_URL,
+      authType: "none",
+      envVar: "NASA_FIRMS_MAP_KEY",
+      description:
+        "Free MAP_KEY from firms.modaps.eosdis.nasa.gov/api/area/. Required for fire detections; ~20 requests/min per key.",
+    });
+    setNasaFirmsMapKeyResolver(() => (
+      ctx.getApiKey(NASA_FIRMS_BYOK_SERVICE_ID)
+      ?? ctx.configState?.get<string>(NASA_FIRMS_MAP_KEY_CONFIG)
+      ?? undefined
+    ));
     disposeConnection = registerConnectionSource({
       id: NASA_FIRMS_CONNECTION_ID,
       name: "NASA FIRMS",

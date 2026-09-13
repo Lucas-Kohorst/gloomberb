@@ -722,6 +722,17 @@ export interface PinTickerOptions {
   forceNewPane?: boolean;
 }
 
+export interface PluginByokService {
+  id: string;
+  name: string;
+  description: string;
+  apiUrl?: string;
+  authType?: "bearer" | "header" | "query" | "user-agent" | "none";
+  authKey?: string;
+  envVar?: string;
+  keyPrefix?: string;
+}
+
 export interface GloomPluginContext {
   /** The owning plugin's id. Available so registration helpers can auto-attribute contributions. */
   readonly pluginId: string;
@@ -734,6 +745,12 @@ export interface GloomPluginContext {
   registerCommandBarSearchProvider(provider: CommandBarSearchProvider): () => void;
   registerDocumentSearchProvider(provider: DocumentSearchProvider): () => void;
   registerChartSeriesCatalog(provider: ChartSeriesCatalogProvider): () => void;
+  /**
+   * Advertise that this plugin accepts a personal API key. ACM Keys (local
+   * TUI/desktop) lists registered services and stores keys in the BYOK vault
+   * so later `getApiKey(service.id)` calls pick them up.
+   */
+  registerByokService(service: PluginByokService): () => void;
   registerAlertCondition(condition: AlertConditionDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;

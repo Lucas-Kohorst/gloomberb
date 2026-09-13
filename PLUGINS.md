@@ -1183,6 +1183,7 @@ Available components:
 - `Spinner` — loading indicator
 - `PriceSelectorDialog` — ticker price picker dialog
 - `PaneFooterBar` — shared pane footer renderer used by the shell
+- `isBindableFooterHintKey(key)` — checks whether a footer hint key is `/` or a single character that the shared hint binder can dispatch
 - `usePaneFooter(registrationId, factory, deps)` — register pane footer info and action hints from a pane or Ticker Research tab
 - `usePaneHints(registrationId, factory, deps)` — register only footer hints
 - `useExternalLinkFooter(options)` — register footer help for an external link

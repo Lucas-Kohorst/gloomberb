@@ -9,12 +9,15 @@ import {
   parseRecentFilings,
   parseSubmissionArchiveNames,
   parseTickerLookup,
+  secRequestHeaders,
+  setSecContactEmailResolver,
 } from "./sec-edgar";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setSecContactEmailResolver(() => undefined);
 });
 
 describe("parseTickerLookup", () => {
@@ -115,6 +118,24 @@ describe("SecEdgarClient EFTS browser", () => {
     expect(urls[0]).toContain("https://efts.sec.gov/LATEST/search-index");
     expect(urls[0]).toContain("forms=");
     expect(filings[0]?.ticker).toBe("AAPL");
+  });
+
+  test("loads latest ETF forms over a longer window", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ hits: { hits: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    await new SecEdgarClient().getLatestFilings(10, {
+      forms: ["N-1A", "485BPOS"],
+      windowDays: 30,
+    });
+    expect(urls[0]).toContain("forms=N-1A%2C485BPOS");
+    expect(urls[0]).toContain("dateRange=custom");
   });
 
   test("resolves a ticker search through company submissions", async () => {
@@ -883,5 +904,14 @@ describe("SecEdgarClient", () => {
 
     expect(documents.map((document) => document.type)).toEqual(["8-K", "EX-99.2"]);
     expect(documents[1]?.description).toBe("Investor presentation");
+  });
+});
+
+describe("SEC contact email", () => {
+  test("live BYOK resolver supplies From and User-Agent contact", () => {
+    setSecContactEmailResolver(() => "analyst@example.com");
+    const headers = secRequestHeaders();
+    expect(headers.From).toBe("analyst@example.com");
+    expect(headers["User-Agent"]).toContain("analyst@example.com");
   });
 });

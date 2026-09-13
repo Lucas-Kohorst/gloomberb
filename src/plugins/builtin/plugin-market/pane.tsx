@@ -399,7 +399,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       updateSelected();
       return true;
     }
-    if (isPlainKey(event, "x")) {
+    if (isPlainKey(event, "d")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       removeSelected();
@@ -474,7 +474,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
             ? [{ id: "update", key: "u", label: "pdate", onPress: updateSelected, disabled: busy }]
             : []),
           ...(canRemove
-            ? [{ id: "remove", key: "x", label: "remove", onPress: removeSelected, disabled: busy }]
+            ? [{ id: "remove", key: "d", label: "elete", onPress: removeSelected, disabled: busy }]
             : []),
         ],
   }), [

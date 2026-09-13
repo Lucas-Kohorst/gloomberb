@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { getSharedMarketDataCoordinator } from "../../../../market-data/coordinator";
+import { createBaselineChartRequest } from "../../../../market-data/coordinator/chart";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../../market-data/request-types";
 import { useQuoteUpdates } from "../../../../state/hooks/quote-streaming";
 import type { TickerFinancials } from "../../../../types/financials";
@@ -9,11 +10,13 @@ import {
   VISIBLE_FINANCIAL_WARMUP_DELAY_MS,
   VISIBLE_QUOTE_REFRESH_COOLDOWN_MS,
   VISIBLE_QUOTE_STREAM_WATCHDOG_MS,
+  VISIBLE_CHART_WARMUP_BATCH_LIMIT,
   VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT,
   VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS,
   SORT_QUOTE_WARMUP_BATCH_LIMIT,
   needsVisibleQuoteWarmup,
   needsVisibleQuoteWatchdogRefresh,
+  needsVisiblePriceHistoryWarmup,
   needsVisibleSnapshotWarmup,
   selectQuoteWarmupTickers,
   selectStreamTickers,
@@ -123,6 +126,7 @@ export function usePortfolioPaneStreaming({
     const quoteQueue: TickerRecord[] = [];
     const quoteSnapshotQueue: TickerRecord[] = [];
     const snapshotQueue: TickerRecord[] = [];
+    const chartQueue: TickerRecord[] = [];
     const snapshotQueueSymbols = new Set<string>();
     const quoteWarmupTickers = liveStreaming
       ? selectQuoteWarmupTickers(
@@ -156,20 +160,35 @@ export function usePortfolioPaneStreaming({
     for (const ticker of visibleFinancialTickers) {
       if (isPredictionMarketTicker(ticker)) continue;
       const financials = latestFinancialsMap.get(ticker.metadata.ticker);
-      if (snapshotQueueSymbols.has(ticker.metadata.ticker)) continue;
-      const snapshotKey = visibleWarmupKey("snapshot", ticker);
+      if (!snapshotQueueSymbols.has(ticker.metadata.ticker)) {
+        const snapshotKey = visibleWarmupKey("snapshot", ticker);
+        if (
+          needsVisibleSnapshotWarmup(ticker, financials, visibleWarmupRequirements)
+          && !warmupInFlightRef.current.has(snapshotKey)
+          && nowTimestamp - (warmupAttemptRef.current.get(snapshotKey) ?? 0) >= VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS
+        ) {
+          snapshotQueue.push(ticker);
+          snapshotQueueSymbols.add(ticker.metadata.ticker);
+        }
+      }
+      const chartKey = visibleWarmupKey("chart", ticker);
       if (
-        needsVisibleSnapshotWarmup(ticker, financials, visibleWarmupRequirements)
-        && !warmupInFlightRef.current.has(snapshotKey)
-        && nowTimestamp - (warmupAttemptRef.current.get(snapshotKey) ?? 0) >= VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS
+        needsVisiblePriceHistoryWarmup(ticker, financials, visibleWarmupRequirements)
+        && !warmupInFlightRef.current.has(chartKey)
+        && nowTimestamp - (warmupAttemptRef.current.get(chartKey) ?? 0) >= VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS
       ) {
-        snapshotQueue.push(ticker);
-        snapshotQueueSymbols.add(ticker.metadata.ticker);
+        chartQueue.push(ticker);
       }
     }
     const limitedQuoteSnapshotQueue = quoteSnapshotQueue.slice(0, SORT_QUOTE_WARMUP_BATCH_LIMIT);
     const limitedSnapshotQueue = snapshotQueue.slice(0, VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT);
-    if (quoteQueue.length === 0 && limitedQuoteSnapshotQueue.length === 0 && limitedSnapshotQueue.length === 0) return;
+    const limitedChartQueue = chartQueue.slice(0, VISIBLE_CHART_WARMUP_BATCH_LIMIT);
+    if (
+      quoteQueue.length === 0
+      && limitedQuoteSnapshotQueue.length === 0
+      && limitedSnapshotQueue.length === 0
+      && limitedChartQueue.length === 0
+    ) return;
 
     let cancelled = false;
     const runBatch = async (): Promise<void> => {
@@ -197,7 +216,20 @@ export function usePortfolioPaneStreaming({
         warmupAttemptRef.current.set(key, nowTimestamp);
         return [{ key, instrument }];
       });
-      if (quoteEntries.length === 0 && forcedSnapshotEntries.length === 0 && normalSnapshotEntries.length === 0) return;
+      const chartEntries = limitedChartQueue.flatMap((ticker) => {
+        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, instrumentOptions);
+        if (!instrument) return [];
+        const key = visibleWarmupKey("chart", ticker);
+        warmupInFlightRef.current.add(key);
+        warmupAttemptRef.current.set(key, nowTimestamp);
+        return [{ key, instrument }];
+      });
+      if (
+        quoteEntries.length === 0
+        && forcedSnapshotEntries.length === 0
+        && normalSnapshotEntries.length === 0
+        && chartEntries.length === 0
+      ) return;
       try {
         await Promise.allSettled([
           quoteEntries.length > 0
@@ -209,11 +241,12 @@ export function usePortfolioPaneStreaming({
           normalSnapshotEntries.length > 0
             ? sharedCoordinator.loadSnapshotsBatch(normalSnapshotEntries.map((entry) => entry.instrument))
             : Promise.resolve(),
+          ...chartEntries.map((entry) => sharedCoordinator.loadChart(createBaselineChartRequest(entry.instrument))),
         ]);
       } catch {
         // Best-effort warmup for visible rows only.
       } finally {
-        for (const entry of [...quoteEntries, ...forcedSnapshotEntries, ...normalSnapshotEntries]) {
+        for (const entry of [...quoteEntries, ...forcedSnapshotEntries, ...normalSnapshotEntries, ...chartEntries]) {
           warmupInFlightRef.current.delete(entry.key);
         }
       }

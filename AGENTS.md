@@ -49,4 +49,5 @@ Pane footers:
 - `[s]`earch or `/` search when the list is long enough to filter.
 - `r` refreshes globally. Do not put `[r]`efresh in a per-pane footer (PR #589). Bind pane reload with `useShortcut` / table `onRootKeyDown` if the pane needs its own fetch, but do not advertise `r` in the chrome.
 - Footer hint keys must be `/` or a single character (`usePaneFooterHintBindings` cannot press `Ctrl+S`, `Esc`, `Enter`, or `1-8`). Do not register navigation hints (`Esc`, `Enter`, arrows, `j/k`, `h/l`).
+- A letter in `[]` is the first letter of the action: `[o]pen`, `[s]hare`, `[a]rchive`, `[p]op out`. Never `[y] share`.
 - Bind the hinted key. A footer hint with no handler is a bug.

@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { Quote, TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import {
+  needsVisiblePriceHistoryWarmup,
   needsVisibleQuoteWarmup,
   needsVisibleQuoteWatchdogRefresh,
+  needsVisibleSnapshotWarmup,
+  resolveVisibleWarmupRequirements,
   visibleWarmupSignature,
   VISIBLE_QUOTE_STREAM_MAX_AGE_MS,
   warmupQuoteWithSnapshot,
@@ -131,5 +134,39 @@ describe("portfolio visible quote warmup", () => {
     expect(visibleWarmupSignature([btc, eth], before, requirements)).toBe(
       visibleWarmupSignature([btc, eth], after, requirements),
     );
+  });
+
+  test("loads charts for sparkline and 52W columns instead of retrying snapshots", () => {
+    const equity: TickerRecord = {
+      metadata: {
+        ticker: "NVDA",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "NVIDIA",
+        positions: [],
+        portfolios: [],
+        watchlists: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    const quoted = financials(quote({ symbol: "NVDA" }));
+    quoted.fundamentals = { trailingPE: 27.8 };
+
+    expect(resolveVisibleWarmupRequirements([
+      { id: "sparkline", label: "1M", width: 6, align: "left" },
+    ]).priceHistory).toBe(true);
+    expect(resolveVisibleWarmupRequirements([
+      { id: "range_52w", label: "52W%", width: 7, align: "right" },
+    ]).priceHistory).toBe(true);
+    expect(needsVisibleSnapshotWarmup(equity, quoted, { fundamentals: false, profile: false, priceHistory: true })).toBe(false);
+    expect(needsVisiblePriceHistoryWarmup(equity, quoted, { fundamentals: false, profile: false, priceHistory: true })).toBe(true);
+    expect(needsVisiblePriceHistoryWarmup(equity, {
+      ...quoted,
+      priceHistory: [
+        { date: new Date("2026-08-01T00:00:00Z"), close: 90 },
+        { date: new Date("2026-09-01T00:00:00Z"), close: 100 },
+      ],
+    }, { fundamentals: false, profile: false, priceHistory: true })).toBe(false);
   });
 });

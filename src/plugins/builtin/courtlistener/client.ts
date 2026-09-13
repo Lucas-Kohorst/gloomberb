@@ -15,9 +15,10 @@ import {
   type OpinionDetail,
 } from "./types";
 
-export const LAWSUIT_DISPLAY_CAP = 50;
-const DEFAULT_PAGE_SIZE = 50;
-const COMMAND_BAR_RESULT_LIMIT = 5;
+export const LAWSUIT_PAGE_SIZE = 50;
+export const DOCUMENT_SEARCH_RESULT_LIMIT = 40;
+export const LATEST_DOCKET_QUERY = "dateFiled:[now-7d TO now]";
+const JUNK_CASE_NAME = /^(miscellaneous entry|unknown case title)\b/i;
 
 const courtListenerFetch = createThrottledFetch({
   requestsPerMinute: 20,
@@ -31,6 +32,35 @@ const courtListenerFetch = createThrottledFetch({
   },
   transport: (url: string, init?: RequestInit) => httpFetch(url, init),
 });
+
+let resolveApiToken: () => string | undefined = () => process.env.COURTLISTENER_API_KEY?.trim() || undefined;
+
+export function setCourtListenerApiTokenResolver(resolver: () => string | undefined): void {
+  resolveApiToken = resolver;
+}
+
+export function setCourtListenerApiToken(token: string | undefined): void {
+  const value = token?.trim() || undefined;
+  setCourtListenerApiTokenResolver(() => value);
+}
+
+export function resolveCourtListenerApiToken(): string | undefined {
+  return resolveApiToken() || process.env.COURTLISTENER_API_KEY?.trim() || undefined;
+}
+
+function requestHeaders(): Record<string, string> {
+  const token = resolveCourtListenerApiToken();
+  return token
+    ? {
+      Accept: "application/json",
+      Authorization: `Token ${token}`,
+      "User-Agent": "gloomberb-courtlistener",
+    }
+    : {
+      Accept: "application/json",
+      "User-Agent": "gloomberb-courtlistener",
+    };
+}
 
 function asTrimmed(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -72,51 +102,92 @@ function absoluteUrl(path: string): string {
  * entries (missing case name and every usable id) so one bad hit never
  * drops the whole page.
  */
+function firstRecord(value: unknown): Record<string, unknown> | undefined {
+  if (Array.isArray(value)) {
+    return value.find((entry) => entry && typeof entry === "object") as Record<string, unknown> | undefined;
+  }
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function recapSnippet(record: Record<string, unknown>): { snippet: string; downloadUrl: string; url: string } {
+  const document = firstRecord(record.recap_documents) ?? firstRecord(record.recapDocuments);
+  if (!document) return { snippet: "", downloadUrl: "", url: "" };
+  const snippet = collapseWhitespace(
+    asTrimmed(document.snippet) || asTrimmed(document.description) || asTrimmed(document.short_description),
+  ).slice(0, 2000);
+  const path = asTrimmed(document.filepath_local);
+  return {
+    snippet,
+    downloadUrl: asTrimmed(document.download_url) || (path ? `${COURTLISTENER_SITE_BASE_URL}/${path}` : ""),
+    url: absoluteUrl(asTrimmed(document.absolute_url)),
+  };
+}
+
+function isUsableLawsuitDate(date: Date): boolean {
+  if (date.getTime() === 0) return true;
+  return date.getTime() <= Date.now() + 24 * 60 * 60_000;
+}
+
 export function parseLawsuit(raw: unknown): Lawsuit | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
 
-  const caseName = asTrimmed(record.caseName) || asTrimmed(record.caseNameFull);
-  if (!caseName) return null;
+  const caseName = asTrimmed(record.caseName)
+    || asTrimmed(record.caseNameFull)
+    || asTrimmed(record.case_name_full);
+  if (!caseName || JUNK_CASE_NAME.test(caseName)) return null;
 
   const opinions = Array.isArray(record.opinions) ? record.opinions : [];
-  const firstOpinion = opinions.find((entry) => entry && typeof entry === "object") as
-    | Record<string, unknown>
-    | undefined;
-  const opinionFields = firstOpinion ?? {};
+  const opinionFields = firstRecord(opinions) ?? {};
+  const recap = recapSnippet(record);
+  const dateFiled = asDate(record.dateFiled);
+  if (!isUsableLawsuitDate(dateFiled)) return null;
 
   const clusterId = asId(record.cluster_id);
+  const docketId = asId(record.docket_id);
   const opinionId = asId(opinionFields.id);
-  const url = absoluteUrl(asTrimmed(record.absolute_url));
-  const id = clusterId
-    ? `cluster-${clusterId}`
-    : opinionId
-      ? `opinion-${opinionId}`
-      : url || caseName;
+  const kind: Lawsuit["kind"] = docketId && !clusterId ? "docket" : "opinion";
+  const url = absoluteUrl(
+    asTrimmed(record.absolute_url) || asTrimmed(record.docket_absolute_url) || recap.url,
+  );
+  const id = docketId
+    ? `docket-${docketId}`
+    : clusterId
+      ? `cluster-${clusterId}`
+      : opinionId
+        ? `opinion-${opinionId}`
+        : url || caseName;
   if (!id) return null;
 
   const court = asTrimmed(record.court);
   return {
     id,
+    kind,
     clusterId,
     opinionId,
+    docketId,
     caseName,
     court,
     courtCitation:
       asTrimmed(record.court_citation_string) || asTrimmed(record.court_id) || court,
-    dateFiled: asDate(record.dateFiled),
+    dateFiled,
     docketNumber: asTrimmed(record.docketNumber),
-    judge: asTrimmed(record.judge),
-    status: asTrimmed(record.status),
-    snippet: collapseWhitespace(asTrimmed(opinionFields.snippet)).slice(0, 2000),
+    judge: asTrimmed(record.assignedTo) || asTrimmed(record.judge),
+    status: asTrimmed(record.suitNature) || asTrimmed(record.status),
+    snippet: recap.snippet || collapseWhitespace(asTrimmed(opinionFields.snippet)).slice(0, 2000),
     citeCount: asCount(record.citeCount),
     url,
-    downloadUrl: asTrimmed(opinionFields.download_url),
+    downloadUrl: recap.downloadUrl || asTrimmed(opinionFields.download_url),
   };
 }
 
+function asNextUrl(value: unknown): string | null {
+  const next = asTrimmed(value);
+  return next.startsWith("https://") ? next : null;
+}
+
 /** Parse a v4 search response payload; never throws on malformed input. */
-export function parseSearchPage(payload: unknown, cap = LAWSUIT_DISPLAY_CAP): LawsuitPage {
+export function parseSearchPage(payload: unknown, cap = LAWSUIT_PAGE_SIZE): LawsuitPage {
   const record = (
     payload && typeof payload === "object" ? payload : {}
   ) as Record<string, unknown>;
@@ -133,18 +204,19 @@ export function parseSearchPage(payload: unknown, cap = LAWSUIT_DISPLAY_CAP): La
   return {
     lawsuits,
     total: asCount(record.count) || lawsuits.length,
+    next: asNextUrl(record.next),
   };
 }
 
-/**
- * Keyless full-text query against the v4 search endpoint (`type=o` scopes to
- * opinions). No auth params are ever attached.
- */
-export function buildSearchUrl(query: string, limit = DEFAULT_PAGE_SIZE): string {
+export function buildSearchUrl(
+  query: string,
+  options: { limit?: number; type?: "o" | "r" } = {},
+): string {
   const params = new URLSearchParams();
-  params.set("q", query.trim());
-  params.set("type", "o");
-  params.set("page_size", String(Math.max(1, Math.min(limit, 100))));
+  params.set("q", query.trim() || LATEST_DOCKET_QUERY);
+  params.set("type", options.type ?? "r");
+  params.set("order_by", "dateFiled desc");
+  params.set("page_size", String(Math.max(1, Math.min(options.limit ?? LAWSUIT_PAGE_SIZE, 100))));
   return `${COURTLISTENER_API_BASE_URL}/search/?${params.toString()}`;
 }
 
@@ -184,26 +256,38 @@ export function parseOpinionDetail(raw: unknown): OpinionDetail | null {
   };
 }
 
+async function fetchSearchPage(url: string, signal?: AbortSignal): Promise<LawsuitPage> {
+  const response = await courtListenerFetch.fetch(url, {
+    headers: requestHeaders(),
+    ...(signal ? { signal } : {}),
+  });
+  if (response.status === 429) {
+    throw new Error("CourtListener rate limit exceeded. Add an API token in KEYS or wait and retry.");
+  }
+  if (!response.ok) {
+    throw new Error(`CourtListener request failed: ${response.status} ${response.statusText}`);
+  }
+  return parseSearchPage(await response.json());
+}
+
 export class CourtListenerClient {
-  /** Free, keyless opinion search scoped to the query (usually a company name). */
+  /** RECAP docket search, newest first. Blank query is the last seven days of federal dockets. */
   async searchLawsuits(
     query: string,
     options: { limit?: number; signal?: AbortSignal } = {},
   ): Promise<LawsuitPage> {
-    const trimmed = query.trim();
-    if (!trimmed) return { lawsuits: [], total: 0 };
-    return withConnectionRequest(COURTLISTENER_CONNECTION_ID, "search", async () => {
-      const response = await courtListenerFetch.fetch(
-        buildSearchUrl(trimmed, options.limit ?? DEFAULT_PAGE_SIZE),
-        options.signal ? { signal: options.signal } : undefined,
-      );
-      if (!response.ok) {
-        throw new Error(
-          `CourtListener request failed: ${response.status} ${response.statusText}`,
-        );
-      }
-      return parseSearchPage(await response.json());
-    });
+    return withConnectionRequest(COURTLISTENER_CONNECTION_ID, "search", () =>
+      fetchSearchPage(buildSearchUrl(query, { limit: options.limit }), options.signal),
+    );
+  }
+
+  async searchLawsuitsPage(nextUrl: string, options: { signal?: AbortSignal } = {}): Promise<LawsuitPage> {
+    if (!nextUrl.startsWith(`${COURTLISTENER_API_BASE_URL}/search/`)) {
+      throw new Error("Invalid CourtListener pagination URL.");
+    }
+    return withConnectionRequest(COURTLISTENER_CONNECTION_ID, "search", () =>
+      fetchSearchPage(nextUrl, options.signal),
+    );
   }
 
   /**
@@ -216,6 +300,20 @@ export class CourtListenerClient {
     options: { signal?: AbortSignal } = {},
   ): Promise<OpinionDetail> {
     const trimmed = id.trim();
+    const docketMatch = trimmed.match(/^docket-(\d+)$/);
+    if (docketMatch) {
+      const page = await this.searchLawsuits(`docket_id:${docketMatch[1]}`, { limit: 1, signal: options.signal });
+      const lawsuit = page.lawsuits[0];
+      if (!lawsuit) throw new Error("CourtListener docket was not found.");
+      return {
+        id: lawsuit.docketId || lawsuit.id,
+        title: lawsuit.caseName,
+        text: lawsuit.snippet || `Docket ${lawsuit.docketNumber || lawsuit.id}`,
+        url: lawsuit.url,
+        court: lawsuit.court,
+        dateFiled: lawsuit.dateFiled,
+      };
+    }
     const clusterMatch = trimmed.match(/^cluster-(\d+)$/);
     const opinionMatch = trimmed.match(/^(?:opinion-)?(\d+)$/);
     const url = clusterMatch
@@ -225,10 +323,10 @@ export class CourtListenerClient {
         : null;
     if (!url) throw new Error("Invalid CourtListener opinion ID.");
     return withConnectionRequest(COURTLISTENER_CONNECTION_ID, "opinion", async () => {
-      const response = await courtListenerFetch.fetch(
-        url,
-        options.signal ? { signal: options.signal } : undefined,
-      );
+      const response = await courtListenerFetch.fetch(url, {
+        headers: requestHeaders(),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
       if (!response.ok) {
         throw new Error(
           `CourtListener request failed: ${response.status} ${response.statusText}`,
@@ -241,21 +339,58 @@ export class CourtListenerClient {
   }
 }
 
+const ROUTING_TERMS = new Set([
+  "art",
+  "article",
+  "articles",
+  "srch",
+  "search",
+  "document",
+  "documents",
+  "law",
+  "lawsuit",
+  "lawsuits",
+  "litigation",
+  "court",
+  "courts",
+  "courtlistener",
+  "docket",
+  "dockets",
+  "opinion",
+  "opinions",
+  "filing",
+  "filings",
+]);
+
+export function normalizeCourtListenerDocumentQuery(query: string): string {
+  return query
+    .trim()
+    .split(/\s+/)
+    .filter((term) => !ROUTING_TERMS.has(term.toLowerCase().replace(/[^a-z0-9]+/g, "")))
+    .join(" ")
+    .trim();
+}
+
+export function resolveCourtListenerDocumentSearchQuery(query: string): string {
+  return normalizeCourtListenerDocumentQuery(query) || query.trim();
+}
+
 function lawsuitToHit(lawsuit: Lawsuit): DocumentSearchHit {
   return {
-    id: lawsuit.opinionId || lawsuit.id,
+    id: lawsuit.id,
     title: lawsuit.caseName,
     publishedAt:
       lawsuit.dateFiled.getTime() === 0 ? undefined : lawsuit.dateFiled.toISOString(),
     snippet: lawsuit.snippet || undefined,
     source: "CourtListener",
-    documentType: "opinion",
+    documentType: "filing",
     url: lawsuit.url || undefined,
-    keywords: [lawsuit.courtCitation, lawsuit.court, lawsuit.status].filter(Boolean),
+    keywords: [lawsuit.courtCitation, lawsuit.court, lawsuit.status, lawsuit.docketNumber].filter(Boolean),
     metadata: {
       court: lawsuit.court,
       docketNumber: lawsuit.docketNumber,
       status: lawsuit.status,
+      kind: lawsuit.kind,
     },
   };
 }
@@ -264,18 +399,17 @@ export function createCourtListenerDocumentSearchProvider(
   client = new CourtListenerClient(),
 ): DocumentSearchProvider {
   return {
-    id: "courtlistener:opinions",
-    name: "CourtListener opinions",
+    id: "courtlistener:dockets",
+    name: "CourtListener",
     sourceId: COURTLISTENER_CONNECTION_ID,
-    documentTypes: ["opinion"],
+    documentTypes: ["filing"],
     minQueryLength: 2,
     async search(rawQuery, signal) {
-      const query = rawQuery.trim();
+      const query = resolveCourtListenerDocumentSearchQuery(rawQuery);
       if (!query || signal.aborted) return [];
-      const limit = COMMAND_BAR_RESULT_LIMIT;
-      const page = await client.searchLawsuits(query, { limit, signal });
+      const page = await client.searchLawsuits(query, { limit: DOCUMENT_SEARCH_RESULT_LIMIT, signal });
       if (signal.aborted) return [];
-      return page.lawsuits.slice(0, limit).map(lawsuitToHit);
+      return page.lawsuits.slice(0, DOCUMENT_SEARCH_RESULT_LIMIT).map(lawsuitToHit);
     },
     async load(id, signal): Promise<SearchDocument> {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");

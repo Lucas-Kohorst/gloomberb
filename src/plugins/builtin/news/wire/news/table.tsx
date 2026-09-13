@@ -293,7 +293,15 @@ export function NewsArticleStackView({
     () => sortedArticles.map((article) => article.id),
     [sortedArticles],
   );
-  const arrivingArticleIds = useRecentlyArrivedIds(articleIds);
+  const articleTimes = useMemo(() => {
+    const times = new Map<string, number>();
+    for (const article of sortedArticles) {
+      const at = article.publishedAt.getTime();
+      if (Number.isFinite(at)) times.set(article.id, at);
+    }
+    return times;
+  }, [sortedArticles]);
+  const arrivingArticleIds = useRecentlyArrivedIds(articleIds, articleTimes);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
 

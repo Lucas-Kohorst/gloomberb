@@ -1,5 +1,6 @@
 export const OPEN_CORPORATES_PLUGIN_ID = "open-corporates";
 export const OPEN_CORPORATES_CONNECTION_ID = "open-corporates";
+export const OPEN_CORPORATES_BYOK_SERVICE_ID = "open-corporates";
 export const OPEN_CORPORATES_API_BASE_URL = "https://api.opencorporates.com/v0.4";
 
 /** A company record from the OpenCorporates search/detail API. */

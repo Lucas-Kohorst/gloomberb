@@ -169,6 +169,52 @@ describe("provider rows in the root result model", () => {
     expect(ids[initialIdx]).toBe("pane-template:new-ai-screener-pane");
   });
 
+  test("bare LAW keeps the Lawsuits pane next to ticker search", () => {
+    const lawTemplate = {
+      id: "courtlistener-pane",
+      paneId: "courtlistener",
+      label: "Lawsuits",
+      description: "Federal dockets",
+      shortcut: { prefix: "LAW", argPlaceholder: "company", argKind: "text", argOptional: true },
+    } as PaneTemplateDef;
+    const tickerRow: ResultItem = {
+      id: "ticker:LAW",
+      label: "LAW",
+      detail: "CS Disco",
+      category: "Exact Match",
+      kind: "ticker",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "law",
+      getAvailablePaneShortcutTemplates: () => [lawTemplate],
+      createPaneTemplateItem: (template) => ({
+        id: `pane-template:${template.id}`,
+        label: template.label,
+        detail: template.description,
+        category: "Panes",
+        kind: "action",
+        right: template.shortcut?.prefix,
+        action: () => {},
+      }),
+      paneShortcutItems: () => [tickerRow],
+      rootShortcutIntent: {
+        kind: "partial",
+        source: "pane-template",
+        prefix: "LAW",
+        label: "Lawsuits",
+        description: "",
+        argKind: "text",
+        argText: "",
+        completionQuery: null,
+        template: lawTemplate,
+      },
+    }));
+    const ids = items.map((item) => item.id);
+    expect(ids).toContain("pane-template:courtlistener-pane");
+    expect(ids).toContain(tickerRow.id);
+  });
+
   test.each(["ART", "G", "CORR"])("retains relevant discovery rows for %s without unrelated providers", (prefix) => {
     const chartRow = { ...documentRow, id: "chart-series:example", category: "Chart Series" };
     const { items } = buildRootResultModel(rootOptions({

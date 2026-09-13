@@ -1,5 +1,6 @@
 export const OPENFDA_PLUGIN_ID = "openfda";
 export const OPENFDA_CONNECTION_ID = "openfda";
+export const OPENFDA_BYOK_SERVICE_ID = "openfda";
 export const OPENFDA_API_BASE_URL = "https://api.fda.gov";
 
 /** Which openFDA dataset a record came from. */

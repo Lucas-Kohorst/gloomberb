@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useNativeRenderer } from "../../../../ui";
+import { capturePointerDrag } from "../../../../ui/pointer-drag";
+import { resizedColumnWidth } from "../../../data-table/column-widths";
 import { hoverBg } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
-import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
-import { useViewport } from "../../../../react/input";
+import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../../state/app/context";
+import { useShortcut, useViewport } from "../../../../react/input";
 import { measurePerf } from "../../../../utils/perf-marks";
 import { useDoubleClickActivation } from "../../../use-double-click-activation";
 import { useScrollBoxScrollActivity } from "../../../table-view-shared";
@@ -195,6 +197,9 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   sortColumnId,
   sortDirection,
   onHeaderClick,
+  onColumnResize,
+  onColumnResizeEnd,
+  onColumnResizeReset,
   headerScrollRef,
   scrollRef,
   syncHeaderScroll,
@@ -348,6 +353,43 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
   }, [dispatch, paneInstanceId]);
+  const paneFocused = useAppSelector((state) => state.focusedPaneId === paneInstanceId);
+  const lastResizeClickRef = useRef<{ columnId: string; time: number } | null>(null);
+  useShortcut((event) => {
+    if (!event.alt || event.ctrl || event.meta || event.shift || event.name !== "0") return;
+    const column = displayColumns.find((item) => item.id === sortColumnId) ?? displayColumns[0];
+    if (!column) return;
+    event.preventDefault();
+    event.stopPropagation();
+    lastResizeClickRef.current = null;
+    onColumnResizeReset?.(column.id);
+  }, { enabled: paneInstanceId !== null && paneFocused && Boolean(onColumnResizeReset), phase: "before" });
+  const headerRowRef = useRef<unknown>(null);
+  const columnResizeRef = useRef<{
+    columnId: string;
+    startWidth: number;
+    startX: number;
+    lastWidth: number;
+  } | null>(null);
+  const startColumnResize = useCallback((columnId: string, startWidth: number, startX: number) => {
+    columnResizeRef.current = { columnId, startWidth, startX, lastWidth: startWidth };
+    capturePointerDrag(nativeRenderer, headerRowRef.current);
+  }, [nativeRenderer]);
+  const handleColumnResizeDrag = useCallback((event: any) => {
+    const session = columnResizeRef.current;
+    if (!session || !onColumnResize) return;
+    const nextX = typeof event?.x === "number" ? event.x : session.startX;
+    const nextWidth = resizedColumnWidth(session.startWidth, nextX - session.startX);
+    if (nextWidth === session.lastWidth) return;
+    lastResizeClickRef.current = null;
+    session.lastWidth = nextWidth;
+    onColumnResize(session.columnId, nextWidth);
+  }, [onColumnResize]);
+  const handleColumnResizeEnd = useCallback(() => {
+    if (columnResizeRef.current == null) return;
+    columnResizeRef.current = null;
+    onColumnResizeEnd?.();
+  }, [onColumnResizeEnd]);
 
   const applyScrollToIndex = useCallback(() => {
     if (scrollToIndex == null || items.length === 0) return true;
@@ -460,11 +502,14 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         onSizeChange={measureContentWidth}
       >
         <Box
+          ref={headerRowRef}
           flexDirection="row"
           height={1}
           {...tableContentWidthProps(contentWidth)}
           paddingX={horizontalPadding}
           backgroundColor={colors.panel}
+          onMouseDrag={onColumnResize ? handleColumnResizeDrag : undefined}
+          onMouseDragEnd={onColumnResize ? handleColumnResizeEnd : undefined}
         >
           {displayColumns.map((column, columnIndex) => {
             const isSorted = sortColumnId === column.id;
@@ -473,30 +518,60 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                 ? " ▲"
                 : " ▼"
               : "";
+            const handleWidth = onColumnResize ? 1 : 0;
+            const labelWidth = Math.max(1, column.width + columnGap - handleWidth);
             const labelText = fitTableHeaderText(
               column.label + indicator,
-              column.width,
+              Math.min(column.width, labelWidth),
               column.align,
               columnIndex < displayColumns.length - 1,
             );
             return (
               <Box
                 key={column.id}
+                flexDirection="row"
                 width={column.width + columnGap}
                 backgroundColor={column.headerBackgroundColor ?? colors.panel}
-                onMouseDown={(event: any) => {
-                  focusPane();
-                  onTableMouseDown?.(event);
-                  event.preventDefault();
-                  onHeaderClick(column.id);
-                }}
               >
-                <Text
-                  attributes={TextAttributes.BOLD}
-                  fg={isSorted ? colors.text : column.headerColor ?? colors.textDim}
+                <Box
+                  width={labelWidth}
+                  onMouseDown={(event: any) => {
+                    focusPane();
+                    onTableMouseDown?.(event);
+                    event.preventDefault();
+                    onHeaderClick(column.id);
+                  }}
                 >
-                  {labelText}
-                </Text>
+                  <Text
+                    attributes={TextAttributes.BOLD}
+                    fg={isSorted ? colors.text : column.headerColor ?? colors.textDim}
+                  >
+                    {labelText}
+                  </Text>
+                </Box>
+                {onColumnResize ? (
+                  <Box
+                    width={1}
+                    data-gloom-role="data-table-column-resize"
+                    onMouseDown={(event: any) => {
+                      event.preventDefault();
+                      event.stopPropagation?.();
+                      focusPane();
+                      if (event.button !== 0) return;
+                      const now = performance.now();
+                      const previous = lastResizeClickRef.current;
+                      if (previous?.columnId === column.id && now - previous.time <= 400) {
+                        lastResizeClickRef.current = null;
+                        columnResizeRef.current = null;
+                        onColumnResizeReset?.(column.id);
+                        return;
+                      }
+                      lastResizeClickRef.current = { columnId: column.id, time: now };
+                      const startX = typeof event?.x === "number" ? event.x : 0;
+                      startColumnResize(column.id, column.width, startX);
+                    }}
+                  />
+                ) : null}
               </Box>
             );
           })}

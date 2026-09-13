@@ -28,4 +28,5 @@ await writeSharePage({
   outdir,
   title: "Gloomberb",
   loadingText: "Loading shared view...",
+  sameOriginApi: hosted,
 });

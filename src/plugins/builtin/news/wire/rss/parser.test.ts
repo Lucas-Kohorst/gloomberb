@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseRssFeed, type RssFeedConfig, RSS_FEED_ITEM_LIMIT } from "./parser";
+import { dateFromRssUrl, parseRssFeed, type RssFeedConfig, RSS_FEED_ITEM_LIMIT } from "./parser";
 
 const DEFAULT_CONFIG: RssFeedConfig = {
   id: "test-feed",
@@ -197,6 +197,57 @@ describe("parseRssFeed", () => {
     </item></channel></rss>`;
     const items = parseRssFeed(xml, DEFAULT_CONFIG);
     expect(items[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
+  });
+
+  test("does not treat lastBuildDate as the article date when a permalink has a real day", () => {
+    const xml = `<?xml version="1.0"?>
+      <rss version="2.0">
+      <channel>
+        <lastBuildDate>Sun, 13 Sep 2026 13:48:52 GMT</lastBuildDate>
+        <item>
+          <title>Revolut Starts EURR Rollout With Bridge as Regulated Issuer</title>
+          <link>https://thedefiant.io/converge/tradfi-and-fintech/revolut-starts-eurr-rollout-with-bridge-as-regulated-issuer</link>
+          <guid isPermaLink="true">https://thedefiant.io/converge/tradfi-and-fintech/revolut-starts-eurr-rollout-with-bridge-as-regulated-issuer</guid>
+          <pubDate>Sun, 13 Sep 2026 13:48:52 GMT</pubDate>
+        </item>
+        <item>
+          <title>Brent Tops $106 And Hike Odds Reach 64% As Crypto Sells Off</title>
+          <link>https://thedefiant.io/news/markets/brent-tops-106-hike-odds-reach-64-crypto-sells-off-sep-10-2026</link>
+          <guid isPermaLink="true">https://thedefiant.io/news/markets/brent-tops-106-hike-odds-reach-64-crypto-sells-off-sep-10-2026</guid>
+          <pubDate>Sun, 13 Sep 2026 13:48:52 GMT</pubDate>
+        </item>
+        <item>
+          <title>ANON Triples After Sesta Deploys AMM On Robinhood Chain</title>
+          <link>https://thedefiant.io/news/defi/anon-triples-after-sesta-deploys-amm-on-robinhood-chain</link>
+          <pubDate>Fri, 11 Sep 2026 18:19:01 GMT</pubDate>
+        </item>
+      </channel>
+      </rss>`;
+    const items = parseRssFeed(xml, { ...DEFAULT_CONFIG, name: "The Defiant" });
+    expect(items).toHaveLength(3);
+    expect(items[0]!.publishedAt.toISOString()).toBe("2026-09-13T13:48:52.000Z");
+    expect(items[1]!.publishedAt.toISOString()).toBe("2026-09-10T12:00:00.000Z");
+    expect(items[2]!.publishedAt.toISOString()).toBe("2026-09-11T18:19:01.000Z");
+  });
+
+  test("prefers dc:date over a lastBuildDate pubDate", () => {
+    const xml = `<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
+      <lastBuildDate>Sun, 13 Sep 2026 13:48:52 GMT</lastBuildDate>
+      <item>
+        <title>Older story</title>
+        <link>https://example.com/older</link>
+        <pubDate>Sun, 13 Sep 2026 13:48:52 GMT</pubDate>
+        <dc:date>2026-09-08T09:00:00Z</dc:date>
+      </item>
+    </channel></rss>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+    expect(items[0]!.publishedAt.toISOString()).toBe("2026-09-08T09:00:00.000Z");
+  });
+
+  test("dateFromRssUrl reads slash and month-name permalinks", () => {
+    expect(dateFromRssUrl("https://example.com/2026/09/10/story")?.toISOString()).toBe("2026-09-10T12:00:00.000Z");
+    expect(dateFromRssUrl("https://thedefiant.io/news/x-sep-10-2026")?.toISOString()).toBe("2026-09-10T12:00:00.000Z");
+    expect(dateFromRssUrl("https://example.com/no-date-here")).toBeNull();
   });
 
   test("uses Atom id as the stable identity", () => {

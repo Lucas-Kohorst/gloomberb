@@ -27,6 +27,7 @@ import {
   assertNoDuplicateFooterHintKeys,
   assertNoNavigationFooterHints,
   assertNoPerPaneRefreshHint,
+  assertFooterHintKeyPrefixesAction,
   assertUniversalPaneDesignGates,
   renderAuditedPane,
   settleFrames,
@@ -189,6 +190,20 @@ describe("pane design conformance", () => {
       )).toThrow();
       expect(() => assertNoChipFilterChrome("Type All  Range: 7D  Source All", "probe")).toThrow();
       expect(() => assertNoBodySearchSpinner("* Searching...", "probe")).toThrow();
+      expect(() => assertFooterHintKeyPrefixesAction(
+        {
+          ...EMPTY_FOOTER,
+          hints: [{ id: "share", key: "y", label: "share", onPress: () => {} }],
+        },
+        "probe",
+      )).toThrow();
+      expect(() => assertFooterHintKeyPrefixesAction(
+        {
+          ...EMPTY_FOOTER,
+          hints: [{ id: "share", key: "s", label: "hare", onPress: () => {} }],
+        },
+        "probe",
+      )).not.toThrow();
     });
   });
 

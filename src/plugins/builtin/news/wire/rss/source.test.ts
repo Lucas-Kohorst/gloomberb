@@ -3,11 +3,15 @@ import { MemoryPluginPersistence as MemoryPersistence } from "../../../../../tes
 import {
   createRssNewsCapability,
   currentRssCacheStaleMs,
+  isRecentRssItem,
+  mergeRssFeedItems,
   RSS_CACHED_HEAD_LIMIT,
   RSS_FEED_CACHE_POLICY,
   RSS_FETCH_CONCURRENCY,
+  RSS_MAX_AGE_MS,
   rssFeedCachePolicy,
 } from "./source";
+import type { MarketNewsItem } from "../../../../../types/news-source";
 import { setSharedRegistryForTests } from "../../../../registry";
 import type { RssFeedConfig } from "./parser";
 import { buildArticleTickerUniverse } from "../../../../../news/article-tickers";
@@ -275,18 +279,20 @@ describe("createRssNewsCapability", () => {
   });
 
   test("does not ingest the same guid twice in one fetch", async () => {
+    const first = new Date(Date.now() - 4 * 60 * 60 * 1000).toUTCString();
+    const bumped = new Date(Date.now() - 60 * 60 * 1000).toUTCString();
     const xml = `<rss version="2.0"><channel>
       <item>
         <title>Lego has launched 330 new products</title>
         <link>https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</link>
         <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego</guid>
-        <pubDate>2026-08-25T13:04:00</pubDate>
+        <pubDate>${first}</pubDate>
       </item>
       <item>
         <title>Lego has launched 330 new products so far this year</title>
         <link>https://www.fastcompany.com/91595567/lego-has-released-330-new-products</link>
         <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego</guid>
-        <pubDate>2026-08-25T16:12:54</pubDate>
+        <pubDate>${bumped}</pubDate>
       </item>
     </channel></rss>`;
     const source = createRssNewsCapability([FEED], {
@@ -296,6 +302,111 @@ describe("createRssNewsCapability", () => {
     const items = await source.provider.fetchNews({ scope: "global" });
     expect(items).toHaveLength(1);
     expect(items[0]!.guid).toBe("https://www.fastcompany.com/91595567/lego");
-    expect(items[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
+    expect(items[0]!.publishedAt.toUTCString()).toBe(first);
+  });
+
+  test("keeps the first pubDate when a later poll restamps lastBuildDate", async () => {
+    const persistence = new MemoryPersistence();
+    const original = new Date(Date.now() - 2 * 60 * 60 * 1000).toUTCString();
+    const rebuilt = new Date().toUTCString();
+    let pubDate = original;
+    const source = createRssNewsCapability([FEED], {
+      persistence,
+      fetchText: async () => ({
+        ok: true,
+        text: async () => `<rss version="2.0"><channel>
+          <lastBuildDate>${pubDate}</lastBuildDate>
+          <item>
+            <title>Revolut Starts EURR Rollout</title>
+            <link>https://thedefiant.io/revolut-eurr</link>
+            <guid>https://thedefiant.io/revolut-eurr</guid>
+            <pubDate>${pubDate}</pubDate>
+          </item>
+        </channel></rss>`,
+      }),
+    });
+
+    const first = await source.provider.fetchNews({ scope: "global" });
+    expect(first[0]!.publishedAt.toUTCString()).toBe(original);
+
+    pubDate = rebuilt;
+    persistence.seedResource("rss-feed", FEED.id, {
+      items: [{
+        id: first[0]!.id,
+        title: first[0]!.title,
+        url: first[0]!.url,
+        guid: first[0]!.guid,
+        source: FEED.name,
+        publishedAt: first[0]!.publishedAt.toISOString(),
+        categories: ["general"],
+        tickers: [],
+        importance: first[0]!.importance,
+        isBreaking: false,
+      }],
+    }, { sourceKey: FEED.url, stale: true });
+
+    const second = await source.provider.fetchNews({ scope: "global" });
+    expect(second[0]!.publishedAt.toUTCString()).toBe(original);
   });
 });
+
+describe("mergeRssFeedItems", () => {
+  function item(publishedAt: string, overrides: Partial<MarketNewsItem> = {}): MarketNewsItem {
+    return {
+      id: "revolut",
+      title: "Revolut Starts EURR Rollout",
+      url: "https://thedefiant.io/revolut-eurr",
+      guid: "https://thedefiant.io/revolut-eurr",
+      source: "The Defiant",
+      publishedAt: new Date(publishedAt),
+      topic: "crypto",
+      topics: ["crypto"],
+      sectors: [],
+      categories: ["crypto"],
+      tickers: [],
+      scores: { importance: 58, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+      importance: 58,
+      isBreaking: false,
+      isDeveloping: false,
+      ...overrides,
+    };
+  }
+
+  test("does not let a later rebuild stamp replace the first-seen date", () => {
+    const merged = mergeRssFeedItems(
+      [item("2026-09-11T18:19:01.000Z")],
+      [item("2026-09-13T13:48:52.000Z")],
+    );
+    expect(merged[0]!.publishedAt.toISOString()).toBe("2026-09-11T18:19:01.000Z");
+  });
+});
+
+describe("isRecentRssItem", () => {
+  test("keeps items inside 48h and drops epoch, future, and stale rebuilds", () => {
+    const now = Date.parse("2026-09-13T14:00:00.000Z");
+    expect(isRecentRssItem(itemAt(now - 60 * 60 * 1000), now)).toBe(true);
+    expect(isRecentRssItem(itemAt(now - RSS_MAX_AGE_MS + 60_000), now)).toBe(true);
+    expect(isRecentRssItem(itemAt(now - RSS_MAX_AGE_MS - 60_000), now)).toBe(false);
+    expect(isRecentRssItem(itemAt(0), now)).toBe(false);
+    expect(isRecentRssItem(itemAt(now + 60 * 60 * 1000), now)).toBe(false);
+  });
+});
+
+function itemAt(publishedAtMs: number): MarketNewsItem {
+  return {
+    id: "x",
+    title: "Headline",
+    url: "https://example.com/x",
+    source: "Example",
+    publishedAt: new Date(publishedAtMs),
+    topic: "general",
+    topics: [],
+    sectors: [],
+    categories: [],
+    tickers: [],
+    scores: { importance: 50, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+    importance: 50,
+    isBreaking: false,
+    isDeveloping: false,
+  };
+}

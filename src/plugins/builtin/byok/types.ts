@@ -28,6 +28,8 @@ export interface ByokKnownService {
   keyPrefix?: string;
   /** Short description of what the service provides. */
   description: string;
+  /** Owning plugin id when registered from `ctx.registerByokService`. */
+  pluginId?: string;
 }
 
 /** A stored API key entry. */

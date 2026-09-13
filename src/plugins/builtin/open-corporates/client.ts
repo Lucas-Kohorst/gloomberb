@@ -142,12 +142,36 @@ export function parseCompanyDetailPayload(payload: unknown): OpenCorporatesCompa
   return { ...company, officers: parseOfficers(companyRecord.officers) };
 }
 
-export function buildSearchUrl(query: string): string {
-  return `${OPEN_CORPORATES_API_BASE_URL}/companies/search?q=${encodeURIComponent(query.trim())}`;
+let resolveApiToken: () => string | undefined = () => process.env.OPENCORPORATES_API_TOKEN?.trim() || undefined;
+
+export function setOpenCorporatesApiTokenResolver(resolver: () => string | undefined): void {
+  resolveApiToken = resolver;
 }
 
-export function buildCompanyUrl(jurisdictionCode: string, companyNumber: string): string {
-  return `${OPEN_CORPORATES_API_BASE_URL}/companies/${encodeURIComponent(jurisdictionCode)}/${encodeURIComponent(companyNumber)}`;
+export function resolveOpenCorporatesApiToken(): string | undefined {
+  return resolveApiToken()?.trim() || process.env.OPENCORPORATES_API_TOKEN?.trim() || undefined;
+}
+
+function withOptionalToken(url: string, apiToken?: string): string {
+  const token = apiToken?.trim();
+  if (!token) return url;
+  const parsed = new URL(url);
+  parsed.searchParams.set("api_token", token);
+  return parsed.toString();
+}
+
+export function buildSearchUrl(query: string, apiToken?: string): string {
+  return withOptionalToken(
+    `${OPEN_CORPORATES_API_BASE_URL}/companies/search?q=${encodeURIComponent(query.trim())}`,
+    apiToken,
+  );
+}
+
+export function buildCompanyUrl(jurisdictionCode: string, companyNumber: string, apiToken?: string): string {
+  return withOptionalToken(
+    `${OPEN_CORPORATES_API_BASE_URL}/companies/${encodeURIComponent(jurisdictionCode)}/${encodeURIComponent(companyNumber)}`,
+    apiToken,
+  );
 }
 
 export class OpenCorporatesClient {
@@ -155,7 +179,7 @@ export class OpenCorporatesClient {
     return withConnectionRequest(OPEN_CORPORATES_CONNECTION_ID, "search", async () => {
       const trimmed = query.trim();
       if (!trimmed) return { companies: [], total: 0 };
-      const response = await openCorporatesFetch.fetch(buildSearchUrl(trimmed), { signal });
+      const response = await openCorporatesFetch.fetch(buildSearchUrl(trimmed, resolveOpenCorporatesApiToken()), { signal });
       if (!response.ok) {
         throw new Error(
           `OpenCorporates request failed: ${response.status} ${response.statusText}`,
@@ -177,7 +201,7 @@ export class OpenCorporatesClient {
   ): Promise<OpenCorporatesCompanyDetail | null> {
     return withConnectionRequest(OPEN_CORPORATES_CONNECTION_ID, "detail", async () => {
       const response = await openCorporatesFetch.fetch(
-        buildCompanyUrl(jurisdictionCode, companyNumber),
+        buildCompanyUrl(jurisdictionCode, companyNumber, resolveOpenCorporatesApiToken()),
         { signal },
       );
       if (!response.ok) {

@@ -6,9 +6,13 @@ import { owidModule } from "../owid";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
+  getSharedAdjacentClient,
+  resolveAdjacentApiKey,
   resetAdjacentPersistence,
-  setSharedAdjacentApiKey,
+  setSharedAdjacentApiKeyResolver,
 } from "./client";
+import { useAppSelector } from "../../../state/app/context";
+import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
@@ -40,7 +44,12 @@ function getOrCreateClient(apiKey: string | null): AdjacentClient {
  * when no key is set.
  */
 function useAdjacentClient(): AdjacentClient {
-  const [apiKey] = usePluginConfigState<string>(ADJACENT_API_KEY_CONFIG, "");
+  const [pluginKey] = usePluginConfigState<string>(ADJACENT_API_KEY_CONFIG, "");
+  const byokKeys = useAppSelector(byokKeysConfigSelector);
+  const apiKey = byokKeys.find((entry) => entry.serviceId === "adjacent")?.apiKey?.trim()
+    || pluginKey?.trim()
+    || resolveAdjacentApiKey()
+    || "";
   const client = useMemo(
     () => getOrCreateClient(apiKey || null),
     [apiKey],
@@ -183,9 +192,20 @@ const adjacentMarketsModule: PluginModule = {
   setup(ctx) {
     attachAdjacentPersistence(ctx.persistence);
 
-    const apiKey = ctx.configState?.get<string>(ADJACENT_API_KEY_CONFIG) ?? null;
-    adjacentClient = new AdjacentClient({ apiKey: apiKey ?? undefined });
-    setSharedAdjacentApiKey(apiKey ?? null);
+    ctx.registerByokService({
+      id: "adjacent",
+      name: "Adjacent Markets",
+      apiUrl: "https://api.adjacent.markets",
+      authType: "bearer",
+      envVar: "ADJACENT_API_KEY",
+      description: "Real-time market data and analytics from Adjacent.",
+    });
+    setSharedAdjacentApiKeyResolver(() => (
+      ctx.getApiKey("adjacent")
+      ?? ctx.configState?.get<string>(ADJACENT_API_KEY_CONFIG)
+      ?? null
+    ));
+    adjacentClient = getSharedAdjacentClient();
 
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
     ctx.registerCommandBarSearchProvider(createAdjacentCatalogSearchProvider(ctx));

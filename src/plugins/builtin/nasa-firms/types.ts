@@ -1,5 +1,6 @@
 export const NASA_FIRMS_PLUGIN_ID = "nasa-firms";
 export const NASA_FIRMS_CONNECTION_ID = "nasa-firms";
+export const NASA_FIRMS_BYOK_SERVICE_ID = "nasa-firms";
 export const NASA_FIRMS_API_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api";
 
 /** Config key for the free FIRMS MAP_KEY (register at https://firms.modaps.eosdis.nasa.gov/api/area/). */

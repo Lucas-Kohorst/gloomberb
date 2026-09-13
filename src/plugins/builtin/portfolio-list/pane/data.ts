@@ -16,6 +16,8 @@ export const VISIBLE_QUOTE_STREAM_WATCHDOG_MS = 5_000;
 export const VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS = 5 * 60_000;
 export const VISIBLE_FINANCIAL_WARMUP_DELAY_MS = 350;
 export const VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT = 3;
+export const VISIBLE_CHART_WARMUP_BATCH_LIMIT = 8;
+export const MIN_SPARKLINE_HISTORY_POINTS = 2;
 export const SORT_QUOTE_WARMUP_BATCH_LIMIT = 64;
 
 const STREAM_OVERSCAN_ROWS = 6;
@@ -50,11 +52,13 @@ export function resolveVisibleWarmupRequirements(columns: ColumnConfig[]): Visib
   return {
     fundamentals: columns.some((column) => FUNDAMENTAL_COLUMN_IDS.has(column.id)),
     profile: columns.some((column) => PROFILE_COLUMN_IDS.has(column.id)),
-    priceHistory: columns.some((column) => column.id === PRICE_SPARKLINE_COLUMN_ID),
+    priceHistory: columns.some((column) => (
+      column.id === PRICE_SPARKLINE_COLUMN_ID || column.id === "range_52w"
+    )),
   };
 }
 
-export function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecord): string {
+export function visibleWarmupKey(kind: "quote" | "snapshot" | "chart", ticker: TickerRecord): string {
   return `${kind}:${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
 }
 
@@ -69,6 +73,7 @@ export function visibleWarmupSignature(
       visibleWarmupKey("snapshot", ticker),
       needsVisibleQuoteWarmup(financials) ? "1" : "0",
       needsVisibleSnapshotWarmup(ticker, financials, requirements) ? "1" : "0",
+      needsVisiblePriceHistoryWarmup(ticker, financials, requirements) ? "1" : "0",
       financials?.priceHistory.length ?? 0,
       Object.keys(financials?.fundamentals ?? {}).length,
       financials?.profile ? "1" : "0",
@@ -99,7 +104,17 @@ export function needsVisibleSnapshotWarmup(
   if (!financials?.quote) return false;
   if (requirements.fundamentals && Object.keys(financials.fundamentals ?? {}).length === 0) return true;
   if (requirements.profile && !financials.profile) return true;
-  return requirements.priceHistory && financials.priceHistory.length === 0;
+  return false;
+}
+
+export function needsVisiblePriceHistoryWarmup(
+  ticker: TickerRecord,
+  financials: TickerFinancials | undefined,
+  requirements: VisibleWarmupRequirements,
+): boolean {
+  if (!requirements.priceHistory) return false;
+  if (ticker.metadata.assetCategory === "OPT") return false;
+  return (financials?.priceHistory.length ?? 0) < MIN_SPARKLINE_HISTORY_POINTS;
 }
 
 export function selectStreamTickers(

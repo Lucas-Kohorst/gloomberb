@@ -745,6 +745,88 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(row).toMatch(/[\u2800-\u28ff]/);
   });
 
+  test("warms one-month sparkline history when snapshots omit chart data", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "price", "sparkline"],
+      [createBrokerInstance("flex")],
+    );
+    const seededTicker = makeTicker();
+    const seededQuote = makeQuote();
+    const history = [118, 121, 119, 124, 127, 126, 130].map((close, index) => ({
+      date: new Date(`2026-03-${20 + index}T00:00:00Z`),
+      close,
+    }));
+    let historyCalls = 0;
+    const provider: DataProvider = {
+      id: "test-provider",
+      name: "Test Provider",
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: seededQuote,
+          fundamentals: { trailingPE: 25 },
+          profile: { sector: "Technology" },
+        };
+      },
+      async getQuote() {
+        return seededQuote;
+      },
+      async getExchangeRate() {
+        return 1;
+      },
+      async search() {
+        return [];
+      },
+      async getArticleSummary() {
+        return null;
+      },
+      async getPriceHistory() {
+        historyCalls += 1;
+        return history;
+      },
+      subscribeQuotes() {
+        return () => {};
+      },
+    };
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    const instrument = instrumentFromTicker(seededTicker, seededTicker.metadata.ticker);
+    if (!instrument) throw new Error("expected ticker instrument");
+    sharedCoordinator.primeCachedFinancials([{
+      instrument,
+      financials: {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: seededQuote,
+      },
+    }]);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        ticker={seededTicker}
+        quote={seededQuote}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 380));
+    });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    const row = frame.split("\n").find((line) => line.includes("AAPL")) ?? "";
+    expect(historyCalls).toBeGreaterThan(0);
+    expect(row).toMatch(/[\u2800-\u28ff]/);
+  });
+
   test("keeps native price and avg cost while converting market value and pnl to base currency", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const config = createPortfolioConfigWithColumns(

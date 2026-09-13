@@ -25,7 +25,10 @@ function sameIdList(left: readonly string[] | null, right: readonly string[]): b
  * First observation primes silently. Timers are coalesced to the next reveal
  * or expiry so staggered batches do not schedule one timer per row.
  */
-export function useRecentlyArrivedIds(ids: readonly string[]): ReadonlySet<string> {
+export function useRecentlyArrivedIds(
+  ids: readonly string[],
+  timestamps?: ReadonlyMap<string, number>,
+): ReadonlySet<string> {
   const trackerRef = useRef<ArrivalTracker>(createArrivalTracker());
   const prevIdsRef = useRef<readonly string[] | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,7 +77,7 @@ export function useRecentlyArrivedIds(ids: readonly string[]): ReadonlySet<strin
     if (!sameIdList(prevIdsRef.current, observed)) {
       prevIdsRef.current = observed;
       const now = Date.now();
-      trackerRef.current = observeItemIds(trackerRef.current, observed, now);
+      trackerRef.current = observeItemIds(trackerRef.current, observed, now, timestamps);
       publish(now);
     } else {
       publish(Date.now());
@@ -84,7 +87,7 @@ export function useRecentlyArrivedIds(ids: readonly string[]): ReadonlySet<strin
     scheduleNext();
 
     return clearTimer;
-  }, [ids]);
+  }, [ids, timestamps]);
 
   return activeIds;
 }

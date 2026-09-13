@@ -165,11 +165,24 @@ textarea::-webkit-strong-password-auto-fill-button {
 
 .share-pane[data-layout="document"] .share-pane-body > .share-body,
 .share-pane[data-layout="document"] .share-pane-body > .share-subtitle,
+.share-pane[data-layout="document"] .share-pane-body > .share-meta,
 .share-pane[data-layout="document"] .share-pane-body > .share-items,
 .share-pane[data-layout="document"] .share-pane-body > .share-items-heading,
 .share-pane[data-layout="document"] .share-pane-body > .share-note,
 .share-pane[data-layout="document"] .share-pane-body > .share-loading-body {
   max-width: 820px;
+}
+
+.share-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5em;
+  margin: 0 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--gloom-border);
+  color: var(--gloom-text-dim);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .share-pane-footer {

@@ -11,6 +11,16 @@ import {
   type EiaSeriesDef,
 } from "./types";
 
+let resolveApiKey: () => string | undefined = () => process.env.EIA_API_KEY?.trim() || undefined;
+
+export function setEiaApiKeyResolver(resolver: () => string | undefined): void {
+  resolveApiKey = resolver;
+}
+
+export function resolveEiaApiKey(): string {
+  return resolveApiKey()?.trim() || process.env.EIA_API_KEY?.trim() || EIA_DEMO_KEY;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 const eiaFetch = createThrottledFetch({
@@ -126,7 +136,7 @@ export function formatChangePct(changePct: number | null): string {
 }
 
 export class EiaEnergyClient {
-  constructor(private readonly apiKey: string = EIA_DEMO_KEY) {}
+  constructor(private readonly apiKey: string = resolveEiaApiKey()) {}
 
   async listSeriesPoints(seriesId: string, length = 52, signal?: AbortSignal): Promise<EiaSeriesSummary> {
     const def = findEiaSeries(seriesId);
@@ -144,11 +154,11 @@ export class EiaEnergyClient {
   }
 }
 
-/** Resolve a catalog series id into chartable points (uses the public demo key). */
+/** Resolve a catalog series id into chartable points (BYOK key, else DEMO_KEY). */
 export async function resolveEiaChartSeries(seriesId: string, signal?: AbortSignal): Promise<ResolvedSeries> {
   const def = findEiaSeries(seriesId);
   if (!def) throw new Error(`Unknown EIA series "${seriesId}". Use one of: crude-stocks, gasoline-stocks, distillate-stocks, gas-storage, gasoline-price, diesel-price, crude-production.`);
-  const client = new EiaEnergyClient(EIA_DEMO_KEY);
+  const client = new EiaEnergyClient(resolveEiaApiKey());
   const summary = await client.listSeriesPoints(def.id, 260, signal);
   if (summary.points.length === 0) throw new Error(`EIA returned no points for ${def.label}`);
   const ascending = [...summary.points].sort((a, b) => a.date.getTime() - b.date.getTime());

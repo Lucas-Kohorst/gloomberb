@@ -1,11 +1,15 @@
 import type {
   GloomPlugin,
+  GloomPluginContext,
   PaneTemplateContext,
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
+import { setOpenFdaApiKeyResolver } from "./client";
 import { OpenFdaPane, OPENFDA_PANE_ID } from "./pane";
 import {
+  OPENFDA_API_BASE_URL,
+  OPENFDA_BYOK_SERVICE_ID,
   OPENFDA_CONNECTION_ID,
   OPENFDA_PLUGIN_ID,
 } from "./types";
@@ -83,7 +87,18 @@ export const openFdaPlugin: GloomPlugin = {
     },
   ],
 
-  setup() {
+  setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: OPENFDA_BYOK_SERVICE_ID,
+      name: "openFDA",
+      apiUrl: OPENFDA_API_BASE_URL,
+      authType: "query",
+      authKey: "api_key",
+      envVar: "OPENFDA_API_KEY",
+      description:
+        "Optional open.fda.gov API key. Anonymous is 40 req/min; a key raises that to 240/min.",
+    });
+    setOpenFdaApiKeyResolver(() => ctx.getApiKey(OPENFDA_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: OPENFDA_CONNECTION_ID,
       name: "openFDA",

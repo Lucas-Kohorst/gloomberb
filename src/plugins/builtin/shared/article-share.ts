@@ -50,6 +50,7 @@ export function newsArticleSharePayload(article: NewsArticle): ArticleSharePaylo
     categories: article.categories ?? [],
     tickers: article.tickers ?? [],
     importance: article.importance,
+    imageUrls: article.imageUrl ? [article.imageUrl] : undefined,
     items: article.items?.map((item) => ({
       id: item.id,
       sourceKey: item.sourceKey ?? "",
@@ -249,8 +250,9 @@ function longerShareText(
 // ---------------------------------------------------------------------------
 
 /**
- * Prefer a short `/s/{id}` link. Fall back to the inline `/article?a=…` form
- * when the hosted share API is unreachable (desktop terminal, offline).
+ * Prefer a canonical `/news/{articleId}` link when the story has a stable id.
+ * Fall back to Cloud `/s/{32hex}`, then a hosted short id if Cloud is down,
+ * then the inline `/article?a=…` form.
  */
 export function useCopyShareLink(): (payload: ArticleSharePayload) => Promise<void> {
   const rendererHost = useRendererHost();

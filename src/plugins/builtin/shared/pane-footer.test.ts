@@ -6,6 +6,7 @@ import {
   paneLiveStatus,
   paneRefreshHint,
   paneSearchHint,
+  paneShareHint,
 } from "./pane-footer";
 
 describe("pane footer action keys", () => {
@@ -13,7 +14,7 @@ describe("pane footer action keys", () => {
     expect(PANE_FOOTER_ACTION_KEYS.search).toBe("/");
     expect(PANE_FOOTER_ACTION_KEYS.refresh).toBe("r");
     expect(PANE_FOOTER_ACTION_KEYS.open).toBe("o");
-    expect(PANE_FOOTER_ACTION_KEYS.share).toBe("y");
+    expect(PANE_FOOTER_ACTION_KEYS.share).toBe("s");
   });
 
   test("footer binder keys are / or a single character", () => {
@@ -36,6 +37,9 @@ describe("pane footer action keys", () => {
     expect(refresh.key).toBe("r");
     expect(search.key).not.toBe("s");
     expect(refresh.key).not.toBe("Shift+R");
+    const share = paneShareHint(() => {});
+    expect(share.key).toBe("s");
+    expect(share.label).toBe("hare");
   });
 
   test("live and delayed status chips match the canonical footer copy", () => {

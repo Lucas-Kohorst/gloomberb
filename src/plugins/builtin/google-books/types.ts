@@ -1,5 +1,6 @@
 export const GOOGLE_BOOKS_PLUGIN_ID = "google-books";
 export const GOOGLE_BOOKS_CONNECTION_ID = "google-books";
+export const GOOGLE_BOOKS_BYOK_SERVICE_ID = "google-books";
 export const GOOGLE_BOOKS_API_BASE_URL = "https://www.googleapis.com/books/v1";
 export const GOOGLE_BOOKS_DOCUMENT_PROVIDER_ID = "google-books:volumes";
 
