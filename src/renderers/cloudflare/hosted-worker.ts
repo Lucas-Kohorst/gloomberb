@@ -71,7 +71,8 @@ export default {
       return handleCloudSharesProxy(request, env, url);
     }
     if (url.pathname.startsWith("/api/news/")) {
-      return handleNewsShareIndex(request, env, url);
+      return handleNewsShareIndex(request, env, url).catch(() =>
+        newsIndexResponse({ error: "News share temporarily unavailable." }, 503));
     }
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
@@ -176,18 +177,15 @@ async function readCloudShare(
   env: Env,
   shareId: string,
 ): Promise<{ payload: SharePayload; body: Record<string, unknown> } | null> {
-  try {
-    const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500 });
-    if (!response.ok) return null;
-    const body: unknown = await response.json();
-    if (!body || typeof body !== "object") return null;
-    const object = body as Record<string, unknown>;
-    const payload = parseSharePayload({ kind: object.kind, data: object.data });
-    if (!payload) return null;
-    return { payload, body: object };
-  } catch {
-    return null;
-  }
+  const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500 });
+  if (response.status === 404 || response.status === 410) return null;
+  if (!response.ok) throw new Error("Cloud share unavailable");
+  const body: unknown = await response.json();
+  if (!body || typeof body !== "object") throw new Error("Invalid Cloud share");
+  const object = body as Record<string, unknown>;
+  const payload = parseSharePayload({ kind: object.kind, data: object.data });
+  if (!payload) throw new Error("Invalid Cloud share");
+  return { payload, body: object };
 }
 
 async function loadIndexedNewsShare(

@@ -539,6 +539,22 @@ describe("canonical news share index", () => {
     }) as typeof globalThis.fetch;
   }
 
+  test("transient Cloud failures preserve the index and recover", async () => {
+    const env = makeEnv();
+    SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
+    for (const response of [new Response("{}", { status: 503 }), new Response("bad json"), Response.json({ kind: "article", data: {} })]) {
+      globalThis.fetch = (async () => response) as typeof fetch;
+      const get = await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env);
+      expect(get.status).toBe(503);
+      expect(SNAPSHOTS.has(`news:${articleId}`)).toBe(true);
+    }
+    installCloudShares({ [shareId]: cloudArticle });
+    expect((await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env)).status).toBe(200);
+    installCloudShares({});
+    expect((await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env)).status).toBe(404);
+    expect(SNAPSHOTS.has(`news:${articleId}`)).toBe(false);
+  });
+
   test("PUT then GET resolves the Cloud snapshot by article id", async () => {
     installCloudShares({ [shareId]: cloudArticle });
     const env = makeEnv();
