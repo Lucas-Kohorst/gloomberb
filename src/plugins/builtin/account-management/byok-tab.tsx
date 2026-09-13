@@ -214,6 +214,7 @@ export function AccountByokTab({ focused, width, height }: { focused: boolean; w
         ) : null}
         <TextField
           label=""
+          type="password"
           value={draft.apiKey}
           focused
           width={fieldWidth}
