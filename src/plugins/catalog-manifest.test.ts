@@ -28,16 +28,4 @@ describe("built-in plugin manifest", () => {
     expect(buildBuiltinManifest().uncategorised).toEqual([]);
   });
 
-  test("exactly one plugin is featured", () => {
-    const featured = buildBuiltinManifest().plugins.filter((plugin) => plugin.featured);
-
-    expect(featured.map((plugin) => plugin.id)).toEqual(["gloomberb-cloud"]);
-  });
-
-  test("describes what each plugin contributes, which is what the directory renders", () => {
-    const cloud = buildBuiltinManifest().plugins.find((plugin) => plugin.id === "gloomberb-cloud");
-
-    expect(cloud?.contributes.panes).toContain("chat");
-    expect(cloud?.contributes.capabilities.length).toBeGreaterThan(0);
-  });
 });

@@ -44,6 +44,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "foia-logs": { categories: ["research", "data"] },
   "google-books": { categories: ["research", "data"] },
   "iborrowdesk": { categories: ["research", "data"] },
+  "nasa-firms": { categories: ["research", "data"] },
   "levels-fyi": { categories: ["research", "data"] },
   "open-corporates": { categories: ["research", "data"] },
   "open-payments": { categories: ["research", "data"] },
