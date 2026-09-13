@@ -14,12 +14,11 @@ import {
   serializeNewsIndexRecord,
 } from "../../shares/news-index";
 import {
-  SHARE_KINDS,
+  MAX_SHARE_BYTES,
   articleShareFromStored,
   articleShareStoreData,
   decodeArticleSharePayload,
   parseSharePayload,
-  type ShareKind,
   type SharePayload,
 } from "../../shares/payload";
 import { injectShareDocumentMeta } from "../../shares/open-graph";
@@ -113,7 +112,7 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
-const MAX_SHARE_BODY_BYTES = 512_000;
+const MAX_SHARE_BODY_BYTES = MAX_SHARE_BYTES;
 const SHARE_ID_MAX_ATTEMPTS = 5;
 
 const KALSHI_API_ORIGIN = "https://external-api.kalshi.com/trade-api/v2";
@@ -371,10 +370,11 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     } catch {
       return Response.json({ error: "Invalid share payload." }, { status: 400 });
     }
-    if (!body || !SHARE_KINDS.includes(body.kind as never) || body.data === undefined) {
+    const payload = parseSharePayload(body);
+    if (!payload) {
       return leftoverShareResponse({ error: "Invalid share payload." }, 400);
     }
-    const kind = body.kind as ShareKind;
+    const { kind, data } = payload;
     const trustedOrigin = hasTrustedHostedOrigin(request, url);
     if (!trustedOrigin && !(kind === "article" && isNativeShareClient(request))) {
       return leftoverShareResponse({ error: "Invalid origin" }, 403);
@@ -385,13 +385,19 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     if (kind !== "article" && !await fetchSessionUser(request, env)) {
       return leftoverShareResponse({ error: "Authentication required." }, 401);
     }
+    if (kind === "article") {
+      const budget = await env.ANONYMOUS_SHARE_WRITES.limit({
+        key: request.headers.get("CF-Connecting-IP") || "unknown",
+      });
+      if (!budget.success) return leftoverShareResponse({ error: "Share limit reached. Try again shortly." }, 429);
+    }
     const id = await allocateShareId(env);
     if (!id) {
       return leftoverShareResponse({ error: "Failed to allocate share id." }, 503);
     }
     await env.SHARES.put(id, JSON.stringify({
       kind,
-      data: body.data,
+      data,
       createdAt: new Date().toISOString(),
     }), { expirationTtl: SHARE_TTL_SECONDS });
     return leftoverShareResponse({ id });
