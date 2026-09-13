@@ -22,6 +22,7 @@ import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
+import { SHARE_CONNECTION_ID } from "../../../shares/connection";
 import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
@@ -32,6 +33,7 @@ interface GloomberbCloudPluginComponents {
 
 function createCloudDataModule(): PluginModule {
   let disposeConfigConnection: (() => void) | null = null;
+  let disposeSharingConnection: (() => void) | null = null;
   let disposeOllamaConnection: (() => void) | null = null;
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
@@ -45,6 +47,13 @@ function createCloudDataModule(): PluginModule {
         priority: 100,
         authRequired: true,
       });
+      disposeSharingConnection = registerConnectionSource({
+        id: SHARE_CONNECTION_ID,
+        name: "Gloom Sharing",
+        kind: "api",
+        pluginId: "gloomberb-cloud",
+        authRequired: false,
+      });
       disposeOllamaConnection = registerConnectionSource({
         id: "ollama",
         name: "Ollama (local)",
@@ -55,6 +64,8 @@ function createCloudDataModule(): PluginModule {
     },
     dispose() {
       disposeConfigConnection?.();
+      disposeSharingConnection?.();
+      disposeSharingConnection = null;
       disposeOllamaConnection?.();
       disposeOllamaConnection = null;
       apiClient.dispose();

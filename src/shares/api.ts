@@ -1,3 +1,4 @@
+import { fetchShare } from "./connection";
 import { apiClient } from "../api-client";
 import { ApiRequestError } from "../api-client/errors";
 import { parseSharePayload, type SharePayload } from "./payload";
@@ -56,7 +57,7 @@ export async function createShare(payload: SharePayload, fetchImpl?: ShareFetch)
   if (!validated) throw new Error("Invalid share payload.");
   let body: unknown;
   if (fetchImpl) {
-    const response = await fetchImpl(`${SHARE_API_ORIGIN}/shares`, {
+    const response = await fetchShare(fetchImpl, `${SHARE_API_ORIGIN}/shares`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -110,7 +111,7 @@ export async function getShare(
 ): Promise<ShareRecord | null> {
   if (isStoredShareId(id)) {
     const purpose = options?.trackView === false ? "?purpose=open" : "";
-    const response = await fetchImpl(`${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}${purpose}`, {
+    const response = await fetchShare(fetchImpl, `${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}${purpose}`, {
       credentials: "include",
     });
     if (response.status === 404) return null;
@@ -118,7 +119,7 @@ export async function getShare(
     return parseShareRecord(await readJson(response));
   }
   if (!isShareId(id)) return null;
-  const response = await fetchImpl(`${NEWS_INDEX_API_ORIGIN}/share/${encodeURIComponent(id)}`);
+  const response = await fetchShare(fetchImpl, `${NEWS_INDEX_API_ORIGIN}/share/${encodeURIComponent(id)}`);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Could not load share.");
   return parseShareRecord(await readJson(response));
@@ -132,7 +133,7 @@ export async function createHostedShare(
   const validated = parseSharePayload(payload);
   if (!validated) return null;
   try {
-    const response = await fetchImpl(`${NEWS_INDEX_API_ORIGIN}/share`, {
+    const response = await fetchShare(fetchImpl, `${NEWS_INDEX_API_ORIGIN}/share`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validated),
@@ -150,7 +151,7 @@ export async function createHostedShare(
 
 export async function deleteShare(id: string, fetchImpl: ShareFetch = fetch): Promise<void> {
   if (!isStoredShareId(id)) throw new Error("Invalid share id.");
-  const response = await fetchImpl(`${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}`, {
+  const response = await fetchShare(fetchImpl, `${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}`, {
     method: "DELETE",
     credentials: "include",
   });
@@ -194,7 +195,7 @@ export async function getNewsShare(
   options?: { trackView?: boolean },
 ): Promise<NewsShareRecord | null> {
   if (!isCanonicalNewsId(articleId)) return null;
-  const response = await fetchImpl(`${newsIndexUrl(articleId)}${options?.trackView === false ? "?purpose=open" : ""}`);
+  const response = await fetchShare(fetchImpl, `${newsIndexUrl(articleId)}${options?.trackView === false ? "?purpose=open" : ""}`);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Could not load share.");
   return parseNewsShareRecord(await readJson(response));
@@ -222,7 +223,7 @@ export async function registerNewsShare(
 ): Promise<boolean> {
   if (!isCanonicalNewsId(articleId) || !isStoredShareId(shareId)) return false;
   try {
-    const response = await fetchImpl(newsIndexUrl(articleId), {
+    const response = await fetchShare(fetchImpl, newsIndexUrl(articleId), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ shareId }),
