@@ -70,7 +70,13 @@ export function buildChartShareData(
   const withSpec = options.spec ? { ...base, spec: options.spec } : base;
   if (parseSharePayload({ kind: "chart", data: withSpec })) return withSpec;
   if (parseSharePayload({ kind: "chart", data: base })) return base;
-  return base;
+  for (let limit = Math.floor(MAX_POINTS / 2); limit >= 2; limit = Math.floor(limit / 2)) {
+    const sampled = { ...base, series: sharedSeries.map((entry) => ({ ...entry, points: sample(entry.points, limit) })) };
+    const sampledWithSpec = options.spec ? { ...sampled, spec: options.spec } : sampled;
+    if (parseSharePayload({ kind: "chart", data: sampledWithSpec })) return sampledWithSpec;
+    if (parseSharePayload({ kind: "chart", data: sampled })) return sampled;
+  }
+  return null;
 }
 
 function finiteNumber(value: number | null | undefined): number | undefined {
