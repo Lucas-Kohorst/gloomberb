@@ -34,7 +34,7 @@ function SourceLink({ url }: { url?: string }) {
   return url ? <a href={url} target="_blank" rel="noopener noreferrer">View source</a> : null;
 }
 
-function OwnerActions({
+export function OwnerActions({
   deleting,
   error,
   onDelete,

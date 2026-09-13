@@ -15,7 +15,7 @@ import {
   type ShareRecord,
 } from "../../shares/api";
 import { LayoutShareView } from "./layout-view";
-import { ShareView } from "./view";
+import { OwnerActions, ShareView } from "./view";
 import { ArticleShareView } from "./article-view";
 import { ChartShareView } from "./chart-view";
 import { TableShareView } from "./table-view";
@@ -140,7 +140,10 @@ function ContentShareApp({ id, origin }: { id: string; origin: string }) {
         />
       );
     }
-    return <ShareRecordView share={state.share} shareId={id} origin={origin} />;
+    return <>
+      <OwnerActions deleting={state.deleting === true} error={state.error} onDelete={state.share.ownedByViewer ? remove : undefined} />
+      <ShareRecordView share={state.share} shareId={id} origin={origin} />
+    </>;
   }
   return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
 }
