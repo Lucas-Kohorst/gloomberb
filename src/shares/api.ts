@@ -191,9 +191,10 @@ function parseNewsShareRecord(body: unknown): NewsShareRecord | null {
 export async function getNewsShare(
   articleId: string,
   fetchImpl: ShareFetch = fetch,
+  options?: { trackView?: boolean },
 ): Promise<NewsShareRecord | null> {
   if (!isCanonicalNewsId(articleId)) return null;
-  const response = await fetchImpl(newsIndexUrl(articleId));
+  const response = await fetchImpl(`${newsIndexUrl(articleId)}${options?.trackView === false ? "?purpose=open" : ""}`);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Could not load share.");
   return parseNewsShareRecord(await readJson(response));
@@ -204,7 +205,7 @@ export async function lookupNewsShareId(
   fetchImpl: ShareFetch = fetch,
 ): Promise<string | null> {
   try {
-    return (await getNewsShare(articleId, fetchImpl))?.id ?? null;
+    return (await getNewsShare(articleId, fetchImpl, { trackView: false }))?.id ?? null;
   } catch {
     return null;
   }

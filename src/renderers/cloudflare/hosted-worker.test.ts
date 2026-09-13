@@ -619,6 +619,23 @@ describe("canonical news share index", () => {
     expect((await response.json() as { data: { text: string } }).data.text).toBe("Trusted provider body");
   });
 
+  test("metadata and lookup reads suppress views while a deliberate visit counts once", async () => {
+    installCloudShares({ [shareId]: cloudArticle });
+    const provider = globalThis.fetch;
+    const reads: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.startsWith("/shares/")) reads.push(url.search);
+      return provider(input, init);
+    }) as typeof fetch;
+    const env = makeEnv();
+    SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
+    for (const [method, path] of [["GET", `/api/news/${articleId}?purpose=open`], ["HEAD", `/api/news/${articleId}`], ["GET", `/news/${articleId}`], ["GET", `/api/news/${articleId}`]]) {
+      await workerModule.default.fetch(makeRequest(method!, path!), env);
+    }
+    expect(reads).toEqual(["?purpose=open", "?purpose=open", "?purpose=open", ""]);
+  });
+
   test("PUT then GET resolves the Cloud snapshot by article id", async () => {
     installCloudShares({ [shareId]: cloudArticle });
     const env = makeEnv();

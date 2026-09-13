@@ -185,8 +185,9 @@ async function readCloudShare(
   env: Env,
   shareId: string,
   token?: string | null,
+  trackView = false,
 ): Promise<{ payload: SharePayload; body: Record<string, unknown> } | null> {
-  const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500, token });
+  const response = await gloomFetch(env, `/shares/${shareId}${trackView ? "" : "?purpose=open"}`, { timeoutMs: 2_500, token });
   if (response.status === 404 || response.status === 410) return null;
   if (!response.ok) throw new Error("Cloud share unavailable");
   const body: unknown = await response.json();
@@ -200,11 +201,12 @@ async function readCloudShare(
 async function loadIndexedNewsShare(
   env: Env,
   articleId: string,
+  trackView = false,
 ): Promise<{ shareId: string; payload: SharePayload; body: Record<string, unknown> } | null> {
   const raw = await env.SHARES.get(newsIndexKey(articleId));
   const record = parseNewsIndexRecord(raw);
   if (!record) return null;
-  const live = await readCloudShare(env, record.shareId);
+  const live = await readCloudShare(env, record.shareId, undefined, trackView);
   if (!live) {
     await env.SHARES.delete(newsIndexKey(articleId));
     return null;
@@ -240,7 +242,7 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
   if (!articleId) return newsIndexResponse({ error: "Invalid news id." }, 400);
 
   if (request.method === "GET" || request.method === "HEAD") {
-    const indexed = await loadIndexedNewsShare(env, articleId);
+    const indexed = await loadIndexedNewsShare(env, articleId, request.method === "GET" && url.searchParams.get("purpose") !== "open");
     if (!indexed) return newsIndexResponse({ error: "Share not found." }, 404);
     const body = {
       ...indexed.body,
