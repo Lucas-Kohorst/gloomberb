@@ -19,6 +19,6 @@ export function injectShareDocumentMeta(
     `<meta name="twitter:card" content="summary" />`,
   ].filter(Boolean).join("");
   return html
-    .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
-    .replace("</head>", `${tags}</head>`);
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace("</head>", () => `${tags}</head>`);
 }

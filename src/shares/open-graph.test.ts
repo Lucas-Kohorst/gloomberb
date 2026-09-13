@@ -18,3 +18,12 @@ describe("share open graph", () => {
     expect(html).not.toContain("<CNBC>");
   });
 });
+
+test("inserts dollar replacement tokens literally without duplicating document markup", () => {
+  const title = "$& $` $' $$ <script>";
+  const html = injectShareDocumentMeta('<html><head><title>Old</title></head><body><script src="app.js"></script></body></html>', { title, description: title });
+  expect(html).toContain("<title>$&amp; $` $' $$ &lt;script&gt;</title>");
+  expect(html).toContain("content=\"$&amp; $` $' $$ &lt;script&gt;\"");
+  expect(html.match(/<script/g)).toHaveLength(1);
+  expect(html.match(/<head>/g)).toHaveLength(1);
+});
