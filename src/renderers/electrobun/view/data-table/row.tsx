@@ -56,8 +56,10 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
   onResize,
   onResizeEnd,
   onReset,
+  focusPane,
 }: {
   column: C;
+  focusPane: () => void;
   onResize?: (columnId: string, width: number) => void;
   onResizeEnd?: () => void;
   onReset?: (columnId: string) => void;
@@ -69,9 +71,11 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
   onResizeEndRef.current = onResizeEnd;
   onResetRef.current = onReset;
   const keyboardResizedRef = useRef(false);
+  const keyboardWidthRef = useRef<number | null>(null);
   const finishKeyboardResize = () => {
     if (!keyboardResizedRef.current) return;
     keyboardResizedRef.current = false;
+    keyboardWidthRef.current = null;
     onResizeEndRef.current?.();
   };
   const [active, setActive] = useState(false);
@@ -164,11 +168,16 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
         event.stopPropagation();
         if (event.key === "Home") {
           keyboardResizedRef.current = false;
+          keyboardWidthRef.current = null;
           onResetRef.current?.(column.id);
           return;
         }
         const step = event.shiftKey ? 5 : 1;
-        onResizeRef.current?.(column.id, resizedColumnWidth(column.width, event.key === "ArrowLeft" ? -step : step));
+        const startWidth = keyboardWidthRef.current
+          ?? (event.currentTarget.parentElement?.getBoundingClientRect().width ?? column.width * WEB_CELL_WIDTH) / WEB_CELL_WIDTH;
+        const nextWidth = resizedColumnWidth(startWidth, event.key === "ArrowLeft" ? -step : step);
+        keyboardWidthRef.current = nextWidth;
+        onResizeRef.current?.(column.id, nextWidth);
         keyboardResizedRef.current = true;
       }}
       onKeyUp={(event) => {
@@ -176,6 +185,7 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
         event.stopPropagation();
         finishKeyboardResize();
       }}
+      onFocus={focusPane}
       onBlur={finishKeyboardResize}
       onDoubleClick={(event) => {
         event.preventDefault();
@@ -274,6 +284,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             </span>
             <WebColumnResizeHandle
               column={column}
+              focusPane={focusPane}
               onResize={onColumnResize}
               onResizeEnd={onColumnResizeEnd}
               onReset={onColumnResizeReset}

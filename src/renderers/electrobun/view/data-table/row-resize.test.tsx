@@ -14,25 +14,26 @@ afterEach(async () => {
   testWindow.document.body.innerHTML = "";
 });
 
-async function mount() {
+async function mount(renderedWidth = 12) {
   const resized: number[] = [];
   let ended = 0;
   let reset = 0;
   let sorted = 0;
+  let focused = 0;
   const container = testWindow.document.createElement("div");
   testWindow.document.body.append(container);
   root = createRoot(container as unknown as HTMLElement);
   await act(async () => root!.render(<WebDataTableHeader
     columns={[{ id: "name", label: "Name", width: 12 }]}
-    columnGap={1} horizontalPadding={1} focusPane={() => {}}
+    columnGap={1} horizontalPadding={1} focusPane={() => focused++}
     gridTemplateColumns="100px" sortColumnId={null} sortDirection="asc"
     onHeaderClick={() => sorted++}
     onColumnResize={(_, width) => resized.push(width)}
     onColumnResizeEnd={() => ended++} onColumnResizeReset={() => reset++}
   />));
   const handle = container.querySelector('[role="separator"]')!;
-  if (handle) handle.parentElement!.getBoundingClientRect = () => ({ width: 12 * WEB_CELL_WIDTH }) as DOMRect;
-  return { handle, resized, counts: () => ({ ended, reset, sorted }) };
+  if (handle) handle.parentElement!.getBoundingClientRect = () => ({ width: renderedWidth * WEB_CELL_WIDTH }) as DOMRect;
+  return { handle, resized, focusCount: () => focused, counts: () => ({ ended, reset, sorted }) };
 }
 
 test("keyboard resizing and reset do not sort the column", async () => {
@@ -67,4 +68,19 @@ test("touch and pen pointer sessions ignore other pointers and clean up on cance
   expect(probe.resized).toEqual([15, 15]);
   expect(probe.counts()).toEqual({ ended: 2, reset: 0, sorted: 0 });
   expect(testWindow.document.body.classList.contains("gloom-col-resizing")).toBe(false);
+});
+
+
+test("keyboard resize starts from the expanded width and focusing the handle activates its pane", async () => {
+  const probe = await mount(30);
+  await act(async () => probe.handle.dispatchEvent(new testWindow.FocusEvent("focusin", { bubbles: true })));
+  expect(probe.focusCount()).toBe(1);
+  await act(async () => {
+    for (let i = 0; i < 2; i++) probe.handle.dispatchEvent(new testWindow.KeyboardEvent("keydown", {
+      key: "ArrowRight", bubbles: true, cancelable: true,
+    }));
+  });
+  expect(probe.resized).toEqual([31, 32]);
+  await act(async () => probe.handle.dispatchEvent(new testWindow.FocusEvent("focusout", { bubbles: true })));
+  expect(probe.counts().ended).toBe(1);
 });
