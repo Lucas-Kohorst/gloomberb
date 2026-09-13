@@ -506,14 +506,14 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                 ? " ▲"
                 : " ▼"
               : "";
+            const handleWidth = onColumnResize ? 1 : 0;
+            const labelWidth = Math.max(1, column.width + columnGap - handleWidth);
             const labelText = fitTableHeaderText(
               column.label + indicator,
-              column.width,
+              Math.min(column.width, labelWidth),
               column.align,
               columnIndex < displayColumns.length - 1,
             );
-            const handleWidth = onColumnResize ? 1 : 0;
-            const labelWidth = Math.max(1, column.width + columnGap - handleWidth);
             return (
               <Box
                 key={column.id}
