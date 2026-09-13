@@ -686,6 +686,7 @@ describe("CommandBar pane and layout routes", () => {
       testSetup!.mockInput.pressEnter();
       await testSetup!.renderOnce();
     });
+    expect(testSetup.captureCharFrame()).toContain("AI Provider");
     await act(async () => {
       testSetup!.mockInput.pressTab();
       await testSetup!.renderOnce();
