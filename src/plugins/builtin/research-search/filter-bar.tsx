@@ -31,8 +31,8 @@ export function SearchFilterBar({
   sourceOptions: Array<{ value: string; label: string }>;
 }) {
   const compact = width < 84;
-  const typeValue = filters.docTypes.length === 1 ? filters.docTypes[0] : "all";
-  const sourceValue = filters.sourceIds?.length === 1 ? filters.sourceIds[0] : "all";
+  const typeValue = filters.docTypes.length === 1 ? filters.docTypes[0] ?? "all" : "all";
+  const sourceValue = filters.sourceIds?.length === 1 ? filters.sourceIds[0] ?? "all" : "all";
   const rangeValue = filters.range === "custom" ? "all" : filters.range;
 
   return (
