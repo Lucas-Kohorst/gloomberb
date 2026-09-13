@@ -472,6 +472,35 @@ describe("hosted share Worker endpoint", () => {
     expect(body.id).toHaveLength(12);
   });
 
+  test("rotated bodyless share responses keep a null body", async () => {
+    for (const [method, status] of [["DELETE", 204], ["GET", 205], ["GET", 304], ["HEAD", 200]] as const) {
+      globalThis.fetch = (async () => new Response(null, { status,
+        headers: { "set-cookie": "gloomberb.session_token=rotated-secret; Path=/" },
+      })) as typeof fetch;
+      const response = await workerModule.default.fetch(makeRequest(method, "/api/shares/0123456789abcdef0123456789abcdef", {
+        origin: ORIGIN, sessionToken: "old-token",
+      }), makeEnv());
+      expect(response.status).toBe(status);
+      expect(response.body).toBeNull();
+      expect(response.headers.get("set-cookie")).toContain("__Host-gloom.session=rotated-secret;");
+    }
+  });
+
+  test("share responses relay session rotation without exposing the token", async () => {
+    for (const status of [200, 403]) {
+      globalThis.fetch = (async () => Response.json({ token: "rotated-secret", message: "result" }, {
+        status, headers: { "set-cookie": "gloomberb.session_token=rotated-secret; Path=/" },
+      })) as typeof fetch;
+      const response = await workerModule.default.fetch(makeRequest("GET", "/api/shares/0123456789abcdef0123456789abcdef", {
+        sessionToken: "old-token",
+      }), makeEnv());
+      expect(response.status).toBe(status);
+      expect(response.headers.get("set-cookie")).toContain("__Host-gloom.session=rotated-secret;");
+      expect(response.headers.get("set-cookie")).toContain("HttpOnly; Secure; SameSite=Lax");
+      expect(await response.json()).toEqual({ message: "result" });
+    }
+  });
+
   test("proxies Cloud /api/shares on this origin", async () => {
     mockSessionUser = null;
     const shareId = "0123456789abcdef0123456789abcdef";
