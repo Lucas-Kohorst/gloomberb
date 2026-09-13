@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { TextAttributes } from "../../../../ui/host";
 import type {
   DataTableCell,
@@ -7,7 +7,7 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../../components/ui/data-table";
-import { resizedColumnWidth } from "../../../../components/data-table/column-widths";
+import { MIN_TABLE_COLUMN_WIDTH, MAX_TABLE_COLUMN_WIDTH, resizedColumnWidth } from "../../../../components/data-table/column-widths";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import {
   CSS_BG,
@@ -68,21 +68,29 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
   onResizeRef.current = onResize;
   onResizeEndRef.current = onResizeEnd;
   onResetRef.current = onReset;
+  const keyboardResizedRef = useRef(false);
+  const finishKeyboardResize = () => {
+    if (!keyboardResizedRef.current) return;
+    keyboardResizedRef.current = false;
+    onResizeEndRef.current?.();
+  };
   const [active, setActive] = useState(false);
   const sessionRef = useRef<{
     columnId: string;
     startWidth: number;
     startX: number;
     lastWidth: number;
-    handleMove: (event: globalThis.MouseEvent) => void;
+    pointerId: number;
+    handleMove: (event: globalThis.PointerEvent) => void;
     handleUp: () => void;
   } | null>(null);
 
   useEffect(() => () => {
     const session = sessionRef.current;
     if (session) {
-      document.removeEventListener("mousemove", session.handleMove);
-      document.removeEventListener("mouseup", session.handleUp);
+      document.removeEventListener("pointermove", session.handleMove);
+      document.removeEventListener("pointerup", session.handleUp);
+      document.removeEventListener("pointercancel", session.handleUp);
       sessionRef.current = null;
     }
     document.body.classList.remove("gloom-col-resizing");
@@ -90,36 +98,39 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
 
   if (!onResize) return null;
 
-  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary || sessionRef.current) return;
+    event.currentTarget.focus();
     if (event.detail >= 2) return;
     const cell = event.currentTarget.parentElement;
     const renderedWidth = cell
       ? cell.getBoundingClientRect().width / WEB_CELL_WIDTH
       : column.width;
-    const handleMove = (moveEvent: globalThis.MouseEvent) => {
+    const handleMove = (moveEvent: globalThis.PointerEvent) => {
       const session = sessionRef.current;
-      if (!session) return;
+      if (!session || moveEvent.pointerId !== session.pointerId) return;
       const deltaCells = (moveEvent.clientX - session.startX) / WEB_CELL_WIDTH;
       const nextWidth = resizedColumnWidth(session.startWidth, deltaCells);
       if (nextWidth === session.lastWidth) return;
       session.lastWidth = nextWidth;
       onResizeRef.current?.(session.columnId, nextWidth);
     };
-    const handleUp = () => {
+    const handleUp = (upEvent?: globalThis.PointerEvent) => {
       const session = sessionRef.current;
-      if (!session) return;
+      if (!session || (upEvent && upEvent.pointerId !== session.pointerId)) return;
       sessionRef.current = null;
       setActive(false);
       document.body.classList.remove("gloom-col-resizing");
-      document.removeEventListener("mousemove", session.handleMove);
-      document.removeEventListener("mouseup", session.handleUp);
+      document.removeEventListener("pointermove", session.handleMove);
+      document.removeEventListener("pointerup", session.handleUp);
+      document.removeEventListener("pointercancel", session.handleUp);
       onResizeEndRef.current?.();
     };
     sessionRef.current = {
       columnId: column.id,
+      pointerId: event.pointerId,
       startWidth: renderedWidth,
       startX: event.clientX,
       lastWidth: column.width,
@@ -128,17 +139,44 @@ function WebColumnResizeHandle<C extends DataTableColumn>({
     };
     setActive(true);
     document.body.classList.add("gloom-col-resizing");
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+    document.addEventListener("pointercancel", handleUp);
   };
 
   return (
     <div
       data-gloom-role="data-table-column-resize"
       data-active={active ? "true" : undefined}
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-valuemin={MIN_TABLE_COLUMN_WIDTH}
+      aria-valuemax={MAX_TABLE_COLUMN_WIDTH}
+      aria-valuenow={column.width}
       aria-label={`Resize ${column.label} column`}
-      title="Drag to resize. Double-click to reset."
-      onMouseDown={handleMouseDown}
+      title="Drag or use Left/Right to resize. Double-click or Home to reset."
+      onPointerDown={handlePointerDown}
+      onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === "Home") {
+          keyboardResizedRef.current = false;
+          onResetRef.current?.(column.id);
+          return;
+        }
+        const step = event.shiftKey ? 5 : 1;
+        onResizeRef.current?.(column.id, resizedColumnWidth(column.width, event.key === "ArrowLeft" ? -step : step));
+        keyboardResizedRef.current = true;
+      }}
+      onKeyUp={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.stopPropagation();
+        finishKeyboardResize();
+      }}
+      onBlur={finishKeyboardResize}
       onDoubleClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
