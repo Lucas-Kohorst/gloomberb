@@ -150,6 +150,7 @@ async function collectRegisteredCommands(
     registerTickerResearchTab() {},
     registerDocumentSearchProvider: () => () => {},
     registerChartSeriesCatalog: () => () => {},
+    registerByokService: () => () => {},
     registerCommandBarSearchProvider() {},
     registerAgentPromptFragment() {},
     createPaneFromTemplate() {},

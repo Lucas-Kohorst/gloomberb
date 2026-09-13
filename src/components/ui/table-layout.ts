@@ -5,6 +5,8 @@ import { displayWidth, truncateToDisplayWidth } from "../../utils/format";
 export interface TableWidthColumn {
   width: number;
   flexGrow?: number;
+  /** Keep this column at `width` even when the table stretches to fill. */
+  lockWidth?: boolean;
   align?: string;
   label?: string;
 }
@@ -25,6 +27,7 @@ export const TABLE_COLUMN_GAP = 1;
  */
 export function tableColumnWidth(column: TableWidthColumn): number {
   const width = Math.max(1, Math.floor(column.width));
+  if (column.lockWidth) return width;
   if (!column.label) return width;
   return Math.max(width, displayWidth(column.label) + HEADER_RESERVED_WIDTH);
 }
@@ -101,7 +104,9 @@ export function expandTableColumns<C extends TableWidthColumn>(
   const extraWidth = Math.floor(targetWidth) - currentWidth;
   if (extraWidth <= 0) return normalized;
 
-  const growIndex = normalized.findIndex((column) => (column.flexGrow ?? 0) > 0);
+  const growIndex = normalized.findIndex((column) => (
+    (column.flexGrow ?? 0) > 0 && !column.lockWidth
+  ));
   if (growIndex < 0) return normalized;
 
   return normalized.map((column, index) => {
@@ -143,12 +148,16 @@ export function buildTableGridTemplateColumns(
   columns: readonly TableWidthColumn[],
   fillAvailableWidth = true,
 ): string {
-  const hasFlexColumn = columns.some((column) => (column.flexGrow ?? 0) > 0);
+  const hasFlexColumn = columns.some((column) => (
+    (column.flexGrow ?? 0) > 0 && !column.lockWidth
+  ));
+  const hasLockedColumn = columns.some((column) => column.lockWidth === true);
+  const stretchToFill = fillAvailableWidth && (hasFlexColumn || !hasLockedColumn);
   return columns
     .map((column) => {
       const width = tableColumnWidth(column);
       const minWidth = cellWidthCss(columnMinCh(column));
-      if (!fillAvailableWidth) {
+      if (!stretchToFill || column.lockWidth) {
         return `minmax(${minWidth}, ${cellWidthCss(width)})`;
       }
       if (!hasFlexColumn || (column.flexGrow ?? 0) > 0) {

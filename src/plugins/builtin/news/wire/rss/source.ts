@@ -5,7 +5,7 @@ import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
 import { withConnectionRequest, reportConnectionRequest } from "../../../connections/register";
-import { dedupeNewsArticles } from "../../../../../news/news-model";
+import { canonicalArticleUrl, dedupeNewsArticles } from "../../../../../news/news-model";
 import { newsPollIntervalMsFromMinutes } from "../../../../../news/poll-interval";
 import { getSharedRegistry } from "../../../../registry";
 import {
@@ -40,6 +40,61 @@ export function currentRssCacheStaleMs(): number {
 }
 
 export const RSS_FEED_CACHE_POLICY = rssFeedCachePolicy(DEFAULT_RSS_CACHE_STALE_MS);
+/** Firehose/latest still revalidates a "fresh" cache after this so new RSS is not 15 minutes late. */
+export const LATEST_RSS_REVALIDATE_MS = 2 * 60 * 1000;
+
+export function shouldRevalidateRssCache(fetchedAt: number, now = Date.now()): boolean {
+  return now - fetchedAt >= LATEST_RSS_REVALIDATE_MS;
+}
+/** Firehose/RSS latest drops items older than this. Rebuild-stamped dates freeze earlier. */
+export const RSS_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const RSS_FUTURE_SKEW_MS = 15 * 60 * 1000;
+
+function rssItemMergeKey(item: MarketNewsItem): string {
+  const guid = item.guid?.trim().toLowerCase();
+  if (guid) return `g:${guid}`;
+  const url = canonicalArticleUrl(item.url);
+  if (url) return `u:${url}`;
+  return `id:${item.id}`;
+}
+
+function usablePublishedAt(date: Date): boolean {
+  const time = date.getTime();
+  return Number.isFinite(time) && time > 0;
+}
+
+/** Keep the earliest real pubDate so a feed rebuild cannot bump TIME back to 24m. */
+export function mergeRssFeedItems(
+  previous: readonly MarketNewsItem[] | null | undefined,
+  incoming: MarketNewsItem[],
+): MarketNewsItem[] {
+  if (!previous || previous.length === 0) return incoming;
+  const earlier = new Map<string, Date>();
+  for (const item of previous) {
+    if (!usablePublishedAt(item.publishedAt)) continue;
+    earlier.set(rssItemMergeKey(item), item.publishedAt);
+  }
+  if (earlier.size === 0) return incoming;
+  return incoming.map((item) => {
+    const cached = earlier.get(rssItemMergeKey(item));
+    if (!cached) return item;
+    if (!usablePublishedAt(item.publishedAt) || cached.getTime() < item.publishedAt.getTime()) {
+      return { ...item, publishedAt: cached };
+    }
+    return item;
+  });
+}
+
+export function isRecentRssItem(item: MarketNewsItem, nowMs = Date.now()): boolean {
+  const time = item.publishedAt.getTime();
+  if (!Number.isFinite(time) || time <= 0) return false;
+  if (time > nowMs + RSS_FUTURE_SKEW_MS) return false;
+  return time >= nowMs - RSS_MAX_AGE_MS;
+}
+
+function recentRssItems(items: MarketNewsItem[], nowMs = Date.now()): MarketNewsItem[] {
+  return items.filter((item) => isRecentRssItem(item, nowMs));
+}
 
 interface CachedNewsItem extends Omit<MarketNewsItem, "publishedAt"> {
   publishedAt: string;
@@ -164,16 +219,26 @@ function deserializeItem(item: unknown): MarketNewsItem | null {
   };
 }
 
+function readFeedCacheRecord(
+  persistence: PluginPersistence | undefined,
+  feed: RssFeedConfig,
+  options?: { allowExpired?: boolean; allowStale?: boolean },
+) {
+  const cached = persistence?.getResource<CachedFeedPayload>(RSS_CACHE_KIND, feed.id, {
+    sourceKey: feed.url,
+    allowExpired: options?.allowExpired,
+  });
+  if (!cached) return null;
+  if (cached.stale && !options?.allowStale && !options?.allowExpired) return null;
+  return cached;
+}
+
 function readFeedCache(
   persistence: PluginPersistence | undefined,
   feed: RssFeedConfig,
   options?: { allowExpired?: boolean; allowStale?: boolean },
 ): MarketNewsItem[] | null {
-  const cached = persistence?.getResource<CachedFeedPayload>(RSS_CACHE_KIND, feed.id, {
-    sourceKey: feed.url,
-    allowExpired: options?.allowExpired,
-  });
-  if (cached?.stale && !options?.allowStale && !options?.allowExpired) return null;
+  const cached = readFeedCacheRecord(persistence, feed, options);
   if (!cached?.value || !Array.isArray(cached.value.items)) return null;
   const items = cached.value.items
     .map(deserializeItem)
@@ -206,9 +271,12 @@ export function createRssNewsCapability(
   async function fetchFeed(
     feed: RssFeedConfig,
     resolveUniverse: () => Promise<ArticleTickerUniverse | undefined>,
+    fetchMode?: { forceRefresh?: boolean },
   ): Promise<{ items: MarketNewsItem[]; fromCache: boolean }> {
-    const freshCache = readFeedCache(options.persistence, feed);
-    if (freshCache) return { items: freshCache, fromCache: true };
+    if (!fetchMode?.forceRefresh) {
+      const freshCache = readFeedCache(options.persistence, feed);
+      if (freshCache) return { items: freshCache, fromCache: true };
+    }
 
     try {
       const items = await withConnectionRequest("rss", feed.name, async () => {
@@ -218,9 +286,11 @@ export function createRssNewsCapability(
         const knownTickers = await resolveUniverse();
         const parsed = parseRssFeed(xml, feed)
           .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
-        writeFeedCache(options.persistence, feed, parsed);
+        const previous = readFeedCache(options.persistence, feed, { allowExpired: true, allowStale: true });
+        const merged = mergeRssFeedItems(previous, parsed);
+        writeFeedCache(options.persistence, feed, merged);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        return parsed;
+        return merged;
       });
       return { items, fromCache: false };
     } catch {
@@ -247,7 +317,7 @@ export function createRssNewsCapability(
         }
         return collected.length === 0
           ? []
-          : dedupeNewsArticles(collected).slice(0, limit);
+          : recentRssItems(dedupeNewsArticles(collected)).slice(0, limit);
       },
       async fetchNews(query: NewsQuery, fetchOptions?: { onPartial?: (articles: MarketNewsItem[]) => void }): Promise<MarketNewsItem[]> {
         if (!supportsQuery(query)) return [];
@@ -295,31 +365,40 @@ export function createRssNewsCapability(
         let sinceYield = 0;
         let emittedHead = false;
         for (const feed of enabledFeeds) {
+          const record = readFeedCacheRecord(options.persistence, feed, {
+            allowExpired: true,
+            allowStale: true,
+          });
+          const cached = record ? readFeedCache(options.persistence, feed, {
+            allowExpired: true,
+            allowStale: true,
+          }) : null;
           const fresh = readFeedCache(options.persistence, feed);
-          if (!fresh) {
-            pending.push(feed);
-            continue;
+          const revalidate = !fresh
+            || (record != null && shouldRevalidateRssCache(record.fetchedAt));
+          if (cached && cached.length > 0) {
+            collected.push(...cached);
+            if (!revalidate) cacheOnlyHits += 1;
+            if (!emittedHead && collected.length >= RSS_PARTIAL_HEAD) {
+              emitPartial(true);
+              emittedHead = true;
+              await yieldToUi();
+              sinceYield = 0;
+            } else {
+              sinceYield += 1;
+              if (sinceYield >= RSS_CACHE_YIELD_EVERY) {
+                sinceYield = 0;
+                await yieldToUi();
+              }
+            }
           }
-          collected.push(...fresh);
-          cacheOnlyHits += 1;
-          if (!emittedHead && collected.length >= RSS_PARTIAL_HEAD) {
-            emitPartial(true);
-            emittedHead = true;
-            await yieldToUi();
-            sinceYield = 0;
-            continue;
-          }
-          sinceYield += 1;
-          if (sinceYield >= RSS_CACHE_YIELD_EVERY) {
-            sinceYield = 0;
-            await yieldToUi();
-          }
+          if (revalidate) pending.push(feed);
         }
         if (collected.length > 0) emitPartial(!emittedHead);
 
         try {
           await mapPool(pending, RSS_FETCH_CONCURRENCY, async (feed) => {
-            const result = await fetchFeed(feed, resolveUniverse);
+            const result = await fetchFeed(feed, resolveUniverse, { forceRefresh: true });
             collected.push(...result.items);
             if (result.fromCache) cacheOnlyHits += 1;
             else networkReports += 1;
@@ -343,7 +422,7 @@ export function createRssNewsCapability(
           });
         }
 
-        return dedupeNewsArticles(collected);
+        return recentRssItems(dedupeNewsArticles(collected));
       },
     },
   });

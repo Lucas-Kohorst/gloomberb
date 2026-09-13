@@ -125,22 +125,43 @@ export function parseVolumesPayload(data: unknown, cap = BOOKS_DISPLAY_CAP): Boo
   return { volumes, total };
 }
 
+let resolveApiKey: () => string | undefined = () => process.env.GOOGLE_BOOKS_API_KEY?.trim() || undefined;
+
+export function setGoogleBooksApiKeyResolver(resolver: () => string | undefined): void {
+  resolveApiKey = resolver;
+}
+
+export function resolveGoogleBooksApiKey(): string | undefined {
+  return resolveApiKey()?.trim() || process.env.GOOGLE_BOOKS_API_KEY?.trim() || undefined;
+}
+
+function withOptionalKey(url: string, apiKey?: string): string {
+  const key = apiKey?.trim();
+  if (!key) return url;
+  const parsed = new URL(url);
+  parsed.searchParams.set("key", key);
+  return parsed.toString();
+}
+
 /**
  * Build the volumes list URL. The raw query is passed through as `q` so the
- * API's own qualifiers (`inauthor:`, `intitle:`) keep working. No API key:
- * the endpoint is free for anonymous use.
+ * API's own qualifiers (`inauthor:`, `intitle:`) keep working. An optional
+ * API key raises Google's anonymous quota.
  */
-export function buildVolumesUrl(query: string, maxResults = DEFAULT_MAX_RESULTS): string {
+export function buildVolumesUrl(query: string, maxResults = DEFAULT_MAX_RESULTS, apiKey?: string): string {
   const clamped = Math.max(1, Math.min(Math.floor(maxResults) || DEFAULT_MAX_RESULTS, MAX_MAX_RESULTS));
   const params = new URLSearchParams();
   params.set("q", query.trim());
   params.set("maxResults", String(clamped));
   params.set("printType", "books");
-  return `${GOOGLE_BOOKS_API_BASE_URL}/volumes?${params.toString()}`;
+  return withOptionalKey(`${GOOGLE_BOOKS_API_BASE_URL}/volumes?${params.toString()}`, apiKey);
 }
 
-function buildVolumeUrl(id: string): string {
-  return `${GOOGLE_BOOKS_API_BASE_URL}/volumes/${encodeURIComponent(id)}`;
+function buildVolumeUrl(id: string, apiKey?: string): string {
+  return withOptionalKey(
+    `${GOOGLE_BOOKS_API_BASE_URL}/volumes/${encodeURIComponent(id)}`,
+    apiKey,
+  );
 }
 
 export class GoogleBooksClient {
@@ -155,7 +176,7 @@ export class GoogleBooksClient {
     const query = options.query.trim();
     if (!query) return { volumes: [], total: 0 };
     return withConnectionRequest(GOOGLE_BOOKS_CONNECTION_ID, "search", async () => {
-      const response = await booksFetch.fetch(buildVolumesUrl(query, options.maxResults));
+      const response = await booksFetch.fetch(buildVolumesUrl(query, options.maxResults, resolveGoogleBooksApiKey()));
       if (!response.ok) {
         throw new Error(
           `Google Books request failed: ${response.status} ${response.statusText}`,
@@ -170,7 +191,7 @@ export class GoogleBooksClient {
     const trimmed = id.trim();
     if (!trimmed) return null;
     return withConnectionRequest(GOOGLE_BOOKS_CONNECTION_ID, "fetch", async () => {
-      const response = await booksFetch.fetch(buildVolumeUrl(trimmed));
+      const response = await booksFetch.fetch(buildVolumeUrl(trimmed, resolveGoogleBooksApiKey()));
       if (response.status === 404) return null;
       if (!response.ok) {
         throw new Error(

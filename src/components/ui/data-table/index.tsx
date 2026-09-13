@@ -10,6 +10,7 @@ import { remoteNumberValue, resolveRemoteItemIndex } from "../../../remote/seman
 import { useOptionalPaneInstanceId } from "../../../state/app/context";
 import { registerPaneTableExporter } from "../../../state/pane-table-export-registry";
 import { createDataTableCsv } from "../../data-table/export";
+import { useTableColumnWidths } from "../../data-table/use-column-widths";
 
 export type {
   DataTableCell,
@@ -26,6 +27,19 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
   const renderer = useRendererHost();
   const propsRef = useRef(props);
   propsRef.current = props;
+  const {
+    columns: displayColumns,
+    resizeColumn,
+    persistWidths,
+    resetColumn,
+  } = useTableColumnWidths(props.columns);
+  const tableProps = {
+    ...props,
+    columns: displayColumns,
+    onColumnResize: resizeColumn,
+    onColumnResizeEnd: persistWidths,
+    onColumnResizeReset: resetColumn,
+  };
   const selectedHintRef = useRef(-1);
 
   useEffect(() => {
@@ -101,9 +115,9 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
     | ComponentType<DataTableProps<T, C>>
     | undefined;
   if (HostDataTable) {
-    return <HostDataTable {...props} />;
+    return <HostDataTable {...tableProps} />;
   }
-  return <OpenTuiDataTable {...props} />;
+  return <OpenTuiDataTable {...tableProps} />;
 }
 
 function resolveTableIndex<T, C extends DataTableColumn>(

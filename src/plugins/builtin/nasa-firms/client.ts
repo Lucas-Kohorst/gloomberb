@@ -175,6 +175,16 @@ export interface FirmsClientOptions {
   mapKey?: string;
 }
 
+let resolveMapKey: () => string | undefined = () => process.env.NASA_FIRMS_MAP_KEY?.trim() || undefined;
+
+export function setNasaFirmsMapKeyResolver(resolver: () => string | undefined): void {
+  resolveMapKey = resolver;
+}
+
+export function resolveNasaFirmsMapKey(): string | undefined {
+  return resolveMapKey()?.trim() || process.env.NASA_FIRMS_MAP_KEY?.trim() || undefined;
+}
+
 export class FirmsClient {
   readonly mapKey: string | undefined;
 
@@ -184,16 +194,17 @@ export class FirmsClient {
 
   /** True when a MAP_KEY is configured and requests can be made. */
   get authenticated(): boolean {
-    return this.mapKey !== undefined;
+    return (this.mapKey || resolveNasaFirmsMapKey()) !== undefined;
   }
 
   private requireKey(): string {
-    if (!this.mapKey) {
+    const key = this.mapKey || resolveNasaFirmsMapKey();
+    if (!key) {
       throw new Error(
         "NASA FIRMS MAP_KEY is not configured. Get a free key at https://firms.modaps.eosdis.nasa.gov/api/area/",
       );
     }
-    return this.mapKey;
+    return key;
   }
 
   /**

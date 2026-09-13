@@ -10,12 +10,12 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainKeyboardEvent } from "../../../utils/keyboard";
 
-/** Canonical pane-footer action keys. Search is `/`; refresh is `r`; open is `o`; share is `y`. */
+/** Canonical pane-footer action keys. Search is `/`; refresh is `r`; open is `o`; share is `s`. */
 export const PANE_FOOTER_ACTION_KEYS = {
   search: "/",
   refresh: "r",
   open: "o",
-  share: "y",
+  share: "s",
 } as const;
 
 export function paneSearchHint(
@@ -36,7 +36,7 @@ export function paneShareHint(
   onPress: () => void,
   extra?: Pick<PaneHint, "disabled">,
 ): PaneHint {
-  return { id: "share", key: PANE_FOOTER_ACTION_KEYS.share, label: "share", onPress, ...extra };
+  return { id: "share", key: PANE_FOOTER_ACTION_KEYS.share, label: "hare", onPress, ...extra };
 }
 
 export function paneDelayedStatus(): PaneFooterSegment {

@@ -1,9 +1,11 @@
 import type {
   GloomPlugin,
+  GloomPluginContext,
   PaneTemplateContext,
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
+import { SEC_EDGAR_BYOK_SERVICE_ID, setSecContactEmailResolver } from "../../../sources/sec-edgar";
 import { CommentLettersPane } from "./pane";
 import {
   COMMENT_LETTERS_CONNECTION_ID,
@@ -81,7 +83,8 @@ export const commentLettersPlugin: GloomPlugin = {
     },
   ],
 
-  setup() {
+  setup(ctx: GloomPluginContext) {
+    setSecContactEmailResolver(() => ctx.getApiKey(SEC_EDGAR_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: COMMENT_LETTERS_CONNECTION_ID,
       name: "SEC Comment Letters",

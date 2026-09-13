@@ -7,10 +7,12 @@ import type {
 import { chartSeriesProvider } from "../../../capabilities";
 import type { ChartSeriesCatalogItem } from "../../../capabilities/types";
 import { registerConnectionSource } from "../connections/register";
-import { resolveEiaChartSeries } from "./client";
+import { resolveEiaChartSeries, setEiaApiKeyResolver } from "./client";
 import { buildEiaEnergySettingsDef, EnergyPane } from "./pane";
 import {
   DEFAULT_EIA_SERIES_ID,
+  EIA_API_BASE_URL,
+  EIA_BYOK_SERVICE_ID,
   EIA_CHART_CAPABILITY_ID,
   EIA_ENERGY_CONNECTION_ID,
   EIA_ENERGY_PLUGIN_ID,
@@ -109,6 +111,17 @@ export const eiaEnergyPlugin: GloomPlugin = {
   ],
 
   setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: EIA_BYOK_SERVICE_ID,
+      name: "EIA Energy",
+      apiUrl: EIA_API_BASE_URL,
+      authType: "query",
+      authKey: "api_key",
+      envVar: "EIA_API_KEY",
+      description:
+        "Free key at eia.gov/opendata. DEMO_KEY works out of the box with strict limits; a personal key raises the cap.",
+    });
+    setEiaApiKeyResolver(() => ctx.getApiKey(EIA_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: EIA_ENERGY_CONNECTION_ID,
       name: "EIA Energy",

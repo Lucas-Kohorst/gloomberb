@@ -25,7 +25,7 @@ export function resolveChartComposerShortcut(
   if (isPlainKey(event, "t")) return "resolution";
   if (isPlainKey(event, "l")) return "log";
   if (isPlainKey(event, "p")) return "percent";
-  if (isPlainKey(event, "g")) return "auto";
+  if (isPlainKey(event, "a")) return "auto";
   if (isPlainKey(event, "z")) return "timezone";
   if (!isPlainKey(event, event.name ?? "")) return null;
 

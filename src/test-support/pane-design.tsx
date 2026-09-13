@@ -28,6 +28,7 @@ import {
   PANE_FOOTER_INFO_MAX_CHARS,
 } from "../components/layout/pane/footer/model";
 import { createTestPluginRuntime } from "./plugin-runtime";
+import { normalizeShortcutHint } from "../components/ui/shortcut-hint-format";
 
 export interface AuditedPaneRender {
   /** Full captured character frame. */
@@ -319,6 +320,26 @@ export function assertNoBodySearchSpinner(frame: string, paneId: string): void {
 }
 
 /**
+ * AGENTS.md: a letter in `[]` is the first letter of the action (`[o]pen`,
+ * `[s]hare`). `[y] share` is the failure mode — the key is not a prefix.
+ */
+export function assertFooterHintKeyPrefixesAction(footer: CombinedPaneFooter, paneId: string): void {
+  for (const hint of footer.hints) {
+    if (!/^[a-z]$/i.test(hint.key)) continue;
+    const normalized = normalizeShortcutHint(hint.key, hint.label);
+    expect(
+      normalized.glue,
+      `${paneId}: [${hint.key}] ${JSON.stringify(normalized.label)} — letter hints prefix the action ([o]pen, not [y] share)`,
+    ).toBe("");
+    const action = `${hint.key}${normalized.label}`.toLowerCase();
+    expect(
+      action.startsWith(hint.key.toLowerCase()),
+      `${paneId}: action ${JSON.stringify(action)} does not start with [${hint.key}]`,
+    ).toBe(true);
+  }
+}
+
+/**
  * Universal empty-state chrome every builtin pane must satisfy.
  */
 export function assertUniversalPaneDesignGates(
@@ -335,6 +356,7 @@ export function assertUniversalPaneDesignGates(
   assertNoNavigationFooterHints(footer, paneId);
   assertNoDuplicateFooterHintKeys(footer, paneId);
   assertNoPerPaneRefreshHint(footer, paneId);
+  assertFooterHintKeyPrefixesAction(footer, paneId);
   assertFooterInfoIsStatusOnly(footer, paneId);
   assertFooterHasNoResultCounts(footer, paneId);
   assertFooterInfoFitsChrome(footer, paneId);

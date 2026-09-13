@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildSearchUrl,
+  LATEST_DOCKET_QUERY,
+  normalizeCourtListenerDocumentQuery,
   parseLawsuit,
   parseOpinionDetail,
   parseSearchPage,
-  CourtListenerClient,
+  resolveCourtListenerApiToken,
+  setCourtListenerApiToken,
 } from "./client";
 import { COURTLISTENER_API_BASE_URL } from "./types";
 
@@ -58,15 +61,23 @@ const SEARCH_FIXTURE = {
 };
 
 describe("courtlistener search url", () => {
-  test("builds a keyless opinion query against the v4 search endpoint", () => {
-    const url = buildSearchUrl("Apple Inc.", 25);
+  test("builds a RECAP docket query newest-first", () => {
+    const url = buildSearchUrl("Apple Inc.", { limit: 25 });
     expect(url.startsWith(`${COURTLISTENER_API_BASE_URL}/search/?`)).toBe(true);
     const params = new URLSearchParams(url.split("?")[1]);
     expect(params.get("q")).toBe("Apple Inc.");
-    expect(params.get("type")).toBe("o");
+    expect(params.get("type")).toBe("r");
+    expect(params.get("order_by")).toBe("dateFiled desc");
     expect(params.get("page_size")).toBe("25");
     expect(url).not.toContain("api_key");
     expect(url).not.toContain("token");
+  });
+
+  test("blank queries request the last week of dockets", () => {
+    const params = new URLSearchParams(buildSearchUrl("").split("?")[1]);
+    expect(params.get("q")).toBe(LATEST_DOCKET_QUERY);
+    expect(params.get("type")).toBe("r");
+    expect(params.get("order_by")).toBe("dateFiled desc");
   });
 });
 
@@ -78,6 +89,7 @@ describe("courtlistener search parsing", () => {
 
     const first = page.lawsuits[0]!;
     expect(first.id).toBe("cluster-10882239");
+    expect(first.kind).toBe("opinion");
     expect(first.caseName).toBe("Trump v. Barbara");
     expect(first.court).toBe("Supreme Court of the United States");
     expect(first.courtCitation).toBe("SCOTUS");
@@ -124,16 +136,75 @@ describe("courtlistener search parsing", () => {
     const page = parseSearchPage({ results: SEARCH_FIXTURE.results });
     expect(page.lawsuits).toHaveLength(2);
     expect(page.total).toBe(2);
+    expect(page.next).toBeNull();
   });
 
   test("returns an empty page for non-object payloads", () => {
-    expect(parseSearchPage(null)).toEqual({ lawsuits: [], total: 0 });
-    expect(parseSearchPage("nope")).toEqual({ lawsuits: [], total: 0 });
+    expect(parseSearchPage(null)).toEqual({ lawsuits: [], total: 0, next: null });
+    expect(parseSearchPage("nope")).toEqual({ lawsuits: [], total: 0, next: null });
   });
 
-  test("blank queries short-circuit without fetching", async () => {
-    const page = await new CourtListenerClient().searchLawsuits("   ");
-    expect(page).toEqual({ lawsuits: [], total: 0 });
+  test("parses RECAP docket hits and keeps the next page cursor", () => {
+    const page = parseSearchPage({
+      count: 178,
+      next: `${COURTLISTENER_API_BASE_URL}/search/?cursor=abc&q=Kalshi&type=r`,
+      results: [{
+        caseName: "Moran v. Kalshi Inc.",
+        court: "District Court, E.D. Virginia",
+        court_citation_string: "E.D. Va.",
+        dateFiled: "2026-09-10",
+        docketNumber: "1:26-cv-03008",
+        docket_id: 74775891,
+        docket_absolute_url: "/docket/74775891/moran-v-kalshi-inc/",
+        assignedTo: "Leonie M. Brinkema",
+        suitNature: "Other Statutory Actions",
+        recap_documents: [{
+          absolute_url: "/docket/74775891/1/moran-v-kalshi-inc/",
+          snippet: "COMPLAINT FOR DAMAGES",
+          description: "Complaint",
+        }],
+      }],
+    });
+    expect(page.total).toBe(178);
+    expect(page.next).toContain("cursor=abc");
+    expect(page.lawsuits[0]).toMatchObject({
+      id: "docket-74775891",
+      kind: "docket",
+      caseName: "Moran v. Kalshi Inc.",
+      courtCitation: "E.D. Va.",
+      docketNumber: "1:26-cv-03008",
+      judge: "Leonie M. Brinkema",
+      snippet: "COMPLAINT FOR DAMAGES",
+    });
+  });
+
+  test("drops placeholder and future-dated docket junk", () => {
+    expect(parseLawsuit({
+      caseName: "Miscellaneous Entry",
+      docket_id: 1,
+      dateFiled: "2026-09-01",
+    })).toBeNull();
+    expect(parseLawsuit({
+      caseName: "Le Gros",
+      docket_id: 2,
+      dateFiled: "2079-11-23",
+    })).toBeNull();
+  });
+});
+
+describe("courtlistener document query", () => {
+  test("strips LAW routing words so SRCH and ART keep the party name", () => {
+    expect(normalizeCourtListenerDocumentQuery("LAW Kalshi")).toBe("Kalshi");
+    expect(normalizeCourtListenerDocumentQuery("lawsuit docket Tesla")).toBe("Tesla");
+  });
+});
+
+describe("courtlistener token", () => {
+  test("stores a BYOK token without putting it in the search URL", () => {
+    setCourtListenerApiToken("  secret-token  ");
+    expect(resolveCourtListenerApiToken()).toBe("secret-token");
+    expect(buildSearchUrl("Kalshi")).not.toContain("secret-token");
+    setCourtListenerApiToken(undefined);
   });
 });
 

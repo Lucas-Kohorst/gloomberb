@@ -320,7 +320,7 @@ export function ChartShareView({
   const footer = [
     captured ? `snapshot ${captured}` : null,
     payload.subtitle?.trim() || null,
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join("  ");
 
   return (
     <ShareShell

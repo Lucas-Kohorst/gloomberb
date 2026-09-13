@@ -1,7 +1,27 @@
 import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { handleHostedBackendRpc } from "./backend";
-import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
-import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
+import {
+  isShareDocumentPath,
+  isShareScriptPath,
+  isStoredShareId,
+  parseNewsArticleId,
+  parseShareId,
+} from "../../shares/routes";
+import {
+  NEWS_INDEX_TTL_SECONDS,
+  newsIndexKey,
+  parseNewsIndexRecord,
+  serializeNewsIndexRecord,
+} from "../../shares/news-index";
+import {
+  SHARE_KINDS,
+  articleShareFromStored,
+  decodeArticleSharePayload,
+  parseSharePayload,
+  type ShareKind,
+  type SharePayload,
+} from "../../shares/payload";
+import { injectShareDocumentMeta } from "../../shares/open-graph";
 import { generateShareId, isShareId } from "../../shares/short-id";
 import { handleKeyedDataRequest } from "./data-providers/handle";
 import {
@@ -47,6 +67,12 @@ export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ status: "ok" });
+    if (url.pathname === "/api/shares" || url.pathname.startsWith("/api/shares/")) {
+      return handleCloudSharesProxy(request, env, url);
+    }
+    if (url.pathname.startsWith("/api/news/")) {
+      return handleNewsShareIndex(request, env, url);
+    }
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
     }
@@ -99,12 +125,210 @@ async function allocateShareId(env: Env): Promise<string | null> {
   return null;
 }
 
-async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
-  // Reads are public by design. Writes must carry a matching Origin: an absent
-  // one cannot be trusted, or any non-browser client bypasses the check by
-  // omitting the header.
-  if (request.method !== "GET" && !hasTrustedHostedOrigin(request, url)) {
+function relayCloudShareResponse(upstream: Response): Response {
+  const headers = new Headers();
+  const contentType = upstream.headers.get("content-type");
+  if (contentType) headers.set("content-type", contentType);
+  const location = upstream.headers.get("location");
+  if (location) headers.set("location", location);
+  headers.set("cache-control", "private, no-store");
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+/** Public Cloud share API on this origin so the slim page does not call api.gloom.sh from the browser. */
+async function handleCloudSharesProxy(request: Request, env: Env, url: URL): Promise<Response> {
+  const upstreamPath = `/shares${url.pathname.slice("/api/shares".length)}${url.search}`;
+  const isWrite = request.method !== "GET" && request.method !== "HEAD";
+  if (isWrite && !hasTrustedHostedOrigin(request, url)) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+  const token = readSessionCookie(request);
+  if (isWrite && !token) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const upstream = await gloomFetch(env, upstreamPath, {
+    method: request.method,
+    body: hasBody ? await request.text() : null,
+    token,
+    timeoutMs: GLOOM_CLOUD_PROXY_TIMEOUT_MS,
+  });
+  return relayCloudShareResponse(upstream);
+}
+
+const NEWS_INDEX_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, PUT, OPTIONS",
+  "access-control-allow-headers": "content-type",
+} as const;
+
+function newsIndexResponse(body: unknown, status = 200): Response {
+  return Response.json(body, {
+    status,
+    headers: {
+      ...NEWS_INDEX_CORS,
+      "cache-control": "private, no-store",
+    },
+  });
+}
+
+async function readCloudShare(
+  env: Env,
+  shareId: string,
+): Promise<{ payload: SharePayload; body: Record<string, unknown> } | null> {
+  try {
+    const response = await gloomFetch(env, `/shares/${shareId}`, { timeoutMs: 2_500 });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (!body || typeof body !== "object") return null;
+    const object = body as Record<string, unknown>;
+    const payload = parseSharePayload({ kind: object.kind, data: object.data });
+    if (!payload) return null;
+    return { payload, body: object };
+  } catch {
+    return null;
+  }
+}
+
+async function loadIndexedNewsShare(
+  env: Env,
+  articleId: string,
+): Promise<{ shareId: string; payload: SharePayload; body: Record<string, unknown> } | null> {
+  const raw = await env.SHARES.get(newsIndexKey(articleId));
+  const record = parseNewsIndexRecord(raw);
+  if (!record) return null;
+  const live = await readCloudShare(env, record.shareId);
+  if (!live) {
+    await env.SHARES.delete(newsIndexKey(articleId));
+    return null;
+  }
+  return { shareId: record.shareId, payload: live.payload, body: live.body };
+}
+
+function cloudShareMatchesArticle(payload: SharePayload, articleId: string): boolean {
+  return payload.kind === "article" && payload.data.id === articleId;
+}
+
+async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: NEWS_INDEX_CORS });
+  }
+
+  const articleId = parseNewsArticleId(url.pathname);
+  if (!articleId) return newsIndexResponse({ error: "Invalid news id." }, 400);
+
+  if (request.method === "GET" || request.method === "HEAD") {
+    const indexed = await loadIndexedNewsShare(env, articleId);
+    if (!indexed) return newsIndexResponse({ error: "Share not found." }, 404);
+    const body = {
+      ...indexed.body,
+      shareId: indexed.shareId,
+      kind: indexed.payload.kind,
+      data: indexed.payload.data,
+    };
+    if (request.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: { ...NEWS_INDEX_CORS, "cache-control": "private, no-store", "content-type": "application/json" },
+      });
+    }
+    return newsIndexResponse(body);
+  }
+
+  if (request.method !== "PUT") {
+    return newsIndexResponse({ error: "Method not allowed." }, 405);
+  }
+
+  let requestedShareId: string | null = null;
+  try {
+    const raw = await request.text();
+    const parsed: unknown = JSON.parse(raw || "null");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const shareId = (parsed as { shareId?: unknown }).shareId;
+      requestedShareId = typeof shareId === "string" ? shareId : null;
+    }
+  } catch {
+    return newsIndexResponse({ error: "Invalid share payload." }, 400);
+  }
+  if (!requestedShareId || !isStoredShareId(requestedShareId)) {
+    return newsIndexResponse({ error: "Invalid share id." }, 400);
+  }
+
+  const existing = await loadIndexedNewsShare(env, articleId);
+  if (existing) {
+    return newsIndexResponse({ shareId: existing.shareId });
+  }
+
+  const live = await readCloudShare(env, requestedShareId);
+  if (!live) return newsIndexResponse({ error: "Share not found." }, 404);
+  if (!cloudShareMatchesArticle(live.payload, articleId)) {
+    return newsIndexResponse({ error: "Share does not match this article." }, 409);
+  }
+
+  await env.SHARES.put(newsIndexKey(articleId), serializeNewsIndexRecord(requestedShareId), {
+    expirationTtl: NEWS_INDEX_TTL_SECONDS,
+  });
+  return newsIndexResponse({ shareId: requestedShareId }, 201);
+}
+
+async function resolveSharePageMeta(
+  request: Request,
+  env: Env,
+): Promise<{ title: string; description?: string } | null> {
+  const url = new URL(request.url);
+  if (url.pathname === "/article") {
+    const encoded = url.searchParams.get("a");
+    const article = encoded ? decodeArticleSharePayload(encoded) : null;
+    if (!article) return null;
+    return {
+      title: article.title,
+      description: article.summary || article.previewText,
+    };
+  }
+  const newsId = parseNewsArticleId(url.pathname);
+  if (newsId) {
+    const indexed = await loadIndexedNewsShare(env, newsId);
+    if (!indexed) return null;
+    if (indexed.payload.kind === "article") {
+      const article = articleShareFromStored(indexed.payload.data);
+      return { title: article.title, description: article.summary };
+    }
+    return { title: indexed.payload.data.title };
+  }
+  const id = parseShareId(url.pathname);
+  if (!id) return null;
+  const live = await readCloudShare(env, id);
+  if (!live) return null;
+  if (live.payload.kind === "article") {
+    const article = articleShareFromStored(live.payload.data);
+    return { title: article.title, description: article.summary };
+  }
+  return { title: live.payload.data.title };
+}
+
+const LEFTOVER_SHARE_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+} as const;
+
+function leftoverShareResponse(body: unknown, status = 200): Response {
+  return Response.json(body, {
+    status,
+    headers: {
+      ...LEFTOVER_SHARE_CORS,
+      "cache-control": "private, no-store",
+    },
+  });
+}
+
+function isNativeShareClient(request: Request): boolean {
+  return !request.headers.get("Origin") && !request.headers.get("Sec-Fetch-Site");
+}
+
+async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: LEFTOVER_SHARE_CORS });
   }
 
   if (request.method === "POST" && url.pathname === "/api/share") {
@@ -119,36 +343,41 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
       return Response.json({ error: "Invalid share payload." }, { status: 400 });
     }
     if (!body || !SHARE_KINDS.includes(body.kind as never) || body.data === undefined) {
-      return Response.json({ error: "Invalid share payload." }, { status: 400 });
+      return leftoverShareResponse({ error: "Invalid share payload." }, 400);
     }
     const kind = body.kind as ShareKind;
+    const trustedOrigin = hasTrustedHostedOrigin(request, url);
+    if (!trustedOrigin && !(kind === "article" && isNativeShareClient(request))) {
+      return leftoverShareResponse({ error: "Invalid origin" }, 403);
+    }
     // Articles are the public-share case (changelog, news, Substack) and must
     // work without a login. Charts/tables still require a session so anonymous
     // visitors cannot fill KV with large snapshots.
     if (kind !== "article" && !await fetchSessionUser(request, env)) {
-      return Response.json({ error: "Authentication required." }, { status: 401 });
+      return leftoverShareResponse({ error: "Authentication required." }, 401);
     }
     const id = await allocateShareId(env);
     if (!id) {
-      return Response.json({ error: "Failed to allocate share id." }, { status: 503 });
+      return leftoverShareResponse({ error: "Failed to allocate share id." }, 503);
     }
     await env.SHARES.put(id, JSON.stringify({
       kind,
       data: body.data,
       createdAt: new Date().toISOString(),
     }), { expirationTtl: SHARE_TTL_SECONDS });
-    return Response.json({ id });
+    return leftoverShareResponse({ id });
   }
 
   if (request.method === "GET") {
     const id = url.pathname.slice("/api/share/".length);
     if (!isShareId(id)) {
-      return Response.json({ error: "Share not found." }, { status: 404 });
+      return leftoverShareResponse({ error: "Share not found." }, 404);
     }
     const value = await env.SHARES.get(id);
-    if (!value) return Response.json({ error: "Share not found." }, { status: 404 });
+    if (!value) return leftoverShareResponse({ error: "Share not found." }, 404);
     return new Response(value, {
       headers: {
+        ...LEFTOVER_SHARE_CORS,
         "content-type": "application/json",
         "cache-control": "private, no-store",
       },
@@ -467,6 +696,12 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     headers.delete("etag");
     headers.delete("last-modified");
     const status = response.status === 304 ? 200 : response.status;
+    const meta = status === 200 ? await resolveSharePageMeta(request, env) : null;
+    if (meta) {
+      const html = await response.text();
+      headers.set("content-type", "text/html; charset=utf-8");
+      return new Response(injectShareDocumentMeta(html, meta), { status, headers });
+    }
     return new Response(response.body, { status, headers });
   }
   headers.set(

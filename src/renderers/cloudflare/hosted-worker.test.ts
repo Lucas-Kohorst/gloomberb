@@ -418,6 +418,24 @@ describe("hosted share Worker endpoint", () => {
     expect(envelope.data.id).toBe("changelog:hosted-v0-11-0");
   });
 
+  test("accepts a native unsigned article share without Origin", async () => {
+    mockSessionUser = null;
+    const env = makeEnv();
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/share", {
+        body: JSON.stringify({
+          kind: "article",
+          data: { title: "BRIEF", text: "body" },
+        }),
+      }),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("access-control-allow-origin")).toBe("*");
+    const body = await response?.json() as { id: string };
+    expect(body.id).toHaveLength(12);
+  });
+
   test("rejects anonymous chart share creation", async () => {
     mockSessionUser = null;
     installMockFetch();
@@ -452,6 +470,155 @@ describe("hosted share Worker endpoint", () => {
     expect(response?.status).toBe(200);
     const body = await response?.json() as { id: string };
     expect(body.id).toHaveLength(12);
+  });
+
+  test("proxies Cloud /api/shares on this origin", async () => {
+    mockSessionUser = null;
+    const shareId = "0123456789abcdef0123456789abcdef";
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+      upstream.push(`${url.origin}${url.pathname}`);
+      if (url.pathname === `/shares/${shareId}`) {
+        return Response.json({
+          kind: "article",
+          data: { title: "BRIEF", text: "Sept 11 (Reuters) - body", source: "Reuters News" },
+          createdAt: "2026-09-11T00:00:00Z",
+          expiresAt: "2026-10-11T00:00:00Z",
+        });
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof globalThis.fetch;
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/shares/${shareId}`),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toEqual([`https://api.gloom.sh/shares/${shareId}`]);
+    expect(await response?.json()).toMatchObject({ kind: "article", data: { title: "BRIEF" } });
+
+    const write = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/shares", {
+        origin: ORIGIN,
+        body: JSON.stringify({ kind: "article", data: { title: "X", text: "Y" } }),
+      }),
+      makeEnv(),
+    );
+    expect(write?.status).toBe(401);
+  });
+});
+
+describe("canonical news share index", () => {
+  const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+  const shareId = "0123456789abcdef0123456789abcdef";
+  const otherShareId = "abcdef0123456789abcdef0123456789";
+  const cloudArticle = {
+    kind: "article",
+    data: {
+      title: "BRIEF",
+      text: "Sept 11 (Reuters) - body",
+      id: articleId,
+      source: "Reuters News",
+    },
+    createdAt: "2026-09-11T00:00:00Z",
+    expiresAt: "2026-10-11T00:00:00Z",
+  };
+
+  afterEach(() => {
+    SNAPSHOTS.clear();
+    restoreFetch();
+  });
+
+  function installCloudShares(records: Record<string, unknown>) {
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+      const match = url.pathname.match(/^\/shares\/([a-f0-9]{32})$/);
+      const record = match ? records[match[1]!] : undefined;
+      if (record) return Response.json(record);
+      return new Response("{}", { status: 404 });
+    }) as typeof globalThis.fetch;
+  }
+
+  test("PUT then GET resolves the Cloud snapshot by article id", async () => {
+    installCloudShares({ [shareId]: cloudArticle });
+    const env = makeEnv();
+    const put = await workerModule.default.fetch?.(
+      makeRequest("PUT", `/api/news/${articleId}`, {
+        body: JSON.stringify({ shareId }),
+      }),
+      env,
+    );
+    expect(put?.status).toBe(201);
+    expect(await put?.json()).toEqual({ shareId });
+
+    const get = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/news/${articleId}`),
+      env,
+    );
+    expect(get?.status).toBe(200);
+    expect(get?.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await get?.json()).toMatchObject({
+      shareId,
+      kind: "article",
+      data: { title: "BRIEF", id: articleId },
+    });
+  });
+
+  test("first live mapping wins and a mismatched article id is rejected", async () => {
+    installCloudShares({
+      [shareId]: cloudArticle,
+      [otherShareId]: { ...cloudArticle, data: { ...cloudArticle.data, id: "other-story" } },
+    });
+    const env = makeEnv();
+    await workerModule.default.fetch?.(
+      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId }) }),
+      env,
+    );
+    const replay = await workerModule.default.fetch?.(
+      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId: otherShareId }) }),
+      env,
+    );
+    expect(replay?.status).toBe(200);
+    expect(await replay?.json()).toEqual({ shareId });
+
+    const mismatch = await workerModule.default.fetch?.(
+      makeRequest("PUT", `/api/news/other-story`, { body: JSON.stringify({ shareId }) }),
+      env,
+    );
+    expect(mismatch?.status).toBe(409);
+  });
+
+  test("a stale Cloud share can be replaced", async () => {
+    installCloudShares({ [otherShareId]: cloudArticle });
+    const env = makeEnv();
+    SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
+    const put = await workerModule.default.fetch?.(
+      makeRequest("PUT", `/api/news/${articleId}`, { body: JSON.stringify({ shareId: otherShareId }) }),
+      env,
+    );
+    expect(put?.status).toBe(201);
+    expect(await put?.json()).toEqual({ shareId: otherShareId });
+  });
+
+  test("GET /news/{id} serves the slim document with article OG tags", async () => {
+    installCloudShares({ [shareId]: cloudArticle });
+    const env = makeEnv();
+    SNAPSHOTS.set(`news:${articleId}`, JSON.stringify({ shareId }));
+    env.ASSETS = {
+      fetch: async () => new Response("<!doctype html><html><head><title>Gloomberb</title></head><body></body></html>", {
+        headers: { "content-type": "text/html" },
+      }),
+    } as unknown as Fetcher;
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `/news/${articleId}`),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+    const html = await response?.text();
+    expect(html).toContain("<title>BRIEF</title>");
+    expect(html).toContain('property="og:title"');
+    expect(html).toContain("BRIEF");
   });
 });
 
@@ -1288,6 +1455,9 @@ describe("app security headers", () => {
   test("only share documents ask crawlers to stay out", async () => {
     expect((await serveAsset("/"))?.headers.get("x-robots-tag")).toBeNull();
     expect((await serveAsset("/s/SdIc3WRwjojR"))?.headers.get("x-robots-tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
+    expect((await serveAsset("/news/reuters-urn:nFWN4530A2"))?.headers.get("x-robots-tag")).toBe(
       "noindex, nofollow, noarchive",
     );
   });

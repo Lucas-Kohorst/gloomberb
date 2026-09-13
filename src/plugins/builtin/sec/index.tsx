@@ -31,9 +31,10 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { registerConnectionSource } from "../connections/register";
+import { SEC_EDGAR_BYOK_SERVICE_ID, setSecContactEmailResolver } from "../../../sources/sec-edgar";
 import { loadSecBrowserFilings } from "./client";
 import { filingToArticle, isPeriodicFiling } from "./filing-article";
-import { filingMatchesForms, parseFormsSetting } from "./forms";
+import { ETF_FORMS_SETTING, filingMatchesForms, isEtfFilingForm, parseFormsSetting } from "./forms";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import { useNewsReadState } from "../news/wire/read-state";
 import { formatFilingMetaDate } from "./filing-display";
@@ -453,6 +454,7 @@ function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
 }
 
 const PERIODIC_FORMS_SETTING = "10-K,10-Q,10-K/A,10-Q/A";
+const ETF_LATEST_WINDOW_DAYS = 30;
 
 function createSecBrowserInstance(
   prefix: string,
@@ -495,7 +497,12 @@ function SecPane({ width, height, focused }: PaneProps) {
     abortRef.current = controller;
     setStatus("loading");
     setError(null);
-    void loadSecBrowserFilings(nextQuery)
+    void loadSecBrowserFilings(nextQuery, {
+        forms: formFilter ? [...formFilter] : undefined,
+        windowDays: formFilter && [...formFilter].some(isEtfFilingForm)
+          ? ETF_LATEST_WINDOW_DAYS
+          : undefined,
+      })
       .then((nextFilings) => {
         if (abortRef.current !== controller) return;
         setFilings(nextFilings);
@@ -509,7 +516,7 @@ function SecPane({ width, height, focused }: PaneProps) {
         setFilings([]);
         setStatus("error");
       });
-  }, []);
+  }, [formFilter]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -827,10 +834,38 @@ export const secModule: PluginModule = {
         return createSecBrowserInstance("sec-10q", "10-Q/K", options, { forms: PERIODIC_FORMS_SETTING });
       },
     },
+    {
+      id: "sec-etf-pane",
+      paneId: "sec",
+      label: "ETF Filings",
+      description:
+        "Latest ETF and fund registrations: N-1A, 485BPOS, 497, N-CSR, N-CEN, and N-PORT. Search a ticker or fund name.",
+      keywords: ["etf", "fund", "n-1a", "485bpos", "497", "n-port", "n-csr", "prospectus", "edgar", "sec", "filing"],
+      shortcut: {
+        prefix: "ETF",
+        argPlaceholder: "ticker or fund",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        return createSecBrowserInstance("sec-etf", "ETF", options, { forms: ETF_FORMS_SETTING });
+      },
+    },
   ],
 
   setup(ctx) {
     attachSecSummaryPersistence(ctx.persistence);
+    ctx.registerByokService({
+      id: SEC_EDGAR_BYOK_SERVICE_ID,
+      name: "SEC EDGAR",
+      apiUrl: "https://www.sec.gov",
+      authType: "user-agent",
+      authKey: "User-Agent",
+      envVar: "SEC_EDGAR_EMAIL",
+      description:
+        "Contact email for the SEC fair-access User-Agent. Required by EDGAR; a personal address reduces 403s.",
+    });
+    setSecContactEmailResolver(() => ctx.getApiKey(SEC_EDGAR_BYOK_SERVICE_ID));
     disposeSecConnection = registerConnectionSource({
       id: "sec-edgar",
       name: "SEC EDGAR",

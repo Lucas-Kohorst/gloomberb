@@ -35,7 +35,88 @@ test("publishes displayed table values through the stored API and reads the same
     .toThrow("Filter this table");
 });
 
-test("keeps rich article snapshots inline and falls back inline when stored publishing fails", async () => {
+test("stores a Cloud article snapshot with reader fields", async () => {
+  let stored: SharePayload | undefined;
+  const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+  const index = { lookup: async () => null, register: async () => true };
+  const url = await publishArticleShare({
+    type: "news",
+    id: articleId,
+    title: "BRIEF-Situational Awareness Active In Options Market - CNBC",
+    source: "Reuters News",
+    url: "https://www.reuters.com/article",
+    summary: "Sept 11 (Reuters) - SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET",
+    publishedAt: "2026-09-11T13:37:11.000Z",
+  }, async (payload) => {
+    stored = payload;
+    return { id, expiresAt: "2026-10-01T00:00:00Z" };
+  }, index);
+  expect(new URL(url).pathname).toBe(`/news/${articleId}`);
+  expect(stored).toMatchObject({
+    kind: "article",
+    data: {
+      title: "BRIEF-Situational Awareness Active In Options Market - CNBC",
+      source: "Reuters News",
+      sourceUrl: "https://www.reuters.com/article",
+      publishedAt: "2026-09-11T13:37:11.000Z",
+      summary: "Sept 11 (Reuters) - SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET",
+    },
+  });
+});
+
+test("reuses the canonical news URL when the story was already shared", async () => {
+  const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+  let created = 0;
+  const url = await publishArticleShare({
+    type: "news",
+    id: articleId,
+    title: "BRIEF",
+    source: "Reuters News",
+    url: "https://www.reuters.com/article",
+    summary: "body",
+  }, async () => {
+    created += 1;
+    return { id, expiresAt: "2026-10-01T00:00:00Z" };
+  }, {
+    lookup: async () => id,
+    register: async () => true,
+  });
+  expect(created).toBe(0);
+  expect(new URL(url).pathname).toBe(`/news/${articleId}`);
+});
+
+test("falls back to a Cloud share URL when the news index cannot be written", async () => {
+  const url = await publishArticleShare({
+    type: "news",
+    id: "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2",
+    title: "BRIEF",
+    source: "Reuters News",
+    url: "https://www.reuters.com/article",
+    summary: "body",
+  }, async () => ({ id, expiresAt: "2026-10-01T00:00:00Z" }), {
+    lookup: async () => null,
+    register: async () => false,
+  });
+  expect(new URL(url).pathname).toBe(`/s/${id}`);
+});
+
+test("falls back to a hosted short id when Cloud is unavailable", async () => {
+  const shortId = "Xk9mQ2nLp4Ab";
+  const url = await publishArticleShare({
+    type: "news",
+    id: "story",
+    title: "Story",
+    source: "Wire",
+    url: "https://example.com/story",
+    summary: "body",
+  }, async () => { throw new Error("Sign in to Gloom Cloud to share."); }, {
+    lookup: async () => null,
+    register: async () => false,
+  }, async () => ({ id: shortId }));
+  expect(new URL(url).pathname).toBe(`/s/${shortId}`);
+});
+
+test("falls back inline when stored publishing fails", async () => {
   const article = {
     type: "news" as const, id: "story", title: "Story", source: "Wire",
     url: "https://example.com/story", summary: "Complete snapshot",
@@ -44,11 +125,10 @@ test("keeps rich article snapshots inline and falls back inline when stored publ
   let attempts = 0;
   const unavailable = async () => { attempts += 1; throw new Error("Offline"); };
   const rich = new URL(await publishArticleShare(article, unavailable));
-  expect(attempts).toBe(0);
+  expect(attempts).toBeGreaterThan(0);
   expect(rich.pathname).toBe("/article");
   expect(decodeArticleSharePayload(rich.searchParams.get("a")!)).toEqual(article);
   const plain = { ...article, imageUrls: undefined };
   const fallback = new URL(await publishArticleShare(plain, unavailable));
-  expect(attempts).toBe(1);
   expect(decodeArticleSharePayload(fallback.searchParams.get("a")!)?.summary).toBe(plain.summary);
 });

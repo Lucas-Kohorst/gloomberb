@@ -1,3 +1,4 @@
+import { formatTimeAgo } from "../../../utils/format";
 import {
   CFTC_FEED_LABELS,
   CFTC_KIND_LABELS,
@@ -9,6 +10,18 @@ import {
 export function formatDate(date: Date | undefined): string | undefined {
   if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return undefined;
   return date.toISOString().slice(0, 10);
+}
+
+/** CFTC publishes a calendar date with no time. Show 9/11/26, not 20h ago. */
+export function formatFilingDay(date: Date | undefined): string | undefined {
+  const valid = validFilingDate(date);
+  if (!valid) return undefined;
+  return valid.toLocaleDateString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
 }
 
 export function feedLabel(filing: CftcFiling): string {
@@ -39,11 +52,34 @@ export function filingListTitle(filing: CftcFiling): string {
   return `${prefix} | ${filing.title}`;
 }
 
-/** Most recent status date for the filing, matching the CFTC's own ordering. */
+function validFilingDate(date: Date | undefined): Date | undefined {
+  if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return undefined;
+  return date;
+}
+
+/** CFTC status/receipt date — when the filing was published, not when Adjacent ingested it. */
+export function filingPublishedAt(filing: CftcFiling): Date | undefined {
+  return validFilingDate(filing.statusDate) ?? validFilingDate(filing.receiptDate);
+}
+
+/** When Adjacent first (then last) saw the filing. */
+export function filingSeenAt(filing: CftcFiling): Date | undefined {
+  return validFilingDate(filing.firstSeenAt) ?? validFilingDate(filing.lastSeenAt);
+}
+
+/**
+ * Live SEEN label for table row memo. The footer clock re-renders the pane
+ * every minute; including this string in the revision is what lets "6m ago"
+ * step to "7m ago" without a new fetch. DAY is a calendar date, so it stays put.
+ */
+export function filingRelativeTimeRevision(filing: CftcFiling): string {
+  const seen = filingSeenAt(filing);
+  return seen ? formatTimeAgo(seen) : "";
+}
+
+/** Article/share timestamp: published if we have it, otherwise seen. */
 export function filingListTimestamp(filing: CftcFiling): Date {
-  if (filing.statusDate && filing.statusDate.getTime() > 0) return filing.statusDate;
-  if (filing.lastSeenAt && filing.lastSeenAt.getTime() > 0) return filing.lastSeenAt;
-  return filing.firstSeenAt ?? new Date(0);
+  return filingPublishedAt(filing) ?? filingSeenAt(filing) ?? new Date(0);
 }
 
 /**

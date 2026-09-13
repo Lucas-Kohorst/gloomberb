@@ -20,6 +20,7 @@ import type { SyncContributor, SyncTransport } from "../../sync/types";
 import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
 import { createAlert as createAlertHandler } from "../builtin/alerts/alert-registry";
+import { registerByokKnownService } from "../builtin/byok/services";
 import type { PluginEvents } from "../event-bus";
 import type { PluginItems, RegistryContributions } from "./contributions";
 import {
@@ -161,6 +162,15 @@ export function createRegistryPluginContext({
     registerDocumentSearchProvider: (provider) => (
       contributions.registerDocumentSearchProvider(pluginId, provider, items)
     ),
+    registerByokService: (service) => {
+      const dispose = registerByokKnownService({
+        authType: "bearer",
+        ...service,
+        pluginId,
+      });
+      items.eventDisposers.push(dispose);
+      return dispose;
+    },
     registerChartSeriesCatalog: (provider) => (
       contributions.registerChartSeriesCatalog(pluginId, provider, items)
     ),

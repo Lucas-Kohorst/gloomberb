@@ -9,6 +9,7 @@ export type DataTableColumn = Pick<
   headerColor?: string;
   headerBackgroundColor?: string;
   flexGrow?: number;
+  lockWidth?: boolean;
   wrap?: boolean;
 };
 
@@ -52,6 +53,9 @@ export interface DataTableProps<
   sortColumnId: string | null;
   sortDirection: "asc" | "desc";
   onHeaderClick: (columnId: string) => void;
+  onColumnResize?: (columnId: string, width: number) => void;
+  onColumnResizeEnd?: () => void;
+  onColumnResizeReset?: (columnId: string) => void;
   headerScrollRef: RefObject<ScrollBoxRenderable | null>;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   syncHeaderScroll: () => void;

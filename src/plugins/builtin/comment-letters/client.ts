@@ -1,6 +1,7 @@
 import {
   SecEdgarClient,
   parseEftsFilings,
+  secRequestHeaders,
 } from "../../../sources/sec-edgar";
 import type { SecFilingItem } from "../../../types/data-provider";
 import { httpFetch } from "../../../utils/http-transport";
@@ -186,21 +187,8 @@ export function parseCommentLettersPayload(payload: unknown, count = DEFAULT_COU
   return filterCommentLetters(parseEftsFilings(payload, count)).map(toCommentLetter);
 }
 
-// SEC EDGAR rejects requests whose User-Agent lacks a reachable contact.
-// Mirrors the convention in src/sources/sec-edgar.ts on a smaller surface:
-// explicit env wins, otherwise a plausible gloomberb contact address.
 function secHeaders(): Record<string, string> {
-  const from = ((typeof process === "undefined" ? undefined : process.env.SEC_FROM_EMAIL) ?? "").trim() || "gloomberb@localhost.local";
-  const userAgent = ((typeof process === "undefined" ? undefined : process.env.SEC_USER_AGENT) ?? "").trim()
-    || `Gloomberb/0.1 (comment-letters; contact=${from})`;
-  return {
-    "User-Agent": userAgent,
-    From: from,
-    Accept: "application/json,text/plain,*/*",
-    "Accept-Encoding": "gzip, deflate",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://www.sec.gov/",
-  };
+  return secRequestHeaders();
 }
 
 export function buildCommentLettersUrl(query: string, count: number): string {

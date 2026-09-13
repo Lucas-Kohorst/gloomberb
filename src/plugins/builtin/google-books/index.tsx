@@ -5,9 +5,11 @@ import type {
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
-import { createGoogleBooksDocumentSearchProvider } from "./client";
+import { createGoogleBooksDocumentSearchProvider, setGoogleBooksApiKeyResolver } from "./client";
 import { BooksPane, createBooksPaneInstance } from "./pane";
 import {
+  GOOGLE_BOOKS_API_BASE_URL,
+  GOOGLE_BOOKS_BYOK_SERVICE_ID,
   GOOGLE_BOOKS_CONNECTION_ID,
   GOOGLE_BOOKS_PLUGIN_ID,
 } from "./types";
@@ -68,6 +70,17 @@ export const googleBooksPlugin: GloomPlugin = {
   ],
 
   setup(ctx: GloomPluginContext) {
+    ctx.registerByokService({
+      id: GOOGLE_BOOKS_BYOK_SERVICE_ID,
+      name: "Google Books",
+      apiUrl: GOOGLE_BOOKS_API_BASE_URL,
+      authType: "query",
+      authKey: "key",
+      envVar: "GOOGLE_BOOKS_API_KEY",
+      description:
+        "Optional Google Cloud API key. Anonymous search works; a key raises the daily quota.",
+    });
+    setGoogleBooksApiKeyResolver(() => ctx.getApiKey(GOOGLE_BOOKS_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({
       id: GOOGLE_BOOKS_CONNECTION_ID,
       name: "Google Books",

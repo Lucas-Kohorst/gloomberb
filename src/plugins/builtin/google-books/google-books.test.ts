@@ -39,6 +39,11 @@ describe("buildVolumesUrl", () => {
     expect(url).not.toContain("key=");
   });
 
+  test("appends a Google API key when one is supplied", () => {
+    const url = new URL(buildVolumesUrl("Tesla motors", 20, "books-key"));
+    expect(url.searchParams.get("key")).toBe("books-key");
+  });
+
   test("passes inauthor:/intitle: qualifiers through untouched", () => {
     const url = buildVolumesUrl("inauthor:Curie intitle:radioactivity");
     expect(new URL(url).searchParams.get("q")).toBe("inauthor:Curie intitle:radioactivity");

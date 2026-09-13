@@ -196,6 +196,43 @@ describe("ticker data root shortcuts", () => {
     expect(shortcutClaimsQuery(parse("SRCH apple inc"))).toBe(true);
   });
 
+  test("LAW and ETF keep the pane shortcut while document search still runs", () => {
+    const templates: PaneTemplateDef[] = [
+      {
+        id: "courtlistener-pane",
+        paneId: "courtlistener",
+        label: "Lawsuits",
+        description: "Federal dockets",
+        shortcut: { prefix: "LAW", argPlaceholder: "company", argKind: "text", argOptional: true },
+      },
+      {
+        id: "sec-etf-pane",
+        paneId: "sec",
+        label: "ETF Filings",
+        description: "ETF filings",
+        shortcut: { prefix: "ETF", argPlaceholder: "ticker", argKind: "text", argOptional: true },
+      },
+    ];
+    const parseWith = (query: string) => parseRootShortcutIntent({
+      query,
+      commands: [],
+      pluginCommands: [],
+      paneTemplates: templates,
+      activeTicker: null,
+    });
+    const law = parseWith("LAW kalshi");
+    const etf = parseWith("ETF SPY");
+    expect(law.kind).toBe("complete");
+    expect(etf.kind).toBe("complete");
+    if (law.kind === "none" || etf.kind === "none") throw new Error("Expected shortcut intent");
+    expect(shortcutClaimsQuery(law)).toBe(true);
+    expect(shortcutClaimsQuery(etf)).toBe(true);
+    const bareLaw = parseWith("law");
+    expect(bareLaw.kind).not.toBe("none");
+    if (bareLaw.kind === "none") throw new Error("Expected shortcut intent");
+    expect(shortcutClaimsQuery(bareLaw)).toBe(false);
+  });
+
   test("pane shortcut aliases resolve to the same template", () => {
     const templates: PaneTemplateDef[] = [{
       id: "plugin-marketplace-pane",

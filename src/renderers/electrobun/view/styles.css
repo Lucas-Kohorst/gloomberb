@@ -70,6 +70,35 @@ textarea:-webkit-autofill:focus {
   transition: background-color 99999s ease-out;
 }
 button, [data-gloom-interactive="true"] { cursor: pointer; }
+[data-gloom-role="data-table-column-resize"] {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 14px;
+  height: 100%;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+}
+[data-gloom-role="data-table-column-resize"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  right: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+[data-gloom-role="data-table-column-resize"]:hover::after,
+[data-gloom-role="data-table-column-resize"][data-active="true"]::after {
+  background: var(--gloom-border-focused, #8b8fa3);
+}
+body.gloom-col-resizing,
+body.gloom-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 [data-gloom-hover-bg="true"]:hover {
   background-color: var(--gloom-box-hover-bg) !important;
 }

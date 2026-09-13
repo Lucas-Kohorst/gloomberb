@@ -30,7 +30,8 @@ import {
 } from "./rows";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
-import { paneDelayedStatus, paneLiveStatus } from "../builtin/shared/pane-footer";
+import { paneDelayedStatus, paneLiveStatus, paneShareHint } from "../builtin/shared/pane-footer";
+import { useShareTable } from "../builtin/shared/use-share-table";
 import type {
   PredictionColumnDef,
   PredictionListRow,
@@ -138,6 +139,27 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const kalshiDelayed = includeKalshi && controller.kalshiFeed === "delayed";
   const kalshiLive = includeKalshi && controller.kalshiFeed === "live";
   const newsTabOpen = controller.detailOpen && controller.detailTab === "news";
+  const shareTable = useShareTable();
+  const shareVisibleRows = useCallback(() => {
+    const columns = visibleColumns.filter((column) => column.id !== "watch");
+    void shareTable({
+      title: "Prediction Markets",
+      columns: columns.map((column) => ({
+        id: column.id,
+        label: column.label,
+        align: column.align,
+        width: column.width,
+      })),
+      items: controller.visibleRows,
+      cell: (row, columnId) => {
+        const column = columns.find((entry) => entry.id === columnId);
+        if (!column) return "";
+        return getPredictionColumnValue(column, row, false);
+      },
+      rowUrl: (row) => row.url,
+      paneTemplateId: "new-prediction-markets-pane",
+    });
+  }, [controller.visibleRows, shareTable, visibleColumns]);
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "g" && graphExpression) {
@@ -146,11 +168,17 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       graphSelected();
       return;
     }
+    if (!controller.detailOpen && (event.name === "s" || event.name === "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareVisibleRows();
+      return;
+    }
     if (newsTabOpen || event.name !== "o" || !marketUrl) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     openMarket();
-  }, { enabled: focused && ((!newsTabOpen && !!marketUrl) || !!graphExpression) });
+  }, { enabled: focused && ((!newsTabOpen && !!marketUrl) || !!graphExpression || !controller.detailOpen) });
   usePaneFooter("prediction-markets", () => {
     return {
       info: [
@@ -172,6 +200,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
+        ...(!controller.detailOpen
+          ? [paneShareHint(shareVisibleRows, { disabled: controller.visibleRows.length === 0 })]
+          : []),
       ],
     };
   }, [
@@ -198,7 +229,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     marketUrl,
     newsTabOpen,
     openMarket,
+    shareVisibleRows,
     updatedAgo,
+    controller.visibleRows.length,
   ]);
 
   const venueTabItems = useMemo(

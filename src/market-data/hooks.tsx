@@ -133,15 +133,38 @@ export function buildTickerFinancialsKeys(tickers: TickerRecord[], options: Tick
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
     if (!instrument) continue;
     keys.push(buildQuoteKey(instrument));
+    keys.push(buildSnapshotKey(instrument));
+    keys.push(buildChartKey(createBaselineChartRequest(instrument)));
   }
   return keys;
 }
 
-function tickerFinancialsQuoteUnchanged(
+function priceHistoryUnchanged(
+  previous: TickerFinancials["priceHistory"],
+  next: TickerFinancials["priceHistory"],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  if (previous.length === 0) return true;
+  const previousLast = previous.at(-1);
+  const nextLast = next.at(-1);
+  return previousLast === nextLast
+    || (
+      previousLast?.close === nextLast?.close
+      && previousLast?.date === nextLast?.date
+    );
+}
+
+function tickerFinancialsOverlayUnchanged(
   previous: TickerFinancials,
   next: TickerFinancials,
 ): boolean {
-  return previous === next || previous.quote === next.quote;
+  return previous === next || (
+    previous.quote === next.quote
+    && priceHistoryUnchanged(previous.priceHistory, next.priceHistory)
+    && previous.fundamentals === next.fundamentals
+    && previous.profile === next.profile
+  );
 }
 
 function tickerFinancialsMapsEquivalent(
@@ -164,7 +187,7 @@ export function copyOnWriteTickerFinancialsMap(
   const result = new Map<string, TickerFinancials>();
   for (const [symbol, financials] of next) {
     const prev = previous.get(symbol);
-    if (prev && tickerFinancialsQuoteUnchanged(prev, financials)) {
+    if (prev && tickerFinancialsOverlayUnchanged(prev, financials)) {
       result.set(symbol, prev);
     } else {
       result.set(symbol, financials);
@@ -190,7 +213,13 @@ export function mergeTickerFinancials(
   const merged = new Map<string, TickerFinancials>();
   for (const ticker of tickers) {
     const symbol = ticker.metadata.ticker;
-    const financials = live.get(symbol) ?? cached.get(symbol);
+    const liveData = live.get(symbol);
+    const cachedData = cached.get(symbol);
+    if (liveData && cachedData && liveData.priceHistory.length < 2 && cachedData.priceHistory.length >= 2) {
+      merged.set(symbol, { ...liveData, priceHistory: cachedData.priceHistory });
+      continue;
+    }
+    const financials = liveData ?? cachedData;
     if (financials) merged.set(symbol, financials);
   }
   return merged;

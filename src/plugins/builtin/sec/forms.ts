@@ -1,5 +1,29 @@
 const PERIODIC_FORMS = new Set(["10-K", "10-K/A", "10-Q", "10-Q/A"]);
 
+export const ETF_FILING_FORMS = [
+  "N-1A",
+  "N-1A/A",
+  "485BPOS",
+  "485APOS",
+  "497",
+  "497K",
+  "N-CSR",
+  "N-CSRS",
+  "N-CEN",
+  "NPORT-P",
+  "NPORT-EX",
+  "N-PORT",
+  "24F-2NT",
+  "N-2",
+  "N-2/A",
+] as const;
+
+export const ETF_FORMS_SETTING = ETF_FILING_FORMS.join(",");
+
+export function isEtfFilingForm(form: string): boolean {
+  return (ETF_FILING_FORMS as readonly string[]).includes(normalizeFilingForm(form));
+}
+
 export function normalizeFilingForm(form: string): string {
   return form.trim().toUpperCase();
 }

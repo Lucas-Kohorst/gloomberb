@@ -187,7 +187,7 @@ function CrowdedHintsRegistration() {
       { id: "res", key: "r", label: "es" },
       { id: "range", key: "1-8", label: "range" },
       { id: "reload", key: "Shift+R", label: "reload" },
-      { id: "share", key: "y", label: "share" },
+      { id: "yank", key: "y", label: "ank" },
     ],
   }), []);
   return null;
@@ -384,8 +384,7 @@ describe("PaneFooterBar", () => {
     expect(frame).toContain("[s]eries");
     expect(frame).toContain("[1-8] range");
     expect(frame).toContain("[Shift+R] reload");
-    expect(frame).toContain("[y] share");
-    expect(frame).not.toContain("[y]share");
+    expect(frame).toContain("[y]ank");
     expect(frame).not.toContain("[1-8]range");
     const lines = frame.split("\n").filter((line) => /\[(?:s|y|1-8|Shift\+R)\]/.test(line));
     expect(lines.length).toBeGreaterThanOrEqual(2);

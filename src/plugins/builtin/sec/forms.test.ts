@@ -41,6 +41,8 @@ describe("periodic report forms", () => {
     expect(looksLikeFilingQuery("ART 10-K AAPL")).toBe(true);
     expect(looksLikeFilingQuery("latest 10q")).toBe(true);
     expect(looksLikeFilingQuery("cftc kalshi")).toBe(true);
+    expect(looksLikeFilingQuery("ETF SPY")).toBe(true);
+    expect(looksLikeFilingQuery("485BPOS")).toBe(true);
     expect(looksLikeFilingQuery("nvda")).toBe(false);
   });
 

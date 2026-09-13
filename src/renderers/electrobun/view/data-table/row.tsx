@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { memo, type CSSProperties } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { TextAttributes } from "../../../../ui/host";
 import type {
   DataTableCell,
@@ -7,7 +7,8 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../../components/ui/data-table";
-import { WEB_CELL_HEIGHT } from "../input-host";
+import { resizedColumnWidth } from "../../../../components/data-table/column-widths";
+import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import {
   CSS_BG,
   CSS_PANEL,
@@ -50,6 +51,103 @@ function inlinePaddingPx(horizontalPadding: number): number {
   return TABLE_INLINE_PADDING_PX * horizontalPadding;
 }
 
+function WebColumnResizeHandle<C extends DataTableColumn>({
+  column,
+  onResize,
+  onResizeEnd,
+  onReset,
+}: {
+  column: C;
+  onResize?: (columnId: string, width: number) => void;
+  onResizeEnd?: () => void;
+  onReset?: (columnId: string) => void;
+}) {
+  const onResizeRef = useRef(onResize);
+  const onResizeEndRef = useRef(onResizeEnd);
+  const onResetRef = useRef(onReset);
+  onResizeRef.current = onResize;
+  onResizeEndRef.current = onResizeEnd;
+  onResetRef.current = onReset;
+  const [active, setActive] = useState(false);
+  const sessionRef = useRef<{
+    columnId: string;
+    startWidth: number;
+    startX: number;
+    lastWidth: number;
+    handleMove: (event: globalThis.MouseEvent) => void;
+    handleUp: () => void;
+  } | null>(null);
+
+  useEffect(() => () => {
+    const session = sessionRef.current;
+    if (session) {
+      document.removeEventListener("mousemove", session.handleMove);
+      document.removeEventListener("mouseup", session.handleUp);
+      sessionRef.current = null;
+    }
+    document.body.classList.remove("gloom-col-resizing");
+  }, []);
+
+  if (!onResize) return null;
+
+  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    if (event.detail >= 2) return;
+    const cell = event.currentTarget.parentElement;
+    const renderedWidth = cell
+      ? cell.getBoundingClientRect().width / WEB_CELL_WIDTH
+      : column.width;
+    const handleMove = (moveEvent: globalThis.MouseEvent) => {
+      const session = sessionRef.current;
+      if (!session) return;
+      const deltaCells = (moveEvent.clientX - session.startX) / WEB_CELL_WIDTH;
+      const nextWidth = resizedColumnWidth(session.startWidth, deltaCells);
+      if (nextWidth === session.lastWidth) return;
+      session.lastWidth = nextWidth;
+      onResizeRef.current?.(session.columnId, nextWidth);
+    };
+    const handleUp = () => {
+      const session = sessionRef.current;
+      if (!session) return;
+      sessionRef.current = null;
+      setActive(false);
+      document.body.classList.remove("gloom-col-resizing");
+      document.removeEventListener("mousemove", session.handleMove);
+      document.removeEventListener("mouseup", session.handleUp);
+      onResizeEndRef.current?.();
+    };
+    sessionRef.current = {
+      columnId: column.id,
+      startWidth: renderedWidth,
+      startX: event.clientX,
+      lastWidth: column.width,
+      handleMove,
+      handleUp,
+    };
+    setActive(true);
+    document.body.classList.add("gloom-col-resizing");
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  return (
+    <div
+      data-gloom-role="data-table-column-resize"
+      data-active={active ? "true" : undefined}
+      aria-label={`Resize ${column.label} column`}
+      title="Drag to resize. Double-click to reset."
+      onMouseDown={handleMouseDown}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onResetRef.current?.(column.id);
+      }}
+    />
+  );
+}
+
 export function WebDataTableHeader<C extends DataTableColumn>({
   columns,
   columnGap,
@@ -58,6 +156,9 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   onTableMouseDown,
   gridTemplateColumns,
   onHeaderClick,
+  onColumnResize,
+  onColumnResizeEnd,
+  onColumnResizeReset,
   sortColumnId,
   sortDirection,
 }: {
@@ -68,6 +169,9 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   onTableMouseDown?: (event: any) => void;
   gridTemplateColumns: string;
   onHeaderClick: (columnId: string) => void;
+  onColumnResize?: (columnId: string, width: number) => void;
+  onColumnResizeEnd?: () => void;
+  onColumnResizeReset?: (columnId: string) => void;
   sortColumnId: string | null;
   sortDirection: "asc" | "desc";
 }) {
@@ -103,9 +207,10 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             data-gloom-role="data-table-header-cell"
             data-gloom-interactive="true"
             style={{
+              position: "relative",
               minWidth: 0,
               height: WEB_CELL_HEIGHT,
-              overflow: "hidden",
+              overflow: "visible",
               cursor: "pointer",
               backgroundColor: column.headerBackgroundColor ?? CSS_PANEL,
             }}
@@ -129,6 +234,12 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             >
               {text}
             </span>
+            <WebColumnResizeHandle
+              column={column}
+              onResize={onColumnResize}
+              onResizeEnd={onColumnResizeEnd}
+              onReset={onColumnResizeReset}
+            />
           </div>
         );
       })}

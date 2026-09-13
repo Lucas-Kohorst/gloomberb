@@ -13,11 +13,13 @@ import {
   parseOpenFdaDate,
   parseRecall,
   parseRecallPage,
+  setOpenFdaApiKeyResolver,
 } from "./client";
 import type { OpenFdaPage } from "./types";
 
 afterEach(() => {
   setHttpFetchTransport(null);
+  setOpenFdaApiKeyResolver(() => undefined);
 });
 
 const DRUG_FIXTURE = {
@@ -232,5 +234,17 @@ describe("openfda client", () => {
   test("failed endpoints still throw", async () => {
     setHttpFetchTransport(async () => new Response("oops", { status: 500, statusText: "Bad" }));
     await expect(new OpenFdaClient().listRecords({})).rejects.toThrow();
+  });
+
+  test("attaches api_key when a personal key is configured", async () => {
+    setOpenFdaApiKeyResolver(() => "fda-key");
+    const requested: string[] = [];
+    setHttpFetchTransport(async (url: string) => {
+      requested.push(url);
+      return new Response(JSON.stringify({ error: { code: "NOT_FOUND" } }), { status: 404 });
+    });
+    await new OpenFdaClient().listRecords({ searchQuery: "ibuprofen" });
+    expect(requested.length).toBeGreaterThan(0);
+    expect(requested.every((url) => new URL(url).searchParams.get("api_key") === "fda-key")).toBe(true);
   });
 });

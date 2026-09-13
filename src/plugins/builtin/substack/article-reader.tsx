@@ -123,7 +123,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
       else jina.refresh();
       return;
     }
-    if (isPlainKey(event, "y")) {
+    if (isPlainKey(event, "s") || isPlainKey(event, "y")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       shareArticle();
@@ -137,7 +137,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   }, { enabled: focused && !!article });
 
   const shareHint: PaneHint[] = article
-    ? [{ id: "share", key: "y", label: "share", onPress: shareArticle }]
+    ? [{ id: "share", key: "s", label: "hare", onPress: shareArticle }]
     : [];
   const archiveHint: PaneHint[] = archiveAction.enabled
     ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]

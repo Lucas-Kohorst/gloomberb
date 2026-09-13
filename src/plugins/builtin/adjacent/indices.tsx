@@ -766,7 +766,7 @@ export function AdjacentIndicesPane({
       ...(!detailOpen
         ? [{ id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow }]
         : []),
-      { id: "share", key: "y", label: "share", onPress: shareIndices },
+      { id: "share", key: "s", label: "hare", onPress: shareIndices },
       paneSearchHint(focusSearch),
     ],
   }), [detailOpen, error, focusSearch, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);

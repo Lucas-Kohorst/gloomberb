@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { articleShareBodySource, articleShareNeedsReader, preferredArticleBody } from "./article-view";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { articleShareBodySource, ArticleShareView, articleShareNeedsReader, preferredArticleBody } from "./article-view";
 
 describe("preferredArticleBody", () => {
   test("uses the extracted article when it adds text", () => {
@@ -24,6 +26,27 @@ describe("preferredArticleBody", () => {
     expect(preferredArticleBody("The fund declared a $0.055 dividend.", "")).toBe(
       "The fund declared a $0.055 dividend.",
     );
+  });
+});
+
+describe("ArticleShareView", () => {
+  test("prints source and publication date as document metadata", () => {
+    const html = renderToStaticMarkup(createElement(ArticleShareView, {
+      payload: {
+        type: "news",
+        id: "reuters-urn",
+        title: "BRIEF-Situational Awareness Active In Options Market - CNBC",
+        url: "https://www.reuters.com/article",
+        source: "Reuters News",
+        publishedAt: "2026-09-11T13:37:11.000Z",
+        summary: "Sept 11 (Reuters) - SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET",
+      },
+    }));
+    expect(html).toContain("Source: Reuters News");
+    expect(html).toContain("Publication Date:");
+    expect(html).toContain("SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET");
+    expect(html).toContain("view original");
+    expect(html).not.toContain(" · ");
   });
 });
 

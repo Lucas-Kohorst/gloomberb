@@ -336,7 +336,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
       toggleSelected();
       return true;
     }
-    if (isPlainKey(event, "x") && canRemove) {
+    if (isPlainKey(event, "d") && canRemove) {
       event.preventDefault?.();
       event.stopPropagation?.();
       void removeSelected();
@@ -394,7 +394,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
         : canToggle
           ? [{ id: "toggle", key: "e", label: selected?.enabled ? "disable" : "nable", onPress: toggleSelected }]
           : []),
-      ...(canRemove ? [{ id: "remove", key: "x", label: "uninstall", onPress: () => void removeSelected() }] : []),
+      ...(canRemove ? [{ id: "remove", key: "d", label: "elete", onPress: () => void removeSelected() }] : []),
     ],
   });
 

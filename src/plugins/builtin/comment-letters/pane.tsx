@@ -18,6 +18,7 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { newsArticleSharePayload, useCopyShareLink } from "../shared/article-share";
 import { CommentLettersClient } from "./client";
 import {
   COMMENT_LETTERS_PLUGIN_ID,
@@ -89,7 +90,7 @@ function letterToArticle(letter: CommentLetter): NewsArticle {
   const url = letter.primaryDocumentUrl ?? letter.filingUrl;
   return {
     id: `comment-letter:${letter.id}`,
-    title: `${letter.form} · ${letter.companyName ?? letter.cik}`,
+    title: `${letter.form} ${letter.companyName ?? letter.cik}`,
     url,
     source: "SEC",
     publishedAt: letter.filingDate,
@@ -219,6 +220,11 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const items = useMemo(() => toFeedItems(letters), [letters]);
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
+  const copyShareLink = useCopyShareLink();
+  const shareSelected = useCallback(() => {
+    if (!detailLetter) return;
+    void copyShareLink(newsArticleSharePayload(letterToArticle(detailLetter)));
+  }, [copyShareLink, detailLetter]);
   useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
     refresh,
@@ -247,6 +253,11 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
           onPress: () => {
             popOutArticle(letterToArticle(detailLetter));
           },
+        }, {
+          id: "share",
+          key: "s",
+          label: "hare",
+          onPress: shareSelected,
         }]
         : []),
     ],
@@ -275,9 +286,15 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
         refresh();
         return true;
       }
+      if (event.name === "s" || event.name === "y") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        shareSelected();
+        return true;
+      }
       return false;
     },
-    [focusSearch, refresh],
+    [focusSearch, refresh, shareSelected],
   );
 
   const rootBefore = (

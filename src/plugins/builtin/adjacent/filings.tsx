@@ -31,6 +31,7 @@ import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { newsArticleSharePayload, useCopyShareLink } from "../shared/article-share";
 import { useNewsReadState } from "../news/wire/read-state";
 import { formatTimeAgo } from "../../../utils/format";
 import { wrapTextLines } from "../../../utils/text-wrap";
@@ -44,6 +45,10 @@ import {
   feedLabel,
   filingKindLabel,
   filingListTimestamp,
+  filingPublishedAt,
+  filingRelativeTimeRevision,
+  filingSeenAt,
+  formatFilingDay,
   stripLeadingHeading,
 } from "./filings-format";
 import {
@@ -84,17 +89,18 @@ function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null
   };
 }
 
-type FilingColumnId = "time" | "org" | "type" | "status" | "filing";
+type FilingColumnId = "seen" | "published" | "org" | "type" | "status" | "filing";
 type FilingColumn = DataTableColumn & { id: FilingColumnId };
 
 const DEFAULT_FILING_SORT: StackSortPreference<FilingColumnId> = {
-  columnId: "time",
+  columnId: "seen",
   direction: "desc",
 };
 
 function createFilingColumns(): FilingColumn[] {
   return [
-    { id: "time", label: "SEEN", width: 8, align: "left" },
+    { id: "seen", label: "SEEN", width: 8, align: "left" },
+    { id: "published", label: "DAY", width: 8, align: "left" },
     { id: "org", label: "ORG", width: 8, align: "left" },
     { id: "type", label: "TYPE", width: 13, align: "left" },
     { id: "status", label: "STATUS", width: 14, align: "left" },
@@ -104,8 +110,10 @@ function createFilingColumns(): FilingColumn[] {
 
 function filingSortValue(filing: CftcFiling, columnId: FilingColumnId): string | number | null {
   switch (columnId) {
-    case "time":
-      return filingListTimestamp(filing).getTime();
+    case "seen":
+      return filingSeenAt(filing)?.getTime() ?? 0;
+    case "published":
+      return filingPublishedAt(filing)?.getTime() ?? 0;
     case "org":
       return filing.orgCode;
     case "type":
@@ -140,8 +148,14 @@ function renderFilingCell(
 ): DataTableCell {
   const sel = selected ? colors.selectedText : undefined;
   switch (column.id) {
-    case "time":
-      return { text: formatTimeAgo(filingListTimestamp(filing)), color: sel ?? colors.textDim };
+    case "seen": {
+      const seen = filingSeenAt(filing);
+      return { text: seen ? formatTimeAgo(seen) : "—", color: sel ?? colors.textDim };
+    }
+    case "published": {
+      const published = formatFilingDay(filingPublishedAt(filing));
+      return { text: published ?? "—", color: sel ?? colors.textDim };
+    }
     case "org":
       return { text: filing.orgCode, color: sel ?? colors.textMuted };
     case "type":
@@ -451,6 +465,7 @@ export function AdjacentFilingsPane({
 
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
+  const copyShareLink = useCopyShareLink();
   const filingSummary = useCftcFilingSummary();
   const markFilingRead = useCallback((filing: CftcFiling) => {
     markArticleRead(filingId(filing));
@@ -460,6 +475,10 @@ export function AdjacentFilingsPane({
     markFilingRead(detailFiling);
     popOutArticle(cftcFilingToArticle(detailFiling, detail));
   }, [detail, detailFiling, markFilingRead, popOutArticle]);
+  const shareSelected = useCallback(() => {
+    if (!detailFiling) return;
+    void copyShareLink(newsArticleSharePayload(cftcFilingToArticle(detailFiling, detail)));
+  }, [copyShareLink, detail, detailFiling]);
   const handleSummarize = useCallback(() => {
     if (!openFiling || detailLoading) return;
     void filingSummary.summarize(openFiling, buildDetailBody(openFiling, detail, false));
@@ -515,6 +534,12 @@ export function AdjacentFilingsPane({
       event.preventDefault?.();
       if (view === "chart") loadChart(query);
       else load(query);
+      return;
+    }
+    if (isPlainKey(event, "y") && detailFiling) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      shareSelected();
     }
   }, { allowEditable: true, enabled: focused });
 
@@ -528,7 +553,7 @@ export function AdjacentFilingsPane({
     error: error ?? filingSummary.summaryError,
     info: [
       ...(client.isPublic
-        ? [{ id: "tier", parts: [{ text: "public · last 90d", tone: "muted" as const }] }]
+        ? [{ id: "tier", parts: [{ text: "public, last 90d", tone: "muted" as const }] }]
         : []),
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
@@ -543,6 +568,9 @@ export function AdjacentFilingsPane({
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       ...(view === "list" && detailFiling
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
+        : []),
+      ...(detailFiling && !openFiling
+        ? [{ id: "share", key: "s", label: "hare", onPress: shareSelected }]
         : []),
       ...(openFiling && !detailLoading
         ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
@@ -741,14 +769,16 @@ export function AdjacentFilingsPane({
         setSortPreference((current) => nextStackSortPreference(
           current,
           next,
-          next === "time" ? "desc" : "asc",
+          next === "seen" || next === "published" ? "desc" : "asc",
         ));
       }}
       resetScrollKey={query}
       scrollRef={tableScrollRef}
       onBodyScrollActivity={onFilingsScroll}
       getItemKey={filingId}
-      getRowRevision={(filing) => `${filingId(filing)}:${filing.title}:${readArticleIds.has(filingId(filing)) ? 1 : 0}`}
+      getRowRevision={(filing) =>
+        `${filingId(filing)}:${filing.title}:${readArticleIds.has(filingId(filing)) ? 1 : 0}:${filingRelativeTimeRevision(filing)}`
+      }
       renderCell={(filing, column, _index, rowState) =>
         renderFilingCell(filing, column, rowState.selected, readArticleIds.has(filingId(filing)))
       }

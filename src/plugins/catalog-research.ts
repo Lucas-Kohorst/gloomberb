@@ -12,6 +12,7 @@ import { foiaLogsPlugin } from "./builtin/foia-logs";
 import { googleBooksPlugin } from "./builtin/google-books";
 import { iborrowDeskPlugin } from "./builtin/iborrowdesk";
 import { levelsFyiPlugin } from "./builtin/levels-fyi";
+import { nasaFirmsPlugin } from "./builtin/nasa-firms";
 import { openCorporatesPlugin } from "./builtin/open-corporates";
 import { openPaymentsPlugin } from "./builtin/open-payments";
 import { openFdaPlugin } from "./builtin/openfda";
@@ -35,6 +36,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   googleBooksPlugin,
   iborrowDeskPlugin,
   levelsFyiPlugin,
+  nasaFirmsPlugin,
   openCorporatesPlugin,
   openPaymentsPlugin,
   openFdaPlugin,

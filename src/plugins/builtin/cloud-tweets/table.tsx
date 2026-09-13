@@ -224,7 +224,7 @@ export function TweetSearchTable({
     if (!selectedTweet) return [];
     return [
       ...(shareSelectedTweet
-        ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedTweet }]
+        ? [{ id: "share", key: "s", label: "hare", onPress: shareSelectedTweet }]
         : []),
       { id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) },
     ];
@@ -313,7 +313,7 @@ export function TweetSearchTable({
       openSelectedTweetAndMarkRead();
       return true;
     }
-    if (isPlainKey(event, "y") && shareSelectedTweet) {
+    if ((isPlainKey(event, "s") || isPlainKey(event, "y")) && shareSelectedTweet) {
       event.preventDefault?.();
       event.stopPropagation?.();
       shareSelectedTweet();
@@ -333,7 +333,7 @@ export function TweetSearchTable({
   }, [onFocusSearch, openSelectedTweetAndMarkRead, popOutSelectedTweet, reload, selectedTweet, shareSelectedTweet]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (isPlainKey(event, "y") && shareSelectedTweet) {
+    if ((isPlainKey(event, "s") || isPlainKey(event, "y")) && shareSelectedTweet) {
       event.preventDefault?.();
       event.stopPropagation?.();
       shareSelectedTweet();

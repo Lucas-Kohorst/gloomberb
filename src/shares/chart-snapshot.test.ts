@@ -31,4 +31,41 @@ describe("chart share snapshots", () => {
     expect(shared?.series[0]?.points[0]?.y).toBe(0);
     expect(shared?.series[0]?.points.at(-1)?.y).toBe(999);
   });
+
+  test("keeps series style, color, and OHLC so the public chart is not a green polyline", () => {
+    const candles: ResolvedSeries = {
+      ...series(3),
+      color: "#e0a458",
+      style: "candles",
+      panelId: "price",
+      points: [{
+        date: new Date(Date.UTC(2025, 0, 2)),
+        observedAt: new Date(Date.UTC(2025, 0, 2)),
+        value: 10,
+        open: 8,
+        high: 12,
+        low: 7,
+        close: 10,
+      }],
+    };
+    const shared = buildChartShareData([candles], {
+      spec: {
+        version: 2,
+        viewport: { range: "1Y", resolution: "1d" },
+        panels: [{ id: "price", label: "Price" }],
+        series: [],
+        studies: [],
+      },
+    });
+    expect(shared).toMatchObject({
+      series: [{
+        name: "AAPL",
+        color: "#e0a458",
+        style: "candles",
+        panelId: "price",
+        points: [{ y: 10, o: 8, h: 12, l: 7, c: 10 }],
+      }],
+      panels: [{ id: "price", label: "Price" }],
+    });
+  });
 })

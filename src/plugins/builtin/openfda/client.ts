@@ -15,9 +15,20 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export const OPENFDA_PER_ENDPOINT_LIMIT = 30;
 export const OPENFDA_DISPLAY_CAP = 90;
 
+let resolveApiKey: () => string | undefined = () => process.env.OPENFDA_API_KEY?.trim() || undefined;
+
+export function setOpenFdaApiKeyResolver(resolver: () => string | undefined): void {
+  resolveApiKey = resolver;
+}
+
+export function resolveOpenFdaApiKey(): string | undefined {
+  return resolveApiKey()?.trim() || process.env.OPENFDA_API_KEY?.trim() || undefined;
+}
+
 /**
- * openFDA is free with no API key. Stay well under the anonymous rate limit
- * so typing-driven searches never 429 the pane.
+ * openFDA is free without a key (40 req/min). A personal key raises that to
+ * 240/min. Stay well under the anonymous cap so typing-driven searches never
+ * 429 the pane when no key is attached.
  */
 const openFdaFetch = createThrottledFetch({
   requestsPerMinute: 20,
@@ -114,6 +125,8 @@ function endpointUrl(path: string, search: string | undefined, limit: number, so
   if (search) params.set("search", search);
   params.set("limit", String(limit));
   params.set("sort", sort);
+  const key = resolveOpenFdaApiKey();
+  if (key) params.set("api_key", key);
   return `${OPENFDA_API_BASE_URL}${path}?${params.toString()}`;
 }
 

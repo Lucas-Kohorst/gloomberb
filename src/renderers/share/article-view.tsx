@@ -159,17 +159,9 @@ export function ArticleShareView({
 
   const published = formatShareTimestamp(payload.publishedAt);
   const byline = payload.source || payload.publicationName || "";
-  const footer = (
-    <>
-      {[byline, published].filter(Boolean).join(" · ")}
-      {payload.url ? (
-        <>
-          {byline || published ? " · " : null}
-          <a href={payload.url} target="_blank" rel="noreferrer noopener">view original</a>
-        </>
-      ) : null}
-    </>
-  );
+  const footer = payload.url
+    ? <a href={payload.url} target="_blank" rel="noreferrer noopener">view original</a>
+    : null;
 
   return (
     <ShareShell
@@ -179,6 +171,12 @@ export function ArticleShareView({
       onArchive={archive.archive}
       archiveEnabled={archive.enabled}
     >
+      {byline || published ? (
+        <p className="share-meta">
+          {byline ? <span>Source: {byline}</span> : null}
+          {published ? <span>Publication Date: {published}</span> : null}
+        </p>
+      ) : null}
       {payload.subtitle ? <p className="share-subtitle">{payload.subtitle}</p> : null}
 
       {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
@@ -224,7 +222,7 @@ export function ArticleShareView({
                 <span className="share-item-meta">
                   {[item.sourceName, formatShareTimestamp(item.publishedAt)]
                     .filter(Boolean)
-                    .join(" · ")}
+                    .join(" ")}
                 </span>
               </li>
             ))}

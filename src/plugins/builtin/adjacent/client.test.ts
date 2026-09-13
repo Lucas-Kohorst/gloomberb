@@ -4,6 +4,10 @@ import {
   filingKind,
   filingListTimestamp,
   filingListTitle,
+  filingPublishedAt,
+  filingRelativeTimeRevision,
+  filingSeenAt,
+  formatFilingDay,
   stripLeadingHeading,
   stripMarkdownHeader,
 } from "./filings-format";
@@ -236,12 +240,12 @@ describe("AdjacentClient paths", () => {
     expect(url.searchParams.get("per_page")).toBe("10");
   });
 
-  test("asks Adjacent for most recent status-date filings first", async () => {
+  test("asks Adjacent for most recently seen filings first", async () => {
     setHosted(false);
     mockFetch({ data: [], meta: {} });
     await loadCftcFilings(new AdjacentClient(), "", 100);
     const url = new URL(requested[0]!.url);
-    expect(url.searchParams.get("sort")).toBe("status_date");
+    expect(url.searchParams.get("sort")).toBe("first_seen");
     expect(url.searchParams.get("sort_dir")).toBe("desc");
     expect(url.searchParams.get("per_page")).toBe("100");
   });
@@ -356,8 +360,8 @@ describe("filingListTitle", () => {
   });
 });
 
-describe("filingListTimestamp", () => {
-  test("uses status date over ingest time", () => {
+describe("filing published vs seen", () => {
+  test("published is CFTC status date, seen is Adjacent ingest", () => {
     const statusDate = new Date("2026-09-10T00:00:00.000Z");
     const firstSeenAt = new Date("2026-08-27T12:34:56.000Z");
     const filing: CftcFiling = {
@@ -371,23 +375,30 @@ describe("filingListTimestamp", () => {
       docCount: 1,
     };
 
+    expect(filingPublishedAt(filing)).toBe(statusDate);
+    expect(filingSeenAt(filing)).toBe(firstSeenAt);
     expect(filingListTimestamp(filing)).toBe(statusDate);
+    expect(formatFilingDay(statusDate)).toBe("9/10/26");
   });
 
-  test("falls back to lastSeenAt, then firstSeenAt", () => {
-    const lastSeenAt = new Date("2026-09-04T12:34:56.000Z");
-    const statusDate = new Date("2026-09-03T00:00:00.000Z");
-    expect(filingListTimestamp({
-      id: 1,
+  test("relative-time revision steps when the seen label would tick", () => {
+    const filing: CftcFiling = {
+      id: 4,
       feed: "dcm_products",
       title: "A filing",
       orgCode: "KEX",
       status: "Certified",
-      statusDate,
-      lastSeenAt,
+      statusDate: new Date(Date.now() - 26 * 60 * 60_000),
+      firstSeenAt: new Date(Date.now() - 6 * 60_000),
       docCount: 1,
-    })).toBe(statusDate);
-    expect(filingListTimestamp({
+    };
+    expect(filingRelativeTimeRevision(filing)).toBe("6m ago");
+  });
+
+  test("seen falls back to lastSeenAt; published falls back to receiptDate", () => {
+    const lastSeenAt = new Date("2026-09-04T12:34:56.000Z");
+    const receiptDate = new Date("2026-09-01T00:00:00.000Z");
+    expect(filingSeenAt({
       id: 2,
       feed: "dcm_products",
       title: "A filing",
@@ -397,8 +408,18 @@ describe("filingListTimestamp", () => {
       lastSeenAt,
       docCount: 1,
     })).toBe(lastSeenAt);
-    expect(filingListTimestamp({
+    expect(filingPublishedAt({
       id: 3,
+      feed: "dcm_products",
+      title: "A filing",
+      orgCode: "KEX",
+      status: "Certified",
+      statusDate: new Date(0),
+      receiptDate,
+      docCount: 1,
+    })).toBe(receiptDate);
+    expect(filingListTimestamp({
+      id: 4,
       feed: "dcm_products",
       title: "A filing",
       orgCode: "KEX",

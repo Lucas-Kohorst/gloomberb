@@ -121,6 +121,7 @@ export async function writeSharePage(options: {
   outdir: string;
   title: string;
   loadingText: string;
+  sameOriginApi?: boolean;
 }): Promise<string> {
   const result = await Bun.build({
     entrypoints: [join(SHARE_VIEW_DIR, "share-main.tsx")],
@@ -132,7 +133,10 @@ export async function writeSharePage(options: {
     splitting: true,
     sourcemap: "external",
     minify: true,
-    define: { "process.env.NODE_ENV": "\"production\"" },
+    define: {
+      "process.env.NODE_ENV": "\"production\"",
+      __GLOOMBERB_API_URL__: options.sameOriginApi ? "location.origin" : JSON.stringify(""),
+    },
   });
   if (!result.success) {
     const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");

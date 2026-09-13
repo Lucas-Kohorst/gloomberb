@@ -154,4 +154,9 @@ describe("url builders", () => {
       "https://api.opencorporates.com/v0.4/companies/us_de/123456",
     );
   });
+
+  test("attaches api_token when a personal key is supplied", () => {
+    expect(new URL(buildSearchUrl("Acme Ltd", "oc-token")).searchParams.get("api_token")).toBe("oc-token");
+    expect(new URL(buildCompanyUrl("us_de", "123456", "oc-token")).searchParams.get("api_token")).toBe("oc-token");
+  });
 });

@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { createShare, deleteShare, getShare, openLiveShareUrl, publicShareUrl, SHARE_API_ORIGIN } from "./api";
+import {
+  createShare,
+  deleteShare,
+  getNewsShare,
+  getShare,
+  NEWS_INDEX_API_ORIGIN,
+  openLiveShareUrl,
+  publicShareUrl,
+  registerNewsShare,
+  SHARE_API_ORIGIN,
+} from "./api";
 import { parseSharePayload } from "./payload";
 
 const article = { kind: "article", data: { title: "AAPL", text: "Research", sourceUrl: "https://example.com/a" } } as const;
@@ -126,5 +136,42 @@ describe("share API client", () => {
     ]);
     expect(publicShareUrl(shareId)).toBe(`https://terminal.kohor.st/s/${shareId}`);
     expect(openLiveShareUrl(shareId)).toBe(`https://terminal.kohor.st/api/shares/${shareId}/open`);
+  });
+
+  test("looks up and registers canonical news shares on the hosted index", async () => {
+    const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      urls.push(`${init?.method ?? "GET"} ${String(url)}`);
+      if (init?.method === "PUT") return Response.json({ shareId }, { status: 201 });
+      return Response.json({
+        ...article,
+        shareId,
+        createdAt: "2026-08-21T00:00:00Z",
+        expiresAt: "2026-09-20T00:00:00Z",
+      });
+    }) as typeof fetch;
+    const share = await getNewsShare(articleId, fetchImpl);
+    expect(share?.id).toBe(shareId);
+    expect(share?.kind).toBe("article");
+    expect(await registerNewsShare(articleId, shareId, fetchImpl)).toBe(true);
+    expect(urls).toEqual([
+      `GET ${NEWS_INDEX_API_ORIGIN}/news/${articleId}`,
+      `PUT ${NEWS_INDEX_API_ORIGIN}/news/${articleId}`,
+    ]);
+  });
+
+  test("loads leftover hosted short ids from this origin", async () => {
+    const shortId = "Xk9mQ2nLp4Ab";
+    const share = await getShare(shortId, async (url) => {
+      expect(String(url)).toBe(`${NEWS_INDEX_API_ORIGIN}/share/${shortId}`);
+      return Response.json({
+        ...article,
+        createdAt: "2026-08-21T00:00:00Z",
+      });
+    });
+    expect(share?.kind).toBe("article");
+    expect(share?.createdAt).toBe("2026-08-21T00:00:00Z");
+    expect(share?.expiresAt).toBeTruthy();
   });
 });

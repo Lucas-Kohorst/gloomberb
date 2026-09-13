@@ -38,6 +38,13 @@ export interface MarketSummaryFit {
  * header therefore sheds the countdown, then the currency, then the state, and
  * keeps SPY longest. `countdownWidth` is what the suffix adds to the label.
  */
+/** State and countdown share one label; a space, never a middot. */
+export function formatMarketLabel(stateLabel: string, countdown: string | null | undefined): string {
+  if (!stateLabel) return "";
+  if (!countdown) return stateLabel;
+  return `${stateLabel} ${countdown}`;
+}
+
 export function resolveMarketSummaryFit(options: {
   available: number;
   baseCurrencyWidth: number;
@@ -94,9 +101,7 @@ export function useMarketSummary(): MarketSummary {
 
   const mktCountdown = mktState ? marketStateCountdown(mktState, now) : null;
   const marketLabelShort = mktState ? t(marketStateLabel(mktState)) : "";
-  const marketLabel = marketLabelShort && mktCountdown
-    ? `${marketLabelShort} · ${mktCountdown}`
-    : marketLabelShort;
+  const marketLabel = formatMarketLabel(marketLabelShort, mktCountdown);
 
   return {
     baseCurrency,

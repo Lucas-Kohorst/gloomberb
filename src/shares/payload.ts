@@ -35,15 +35,51 @@ export interface ChartShareData {
   title: string;
   series: Array<{
     name: string;
-    points: Array<{ x: string | number; y: number }>;
+    points: Array<{
+      x: string | number;
+      y: number;
+      o?: number;
+      h?: number;
+      l?: number;
+      c?: number;
+    }>;
+    color?: string;
+    style?: SeriesStyle;
+    axis?: "left" | "right";
+    panelId?: string;
+    unit?: string;
   }>;
   sourceUrl?: string;
+  capturedAt?: string;
+  panels?: ChartSharePanel[];
+  spec?: ChartSpec;
+  window?: { start: string; end: string };
 }
 
 export interface ArticleShareData {
   title: string;
   text: string;
   sourceUrl?: string;
+  /** Reader fields persisted on Cloud so `/s/{id}` can render ArticleShareView. */
+  type?: "news" | "substack";
+  id?: string;
+  source?: string;
+  publishedAt?: string;
+  summary?: string;
+  items?: ArticleShareStoryItem[];
+  subtitle?: string;
+  publicationName?: string;
+  publicationBaseUrl?: string;
+  slug?: string;
+  previewText?: string;
+  bodyHtml?: string;
+  imageUrls?: string[];
+  wordCount?: number;
+  readMinutes?: number;
+  topics?: string[];
+  categories?: string[];
+  tickers?: string[];
+  importance?: number;
 }
 
 export interface ArticleShareStoryItem {
@@ -433,4 +469,130 @@ export function decodeArticleSharePayload(encoded: string): ArticleSharePayload 
 
 export function encodeArticleSharePayload(payload: ArticleSharePayload): string {
   return base64urlEncode(JSON.stringify(payload));
+}
+
+/** Envelope body Cloud will store. Keeps `title`/`text` for old readers. */
+export function articleShareStoreData(article: ArticleSharePayload): ArticleShareData {
+  const text = [
+    article.subtitle,
+    article.summary || article.previewText,
+  ].filter((value): value is string => !!value?.trim()).join("\n\n").slice(0, MAX_TEXT_LENGTH);
+  return {
+    title: article.title.slice(0, MAX_ARTICLE_TITLE_LENGTH),
+    text: text || article.title.slice(0, MAX_TEXT_LENGTH),
+    ...(article.url ? { sourceUrl: article.url } : {}),
+    type: article.type,
+    id: article.id,
+    source: article.source,
+    ...(article.publishedAt ? { publishedAt: article.publishedAt } : {}),
+    ...(article.summary ? { summary: article.summary } : {}),
+    ...(article.items?.length ? { items: article.items } : {}),
+    ...(article.subtitle ? { subtitle: article.subtitle } : {}),
+    ...(article.publicationName ? { publicationName: article.publicationName } : {}),
+    ...(article.publicationBaseUrl ? { publicationBaseUrl: article.publicationBaseUrl } : {}),
+    ...(article.slug ? { slug: article.slug } : {}),
+    ...(article.previewText ? { previewText: article.previewText } : {}),
+    ...(article.bodyHtml ? { bodyHtml: article.bodyHtml } : {}),
+    ...(article.imageUrls?.length ? { imageUrls: article.imageUrls } : {}),
+    ...(article.wordCount ? { wordCount: article.wordCount } : {}),
+    ...(article.readMinutes ? { readMinutes: article.readMinutes } : {}),
+    ...(article.topics?.length ? { topics: article.topics } : {}),
+    ...(article.categories?.length ? { categories: article.categories } : {}),
+    ...(article.tickers?.length ? { tickers: article.tickers } : {}),
+    ...(article.importance != null ? { importance: article.importance } : {}),
+  };
+}
+
+/** Rebuild the reader payload from a Cloud envelope, including legacy title+text shares. */
+export function articleShareFromStored(data: ArticleShareData): ArticleSharePayload {
+  const url = data.sourceUrl ?? "";
+  const parsed = parseArticleSharePayload({
+    type: data.type ?? "news",
+    id: data.id ?? data.title,
+    title: data.title,
+    url,
+    source: data.source ?? data.publicationName ?? "",
+    summary: data.summary ?? data.previewText ?? data.text,
+    publishedAt: data.publishedAt,
+    items: data.items,
+    subtitle: data.subtitle,
+    publicationName: data.publicationName,
+    publicationBaseUrl: data.publicationBaseUrl,
+    slug: data.slug,
+    previewText: data.previewText,
+    bodyHtml: data.bodyHtml,
+    imageUrls: data.imageUrls,
+    wordCount: data.wordCount,
+    readMinutes: data.readMinutes,
+    topics: data.topics,
+    categories: data.categories,
+    tickers: data.tickers,
+    importance: data.importance,
+  });
+  if (parsed) {
+    return {
+      ...parsed,
+      url: parsed.url || url,
+      summary: parsed.summary || data.text,
+    };
+  }
+  return {
+    type: "news",
+    id: data.title,
+    title: data.title,
+    url,
+    source: data.source ?? "",
+    summary: data.text,
+    publishedAt: data.publishedAt,
+  };
+}
+
+const CHART_SHARE_FALLBACK_COLORS = ["#00cc66", "#4ea1ff", "#e0a458", "#c56cf0", "#e06256"];
+
+export function chartShareFromStored(data: ChartShareData): ChartSharePayload {
+  const series = data.series.map((entry, index) => ({
+    id: `s${index}`,
+    label: entry.name,
+    color: entry.color || CHART_SHARE_FALLBACK_COLORS[index % CHART_SHARE_FALLBACK_COLORS.length]!,
+    style: entry.style ?? "line",
+    axis: entry.axis ?? "left",
+    panelId: entry.panelId ?? "main",
+    ...(entry.unit ? { unit: entry.unit } : {}),
+    points: entry.points.map((point) => ({
+      t: typeof point.x === "number" ? point.x : Date.parse(String(point.x)) || 0,
+      v: point.y,
+      ...(point.o != null ? { o: point.o } : {}),
+      ...(point.h != null ? { h: point.h } : {}),
+      ...(point.l != null ? { l: point.l } : {}),
+      ...(point.c != null ? { c: point.c } : {}),
+    })),
+  }));
+  const panelIds = [...new Set(series.map((entry) => entry.panelId))];
+  return {
+    title: data.title,
+    capturedAt: data.capturedAt ?? "",
+    panels: data.panels?.length
+      ? data.panels
+      : panelIds.map((id) => ({ id })),
+    series,
+    ...(data.window ? { window: data.window } : {}),
+    ...(data.spec ? { spec: data.spec } : {}),
+  };
+}
+
+export function tableShareFromStored(data: TableShareData): TableSharePayload {
+  const sourceKey = data.columns.some((column) => column.key === "source") ? "source" : null;
+  const columns = data.columns.filter((column) => column.key !== sourceKey);
+  return {
+    title: data.title,
+    capturedAt: "",
+    columns: columns.map((column) => ({ id: column.key, label: column.label })),
+    rows: data.rows.map((row) => {
+      const url = sourceKey && typeof row[sourceKey] === "string" ? String(row[sourceKey]) : "";
+      return {
+        cells: columns.map((column) => ({ text: String(row[column.key] ?? "") })),
+        ...(url ? { url } : {}),
+      };
+    }),
+  };
 }
