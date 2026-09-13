@@ -4,8 +4,8 @@ import { capturePointerDrag } from "../../../../ui/pointer-drag";
 import { resizedColumnWidth } from "../../../data-table/column-widths";
 import { hoverBg } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
-import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
-import { useViewport } from "../../../../react/input";
+import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../../state/app/context";
+import { useShortcut, useViewport } from "../../../../react/input";
 import { measurePerf } from "../../../../utils/perf-marks";
 import { useDoubleClickActivation } from "../../../use-double-click-activation";
 import { useScrollBoxScrollActivity } from "../../../table-view-shared";
@@ -353,6 +353,17 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
   }, [dispatch, paneInstanceId]);
+  const paneFocused = useAppSelector((state) => state.focusedPaneId === paneInstanceId);
+  const lastResizeClickRef = useRef<{ columnId: string; time: number } | null>(null);
+  useShortcut((event) => {
+    if (!event.alt || event.ctrl || event.meta || event.shift || event.name !== "0") return;
+    const column = displayColumns.find((item) => item.id === sortColumnId) ?? displayColumns[0];
+    if (!column) return;
+    event.preventDefault();
+    event.stopPropagation();
+    lastResizeClickRef.current = null;
+    onColumnResizeReset?.(column.id);
+  }, { enabled: paneInstanceId !== null && paneFocused && Boolean(onColumnResizeReset), phase: "before" });
   const headerRowRef = useRef<unknown>(null);
   const columnResizeRef = useRef<{
     columnId: string;
@@ -370,6 +381,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     const nextX = typeof event?.x === "number" ? event.x : session.startX;
     const nextWidth = resizedColumnWidth(session.startWidth, nextX - session.startX);
     if (nextWidth === session.lastWidth) return;
+    lastResizeClickRef.current = null;
     session.lastWidth = nextWidth;
     onColumnResize(session.columnId, nextWidth);
   }, [onColumnResize]);
@@ -545,10 +557,16 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                       event.preventDefault();
                       event.stopPropagation?.();
                       focusPane();
-                      if (typeof event?.detail === "number" && event.detail >= 2) {
+                      if (event.button !== 0) return;
+                      const now = performance.now();
+                      const previous = lastResizeClickRef.current;
+                      if (previous?.columnId === column.id && now - previous.time <= 400) {
+                        lastResizeClickRef.current = null;
+                        columnResizeRef.current = null;
                         onColumnResizeReset?.(column.id);
                         return;
                       }
+                      lastResizeClickRef.current = { columnId: column.id, time: now };
                       const startX = typeof event?.x === "number" ? event.x : 0;
                       startColumnResize(column.id, column.width, startX);
                     }}
