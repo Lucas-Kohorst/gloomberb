@@ -170,7 +170,7 @@
     {
       "id": "courtlistener",
       "name": "CourtListener",
-      "description": "Search federal and state court opinions by company name via the free CourtListener API. No API key required.",
+      "description": "Federal PACER dockets and opinions via CourtListener. Empty search is the last week of new cases; LAW Kalshi searches that party.",
       "categories": [
         "research",
         "data"
@@ -411,6 +411,23 @@
           "sectors",
           "world-indices",
           "world-venue-map"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "nasa-firms",
+      "name": "NASA FIRMS",
+      "description": "Near-real-time active fire detection from NASA MODIS and VIIRS satellites.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "fire-detection"
         ],
         "capabilities": [],
         "broker": false
