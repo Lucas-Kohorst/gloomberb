@@ -573,6 +573,23 @@ describe("canonical news share index", () => {
     expect((await response.json() as { data: { text: string } }).data.text).toBe("Trusted provider body");
   });
 
+  test("registered canonical articles remain public when the provider requires authentication", async () => {
+    installCloudShares({ [shareId]: cloudArticle });
+    const env = makeEnv();
+    const registered = await workerModule.default.fetch(makeRequest("PUT", `/api/news/${articleId}`, {
+      origin: ORIGIN, sessionToken: "owner-token", body: JSON.stringify({ shareId }),
+    }), env);
+    expect(registered.status).toBe(201);
+    const provider = globalThis.fetch;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      if (String(input).includes("/news/")) return new Response("{}", { status: 401 });
+      return provider(input, init);
+    }) as typeof fetch;
+    const response = await workerModule.default.fetch(makeRequest("GET", `/api/news/${articleId}`), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as { data: { text: string } }).data.text).toBe("Trusted provider body");
+  });
+
   test("PUT then GET resolves the Cloud snapshot by article id", async () => {
     installCloudShares({ [shareId]: cloudArticle });
     const env = makeEnv();

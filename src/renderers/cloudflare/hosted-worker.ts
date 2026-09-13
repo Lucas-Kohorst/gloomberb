@@ -202,8 +202,8 @@ async function loadIndexedNewsShare(
     await env.SHARES.delete(newsIndexKey(articleId));
     return null;
   }
-  const payload = await readTrustedNewsArticle(env, articleId);
-  if (!payload) return null;
+  const payload = record.verifiedArticle ?? await readTrustedNewsArticle(env, articleId);
+  if (!payload || payload.kind !== "article" || payload.data.id !== articleId) return null;
   return { shareId: record.shareId, payload, body: live.body };
 }
 
@@ -283,12 +283,12 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
   const live = await readCloudShare(env, requestedShareId, token);
   if (!live) return newsIndexResponse({ error: "Share not found." }, 404);
   if (live.body.ownedByViewer !== true) return newsIndexResponse({ error: "Only the share owner can register it." }, 403);
-  if (live.payload.kind !== "article" || live.payload.data.id !== articleId
-    || !await readTrustedNewsArticle(env, articleId, token)) {
+  const verifiedArticle = await readTrustedNewsArticle(env, articleId, token);
+  if (live.payload.kind !== "article" || live.payload.data.id !== articleId || !verifiedArticle) {
     return newsIndexResponse({ error: "Share does not match this article." }, 409);
   }
 
-  await env.SHARES.put(newsIndexKey(articleId), serializeNewsIndexRecord(requestedShareId), {
+  await env.SHARES.put(newsIndexKey(articleId), serializeNewsIndexRecord(requestedShareId, verifiedArticle), {
     expirationTtl: NEWS_INDEX_TTL_SECONDS,
   });
   return newsIndexResponse({ shareId: requestedShareId }, 201);
