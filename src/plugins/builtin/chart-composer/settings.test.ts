@@ -10,6 +10,7 @@ import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   applyChartComposerPaneSetting,
   buildChartComposerPaneSettingsDef,
+  CHART_RANGE_SYNC_SETTING_KEY,
   CHART_SETTING_KEYS,
   getChartInlineStyleTarget,
 } from "./settings";
@@ -36,6 +37,7 @@ describe("chart composer pane settings", () => {
       CHART_SETTING_KEYS.dateWindow,
       CHART_SETTING_KEYS.range,
       CHART_SETTING_KEYS.resolution,
+      CHART_RANGE_SYNC_SETTING_KEY,
       CHART_SETTING_KEYS.mode,
       CHART_SETTING_KEYS.scale,
       CHART_SETTING_KEYS.timeZone,
@@ -46,6 +48,7 @@ describe("chart composer pane settings", () => {
       [CHART_SETTING_KEYS.formulas]: [],
       [CHART_SETTING_KEYS.range]: "5Y",
       [CHART_SETTING_KEYS.resolution]: "auto",
+      [CHART_RANGE_SYNC_SETTING_KEY]: true,
       [CHART_SETTING_KEYS.mode]: "candles",
       [CHART_SETTING_KEYS.scale]: "linear",
       [CHART_SETTING_KEYS.timeZone]: "UTC",

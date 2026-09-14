@@ -5,6 +5,7 @@ export {
 } from "./price-series";
 export type {
   BuildCompositeChartSceneOptions,
+  CompositeAdoptedViewport,
   CompositeAxisDomain,
   CompositeAxisSide,
   CompositeChartColors,

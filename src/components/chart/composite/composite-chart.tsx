@@ -1627,6 +1627,7 @@ export function CompositeChart({
   cursorDate,
   viewport,
   viewportResetKey,
+  adoptedViewport,
   colors,
   interactive = true,
   navigable = true,
@@ -1764,7 +1765,7 @@ export function CompositeChart({
   const userViewportStart = activeUserViewport?.start.getTime() ?? null;
   const userViewportEnd = activeUserViewport?.end.getTime() ?? null;
   const lastReportedViewportRef = useRef<string | null>(null);
-  const viewportInteractionRef = useRef<"pan" | "reset" | "zoom">("reset");
+  const viewportInteractionRef = useRef<"pan" | "reset" | "zoom" | "sync">("reset");
   useEffect(() => {
     if (!onViewportChange) return;
     const key = userViewportStart === null || userViewportEnd === null
@@ -1790,10 +1791,32 @@ export function CompositeChart({
     previousAuthoredViewportRef.current = viewport ?? null;
     previousViewportResetKeyRef.current = viewportResetKey;
     if (authoredViewportChanged && userViewport) {
-      viewportInteractionRef.current = "reset";
+      // The authored viewport moved under the user, so this reset is a
+      // consequence of that change, not a gesture of its own.
+      viewportInteractionRef.current = "sync";
       setUserViewport(null);
     }
   }, [authoredViewportChanged, userViewport, viewport, viewportResetKey]);
+
+  // An externally synced window adopts the user's navigation slot once per key,
+  // exactly as if the user had navigated there. The adoption echoes back as a
+  // "sync" viewport change so the owner persists it without re-broadcasting it.
+  const adoptedViewportKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!adoptedViewport || adoptedViewportKeyRef.current === adoptedViewport.key) return;
+    if (!adoptedViewport.viewport) {
+      adoptedViewportKeyRef.current = adoptedViewport.key;
+      viewportInteractionRef.current = "sync";
+      setUserViewport(null);
+      return;
+    }
+    // Wait for a navigation frame so the adopted window can be fitted to the
+    // loaded data exactly like a local gesture would be.
+    if (!navigationFrame) return;
+    adoptedViewportKeyRef.current = adoptedViewport.key;
+    viewportInteractionRef.current = "sync";
+    setUserViewport(clampCompositeViewport(navigationFrame, adoptedViewport.viewport));
+  }, [adoptedViewport, navigationFrame]);
 
   const navigate = useCallback((
     kind: "pan" | "zoom",

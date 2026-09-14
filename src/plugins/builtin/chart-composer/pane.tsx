@@ -11,7 +11,7 @@ import {
   MultiSelectDialogButton,
   type MultiSelectDialogButtonHandle,
 } from "../../../components/ui";
-import { CompositeChart } from "../../../components/chart/composite";
+import { CompositeChart, type CompositeAdoptedViewport } from "../../../components/chart/composite";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
 import type { ChartSeriesSource, ChartSpec, ResolvedSeries } from "../../../time-series/types";
@@ -74,11 +74,20 @@ import {
 import type { ChartInteractionViewport } from "./chart-spec";
 import {
   CHART_FORMULA_OPTIONS,
+  CHART_RANGE_SYNC_SETTING_KEY,
   CHART_RANGES as RANGES,
   CHART_STUDY_OPTIONS,
   CHART_TIME_ZONE_OPTIONS,
 } from "./settings";
 import { resolveChartComposerShortcut } from "./shortcuts";
+import {
+  chartRangeSyncWindowDates,
+  mergeSyncedChartViewport,
+  publishChartRangeSync,
+  subscribeChartRangeSync,
+  type ChartRangeSyncUpdate,
+  type ChartRangeSyncWindow,
+} from "./range-sync";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { usePublicShare } from "../shared/public-share";
@@ -162,6 +171,19 @@ function ChartComposerSurface({
   const paneId = usePaneInstanceId();
   const liveStreaming = useLiveStreamingSetting();
   const dialogOpen = useDialogState((state) => state.isOpen);
+  const { symbol: paneTicker } = usePaneTicker();
+  const [rangeSyncEnabled] = usePaneSettingValue<boolean>(CHART_RANGE_SYNC_SETTING_KEY, true);
+  // Chart surfaces that resolve the same ticker move together: user range,
+  // interval, and navigation changes fan out to live peers, and every apply
+  // rides the same chartSpec persistence path as a local edit.
+  const publishRangeSync = useCallback((update: {
+    range: TimeRange;
+    interval: ChartResolution;
+    window?: ChartRangeSyncWindow | null;
+  }) => {
+    if (!paneTicker || !rangeSyncEnabled) return;
+    publishChartRangeSync({ ...update, ticker: paneTicker, originPaneId: paneId });
+  }, [paneId, paneTicker, rangeSyncEnabled]);
   const authoredViewportKey = useMemo(() => JSON.stringify({
     range: spec.viewport.range,
     resolution: spec.viewport.resolution,
@@ -194,6 +216,10 @@ function ChartComposerSurface({
   const [runtimeViewportState, setRuntimeViewportState] = useState<RuntimeChartViewportState | null>(() => (
     runtimeViewportFromSetting(persistedInteractionViewport, authoredViewportKey)
   ));
+  // A window adopted from a synced peer chart. The counter key makes every
+  // adoption a fresh one for the chart, even when the window repeats.
+  const [adoptedViewport, setAdoptedViewport] = useState<CompositeAdoptedViewport | null>(null);
+  const adoptedViewportCountRef = useRef(0);
   const runtimeViewportTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const adaptiveViewportRef = useRef<RuntimeChartViewport | null>(null);
   const requestViewportRef = useRef<RuntimeChartViewport | null>(null);
@@ -361,7 +387,7 @@ function ChartComposerSurface({
   }, [authoredViewportKey, persistedInteractionViewport, setStoredInteractionViewport]);
   const handleChartViewportChange = useCallback((
     next: { start: Date; end: Date } | null,
-    _interaction: "pan" | "reset" | "zoom",
+    interaction: "pan" | "reset" | "zoom" | "sync",
   ) => {
     if (runtimeViewportTimerRef.current !== null) {
       clearTimeout(runtimeViewportTimerRef.current);
@@ -372,6 +398,16 @@ function ChartComposerSurface({
       requestViewportRef.current = null;
       setRuntimeViewportState(null);
       setStoredInteractionViewport(null);
+      // A user reset returns to the authored viewport, which peers should
+      // follow; "sync" echoes are adoptions or authored resets that the other
+      // panes are already in step with.
+      if (interaction !== "sync") {
+        publishRangeSync({
+          range: spec.viewport.range,
+          interval: spec.viewport.resolution,
+          window: null,
+        });
+      }
       return;
     }
     const start = next.start.getTime();
@@ -400,8 +436,49 @@ function ChartComposerSurface({
         end: requestViewport.end.toISOString(),
         adaptive: adaptiveViewport !== null,
       } satisfies ChartInteractionViewport);
+      if (interaction !== "sync") {
+        publishRangeSync({
+          range: spec.viewport.range,
+          interval: spec.viewport.resolution,
+          window: {
+            start: requestViewport.start.toISOString(),
+            end: requestViewport.end.toISOString(),
+          },
+        });
+      }
     }, AUTO_VIEWPORT_DEBOUNCE_MS);
-  }, [authoredViewportKey, setStoredInteractionViewport, spec.viewport.resolution]);
+  }, [
+    authoredViewportKey,
+    publishRangeSync,
+    setStoredInteractionViewport,
+    spec.viewport.range,
+    spec.viewport.resolution,
+  ]);
+
+  // Applies from synced peers. Assigned during render so the subscription below
+  // can stay keyed to the resolved ticker while always reading fresh state.
+  const applyRangeSyncRef = useRef<(update: ChartRangeSyncUpdate) => void>(() => {});
+  applyRangeSyncRef.current = (update) => {
+    // A gesture or modal in flight on this pane owns the window; leave it be.
+    if (dialogOpen || interactionCaptureRef.current || runtimeViewportTimerRef.current !== null) return;
+    const nextSpec = mergeSyncedChartViewport(spec, update);
+    if (nextSpec) setSpec(nextSpec);
+    if (update.window === undefined) return;
+    const dates = update.window === null ? null : chartRangeSyncWindowDates(update.window);
+    if (update.window !== null && !dates) return;
+    setAdoptedViewport({
+      key: `chart-range-sync:${paneId}:${++adoptedViewportCountRef.current}`,
+      viewport: dates,
+    });
+  };
+
+  useEffect(() => {
+    if (!paneTicker || !rangeSyncEnabled) return undefined;
+    return subscribeChartRangeSync(paneTicker, {
+      paneId,
+      apply: (update) => applyRangeSyncRef.current(update),
+    });
+  }, [paneId, paneTicker, rangeSyncEnabled]);
 
   useRemoteUiNode({
     role: "chart-data",
@@ -434,10 +511,12 @@ function ChartComposerSurface({
       ...spec,
       viewport: { ...spec.viewport, range, dateWindow: undefined, maxPoints: undefined },
     });
-  }, [setSpec, spec]);
+    publishRangeSync({ range, interval: spec.viewport.resolution });
+  }, [publishRangeSync, setSpec, spec]);
   const setResolution = useCallback((next: ChartResolution) => {
     setSpec({ ...spec, viewport: { ...spec.viewport, resolution: next } });
-  }, [setSpec, spec]);
+    publishRangeSync({ range: spec.viewport.range, interval: next });
+  }, [publishRangeSync, setSpec, spec]);
   const openRangePicker = useCallback(async () => {
     const enabledRanges = rangeChoices.filter((choice) => choice.enabled).map((choice) => choice.range);
     setInteractionCaptured("prompt", true);
@@ -773,6 +852,7 @@ function ChartComposerSurface({
           panels={spec.panels}
           viewport={viewport}
           viewportResetKey={authoredViewportKey}
+          adoptedViewport={adoptedViewport}
           width={Math.max(1, width)}
           height={Math.max(4, height - 1)}
           focused={focused}

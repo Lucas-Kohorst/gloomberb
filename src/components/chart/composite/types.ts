@@ -129,6 +129,15 @@ export interface CompositeChartXAxis {
   formatCursor?: (xRatio: number) => string;
 }
 
+/**
+ * A navigation window to adopt from outside the chart, plus a key that changes
+ * whenever a new adoption should take effect.
+ */
+export interface CompositeAdoptedViewport {
+  key: string;
+  viewport: { start: Date; end: Date } | null;
+}
+
 export interface CompositeChartProps {
   series: ResolvedSeries[];
   /** Optional legend model; can include hidden series that are not plotted. */
@@ -159,6 +168,12 @@ export interface CompositeChartProps {
    * viewport updates under the same key are treated as adaptive data refreshes.
    */
   viewportResetKey?: string;
+  /**
+   * Externally driven navigation window, adopted once per `key` change as if
+   * the user had navigated there. A null viewport adopts the authored viewport.
+   * Used to keep peer charts that follow the same ticker in step.
+   */
+  adoptedViewport?: CompositeAdoptedViewport | null;
   colors?: Partial<CompositeChartColors>;
   axisWidth?: number;
   showLegend?: boolean;
@@ -170,10 +185,15 @@ export interface CompositeChartProps {
   emptyMessage?: string;
   formatValue?: (value: number, series: ResolvedSeries) => string;
   onCursorDateChange?: (date: Date | null) => void;
-  /** Reports a user-created viewport, or null when the user resets to the authored viewport. */
+  /**
+   * Reports a navigation viewport, or null when the viewport reset to the
+   * authored one. `pan`, `reset`, and `zoom` are user gestures; `sync` marks
+   * programmatic changes (authored-viewport resets and externally synced
+   * windows) so owners can persist them without treating them as user input.
+   */
   onViewportChange?: (
     viewport: { start: Date; end: Date } | null,
-    interaction: "pan" | "reset" | "zoom",
+    interaction: "pan" | "reset" | "zoom" | "sync",
   ) => void;
   onActivate?: () => void;
   /** Overlay another ticker when `c` is pressed with no drawing selected. */
