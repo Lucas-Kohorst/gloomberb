@@ -22,7 +22,7 @@ import {
   type StackSortPreference,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatPercentRaw } from "../../../utils/format";
+import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/format";
 import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
 import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
 import { searchRelatedNews } from "../news/wire/article-search";
@@ -82,8 +82,8 @@ export function createIndexColumns(): IndexColumn[] {
     { id: "ticker", label: "TICKER", width: 8, align: "left" },
     { id: "name", label: "NAME", width: 10, align: "left", flexGrow: 1 },
     { id: "value", label: "VALUE", width: 8, align: "right" },
-    { id: "chg1d", label: "1D", width: 7, align: "right" },
-    { id: "chg7d", label: "7D", width: 7, align: "right" },
+    { id: "chg1d", label: "1D%", width: 7, align: "right" },
+    { id: "chg7d", label: "7D%", width: 7, align: "right" },
   ];
 }
 
@@ -91,8 +91,8 @@ const INDEX_SHARE_COLUMNS: TableShareColumn[] = [
   { id: "ticker", label: "Ticker" },
   { id: "name", label: "Name" },
   { id: "value", label: "Value", align: "right" },
-  { id: "chg1d", label: "1D", align: "right" },
-  { id: "chg7d", label: "7D", align: "right" },
+  { id: "chg1d", label: "1D%", align: "right" },
+  { id: "chg7d", label: "7D%", align: "right" },
 ];
 
 function renderIndexCell(
@@ -111,10 +111,10 @@ function renderIndexCell(
       return { text: row.value.toFixed(1), color: sel };
     case "chg1d":
       if (row.change1d == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.change1d), color: priceColor(row.change1d) };
+      return { text: formatSignedPercentValue(row.change1d), color: priceColor(row.change1d) };
     case "chg7d":
       if (row.change7d == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.change7d), color: priceColor(row.change7d) };
+      return { text: formatSignedPercentValue(row.change7d), color: priceColor(row.change7d) };
   }
 }
 

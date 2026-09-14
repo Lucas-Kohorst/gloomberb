@@ -19,7 +19,7 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatPercentRaw } from "../../../utils/format";
+import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/format";
 import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
 import {
   applySortPreference,
@@ -53,8 +53,8 @@ export function createRateColumns(): RateColumn[] {
   return [
     { id: "name", label: "RATE", width: 10, align: "left", flexGrow: 1 },
     { id: "value", label: "VALUE", width: 10, align: "right" },
-    { id: "chg1d", label: "1D", width: 7, align: "right" },
-    { id: "spread", label: "SPREAD", width: 8, align: "right" },
+    { id: "chg1d", label: "1D%", width: 7, align: "right" },
+    { id: "spread", label: "SPREAD%", width: 8, align: "right" },
   ];
 }
 
@@ -72,10 +72,10 @@ function renderRateCell(
       return { text: row.value.toFixed(2), color: sel };
     case "chg1d":
       if (row.change1d == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.change1d), color: priceColor(row.change1d) };
+      return { text: formatSignedPercentValue(row.change1d), color: priceColor(row.change1d) };
     case "spread":
       if (row.spread == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.spread), color: priceColor(row.spread) };
+      return { text: formatSignedPercentValue(row.spread), color: priceColor(row.spread) };
   }
 }
 
