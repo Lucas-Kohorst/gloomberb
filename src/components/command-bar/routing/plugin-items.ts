@@ -24,8 +24,8 @@ export function buildMarketplaceJumpItem(pluginRegistry: PluginRegistry): Result
     detail: "Search installed and GitHub plugins, then install, toggle, update, or remove",
     category: "Plugins",
     kind: "action",
-    right: "PLUGINS",
-    shortcutQuery: "PLUGINS",
+    right: "PLUG",
+    shortcutQuery: "PLUG",
     defaultSelectable: false,
     action: () => {
       pluginRegistry.createPaneFromTemplate(PLUGIN_MARKETPLACE_TEMPLATE_ID);

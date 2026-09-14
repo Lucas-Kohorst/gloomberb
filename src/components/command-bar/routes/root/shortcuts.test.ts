@@ -239,7 +239,7 @@ describe("ticker data root shortcuts", () => {
       paneId: "plugin-marketplace",
       label: "Plugin Marketplace",
       description: "Search installed and GitHub plugins",
-      shortcut: { prefix: "PLUGINS", aliases: ["PLUG", "PL"] },
+      shortcut: { prefix: "PLUG", aliases: ["PLUGINS", "PL"] },
     }];
     const parseAlias = (query: string) => parseRootShortcutIntent({
       query,
