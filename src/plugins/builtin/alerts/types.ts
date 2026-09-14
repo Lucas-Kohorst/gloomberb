@@ -24,6 +24,8 @@ export interface AlertRule {
   targetText?: string;
   createdAt: number;
   status: AlertStatus;
+  /** While in the future, the poll loop skips evaluation (status stays "active"); expiry re-arms silently. */
+  snoozedUntil?: number;
   triggeredAt?: number;
   lastCheckedPrice?: number;
   lastCheckedAt?: number;

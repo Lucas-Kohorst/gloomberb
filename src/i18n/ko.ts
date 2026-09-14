@@ -196,6 +196,7 @@ export const ko: Record<string, string> = {
   "Crosses": "돌파",
   "Add Alert": "알림 추가",
   "Set Alert": "알림 설정",
+  "Snooze {minutes}m": "미루기 {minutes}분",
   "Choose a portfolio and optionally record the manual position now.": "포트폴리오를 선택하고 필요하면 수동 포지션을 입력하세요.",
   "Create or update a manual position without leaving the command bar.": "명령 팔레트에서 수동 포지션을 만들거나 업데이트합니다.",
   "Create a new watchlist inside the command bar.": "명령 팔레트에서 새 관심 목록을 만듭니다.",

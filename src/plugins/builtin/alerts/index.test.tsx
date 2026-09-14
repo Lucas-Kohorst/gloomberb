@@ -181,6 +181,7 @@ describe("AlertsPane", () => {
     expect(frame).toContain("MSFT");
     expect(frame).toContain("[a]dd alert");
     expect(frame).toContain("[e]dit");
+    expect(frame).toContain("[s]nooze");
     expect(frame).toContain("[d]elete");
     expect(frame).not.toContain("Add Alert");
     expect(frame).not.toContain("Enter");
@@ -303,6 +304,30 @@ describe("AlertsPane", () => {
 
     expect(storedAlerts().map((alert) => alert.id)).toEqual(["alert-msft"]);
   });
+
+  test("snoozes the selected alert from the keyboard and wakes it from the row action", async () => {
+    testSetup = await testRender(
+      <AlertsHarness alerts={[makeAlert("alert-aapl", "AAPL", "above", 200)]} />,
+      { width: 110, height: 12 },
+    );
+
+    await renderSettled();
+    await act(async () => {
+      await testSetup!.mockInput.typeText("s");
+    });
+    await renderSettled();
+
+    const snoozed = storedAlerts().find((alert) => alert.id === "alert-aapl");
+    expect(snoozed?.status).toBe("active");
+    expect(snoozed?.snoozedUntil).toBeGreaterThan(Date.now());
+    expect(testSetup.captureCharFrame()).toContain("Snooz");
+
+    await clickFrameText("Wake");
+
+    const woken = storedAlerts().find((alert) => alert.id === "alert-aapl");
+    expect(woken?.status).toBe("active");
+    expect(woken?.snoozedUntil).toBeUndefined();
+  });
 });
 
 describe("alertsPlugin command", () => {
@@ -376,6 +401,83 @@ describe("alertsPlugin command", () => {
         status: "active",
       });
       expect(notifications[0]?.body).toContain("AAPL");
+    } finally {
+      alertsPlugin.dispose?.();
+    }
+  });
+});
+
+describe("alertsPlugin poll", () => {
+  test("holds a snoozed alert and wires the trigger toast's snooze action", async () => {
+    const store = new Map<string, unknown>();
+    const notifications: any[] = [];
+    const seededAt = Date.now();
+    store.set("alerts", serializeAlerts([
+      { ...makeAlert("alert-snoozed", "AAPL", "above", 200), snoozedUntil: seededAt + 10 * 60_000 },
+      makeAlert("alert-plain", "MSFT", "above", 300),
+    ]));
+    const ctx = {
+      registerCommand() {},
+      registerPane() {},
+      registerPaneTemplate() {},
+      configState: {
+        get(key: string) {
+          return store.get(key);
+        },
+        set(key: string, value: unknown) {
+          store.set(key, value);
+        },
+      },
+      marketData: {
+        getQuote: async (symbol: string) => ({
+          symbol,
+          price: symbol === "MSFT" ? 350 : 201.5,
+          currency: "USD",
+          change: 1,
+          changePercent: 0.5,
+          lastUpdated: Date.now(),
+          dataSource: "live",
+        }),
+      },
+      notify(notification: any) {
+        notifications.push(notification);
+      },
+      listAlertConditions: () => [],
+      showPane() {},
+      log: { info() {}, warn() {}, error() {} },
+    };
+
+    try {
+      await alertsPlugin.setup?.(ctx as any);
+      // setup() fires the first poll cycle; wait for it to settle.
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (deserializeAlerts(String(store.get("alerts"))).some((a) => a.status === "triggered")) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      const alerts = deserializeAlerts(String(store.get("alerts")));
+      const snoozed = alerts.find((alert) => alert.id === "alert-snoozed");
+      const plain = alerts.find((alert) => alert.id === "alert-plain");
+
+      // 201.5 would satisfy "above 200", but the snooze window held it;
+      // its quote fields still refreshed.
+      expect(snoozed?.status).toBe("active");
+      expect(snoozed?.snoozedUntil).toBe(seededAt + 10 * 60_000);
+      expect(snoozed?.lastCheckedPrice).toBe(201.5);
+      expect(plain?.status).toBe("triggered");
+
+      const trigger = notifications.find((notification) => notification.body.includes("MSFT"));
+      expect(notifications.filter((notification) => notification.body.includes("triggered"))).toHaveLength(1);
+      expect(trigger?.secondaryAction?.label).toBe("Snooze 15m");
+
+      trigger?.secondaryAction?.onClick();
+      const afterSnooze = deserializeAlerts(String(store.get("alerts")))
+        .find((alert) => alert.id === "alert-plain");
+      expect(afterSnooze?.status).toBe("active");
+      expect(afterSnooze?.snoozedUntil).toBeGreaterThan(Date.now());
+      expect(notifications.some((notification) => (
+        notification.type === "info" && notification.body.includes("snoozed 15m")
+      ))).toBe(true);
     } finally {
       alertsPlugin.dispose?.();
     }

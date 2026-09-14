@@ -73,6 +73,14 @@ export function formatAlertDistance(alert: AlertRule): string {
   return `${percent >= 0 ? "+" : ""}${percent.toFixed(decimals)}`;
 }
 
+/** Compact countdown for the alerts pane while an alert is snoozed, e.g. "Snooz 12m"; empty when not snoozed. */
+export function formatSnoozeRemaining(alert: AlertRule, now = Date.now()): string {
+  const until = alert.snoozedUntil;
+  if (until == null || until <= now) return "";
+  const minutes = Math.ceil((until - now) / 60_000);
+  return minutes >= 60 ? `Snooz ${Math.floor(minutes / 60)}h` : `Snooz ${minutes}m`;
+}
+
 export function formatQuoteChecked(alert: AlertRule): string {
   if (alert.lastCheckError) return "No quote";
   if (alert.lastQuoteUpdatedAt) {

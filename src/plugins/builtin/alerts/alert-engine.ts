@@ -61,6 +61,48 @@ export function rearmAlert(alert: AlertRule): AlertRule {
   return editAlert(alert, alert.symbol, alert.condition, alert.targetPrice);
 }
 
+/** True while the alert's snooze window still holds; a missing or past `snoozedUntil` means not snoozed. */
+export function isAlertSnoozed(alert: Pick<AlertRule, "snoozedUntil">, now = Date.now()): boolean {
+  return alert.snoozedUntil != null && alert.snoozedUntil > now;
+}
+
+export type AlertSnoozeState = "snoozed" | "rearmed" | "active";
+
+/**
+ * Snooze gate for one poll cycle. `"snoozed"` while the window still holds —
+ * evaluation is skipped. Once the window passes, the stale `snoozedUntil` is
+ * cleared in place and the alert re-arms silently (`"rearmed"`) so evaluation
+ * resumes without a notification. Alerts without a window report `"active"`.
+ */
+export function resolveAlertSnooze(alert: AlertRule, now = Date.now()): AlertSnoozeState {
+  if (alert.snoozedUntil == null) return "active";
+  if (isAlertSnoozed(alert, now)) return "snoozed";
+  delete alert.snoozedUntil;
+  return "rearmed";
+}
+
+/**
+ * Snoozes an alert for `durationMs`: a triggered alert re-arms (the trigger
+ * and quote lifecycle drop so `crosses` starts from a fresh baseline, the same
+ * contract as `editAlert`) and evaluation is held until the window passes, so
+ * a still-true condition can only re-fire after it. Unlike `editAlert`, the
+ * condition-defining fields (`weather`, `targetText`) survive.
+ */
+export function snoozeAlert(alert: AlertRule, durationMs: number, now = Date.now()): AlertRule {
+  const snoozed: AlertRule = { ...alert, status: "active", snoozedUntil: now + durationMs };
+  if (alert.status === "triggered") {
+    delete snoozed.triggeredAt;
+    delete snoozed.lastCheckedPrice;
+    delete snoozed.lastCheckedAt;
+    delete snoozed.lastCheckError;
+    delete snoozed.lastQuoteUpdatedAt;
+    delete snoozed.lastQuoteSource;
+    delete snoozed.lastQuoteProviderId;
+    delete snoozed.lastWeatherStatus;
+  }
+  return snoozed;
+}
+
 export function evaluateAlert(alert: AlertRule, currentPrice: number): boolean {
   if (alert.status !== "active" || !isPriceAlertCondition(alert.condition)) return false;
 

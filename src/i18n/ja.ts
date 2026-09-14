@@ -198,6 +198,7 @@ export const ja: Record<string, string> = {
   "Crosses": "クロス",
   "Add Alert": "アラートを追加",
   "Set Alert": "アラートを設定",
+  "Snooze {minutes}m": "スヌーズ {minutes}分",
   "Choose a portfolio and optionally record the manual position now.": "ポートフォリオを選択し、必要なら手動ポジションも登録します。",
   "Create or update a manual position without leaving the command bar.": "コマンドバー内で手動ポジションを作成または更新します。",
   "Create a new watchlist inside the command bar.": "コマンド バー内に新しいウォッチリストを作成します。",

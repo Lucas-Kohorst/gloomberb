@@ -197,6 +197,7 @@ export const es: Record<string, string> = {
   "Crosses": "Cruza",
   "Add Alert": "Agregar alerta",
   "Set Alert": "Configurar alerta",
+  "Snooze {minutes}m": "Posponer {minutes}m",
   "Choose a portfolio and optionally record the manual position now.": "Elige una cartera y, si quieres, registra ahora la posición manual.",
   "Create or update a manual position without leaving the command bar.": "Crea o actualiza una posición manual sin salir de la barra de comandos.",
   "Create a new watchlist inside the command bar.": "Crea una nueva lista de seguimiento en la barra de comandos.",
