@@ -7,6 +7,7 @@ import {
   type DataTableKeyEvent,
   type TickerListVisibleRange,
 } from "../../../../components";
+import type { DataTableYankHandle } from "../../../../components/data-table/yank";
 import { usePluginAppActions } from "../../../runtime";
 import { useTickerSourceActivate } from "../../shared/ticker-source";
 import { copyOnWriteTickerFinancialsMap, mergeTickerFinancials, useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
@@ -98,6 +99,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const searchInputRef = useRef<InputRenderable | null>(null);
   const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
   const quickAddRef = useRef<QuickAddTickerInputHandle | null>(null);
+  const yankRef = useRef<DataTableYankHandle | null>(null);
+  const yankSelectedRow = useCallback(() => yankRef.current?.yank("row"), []);
 
   const {
     cursorSymbol,
@@ -529,6 +532,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         disabled: !selectedTicker,
       },
       paneSearchHint(focusSearch),
+      ...(viewMode === "table" ? [{
+        id: "yank",
+        key: "y",
+        label: "ank",
+        onPress: yankSelectedRow,
+        disabled: !selectedTicker,
+      }] : []),
       ...(isPortfolioTab ? [{ id: "view", key: "s", label: "witch view", onPress: toggleViewMode }] : []),
       ...(canMutateCollection ? [
         { id: "add", key: "a", label: "dd", onPress: toggleAdd },
@@ -562,6 +572,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     toggleAdd,
     toggleViewMode,
     focusSearch,
+    viewMode,
+    yankSelectedRow,
   ]);
 
   const showQuickAdd = canMutateCollection;
@@ -618,6 +630,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           resetScrollKey={activeCollectionId}
           onRowActivate={handleRowActivate}
           rootHeight={contentHeight}
+          enableYank
+          yankRef={yankRef}
         />
       ) : (
         <PortfolioGrid

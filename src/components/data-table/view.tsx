@@ -1,17 +1,27 @@
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ScrollBoxRenderable } from "../../ui";
+import { useRendererHost, type ScrollBoxRenderable } from "../../ui";
+import { t } from "../../i18n";
+import { getSharedRegistry } from "../../plugins/registry";
 import { useShortcut } from "../../react/input";
 import { useOptionalPaneInstanceId, usePaneInstance } from "../../state/app/context";
 import { DataTable, type DataTableColumn, type DataTableProps } from "../ui";
 import { PANE_CSV_MAX_ROWS, publishPaneCsvSnapshot } from "./csv-export";
+import {
+  projectYankCellText,
+  projectYankRowText,
+  resolveYankTarget,
+  type DataTableYankHandle,
+  type YankTarget,
+} from "./yank";
 import {
   isNextTableRowKey,
   isPreviousTableRowKey,
@@ -110,6 +120,14 @@ export interface DataTableViewProps<
     context: DataTableRootKeyContext,
   ) => boolean | void;
   resetScrollKey?: unknown;
+  /**
+   * Opt-in yank: plain `y` copies the selected row as tab-separated cells,
+   * `Shift+Y` copies its leading cell. Only enable where `y` is free — chart
+   * and article panes bind `y` to share.
+   */
+  enableYank?: boolean;
+  /** Receives the same yank the `y` / `Shift+Y` keys run, for pane chrome. */
+  yankRef?: RefObject<DataTableYankHandle | null>;
 }
 
 export function DataTableView<
@@ -133,6 +151,8 @@ export function DataTableView<
   keyboardNavigation = true,
   onRootKeyDown,
   resetScrollKey,
+  enableYank = false,
+  yankRef,
   scrollToIndex,
   scrollToIndexVersion = 0,
   ...tableProps
@@ -140,6 +160,7 @@ export function DataTableView<
   const paneId = useOptionalPaneInstanceId();
   const pane = usePaneInstance();
   const paneTitle = pane?.title?.trim() || pane?.paneId || "table";
+  const renderer = useRendererHost();
   const csvSourceRef = useRef({
     items: tableProps.items,
     columns: tableProps.columns,
@@ -252,6 +273,28 @@ export function DataTableView<
       : defaultCursorIndex;
   const effectiveSelectedIndexRef = useRef(effectiveSelectedIndex);
   effectiveSelectedIndexRef.current = effectiveSelectedIndex;
+
+  const yankSelection = useCallback((target: YankTarget) => {
+    const index = effectiveSelectedIndexRef.current;
+    const item = index >= 0 ? tableProps.items[index] : undefined;
+    if (!item) return;
+    const text = target === "row"
+      ? projectYankRowText(tableProps.columns, tableProps.renderCell, item, index)
+      : projectYankCellText(tableProps.columns, tableProps.renderCell, item, index);
+    if (!text) return;
+    void renderer.copyText(text).then(
+      () => getSharedRegistry()?.notify({
+        body: t(target === "row" ? "Row copied to clipboard" : "Cell copied to clipboard"),
+        type: "success",
+      }),
+      () => getSharedRegistry()?.notify({
+        body: t("Failed to copy to clipboard"),
+        type: "error",
+      }),
+    );
+  }, [renderer, tableProps.columns, tableProps.items, tableProps.renderCell]);
+
+  useImperativeHandle(yankRef, () => ({ yank: yankSelection }), [yankSelection]);
   const [selectionScrollVersion, setSelectionScrollVersion] = useState(0);
   const [selectionScrollTarget, setSelectionScrollTarget] = useState<number | null>(null);
   const selectionScrollTargetRef = useRef<number | null>(null);
@@ -586,6 +629,15 @@ export function DataTableView<
       itemCount: tableProps.items.length,
     })) return;
     if (tableProps.items.length === 0) return;
+
+    if (enableYank) {
+      const yankTarget = resolveYankTarget(event);
+      if (yankTarget) {
+        stopTableKey(event);
+        yankSelection(yankTarget);
+        return;
+      }
+    }
 
     if (isNextTableRowKey(event)) {
       stopTableKey(event);
