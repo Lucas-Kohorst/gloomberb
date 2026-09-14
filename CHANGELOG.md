@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Exec tab for named-executive pay
+
+`EXEC <ticker>` opens named executive officers and what they were paid, read from the company's proxy statement. Ticker research also gets an Exec tab beside Calls.
+
+- Key figures first (CEO total, pay ratio, equity share, prior say-on-pay), then a pay-mix bar, the named-officer table, and what the compensation committee changed.
+- Year switcher when more than one proxy is on file; `[o]`pen the DEF 14A.
+- Open Gloom Cloud `/public/proxies` reads, registered as a Connections source.
+
 ## Unreleased — Freeze the first table column on desktop and web
 
 Wide panes scroll sideways instead of dropping columns, which put the ticker out of view while reading far-off columns. The leading column now stays pinned while a table scrolls.
