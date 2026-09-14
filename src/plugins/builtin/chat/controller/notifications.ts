@@ -40,6 +40,7 @@ function notifyChatServerMessage({
     body,
     type: "info",
     desktop: "when-inactive",
+    refId: notification.messageId,
     ...(openMessage ? {
       action: {
         label: "Open",

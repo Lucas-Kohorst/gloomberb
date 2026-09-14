@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { CorporateActionsData } from "../../../types/financials";
-import { buildPortfolioEventRows } from "./portfolio-events-model";
+import { buildPortfolioEventRows, resolvePortfolioEventsCollectionId } from "./portfolio-events-model";
+
+type CollectionConfig = Parameters<typeof resolvePortfolioEventsCollectionId>[0];
+
+function collections(portfolios: string[], watchlists: string[]): CollectionConfig {
+  return {
+    portfolios: portfolios.map((id) => ({ id, name: id })),
+    watchlists: watchlists.map((id) => ({ id, name: id })),
+  } as CollectionConfig;
+}
 
 function actions(symbol: string, date: string): CorporateActionsData {
   return {
@@ -29,5 +38,22 @@ describe("portfolio event rows", () => {
       "AAPL:div:2026-05-01",
       "MSFT:div:2026-06-01",
     ]);
+  });
+});
+
+describe("portfolio events scope", () => {
+  const config = collections(["book", "second"], ["main"]);
+
+  test("prefers the pane setting, then the followed pane, then the first book", () => {
+    expect(resolvePortfolioEventsCollectionId(config, { collectionId: " main " }, null)).toBe("main");
+    expect(resolvePortfolioEventsCollectionId(config, undefined, "second")).toBe("second");
+    expect(resolvePortfolioEventsCollectionId(config, undefined, null)).toBe("book");
+    expect(resolvePortfolioEventsCollectionId(collections([], ["main"]), undefined, null)).toBe("main");
+  });
+
+  test("falls through a collection id that no longer exists", () => {
+    expect(resolvePortfolioEventsCollectionId(config, { collectionId: "deleted" }, "main")).toBe("main");
+    expect(resolvePortfolioEventsCollectionId(config, { collectionId: "deleted" }, null)).toBe("book");
+    expect(resolvePortfolioEventsCollectionId(collections([], []), undefined, null)).toBeNull();
   });
 });

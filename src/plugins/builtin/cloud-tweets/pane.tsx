@@ -27,7 +27,9 @@ import {
   persistTwitterFeedState,
   resolvePersistedTwitterFeeds,
   resolveTwitterFeedQuery,
+  twitterFeedRequestKey,
   twitterFeedResumeStateKey,
+  updateTwitterFeedQuery,
   type PersistedTwitterFeedState,
   type TwitterFeed,
   type TwitterFeedLaunchRequest,
@@ -144,10 +146,11 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const updateFeeds = useCallback((updater: (feeds: TwitterFeed[]) => TwitterFeed[]) => {
-    setPanePersistedState((current) => ({
-      feeds: updater(normalizeFeeds(current ?? persistedState)),
+    setPersistedState((current) => ({
+      ...current,
+      feeds: updater(current.feeds),
     }));
-  }, [persistedState, setPanePersistedState]);
+  }, [setPersistedState]);
 
   const addFeed = useCallback((query = "", queryType: CloudTweetQueryType = "Latest") => {
     const feed = createFeed(query, queryType);
@@ -185,19 +188,8 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   }, [addFeed, feeds.length, focusSearch, setPersistedState]);
 
   const updateFeedQuery = useCallback((feedId: string, query: string) => {
-    const now = Date.now();
-    updateFeeds((current) => current.map((feed) => (
-      feed.id === feedId
-        ? {
-          ...feed,
-          query,
-          title: deriveFeedTitle(query),
-          updatedAt: now,
-          lastError: null,
-        }
-        : feed
-    )));
-  }, [updateFeeds]);
+    setPersistedState((current) => updateTwitterFeedQuery(current, feedId, query));
+  }, [setPersistedState]);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -226,10 +218,9 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     );
     const seedType = paneInstance?.params?.queryType === "Top" ? "Top" : "Latest";
     const feed = createFeed(seedQuery, seedType);
-    setPanePersistedState({ feeds: [feed] });
-    setActiveFeedId(feed.id);
+    setPersistedState({ feeds: [feed], activeFeedId: feed.id });
     if (!seedQuery.trim()) focusSearch();
-  }, [feeds.length, focusSearch, paneInstance?.params?.query, paneInstance?.params?.queryType, setActiveFeedId, setPanePersistedState]);
+  }, [feeds.length, focusSearch, paneInstance?.params?.query, paneInstance?.params?.queryType, setPersistedState]);
 
   useEffect(() => {
     if (!launchRequest) return;
@@ -366,7 +357,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           focused={focused && !searchFocused}
           width={width}
           height={Math.max(1, height - 1)}
-          requestKey={`feed:${activeFeed.id}:${activeFeed.query}:${activeFeed.queryType}`}
+          requestKey={twitterFeedRequestKey(activeFeed)}
           footerId="twitter-feed-search"
           rootBefore={searchBar}
           enabled={searchEnabled}

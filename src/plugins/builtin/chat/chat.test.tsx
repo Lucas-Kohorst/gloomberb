@@ -11,6 +11,7 @@ import { PluginRenderProvider } from "../../runtime";
 import { setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "./content";
 import { ChatStatusWidget } from "./status-widget";
+import { appendNotificationLog, resetNotificationLogForTest } from "../../../notifications/notification-log";
 import { requestOpenChatProfile } from "./profile-request";
 import {
   cleanupChatTest,
@@ -102,6 +103,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await cleanupChatTest(testSetup);
+  resetNotificationLogForTest();
   testSetup = undefined;
 });
 
@@ -1434,6 +1436,124 @@ describe("ChatContent", () => {
     });
 
     expect(openedTemplates).toEqual([{ templateId: "notification-center-pane" }]);
+  });
+
+  test("counts unread notification-log entries in the badge and opens the notification center", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string } }> = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    const runtime = createTestPluginRuntime({
+      createPaneFromTemplate(templateId: string, options?: { arg?: string }) {
+        openedTemplates.push({ templateId, options });
+      },
+    });
+
+    await act(async () => {
+      appendNotificationLog({
+        title: "Breakout",
+        body: "TSLA broke out of the range",
+        type: "info",
+      }, "alerts");
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    // A non-chat alert with no chat unread still shows up in the badge.
+    let frame = setup().captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).toContain("[1]");
+
+    // A new chat unread is added to the same badge instead of replacing it.
+    await act(async () => {
+      (controller as any).mergeMessages([{
+        id: "m1",
+        channelId: "everyone",
+        content: "pinging @vince before the bell",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      } satisfies ChatMessage]);
+    });
+    await flushFrame();
+
+    frame = setup().captureCharFrame();
+    expect(frame).toContain("[2]");
+
+    const line = frame.split("\n")[0] ?? "";
+    const badgeCol = line.indexOf("[2]");
+
+    expect(badgeCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(badgeCol + 1, 0);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    expect(openedTemplates).toEqual([{ templateId: "notification-center-pane" }]);
+  });
+
+  test("counts a chat message once when it is both channel unread and in the notification log", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    await act(async () => {
+      appendNotificationLog({
+        title: "#everyone",
+        body: "@bob: hey @vince",
+        type: "info",
+        refId: "m1",
+      }, "chat");
+    });
+
+    await act(async () => {
+      (controller as any).mergeMessages([{
+        id: "m1",
+        channelId: "everyone",
+        content: "hey @vince",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      } satisfies ChatMessage]);
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).toContain("[1]");
+    expect(frame).not.toContain("[2]");
   });
 
   test("opens an unread direct-message channel from the status username", async () => {

@@ -141,6 +141,8 @@ interface MergeChatMessagesOptions {
   options?: MergeMessagesOptions;
   viewActive: boolean;
   markViewed: (persist?: boolean) => void;
+  /** Fired for each freshly-merged message that counts as unread. */
+  onUnread?: (message: ChatMessage) => void;
 }
 
 export function mergeChatMessages({
@@ -150,6 +152,7 @@ export function mergeChatMessages({
   options,
   viewActive,
   markViewed,
+  onUnread,
 }: MergeChatMessagesOptions): void {
   reconcilePendingMessages(channel, messages);
   const freshIncoming = mergeStoredMessages(channel, messages)
@@ -158,6 +161,9 @@ export function mergeChatMessages({
     markViewed(false);
   } else if (freshIncoming.length > 0 && options?.countUnread !== false) {
     channel.unreadCount += freshIncoming.length;
+    for (const message of freshIncoming) {
+      onUnread?.(message);
+    }
   }
 }
 

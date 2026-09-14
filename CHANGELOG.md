@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — PEVT was invisible, then empty
+
+Portfolio Events could not be reached from the command bar, and read "No tickers in scope" when it was open.
+
+- The pane template required a focused collection to be creatable, and the command bar drops a template whose `canCreate` returns false. Typing `PEVT` therefore listed nothing unless a Portfolio or Watchlist pane happened to be focused. The gate is gone, matching the Earnings and Analytics templates.
+- Scope resolution went through pane-binding alone, which only answers for `portfolio-list` panes, so the pane always resolved to no collection and rendered an empty book. Scope now falls back through the pane's own setting, the collection pane it follows, then the first portfolio or watchlist. A configured collection that no longer exists falls through instead of pinning the pane to it.
+
 ## Unreleased — Double Esc leaves fullscreen before it closes
 
 A single Esc used to drop a fullscreen pane, so a double-tap could exit and then immediately fullscreen again before the next close. Double Esc now minimizes fullscreen; another double Esc closes the focused docked or floating pane.

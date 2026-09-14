@@ -22,7 +22,7 @@ describe("desktop chrome clip", () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 
     const tiledWindow = cssRule(css, '[data-gloom-role="pane-window"][data-floating="false"]');
-    expect(tiledWindow).toContain("overflow: visible");
+    expect(tiledWindow).toContain("overflow: hidden");
 
     const floatingWindow = cssRule(css, '[data-gloom-role="pane-window"][data-floating="true"]');
     expect(floatingWindow).toContain("border-radius: 6px");

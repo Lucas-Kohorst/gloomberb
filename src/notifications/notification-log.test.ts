@@ -51,4 +51,28 @@ describe("notification log", () => {
     expect(getNotificationLog()).toEqual([]);
     expect(saved.at(-1)).toEqual([]);
   });
+
+  test("upserts entries by refId instead of duplicating", () => {
+    configureNotificationLog({ get: () => [], set: () => {} });
+    const first = appendNotificationLog({ body: "first body", refId: "m1" }, "chat", 100);
+    const second = appendNotificationLog({ body: "second body", refId: "m1" }, "chat", 200);
+
+    expect(getNotificationLog()).toHaveLength(1);
+    expect(second).toBe(first);
+    expect(getNotificationLog()[0]).toMatchObject({
+      body: "second body",
+      source: "chat",
+      at: 100,
+      read: false,
+      refId: "m1",
+    });
+
+    markNotificationLogRead();
+    appendNotificationLog({ body: "later body", refId: "m1" }, "chat", 300);
+    expect(getNotificationLog()[0]).toMatchObject({
+      body: "later body",
+      read: true,
+      at: 100,
+    });
+  });
 });

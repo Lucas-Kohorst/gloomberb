@@ -289,7 +289,6 @@ export function ShellPaneLayers({
               "data-axis": divider.axis,
               "data-active": active ? "true" : "false",
               "data-gloom-interactive": "true",
-              title: divider.axis === "horizontal" ? "Drag to resize columns" : "Drag to resize rows",
               style: { "--divider-color": active ? colors.borderFocused : colors.border } as any,
             } : {})}
             onMouseDown={nativePaneChrome ? (event: any) => startNativeDividerDrag(divider, event) : undefined}
