@@ -387,7 +387,10 @@ function StatusBarLayoutControl({
   if (!hasMultipleLayouts) return null;
   return (
     <Box
-      paddingLeft={1}
+      // Native chrome already insets the bar 8px (padding-inline), the same edge
+      // the pane footer text starts at; an extra cell here pushed the layout
+      // pill a full cell right of the footer. Terminal keeps the explicit inset.
+      paddingLeft={nativePaneChrome ? 0 : 1}
       flexShrink={0}
       flexDirection="row"
       {...(nativePaneChrome ? { alignItems: "center", gap: 1 } : {})}
