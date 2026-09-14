@@ -7,6 +7,7 @@ import type {
 import type { NewsArticle } from "../../../news/types";
 import {
   DataTableStackView,
+  EmptyState,
   InputSearchBar,
   Spinner,
   Tabs,
@@ -696,7 +697,11 @@ export function AdjacentFilingsPane({
         <Box flexDirection="column" width={width} height={height}>
           {rootBefore}
           <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-            <Text fg={colors.textDim}>Error: {error}</Text>
+            <EmptyState
+            title="CFTC filings unavailable."
+            message={error}
+            hint="Press r to retry."
+          />
           </Box>
         </Box>
       );
@@ -718,7 +723,11 @@ export function AdjacentFilingsPane({
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
         <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <Text fg={colors.textDim}>Error: {error}</Text>
+          <EmptyState
+            title="CFTC filings unavailable."
+            message={error}
+            hint="Press r to retry."
+          />
         </Box>
       </Box>
     );
