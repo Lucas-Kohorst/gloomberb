@@ -28,6 +28,8 @@ interface ShellPaneManagementShortcutOptions {
   popOutFocusedPane(): boolean;
   shareFocusedPane(): boolean;
   startWindowMode(paneId?: string, mode?: WindowEditMode): void;
+  exitFocusedPaneFullscreen(): boolean;
+  isFocusedPaneFullscreen(): boolean;
   toggleFocusedPaneFullscreen(): boolean;
   toggleFocusedPaneFloating(): boolean;
   transientFocusActive: boolean;
@@ -52,6 +54,8 @@ export function useShellPaneManagementShortcuts({
   popOutFocusedPane,
   shareFocusedPane,
   startWindowMode,
+  exitFocusedPaneFullscreen,
+  isFocusedPaneFullscreen,
   toggleFocusedPaneFullscreen,
   toggleFocusedPaneFloating,
   transientFocusActive,
@@ -83,9 +87,20 @@ export function useShellPaneManagementShortcuts({
 
     const isEscape = event.name === "escape" || event.name === "esc";
     if (!isEscape) return;
-    if (!hasActiveDrag()) return;
-    resetDoubleEscapeClose(doubleEscapeCloseRef.current);
-    cancelActiveDrag();
+    if (hasActiveDrag()) {
+      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+      cancelActiveDrag();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (overlayOpen || !isFocusedPaneFullscreen()) return;
+    const fullscreenTarget = transientFocusPaneId ?? focusedPaneId;
+    if (!fullscreenTarget) return;
+    const now = Date.now();
+    if (recordDoubleEscapeClose(doubleEscapeCloseRef.current, `fullscreen:${fullscreenTarget}`, now)) {
+      exitFocusedPaneFullscreen();
+    }
     event.preventDefault();
     event.stopPropagation();
   }, { phase: "before" });
@@ -96,24 +111,13 @@ export function useShellPaneManagementShortcuts({
       resetDoubleEscapeClose(doubleEscapeCloseRef.current);
       return;
     }
-    if (hasActiveDrag() || overlayOpen) {
+    if (hasActiveDrag() || overlayOpen || isFocusedPaneFullscreen()) {
       resetDoubleEscapeClose(doubleEscapeCloseRef.current);
       return;
     }
 
-    const doubleEscapeState = doubleEscapeCloseRef.current;
-    if (
-      transientFocusActive
-      && (!focusedPaneId || focusedPaneId === transientFocusPaneId)
-      && toggleFocusedPaneFullscreen()
-    ) {
-      resetDoubleEscapeClose(doubleEscapeState);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
     const now = Date.now();
+    const doubleEscapeState = doubleEscapeCloseRef.current;
     const pendingId = doubleEscapeState.targetId;
     if (pendingId && recordDoubleEscapeClose(doubleEscapeState, pendingId, now) && closePane(pendingId)) {
       event.preventDefault();

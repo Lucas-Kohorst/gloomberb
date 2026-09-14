@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Double Esc leaves fullscreen before it closes
+
+A single Esc used to drop a fullscreen pane, so a double-tap could exit and then immediately fullscreen again before the next close. Double Esc now minimizes fullscreen; another double Esc closes the focused docked or floating pane.
+
 ## Unreleased — Command-bar Plugins prefix on the left
 
 The Plugin Marketplace shortcut was `PLUGINS`, seven characters, so the command-bar badge rule left it on the right of the row. The prefix is now `PLUG` (with `PLUGINS` and `PL` still accepted), which lifts into the left badge column with the other command tags.
