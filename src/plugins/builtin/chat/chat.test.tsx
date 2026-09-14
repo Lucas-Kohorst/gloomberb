@@ -1433,7 +1433,7 @@ describe("ChatContent", () => {
       await setup().renderOnce();
     });
 
-    expect(openedTemplates).toEqual([{ templateId: "unread-inbox-pane" }]);
+    expect(openedTemplates).toEqual([{ templateId: "notification-center-pane" }]);
   });
 
   test("opens an unread direct-message channel from the status username", async () => {
