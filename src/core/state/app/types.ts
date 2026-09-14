@@ -10,6 +10,7 @@ export interface PaneRuntimeState {
   collectionId?: string;
   activeTabId?: string;
   collectionSorts?: Record<string, CollectionSortPreference>;
+  tableScrollPositions?: Record<string, number>;
   pluginState?: Record<string, Record<string, unknown>>;
   [key: string]: unknown;
 }

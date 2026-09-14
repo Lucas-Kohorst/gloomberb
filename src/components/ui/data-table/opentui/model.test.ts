@@ -43,6 +43,7 @@ describe("OpenTUI data table model", () => {
     expect(resolveDataTableScrollTop(12, 0, 5, 20, "nearest")).toBe(8);
     expect(resolveDataTableScrollTop(1, 8, 5, 20, "nearest")).toBe(1);
     expect(resolveDataTableScrollTop(18, 0, 5, 20, "center")).toBe(15);
+    expect(resolveDataTableScrollTop(12, 0, 5, 20, "start")).toBe(12);
   });
 
   test("virtualizes taller rows using cell height instead of one-row units", () => {
