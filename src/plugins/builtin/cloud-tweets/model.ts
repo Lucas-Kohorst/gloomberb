@@ -217,6 +217,33 @@ export function persistTwitterFeedState(state: PersistedTwitterFeedState): Persi
   };
 }
 
+/** In-pane search and result timestamps live on this blob; the table reads it. */
+export function updateTwitterFeedQuery(
+  state: PersistedTwitterFeedState,
+  feedId: string,
+  query: string,
+  now = Date.now(),
+): PersistedTwitterFeedState {
+  return persistTwitterFeedState({
+    ...state,
+    feeds: state.feeds.map((feed) => (
+      feed.id === feedId
+        ? {
+          ...feed,
+          query,
+          title: deriveFeedTitle(query),
+          updatedAt: now,
+          lastError: null,
+        }
+        : feed
+    )),
+  });
+}
+
+export function twitterFeedRequestKey(feed: Pick<TwitterFeed, "id" | "query" | "queryType">): string {
+  return `feed:${feed.id}:${feed.query}:${feed.queryType}`;
+}
+
 export function resolvePersistedTwitterFeeds(options: {
   config: unknown;
   resume?: unknown;

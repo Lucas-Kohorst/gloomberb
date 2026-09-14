@@ -19,6 +19,8 @@ import {
   sortedTweets,
   tweetTextRowHeight,
   tweetTickers,
+  twitterFeedRequestKey,
+  updateTwitterFeedQuery,
 } from "./model";
 
 function feed(id: string, query: string) {
@@ -138,6 +140,23 @@ describe("twitter feed persistence", () => {
       paneActiveFeedId: "b",
     });
     expect(resolved.activeFeedId).toBe("b");
+  });
+
+  test("in-pane query edits land on the blob the table reads", () => {
+    const markets = feed("markets", DEFAULT_TWITTER_FEED_QUERY);
+    const next = updateTwitterFeedQuery(
+      { feeds: [markets], activeFeedId: "markets" },
+      "markets",
+      "from:Reuters",
+      42,
+    );
+    const resolved = resolvePersistedTwitterFeeds({
+      config: next,
+      resume: { feeds: [markets], activeFeedId: "markets" },
+    });
+    expect(resolved.feeds[0]?.query).toBe("from:Reuters");
+    expect(resolved.activeFeedId).toBe("markets");
+    expect(twitterFeedRequestKey(resolved.feeds[0]!)).toBe("feed:markets:from:Reuters:Latest");
   });
 });
 
