@@ -49,6 +49,23 @@ export function formatPercentRaw(value: number | undefined): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+/**
+ * Percent magnitude with no unit, for table columns whose header already reads
+ * "%" (`52W%`, `CHG%`). Repeating the sign in every cell costs a display column
+ * and truncates the number itself once the table is tight.
+ */
+export function formatPercentValue(value: number | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
+  return value.toFixed(2);
+}
+
+/** Signed percent with no unit (e.g., +1.23), for a "%"-headed column. */
+export function formatSignedPercentValue(value: number | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}`;
+}
+
 /** Format large numbers compactly (e.g., 1.5T, 234B, 12.3M, 5k) */
 export function formatCompact(value: number | undefined): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return "—";
