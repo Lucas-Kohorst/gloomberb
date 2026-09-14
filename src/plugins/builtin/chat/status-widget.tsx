@@ -9,7 +9,6 @@ import {
   getPreferredChatOpenChannelId,
 } from "./channels";
 import { chatController, type ChatController } from "./controller";
-import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
   controller?: Pick<ChatController, "getSnapshot" | "refreshPresence" | "refreshSession" | "subscribe">;
@@ -74,7 +73,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const openUnreadInbox = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    createPaneFromTemplate(UNREAD_INBOX_TEMPLATE_ID);
+    createPaneFromTemplate("notification-center-pane");
   };
 
   useEffect(() => {

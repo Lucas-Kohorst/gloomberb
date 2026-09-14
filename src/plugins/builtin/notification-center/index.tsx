@@ -215,9 +215,9 @@ export const notificationCenterPlugin: GloomPlugin = {
       label: "Notification Center",
       description: "Review alert, chat, and app notification history",
       keywords: ["notifications", "alerts", "mentions", "history"],
-      shortcut: { prefix: "NOTF" },
+      shortcut: { prefix: "NOT", aliases: ["NOTF", "UNREAD"] },
     });
-    ctx.registerAgentPromptFragment("Notification Center: pane.createFromTemplate notification-center-pane (NOTF) to review alert, chat, and app notification history.");
+    ctx.registerAgentPromptFragment("Notification Center: pane.createFromTemplate notification-center-pane (NOT) to review alert, chat, and app notification history.");
   },
   dispose() {
     configureNotificationLog(null);

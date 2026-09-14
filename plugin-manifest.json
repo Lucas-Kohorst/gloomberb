@@ -315,8 +315,7 @@
         "panes": [
           "account-management",
           "buildout",
-          "chat",
-          "unread-inbox"
+          "chat"
         ],
         "capabilities": [
           "asset-data.gloomberb-cloud",
