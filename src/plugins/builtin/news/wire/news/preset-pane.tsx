@@ -14,6 +14,7 @@ import {
 import { useNewsArticleFooter } from "./footer";
 import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
+import { useNewsSavedState } from "../saved-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { getNewsPaneSettings } from "../settings";
@@ -64,6 +65,7 @@ export function NewsPresetPane({
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(visibleArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
   const selectedArticle = visibleArticles.find((article) => article.id === selectedArticleId) ?? null;
@@ -87,6 +89,8 @@ export function NewsPresetPane({
     onRefresh: refresh,
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     updatedAt: newsState.updatedAt,
     showPoll: !detailArticle,
   });
@@ -109,6 +113,8 @@ export function NewsPresetPane({
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={effectiveSortPreference}

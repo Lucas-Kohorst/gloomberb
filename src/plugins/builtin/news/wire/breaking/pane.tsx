@@ -15,6 +15,7 @@ import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/artic
 import { NEWS_QUERY_PRESETS } from "../news/query-presets";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useNewsReadState } from "../read-state";
+import { useNewsSavedState } from "../saved-state";
 
 const DEFAULT_SORT: NewsSortPreference = { columnId: "importance", direction: "desc" };
 
@@ -30,6 +31,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
@@ -53,6 +55,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     onRefresh: refresh,
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     showPoll: !detailArticle,
     updatedAt: breakingState.updatedAt,
   });
@@ -75,6 +79,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}

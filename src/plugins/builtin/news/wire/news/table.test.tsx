@@ -434,4 +434,53 @@ describe("NewsArticleStackView", () => {
     expect(frame).toContain("Treasury yields");
     expect(frame).toContain("Wire");
   });
+
+  test("stars saved articles in the bookmark column and toggles on click", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-saved-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-feed:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({ id: "keep", title: "Keep for later" }),
+              makeArticle({ id: "skim", title: "Skim once" }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            readArticleIds={new Set()}
+            savedArticleIds={new Set(["keep"])}
+            onToggleSaved={() => {}}
+            selectedArticleId="keep"
+            setSelectedArticleId={() => {}}
+            sortPreference={sortPreference}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "source", "title"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    // The star column leads the header without joining the next label.
+    expect(lines[0]).toContain("★");
+    const keepRow = lines.find((line) => line.includes("Keep for later"));
+    const skimRow = lines.find((line) => line.includes("Skim once"));
+    expect(keepRow).toContain("★");
+    expect(skimRow).toContain("·");
+  });
 });

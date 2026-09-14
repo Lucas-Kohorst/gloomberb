@@ -17,7 +17,7 @@ import {
 import type { DataTableYankHandle } from "../../../../components/data-table/yank";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
-import { useDebouncedPluginPaneState } from "../../../runtime";
+import { useDebouncedPluginPaneState, usePluginAppActions } from "../../../runtime";
 import { usePaneSettingValue } from "../../../../state/app/context";
 import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { usePluginRenderContext } from "../../../runtime/context";
@@ -31,6 +31,7 @@ import { NewsArticleStackView } from "./news/table";
 import { getNewsPaneSettings, getRssViewMode, type RssViewMode } from "./settings";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
+import { NEWS_SAVED_PANE_TEMPLATE_ID, useNewsSavedState } from "./saved-state";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useArticleArchiveAction } from "../../shared/article-archive";
@@ -421,6 +422,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   onManageFeeds: () => void;
 }) {
   const rendererHost = useRendererHost();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const newsState = useNewsArticles({ feed: "latest", limit: 200 });
   const liveHead = useMemo(
     () => newsState.articles.length <= 200
@@ -453,6 +455,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(filteredArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
@@ -475,21 +478,40 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     if (readableArticle) markArticleRead(readableArticle.id);
     popOutArticle(readableArticle);
   }, [markArticleRead, popOutArticle, readableArticle]);
+  const bookmarkSelectedArticle = useCallback(() => {
+    if (readableArticle) toggleArticleSaved(readableArticle.id);
+  }, [readableArticle, toggleArticleSaved]);
+  const openSavedNewsPane = useCallback(() => {
+    createPaneFromTemplate(NEWS_SAVED_PANE_TEMPLATE_ID);
+  }, [createPaneFromTemplate]);
   const poll = useFeedPollInterval();
   const updatedAgo = useUpdatedAgo(newsState.updatedAt);
 
   useShortcut((event) => {
-    if (!focused || !readableArticle) return;
+    if (!focused) return;
+    if (savedArticleIds.size > 0 && isPlainKey(event, "v")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      openSavedNewsPane();
+      return;
+    }
+    if (!readableArticle) return;
     if (isPlainKey(event, "p")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       popOutSelectedArticle();
       return;
     }
-    if (isPlainKey(event, "y")) {
+    if (isPlainKey(event, "s") || isPlainKey(event, "y")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       shareSelectedArticle();
+      return;
+    }
+    if (isPlainKey(event, "b")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      bookmarkSelectedArticle();
       return;
     }
     if (isPlainKey(event, "a") && archiveAction.enabled) {
@@ -497,7 +519,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       event.preventDefault?.();
       archiveAction.archive();
     }
-  }, { enabled: focused && !!readableArticle });
+  }, { enabled: focused && (!!readableArticle || savedArticleIds.size > 0) });
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "m")) {
@@ -525,6 +547,18 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       shareSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "s") && readableArticle) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
+    if (isPlainKey(event, "b") && readableArticle) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      bookmarkSelectedArticle();
+      return true;
+    }
     if (isPlainKey(event, "a") && archiveAction.enabled) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -538,7 +572,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       return true;
     }
     return false;
-  }, [archiveAction, focusSearch, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }, [archiveAction, bookmarkSelectedArticle, focusSearch, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   usePaneFooter("rss-articles", () => ({
     info: [
@@ -550,11 +584,13 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       paneSearchHint(focusSearch),
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
+      ...(readableArticle ? [{ id: "bookmark", key: "b", label: "ookmark", onPress: bookmarkSelectedArticle }] : []),
+      ...(savedArticleIds.size > 0 ? [{ id: "view-saved", key: "v", label: "iew saved", onPress: openSavedNewsPane }] : []),
       ...(readableArticle ? [{ id: "share", key: "s", label: "hare", onPress: shareSelectedArticle }] : []),
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, detailArticle, focusSearch, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle, updatedAgo]);
+  }), [archiveAction.archive, archiveAction.enabled, bookmarkSelectedArticle, detailArticle, focusSearch, loading, onManageFeeds, openSavedNewsPane, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, savedArticleIds.size, shareSelectedArticle, updatedAgo]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
@@ -578,6 +614,8 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
