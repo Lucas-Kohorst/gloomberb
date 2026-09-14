@@ -57,13 +57,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "PUSH_CLOSED_PANE":
       return {
         ...state,
-        closedPanes: pushClosedPane(state.closedPanes, action.pane),
+        closedPanes: pushClosedPane(state.closedPanes ?? [], action.pane),
       };
 
-    case "POP_CLOSED_PANE":
-      return state.closedPanes.length === 0
+    case "POP_CLOSED_PANE": {
+      const closedPanes = state.closedPanes ?? [];
+      return closedPanes.length === 0
         ? state
-        : { ...state, closedPanes: state.closedPanes.slice(0, -1) };
+        : { ...state, closedPanes: closedPanes.slice(0, -1) };
+    }
 
     case "SET_ONBOARDING_STATE":
       return {

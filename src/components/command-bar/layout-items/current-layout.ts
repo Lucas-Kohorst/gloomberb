@@ -25,6 +25,7 @@ export function buildCurrentLayoutItems({
   state,
 }: LayoutItemsContext): ResultItem[] {
   const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+  const closedPanes = state.closedPanes ?? [];
   const floatingPaneCount = currentLayout.floating.length;
   const floatingPaneLabel = floatingPaneCount === 1 ? "floating pane" : "floating panes";
   const presetItems = ([
@@ -55,12 +56,12 @@ export function buildCurrentLayoutItems({
     {
       id: "layout-reopen-closed-pane",
       label: "Reopen Closed Pane",
-      detail: state.closedPanes.length > 0 ? "Restore the most recently closed pane" : "No closed panes",
+      detail: closedPanes.length > 0 ? "Restore the most recently closed pane" : "No closed panes",
       category: "Current Layout",
       kind: "action",
-      disabled: state.closedPanes.length === 0,
+      disabled: closedPanes.length === 0,
       action: () => {
-        if (state.closedPanes.length === 0) return;
+        if (closedPanes.length === 0) return;
         reopenClosedPane();
         closeAll({ revertThemePreview: false });
       },

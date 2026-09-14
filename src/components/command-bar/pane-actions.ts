@@ -159,7 +159,7 @@ export function useCommandBarPaneActions({
 
   const reopenClosedPane = useCallback(() => {
     const currentState = stateRef.current;
-    const closedPane = currentState.closedPanes.at(-1);
+    const closedPane = currentState.closedPanes?.at(-1);
     if (!closedPane) return;
     const paneDef = pluginRegistry.panes.get(closedPane.instance.paneId);
     if (!paneDef) return;
