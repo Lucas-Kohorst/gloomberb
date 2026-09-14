@@ -54,6 +54,7 @@ export {
   removeFloatingPanes,
   removePane,
   removeUnavailablePaneTypes,
+  finalizeLayout,
   type PaneTypeAvailability,
 } from "./pane-manager/layout-state";
 export {

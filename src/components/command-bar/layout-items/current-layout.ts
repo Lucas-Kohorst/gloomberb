@@ -13,6 +13,7 @@ import type { LayoutItemsContext } from "./types";
 
 export function buildCurrentLayoutItems({
   closeAll,
+  reopenClosedPane,
   confirmDangerousActions,
   currentLayout,
   dispatch,
@@ -51,6 +52,19 @@ export function buildCurrentLayoutItems({
 
   return [
     ...presetItems,
+    {
+      id: "layout-reopen-closed-pane",
+      label: "Reopen Closed Pane",
+      detail: state.closedPanes.length > 0 ? "Restore the most recently closed pane" : "No closed panes",
+      category: "Current Layout",
+      kind: "action",
+      disabled: state.closedPanes.length === 0,
+      action: () => {
+        if (state.closedPanes.length === 0) return;
+        reopenClosedPane();
+        closeAll({ revertThemePreview: false });
+      },
+    },
     {
       id: "layout-undo",
       label: "Undo Layout Change",

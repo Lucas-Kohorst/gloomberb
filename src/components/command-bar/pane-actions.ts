@@ -16,6 +16,11 @@ import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
 import { applyTickerRetarget } from "../../plugins/ticker-follow";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
+import {
+  captureClosedPane,
+  restoreClosedPane,
+} from "../../core/state/app/closed-panes";
+import { removePane } from "../../plugins/pane-manager";
 
 interface CommandBarPaneActionsOptions {
   dispatch: Dispatch<AppAction>;
@@ -140,12 +145,48 @@ export function useCommandBarPaneActions({
     dispatch({ type: "FOCUS_PANE", paneId: duplicate.instanceId });
   }, [dispatch, persistLayoutChange, pluginRegistry, stateRef]);
 
+  const closePane = useCallback((paneId: string) => {
+    const currentState = stateRef.current;
+    const closedPane = captureClosedPane(
+      currentState.config.layout,
+      paneId,
+      currentState.paneState[paneId],
+    );
+    if (!closedPane) return;
+    dispatch({ type: "PUSH_CLOSED_PANE", pane: closedPane });
+    persistLayoutChange(removePane(currentState.config.layout, paneId));
+  }, [dispatch, persistLayoutChange, stateRef]);
+
+  const reopenClosedPane = useCallback(() => {
+    const currentState = stateRef.current;
+    const closedPane = currentState.closedPanes.at(-1);
+    if (!closedPane) return;
+    const paneDef = pluginRegistry.panes.get(closedPane.instance.paneId);
+    if (!paneDef) return;
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const nextLayout = restoreClosedPane(
+      currentState.config.layout,
+      closedPane,
+      width,
+      height,
+      paneDef,
+    );
+    dispatch({ type: "POP_CLOSED_PANE" });
+    dispatch({ type: "REPLACE_PANE_STATE", paneId: closedPane.instance.instanceId, state: closedPane.paneState });
+    persistLayoutChange(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId: closedPane.instance.instanceId });
+  }, [dispatch, persistLayoutChange, pluginRegistry, stateRef]);
+
+  pluginRegistry.reopenClosedPaneFn = reopenClosedPane;
+
   return {
+    closePane,
     duplicatePane,
     focusTicker,
     notifyGridlockRevert,
     persistLayoutChange,
     replacePaneTicker,
+    reopenClosedPane,
     setActiveCollection,
   };
 }

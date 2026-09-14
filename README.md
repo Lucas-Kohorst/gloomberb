@@ -226,6 +226,7 @@ See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface availa
 | `?` | Show focused-pane actions and global keys; choose All shortcuts for full help |
 | `Ctrl+,` | Open focused pane settings |
 | `Ctrl+W` | Close focused pane |
+| `Ctrl+Shift+T` | Reopen most recently closed pane |
 | `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
 | `Ctrl+Shift+D` | Dock or float focused pane |
 | `Ctrl+Shift+E` | Export focused pane table as CSV |

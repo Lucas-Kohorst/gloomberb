@@ -1,5 +1,5 @@
 import type { BrokerAccount } from "../../../types/trading";
-import type { AppConfig, LayoutConfig, OnboardingProgress, RecentCommand } from "../../../types/config";
+import type { AppConfig, LayoutConfig, OnboardingProgress, PaneInstanceConfig, RecentCommand } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -18,6 +18,11 @@ export interface PaneRuntimeState {
 export interface LayoutHistoryEntry {
   past: LayoutConfig[];
   future: LayoutConfig[];
+}
+
+export interface ClosedPane {
+  instance: PaneInstanceConfig;
+  paneState: PaneRuntimeState;
 }
 
 type SortDirection = "asc" | "desc";
@@ -67,6 +72,7 @@ export interface AppState {
   updateCheckInProgress: boolean;
   updateNotice: string | null;
   layoutHistory: Record<number, LayoutHistoryEntry>;
+  closedPanes: ClosedPane[];
 }
 
 export type AppAction =
@@ -111,6 +117,8 @@ export type AppAction =
   | { type: "UNDO_LAYOUT" }
   | { type: "REDO_LAYOUT" }
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig; focusedPaneId?: string | null }
+  | { type: "PUSH_CLOSED_PANE"; pane: ClosedPane }
+  | { type: "POP_CLOSED_PANE" }
   | { type: "SWITCH_LAYOUT"; index: number }
   | { type: "REORDER_LAYOUT"; fromIndex: number; toIndex: number }
   | { type: "NEW_LAYOUT"; name: string; activate?: boolean; layout?: LayoutConfig }

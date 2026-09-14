@@ -37,6 +37,8 @@ export function menuForPane(
   sharePane?: () => void | Promise<void>,
   linkItems: ContextMenuItem[] = [],
   exportPaneCsv?: (paneId: string) => void | Promise<void>,
+  duplicatePane?: (paneId: string) => void,
+  closePane?: (paneId: string) => void,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -69,6 +71,14 @@ export function menuForPane(
       label: "Export CSV",
       accelerator: PANE_MANAGEMENT_ACCELERATORS.exportCsv,
       onSelect: () => exportPaneCsv(pane.instance.instanceId),
+    });
+  }
+
+  if (duplicatePane) {
+    baseActions.push({
+      id: "duplicate-pane",
+      label: "Duplicate Pane",
+      onSelect: () => duplicatePane(pane.instance.instanceId),
     });
   }
 
@@ -113,7 +123,7 @@ export function menuForPane(
     id: "close-pane",
     label: "Close Pane",
     accelerator: PANE_MANAGEMENT_ACCELERATORS.close,
-    onSelect: () => persistLayout(removePane(layout, pane.instance.instanceId)),
+    onSelect: () => closePane?.(pane.instance.instanceId) ?? persistLayout(removePane(layout, pane.instance.instanceId)),
   });
 
   if (linkItems.length > 0) {

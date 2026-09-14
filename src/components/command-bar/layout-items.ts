@@ -21,6 +21,7 @@ export {
 
 export function buildLayoutResultItems({
   closeAll,
+  closePane,
   confirmDangerousActions,
   dispatch,
   duplicatePane,
@@ -31,9 +32,11 @@ export function buildLayoutResultItems({
   pluginRegistry,
   pushRoute,
   query,
+  reopenClosedPane,
   state,
 }: {
   closeAll: CloseAll;
+  closePane: (paneId: string) => void;
   confirmDangerousActions?: boolean;
   dispatch: Dispatch<AppAction>;
   duplicatePane: (paneId: string) => void;
@@ -44,10 +47,12 @@ export function buildLayoutResultItems({
   pluginRegistry: PluginRegistry;
   pushRoute: (route: CommandBarRoute) => void;
   query: string;
+  reopenClosedPane: () => void;
   state: AppState;
 }): ResultItem[] {
   const context: LayoutItemsContext = {
     closeAll,
+    closePane,
     currentLayout: state.config.layout,
     dispatch,
     duplicatePane,
@@ -58,6 +63,7 @@ export function buildLayoutResultItems({
     persistLayoutChange,
     pluginRegistry,
     pushRoute,
+    reopenClosedPane,
     state,
     ...(confirmDangerousActions === undefined ? {} : { confirmDangerousActions }),
   };

@@ -15,6 +15,7 @@ import {
 } from "../../../plugins/pane-manager";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutConfig } from "../../../types/config";
+import { captureClosedPane } from "../../../core/state/app/closed-panes";
 import { contextMenuDivider } from "../../../types/context-menu";
 import {
   resolveTickerForPane,
@@ -201,6 +202,11 @@ export function Shell({
     dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch]);
 
+  const recordClosedPane = useCallback((paneId: string) => {
+    const closedPane = captureClosedPane(visibleLayout, paneId, paneState[paneId]);
+    if (closedPane) dispatch({ type: "PUSH_CLOSED_PANE", pane: closedPane });
+  }, [dispatch, paneState, visibleLayout]);
+
   const {
     activeLayout: windowModeLayout,
     nativeWindowModePanelRect,
@@ -286,6 +292,7 @@ export function Shell({
     unfocusFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
+    duplicatePane,
     exportFocusedPaneCsv,
     exportPaneCsv,
     gridlockVisiblePanes,
@@ -302,6 +309,7 @@ export function Shell({
     focusedPaneId,
     focusPane,
     nativePaneChrome,
+    onPaneClosed: recordClosedPane,
     paneMap,
     persistLayout,
     previousFocusedPaneId,
@@ -590,6 +598,8 @@ export function Shell({
         persistLayout,
       }),
       canExportPaneCsv(paneId) ? exportPaneCsv : undefined,
+      duplicatePane,
+      closePane,
     );
     void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
@@ -613,7 +623,7 @@ export function Shell({
         items: fallbackItems,
       });
     });
-  }, [canExportPaneCsv, contentHeight, copyPaneScreenshot, desktopWindowBridge, exportPaneCsv, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
+  }, [canExportPaneCsv, closePane, contentHeight, copyPaneScreenshot, desktopWindowBridge, duplicatePane, exportPaneCsv, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
 
   const {
     handleFloatingCloseMouseDown,
