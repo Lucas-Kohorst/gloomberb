@@ -62,6 +62,7 @@
           "changelog",
           "connections",
           "help",
+          "keybindings",
           "layout-marketplace",
           "plugin-marketplace"
         ],
