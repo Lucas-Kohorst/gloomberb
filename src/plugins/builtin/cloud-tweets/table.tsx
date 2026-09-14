@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { TextAttributes } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
+  EmptyState,
   PaneStatusBody,
   TickerBadgeList,
-  dataErrorMessage,
   isNoDataError,
-  unavailableTitle,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -400,20 +399,29 @@ export function TweetSearchTable({
     return `${tweet.id}:${readTweetIds.has(tweet.id) ? 1 : 0}`;
   }, [readTweetIds]);
 
+  const emptyTitle = emptyStateTitle ?? "No tweets for this search";
+  const emptyMessage = emptyStateMessage ?? emptyStateHint ?? data?.query;
   // Owns the whole empty body so loading, failure, and "nothing found" each get
-  // their own rows instead of the table's single run-on empty line.
+  // their own copy instead of the table's generic unavailable dump.
   const emptyContent = error && isAuthError(error)
     ? <CloudAuthNotice message={error} showSignup />
-    : (
-      <PaneStatusBody
-        loading={loading}
-        error={error}
-        empty
-        subject="Tweets"
-        emptyTitle={emptyStateTitle ?? "No tweets"}
-        emptyMessage={emptyStateHint ?? data?.query}
-      />
-    );
+    : loading || (error && !isNoDataError(error))
+      ? (
+        <PaneStatusBody
+          loading={loading}
+          error={error}
+          empty={false}
+          subject="Tweets"
+        />
+      )
+      : (
+        <Box paddingX={1} paddingY={1} data-gloom-status="empty" flexGrow={1}>
+          <EmptyState
+            title={emptyTitle}
+            message={emptyMessage}
+          />
+        </Box>
+      );
 
   return (
     <DataTableStackView<CloudTweetPayload, TweetColumn>
@@ -450,8 +458,9 @@ export function TweetSearchTable({
       getRowRevision={getRowRevision}
       renderCell={renderCell}
       emptyContent={emptyContent}
-      emptyStateTitle={emptyStateTitle ?? "No tweets"}
-      emptyStateHint={emptyStateHint ?? data?.query}
+      emptyStateTitle={emptyTitle}
+      emptyStateMessage={emptyMessage}
+      emptyStateHint={emptyStateHint}
     />
   );
 }

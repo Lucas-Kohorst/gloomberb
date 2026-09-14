@@ -82,6 +82,7 @@ export function SegmentedControl({
               if (!option.disabled) onChange?.(option.value);
             }}
             cursor={option.disabled ? undefined : "pointer"}
+            data-gloom-interactive={option.disabled ? undefined : "true"}
           >
             <Text
               fg={option.disabled ? colors.textMuted : active ? colors.text : colors.textDim}

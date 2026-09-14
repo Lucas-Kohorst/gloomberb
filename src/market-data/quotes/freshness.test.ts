@@ -133,6 +133,38 @@ describe("quote freshness", () => {
     ).toBe(false);
   });
 
+  test("keeps Friday futures last prints over the weekend", () => {
+    const now = Date.parse("2026-09-13T22:00:00Z");
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "ZC=F",
+          currency: "USX",
+          price: 532,
+          lastUpdated: Date.parse("2026-09-11T18:19:59Z"),
+          listingExchangeName: "CBT",
+          exchangeName: "CBT",
+          marketState: "REGULAR",
+        }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "KC=F",
+          currency: "USX",
+          price: 284.25,
+          lastUpdated: Date.parse("2026-09-11T17:29:56Z"),
+          listingExchangeName: "NYB",
+          exchangeName: "NYB",
+          marketState: "REGULAR",
+        }),
+        now,
+      ),
+    ).toBe(false);
+  });
+
   test("allows Friday closes before Monday reopen", () => {
     expect(
       isQuoteStaleForCurrentSession(

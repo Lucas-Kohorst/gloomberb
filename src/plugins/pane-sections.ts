@@ -28,6 +28,7 @@ const PLUGIN_PANE_SECTIONS: Record<string, PaneSection> = {
   "federal-register": PANE_SECTION.data,
   "ofac-sanctions": PANE_SECTION.data,
   "crt-sh": PANE_SECTION.data,
+  eulerpool: PANE_SECTION.data,
 
   portfolio: PANE_SECTION.portfolio,
   broker: PANE_SECTION.portfolio,

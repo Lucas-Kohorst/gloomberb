@@ -89,3 +89,5 @@ export {
 export { usePopOutNewsArticle } from "../plugins/builtin/news/wire/news/pop-out";
 export { useNewsReadState } from "../plugins/builtin/news/wire/read-state";
 export type { NewsArticle } from "../news/types";
+export { stashSubstackArticle } from "../plugins/builtin/substack/article-stash";
+export { SUBSTACK_ARTICLE_READER_TEMPLATE_ID } from "../plugins/builtin/shared/article-pop-out";

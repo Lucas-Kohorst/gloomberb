@@ -585,6 +585,10 @@ body.gloom-dragging {
     0 0 0 4px color-mix(in srgb, var(--gloom-border-focused) 28%, transparent);
   pointer-events: none;
 }
+[data-gloom-role="tradingview-chart"] {
+  padding-bottom: 12px;
+  box-sizing: border-box;
+}
 [data-gloom-role="chart-surface"] {
   cursor: crosshair;
 }

@@ -167,5 +167,6 @@ export function useCommandBarPluginCommandActions({
     openPluginCommandWorkflow,
     pluginCommandItems,
     pluginCommandResultItems,
+    runPluginCommandDirect,
   };
 }

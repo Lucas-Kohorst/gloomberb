@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { StaticChartSurface } from "../../../components";
+import { ExternalLinkText } from "../../../components/ui";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors } from "../../../theme/colors";
@@ -10,7 +11,7 @@ import { useShortcut } from "../../../react/input";
 import { usePluginTickerActions } from "../../runtime";
 import { withConnectionRequest } from "../connections/register";
 import { ECON_CALENDAR_CONNECTION_ID } from "./calendar-source";
-import { resolveFredMapping } from "./fred-series-map";
+import { fredSeriesUrl, resolveFredMapping } from "./fred-series-map";
 import {
   getCachedFredSeries,
   loadCachedFredSeries,
@@ -127,16 +128,19 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
     }
   });
 
+  const seriesLink = mapping ? (
+    <ExternalLinkText
+      url={fredSeriesUrl(mapping.seriesId)}
+      label={mapping.seriesId}
+      color={colors.textDim}
+    />
+  ) : null;
+
   if (!mapping) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
-        </Box>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>No historical data available for this indicator</Text>
+          <Text fg={colors.textMuted}>No FRED history for this release.</Text>
         </Box>
       </Box>
     );
@@ -146,14 +150,11 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
     return (
       <Box flexDirection="column" width={width} height={height}>
         <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
           <Box flexGrow={1} />
-          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+          {seriesLink}
         </Box>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>Loading...</Text>
+          <Text fg={colors.textMuted}>Loading FRED series...</Text>
         </Box>
       </Box>
     );
@@ -163,11 +164,8 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
     return (
       <Box flexDirection="column" width={width} height={height}>
         <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
           <Box flexGrow={1} />
-          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+          {seriesLink}
         </Box>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Text fg={colors.negative}>{error}</Text>
@@ -225,7 +223,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
           {title}
         </Text>
         <Box flexGrow={1} />
-        <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+        {seriesLink}
       </Box>
       <Box height={1} paddingX={1} flexDirection="row">
         <Text fg={colors.textMuted}>

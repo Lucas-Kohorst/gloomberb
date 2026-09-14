@@ -291,7 +291,13 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // A prefix that owns the query is command language, so free-text providers
   // stay out of the way. Short text prefixes ("AI safety") keep searching.
   if (!shortcutOwnsQuery) {
-    items.push(...providerResultItems);
+    const queryLabel = rootQuery.trim().toLowerCase();
+    const exactLocalLabel = queryLabel.length > 0 && items.some((item) => (
+      item.label.trim().toLowerCase() === queryLabel
+    ));
+    items.push(...(exactLocalLabel
+      ? providerResultItems.filter((item) => !item.id.startsWith("twitter-search:"))
+      : providerResultItems));
   } else if (rootShortcutIntent.kind !== "none" && (rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR")) {
     items.push(...providerResultItems.filter((item) => item.id.startsWith("chart-series:")));
   }

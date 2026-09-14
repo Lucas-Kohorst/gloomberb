@@ -15,6 +15,70 @@ import type { ResultItem } from "../../list/model";
 const RELATED_PANE_LIMIT = 5;
 const INDEX_MATCH_LIMIT = 6;
 
+/** Prefixes that already own the rest of the query as command language. */
+const CLAIMED_SEARCH_PREFIXES = new Set([
+  "ART",
+  "LAW",
+  "ETF",
+  "FH",
+  "TWIT",
+  "CAT",
+  "SEC",
+  "RSS",
+  "SRCH",
+  "DES",
+  "CORR",
+  "G",
+]);
+
+const TWITTER_OPERATOR_RE =
+  /(?:^|\s)(?:from|to|since|until|filter|lang|list|url|min_faves|min_retweets|min_replies):/i;
+const TWITTER_BARE_OPERATOR_RE = /\bmin_faves\b/i;
+const TWITTER_OR_RE = /(?:^|\s)OR(?:\s|$)/;
+const QUOTED_PHRASE_RE = /"[^"]+"/;
+const HANDLE_OR_HASHTAG_RE = /(?:^|\s)[@#][A-Za-z0-9_]{1,50}/;
+
+function claimedSearchPrefix(query: string): string | null {
+  const match = query.trim().match(/^([A-Za-z]{1,8})(?:\s|$)/);
+  if (!match) return null;
+  const prefix = match[1]!.toUpperCase();
+  return CLAIMED_SEARCH_PREFIXES.has(prefix) ? prefix : null;
+}
+
+/**
+ * Free text that should open an X advanced-search feed: operators, @handle /
+ * #hashtag, or a multi-word natural-language query. Single tickers and pane
+ * prefixes (ART, LAW, ETF, FH, …) stay with their own command-bar rows.
+ */
+export function looksLikeTwitterSearchQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || claimedSearchPrefix(trimmed)) return false;
+  if (TWITTER_OPERATOR_RE.test(trimmed) || TWITTER_BARE_OPERATOR_RE.test(trimmed)) return true;
+  if (TWITTER_OR_RE.test(trimmed) && /\s/.test(trimmed)) return true;
+  if (QUOTED_PHRASE_RE.test(trimmed)) return true;
+  if (HANDLE_OR_HASHTAG_RE.test(trimmed)) return true;
+  return trimmed.split(/\s+/).length >= 2;
+}
+
+export function buildTwitterSearchActionItem(options: {
+  query: string;
+  onOpen: (query: string) => void;
+}): ResultItem | null {
+  const query = options.query.trim();
+  if (!looksLikeTwitterSearchQuery(query)) return null;
+  return {
+    id: `twitter-search:${query.toLowerCase()}`,
+    label: query,
+    detail: t("Open an X advanced-search feed"),
+    category: "X Feeds",
+    kind: "action",
+    right: "TWIT",
+    shortcutQuery: "TWIT",
+    searchText: `${query} twitter x tweet feed search twit`,
+    action: () => options.onOpen(query),
+  };
+}
+
 function tokensOf(query: string, minLength = 2): string[] {
   return query.toLowerCase().split(/\s+/).filter((token) => token.length >= minLength);
 }
@@ -86,6 +150,7 @@ export function buildTwitterFeedResultItems(options: {
   feeds: readonly TwitterFeed[];
   query: string;
   onOpen: (feed: TwitterFeed) => void;
+  onSearch?: (query: string) => void;
 }): ResultItem[] {
   const query = options.query.trim();
   if (!query) return [];
@@ -112,6 +177,15 @@ export function buildTwitterFeedResultItems(options: {
     });
     if (items.length >= INDEX_MATCH_LIMIT) break;
   }
+  if (!options.onSearch) return items;
+  const searchItem = buildTwitterSearchActionItem({
+    query,
+    onOpen: options.onSearch,
+  });
+  if (!searchItem) return items;
+  const normalized = query.toLowerCase();
+  if (items.some((item) => item.detail.trim().toLowerCase() === normalized)) return items;
+  items.push(searchItem);
   return items;
 }
 

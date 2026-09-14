@@ -187,6 +187,64 @@ export function assertFooterHintsBound(footer: CombinedPaneFooter, paneId: strin
 }
 
 /**
+ * Calendar-like data tables always advertise at least one action. An empty
+ * hints array would pass `assertFooterHintsBound`.
+ */
+export function assertFooterHasBoundActionHints(footer: CombinedPaneFooter, paneId: string): void {
+  const enabled = footer.hints.filter((hint) => !hint.disabled);
+  expect(
+    enabled.length > 0,
+    `${paneId}: calendar-like table has no footer action hints`,
+  ).toBe(true);
+  assertFooterHintsBound(footer, paneId);
+}
+
+/**
+ * AGENTS.md: `[s]`earch or `/` when the list is long enough to filter.
+ */
+export function assertHasSearchFooterHint(footer: CombinedPaneFooter, paneId: string): void {
+  const search = footer.hints.find((hint) => (
+    hint.id === "search"
+    || hint.key === "/"
+    || (hint.key.toLowerCase() === "s" && /earch/i.test(hint.label))
+  ));
+  expect(
+    search,
+    `${paneId}: data table missing [/] or [s]earch footer hint`,
+  ).toBeDefined();
+  if (search?.disabled) return;
+  expect(
+    search?.onPress,
+    `${paneId}: search footer hint has no handler`,
+  ).toBeTypeOf("function");
+}
+
+/** JSX that mounts a shared data table. */
+export const DATA_TABLE_COMPONENT_RE =
+  /<(?:DataTableView|DataTableStackView|FeedDataTableStackView)\b/;
+
+const NOOP_HEADER_CLICK_RE =
+  /\bonHeaderClick\s*=\s*\{\s*\(\s*\)\s*=>\s*(?:\{\s*\}|undefined)\s*\}/;
+
+/**
+ * Calendar-like tables must wire clickable header sort, not a no-op.
+ */
+export function sourceHasClickableHeaderSort(source: string): boolean {
+  if (!DATA_TABLE_COMPONENT_RE.test(source)) return false;
+  if (!/\bonHeaderClick\s*=/.test(source)) return false;
+  return !NOOP_HEADER_CLICK_RE.test(source);
+}
+
+/**
+ * Search is registered through `paneSearchHint(...)` or an explicit search
+ * hint with `onPress`.
+ */
+export function sourceHasBoundTableFooterHints(source: string): boolean {
+  if (/paneSearchHint\s*\(/.test(source)) return true;
+  return /id:\s*["']search["']/.test(source) && /onPress\s*:/.test(source);
+}
+
+/**
  * AGENTS.md: footers carry changing status plus bound action hints —
  * no "N results" tallies.
  */
@@ -340,6 +398,44 @@ export function assertFooterHintKeyPrefixesAction(footer: CombinedPaneFooter, pa
 }
 
 /**
+ * Written-text / filings / company-record list panes. Generic
+ * `ErrorState` / `dataErrorMessage` copy ("The data source is unavailable.")
+ * is a dead empty window on these — they need empty vs transport-failure copy.
+ */
+export const WRITTEN_DATA_LIST_PANE_IDS = [
+  "news-top",
+  "news-feed",
+  "news-industry",
+  "news-rss",
+  "news-breaking",
+  "news-firehose",
+  "sec",
+  "comment-letters",
+  "companies",
+  "cftc-filings",
+] as const;
+
+export type WrittenDataListPaneId = (typeof WRITTEN_DATA_LIST_PANE_IDS)[number];
+
+export function isWrittenDataListPane(paneId: string): boolean {
+  return (WRITTEN_DATA_LIST_PANE_IDS as readonly string[]).includes(paneId);
+}
+
+const GENERIC_DATA_ERROR_DUMP = /the data source is unavailable\.?/i;
+
+/**
+ * AGENTS.md: empty vs error. Written-data list panes must not dump
+ * `ErrorState` / `dataErrorMessage`'s generic sentence. Empty results use
+ * EmptyState; real failures name the source.
+ */
+export function assertNoGenericDataErrorDump(frame: string, paneId: string): void {
+  expect(
+    GENERIC_DATA_ERROR_DUMP.test(frame),
+    `${paneId}: generic ErrorState/dataErrorMessage dump ${JSON.stringify("The data source is unavailable.")} — use EmptyState for no-data and name the source on transport failure`,
+  ).toBe(false);
+}
+
+/**
  * Universal empty-state chrome every builtin pane must satisfy.
  */
 export function assertUniversalPaneDesignGates(
@@ -361,6 +457,9 @@ export function assertUniversalPaneDesignGates(
   assertFooterHasNoResultCounts(footer, paneId);
   assertFooterInfoFitsChrome(footer, paneId);
   assertBodyDoesNotRepeatPaneName(frame, paneId, paneName);
+  if (isWrittenDataListPane(paneId)) {
+    assertNoGenericDataErrorDump(frame, paneId);
+  }
 }
 
 /**

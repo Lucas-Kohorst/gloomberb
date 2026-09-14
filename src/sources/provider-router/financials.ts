@@ -3,6 +3,7 @@ import type { AnalystResearchData, CorporateActionsData, FinancialStatement, Quo
 import { hasLikelyQuoteUnitMismatch } from "../../utils/currency-units";
 import { mergeFinancialStatementRows } from "../../utils/financial-statements";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../../utils/price-history";
+import { exchangeHasTimedCashSession } from "../../market-data/market/freshness";
 import { isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
 import {
   mergeQuoteContributionMaps,
@@ -87,6 +88,7 @@ const ACTIVE_QUOTE_MARKET_STATES = new Set(["PRE", "REGULAR", "POST"]);
 
 function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now()): boolean {
   if (!ACTIVE_QUOTE_MARKET_STATES.has(quote.marketState ?? "")) return false;
+  if (!exchangeHasTimedCashSession(quote.listingExchangeName || quote.exchangeName)) return false;
   if (!Number.isFinite(quote.lastUpdated)) return false;
   const maxAge =
     quote.dataSource === "delayed"

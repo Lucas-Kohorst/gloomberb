@@ -4,12 +4,14 @@ import {
   createRssNewsCapability,
   currentRssCacheStaleMs,
   isRecentRssItem,
+  LATEST_RSS_REVALIDATE_MS,
   mergeRssFeedItems,
   RSS_CACHED_HEAD_LIMIT,
   RSS_FEED_CACHE_POLICY,
   RSS_FETCH_CONCURRENCY,
   RSS_MAX_AGE_MS,
   rssFeedCachePolicy,
+  shouldRevalidateRssCache,
 } from "./source";
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { setSharedRegistryForTests } from "../../../../registry";
@@ -31,6 +33,19 @@ const RSS_FIXTURE = `<rss version="2.0"><channel><item>
   <pubDate>${new Date().toUTCString()}</pubDate>
   <description>NVIDIA shares moved higher.</description>
 </item></channel></rss>`;
+
+describe("shouldRevalidateRssCache", () => {
+  test("lets a just-written cache paint without a refetch", () => {
+    const now = Date.parse("2026-09-13T14:00:00.000Z");
+    expect(shouldRevalidateRssCache(now - 30_000, now)).toBe(false);
+  });
+
+  test("revalidates firehose RSS after two minutes so new items are not stuck behind a 15m cache", () => {
+    const now = Date.parse("2026-09-13T14:00:00.000Z");
+    expect(shouldRevalidateRssCache(now - LATEST_RSS_REVALIDATE_MS, now)).toBe(true);
+    expect(shouldRevalidateRssCache(now - 15 * 60_000, now)).toBe(true);
+  });
+});
 
 describe("rssFeedCachePolicy", () => {
   test("follows the live refresh-interval chip when a registry is bound", () => {

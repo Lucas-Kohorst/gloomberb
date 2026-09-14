@@ -233,17 +233,20 @@ function readFeedCacheRecord(
   return cached;
 }
 
+function deserializeCachedItems(record: { value?: CachedFeedPayload } | null): MarketNewsItem[] | null {
+  if (!record?.value || !Array.isArray(record.value.items)) return null;
+  const items = record.value.items
+    .map(deserializeItem)
+    .filter((item): item is MarketNewsItem => !!item);
+  return items.length > 0 ? items : null;
+}
+
 function readFeedCache(
   persistence: PluginPersistence | undefined,
   feed: RssFeedConfig,
   options?: { allowExpired?: boolean; allowStale?: boolean },
 ): MarketNewsItem[] | null {
-  const cached = readFeedCacheRecord(persistence, feed, options);
-  if (!cached?.value || !Array.isArray(cached.value.items)) return null;
-  const items = cached.value.items
-    .map(deserializeItem)
-    .filter((item): item is MarketNewsItem => !!item);
-  return items.length > 0 ? items : null;
+  return deserializeCachedItems(readFeedCacheRecord(persistence, feed, options));
 }
 
 function writeFeedCache(
@@ -369,10 +372,7 @@ export function createRssNewsCapability(
             allowExpired: true,
             allowStale: true,
           });
-          const cached = record ? readFeedCache(options.persistence, feed, {
-            allowExpired: true,
-            allowStale: true,
-          }) : null;
+          const cached = deserializeCachedItems(record);
           const fresh = readFeedCache(options.persistence, feed);
           const revalidate = !fresh
             || (record != null && shouldRevalidateRssCache(record.fetchedAt));

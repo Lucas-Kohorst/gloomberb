@@ -157,6 +157,7 @@ export function CommandBar({
     getAvailablePaneShortcutTemplates,
     getAvailablePaneTemplates,
     getAvailablePluginCommands,
+    runPluginCommandDirect,
     ensureRouteFieldFocus,
     focusWorkflowField,
     getWorkflowFieldStringValue,
@@ -512,18 +513,33 @@ export function CommandBar({
       ...twitterFeedsFromConfig(state.config.pluginConfig),
       ...twitterFeedsFromOpenPanes(state.config.layout.instances),
     ];
+    const openQuery = (query: string) => {
+      const command = getAvailablePluginCommands().find((item) => item.id === "twitter-feed-open");
+      if (command) {
+        void runPluginCommandDirect(command, { query });
+        return;
+      }
+      pluginRegistry.createPaneFromTemplate("twitter-feed-pane", {
+        arg: query,
+        values: { query },
+      });
+      closeAll({ revertThemePreview: false });
+    };
     return buildTwitterFeedResultItems({
       feeds,
       query: rootQuery,
-      onOpen: (feed) => {
-        pluginRegistry.createPaneFromTemplate("twitter-feed-pane", {
-          arg: feed.query,
-          values: { query: feed.query },
-        });
-        closeAll({ revertThemePreview: false });
-      },
+      onOpen: (feed) => openQuery(feed.query),
+      onSearch: openQuery,
     });
-  }, [closeAll, pluginRegistry, rootQuery, state.config.layout.instances, state.config.pluginConfig]);
+  }, [
+    closeAll,
+    getAvailablePluginCommands,
+    pluginRegistry,
+    rootQuery,
+    runPluginCommandDirect,
+    state.config.layout.instances,
+    state.config.pluginConfig,
+  ]);
   const indexedResultItems = useMemo(() => [
     ...articleResultItems,
     ...predictionResultItems,

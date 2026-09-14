@@ -219,6 +219,9 @@ type SeriesEntry = {
   colorKey: string;
 };
 
+/** Keep time-axis tick labels off the pane footer. */
+export const TRADINGVIEW_TIME_AXIS_FOOTER_GAP_PX = 12;
+
 export function WebTradingViewChart({
   panel,
   seriesData,
@@ -786,28 +789,39 @@ export function WebTradingViewChart({
       ref={wrapperRef}
       style={{
         position: "relative",
+        display: "flex",
+        flexDirection: "column",
         width: "100%",
         height: "100%",
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
         flex: 1,
+        boxSizing: "border-box",
         cursor: measureEnabled ? "crosshair" : interactive ? "grab" : undefined,
         touchAction: interactive ? "none" : undefined,
         ...(style as CSSProperties | undefined),
+        paddingBottom: TRADINGVIEW_TIME_AXIS_FOOTER_GAP_PX,
       }}
       data-gloom-role="tradingview-chart"
     >
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      <div
+        ref={containerRef}
+        data-gloom-role="tradingview-chart-canvas"
+        style={{ position: "relative", flex: 1, minHeight: 0, width: "100%" }}
+      />
       <svg
         aria-hidden
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
         style={{
           position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: TRADINGVIEW_TIME_AXIS_FOOTER_GAP_PX,
+          width: "auto",
+          height: "auto",
           pointerEvents: "none",
           zIndex: 1,
         }}

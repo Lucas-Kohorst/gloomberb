@@ -4,6 +4,7 @@ import {
   buildRelatedPaneItems,
   buildRssFeedResultItems,
   buildTwitterFeedResultItems,
+  looksLikeTwitterSearchQuery,
   twitterFeedsFromOpenPanes,
 } from "./indexed-results";
 import { TWITTER_FEED_PANE_ID } from "../../../../plugins/builtin/cloud-tweets/model";
@@ -72,6 +73,50 @@ describe("indexed command-bar results", () => {
     expect(twitterFeedsFromOpenPanes([
       { instanceId: "x1", paneId: TWITTER_FEED_PANE_ID, title: "Kalshi nfl", params: { query: "kalshi nfl" } },
     ]).map((feed) => feed.title)).toEqual(["Kalshi nfl"]);
+  });
+
+  test("classifies X/Google search text without stealing tickers or pane prefixes", () => {
+    expect(looksLikeTwitterSearchQuery("from:elonmusk")).toBe(true);
+    expect(looksLikeTwitterSearchQuery("to:Reuters since:2024-01-01")).toBe(true);
+    expect(looksLikeTwitterSearchQuery("nvda OR amd filter:verified")).toBe(true);
+    expect(looksLikeTwitterSearchQuery("min_faves:100")).toBe(true);
+    expect(looksLikeTwitterSearchQuery('"why did nvda dump"')).toBe(true);
+    expect(looksLikeTwitterSearchQuery("@elonmusk")).toBe(true);
+    expect(looksLikeTwitterSearchQuery("#bitcoin")).toBe(true);
+    expect(looksLikeTwitterSearchQuery("why did nvda dump")).toBe(true);
+
+    expect(looksLikeTwitterSearchQuery("AAPL")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("nvidia")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("ART hormuz")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("LAW kalshi")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("ETF SPY")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("FH")).toBe(false);
+    expect(looksLikeTwitterSearchQuery("TWIT from:elonmusk")).toBe(false);
+  });
+
+  test("offers Search X when no saved feed matches", () => {
+    const opened: string[] = [];
+    const items = buildTwitterFeedResultItems({
+      feeds: [],
+      query: "from:elonmusk min_faves:50",
+      onOpen: () => {},
+      onSearch: (query) => {
+        opened.push(query);
+      },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.label).toBe("from:elonmusk min_faves:50");
+    expect(items[0]?.right).toBe("TWIT");
+    items[0]?.action();
+    expect(opened).toEqual(["from:elonmusk min_faves:50"]);
+
+    const unmatched = buildTwitterFeedResultItems({
+      feeds: [],
+      query: "why did nvda dump",
+      onOpen: () => {},
+      onSearch: () => {},
+    });
+    expect(unmatched.map((item) => item.right)).toEqual(["TWIT"]);
   });
 
   test("offers related panes that share a word with the query", () => {

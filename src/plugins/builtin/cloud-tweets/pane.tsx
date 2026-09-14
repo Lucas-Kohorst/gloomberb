@@ -236,7 +236,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     if (launchRequest.targetPaneId && launchRequest.targetPaneId !== paneId) return;
 
     const queryType = launchRequest.queryType === "Top" ? "Top" : "Latest";
-    openOrCreateFeed(resolveTwitterFeedQuery(launchRequest.query), queryType);
+    openOrCreateFeed(launchRequest.query.trim() || resolveTwitterFeedQuery(""), queryType);
     setLaunchRequest(null);
   }, [launchRequest, openOrCreateFeed, paneId, setLaunchRequest]);
 
@@ -374,8 +374,8 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           onResult={markFeedResult}
           onError={markFeedError}
           onFocusSearch={focusSearch}
-          emptyStateTitle={searchEnabled ? "No tweet data" : "Enter a search query"}
-          emptyStateHint={searchEnabled ? activeFeedQuery : undefined}
+          emptyStateTitle={searchEnabled ? "No tweets for this search" : "Enter a search query"}
+          emptyStateMessage={searchEnabled ? `No tweets matched “${activeFeedQuery}”.` : undefined}
         />
       )}
     </Box>

@@ -1,6 +1,7 @@
 import type { PluginPersistence } from "../../../../types/plugin";
 import type { CachePolicy, PersistedResourceValue } from "../../../../types/persistence";
 import { createThrottledFetch, type ThrottledFetchTransport } from "../../../../utils/throttled-fetch";
+import { withConnectionRequest } from "../../connections/register";
 import { normalizedHttpUrl } from "../../../../utils/url";
 import { omitSubstackFeedBodies } from "../normalize";
 import type { SubstackArticleSummary } from "../types";
@@ -149,9 +150,11 @@ export async function fetchJsonAuthenticated<T = unknown>(url: string, auth: Sub
   if (!isAllowedSubstackUrl(url)) {
     throw new Error("Refusing authenticated Substack request to an untrusted origin");
   }
-  const response = await substackClient.fetch(url, {
-    headers: authHeaders(auth),
-  });
+  const response = await withConnectionRequest("substack", "request", () => (
+    substackClient.fetch(url, {
+      headers: authHeaders(auth),
+    })
+  ));
   if (response.status === 401 || response.status === 403) {
     clearSubstackAuth();
     throw new SubstackAuthError("Substack session expired");
@@ -175,12 +178,12 @@ function persistableResourceValue<T>(kind: string, value: T): T {
   if (kind === "feed") {
     if (Array.isArray(value)) return omitSubstackFeedBodies(value as SubstackArticleSummary[]) as T;
     if (value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
-      const record = value as { items: SubstackArticleSummary[] };
+      const record = value as unknown as { items: SubstackArticleSummary[] };
       return { ...record, items: omitSubstackFeedBodies(record.items) } as T;
     }
   }
   if (kind === "publication" && value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
-    const record = value as { items: SubstackArticleSummary[] };
+    const record = value as unknown as { items: SubstackArticleSummary[] };
     return { ...record, items: omitSubstackFeedBodies(record.items) } as T;
   }
   return value;

@@ -39,6 +39,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "comment-letters": { categories: ["research", "data"] },
   "courtlistener": { categories: ["research", "data"] },
   "eia-energy": { categories: ["research", "data"] },
+  eulerpool: { categories: ["research", "data"] },
   "fdic-bank": { categories: ["research", "data"] },
   "filing-diff": { categories: ["research", "data"] },
   "foia-logs": { categories: ["research", "data"] },

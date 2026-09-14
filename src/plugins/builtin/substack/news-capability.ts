@@ -6,7 +6,6 @@ import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import { loadSubstackHome } from "./api/loaders";
 import { readResource } from "./api/store";
 import { SubstackAuthError } from "./api/types";
-import { withConnectionRequest } from "../connections/register";
 
 const SUBSTACK_FEED_CACHE_KIND = "feed";
 const SUBSTACK_FEED_CACHE_KEY = "subscribed";
@@ -120,9 +119,7 @@ export function createSubstackNewsCapability(): NewsCapability {
       async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
         if (!supports(query)) return [];
         try {
-          const home = await withConnectionRequest("substack", "home-feed", () =>
-            loadSubstackHome(),
-          );
+          const home = await loadSubstackHome();
           return normalizeAll(home.feed, newsHeadLimit(query));
         } catch (error) {
           if (error instanceof SubstackAuthError) return [];
