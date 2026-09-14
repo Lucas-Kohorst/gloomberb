@@ -76,7 +76,7 @@ export interface DataTableProps<
   visibleRangeKey?: string | number;
   onVisibleRangeChange?: (range: DataTableVisibleRange) => void;
   onRowMouseDown?: (item: T, index: number, event: any) => boolean | void;
-  onRowContextMenu?: (item: T, index: number, event: any) => void;
+  onRowContextMenu?: (item: T, index: number, rowKey: string, event: any) => void;
   rowContextMenuSurface?: boolean;
   renderCell: (
     item: T,

@@ -53,42 +53,74 @@ describe("context menu item builders", () => {
     expect(labels).toEqual(["Open Link", "Copy Link"]);
   });
 
-  test("ticker menu includes plugin ticker actions and hides remove actions without memberships", () => {
+  test("ticker row menu builds portfolio actions and keeps registered actions", () => {
+    const commands: string[] = [];
+    const copied: string[] = [];
+    const opened: string[] = [];
     const registry = {
       tickerActions: new Map([
-        ["alert", {
-          id: "alert",
-          label: "Set Alert",
+        ["research", {
+          id: "research",
+          label: "Open research",
+          keywords: [],
           execute: () => {},
         }],
       ]),
       navigateTicker: () => {},
       pinTicker: () => {},
-      openCommandBar: () => {},
+      openCommandBar: (query?: string) => { commands.push(query ?? ""); },
     } as unknown as PluginRegistry;
-
-    const labels = menuLabels(tickerContextMenuItems({
-      ticker: ticker(),
+    const items = tickerContextMenuItems({
+      ticker: ticker({ watchlists: ["watchlist:tech"] }),
       financials: null,
       registry,
-      copyText: async () => {},
-    }));
+      openExternal: (url) => { opened.push(url); },
+      copyText: async (symbol) => { copied.push(symbol); },
+    });
+    const actions = new Map(
+      items
+        .filter((item) => item.type !== "divider")
+        .map((item) => [item.id, item.onSelect]),
+    );
 
-    expect(labels).toContain("Set Alert");
-    expect(labels).toContain("Add to Watchlist...");
-    expect(labels).not.toContain("Remove from Watchlist...");
-    expect(labels).not.toContain("Remove from Portfolio...");
+    expect(items.find((item) => item.type !== "divider" && item.id === "ticker:add-to"))
+      .toMatchObject({
+        label: "Add to...",
+        submenu: [
+          { id: "ticker:add-watchlist", label: "Watchlist..." },
+          { id: "ticker:add-portfolio", label: "Portfolio..." },
+        ],
+      });
+    expect(menuLabels(items)).toContain("Open research");
+    actions.get("ticker:chart")?.();
+    actions.get("ticker:alert")?.();
+    actions.get("ticker:copy-symbol")?.();
+    actions.get("ticker:open-yahoo")?.();
+
+    expect(commands).toEqual(["GP AAPL", "SA AAPL"]);
+    expect(copied).toEqual(["AAPL"]);
+    expect(opened).toEqual(["https://finance.yahoo.com/quote/AAPL"]);
   });
 
-  test("ticker menu includes remove actions when memberships exist", () => {
-    const labels = menuLabels(tickerContextMenuItems({
+  test("ticker menu only includes removals for collection members", () => {
+    const emptyLabels = menuLabels(tickerContextMenuItems({
+      ticker: ticker(),
+      financials: null,
+      registry: null,
+      openExternal: () => {},
+      copyText: async () => {},
+    }));
+    const memberLabels = menuLabels(tickerContextMenuItems({
       ticker: ticker({ watchlists: ["watchlist:tech"], portfolios: ["portfolio:main"] }),
       financials: null,
       registry: null,
+      openExternal: () => {},
       copyText: async () => {},
     }));
 
-    expect(labels).toContain("Remove from Watchlist...");
-    expect(labels).toContain("Remove from Portfolio...");
+    expect(emptyLabels).not.toContain("Remove from Watchlist...");
+    expect(emptyLabels).not.toContain("Remove from Portfolio...");
+    expect(memberLabels).toContain("Remove from Watchlist...");
+    expect(memberLabels).toContain("Remove from Portfolio...");
   });
 });

@@ -217,12 +217,14 @@ export function tickerContextMenuItems({
   financials,
   registry,
   openTicker,
+  openExternal,
   copyText,
 }: {
   ticker: TickerRecord;
   financials: TickerFinancials | null;
   registry: PluginRegistry | null;
   openTicker?: (symbol: string) => void;
+  openExternal: (url: string) => void | Promise<void>;
   copyText: (text: string) => Promise<void>;
 }): ContextMenuItem[] {
   const symbol = ticker.metadata.ticker;
@@ -238,20 +240,41 @@ export function tickerContextMenuItems({
       onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID, forceNewPane: true }),
     },
     {
-      id: "ticker:copy-symbol",
-      label: "Copy Symbol",
-      onSelect: () => { void copyText(symbol); },
+      id: "ticker:chart",
+      label: "Open chart",
+      onSelect: () => registry?.openCommandBar(`GP ${symbol}`),
+    },
+    {
+      id: "ticker:alert",
+      label: "Set alert...",
+      onSelect: () => registry?.openCommandBar(`SA ${symbol}`),
     },
     contextMenuDivider("ticker:collection-divider"),
     {
-      id: "ticker:add-watchlist",
-      label: "Add to Watchlist...",
-      onSelect: () => registry?.openCommandBar(`AW ${symbol}`),
+      id: "ticker:add-to",
+      label: "Add to...",
+      submenu: [
+        {
+          id: "ticker:add-watchlist",
+          label: "Watchlist...",
+          onSelect: () => registry?.openCommandBar(`AW ${symbol}`),
+        },
+        {
+          id: "ticker:add-portfolio",
+          label: "Portfolio...",
+          onSelect: () => registry?.openCommandBar(`AP ${symbol}`),
+        },
+      ],
     },
     {
-      id: "ticker:add-portfolio",
-      label: "Add to Portfolio...",
-      onSelect: () => registry?.openCommandBar(`AP ${symbol}`),
+      id: "ticker:copy-symbol",
+      label: "Copy ticker",
+      onSelect: () => { void copyText(symbol); },
+    },
+    {
+      id: "ticker:open-yahoo",
+      label: "Open in Yahoo",
+      onSelect: () => openExternal(`https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}`),
     },
   ];
 
@@ -441,6 +464,7 @@ export function useTickerContextMenu({
         financials: financials ?? null,
         registry,
         openTicker: onOpen,
+        openExternal: renderer.openExternal.bind(renderer),
         copyText: renderer.copyText.bind(renderer),
       }),
       event,
