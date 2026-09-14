@@ -3,24 +3,28 @@ import { Box, Input, Text, type InputRenderable, type TextareaRenderable } from 
 import { useShortcut } from "../../../react/input";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import { MarkdownEditor } from "../../../components/markdown-editor";
 import { ConfirmDialog, EmptyState, Tabs, usePaneFooter } from "../../../components";
 import { type PromptContext, useDialog } from "../../../ui/dialog";
-import { usePluginAppActions } from "../../runtime";
+import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
 import type { NotesFiles } from "./files";
 import { MarkdownNotePreview } from "./markdown-note-preview";
 import {
   formatDeleteNoteTitle,
   formatLastEdited,
   generateNoteId,
+  searchNotes,
   type QuickNoteEntry,
 } from "./model";
 import { useSyncedText } from "./text-state";
 
-export function createQuickNotesPane(notesFiles: NotesFiles) {
+export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery: () => string = () => "") {
   return function QuickNotesPane({ focused, width }: PaneProps) {
     const dialog = useDialog();
     const { notify } = usePluginAppActions();
+    const { navigateTicker, pinTicker } = usePluginTickerActions();
+    const { switchTab } = usePluginPaneActions();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [editing, setEditing] = useState(false);
     const [tabs, setTabs] = useState<QuickNoteEntry[]>([]);
@@ -28,13 +32,34 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState("");
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [initialSearchQuery] = useState(consumeSearchQuery);
+    const [searching, setSearching] = useState(Boolean(initialSearchQuery));
+    const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+    const [searchResults, setSearchResults] = useState<ReturnType<typeof searchNotes>>([]);
+    const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
     const { text: noteText, textRef: noteTextRef, setText: setNoteText } = useSyncedText("");
     const renameInputRef = useRef<InputRenderable>(null);
+    const searchInputRef = useRef<InputRenderable>(null);
     const prevTabRef = useRef<string | null>(null);
     const lastSavedTextRef = useRef<Map<string, string>>(new Map());
     const loadedTabIdRef = useRef<string | null>(null);
     const loadedRef = useRef(false);
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
+    useEffect(() => {
+      if (!searching) {
+        setSearchResults([]);
+        return;
+      }
+      let cancelled = false;
+      Promise.all([notesFiles.list(), notesFiles.loadQuickNotesIndex()]).then(([entries, quickNotes]) => {
+        if (!cancelled) {
+          setSearchResults(searchNotes(entries, quickNotes, searchQuery));
+          setSelectedSearchIndex(0);
+        }
+      });
+      return () => { cancelled = true; };
+    }, [notesFiles, searchQuery, searching, tabs]);
 
     const saveQuickNotesIndex = useCallback((entries: QuickNoteEntry[]) => {
       notesFiles.saveQuickNotesIndex(entries).catch((error) => {
@@ -76,6 +101,20 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
         return next;
       });
     }, [activeTabId, noteTextRef, notesFiles, notify, readActiveNoteText, saveQuickNotesIndex]);
+
+    const openSearchResult = useCallback((index: number) => {
+      const result = searchResults[index];
+      if (!result) return;
+      if (result.kind === "quick") {
+        saveTab(activeTabId);
+        setActiveTabId(result.key.slice("__note-".length, -2));
+        setSearching(false);
+        setEditing(false);
+        return;
+      }
+      pinTicker(result.key);
+      switchTab("notes");
+    }, [activeTabId, pinTicker, saveTab, searchResults, switchTab]);
 
     useEffect(() => {
       if (loadedRef.current) return;
@@ -260,6 +299,24 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
       }
 
       const isEnter = event.name === "enter" || event.name === "return";
+      if (searching) {
+        if (isEnter) {
+          openSearchResult(selectedSearchIndex);
+          return;
+        }
+        if (event.name === "escape") {
+          setSearching(false);
+          return;
+        }
+        if (event.name === "up" || event.name === "down") {
+          setSelectedSearchIndex((current) => Math.max(0, Math.min(
+            searchResults.length - 1,
+            current + (event.name === "down" ? 1 : -1),
+          )));
+          return;
+        }
+        return;
+      }
       if (isEnter && !editing) {
         setEditing(true);
         return;
@@ -280,6 +337,10 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
         // Not `r`: that is the app-wide refresh key.
         if (event.name === "t") {
           startRename();
+          return;
+        }
+        if (event.name === "/") {
+          setSearching(true);
           return;
         }
         if ((event.name === "[" || event.name === "]") && tabs.length > 1) {
@@ -305,8 +366,9 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
         : [
             { id: "new", key: "n", label: "ew", onPress: addTab },
             { id: "title", key: "t", label: "itle", onPress: startRename, disabled: !activeTabId },
+            { id: "search", key: "/", label: "search", onPress: () => setSearching(true) },
           ],
-    }), [activeTab, activeTabId, addTab, editing, loadError, renaming, startRename]);
+    }), [activeTab, activeTabId, addTab, editing, loadError, renaming, startRename, searching]);
 
     return (
       <Box flexDirection="column" flexGrow={1}>
@@ -346,7 +408,37 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
             />
           </Box>
         )}
-        <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!editing && !renaming && !loadError) setEditing(true); }}>
+        {searching && (
+          <Box flexDirection="column" paddingX={1}>
+            <Box height={1} flexDirection="row">
+              <Text fg={colors.textDim}>{t("Search: ")}</Text>
+              <Input
+                ref={searchInputRef}
+                initialValue={searchQuery}
+                focused={focused}
+                textColor={colors.text}
+                backgroundColor={colors.panel}
+                flexGrow={1}
+                onChange={setSearchQuery}
+              />
+            </Box>
+            {searchResults.map((result, index) => (
+              <Box
+                key={result.key}
+                backgroundColor={index === selectedSearchIndex ? colors.selected : undefined}
+                onMouseDown={() => openSearchResult(index)}
+              >
+                <Text fg={index === selectedSearchIndex ? colors.selectedText : colors.text}>
+                  {result.kind === "ticker" ? `$${result.title}` : result.title}
+                </Text>
+              </Box>
+            ))}
+            {searchQuery && searchResults.length === 0 && (
+              <Text fg={colors.textDim}>{t("No matching notes.")}</Text>
+            )}
+          </Box>
+        )}
+        {!searching && <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!editing && !renaming && !loadError) setEditing(true); }}>
           {loadError ? (
             <EmptyState
               title="This note could not be read."
@@ -368,9 +460,10 @@ export function createQuickNotesPane(notesFiles: NotesFiles) {
               width={width}
               placeholder="Write notes..."
               onActivate={() => { if (!renaming && !loadError) setEditing(true); }}
+              onOpenTicker={navigateTicker}
             />
           )}
-        </Box>
+        </Box>}
       </Box>
     );
   };

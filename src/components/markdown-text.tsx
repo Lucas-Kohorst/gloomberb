@@ -12,6 +12,13 @@ export interface MarkdownTextProps {
   catalog?: Record<string, InlineTickerCatalogEntry>;
   textColor?: string;
   openTicker?: (symbol: string) => void;
+  /** Override the standard social-text tokenizer for a content-specific grammar. */
+  tokenizeTickers?: (text: string) => Array<
+    | { kind: "text"; value: string }
+    | { kind: "ticker"; value: string; symbol: string }
+  >;
+  /** Render valid ticker links even when they are not in the local catalog. */
+  allowUnknownTickers?: boolean;
 }
 
 export interface StyledSegment {
@@ -347,6 +354,8 @@ function MarkdownLine({
   catalog,
   textColor,
   openTicker,
+  tokenizeTickers,
+  allowUnknownTickers = false,
   hoveredSymbol,
   onHover,
 }: {
@@ -355,6 +364,8 @@ function MarkdownLine({
   catalog: Record<string, InlineTickerCatalogEntry>;
   textColor: string;
   openTicker: (symbol: string) => void;
+  tokenizeTickers?: MarkdownTextProps["tokenizeTickers"];
+  allowUnknownTickers?: boolean;
   hoveredSymbol: string | null;
   onHover: (symbol: string | null) => void;
 }) {
@@ -372,8 +383,10 @@ function MarkdownLine({
 
   // Check if any segment contains ticker symbols
   const fullText = parsed.segments.map((s) => s.text).join("");
-  const tickerTokens = tokenizeTickerText(fullText);
-  const hasTickers = tickerTokens.some((t) => t.kind === "ticker" && catalog[t.symbol]?.status !== "missing");
+  const tokenize = tokenizeTickers ?? tokenizeTickerText;
+  const tickerTokens = tokenize(fullText);
+  const hasTickers = tickerTokens.some((t) => t.kind === "ticker"
+    && (allowUnknownTickers || catalog[t.symbol]?.status !== "missing"));
 
   if (!hasTickers) {
     // Simple case: no tickers, render as styled text
@@ -407,7 +420,7 @@ function MarkdownLine({
             </Text>
           );
         }
-        return tokenizeTickerText(segment.text).map((token, tokIdx) => {
+        return tokenize(segment.text).map((token, tokIdx) => {
           if (token.kind === "text") {
             if (!token.value) return null;
             return (
@@ -423,7 +436,7 @@ function MarkdownLine({
             );
           }
           const entry = catalog[token.symbol];
-          if (!entry || entry.status === "missing") {
+          if ((!entry || entry.status === "missing") && !allowUnknownTickers) {
             return (
               <Text
                 key={`${segIdx}:${tokIdx}`}
@@ -440,8 +453,8 @@ function MarkdownLine({
             <TickerBadge
               key={`badge:${segIdx}:${tokIdx}:${token.symbol}`}
               symbol={token.symbol}
-              status={entry.status}
-              quote={entry.quote}
+              status={entry?.status === "loading" ? "loading" : "ready"}
+              quote={entry?.quote ?? null}
               hovered={hoveredSymbol === token.symbol}
               onHoverStart={() => onHover(token.symbol)}
               onHoverEnd={() => onHover(null)}
@@ -460,6 +473,8 @@ export function MarkdownText({
   catalog = {},
   textColor = colors.text,
   openTicker = () => {},
+  tokenizeTickers,
+  allowUnknownTickers = false,
 }: MarkdownTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const lines = parseMarkdownDocument(text);
@@ -478,6 +493,8 @@ export function MarkdownText({
             catalog={catalog}
             textColor={textColor}
             openTicker={openTicker}
+            tokenizeTickers={tokenizeTickers}
+            allowUnknownTickers={allowUnknownTickers}
             hoveredSymbol={hoveredSymbol}
             onHover={setHoveredSymbol}
           />

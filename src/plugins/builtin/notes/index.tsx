@@ -14,7 +14,12 @@ export const notesPlugin: GloomPlugin = {
   setup(ctx) {
     const notesFiles = new NotesFiles(ctx.getConfig().dataDir);
     const NotesTab = createNotesTab(notesFiles);
-    const QuickNotesPane = createQuickNotesPane(notesFiles);
+    let pendingSearchQuery = "";
+    const QuickNotesPane = createQuickNotesPane(notesFiles, () => {
+      const query = pendingSearchQuery;
+      pendingSearchQuery = "";
+      return query;
+    });
 
     ctx.registerSyncContributor(createNotesSyncContributor(notesFiles));
 
@@ -48,8 +53,11 @@ export const notesPlugin: GloomPlugin = {
       label: "Notes",
       description: "Open a general-purpose notes scratchpad",
       keywords: ["notes", "quick", "scratchpad", "memo"],
-      shortcut: { prefix: "NOTE" },
-      createInstance: () => ({ placement: "floating" }),
+      shortcut: { prefix: "NOTE", argPlaceholder: "search", argKind: "text", argOptional: true },
+      createInstance: (_context, options) => {
+        pendingSearchQuery = options?.arg ?? "";
+        return { placement: "floating" };
+      },
     });
   },
 };

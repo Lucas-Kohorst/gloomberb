@@ -51,6 +51,7 @@ export function TickerBadge({
       <Box
         paddingX={1}
         backgroundColor={backgroundColor}
+        focusable={interactive}
         data-gloom-context-menu-surface="true"
         onMouseOver={() => {
           onHoverStart?.();
@@ -72,6 +73,12 @@ export function TickerBadge({
         }}
         onContextMenu={(event: any) => {
           void openTickerContextMenu(event);
+        }}
+        onKeyDown={(event: { key?: string; name?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+          if (!interactive || (event.key !== "Enter" && event.key !== " " && event.name !== "enter")) return;
+          event.stopPropagation?.();
+          event.preventDefault?.();
+          onOpen(symbol);
         }}
       >
         <Text fg={color} attributes={TextAttributes.BOLD}>
