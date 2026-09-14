@@ -292,7 +292,7 @@ describe("useAppGlobalShortcuts", () => {
     expect(event.propagationStopped).toBe(false);
   });
 
-  test("opens Help with question mark after the command bar is closed", async () => {
+  test("opens the cheatsheet with question mark after the command bar is closed", async () => {
     const openedPanes: string[] = [];
     const actions: AppAction[] = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts-help"));
@@ -300,7 +300,7 @@ describe("useAppGlobalShortcuts", () => {
 
     const event = await emitKeypress({ name: "?", shift: true });
 
-    expect(openedPanes).toEqual(["help"]);
+    expect(openedPanes).toEqual([]);
     expect(actions).toEqual([]);
     expect(event.defaultPrevented).toBe(true);
     expect(event.propagationStopped).toBe(true);
