@@ -210,7 +210,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   }
 
   return (
-    <PaneFooterProvider>
+    <PaneFooterProvider paneId={desktopWindowBridge.paneId}>
       {(footer) => (
         <PaneHeaderAccessoryProvider>
           {(titleAccessory) => {

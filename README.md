@@ -221,6 +221,7 @@ See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface availa
 |-----|--------|
 | `Ctrl+P` | Open command mode |
 | `` ` `` | Open ticker search |
+| `?` | Show focused-pane actions and global keys; choose All shortcuts for full help |
 | `Ctrl+,` | Open focused pane settings |
 | `Ctrl+W` | Close focused pane |
 | `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |

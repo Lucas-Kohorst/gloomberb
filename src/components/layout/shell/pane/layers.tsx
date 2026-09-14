@@ -127,7 +127,7 @@ export function ShellPaneLayers({
             height={rect.height}
             zIndex={isFullscreenBase ? 0 : transientFocusActive ? 10 : undefined}
           >
-            <PaneFooterProvider>
+            <PaneFooterProvider paneId={leaf.instanceId}>
               {(footer) => (
                 <PaneHeaderAccessoryProvider>
                   {(titleAccessory) => {
@@ -199,7 +199,7 @@ export function ShellPaneLayers({
         const windowModeSelected = windowModePaneId === paneId;
         const showActions = focused || hoveredPaneId === paneId || menuPaneId === paneId;
         return (
-          <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
+          <PaneFooterProvider key={`float:${pane.instance.instanceId}`} paneId={pane.instance.instanceId}>
             {(footer) => (
               <PaneHeaderAccessoryProvider>
                 {(titleAccessory) => {
