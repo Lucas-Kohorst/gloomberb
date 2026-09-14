@@ -12,7 +12,7 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import type { PricePoint } from "../../../types/financials";
 import { colors } from "../../../theme/colors";
-import { formatPercentRaw } from "../../../utils/format";
+import { formatSignedPercentValue } from "../../../utils/format";
 import { useShortcut } from "../../../react/input";
 import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
@@ -32,7 +32,7 @@ type PatternColumn = DataTableColumn & { id: PatternColumnId };
 
 const PATTERN_COLUMNS: PatternColumn[] = [
   { id: "type", label: "PATTERN", width: 24, align: "left" },
-  { id: "confidence", label: "CONFIDENCE", width: 13, align: "right" },
+  { id: "confidence", label: "CONFIDENCE%", width: 13, align: "right" },
   { id: "dateRange", label: "DATE RANGE", width: 24, align: "left" },
   { id: "description", label: "DESCRIPTION", width: 36, align: "left", flexGrow: 1 },
 ];
@@ -90,7 +90,7 @@ export function PatternRecognitionPane({ focused, width, height }: Pick<PaneProp
         };
       case "confidence":
         return {
-          text: formatPercentRaw(row.confidence * 100),
+          text: formatSignedPercentValue(row.confidence * 100),
           color: selectedColor ?? colors.positive,
         };
       case "dateRange":

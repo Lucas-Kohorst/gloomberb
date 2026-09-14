@@ -7,7 +7,7 @@ import type { PluginModule } from "../plugin-module";
 import type { PricePoint, Quote } from "../../../types/financials";
 import { usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatPercentRaw } from "../../../utils/format";
+import { formatCurrency, formatSignedPercentValue } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
 import { SectorMoveBar } from "./move-bar";
@@ -240,17 +240,17 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
         };
       case "changePercent":
         return {
-          text: row.changePercent !== null ? formatPercentRaw(row.changePercent) : "—",
+          text: row.changePercent !== null ? formatSignedPercentValue(row.changePercent) : "—",
           color: selectedColor ?? (row.changePercent !== null ? priceColor(row.changePercent) : colors.textDim),
         };
       case "return1M":
         return {
-          text: row.loading && row.return1M === null ? "…" : row.return1M !== null ? formatPercentRaw(row.return1M) : "—",
+          text: row.loading && row.return1M === null ? "…" : row.return1M !== null ? formatSignedPercentValue(row.return1M) : "—",
           color: selectedColor ?? (row.return1M !== null ? priceColor(row.return1M) : colors.textDim),
         };
       case "return1Y":
         return {
-          text: row.loading && row.return1Y === null ? "…" : row.return1Y !== null ? formatPercentRaw(row.return1Y) : "—",
+          text: row.loading && row.return1Y === null ? "…" : row.return1Y !== null ? formatSignedPercentValue(row.return1Y) : "—",
           color: selectedColor ?? (row.return1Y !== null ? priceColor(row.return1Y) : colors.textDim),
         };
       case "bar":

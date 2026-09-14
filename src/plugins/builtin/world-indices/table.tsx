@@ -2,7 +2,7 @@ import type { DataTableCell, DataTableColumn } from "../../../components";
 import { marketStateColor, marketStateLabel } from "../../../market-data/market/status";
 import { colors, priceColor } from "../../../theme/colors";
 import { TextAttributes } from "../../../ui";
-import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
+import { formatCurrency, formatNumber, formatSignedPercentValue } from "../../../utils/format";
 import { marketStatusDot, type BoardQuoteMap } from "../shared/use-quote-board";
 import type {
   WorldIndexColumnId,
@@ -36,7 +36,7 @@ export function createWorldIndexColumns(width: number): WorldIndexColumn[] {
     { id: "name", label: "NAME", width: 10, align: "left", flexGrow: 1 },
     { id: "price", label: "LAST", width: 15, align: "right" },
     { id: "change", label: "CHG", width: 12, align: "right" },
-    { id: "changePercent", label: "CHG%", width: 9, align: "right" },
+    { id: "changePercent", label: "CHG%", width: 8, align: "right" },
     // Left-aligned on purpose: the shared table trims a few cells off the right
     // edge of a floating pane, and a right-aligned value would lose digits.
     // 5-char 24h time in an 8-wide column: the shared table's floating-pane width
@@ -114,7 +114,7 @@ export function renderWorldIndexCell(
       if (loadingCell) return { text: "…", color: dimmed };
       if (!quote || quote.changePercent === undefined) return { text: "—", color: dimmed };
       return {
-        text: formatPercentRaw(quote.changePercent),
+        text: formatSignedPercentValue(quote.changePercent),
         color: selectedColor ?? priceColor(quote.changePercent),
       };
     case "time":

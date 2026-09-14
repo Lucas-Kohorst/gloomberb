@@ -30,9 +30,9 @@ export const SECTOR_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
   { id: "name", label: "SECTOR", description: "Sector or industry name." },
   { id: "etf", label: "ETF", description: "Tracking ETF ticker." },
   { id: "price", label: "LAST", description: "Last price." },
-  { id: "changePercent", label: "1D", description: "1-day percent change." },
-  { id: "return1M", label: "1M", description: "1-month return." },
-  { id: "return1Y", label: "1Y", description: "1-year return." },
+  { id: "changePercent", label: "1D%", description: "1-day percent change." },
+  { id: "return1M", label: "1M%", description: "1-month return." },
+  { id: "return1Y", label: "1Y%", description: "1-year return." },
   { id: "bar", label: "MOVE", description: "Relative daily move bar." },
 ];
 
@@ -157,9 +157,9 @@ export function buildSectorColumns(): SectorColumn[] {
     { id: "name", label: "SECTOR", width: 10, align: "left", flexGrow: 1 },
     { id: "etf", label: "ETF", width: 4, align: "left" },
     { id: "price", label: "LAST", width: 8, align: "right" },
-    { id: "changePercent", label: "1D", width: 8, align: "right" },
-    { id: "return1M", label: "1M", width: 8, align: "right" },
-    { id: "return1Y", label: "1Y", width: 8, align: "right" },
+    { id: "changePercent", label: "1D%", width: 8, align: "right" },
+    { id: "return1M", label: "1M%", width: 8, align: "right" },
+    { id: "return1Y", label: "1Y%", width: 8, align: "right" },
     // Labelled with the window it encodes: it sits after 1Y but tracks 1D.
     { id: "bar", label: "1D MOVE", width: 8, align: "left" },
   ];
