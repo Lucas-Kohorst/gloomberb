@@ -247,9 +247,10 @@ export function resolveIssuerQuery(
   return ticker?.metadata.name?.trim() || symbol?.trim().toUpperCase() || null;
 }
 
+/** Bare basis points; the "SPREAD BP" / "COUPON BP" column headers carry the unit. */
 export function formatBp(value: number | null): string {
   if (value == null) return "--";
-  return `${Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 10) / 10}bp`;
+  return `${Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 10) / 10}`;
 }
 
 export function formatNotional(trade: Pick<CdsTrade, "notional" | "notionalCapped">): string {
@@ -296,7 +297,7 @@ export function buildIssuerColumns(): IssuerColumn[] {
     { id: "issuer", label: "ISSUER", width: 16, align: "left", flexGrow: 1 },
     { id: "trades", label: "TRADES", width: 7, align: "right" },
     { id: "last", label: "LAST UTC", width: 12, align: "left" },
-    { id: "spread", label: "SPREAD", width: 10, align: "right" },
+    { id: "spread", label: "SPREAD BP", width: 10, align: "right" },
   ];
 }
 
@@ -350,8 +351,8 @@ export function buildTradeColumns(): TradeColumn[] {
     { id: "maturity", label: "MATURITY", width: 10, align: "left", flexGrow: 1 },
     { id: "notional", label: "NOTIONAL", width: 11, align: "right" },
     { id: "currency", label: "CCY", width: 5, align: "left" },
-    { id: "coupon", label: "COUPON", width: 9, align: "right" },
-    { id: "spread", label: "SPREAD", width: 10, align: "right" },
+    { id: "coupon", label: "COUPON BP", width: 9, align: "right" },
+    { id: "spread", label: "SPREAD BP", width: 10, align: "right" },
     { id: "upfront", label: "UPFRONT", width: 13, align: "right" },
   ];
 }

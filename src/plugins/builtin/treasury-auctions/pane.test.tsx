@@ -129,10 +129,10 @@ describe("TreasuryAuctionsPane", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("13-Week");
-    expect(frame).toContain("3.802%");
+    expect(frame).toContain("3.802");
     expect(frame).toContain("2.86");
-    // Indirect share is derived, not reported.
-    expect(frame).toContain("48.6%");
+    // Indirect share is derived, not reported; header "INDIRECT%" carries the unit.
+    expect(frame).toContain("48.6");
     // The 20-Year is announced but unpublished: every metric cell reads the
     // same placeholder the reported-but-missing cells use.
     expect(frame).toContain("20-Year");

@@ -170,9 +170,9 @@ export function buildAuctionColumns(): AuctionColumn[] {
     { id: "date", label: "DATE", width: 8, align: "left" },
     { id: "type", label: "TYPE", width: 6, align: "left" },
     { id: "term", label: "TERM", width: 10, align: "left", flexGrow: 1 },
-    { id: "rate", label: "RATE", width: 8, align: "right" },
+    { id: "rate", label: "RATE%", width: 8, align: "right" },
     { id: "btc", label: "B/C", width: 6, align: "right" },
-    { id: "indirect", label: "INDIRECT", width: 9, align: "right" },
-    { id: "size", label: "SIZE", width: 8, align: "right" },
+    { id: "indirect", label: "INDIRECT%", width: 9, align: "right" },
+    { id: "size", label: "SIZE$", width: 8, align: "right" },
   ];
 }

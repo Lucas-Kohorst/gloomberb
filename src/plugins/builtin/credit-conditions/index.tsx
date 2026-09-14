@@ -28,14 +28,15 @@ interface Column extends DataTableColumn { id: SortId }
 
 const COLUMNS: Column[] = [
   { id: "label", label: "INDEX", width: 12, align: "left", flexGrow: 1 },
-  { id: "oas", label: "OAS", width: 10, align: "right" },
-  { id: "change", label: "1D", width: 9, align: "right" },
+  { id: "oas", label: "OAS BP", width: 10, align: "right" },
+  { id: "change", label: "1D BP", width: 9, align: "right" },
 ];
 
+/** Bare basis points; the "OAS BP" / "1D BP" column headers carry the unit. */
 function formatBp(value: number | null, signed = false): string {
   if (value == null) return "--";
   const sign = signed && value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}bp`;
+  return `${sign}${value.toFixed(1)}`;
 }
 
 function sortRows(rows: CreditConditionRow[], id: SortId, descending: boolean): CreditConditionRow[] {

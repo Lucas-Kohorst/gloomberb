@@ -73,20 +73,22 @@ export function buildYieldColumns(): YieldColumnDef[] {
     { id: "label", label: "LABEL", width: 14, align: "left", flexGrow: 1 },
     { id: "rating", label: "RATING", width: 5, align: "left" },
     { id: "maturity", label: "MATURITY", width: 8, align: "left" },
-    { id: "yield", label: "YIELD", width: 9, align: "right" },
-    { id: "spread", label: "SPREAD", width: 10, align: "right" },
+    { id: "yield", label: "YIELD%", width: 9, align: "right" },
+    { id: "spread", label: "SPREAD BP", width: 10, align: "right" },
   ];
 }
 
-export function formatYieldPercent(value: number | null): string {
+/** Bare yield for the "YIELD%" column; the header carries the unit. */
+export function formatYieldValue(value: number | null): string {
   if (value == null) return "—";
-  return `${value.toFixed(2)}%`;
+  return value.toFixed(2);
 }
 
-export function formatSpreadBp(value: number | null): string {
+/** Bare spread for the "SPREAD BP" column; the header carries the unit. */
+export function formatSpreadValue(value: number | null): string {
   if (value == null) return "—";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${value}bp`;
+  return `${sign}${value}`;
 }
 
 export function formatYieldDate(value: Date | null): string {

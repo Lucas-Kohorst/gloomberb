@@ -57,20 +57,35 @@ function formatAuctionDate(value: string, withYear = false): string {
   });
 }
 
+/**
+ * Detail rows keep the unit; table cells rely on the "RATE%" header, so a
+ * "4.523%" style print never costs a column and clips the number itself.
+ */
 function formatRate(value: number | null): string {
   return value == null ? "—" : `${value.toFixed(3)}%`;
+}
+
+/** Bare rate for the "RATE%" column; the header carries the unit. */
+function formatRateCell(value: number | null): string {
+  return value == null ? "—" : value.toFixed(3);
 }
 
 function formatRatio(value: number | null): string {
   return value == null ? "—" : value.toFixed(2);
 }
 
-function formatPct(value: number | null): string {
-  return value == null ? "—" : `${value.toFixed(1)}%`;
+/** Bare percent for the "INDIRECT%" column; the header carries the unit. */
+function formatIndirectCell(value: number | null): string {
+  return value == null ? "—" : value.toFixed(1);
 }
 
 function formatMoney(value: number | null): string {
   return value == null ? "—" : `$${formatCompact(value)}`;
+}
+
+/** Bare dollars for the "SIZE$" column; the header carries the unit. */
+function formatMoneyCell(value: number | null): string {
+  return value == null ? "—" : formatCompact(value);
 }
 
 function secTypeColor(secType: string, selected: boolean): string {
@@ -115,13 +130,13 @@ function renderAuctionCell(
     case "term":
       return { text: auction.securityTerm, color: selected ?? colors.text };
     case "rate":
-      return { text: formatRate(rateValue(auction)), color: selected ?? colors.textBright };
+      return { text: formatRateCell(rateValue(auction)), color: selected ?? colors.textBright };
     case "btc":
       return { text: formatRatio(auction.bidToCoverRatio), color: selected ?? colors.text };
     case "indirect":
-      return { text: formatPct(indirectPct(auction)), color: selected ?? colors.text };
+      return { text: formatIndirectCell(indirectPct(auction)), color: selected ?? colors.text };
     case "size":
-      return { text: formatMoney(auctionSize(auction)), color: dimmed };
+      return { text: formatMoneyCell(auctionSize(auction)), color: dimmed };
   }
 }
 
