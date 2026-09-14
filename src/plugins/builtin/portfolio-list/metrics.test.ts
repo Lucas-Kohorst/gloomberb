@@ -105,12 +105,12 @@ describe("portfolio-metrics", () => {
       color: mutedPositive,
     });
     expect(getColumnValue(changePctColumn, ticker, financials, defaultColumnContext)).toEqual({
-      text: "+4.35%",
+      text: "+4.35",
       color: mutedPositive,
     });
     const unchanged = createFinancials({ quote: { change: 0, changePercent: 0, previousClose: 120, marketState: "CLOSED" } });
     expect(getColumnValue(changePctColumn, ticker, unchanged, defaultColumnContext)).toEqual({
-      text: "0.00%",
+      text: "0.00",
       color: colors.neutral,
     });
 
@@ -352,14 +352,14 @@ describe("portfolio-metrics", () => {
     expect(getColumnValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context).text).toBe("+50.00%");
     expect(getSortValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context)).toBe(50);
     expect(getColumnValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context)).toMatchObject({
-      text: "+12.00%",
+      text: "+12.00",
       color: expect.any(String),
     });
     expect(getSortValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context)).toBe(12);
     expect(getColumnValue({ id: "dollar_volume", label: "$VOL", width: 9, align: "right" }, ticker, financials, context).text).toBe("1.5B");
-    expect(getColumnValue({ id: "spread_pct", label: "SPR%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+0.83%");
+    expect(getColumnValue({ id: "spread_pct", label: "SPR%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+0.83");
     expect(getColumnValue({ id: "bid_ask_size", label: "B/A SZ", width: 9, align: "right" }, ticker, financials, context).text).toBe("100/150");
-    expect(getColumnValue({ id: "mark_delta", label: "MARK%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+1.00%");
+    expect(getColumnValue({ id: "mark_delta", label: "MARK%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+1.00");
     expect(getColumnValue({ id: "held", label: "HELD", width: 6, align: "right" }, ticker, financials, context).text).toBe("2.0y");
     expect(getColumnValue({ id: "tags", label: "TAGS", width: 14, align: "left" }, ticker, financials, context).text).toBe("core,mega");
   });
@@ -372,7 +372,7 @@ describe("portfolio-metrics", () => {
     });
     const column: ColumnConfig = { id: "range_52w", label: "52W%", width: 7, align: "right" };
 
-    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+8.00%");
+    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+8.00");
     expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(8);
   });
 
@@ -386,7 +386,7 @@ describe("portfolio-metrics", () => {
       ],
     });
     const column: ColumnConfig = { id: "range_52w", label: "52W%", width: 7, align: "right" };
-    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+100.00%");
+    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+100.00");
     expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(100);
   });
 
@@ -465,7 +465,7 @@ describe("portfolio-metrics", () => {
     };
 
     expect(getColumnValue({ id: "target", label: "TARGET", width: 10, align: "right" }, ticker, financials, context).text).toBe("$150");
-    expect(getColumnValue({ id: "target_pct", label: "TARGET%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+25.00%");
+    expect(getColumnValue({ id: "target_pct", label: "TARGET%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+25.00");
     expect(getColumnValue({ id: "rating", label: "RATING", width: 7, align: "right" }, ticker, financials, context).text).toBe("8.4");
     expect(getColumnValue({ id: "ex_div", label: "EX-DIV", width: 7, align: "right" }, ticker, financials, context).text).toBe("Feb 15");
     expect(getColumnValue({ id: "next_earn", label: "ERN", width: 7, align: "right" }, ticker, financials, context).text).toBe("Jan 29");
