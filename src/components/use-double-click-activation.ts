@@ -1,5 +1,8 @@
 import { useCallback, useRef } from "react";
 
+// Terminal tables keep click-to-select and a second click to enter. Desktop
+// and hosted web tables activate on the first primary click instead.
+
 interface LastClickState {
   targetKey: string;
 }

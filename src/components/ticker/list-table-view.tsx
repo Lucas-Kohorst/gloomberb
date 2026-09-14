@@ -314,9 +314,11 @@ export function TickerListTableView({
           setCursorSymbol(symbol);
         },
       }}
-      onActivate={(ticker) => {
-        onRowActivate?.(ticker);
-      }}
+      onActivate={onRowActivate
+        ? (ticker) => {
+            onRowActivate(ticker);
+          }
+        : undefined}
       onRowMouseDown={handleRowMouseDown}
       onRowContextMenu={handleRowContextMenu}
       rowContextMenuSurface

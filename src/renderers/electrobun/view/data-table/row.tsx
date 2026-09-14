@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { TextAttributes } from "../../../../ui/host";
 import type {
   DataTableCell,
@@ -428,11 +428,34 @@ function WebDataTableRowInner<
   const rowBg = selected
     ? CSS_SELECTED
     : rowBackgroundColor ?? CSS_BG;
+  const handleRowPointer = (
+    event: MouseEvent<HTMLElement>,
+    fromCell = false,
+  ) => {
+    focusPane();
+    onTableMouseDown?.(event);
+    if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
+      if (fromCell) event.stopPropagation();
+      return;
+    }
+    if (event.button !== 0) return;
+    event.preventDefault();
+    if (fromCell) event.stopPropagation();
+    // Activate on the first click when the pane can enter a row. A second
+    // mousedown from a double-click must not fire again. `activateIndex`
+    // already commits selection, so do not also call onSelectRow.
+    if (onActivateRow) {
+      if ((event.detail ?? 1) < 2) onActivateRow(item, index);
+      return;
+    }
+    onSelectRow(item, index);
+  };
 
   return (
     <div
       key={itemKey}
       data-gloom-role="data-table-row"
+      data-gloom-interactive="true"
       data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-roll-in={arriving ? "true" : undefined}
@@ -441,23 +464,11 @@ function WebDataTableRowInner<
         backgroundColor: rowBg,
       }}
       onMouseDown={(event) => {
-        focusPane();
-        onTableMouseDown?.(event);
-        if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
-          return;
-        }
-        event.preventDefault();
-        onSelectRow(item, index);
+        handleRowPointer(event);
       }}
       onContextMenu={(event) => {
         focusPane();
         onRowContextMenu?.(item, index, itemKey, eventWithCellCoordinates(event));
-      }}
-      onDoubleClick={(event) => {
-        focusPane();
-        event.preventDefault();
-        event.stopPropagation();
-        onActivateRow?.(item, index);
       }}
     >
       {columns.map((column) => {
@@ -478,30 +489,14 @@ function WebDataTableRowInner<
               backgroundColor: cell.backgroundColor ?? rowBg,
             }}
             onMouseDown={(event) => {
-              focusPane();
-              onTableMouseDown?.(event);
               if (cell.onMouseDown) {
+                focusPane();
+                onTableMouseDown?.(event);
                 cell.onMouseDown(eventWithCellCoordinates(event));
-                return;
-              }
-              if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
                 event.stopPropagation();
                 return;
               }
-              event.preventDefault();
-              event.stopPropagation();
-              onSelectRow(item, index);
-            }}
-            onDoubleClick={(event) => {
-              if (cell.onMouseDown) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              focusPane();
-              event.preventDefault();
-              event.stopPropagation();
-              onActivateRow?.(item, index);
+              handleRowPointer(event, true);
             }}
           >
             {cell.content !== undefined ? (
