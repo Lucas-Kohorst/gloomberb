@@ -2,7 +2,7 @@
 import { setCurrentPluginTarget } from "../../../plugins/current-target";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../app";
-import { applyLanguageFromConfig } from "../../../i18n";
+import { applyLanguageFromConfig, tf } from "../../../i18n";
 import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
@@ -36,6 +36,7 @@ import { getRendererPlugins } from "../../../plugins/catalog-ui";
 import { loadDesktopExternalPlugins } from "./external-plugins";
 import { setPluginInstaller, setPluginRemover } from "../../../plugins/builtin/plugin-marketplace/store";
 import { enableUiYield } from "../../../utils/ui-yield";
+import { setCustomThemes } from "../../../theme/themes";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
@@ -110,6 +111,12 @@ async function boot() {
     : init.desktopSnapshot;
   const config = desktopSnapshot?.config ?? init.config;
   applyLanguageFromConfig(config);
+  setCustomThemes(init.customThemes ?? {});
+  const startupNotice = init.themeNotice?.missingThemeId
+    ? tf("Theme \"{theme}\" was not found; restored the default theme.", { theme: init.themeNotice.missingThemeId })
+    : init.themeNotice?.invalidCount
+      ? tf("{count} custom theme file(s) were rejected.", { count: init.themeNotice.invalidCount })
+      : undefined;
   const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
   const desktopApplicationMenuBridge = createApplicationMenuBridge();
   const desktopDeepLinkBridge = createDesktopDeepLinkBridge();
@@ -154,6 +161,7 @@ async function boot() {
                   desktopSnapshot={desktopSnapshot}
                   desktopThemePreview={init.desktopThemePreview}
                   remoteControlAdapter={remoteControlAdapter}
+                  startupNotice={startupNotice}
                 />
               </WebDialogHostProvider>
             </WebToastHostProvider>

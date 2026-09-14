@@ -79,6 +79,8 @@ interface AppInnerProps {
   onOnboardingComplete?: (config: AppConfig) => void | Promise<void>;
   /** Hosted browser terminal: nothing is reachable until a session exists. */
   signInGateActive?: boolean;
+  /** A non-fatal startup issue that should be visible in the app chrome. */
+  startupNotice?: string;
 }
 
 function ThemedAppRoot({ children }: { children: ReactNode }) {
@@ -115,6 +117,7 @@ function AppInner({
   requireAccount = false,
   onOnboardingComplete,
   signInGateActive = false,
+  startupNotice,
 }: AppInnerProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
@@ -203,6 +206,11 @@ function AppInner({
   const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {
     pluginRegistry.notify({ body, ...options });
   }, [pluginRegistry]);
+
+  useEffect(() => {
+    if (!startupNotice) return;
+    pluginRegistry.notify({ body: startupNotice, type: "error" });
+  }, [pluginRegistry, startupNotice]);
 
   useEffect(() => {
     if (desktopWindowBridge?.kind !== "main" || !desktopWindowBridge.subscribeDockPreview) return;
@@ -512,6 +520,8 @@ interface AppProps {
    * terminal sets this; desktop and the TUI keep sign-in optional.
    */
   requireSignIn?: boolean;
+  /** A non-fatal startup issue that should be visible in the app chrome. */
+  startupNotice?: string;
 }
 
 export function App({
@@ -528,6 +538,7 @@ export function App({
   remoteControlAdapter,
   updatesEnabled = true,
   requireSignIn = false,
+  startupNotice,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -640,6 +651,7 @@ export function App({
             setConfig(updatedConfig);
             setShowOnboarding(false);
           }}
+          startupNotice={startupNotice}
         />
       </AppProvider>
     </RemoteUiRegistryProvider>

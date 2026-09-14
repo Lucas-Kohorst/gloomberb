@@ -4,7 +4,7 @@ import { isHostedWebClient } from "../../../shared/hosted-api";
 import { App } from "../../../app";
 import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { setCurrentPluginTarget } from "../../../plugins/current-target";
-import { applyLanguageFromConfig } from "../../../i18n";
+import { applyLanguageFromConfig, tf } from "../../../i18n";
 import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
@@ -50,6 +50,7 @@ import {
   enableStartupNetworkDeferral,
 } from "../../../utils/startup-interaction";
 import { enableUiYield } from "../../../utils/ui-yield";
+import { DEFAULT_THEME, hasTheme, setCustomThemes } from "../../../theme/themes";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -165,6 +166,17 @@ async function boot(): Promise<void> {
   enableUiYield();
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
+  setCustomThemes(isHosted ? {} : init.customThemes ?? {});
+  let startupNotice = init.themeNotice?.missingThemeId
+    ? tf("Theme \"{theme}\" was not found; restored the default theme.", { theme: init.themeNotice.missingThemeId })
+    : init.themeNotice?.invalidCount
+      ? tf("{count} custom theme file(s) were rejected.", { count: init.themeNotice.invalidCount })
+      : undefined;
+  if (!hasTheme(init.config.theme)) {
+    const missingThemeId = init.config.theme;
+    init.config = { ...init.config, theme: DEFAULT_THEME };
+    startupNotice = tf("Theme \"{theme}\" was not found; restored the default theme.", { theme: missingThemeId });
+  }
   const desktopWindowBridge = createWebWindowBridge(windowKind, paneId);
   const desktopDeepLinkBridge = createWebDeepLinkBridge();
   stopSlowBootNotice();
@@ -182,6 +194,7 @@ async function boot(): Promise<void> {
                 desktopDeepLinkBridge={desktopDeepLinkBridge}
                 desktopSnapshot={init.desktopSnapshot}
                 requireSignIn={isHosted}
+                startupNotice={startupNotice}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

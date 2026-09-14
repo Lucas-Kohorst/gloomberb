@@ -7,7 +7,11 @@ import type { AppSessionSnapshot } from "../../../../core/state/session-persiste
 import {
   getDataDir,
   initDataDir,
+  saveConfig,
 } from "../../../../data/config/store";
+import { DEFAULT_THEME } from "../../../../theme/themes";
+import { loadCustomThemes } from "../../../../theme/custom-themes";
+import type { Theme } from "../../../../theme/themes";
 import type { AppConfig } from "../../../../types/config";
 import type {
   DesktopSharedStateSnapshot,
@@ -55,6 +59,8 @@ interface InitializationPayloadOptions {
   desktopThemePreview: DesktopThemePreviewState;
   getDesktopSnapshot: () => DesktopSharedStateSnapshot | null;
   getSessionSnapshot: () => AppSessionSnapshot | null;
+  customThemes: Record<string, Theme>;
+  themeNotice?: { missingThemeId?: string; invalidCount?: number };
 }
 
 function normalizeInitWindowTarget<TRpc>(
@@ -97,6 +103,8 @@ function buildInitializationPayload(
     sessionSnapshot: options.getSessionSnapshot(),
     desktopSnapshot: options.getDesktopSnapshot(),
     desktopThemePreview: options.desktopThemePreview,
+    customThemes: options.customThemes,
+    themeNotice: options.themeNotice,
     pluginState: loadDesktopPluginState(services.pluginRegistry),
     capabilityManifests: desktopRendererCapabilityManifests(services.pluginRegistry.capabilities),
     desktopPlatform: process.platform,
@@ -122,20 +130,50 @@ export async function initializeDesktopBackend<TRpc>(
   const currentConfig = options.getCurrentConfig();
   const currentServices = options.getCurrentServices();
   if (currentConfig && currentServices) {
+    const themeLoad = await loadCustomThemes(currentConfig.dataDir, currentConfig.theme);
+    let themeNotice: { missingThemeId?: string; invalidCount?: number } | undefined;
+    if (themeLoad.missingThemeId) {
+      const missingThemeId = currentConfig.theme;
+      const nextConfig = { ...currentConfig, theme: DEFAULT_THEME };
+      await saveConfig(nextConfig);
+      options.setCurrentConfig(nextConfig);
+      themeNotice = { missingThemeId };
+    } else if (themeLoad.errors.length > 0) {
+      for (const error of themeLoad.errors) {
+        console.warn(`Rejected custom theme ${error.file}: ${error.message}`);
+      }
+      themeNotice = { invalidCount: themeLoad.errors.length };
+    }
     if (!options.getDesktopWorkspace()) {
-      options.setDesktopWorkspace(createDesktopWorkspace(currentConfig, options.getSessionSnapshot()));
+      options.setDesktopWorkspace(createDesktopWorkspace(options.getCurrentConfig()!, options.getSessionSnapshot()));
       options.reconcileDetachedWindows();
     }
-    return buildInitializationPayload(currentConfig, currentServices, windowTarget, {
+    return buildInitializationPayload(options.getCurrentConfig()!, currentServices, windowTarget, {
       getDesktopSnapshot: options.getDesktopSnapshot,
       getSessionSnapshot: options.getSessionSnapshot,
       desktopThemePreview: options.getThemePreview(),
+      customThemes: themeLoad.themes,
+      themeNotice,
     });
   }
 
   options.setCurrentConfig(await initDataDir(await resolveDesktopDataDir()));
-  const config = options.getCurrentConfig();
+  let config = options.getCurrentConfig();
   if (!config) throw new Error("Desktop config failed to initialize.");
+  const themeLoad = await loadCustomThemes(config.dataDir, config.theme);
+  let themeNotice: { missingThemeId?: string; invalidCount?: number } | undefined;
+  if (themeLoad.missingThemeId) {
+    const missingThemeId = config.theme;
+    config = { ...config, theme: DEFAULT_THEME };
+    await saveConfig(config);
+    options.setCurrentConfig(config);
+    themeNotice = { missingThemeId };
+  } else if (themeLoad.errors.length > 0) {
+    for (const error of themeLoad.errors) {
+      console.warn(`Rejected custom theme ${error.file}: ${error.message}`);
+    }
+    themeNotice = { invalidCount: themeLoad.errors.length };
+  }
 
   const services = createAppServices({
     config,
@@ -152,5 +190,7 @@ export async function initializeDesktopBackend<TRpc>(
     getDesktopSnapshot: options.getDesktopSnapshot,
     getSessionSnapshot: options.getSessionSnapshot,
     desktopThemePreview: options.getThemePreview(),
+    customThemes: themeLoad.themes,
+    themeNotice,
   });
 }

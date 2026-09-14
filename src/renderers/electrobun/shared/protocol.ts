@@ -8,6 +8,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import type { CapabilityManifest } from "../../../capabilities";
 import type { RemoteControlRequest, RemoteControlResponse } from "../../../remote/types";
+import type { Theme } from "../../../theme/themes";
 
 export const ELECTROBUN_CONTEXT_MENU_ACTION = "gloom.context-menu.select";
 
@@ -16,6 +17,12 @@ export interface ElectrobunBackendInit {
   sessionSnapshot: AppSessionSnapshot | null;
   desktopSnapshot: DesktopSharedStateSnapshot | null;
   desktopThemePreview: DesktopThemePreviewState;
+  /** Themes read by the Bun desktop host; absent for hosted/web init. */
+  customThemes?: Record<string, Theme>;
+  themeNotice?: {
+    missingThemeId?: string;
+    invalidCount?: number;
+  };
   pluginState: Record<string, Record<string, unknown>>;
   capabilityManifests: CapabilityManifest[];
   desktopPlatform: string;
