@@ -1,6 +1,7 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
 import { formatMarketPrice } from "../../../market-data/market/format";
+import { getSharedNewsService } from "../../../news/hooks";
 import {
   createAlert,
   evaluateAlert,
@@ -35,6 +36,8 @@ import { canonicalWeatherStationId } from "../weather/stations";
 import { evaluateWeatherAlert } from "./weather-alert";
 import type { WeatherAlertCondition } from "./weather";
 import { isPriceAlertCondition } from "./types";
+import { isQuoteAlertCondition } from "./types";
+import { evaluateNewsMentionAlert, evaluateQuoteCondition } from "./condition-evaluators";
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let pollInFlight = false;
@@ -66,11 +69,11 @@ export const alertsPlugin: GloomPlugin = {
       id: "set-alert",
       label: "Add Alert",
       description: "Create an alert from a symbol, condition, and target",
-      keywords: ["add", "set", "alert", "price", "trigger", "notify", "alarm", "watch", "halt", "short", "dividend"],
+      keywords: ["add", "set", "alert", "price", "trigger", "notify", "alarm", "watch", "halt", "short", "dividend", "day", "volume", "news", "mention"],
       category: "data",
       shortcut: "SA",
       shortcutArg: {
-        placeholder: "AAPL above 200 / AAPL halted / AAPL short 5",
+        placeholder: "AAPL above 200 / AAPL day 5 / AAPL volume 3 / AAPL news merger",
         kind: "ticker",
         parse: parseAlertShortcutValues,
       },
@@ -93,13 +96,23 @@ export const alertsPlugin: GloomPlugin = {
             { label: "Halted", value: "halted" },
             { label: "Short % float", value: "short_float" },
             { label: "Ex-div in days", value: "ex_div" },
+            { label: "Day move %", value: "pct_day" },
+            { label: "Volume spike × average", value: "volume_spike" },
+            { label: "News mentions keyword", value: "news_mention" },
           ],
         },
         {
           key: "price",
           label: "Target",
-          placeholder: "200.00 / 5% / 7d",
+          placeholder: "200.00 / 5% / 7d / 3×",
           type: "number",
+        },
+        {
+          key: "keyword",
+          label: "Keyword",
+          placeholder: "merger",
+          type: "text",
+          dependsOn: { key: "condition", value: "news_mention" },
         },
       ],
       async execute(values) {
@@ -107,7 +120,8 @@ export const alertsPlugin: GloomPlugin = {
         if (!input) throw new Error("Use a symbol, condition, and target.");
 
         const alert = createAlert(input.symbol, input.condition, input.price);
-        if (isPriceAlertCondition(input.condition)) {
+        if (input.targetText) alert.targetText = input.targetText;
+        if (isQuoteAlertCondition(input.condition)) {
           const quote = await resolveAlertQuote(ctx.marketData, input.symbol);
           Object.assign(alert, quoteAlertFields(quote));
           alert.symbol = quote.symbol || input.symbol;
@@ -197,7 +211,9 @@ export const alertsPlugin: GloomPlugin = {
 
       // One batched pass over the distinct symbols: the alerts pane reads the same
       // persisted store, so this is the only place that talks to the provider.
-      const quoteKeys = [...new Set(activeAlerts.map((alert) => `${alert.symbol}\0${alert.exchange ?? ""}`))];
+      const quoteKeys = [...new Set(activeAlerts
+        .filter((alert) => isQuoteAlertCondition(alert.condition))
+        .map((alert) => `${alert.symbol}\0${alert.exchange ?? ""}`))];
       const results = await Promise.all(quoteKeys.map(async (key): Promise<[string, Quote | string]> => {
         const [symbol, exchange = ""] = key.split("\0");
         try {
@@ -220,7 +236,8 @@ export const alertsPlugin: GloomPlugin = {
           continue;
         }
 
-        if (evaluateAlert(alert, quote.price)) {
+        const triggered = evaluateAlert(alert, quote.price) || evaluateQuoteCondition(alert, quote);
+        if (triggered) {
           alert.status = "triggered";
           const triggeredAt = Date.now();
           alert.triggeredAt = triggeredAt;
@@ -230,8 +247,13 @@ export const alertsPlugin: GloomPlugin = {
             createAlertHistoryEntry(alert, description, triggeredAt, quote.price),
           ));
           ctx.log.info("poll: TRIGGERED", { symbol: alert.symbol, price: quote.price });
+          const triggerValue = alert.condition === "pct_day"
+            ? `${Math.abs(quote.changePercent).toFixed(1)}%`
+            : alert.condition === "volume_spike" && quote.averageVolume && quote.averageVolume > 0
+              ? `${((quote.volume ?? 0) / quote.averageVolume).toFixed(1)}×`
+              : String(quote.price);
           ctx.notify({
-            body: `${description} triggered at ${quote.price}`,
+            body: `${description} triggered at ${triggerValue}`,
             type: "success",
             desktop: "always",
             persistent: true,
@@ -243,14 +265,67 @@ export const alertsPlugin: GloomPlugin = {
           });
         }
         Object.assign(alert, quoteAlertFields(quote));
+        if (alert.condition === "pct_day") alert.lastCheckedPrice = quote.changePercent;
+        if (alert.condition === "volume_spike" && quote.averageVolume && quote.averageVolume > 0) {
+          alert.lastCheckedPrice = (quote.volume ?? 0) / quote.averageVolume;
+        }
         changed = true;
+      }
+
+      const newsAlerts = alerts.filter((alert) => alert.status === "active" && alert.condition === "news_mention");
+      const newsService = getSharedNewsService();
+      if (newsService && newsAlerts.length > 0) {
+        const newsByKey = new Map(await Promise.all(
+          [...new Set(newsAlerts.map((alert) => `${alert.symbol}\0${alert.exchange ?? ""}`))].map(async (key) => {
+            const [ticker, exchange = ""] = key.split("\0");
+            const state = await newsService.load({
+              feed: "ticker",
+              ticker,
+              exchange,
+              tickerTier: "primary",
+              limit: 25,
+            });
+            return [key, state.articles] as const;
+          }),
+        ));
+        for (const alert of newsAlerts) {
+          const evaluation = evaluateNewsMentionAlert(
+            alert,
+            newsByKey.get(`${alert.symbol}\0${alert.exchange ?? ""}`) ?? [],
+          );
+          if (evaluation.lastSeenArticleId) {
+            alert.lastSeenArticleId = evaluation.lastSeenArticleId;
+            alert.lastSeenArticlePublishedAt = evaluation.lastSeenArticlePublishedAt;
+            alert.lastCheckedAt = Date.now();
+            changed = true;
+          }
+          if (!evaluation.triggered) continue;
+          alert.status = "triggered";
+          const triggeredAt = Date.now();
+          alert.triggeredAt = triggeredAt;
+          const description = formatAlertDescription(alert);
+          saveAlertHistory(ctx, appendAlertHistory(
+            loadAlertHistory(ctx),
+            createAlertHistoryEntry(alert, description, triggeredAt),
+          ));
+          ctx.log.info("poll: TRIGGERED", { symbol: alert.symbol, condition: alert.condition });
+          ctx.notify({
+            body: `${description} triggered`,
+            type: "success",
+            desktop: "always",
+            persistent: true,
+            sound: "Glass",
+            action: { label: "Open", onClick: () => ctx.showPane("alerts") },
+          });
+          changed = true;
+        }
       }
 
       // Evaluate custom alert conditions registered by other plugins.
       const customConditions = new Map(
         ctx.listAlertConditions().map((c) => [c.id, c]),
       );
-      const builtinConditions = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div", "weather"]);
+      const builtinConditions = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div", "weather", "pct_day", "volume_spike", "news_mention"]);
       if (customConditions.size > 0) {
         const controller = new AbortController();
         for (const alert of alerts) {

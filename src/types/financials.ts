@@ -31,6 +31,8 @@ export interface Quote {
   low52w?: number;
   marketCap?: number;
   volume?: number;
+  /** Typical daily session volume supplied by the quote provider, when available. */
+  averageVolume?: number;
   name?: string;
   lastUpdated: number; // timestamp ms
   receivedAt?: number; // local receipt timestamp ms for streamed/display freshness
