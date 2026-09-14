@@ -6,6 +6,9 @@ describe("command bar row badges", () => {
     expect(resolveRowBadge({ kind: "command", right: "EVT" })).toEqual({ text: "EVT", tone: "command" });
     expect(resolveRowBadge({ kind: "action", right: "10-K" })).toEqual({ text: "10-K", tone: "command" });
     expect(resolveRowBadge({ kind: "command", right: "FONT+" })).toEqual({ text: "FONT+", tone: "command" });
+    expect(resolveRowBadge({ kind: "action", right: "PLUG" })).toEqual({ text: "PLUG", tone: "command" });
+    expect(badgeConsumesRight({ kind: "action", right: "PLUG" })).toBe(true);
+    expect(resolveRowBadge({ kind: "action", right: "PLUGINS" })).toBeNull();
     expect(resolveRowBadge({ kind: "command", right: "FONT-" })).toEqual({ text: "FONT-", tone: "command" });
     expect(badgeConsumesRight({ kind: "command", right: "EVT" })).toBe(true);
     expect(badgeConsumesRight({ kind: "command", right: "FONT+" })).toBe(true);

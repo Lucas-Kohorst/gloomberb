@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Command-bar Plugins prefix on the left
+
+The Plugin Marketplace shortcut was `PLUGINS`, seven characters, so the command-bar badge rule left it on the right of the row. The prefix is now `PLUG` (with `PLUGINS` and `PL` still accepted), which lifts into the left badge column with the other command tags.
+
 ## Unreleased — Freeze the first table column on desktop and web
 
 Wide panes scroll sideways instead of dropping columns, which put the ticker out of view while reading far-off columns. The leading column now stays pinned while a table scrolls.

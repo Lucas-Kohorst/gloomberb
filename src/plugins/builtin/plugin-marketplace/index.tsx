@@ -62,7 +62,7 @@ export const pluginMarketplaceModule: PluginModule = {
         "addon",
         "extension",
       ],
-      shortcut: { prefix: "PLUGINS", aliases: ["PLUG", "PL"] },
+      shortcut: { prefix: "PLUG", aliases: ["PLUGINS", "PL"] },
       singleton: true,
       createInstance: () => ({
         placement: "floating",

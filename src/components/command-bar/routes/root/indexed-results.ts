@@ -213,8 +213,8 @@ export function buildPluginFallbackItem(onOpenMarketplace: () => void): ResultIt
     detail: t("Nothing matched — open the marketplace to install or write one"),
     category: "Plugins",
     kind: "action",
-    right: "PLUGINS",
-    shortcutQuery: "PLUGINS",
+    right: "PLUG",
+    shortcutQuery: "PLUG",
     searchText: "plugin marketplace build extend",
     action: () => {
       onOpenMarketplace();

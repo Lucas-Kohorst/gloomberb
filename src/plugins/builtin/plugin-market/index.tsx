@@ -5,7 +5,6 @@ import {
   GITHUB_PLUGIN_SEARCH_CONNECTION_ID,
   PLUGIN_MARKET_PANE_ID,
   PLUGIN_MARKET_PLUGIN_ID,
-  PLUGIN_MARKET_PLUG_TEMPLATE_ID,
   PLUGIN_MARKET_TEMPLATE_ID,
 } from "./types";
 
@@ -16,7 +15,7 @@ const MARKETPLACE_DESCRIPTION =
 
 /**
  * Plugin Marketplace is the one in-app plugin surface: discovery (local + GitHub)
- * plus install/toggle/update/remove. `PLUGINS` / `PLUG` open this pane. `PL` stays
+ * plus install/toggle/update/remove. `PLUG` / `PLUGINS` open this pane. `PL` stays
  * a command-bar toggle of the same installed plugins and can jump here.
  */
 export const pluginMarketPlugin: GloomPlugin = {
@@ -61,20 +60,7 @@ export const pluginMarketPlugin: GloomPlugin = {
         "disable",
         "extensions",
       ],
-      shortcut: { prefix: "PLUGINS" },
-      singleton: true,
-      createInstance: () => ({
-        placement: "floating",
-        title: "Plugin Marketplace",
-      }),
-    },
-    {
-      id: PLUGIN_MARKET_PLUG_TEMPLATE_ID,
-      paneId: PLUGIN_MARKET_PANE_ID,
-      label: "Plugin Marketplace",
-      description: MARKETPLACE_DESCRIPTION,
-      keywords: ["plugin", "plugins", "discover", "github", "install"],
-      shortcut: { prefix: "PLUG" },
+      shortcut: { prefix: "PLUG", aliases: ["PLUGINS"] },
       singleton: true,
       createInstance: () => ({
         placement: "floating",
