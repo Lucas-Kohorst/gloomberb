@@ -434,7 +434,7 @@ function WebDataTableRowInner<
       }}
       onContextMenu={(event) => {
         focusPane();
-        onRowContextMenu?.(item, index, eventWithCellCoordinates(event));
+        onRowContextMenu?.(item, index, itemKey, eventWithCellCoordinates(event));
       }}
       onDoubleClick={(event) => {
         focusPane();

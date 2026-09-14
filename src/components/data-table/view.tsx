@@ -572,9 +572,9 @@ export function DataTableView<
     return handled;
   }, [tableProps.onRowMouseDown, updateCursorIndex]);
 
-  const handleRowContextMenu = useCallback((item: T, index: number, event: any) => {
+  const handleRowContextMenu = useCallback((item: T, index: number, rowKey: string, event: any) => {
     updateCursorIndex(index, { commit: "immediate" });
-    tableProps.onRowContextMenu?.(item, index, event);
+    tableProps.onRowContextMenu?.(item, index, rowKey, event);
   }, [tableProps.onRowContextMenu, updateCursorIndex]);
 
   useShortcut((event) => {

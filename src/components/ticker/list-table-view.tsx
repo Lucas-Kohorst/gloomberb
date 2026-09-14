@@ -255,14 +255,15 @@ export function TickerListTableView({
 
   const showTickerContextMenu = useCallback((
     ticker: TickerRecord,
+    rowKey: string,
     event: TableMouseEvent,
   ) => {
-    const financials = financialsMap.get(ticker.metadata.ticker);
+    const financials = financialsMap.get(rowKey);
     const registry = getSharedRegistry() ?? null;
     void showContextMenu(
       {
         kind: "ticker",
-        symbol: ticker.metadata.ticker,
+        symbol: rowKey,
         ticker,
         financials: financials ?? null,
       },
@@ -270,6 +271,7 @@ export function TickerListTableView({
         ticker,
         financials: financials ?? null,
         registry,
+        openExternal: renderer.openExternal.bind(renderer),
         copyText: renderer.copyText.bind(renderer),
       }),
       event,
@@ -279,13 +281,13 @@ export function TickerListTableView({
   const handleRowMouseDown = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
     if (event.button !== 2) return false;
     if (nativeContextMenu !== true) {
-      showTickerContextMenu(ticker, event);
+      showTickerContextMenu(ticker, ticker.metadata.ticker, event);
     }
     return true;
   }, [nativeContextMenu, showTickerContextMenu]);
 
-  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
-    showTickerContextMenu(ticker, event);
+  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, rowKey: string, event: TableMouseEvent) => {
+    showTickerContextMenu(ticker, rowKey, event);
   }, [showTickerContextMenu]);
 
   return (

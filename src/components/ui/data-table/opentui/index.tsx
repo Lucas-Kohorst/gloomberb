@@ -146,7 +146,7 @@ function OpenTuiDataTableRowInner<
       }}
       onContextMenu={(event: any) => {
         focusPane();
-        onRowContextMenu?.(item, index, event);
+        onRowContextMenu?.(item, index, itemKey, event);
       }}
     >
       {displayColumns.map((column) => {
