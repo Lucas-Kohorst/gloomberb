@@ -3,8 +3,9 @@ import { setCurrentPluginTarget } from "../../plugins/current-target";
 import "../electrobun/view/styles.css";
 import { createRoot } from "react-dom/client";
 import { App } from "../../app";
-import { loadConfig } from "../../data/config/store";
-import { applyLanguageFromConfig } from "../../i18n";
+import { loadConfig, saveConfig } from "../../data/config/store";
+import { applyLanguageFromConfig, tf } from "../../i18n";
+import { DEFAULT_THEME, hasTheme, setCustomThemes } from "../../theme/themes";
 import { getBrowserBuiltinPlugins } from "../../plugins/catalog-browser";
 import { UiHostProvider } from "../../ui/host";
 import { WebDialogHostProvider } from "../electrobun/view/dialog-host";
@@ -45,8 +46,16 @@ async function boot(): Promise<void> {
     session.degraded ? readLastHostedUserId() : session.user?.id ?? null,
     BROWSER_DATA_DIR,
   );
-  const config = await loadConfig(BROWSER_DATA_DIR);
+  let config = await loadConfig(BROWSER_DATA_DIR);
   applyLanguageFromConfig(config);
+  setCustomThemes({});
+  let startupNotice: string | undefined;
+  if (!hasTheme(config.theme)) {
+    const missingThemeId = config.theme;
+    config = { ...config, theme: DEFAULT_THEME };
+    await saveConfig(config);
+    startupNotice = tf("Theme \"{theme}\" was not found; restored the default theme.", { theme: missingThemeId });
+  }
   const deepLinkBridge = createBrowserDeepLinkBridge();
   root.render(
     <BrowserErrorBoundary>
@@ -61,6 +70,7 @@ async function boot(): Promise<void> {
                 desktopDeepLinkBridge={deepLinkBridge}
                 updatesEnabled={false}
                 requireSignIn
+                startupNotice={startupNotice}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

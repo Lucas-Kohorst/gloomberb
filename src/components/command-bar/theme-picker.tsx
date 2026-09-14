@@ -13,7 +13,7 @@ import { Box, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { ListView, type ListViewItem } from "../ui";
 import type { ListRowState } from "../ui/list-view";
-import { getThemeIds, isDarkTheme, themes as themeRegistry } from "../../theme/themes";
+import { getThemeIds, isCustomTheme, isDarkTheme, themes as themeRegistry } from "../../theme/themes";
 import { truncateText } from "./view-model";
 
 const THEME_PREVIEW_DEBOUNCE_MS = 120;
@@ -31,20 +31,29 @@ export interface ThemeOption {
   id: string;
   name: string;
   dark: boolean;
+  custom: boolean;
 }
 
-const THEME_OPTIONS: ThemeOption[] = getThemeIds()
-  .map((id) => ({ id, name: themeRegistry[id]!.name, dark: isDarkTheme(id) }))
-  .sort((a, b) => a.name.localeCompare(b.name));
+function getThemeOptions(): ThemeOption[] {
+  return getThemeIds()
+    .map((id) => ({
+      id,
+      name: themeRegistry[id]!.name,
+      dark: isDarkTheme(id),
+      custom: isCustomTheme(id),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /**
  * Shared with the panel layout, which sizes the sheet to whatever this returns
  * so the picker never opens taller than the themes it can show.
  */
 export function matchThemeOptions(filter: string): ThemeOption[] {
+  const themeOptions = getThemeOptions();
   const normalized = filter.trim().toLowerCase();
-  if (!normalized) return THEME_OPTIONS;
-  return THEME_OPTIONS.filter((theme) => (
+  if (!normalized) return themeOptions;
+  return themeOptions.filter((theme) => (
     theme.name.toLowerCase().includes(normalized)
     || theme.id.toLowerCase().includes(normalized)
   ));
@@ -119,13 +128,14 @@ export const ThemePicker = memo(forwardRef<ThemePickerHandle, ThemePickerProps>(
   const selectedIndexRef = useRef(selectedIndex);
   const items = useMemo<ListViewItem[]>(() => themes.map((theme) => {
     const current = theme.id === committedThemeId;
+    const label = theme.custom ? `${theme.name} · ${t("custom")}` : theme.name;
     return {
       id: theme.id,
-      label: theme.name,
-      detail: current ? "current" : "",
+      label,
+      detail: current ? t("current") : theme.custom ? t("custom") : "",
       category: "Themes",
       kind: "theme",
-      right: current ? "current" : "",
+      right: current ? t("current") : "",
       current,
     };
   }), [committedThemeId, themes]);

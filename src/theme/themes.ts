@@ -48,7 +48,7 @@ function highestMinimumContrast(surfaces: readonly string[], candidates: readonl
   });
 }
 
-function normalizeTheme(theme: Theme): Theme {
+export function normalizeTheme(theme: Theme): Theme {
   const bodySurfaces = [theme.bg, theme.panel] as const;
   const bodyContrastExtreme = highestMinimumContrast(bodySurfaces, ["#ffffff", "#000000"]);
   const text = blendForContrastOnSurfaces(
@@ -663,6 +663,31 @@ const rawThemes: Record<string, Theme> = {
 export const themes: Record<string, Theme> = Object.fromEntries(
   Object.entries(rawThemes).map(([id, theme]) => [id, normalizeTheme(theme)]),
 ) as Record<string, Theme>;
+
+const builtInThemeIds = new Set(Object.keys(themes));
+
+/**
+ * Replace the themes loaded from the user's data directory. Built-in themes
+ * are kept in the same registry so every renderer (and the theme preview)
+ * resolves custom ids exactly like built-in ids.
+ */
+export function setCustomThemes(customThemes: Record<string, Theme>): void {
+  for (const id of Object.keys(themes)) {
+    if (!builtInThemeIds.has(id)) delete themes[id];
+  }
+  for (const [id, theme] of Object.entries(customThemes)) {
+    if (builtInThemeIds.has(id)) continue;
+    themes[id] = normalizeTheme(theme);
+  }
+}
+
+export function isCustomTheme(id: string): boolean {
+  return !!themes[id] && !builtInThemeIds.has(id);
+}
+
+export function hasTheme(id: string): boolean {
+  return !!themes[id];
+}
 
 export const DEFAULT_THEME = "white";
 

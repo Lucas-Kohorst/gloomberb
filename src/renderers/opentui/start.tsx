@@ -4,7 +4,7 @@ import { App } from "../../app";
 import { dispatchCli } from "../../cli/index";
 import { applyDataDirFromArgs } from "../../cli/options";
 import { getDataDir, initDataDir, setConfigStoreHost } from "../../data/config/store";
-import { applyLanguageFromConfig } from "../../i18n";
+import { applyLanguageFromConfig, tf } from "../../i18n";
 import * as nodeConfigStoreHost from "../../data/config/store/node";
 import { loadExternalPlugins, watchPluginsDir } from "../../plugins/loader";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -31,6 +31,8 @@ import {
   installAiRunHost,
 } from "../../plugins/builtin/ai/runner";
 import { createAppServices } from "../../core/app-services";
+import { DEFAULT_THEME } from "../../theme/themes";
+import { loadCustomThemes } from "../../theme/custom-themes";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
@@ -137,8 +139,26 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
       mkdirSync(dataDir, { recursive: true });
     }
 
-    const config = await measurePerfAsync("startup.opentui.init-data-dir", () => initDataDir(dataDir));
+    let config = await measurePerfAsync("startup.opentui.init-data-dir", () => initDataDir(dataDir));
+    const originalThemeId = config.theme;
     applyLanguageFromConfig(config);
+    const themeLoad = await measurePerfAsync(
+      "startup.opentui.load-custom-themes",
+      () => loadCustomThemes(config.dataDir, originalThemeId),
+    );
+    let startupThemeNotice: string | undefined;
+    if (themeLoad.missingThemeId) {
+      config = { ...config, theme: DEFAULT_THEME };
+      await nodeConfigStoreHost.saveConfig(config);
+      startupThemeNotice = tf("Theme \"{theme}\" was not found; restored the default theme.", { theme: originalThemeId });
+    }
+    if (themeLoad.errors.length > 0) {
+      appLog.warn("Some custom themes were rejected", {
+        errors: themeLoad.errors,
+      });
+      startupThemeNotice = startupThemeNotice
+        ?? tf("{count} custom theme file(s) were rejected.", { count: themeLoad.errors.length });
+    }
     try {
       const aiHost = createPiAiHost({
         appKind: "tui",
@@ -181,6 +201,7 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
                 plugins={getLoadablePlugins(externalPlugins)}
                 cliLaunchRequest={cliLaunchRequest}
                 remoteControlAdapter={remoteControlAdapter}
+                startupNotice={startupThemeNotice}
               />
             </OpenTuiDialogHostProvider>
           </ToastHostProvider>
