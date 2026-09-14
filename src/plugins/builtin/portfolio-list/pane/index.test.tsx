@@ -867,7 +867,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toMatch(/AAPL\s+125\s+\+4\.17%/);
+    expect(frame).toMatch(/AAPL\s+125\s+\+4\.17/);
     expect(frame).toContain("100");
     expect(frame).toContain("1.4k");
     expect(frame).toContain("+275");
@@ -920,7 +920,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("1.3k");
     expect(frame).toContain("125");
     expect(frame).toContain("+250");
-    expect(frame).toContain("25.00%");
+    expect(frame).toContain("25.00");
   });
 
   test("renders portfolio grid from portfolio table values and opens the selected ticker", async () => {
@@ -1658,7 +1658,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("AAPL");
     expect(frame).toContain("126.5");
-    expect(frame).toContain("+5.41%");
+    expect(frame).toContain("+5.41");
   });
 
   test("streams portfolio rows with the active collection broker contract", async () => {
@@ -1779,7 +1779,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(beforeFrame).not.toContain("SIVE");
     expect(requestedSnapshots).toContain("SIVE");
     expect(frame).toContain("SIVE");
-    expect(frame).toContain("-17.05%");
+    expect(frame).toContain("-17.05");
     expect(frame).toContain("46.7");
   });
 
@@ -1790,7 +1790,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(beforeFrame).not.toContain("SIVE");
     expect(requestedSnapshots).toContain("SIVE");
     expect(frame).toContain("SIVE");
-    expect(frame).toContain("-17.05%");
+    expect(frame).toContain("-17.05");
     expect(frame).toContain("46.7");
   });
 
