@@ -33,17 +33,23 @@ export type NewsColumnId =
   | "sentiment"
   | "importance";
 
+/** Structural star column for save-for-later bookmarks; never part of the configurable column set. */
+const SAVED_NEWS_COLUMN_ID = "saved";
+const SAVED_NEWS_COLUMN_LABEL = "★";
+
 const SENTIMENT_ORDER: Record<string, number> = { negative: -1, neutral: 0, positive: 1 };
 
 export function buildNewsArticleRowRevision(
   article: MarketNewsItem,
   read: boolean,
   title = article.title,
+  saved = false,
 ): string {
   return [
     article.id,
     article.publishedAt.getTime(),
     read ? 1 : 0,
+    saved ? 1 : 0,
     title,
   ].join(":");
 }
@@ -113,13 +119,17 @@ export function takeNewsTableHead<T>(
   return articles.slice(0, limit);
 }
 
-type NewsTableColumn = DataTableColumn & { id: NewsColumnId };
+type NewsTableColumn = DataTableColumn & { id: NewsColumnId | typeof SAVED_NEWS_COLUMN_ID };
 
 interface NewsArticleStackBaseProps {
   articles: MarketNewsItem[];
   focused: boolean;
   width: number;
   readArticleIds?: ReadonlySet<string>;
+  /** Bookmarked article ids shared across news panes. */
+  savedArticleIds?: ReadonlySet<string>;
+  /** Provided with savedArticleIds, adds the clickable star column. */
+  onToggleSaved?: (articleId: string) => void;
   selectedArticleId: string | null;
   setSelectedArticleId: (articleId: string | null) => void;
   sortPreference: NewsSortPreference;
@@ -192,7 +202,7 @@ function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId)
   };
 }
 
-function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn[] {
+function buildColumns(width: number, columnIds: NewsColumnId[], includeSavedColumn: boolean): NewsTableColumn[] {
   const fixedWidths: Record<Exclude<NewsColumnId, "title">, number> = {
     rank: 4,
     time: 4,
@@ -225,16 +235,26 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
       width: fixedWidths[id as Exclude<NewsColumnId, "title">],
       label: labels[id],
     }) + TABLE_COLUMN_GAP, 0);
+  const savedColumn: NewsTableColumn = {
+    id: SAVED_NEWS_COLUMN_ID,
+    label: SAVED_NEWS_COLUMN_LABEL,
+    width: 2,
+    align: "left",
+  };
+  const savedTotal = includeSavedColumn
+    ? tableColumnWidth(savedColumn) + TABLE_COLUMN_GAP
+    : 0;
   const tablePadding = 2;
-  const titleWidth = Math.max(16, width - fixedTotal - tablePadding - TABLE_COLUMN_GAP);
+  const titleWidth = Math.max(16, width - fixedTotal - savedTotal - tablePadding - TABLE_COLUMN_GAP);
 
-  return columnIds.map((id) => ({
+  const columns: NewsTableColumn[] = columnIds.map((id) => ({
     id,
     label: labels[id],
     width: id === "title" ? titleWidth : fixedWidths[id],
     align: id === "rank" || id === "importance" ? "right" : "left",
     flexGrow: id === "title" ? 1 : undefined,
   }));
+  return includeSavedColumn ? [savedColumn, ...columns] : columns;
 }
 
 interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
@@ -258,6 +278,8 @@ export function NewsArticleStackView({
   focused,
   width,
   readArticleIds,
+  savedArticleIds,
+  onToggleSaved,
   rootHeight,
   selectedArticleId,
   setSelectedArticleId,
@@ -303,7 +325,11 @@ export function NewsArticleStackView({
   }, [sortedArticles]);
   const arrivingArticleIds = useRecentlyArrivedIds(articleIds, articleTimes);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
-  const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
+  const showSavedColumn = !!savedArticleIds && !!onToggleSaved;
+  const columns = useMemo(
+    () => buildColumns(width, columnIds, showSavedColumn),
+    [columnIds, showSavedColumn, width],
+  );
 
   const openArticle = useCallback((article: MarketNewsItem) => {
     onArticleRead?.(article.id);
@@ -348,6 +374,18 @@ export function NewsArticleStackView({
   ): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
     switch (column.id) {
+      case "saved": {
+        const saved = savedArticleIds?.has(item.id) === true;
+        return {
+          text: saved ? "★" : "·",
+          color: selectedColor ?? (saved ? colors.positive : colors.textDim),
+          onMouseDown: (event: any) => {
+            event.preventDefault();
+            event.stopPropagation?.();
+            onToggleSaved?.(item.id);
+          },
+        };
+      }
       case "rank":
         return { text: String(index + 1), color: selectedColor ?? colors.textDim };
       case "time":
@@ -406,15 +444,16 @@ export function NewsArticleStackView({
           color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
-  }, [readArticleIds, titleForArticle]);
+  }, [onToggleSaved, readArticleIds, savedArticleIds, titleForArticle]);
 
   const getRowRevision = useCallback((article: MarketNewsItem) => {
     return buildNewsArticleRowRevision(
       article,
       readArticleIds?.has(article.id) === true,
       titleForArticle?.(article),
+      savedArticleIds?.has(article.id) === true,
     );
-  }, [readArticleIds, titleForArticle]);
+  }, [readArticleIds, savedArticleIds, titleForArticle]);
 
   const handleDetailKeyDown = useCallback((event: {
     name?: string;
@@ -457,7 +496,11 @@ export function NewsArticleStackView({
       items={sortedArticles}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
-      onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
+      onHeaderClick={(columnId) => {
+        // The star column toggles per-row, so its header is not a sort control.
+        if (columnId === SAVED_NEWS_COLUMN_ID) return;
+        setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId));
+      }}
       getItemKey={(item) => item.id}
       getRowRevision={getRowRevision}
       getRowBackgroundColor={getRowBackgroundColor}

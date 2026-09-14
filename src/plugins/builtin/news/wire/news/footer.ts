@@ -12,8 +12,11 @@ import { usePaneStatusLinkFooter } from "../../../shared/pane-footer";
 import { usePublicShare } from "../../../shared/public-share";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../../../shared/feed-poll-interval";
 import { useArticleArchiveAction } from "../../../shared/article-archive";
+import { usePluginAppActions } from "../../../../runtime";
+import { NEWS_SAVED_PANE_TEMPLATE_ID } from "../saved-state";
 
 interface NewsFooterArticle {
+  id?: string | null;
   title?: string | null;
   summary?: string | null;
   source?: string | null;
@@ -32,6 +35,10 @@ interface UseNewsArticleFooterOptions {
   onRefresh?: () => void;
   onShare?: () => void;
   onRead?: () => void;
+  /** Toggles the save-for-later bookmark on the readable article ([b]ookmark). */
+  onBookmark?: (articleId: string) => void;
+  /** Bookmark count; gates the [v]iew saved deep link to the Saved News pane. */
+  savedCount?: number;
   /** Feed lists poll. Article readers / open article details do not. */
   showPoll?: boolean;
   /** Last successful fetch; shown as "updated Xm ago" next to the poll chip. */
@@ -49,10 +56,13 @@ export function useNewsArticleFooter({
   onRefresh,
   onShare,
   onRead,
+  onBookmark,
+  savedCount,
   showPoll = true,
   updatedAt,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const updatedAgo = useUpdatedAgo(updatedAt);
   const archiveAction = useArticleArchiveAction(article?.url);
   const { publicSharing } = useUiCapabilities();
@@ -107,6 +117,23 @@ export function useNewsArticleFooter({
   );
   const trailingHints = useMemo<PaneHint[]>(() => {
     const trailing: PaneHint[] = [];
+    const bookmarkArticleId = typeof article?.id === "string" ? article.id : null;
+    if (onBookmark && bookmarkArticleId) {
+      trailing.push({
+        id: "bookmark",
+        key: "b",
+        label: "ookmark",
+        onPress: () => onBookmark(bookmarkArticleId),
+      });
+    }
+    if ((savedCount ?? 0) > 0) {
+      trailing.push({
+        id: "view-saved",
+        key: "v",
+        label: "iew saved",
+        onPress: () => createPaneFromTemplate(NEWS_SAVED_PANE_TEMPLATE_ID),
+      });
+    }
     if (onShare && article) {
       trailing.push({ id: "share", key: "s", label: "hare", onPress: onShare });
     }
@@ -125,7 +152,7 @@ export function useNewsArticleFooter({
       });
     }
     return trailing;
-  }, [archiveAction.archive, archiveAction.enabled, article, onPopOut, onRead, onShare]);
+  }, [archiveAction.archive, archiveAction.enabled, article, createPaneFromTemplate, onBookmark, onPopOut, onRead, onShare, savedCount]);
 
   useShortcut((event) => {
     const key = (event.name ?? event.key ?? "").toLowerCase();

@@ -6,6 +6,7 @@ import { usePaneSettingValue } from "../../../../../state/app/context";
 import type { NewsArticle } from "../../../../../news/types";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useNewsArticleFooter } from "./footer";
+import { useNewsSavedState } from "../saved-state";
 import { getStashedNewsArticle } from "./article-stash";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { shouldSkipJinaForKnownBody } from "../../../shared/jina-article-text";
@@ -17,6 +18,7 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const [url] = usePaneSettingValue("url", "");
   const [source] = usePaneSettingValue("source", "");
   const loadNewsStory = useLoadNewsStory();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const [article, setArticle] = useState<NewsArticle | null>(() => (
     articleId ? getStashedNewsArticle(articleId) : null
   ));
@@ -78,6 +80,8 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
     error: error ?? jina.error,
     onRefresh: jina.refresh,
     onShare: shareArticle,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     showPoll: false,
   });
 

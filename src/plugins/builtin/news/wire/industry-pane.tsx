@@ -16,6 +16,7 @@ import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useNewsReadState } from "./read-state";
+import { useNewsSavedState } from "./saved-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import {
   NEWS_QUERY_PRESETS,
@@ -67,6 +68,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
@@ -111,6 +113,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     onRefresh: refresh,
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     showPoll: !detailArticle,
     updatedAt: newsState.updatedAt,
   });
@@ -146,6 +150,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}

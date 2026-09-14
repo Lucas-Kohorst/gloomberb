@@ -305,6 +305,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `SUB` | Authenticated Substack reader feed |
 | `FH` | News firehose — all article sources in one stream |
 | `FIRST` | Breaking news |
+| `SVD` | Saved news — stories bookmarked with `b` in any news pane |
 | `TWIT <query>` | Ticker-related market posts |
 | `TBO` | TheBuildout infrastructure intelligence |
 | `CG` | Congress trading disclosures |

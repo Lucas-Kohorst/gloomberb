@@ -19,6 +19,7 @@ import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { useNewsReadState } from "./read-state";
+import { useNewsSavedState } from "./saved-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { paneSearchHint } from "../../shared/pane-footer";
@@ -110,6 +111,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
 
@@ -139,6 +141,8 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     onRefresh: refresh,
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     showPoll: !detailArticle,
     updatedAt: newsState.updatedAt,
   });
@@ -218,6 +222,8 @@ function FirehosePane({ focused, width, height }: PaneProps) {
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={effectiveSortPreference}

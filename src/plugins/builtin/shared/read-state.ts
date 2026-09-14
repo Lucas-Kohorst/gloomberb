@@ -81,6 +81,36 @@ export function markPersistedReadId<TState>(
     : adapter.withIds(state, ids);
 }
 
+export function removePersistedReadId<TState>(
+  state: TState,
+  readId: string,
+  adapter: PersistedReadIdAdapter<TState>,
+): TState {
+  const normalizedId = normalizeReadId(readId);
+  const current = adapter.getIds(state);
+  if (!normalizedId || !Array.isArray(current)) {
+    return normalizePersistedReadIdState(state, adapter);
+  }
+  const ids = normalizeReadIds(current, adapter.maxIds).filter((id) => id !== normalizedId);
+  return sameStringArray(ids, current)
+    ? state
+    : adapter.withIds(state, ids);
+}
+
+export function togglePersistedReadId<TState>(
+  state: TState,
+  readId: string,
+  adapter: PersistedReadIdAdapter<TState>,
+): TState {
+  const normalizedId = normalizeReadId(readId);
+  const current = adapter.getIds(state);
+  const isMarked = !!normalizedId && Array.isArray(current)
+    && normalizeReadIds(current, adapter.maxIds).includes(normalizedId);
+  return isMarked
+    ? removePersistedReadId(state, readId, adapter)
+    : markPersistedReadId(state, readId, adapter);
+}
+
 export function usePersistedReadIds<TState>({
   key,
   fallback,
@@ -99,6 +129,12 @@ export function usePersistedReadIds<TState>({
   const markRead = useCallback((readId: string) => {
     setState((current) => markPersistedReadId(current, readId, adapter));
   }, [adapter, setState]);
+  const unmarkRead = useCallback((readId: string) => {
+    setState((current) => removePersistedReadId(current, readId, adapter));
+  }, [adapter, setState]);
+  const toggleRead = useCallback((readId: string) => {
+    setState((current) => togglePersistedReadId(current, readId, adapter));
+  }, [adapter, setState]);
 
-  return { readIds, markRead };
+  return { readIds, markRead, unmarkRead, toggleRead };
 }

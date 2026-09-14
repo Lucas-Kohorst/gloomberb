@@ -11,6 +11,7 @@ import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLo
 import type { NewsArticle } from "../../../news/types";
 import { newsWireModule } from "./wire";
 import { firehoseModule } from "./wire/firehose";
+import { savedNewsModule } from "./wire/saved-pane";
 import { NewsDetailView, useNewsArticleDetail } from "./wire/news/detail-view";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import {
@@ -22,6 +23,7 @@ import { useNewsArticleFooter } from "./wire/news/footer";
 import { useCopyShareLink, newsArticleSharePayload } from "../shared/article-share";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
+import { useNewsSavedState } from "./wire/saved-state";
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { loadRelatedNews } from "./wire/related-news-cache";
@@ -100,6 +102,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
   const news = equityNews ? tickerNews : relatedArticles;
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(newsQuery, newsState);
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(news, loadNewsStory);
@@ -144,6 +147,8 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     onPopOut: () => popOutArticle(readableArticle),
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onBookmark: toggleArticleSaved,
+    savedCount: savedArticleIds.size,
     onRefresh: equityNews && instrument
       ? () => {
         void getSharedNewsService()?.load({
@@ -181,6 +186,8 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
+      savedArticleIds={savedArticleIds}
+      onToggleSaved={toggleArticleSaved}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
@@ -261,5 +268,5 @@ export const newsPlugin = composeBuiltinPlugin({
   version: "1.0.0",
   description: "View latest news for each ticker",
   toggleable: true,
-  modules: [tickerNewsModule, newsWireModule, firehoseModule],
+  modules: [tickerNewsModule, newsWireModule, firehoseModule, savedNewsModule],
 });
