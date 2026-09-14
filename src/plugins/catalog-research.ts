@@ -6,6 +6,7 @@ import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
 import { courtListenerPlugin } from "./builtin/courtlistener";
 import { eiaEnergyPlugin } from "./builtin/eia-energy";
+import { eulerpoolPlugin } from "./builtin/eulerpool";
 import { fdicBankPlugin } from "./builtin/fdic-bank";
 import { filingDiffPlugin } from "./builtin/filing-diff";
 import { foiaLogsPlugin } from "./builtin/foia-logs";
@@ -30,6 +31,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   courtListenerPlugin,
   crtShPlugin,
   eiaEnergyPlugin,
+  eulerpoolPlugin,
   fdicBankPlugin,
   filingDiffPlugin,
   foiaLogsPlugin,

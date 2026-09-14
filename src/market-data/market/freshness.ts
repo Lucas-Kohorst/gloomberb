@@ -153,6 +153,12 @@ function usSessionState(timestampMs: number): UsSessionState {
   return "POSTPOST";
 }
 
+/** Cash equities with a known local open. Futures/Yahoo often keep REGULAR on the last print. */
+export function exchangeHasTimedCashSession(exchange?: string): boolean {
+  const canonical = canonicalExchange(exchange);
+  return canonical in REGULAR_OPEN_MINUTES || US_EXTENDED_HOURS_EXCHANGES.has(canonical);
+}
+
 export function isTimestampStaleForExchangeSession(
   timestampMs: number,
   exchange?: string,
@@ -182,7 +188,16 @@ function isTimestampStaleForExchangeSessionUnsafe(
   const timestampDate = exchangeLocalDate(canonical, timestampMs);
   const currentDate = exchangeLocalDate(canonical, now);
   if (!timestampDate || !currentDate || timestampDate === currentDate) return false;
-  if (marketState === "REGULAR" && !isBeforeKnownRegularOpen(canonical, now)) return true;
+  // Yahoo leaves grains and other futures on REGULAR after the pit closes.
+  // Only cash venues with a known local open should treat a prior-day
+  // REGULAR print as expired once that open has passed.
+  if (
+    marketState === "REGULAR"
+    && REGULAR_OPEN_MINUTES[canonical] != null
+    && !isBeforeKnownRegularOpen(canonical, now)
+  ) {
+    return true;
+  }
 
   // When the provider reports the market as closed (weekend, holiday, or
   // overnight), skip the clock-based session check: the wall clock says

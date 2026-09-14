@@ -15,10 +15,10 @@ import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { Box, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   EmptyState,
-  ErrorState,
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
+  isNoDataError,
   useTableLoadMore,
   useUpdatedAgo,
   type FeedDataTableItem,
@@ -34,7 +34,13 @@ import { registerConnectionSource } from "../connections/register";
 import { SEC_EDGAR_BYOK_SERVICE_ID, setSecContactEmailResolver } from "../../../sources/sec-edgar";
 import { loadSecBrowserFilings } from "./client";
 import { filingToArticle, isPeriodicFiling } from "./filing-article";
-import { ETF_FORMS_SETTING, filingMatchesForms, isEtfFilingForm, parseFormsSetting } from "./forms";
+import {
+  ETF_FORMS_SETTING,
+  filingMatchesForms,
+  isEtfFilingForm,
+  isPeriodicReportForm,
+  parseFormsSetting,
+} from "./forms";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import { useNewsReadState } from "../news/wire/read-state";
 import { formatFilingMetaDate } from "./filing-display";
@@ -473,6 +479,77 @@ function createSecBrowserInstance(
   };
 }
 
+const RETRY_HINT = "Press r to retry.";
+
+function isEtfFilingUniverse(forms: Set<string> | null): boolean {
+  return !!forms && forms.size > 0 && [...forms].every(isEtfFilingForm);
+}
+
+function isPeriodicFilingUniverse(forms: Set<string> | null): boolean {
+  return !!forms && forms.size > 0 && [...forms].every(isPeriodicReportForm);
+}
+
+/** Empty vs transport-failure copy for the SEC / 10-K / ETF browser pane. */
+export function secBrowserStatusCopy(options: {
+  query: string;
+  forms: Set<string> | null;
+  error: string | null;
+}): { title: string; message: string; hint: string; error: boolean } {
+  const query = options.query.trim();
+  if (options.error && !isNoDataError(options.error)) {
+    return {
+      title: "SEC EDGAR unavailable.",
+      message: "The EDGAR request failed.",
+      hint: RETRY_HINT,
+      error: true,
+    };
+  }
+  if (isEtfFilingUniverse(options.forms)) {
+    return query
+      ? {
+          title: `No fund filings for ${query}.`,
+          message: "Try another ticker or fund name.",
+          hint: RETRY_HINT,
+          error: false,
+        }
+      : {
+          title: "No recent fund filings.",
+          message: "Latest covers N-1A, 485BPOS, 497, N-CSR, N-CEN, and N-PORT. Type a ticker or fund name.",
+          hint: RETRY_HINT,
+          error: false,
+        };
+  }
+  if (isPeriodicFilingUniverse(options.forms)) {
+    return query
+      ? {
+          title: `No 10-K / 10-Q filings for ${query}.`,
+          message: "Try another ticker or company.",
+          hint: RETRY_HINT,
+          error: false,
+        }
+      : {
+          title: "No recent 10-K / 10-Q filings.",
+          message: "Type a ticker or company.",
+          hint: RETRY_HINT,
+          error: false,
+        };
+  }
+  if (query) {
+    return {
+      title: options.forms ? `No matching filings for ${query}.` : `No filings for ${query}.`,
+      message: "Try another ticker, company, or form.",
+      hint: RETRY_HINT,
+      error: false,
+    };
+  }
+  return {
+    title: options.forms ? "No matching filings." : "No recent filings.",
+    message: "Type a ticker, company, or form.",
+    hint: RETRY_HINT,
+    error: false,
+  };
+}
+
 function SecPane({ width, height, focused }: PaneProps) {
   const { ticker } = usePaneTicker();
   const [storedQuery] = usePaneSettingValue("query", "");
@@ -725,11 +802,12 @@ function SecPane({ width, height, focused }: PaneProps) {
     );
   }
 
-  if (error && filings.length === 0) {
+  if (visibleFilings.length === 0) {
+    const copy = secBrowserStatusCopy({ query, forms: formFilter, error });
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <ErrorState kind="SEC" error={error} />
+        <EmptyState title={copy.title} message={copy.message} hint={copy.hint} />
       </Box>
     );
   }
@@ -759,11 +837,7 @@ function SecPane({ width, height, focused }: PaneProps) {
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Form"
       titleLabel="Filing"
-      emptyStateTitle={
-        query.trim()
-          ? (formFilter ? `No matching filings for ${query.trim()}.` : `No SEC filings for ${query.trim()}.`)
-          : (formFilter ? "No matching filings." : "No recent SEC filings.")
-      }
+      emptyStateTitle={secBrowserStatusCopy({ query, forms: formFilter, error: null }).title}
     />
   );
 }

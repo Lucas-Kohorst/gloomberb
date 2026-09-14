@@ -282,6 +282,52 @@ describe("assist rows in the root result model", () => {
     expect(opened).toBe(true);
   });
 
+  test("does not offer Search X when a local command already has that label", () => {
+    const deleteRow: ResultItem = {
+      id: "command:delete-portfolio",
+      label: "Delete Portfolio",
+      detail: "Remove a manual portfolio",
+      category: "Danger",
+      kind: "command",
+      action: () => {},
+    };
+    const searchRow: ResultItem = {
+      id: "twitter-search:delete portfolio",
+      label: "Delete Portfolio",
+      detail: "Open an X advanced-search feed",
+      category: "X Feeds",
+      kind: "action",
+      right: "TWIT",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "Delete Portfolio",
+      pluginCommandItems: () => [deleteRow],
+      providerResultItems: [searchRow],
+    }));
+    expect(items.map((item) => item.id)).toContain(deleteRow.id);
+    expect(items.map((item) => item.id)).not.toContain(searchRow.id);
+  });
+
+  test("still offers the Search X row when nothing else matched", () => {
+    const searchRow: ResultItem = {
+      id: "twitter-search:why did nvda dump",
+      label: "why did nvda dump",
+      detail: "Open an X advanced-search feed",
+      category: "X Feeds",
+      kind: "action",
+      right: "TWIT",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "why did nvda dump",
+      providerResultItems: [searchRow],
+      onOpenPluginMarketplace: () => {},
+    }));
+    expect(items.map((item) => item.id)).toEqual([searchRow.id]);
+    expect(items.map((item) => item.right)).toEqual(["TWIT"]);
+  });
+
   test("the local matcher no longer drags in panes whose keywords scatter the letters", () => {
     const optionsRow: ResultItem = {
       id: "pane-template:options-calculator",

@@ -160,6 +160,7 @@ for (const pane of paneTypes) {
 
 const dataProbes: RemoteControlRequest[] = [
   { type: "data", operation: "quote", symbol: "SPY" },
+  { type: "data", operation: "quote", symbol: "ES=F" },
   { type: "data", operation: "articles.search", feed: "top", limit: 5 },
   { type: "data", operation: "markets.search", query: "fed", limit: 3 },
 ];

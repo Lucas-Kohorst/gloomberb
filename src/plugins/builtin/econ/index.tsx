@@ -3,13 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  EmptyState,
   InputSearchBar,
   SegmentedControl,
+  Spinner,
   type DataTableCell,
   type PaneFooterSegment,
 } from "../../../components";
 import { usePluginPaneState } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
@@ -35,13 +39,12 @@ import {
   type EconCalendarColumn,
   type ImpactFilter,
 } from "./calendar-model";
-import { usePaneStatusFooter } from "../shared/pane-footer";
-import { paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { registerConnectionSource } from "../connections/register";
 import { ECON_CALENDAR_CONNECTION_ID, ECON_CALENDAR_CONNECTION_NAME } from "./calendar-source";
 import { useAppActive } from "../../../state/app/activity";
 import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
-import { fredSeriesCatalog } from "./fred-series-map";
+import { fredSeriesCatalog, fredSeriesUrl, resolveFredMapping } from "./fred-series-map";
 
 let disposeEconCalendarConnection: (() => void) | null = null;
 
@@ -56,7 +59,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [initialCache] = useState(() => getCalendarCache());
   const [events, setEvents] = useState<EconEvent[]>(initialCache?.data ?? []);
   const [loading, setLoading] = useState(true);
-  const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(initialCache?.stale ?? false);
   const [fetchedAt, setFetchedAt] = useState<number | null>(initialCache?.fetchedAt ?? null);
@@ -100,7 +102,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     } finally {
       if (fetchGenRef.current === gen) {
         setLoading(false);
-        setSettled(true);
       }
     }
   }, []);
@@ -239,12 +240,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "r") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      load(true);
-      return true;
-    } else if (event.name === "f") {
+    if (event.name === "f") {
       event.stopPropagation?.();
       event.preventDefault?.();
       cycleImpactFilter();
@@ -256,7 +252,15 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [cycleCountryFilter, cycleImpactFilter, focusSearch, load]);
+  }, [cycleCountryFilter, cycleImpactFilter, focusSearch]);
+
+  useShortcut((event) => {
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    void load(true);
+  }, { enabled: focused && !searchFocused });
 
   const columns = useMemo<EconCalendarColumn[]>(() => [
     { id: "time", label: "TIME", width: 6, align: "left" },
@@ -269,28 +273,43 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   ], []);
   const separatorBg = blendHex(colors.bg, colors.border, 0.3);
   const staleness = fetchedAt ? formatStaleness(fetchedAt, now) : "";
-  const emptyStateHint = settled && !loading && !error
-    ? [
-        impactFilter !== "all" ? `impact: ${impactFilter}` : null,
-        countryFilter !== "all" ? `country: ${countryFilter}` : null,
-      ].filter(Boolean).join(" · ") || undefined
+  const filtersActive = impactFilter !== "all" || countryFilter !== "all" || searchQuery.trim().length > 0;
+  const emptyStateTitle = filtersActive ? "No matching events." : "No economic events.";
+  const emptyStateHint = filtersActive
+    ? "Try a different search, impact, or country."
     : undefined;
 
+  const selectedEvent = filtered[selectedIdx];
+  const activeEvent = detailEvent ?? selectedEvent;
+  const activeFredMapping = useMemo(
+    () => activeEvent ? resolveFredMapping(activeEvent.event, activeEvent.country) : null,
+    [activeEvent],
+  );
+  const sourceUrl = activeFredMapping ? fredSeriesUrl(activeFredMapping.seriesId) : null;
+
   const calendarStatus = useMemo<PaneFooterSegment[]>(() => [
-    ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(staleness ? [{ id: "updated", parts: [{ text: staleness, tone: "muted" as const }] }] : []),
-  ], [stale, staleness]);
-  usePaneStatusFooter({
+  ], [staleness]);
+  const calendarTrailing = useMemo<PaneFooterSegment[]>(() => [
+    ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
+  ], [stale]);
+  const calendarHints = useMemo(() => [
+    paneSearchHint(focusSearch),
+    { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter },
+    { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter },
+  ], [cycleCountryFilter, cycleImpactFilter, focusSearch]);
+  usePaneStatusLinkFooter({
     registrationId: "econ-calendar",
+    focused,
+    url: sourceUrl,
+    source: "FRED",
+    label: "series",
     loading,
     error,
     info: calendarStatus,
-    focused,
-    hints: [
-      paneSearchHint(focusSearch),
-      { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter },
-      { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter },
-    ],
+    trailingInfo: calendarTrailing,
+    showOpenHint: !!sourceUrl,
+    hints: calendarHints,
   });
 
   const handleHeaderClick = useCallback((columnId: string) => {
@@ -360,9 +379,8 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
-  const selectedEvent = filtered[selectedIdx];
   const filterControls = (
-    <Box height={1} flexDirection="row" paddingX={1} gap={2} overflow="hidden">
+    <Box flexDirection="row" paddingX={1} gap={2} overflow="hidden" flexShrink={0} alignItems="center">
       <SegmentedControl
         options={FILTER_CYCLE.map((value) => ({ value, label: IMPACT_LABELS[value] }))}
         value={impactFilter}
@@ -385,7 +403,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     </Box>
   );
   const rootBefore = (
-    <Box flexDirection="column">
+    <Box flexDirection="column" flexShrink={0}>
       <InputSearchBar
         value={searchQuery}
         focused={focused && !detailEvent}
@@ -404,6 +422,31 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     </Box>
   );
 
+  if (loading && events.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label="Loading economic events..." />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error && events.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box padding={1} flexGrow={1}>
+          <EmptyState
+            title="Economic calendar unavailable."
+            hint="Press r to retry."
+          />
+        </Box>
+      </Box>
+    );
+  }
+
   const detailContent = detailEvent ? (
     <EconDetailView
       event={detailEvent}
@@ -421,8 +464,9 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       detailOpen={!!detailEvent}
       onBack={() => setDetailEvent(null)}
       detailContent={detailContent}
+      detailTitle={detailEvent?.event}
       rootWidth={width}
-      rootHeight={Math.max(1, height - 2)}
+      rootHeight={height}
       rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       selection={{
@@ -444,7 +488,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       onActivate={openDisplayRow}
       renderSectionHeader={renderSectionHeader}
       renderCell={renderCell}
-      emptyStateTitle={loading || !settled ? "Loading economic events..." : "No events"}
+      emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
     />

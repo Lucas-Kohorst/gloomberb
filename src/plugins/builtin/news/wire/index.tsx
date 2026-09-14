@@ -30,8 +30,13 @@ import {
   ARTICLE_READER_FLOATING_SIZE,
   NEWS_ARTICLE_READER_PANE_ID,
   NEWS_ARTICLE_READER_TEMPLATE_ID,
+  SUBSTACK_ARTICLE_READER_PANE_ID,
+  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
   articleReaderInstanceId,
 } from "../../shared/article-pop-out";
+import { SubstackArticleReaderPane } from "../../substack/article-reader";
+import { createSubstackNewsCapability } from "../../substack/news-capability";
+import { attachSubstackPersistence } from "../../substack/api/store";
 import {
   buildOpenArticleCommandResults,
   cachedNewsArticles,
@@ -90,6 +95,7 @@ let disposeBreakingNewsNotifications: (() => void) | null = null;
 let disposeTopNewsNotifications: (() => void) | null = null;
 let disposeRssConnection: (() => void) | null = null;
 let disposeJinaConnection: (() => void) | null = null;
+let disposeSubstackConnection: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
@@ -187,6 +193,15 @@ export const newsWireModule: PluginModule = {
       defaultMode: "floating",
       defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
     },
+    {
+      id: SUBSTACK_ARTICLE_READER_PANE_ID,
+      name: "Substack Article",
+      icon: "S",
+      component: SubstackArticleReaderPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
+    },
   ],
   paneTemplates: [
     { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Highest-score wire stories from the last 4 hours", keywords: ["top", "news", "headlines", "stories", "wire"], shortcut: { prefix: "TOP" } },
@@ -206,13 +221,36 @@ export const newsWireModule: PluginModule = {
       paneId: NEWS_ARTICLE_READER_PANE_ID,
       label: "News Article",
       description: "Read a popped-out news article.",
-      keywords: ["news", "article", "reader"],
+      keywords: ["news", "article", "reader", "substack", "newsletter"],
       canCreate: (_context, options) => !!options?.arg?.trim(),
       createInstance: (_context, options) => {
         const articleId = options?.arg?.trim() ?? "";
         if (!articleId) return null;
         return {
           instanceId: articleReaderInstanceId(NEWS_ARTICLE_READER_PANE_ID, articleId),
+          title: options?.values?.title?.trim() || "Article",
+          placement: "floating",
+          settings: {
+            articleId,
+            title: options?.values?.title ?? "",
+            url: options?.values?.url ?? "",
+            source: options?.values?.source ?? "",
+          },
+        };
+      },
+    },
+    {
+      id: SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+      paneId: SUBSTACK_ARTICLE_READER_PANE_ID,
+      label: "Substack Article",
+      description: "Read a popped-out Substack post.",
+      keywords: ["substack", "newsletter", "article", "reader"],
+      canCreate: (_context, options) => !!options?.arg?.trim(),
+      createInstance: (_context, options) => {
+        const articleId = options?.arg?.trim() ?? "";
+        if (!articleId) return null;
+        return {
+          instanceId: articleReaderInstanceId(SUBSTACK_ARTICLE_READER_PANE_ID, articleId),
           title: options?.values?.title?.trim() || "Article",
           placement: "floating",
           settings: {
@@ -256,6 +294,16 @@ export const newsWireModule: PluginModule = {
       },
     );
     ctx.registerCapability(source);
+    attachSubstackPersistence(ctx.persistence);
+    ctx.registerCapability(createSubstackNewsCapability());
+    disposeSubstackConnection = registerConnectionSource({
+      id: "substack",
+      name: "Substack",
+      kind: "news",
+      pluginId: "substack",
+      priority: 420,
+      authRequired: true,
+    });
     disposeRssConnection = registerConnectionSource({
       id: "rss",
       name: "RSS Feeds",
@@ -277,7 +325,7 @@ export const newsWireModule: PluginModule = {
     ctx.registerCommand({
       id: "open-news-article",
       label: "Open Article",
-      description: "Open a news article from enabled RSS feeds (including Adjacent Press) and Adjacent News. Search by headline or topic, e.g. ART hormuz.",
+      description: "Open a news article from RSS, Adjacent, and Substack. Search by headline or topic, e.g. ART hormuz.",
       keywords: [
         "article",
         "news",
@@ -286,6 +334,8 @@ export const newsWireModule: PluginModule = {
         "story",
         "adjacent",
         "press",
+        "substack",
+        "newsletter",
         "open",
         "hormuz",
         "strait",
@@ -367,5 +417,7 @@ export const newsWireModule: PluginModule = {
     disposeRssConnection = null;
     disposeJinaConnection?.();
     disposeJinaConnection = null;
+    disposeSubstackConnection?.();
+    disposeSubstackConnection = null;
   },
 };

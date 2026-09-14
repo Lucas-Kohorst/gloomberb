@@ -86,6 +86,10 @@ export function getRelatedTickers(eventTitle: string, country: string): string[]
   return resolveFredMapping(eventTitle, country)?.relatedTickers ?? [];
 }
 
+export function fredSeriesUrl(seriesId: string): string {
+  return `https://fred.stlouisfed.org/series/${seriesId}`;
+}
+
 const FRED_CATALOG_SERIES: ReadonlyArray<{ seriesId: string; label: string }> = (() => {
   const labels = new Map<string, string>();
   for (const [key, mapping] of Object.entries(SERIES_MAP)) {
@@ -131,7 +135,7 @@ export const fredSeriesCatalog: ChartSeriesCatalogProvider = {
     searchText: `${label} ${seriesId} fred federal reserve economic macro`.toLowerCase(),
     description: `Federal Reserve Economic Data · ${seriesId}`,
     detail: "FRED",
-    url: `https://fred.stlouisfed.org/series/${seriesId}`,
+    url: fredSeriesUrl(seriesId),
   })),
   assist: {
     keywords: ["fred", "macro", "economic data", "inflation", "employment"],

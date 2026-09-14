@@ -224,6 +224,7 @@ export function useCommandBarActionRuntime({
     openPluginCommandWorkflow,
     pluginCommandItems,
     pluginCommandResultItems,
+    runPluginCommandDirect,
   } = useCommandBarPluginCommandActions({
     activeCollectionId,
     activeTickerSymbol,
@@ -324,6 +325,7 @@ export function useCommandBarActionRuntime({
     persistLayoutChange,
     pluginCommandItems,
     pluginCommandResultItems,
+    runPluginCommandDirect,
     readTickerSearchCache,
     runDirectCommand,
     runSecurityDescriptionShortcut,

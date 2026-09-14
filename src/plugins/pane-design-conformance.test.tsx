@@ -5,7 +5,7 @@
  * the OpenTUI gates. A new pane in the catalog is gated automatically; there
  * is no exemption list.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createElement } from "react";
 import { uiBuiltinPlugins } from "./catalog-ui";
 import { setCloudApiFetchTransport } from "../api-client";
@@ -16,23 +16,35 @@ import {
 } from "../components/layout/pane/footer/model";
 import {
   assertEmptyStateHasNextAction,
+  assertFooterHasBoundActionHints,
   assertFooterHasNoResultCounts,
   assertFooterHintsBound,
   assertFooterHintKeysBindable,
   assertFooterInfoFitsChrome,
   assertFooterInfoIsStatusOnly,
+  assertHasSearchFooterHint,
   assertNoBannedBullets,
   assertNoBodySearchSpinner,
   assertNoChipFilterChrome,
   assertNoDuplicateFooterHintKeys,
+  assertNoGenericDataErrorDump,
   assertNoNavigationFooterHints,
   assertNoPerPaneRefreshHint,
   assertFooterHintKeyPrefixesAction,
   assertUniversalPaneDesignGates,
   renderAuditedPane,
   settleFrames,
+  sourceHasBoundTableFooterHints,
+  sourceHasClickableHeaderSort,
   type AuditedPaneRender,
 } from "../test-support/pane-design";
+import { MemoryPluginPersistence } from "../test-support/plugin-persistence";
+import {
+  attachEconCalendarPersistence,
+  resetEconCalendarPersistence,
+} from "./builtin/econ/calendar-model";
+import { ETF_FORMS_SETTING } from "./builtin/sec/forms";
+import { secModule } from "./builtin/sec";
 import { TranscriptView } from "./builtin/earnings-calls/transcript-view";
 import type {
   CloudEarningsTranscriptPayload,
@@ -204,6 +216,23 @@ describe("pane design conformance", () => {
         },
         "probe",
       )).not.toThrow();
+      expect(() => assertNoGenericDataErrorDump(
+        "SEC data unavailable\nThe data source is unavailable.",
+        "sec",
+      )).toThrow();
+      expect(() => assertNoGenericDataErrorDump(
+        "No recent fund filings.\nType a ticker or fund name.",
+        "sec",
+      )).not.toThrow();
+      expect(() => assertFooterHasBoundActionHints(EMPTY_FOOTER, "probe")).toThrow();
+      expect(() => assertHasSearchFooterHint(
+        { ...EMPTY_FOOTER, hints: [{ id: "filter", key: "f", label: "ilter", onPress: () => {} }] },
+        "probe",
+      )).toThrow();
+      expect(sourceHasClickableHeaderSort("<DataTableView onHeaderClick={handleHeaderClick} />")).toBe(true);
+      expect(sourceHasClickableHeaderSort("<DataTableStackView onHeaderClick={() => {}} />")).toBe(false);
+      expect(sourceHasBoundTableFooterHints("paneSearchHint(focusSearch)")).toBe(true);
+      expect(sourceHasBoundTableFooterHints("hints: [{ id: \"open\", onPress: open }]")).toBe(false);
     });
   });
 
@@ -573,6 +602,225 @@ describe("pane design conformance", () => {
       assertNoBannedBullets(rendered.frame, "plugin-marketplace");
       assertFooterHintsBound(rendered.footer, "plugin-marketplace");
       assertFooterHasNoResultCounts(rendered.footer, "plugin-marketplace");
+    });
+  });
+
+  describe("calendar tables", () => {
+    const calendarEntries = builtinPaneEntries().filter(({ pane }) => (
+      pane.id.toLowerCase().includes("calendar")
+      || pane.name.toLowerCase().includes("calendar")
+    ));
+
+    let rendered: AuditedPaneRender | undefined;
+    afterEach(async () => {
+      await rendered?.destroy();
+      rendered = undefined;
+      setHttpFetchTransport(null);
+      setCloudApiFetchTransport(null as never);
+      resetEconCalendarPersistence();
+      setSystemTime();
+    });
+
+    for (const { pluginId, pane } of calendarEntries) {
+      test(`${pane.id}: bound footer hints include search`, async () => {
+        setHttpFetchTransport(async () => {
+          throw new Error("design-gate: no network");
+        });
+        setCloudApiFetchTransport(async () => {
+          throw new Error("design-gate: no network");
+        });
+        rendered = await renderAuditedPane({
+          paneId: pane.id,
+          pluginId,
+          node: createElement(pane.component, {
+            paneId: `${pane.id}:design`,
+            paneType: pane.id,
+            focused: true,
+            width: 100,
+            height: 30,
+          }),
+        });
+        await settleFrames(rendered, 3);
+        assertFooterHasBoundActionHints(rendered.footer, pane.id);
+        assertHasSearchFooterHint(rendered.footer, pane.id);
+        assertUniversalPaneDesignGates(rendered.frame, rendered.footer, pane.id, pane.name);
+      });
+    }
+
+    test("econ-calendar error copy is specific and searchable", async () => {
+      setHttpFetchTransport(async () => {
+        throw new Error("design-gate: no network");
+      });
+      setCloudApiFetchTransport(async () => {
+        throw new Error("design-gate: no network");
+      });
+      const econ = calendarEntries.find(({ pane }) => pane.id === "econ-calendar");
+      if (!econ) throw new Error("econ-calendar pane missing");
+      rendered = await renderAuditedPane({
+        paneId: econ.pane.id,
+        pluginId: econ.pluginId,
+        node: createElement(econ.pane.component, {
+          paneId: "econ-calendar:design",
+          paneType: "econ-calendar",
+          focused: true,
+          width: 100,
+          height: 30,
+        }),
+      });
+      await settleFrames(rendered, 6);
+      expect(rendered.frame).toContain("Economic calendar unavailable.");
+      expect(rendered.frame).not.toContain("data unavailable");
+      expect(rendered.frame).not.toContain("No events");
+      assertEmptyStateHasNextAction(rendered.frame, "econ-calendar", "Press r to retry.");
+      assertHasSearchFooterHint(rendered.footer, "econ-calendar");
+      assertFooterHasBoundActionHints(rendered.footer, "econ-calendar");
+    });
+
+    test("econ-calendar mapped event hints [o]pen and keeps header sort", async () => {
+      setSystemTime(new Date("2026-08-21T12:00:00.000Z"));
+      const persistence = new MemoryPluginPersistence();
+      const now = Date.now();
+      persistence.seedResource("calendar", "global", [
+        {
+          id: "cpi",
+          date: new Date(now + 3_600_000).toISOString(),
+          time: "08:30",
+          country: "US",
+          event: "CPI m/m",
+          impact: "high",
+          actual: null,
+          forecast: "0.3%",
+          prior: "0.2%",
+        },
+      ], { sourceKey: "gloomberb-cloud", schemaVersion: 1 });
+      attachEconCalendarPersistence(persistence);
+      setHttpFetchTransport(async () => {
+        throw new Error("design-gate: no network");
+      });
+      setCloudApiFetchTransport(async () => {
+        throw new Error("design-gate: no network");
+      });
+      const econ = calendarEntries.find(({ pane }) => pane.id === "econ-calendar");
+      if (!econ) throw new Error("econ-calendar pane missing");
+      rendered = await renderAuditedPane({
+        paneId: econ.pane.id,
+        pluginId: econ.pluginId,
+        width: 110,
+        height: 30,
+        node: createElement(econ.pane.component, {
+          paneId: "econ-calendar:design",
+          paneType: "econ-calendar",
+          focused: true,
+          width: 110,
+          height: 30,
+        }),
+      });
+      await settleFrames(rendered, 6);
+      expect(rendered.frame).toContain("CPI m/m");
+      expect(rendered.frame).toContain("TIME");
+      expect(rendered.frame).toContain("PRIOR");
+      const open = rendered.footer.hints.find((hint) => hint.id === "open");
+      expect(open?.key).toBe("o");
+      expect(open?.onPress).toBeTypeOf("function");
+      assertHasSearchFooterHint(rendered.footer, "econ-calendar");
+      assertFooterHasBoundActionHints(rendered.footer, "econ-calendar");
+      assertUniversalPaneDesignGates(rendered.frame, rendered.footer, "econ-calendar", "Economic Calendar");
+    });
+  });
+
+  describe("SEC / ETF filings empty vs error", () => {
+    const secPane = secModule.panes?.find((pane) => pane.id === "sec");
+    if (!secPane) throw new Error("sec pane missing");
+
+    let rendered: AuditedPaneRender | undefined;
+    afterEach(async () => {
+      await rendered?.destroy();
+      rendered = undefined;
+      setHttpFetchTransport(null);
+      setCloudApiFetchTransport(null as never);
+    });
+
+    function secNode() {
+      return createElement(secPane.component, {
+        paneId: "sec:design",
+        paneType: "sec",
+        focused: true,
+        width: 100,
+        height: 30,
+      });
+    }
+
+    test("transport failure names EDGAR, not a generic dump", async () => {
+      setHttpFetchTransport(async () => {
+        throw new Error("design-gate: no network");
+      });
+      rendered = await renderAuditedPane({
+        paneId: "sec",
+        pluginId: "ticker-research",
+        node: secNode(),
+      });
+      await settleFrames(rendered, 8);
+      expect(rendered.frame).toContain("SEC EDGAR unavailable.");
+      expect(rendered.frame).not.toContain("The data source is unavailable.");
+      expect(rendered.frame).not.toContain("SEC data unavailable");
+      assertNoGenericDataErrorDump(rendered.frame, "sec");
+      assertEmptyStateHasNextAction(rendered.frame, "sec", "Press r to retry.");
+      const chips = rendered.footer.info.flatMap((segment) => (
+        segment.parts.map((part) => part.text)
+      ));
+      expect(chips).toContain("unavailable");
+      assertFooterHintsBound(rendered.footer, "sec");
+    });
+
+    test("ETF latest empty names fund forms and the next action", async () => {
+      setHttpFetchTransport(async () => (
+        new Response(JSON.stringify({ hits: { hits: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      ));
+      rendered = await renderAuditedPane({
+        paneId: "sec",
+        pluginId: "ticker-research",
+        settings: { forms: ETF_FORMS_SETTING },
+        node: secNode(),
+      });
+      await settleFrames(rendered, 8);
+      expect(rendered.frame).toContain("No recent fund filings.");
+      expect(rendered.frame).toContain("N-1A");
+      expect(rendered.frame).toContain("485BPOS");
+      assertEmptyStateHasNextAction(rendered.frame, "sec", "Type a ticker or fund name");
+      assertNoGenericDataErrorDump(rendered.frame, "sec");
+      const chips = rendered.footer.info.flatMap((segment) => (
+        segment.parts.map((part) => part.text)
+      ));
+      expect(chips).not.toContain("unavailable");
+    });
+
+    test("search with no hits names the query", async () => {
+      setHttpFetchTransport(async (url) => {
+        if (String(url).includes("company_tickers_exchange.json")) {
+          return new Response(JSON.stringify({
+            fields: ["cik", "name", "ticker", "exchange"],
+            data: [],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ hits: { hits: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      rendered = await renderAuditedPane({
+        paneId: "sec",
+        pluginId: "ticker-research",
+        settings: { query: "ZZZZ", forms: ETF_FORMS_SETTING },
+        node: secNode(),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settleFrames(rendered, 8);
+      expect(rendered.frame).toContain("No fund filings for ZZZZ.");
+      expect(rendered.frame).not.toContain("The data source is unavailable.");
+      assertNoGenericDataErrorDump(rendered.frame, "sec");
     });
   });
 });

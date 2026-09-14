@@ -269,8 +269,8 @@ describe("CommandBar AI assist", () => {
         query="how do I plot lunar ice futures"
         configurePluginRegistry={configureEarningsRegistry(created)}
       />,
-      // Tall enough for the sign-in offer, which sits under the local matches.
-      { width: 100, height: 30 },
+      // Tall enough for the sign-in offer under RSS, X search, and catalog rows.
+      { width: 100, height: 36 },
     );
 
     await testSetup.renderOnce();

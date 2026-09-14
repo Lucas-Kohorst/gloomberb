@@ -36,6 +36,18 @@ describe("provider-router financial quote usability", () => {
     ).toBe(true);
   });
 
+  test("keeps last futures prints Yahoo still labels REGULAR after the pit closes", () => {
+    expect(isProviderQuoteUsableForCurrentSession(makeQuote({
+      symbol: "ZC=F",
+      price: 532,
+      dataSource: "delayed",
+      listingExchangeName: "CBT",
+      exchangeName: "CBT",
+      marketState: "REGULAR",
+      lastUpdated: Date.parse("2026-09-11T18:19:59Z"),
+    }), "CBT")).toBe(true);
+  });
+
   test("rejects empty zero provider quotes", () => {
     expect(isProviderQuoteUsableForCurrentSession(makeQuote({
       price: 0,

@@ -6,7 +6,6 @@ import { registerConnectionSource } from "../connections/register";
 import { scheduleLatestNewsWarm } from "../news/wire/article-search";
 import { createXMarketsNewsCapability } from "./news-capability";
 import {
-  POLLING_X_FEED_QUERY,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
@@ -164,18 +163,6 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
   });
 
-  ctx.registerCommand({
-    id: "twitter-polling-feed-open",
-    label: "Polling X",
-    description: "Open an X feed of poll aggregators and handicappers (VoteHub, RCP, Cook, 538 alumni).",
-    keywords: ["polling", "polls", "votehub", "rcp", "cook", "nate", "x", "twitter"],
-    category: "data",
-    shortcut: "POLX",
-    execute: () => {
-      openTwitterFeed(ctx, POLLING_X_FEED_QUERY);
-    },
-  });
-
   ctx.registerCapability(createXMarketsNewsCapability());
   // Firehose still seeds Markets tweets at startup. An open X pane then
   // refreshes on the shared poll chip and ingests those tweets into the hose.
@@ -203,13 +190,13 @@ export function disposeTwitterFeedFeature(): void {
 }
 
 function openTwitterFeed(ctx: GloomPluginContext, query = "") {
-  const targetPaneId = ctx.getConfig().layout.instances.find((instance) => (
+  const existing = ctx.getConfig().layout.instances.find((instance) => (
     instance.paneId === TWITTER_FEED_PANE_ID
-  ))?.instanceId ?? null;
+  ));
   const now = Date.now();
   const launchRequest: TwitterFeedLaunchRequest = {
-    query: resolveTwitterFeedQuery(query),
-    targetPaneId,
+    query: query.trim(),
+    targetPaneId: existing?.instanceId ?? null,
     nonce: `${now}-${Math.random().toString(36).slice(2)}`,
     createdAt: now,
   };
@@ -219,5 +206,12 @@ function openTwitterFeed(ctx: GloomPluginContext, query = "") {
     launchRequest,
     { schemaVersion: TWITTER_FEED_LAUNCH_SCHEMA_VERSION },
   );
-  ctx.focusPane(TWITTER_FEED_PANE_ID);
+  if (existing) {
+    ctx.focusPane(existing.instanceId);
+    return;
+  }
+  ctx.createPaneFromTemplate("twitter-feed-pane", {
+    arg: query.trim(),
+    values: { query: query.trim() },
+  });
 }

@@ -425,7 +425,7 @@ const RELEASE_0_13_6: ChangelogRelease = {
 ## Tables and sources
 
 - Command-bar \`CSV\` copies the focused pane’s current table (clipboard + download, cap 5,000 rows).
-- Default RSS adds Prophet Notes, Sentinel, Metaculus, and Don’t Worry About the Vase. \`POLX\` is an X feed of polling accounts.
+- Default RSS adds Prophet Notes, Sentinel, Metaculus, and Don’t Worry About the Vase.
 - RSS cache stays fresh for 15 minutes instead of 2.
 
 ## Share
