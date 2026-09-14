@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Freeze the first table column on desktop and web
+
+Wide panes scroll sideways instead of dropping columns, which put the ticker out of view while reading far-off columns. The leading column now stays pinned while a table scrolls.
+
+- The DOM renderers pin the first visible column (header, cells, section labels, resize handle, sort, selection, and hover all keep working); the terminal still fits tables to their width.
+- Default on wherever a table actually overflows; "Freeze first column" toggles in Options Flow and Portfolio pane settings persist per pane.
+- The frozen column follows the pane's column order, so reordering `columnIds` moves what stays pinned, and it can still be resized.
+
 ## Unreleased — Webview `process` crash
 
 Hosted Chrome and Electrobun have no Node `process`. Adjacent Indices, CFTC, and Account Management BYOK crashed on pane mount (`process is not defined` / `Can't find variable: process`) because BYOK env fallbacks read `process.env` directly.

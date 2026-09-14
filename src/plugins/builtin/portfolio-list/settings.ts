@@ -1,6 +1,10 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
 import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
+import {
+  FREEZE_FIRST_COLUMN_SETTING_FIELD,
+  resolveFreezeFirstColumnSetting,
+} from "../../../components/data-table/freeze-column";
 import { t } from "../../../i18n";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
@@ -11,6 +15,7 @@ export interface PortfolioPaneSettings {
   collectionScope: CollectionScope;
   visibleCollectionIds: string[];
   viewMode: PortfolioViewMode;
+  freezeFirstColumn: boolean;
   hideHeader: boolean;
   hideCash: boolean;
 }
@@ -162,6 +167,7 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
     visibleCollectionIds,
     viewMode: isPortfolioViewMode(settings?.viewMode) ? settings.viewMode : "table",
+    freezeFirstColumn: resolveFreezeFirstColumnSetting(settings),
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
   };
@@ -260,6 +266,7 @@ export function buildPortfolioPaneSettingsDef(
         description: describeColumnOption(column),
       })),
     },
+    FREEZE_FIRST_COLUMN_SETTING_FIELD,
     {
       key: "collectionScope",
       label: "Collections",

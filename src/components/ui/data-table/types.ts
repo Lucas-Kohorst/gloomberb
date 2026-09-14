@@ -107,6 +107,12 @@ export interface DataTableProps<
   emptyStateTitle: string;
   emptyStateMessage?: string;
   emptyStateHint?: string;
+  /**
+   * Sticky first column while the table scrolls sideways. `undefined` resolves
+   * from the pane's `freezeFirstColumn` setting (default on). The terminal
+   * renderer fits tables to their width, so it ignores this prop.
+   */
+  freezeFirstColumn?: boolean;
   virtualize?: boolean;
   overscan?: number;
   columnGap?: number;

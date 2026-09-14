@@ -1,4 +1,5 @@
-import type { PaneSettingsDef } from "../../../types/plugin";
+import type { PaneSettingsContext, PaneSettingsDef } from "../../../types/plugin";
+import { withFreezeFirstColumnSetting } from "../../../components/data-table/freeze-column";
 import type { PluginModule } from "../plugin-module";
 import { DEFAULT_FLOW_FILTERS, FLOW_FILTER_OPTIONS } from "./flow-model";
 import FlowPane from "./flow-pane";
@@ -41,8 +42,8 @@ function toSettingOptions(
   return options.map(({ value, label }) => ({ value, label }));
 }
 
-function flowSettings(): PaneSettingsDef {
-  return {
+function flowSettings(context: PaneSettingsContext): PaneSettingsDef {
+  return withFreezeFirstColumnSetting({
     title: "Options Flow Settings",
     // Options come from the pane's own filter chips so the two never drift.
     fields: [
@@ -59,7 +60,7 @@ function flowSettings(): PaneSettingsDef {
         options: toSettingOptions(FLOW_FILTER_OPTIONS.universe),
       },
     ],
-  };
+  }, context.settings);
 }
 
 export const scannerModule: PluginModule = {
@@ -84,7 +85,7 @@ export const scannerModule: PluginModule = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 88, height: 28 },
       tableExport: true,
-      settings: flowSettings(),
+      settings: flowSettings,
     },
   ],
 

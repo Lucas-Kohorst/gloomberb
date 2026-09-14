@@ -7,9 +7,10 @@ import type {
 } from "./types";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { remoteNumberValue, resolveRemoteItemIndex } from "../../../remote/semantic-helpers";
-import { useOptionalPaneInstanceId } from "../../../state/app/context";
+import { useOptionalPaneInstanceId, usePaneInstance } from "../../../state/app/context";
 import { registerPaneTableExporter } from "../../../state/pane-table-export-registry";
 import { createDataTableCsv } from "../../data-table/export";
+import { resolveFreezeFirstColumnSetting } from "../../data-table/freeze-column";
 import { useTableColumnWidths } from "../../data-table/use-column-widths";
 
 export type {
@@ -33,8 +34,12 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
     persistWidths,
     resetColumn,
   } = useTableColumnWidths(props.columns);
+  const paneInstance = usePaneInstance();
+  const freezeFirstColumn = props.freezeFirstColumn
+    ?? resolveFreezeFirstColumnSetting(paneInstance?.settings);
   const tableProps = {
     ...props,
+    freezeFirstColumn,
     columns: displayColumns,
     onColumnResize: resizeColumn,
     onColumnResizeEnd: persistWidths,

@@ -203,6 +203,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   focusPane,
   onTableMouseDown,
   gridTemplateColumns,
+  frozenColumnId,
   onHeaderClick,
   onColumnResize,
   onColumnResizeEnd,
@@ -216,6 +217,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   focusPane: () => void;
   onTableMouseDown?: (event: any) => void;
   gridTemplateColumns: string;
+  frozenColumnId: string | null;
   onHeaderClick: (columnId: string) => void;
   onColumnResize?: (columnId: string, width: number) => void;
   onColumnResizeEnd?: () => void;
@@ -249,13 +251,17 @@ export function WebDataTableHeader<C extends DataTableColumn>({
           sortColumnId,
           sortDirection,
         );
+        const frozen = column.id === frozenColumnId;
         return (
           <div
             key={column.id}
             data-gloom-role="data-table-header-cell"
             data-gloom-interactive="true"
             style={{
-              position: "relative",
+              // The frozen header pins above the resize handles (z-index 3) so
+              // scrolled headers and their handles pass under it.
+              position: frozen ? "sticky" : "relative",
+              ...(frozen ? { left: 0, zIndex: 4 } : null),
               minWidth: 0,
               height: WEB_CELL_HEIGHT,
               overflow: "visible",
@@ -310,6 +316,7 @@ export type WebDataTableRowProps<T, C extends DataTableColumn> = {
   item: T;
   itemKey: string;
   gridTemplateColumns: string;
+  frozenColumnId: string | null;
   getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
   isRowArriving?: DataTableProps<T, C>["isRowArriving"];
   renderCell: DataTableProps<T, C>["renderCell"];
@@ -338,6 +345,7 @@ function WebDataTableRowInner<
   item,
   itemKey,
   gridTemplateColumns,
+  frozenColumnId,
   getRowBackgroundColor,
   isRowArriving,
   renderCell,
@@ -363,7 +371,9 @@ function WebDataTableRowInner<
     width: "100%",
     minWidth: 0,
     height: rowSize,
-    overflow: "hidden",
+    // `hidden` makes the row its own sticky scrollport and would pin frozen
+    // cells to an unscrolling box; `clip` keeps the clipping without one.
+    overflow: frozenColumnId != null ? "clip" : "hidden",
     paddingLeft: inlinePaddingPx(horizontalPadding),
     paddingRight: inlinePaddingPx(horizontalPadding),
     boxSizing: "border-box",
@@ -394,6 +404,13 @@ function WebDataTableRowInner<
               sectionHeader.color ?? CSS_TEXT_BRIGHT,
               sectionHeader.attributes ?? TextAttributes.BOLD,
             ),
+            // A section band has no columns of its own, so pin its label the
+            // same way the frozen column stays put. A stretched span fills the
+            // whole band and, being wider than the scrollport, stops sticking
+            // once its right edge leaves the band, so size it to the text.
+            ...(frozenColumnId != null
+              ? { position: "sticky", left: 0, zIndex: 1, justifySelf: "start", width: "max-content" }
+              : null),
             gridColumn: "1 / -1",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -445,11 +462,16 @@ function WebDataTableRowInner<
     >
       {columns.map((column) => {
         const cell: DataTableCell = renderCell(item, column, index, rowState);
+        // The frozen cell keeps its row's background (row, hover, selected, or
+        // arriving styles) so scrolled content never bleeds through it, and
+        // paints above the row's scrolled cells.
+        const frozen = column.id === frozenColumnId;
         return (
           <div
             key={column.id}
             data-gloom-role="data-table-cell"
             style={{
+              ...(frozen ? { position: "sticky", left: 0, zIndex: 1 } : null),
               minWidth: 0,
               height: "100%",
               overflow: "hidden",
