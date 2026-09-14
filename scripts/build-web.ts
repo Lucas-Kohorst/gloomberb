@@ -50,6 +50,11 @@ async function buildPage(name: string, entrypoint: string, title: string, loadin
 </head>
 <body>
   <div id="root"><div class="gloom-loading">${loadingText}</div></div>
+  <script>
+if (!("process" in globalThis) || !globalThis.process) {
+  globalThis.process = { env: {} };
+}
+  </script>
   <script type="module" src="${href(script.path)}"></script>
 </body>
 </html>\n`);

@@ -179,6 +179,28 @@ describe("pane design catalog — connections", () => {
   });
 });
 
+describe("pane design catalog — renderer env", () => {
+  test("pane clients do not read process.env unguarded", () => {
+    const unguarded: string[] = [];
+    for (const plugin of firstPartyPluginDirs()) {
+      for (const file of walkSourceFiles(plugin.dir)) {
+        const rel = relative(plugin.dir, file);
+        const base = rel.split(/[/\\]/).pop() ?? rel;
+        if (TEST_FILE.test(base)) continue;
+        if (plugin.id === "changelog") continue;
+        const source = readFileSync(file, "utf8");
+        if (!/\bprocess\.env\b/.test(source)) continue;
+        if (/\breadProcessEnv\s*\(|processEnvRecord\s*\(|typeof process|globalThis\.process/.test(source)) continue;
+        unguarded.push(`${plugin.id}:${rel}`);
+      }
+    }
+    expect(
+      unguarded,
+      unguarded.map((path) => `${path} reads process.env in the renderer; use readProcessEnv`).join("\n"),
+    ).toEqual([]);
+  });
+});
+
 describe("pane design catalog — ART / written-text", () => {
   afterEach(() => {
     newsPlugin.dispose?.();

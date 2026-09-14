@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { spawn } from "child_process";
 import { mkdirSync } from "fs";
+import { readProcessEnv } from "../../../../utils/process-env";
 import {
   FACTORY_AUTH_PATH,
   FACTORY_WORKDIR,
@@ -90,7 +91,7 @@ function buildDroidExecEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const name of DROID_EXEC_ENV_ALLOWLIST) {
     if (DROID_SECRET_ENV_PATTERN.test(name)) continue;
-    const value = process.env[name];
+    const value = readProcessEnv(name);
     if (value !== undefined) env[name] = value;
   }
   return env;

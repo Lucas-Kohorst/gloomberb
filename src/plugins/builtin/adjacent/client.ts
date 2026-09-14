@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import type { PluginPersistence } from "../../../types/plugin";
 import type {
@@ -722,7 +723,7 @@ export function setSharedAdjacentApiKeyResolver(resolver: () => string | null): 
 }
 
 export function resolveAdjacentApiKey(): string | null {
-  return resolveSharedApiKey()?.trim() || process.env.ADJACENT_API_KEY?.trim() || null;
+  return resolveSharedApiKey()?.trim() || readProcessEnv("ADJACENT_API_KEY") || null;
 }
 
 /** Returns an Adjacent client using the effective shared API key, if any. */

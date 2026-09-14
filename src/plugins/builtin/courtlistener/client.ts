@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import type {
   DocumentSearchHit,
@@ -33,7 +34,7 @@ const courtListenerFetch = createThrottledFetch({
   transport: (url: string, init?: RequestInit) => httpFetch(url, init),
 });
 
-let resolveApiToken: () => string | undefined = () => process.env.COURTLISTENER_API_KEY?.trim() || undefined;
+let resolveApiToken: () => string | undefined = () => readProcessEnv("COURTLISTENER_API_KEY");
 
 export function setCourtListenerApiTokenResolver(resolver: () => string | undefined): void {
   resolveApiToken = resolver;
@@ -45,7 +46,7 @@ export function setCourtListenerApiToken(token: string | undefined): void {
 }
 
 export function resolveCourtListenerApiToken(): string | undefined {
-  return resolveApiToken() || process.env.COURTLISTENER_API_KEY?.trim() || undefined;
+  return resolveApiToken() || readProcessEnv("COURTLISTENER_API_KEY");
 }
 
 function requestHeaders(): Record<string, string> {

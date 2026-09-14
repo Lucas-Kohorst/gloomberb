@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Webview `process` crash
+
+Hosted Chrome and Electrobun have no Node `process`. Adjacent Indices, CFTC, and Account Management BYOK crashed on pane mount (`process is not defined` / `Can't find variable: process`) because BYOK env fallbacks read `process.env` directly.
+
+- Env reads in renderer-facing plugins go through `readProcessEnv` / `globalThis.process`.
+- Desktop and hosted HTML install a tiny `process.env` shim before the app module loads.
+- Pane-design catalog fails unguarded `process.env` in plugin sources.
+
 ## v0.13.15 — Kalshi weather index and calibration provenance
 
 Kalshi now publishes a canonical minute-resolution city temperature index used by hourly temperature markets. The weather pane surfaces this as supplementary market evidence alongside the existing NWS and TWC data — without replacing settlement authority.
@@ -390,7 +398,7 @@ Clicking an Unread row opens that chat channel. `CDS` shows DTCC activity. `CSV`
 ### Tables and sources
 
 - Command-bar `CSV` copies the focused pane’s current table (clipboard + download, cap 5,000 rows).
-- Default RSS adds Prophet Notes, Sentinel, Metaculus, and Don’t Worry About the Vase. `POLX` is an X feed of polling accounts.
+- Default RSS adds Prophet Notes, Sentinel, Metaculus, and Don’t Worry About the Vase.
 - RSS cache stays fresh for 15 minutes instead of 2.
 
 ### Share

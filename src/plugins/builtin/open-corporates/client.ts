@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { withConnectionRequest } from "../connections/register";
 import {
@@ -142,14 +143,14 @@ export function parseCompanyDetailPayload(payload: unknown): OpenCorporatesCompa
   return { ...company, officers: parseOfficers(companyRecord.officers) };
 }
 
-let resolveApiToken: () => string | undefined = () => process.env.OPENCORPORATES_API_TOKEN?.trim() || undefined;
+let resolveApiToken: () => string | undefined = () => readProcessEnv("OPENCORPORATES_API_TOKEN");
 
 export function setOpenCorporatesApiTokenResolver(resolver: () => string | undefined): void {
   resolveApiToken = resolver;
 }
 
 export function resolveOpenCorporatesApiToken(): string | undefined {
-  return resolveApiToken()?.trim() || process.env.OPENCORPORATES_API_TOKEN?.trim() || undefined;
+  return resolveApiToken()?.trim() || readProcessEnv("OPENCORPORATES_API_TOKEN");
 }
 
 function withOptionalToken(url: string, apiToken?: string): string {

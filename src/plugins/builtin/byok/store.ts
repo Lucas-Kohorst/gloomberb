@@ -6,6 +6,7 @@ import {
   type ByokApiKeyEntry,
   type ByokStoredConfig,
 } from "./types";
+import { readProcessEnv } from "../../../utils/process-env";
 import { getByokKnownService, getByokKnownServices } from "./services";
 
 /** Reads BYOK key entries from a raw AppConfig.pluginConfig map. */
@@ -98,7 +99,7 @@ export function resolveApiKey(config: AppConfig, serviceId: string): string | un
 
   const service = getByokKnownService(serviceId);
   if (service?.envVar) {
-    const envValue = process.env[service.envVar];
+    const envValue = readProcessEnv(service.envVar);
     if (envValue) return envValue;
   }
   return undefined;
@@ -120,7 +121,7 @@ export function getAvailableByokServices(config: AppConfig): Array<{ serviceId: 
   const allServices = getByokKnownServices();
   for (const service of allServices) {
     if (storedServiceIds.has(service.id)) continue;
-    if (service.envVar && process.env[service.envVar]) {
+    if (service.envVar && readProcessEnv(service.envVar)) {
       result.push({ serviceId: service.id, source: "env" });
     }
   }

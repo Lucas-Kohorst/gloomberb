@@ -25,6 +25,10 @@ describe("ACM plugin BYOK inventory", () => {
     disposeAi();
   });
 
+  test("env lookup does not throw when listing inventory", () => {
+    expect(() => resolvePluginByokInventory([])).not.toThrow();
+  });
+
   test("marks stored keys attached and env fallbacks separately", () => {
     const dispose = registerByokKnownService({
       id: "env-fixture",

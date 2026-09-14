@@ -1,4 +1,5 @@
 import { type NativeRendererHost as CliRenderer } from "../../../../ui";
+import { processEnvRecord } from "../../../../utils/process-env";
 import { writeRendererRaw } from "./adapter";
 import { buildKittyGraphicsQuery } from "./protocol";
 
@@ -22,7 +23,7 @@ const QUERY_TIMEOUT_MS = 250;
  */
 export function isMultiplexedTerminal(
   capabilities: RendererCapabilities | null | undefined,
-  env: Record<string, string | undefined> = process.env,
+  env: Record<string, string | undefined> = processEnvRecord(),
 ): boolean {
   const reported = capabilities?.multiplexer;
   // The renderer's own detection wins when it has one; the environment is only
@@ -41,7 +42,7 @@ export function isMultiplexedTerminal(
  */
 export function resolveKittySupport(
   capabilities: RendererCapabilities | null | undefined,
-  env: Record<string, string | undefined> = process.env,
+  env: Record<string, string | undefined> = processEnvRecord(),
 ): boolean | null {
   if (isMultiplexedTerminal(capabilities, env)) return false;
   return typeof capabilities?.kitty_graphics === "boolean" ? capabilities.kitty_graphics : null;

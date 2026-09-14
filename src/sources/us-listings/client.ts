@@ -2,6 +2,7 @@ import { SHARE_HOSTED_ORIGIN } from "../../shares/routes";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { createThrottledFetch } from "../../utils/throttled-fetch";
 import { httpFetch } from "../../utils/http-transport";
+import { readProcessEnv } from "../../utils/process-env";
 import {
   keyedDataUrl,
   isHostedWebClient,
@@ -35,8 +36,7 @@ let inflight: Promise<UsListingsUniverse | null> | null = null;
 let testUniverse: UsListingsUniverse | null | undefined;
 
 function bunTestRuntime(): boolean {
-  if (typeof process === "undefined") return false;
-  const argv = process.argv ?? [];
+  const argv = (globalThis as { process?: { argv?: string[] } }).process?.argv ?? [];
   if (argv.some((arg) => /\.test\.(ts|tsx|js|jsx)$/.test(arg))) return true;
   return argv[1] === "test";
 }
@@ -78,7 +78,7 @@ export function peekUsListingsUniverse(): UsListingsUniverse | null {
 export async function ensureUsListingsUniverse(): Promise<UsListingsUniverse | null> {
   if (testUniverse !== undefined) return testUniverse;
   if (cached && cached.expiresAt > Date.now()) return cached.universe;
-  if (bunTestRuntime() && process.env.GLOOMBERB_US_LISTINGS_LIVE !== "1") return null;
+  if (bunTestRuntime() && readProcessEnv("GLOOMBERB_US_LISTINGS_LIVE") !== "1") return null;
   if (inflight) return inflight;
 
   inflight = fetchUniverse()
