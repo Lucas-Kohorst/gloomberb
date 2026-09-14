@@ -56,6 +56,8 @@ import type {
   CloudCongressHousePayload,
   CloudEarningsCallListPayload,
   CloudEarningsTranscriptPayload,
+  CloudProxyStatementListPayload,
+  CloudProxyStatementPayload,
   CloudNewsPayload,
   CloudSavedSearch,
   CloudSavedSearchInput,
@@ -751,6 +753,14 @@ class GloomApiClient {
 
   async getCloudEarningsTranscript(id: string): Promise<CloudEarningsTranscriptPayload> {
     return this.data.getCloudEarningsTranscript(id);
+  }
+
+  async getProxyStatements(ticker: string): Promise<CloudProxyStatementListPayload> {
+    return this.data.getProxyStatements(ticker);
+  }
+
+  async getProxyStatement(ticker: string, year: number): Promise<CloudProxyStatementPayload> {
+    return this.data.getProxyStatement(ticker, year);
   }
 
   async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {

@@ -521,6 +521,73 @@ export interface CloudEarningsCallListPayload {
   unknownTicker?: boolean;
 }
 
+/** One row of a proxy statement's Summary Compensation Table, in dollars. */
+export interface CloudExecutiveRowPayload {
+  name: string;
+  title: string;
+  salary: number | null;
+  bonus: number | null;
+  stockAwards: number | null;
+  optionAwards: number | null;
+  nonEquityIncentive: number | null;
+  pensionAndDeferred: number | null;
+  allOther: number | null;
+  total: number | null;
+}
+
+export interface CloudProxyStatementSummaryPayload {
+  id: string;
+  ticker: string;
+  company: {
+    ticker: string;
+    cik: string | null;
+    name: string;
+    shortName: string;
+  };
+  /** Year of the filing date: what people call "the 2026 proxy". */
+  proxyYear: number;
+  fiscalYear: number | null;
+  fiscalYearLabel: string | null;
+  filedAt: string;
+  meetingDate: string | null;
+  updatedAt: string;
+  ceoName: string | null;
+  ceoTitle: string | null;
+  ceoTotal: number | null;
+  ceoPriorYearTotal: number | null;
+  payRatio: number | null;
+  medianEmployeePay: number | null;
+}
+
+export interface CloudTranscriptKeyFigurePayload {
+  /** What the number is, e.g. "Q3 revenue guidance". */
+  label: string;
+  /** As management said it, e.g. "$108B ± 2%". */
+  value: string;
+  /** Comparison or qualifier, e.g. "vs $96B in Q2". */
+  note?: string;
+}
+
+export interface CloudProxyStatementPayload extends CloudProxyStatementSummaryPayload {
+  docUrl: string;
+  ceo: (CloudExecutiveRowPayload & { priorYearTotal: number | null }) | null;
+  namedExecutives: CloudExecutiveRowPayload[];
+  sayOnPayPriorSupport: number | null;
+  highlights: string | null;
+  keyFigures: CloudTranscriptKeyFigurePayload[];
+  otherYears: CloudProxyStatementSummaryPayload[];
+}
+
+export interface CloudProxyStatementListPayload {
+  company: {
+    ticker: string;
+    cik: string | null;
+    name: string;
+    shortName: string;
+  };
+  proxies: CloudProxyStatementSummaryPayload[];
+}
+
 export interface CloudTranscriptTurnPayload {
   speaker: string;
   role?: string;

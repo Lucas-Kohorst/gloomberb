@@ -35,6 +35,7 @@ import { portfolioListModule } from "./builtin/portfolio-list";
 import { researchModule } from "./builtin/research";
 import { scannerModule } from "./builtin/scanner";
 import { sectorsModule } from "./builtin/sectors";
+import { executivesModule } from "./builtin/executives";
 import { tickerDetailModule } from "./builtin/ticker-detail";
 import { treasuryAuctionsModule } from "./builtin/treasury-auctions";
 import { volatilityModule } from "./builtin/volatility";
@@ -72,6 +73,7 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     optionsModule,
     optionsCalculatorModule,
     researchModule,
+    executivesModule,
   ],
 });
 

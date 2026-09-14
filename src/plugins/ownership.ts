@@ -14,6 +14,7 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "bond-search": "macro",
   "dividend-yield": "ticker-research",
   esg: "ticker-research",
+  executives: "ticker-research",
   "earnings-calendar": "macro",
   "earnings-calls": "macro",
   "ipo-calendar": "macro",
@@ -58,7 +59,7 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   application: ["layout-manager", "help", "changelog", "byok", "connections", "plugin-market", "plugin-discovery"],
   portfolio: ["portfolio-list", "analytics", "kelly-sizer", "options-calc"],
-  "ticker-research": ["short-interest", "dividend-yield", "esg"],
+  "ticker-research": ["short-interest", "dividend-yield", "esg", "executives"],
   "market-overview": ["market-halts", "scanner", "commodities"],
   macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions"],
   adjacent: ["llm-stats", "adjacent-dev"],
