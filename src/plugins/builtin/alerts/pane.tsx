@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
+  Tabs,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -8,7 +9,7 @@ import {
 } from "../../../components";
 import { TextFieldDialog } from "../../../components/pane-settings-dialog/field-dialogs";
 import { colors } from "../../../theme/colors";
-import { TextAttributes } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { useDialog, type AlertContext } from "../../../ui/dialog";
 import type { PaneProps } from "../../../types/plugin";
 import { usePluginAppActions, usePluginConfigState } from "../../runtime";
@@ -21,6 +22,7 @@ import {
 } from "./alert-engine";
 import { parseAlertCommandValues } from "./command";
 import { ALERTS_KEY } from "./constants";
+import { AlertHistoryPane } from "./history-pane";
 import {
   conditionLabel,
   formatAlertDistance,
@@ -67,7 +69,7 @@ const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
   2,
 );
 
-export function AlertsPane({ focused, width, height, close }: PaneProps) {
+function AlertRulesPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
   const { openPluginCommandWorkflow } = usePluginAppActions();
   const dialog = useDialog();
@@ -354,5 +356,29 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       emptyStateHint={storeError ?? "Press a to add a price alert."}
       showHorizontalScrollbar={showHorizontalScrollbar}
     />
+  );
+}
+
+export function AlertsPane(props: PaneProps) {
+  const [activeTab, setActiveTab] = useState<"rules" | "history">("rules");
+  const contentHeight = Math.max(1, props.height - 1);
+
+  return (
+    <Box flexDirection="column" width={props.width} height={props.height}>
+      <Tabs
+        tabs={[
+          { label: "Alerts", value: "rules" },
+          { label: "History", value: "history" },
+        ]}
+        activeValue={activeTab}
+        onSelect={(value) => setActiveTab(value as "rules" | "history")}
+        focused={props.focused}
+      />
+      {activeTab === "rules" ? (
+        <AlertRulesPane {...props} height={contentHeight} />
+      ) : (
+        <AlertHistoryPane focused={props.focused} width={props.width} height={contentHeight} close={props.close} />
+      )}
+    </Box>
   );
 }
