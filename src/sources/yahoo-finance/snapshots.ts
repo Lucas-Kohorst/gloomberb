@@ -301,6 +301,8 @@ async function assembleYahooQuote(
     high52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekHigh), divisor),
     low52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekLow), divisor),
     volume: financeRawNumber(raw.regularMarketVolume),
+    averageVolume: financeRawNumber(raw.averageDailyVolume3Month)
+      ?? financeRawNumber(raw.averageDailyVolume10Day),
     marketCap: normalizePositiveMarketValue(financeRawNumber(raw.marketCap), 1),
     name: raw.shortName || raw.longName,
     lastUpdated: yahooMarketTimestamp({ regularMarketTime: financeRawNumber(raw.regularMarketTime) }),

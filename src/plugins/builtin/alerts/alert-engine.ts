@@ -12,6 +12,9 @@ const BUILTIN_CONDITIONS = new Set<string>([
   "short_float",
   "ex_div",
   "weather",
+  "pct_day",
+  "volume_spike",
+  "news_mention",
 ]);
 
 export function createAlert(
@@ -115,6 +118,12 @@ export function formatAlertDescription(alert: AlertRule): string {
       return `${alert.symbol} ex-div ≤ ${alert.targetPrice}d`;
     case "weather":
       return alert.message ?? `${alert.symbol} weather alert`;
+    case "pct_day":
+      return `${alert.symbol} day move ≥ ${alert.targetPrice}%`;
+    case "volume_spike":
+      return `${alert.symbol} volume ≥ ${alert.targetPrice}× average`;
+    case "news_mention":
+      return `${alert.symbol} news mentions "${alert.targetText ?? ""}"`;
     case "above":
     case "below":
     case "crosses": {

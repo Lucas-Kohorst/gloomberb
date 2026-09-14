@@ -40,6 +40,8 @@ export type YahooQuoteApiResult = {
   regularMarketDayLow?: number;
   regularMarketTime?: number;
   regularMarketVolume?: number;
+  averageDailyVolume3Month?: number;
+  averageDailyVolume10Day?: number;
   bid?: number;
   ask?: number;
   bidSize?: number;

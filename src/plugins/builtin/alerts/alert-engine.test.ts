@@ -15,6 +15,20 @@ import {
   parseAlertShortcutValues,
   parseWeatherAlertCommandValues,
 } from "./command";
+import {
+  evaluateNewsMentionAlert,
+  evaluatePctDayAlert,
+  evaluateVolumeSpikeAlert,
+} from "./condition-evaluators";
+
+function article(id: string, publishedAt: string, title: string) {
+  return {
+    id,
+    title,
+    summary: "",
+    publishedAt: new Date(publishedAt),
+  } as any;
+}
 
 describe("evaluateAlert", () => {
   test("above: triggers when price exceeds target", () => {
@@ -156,8 +170,40 @@ describe("non-price alerts", () => {
   });
 });
 
+describe("additional alert conditions", () => {
+  test("day move fires for either direction at the threshold", () => {
+    const alert = createAlert("AAPL", "pct_day", 5);
+    expect(evaluatePctDayAlert(alert, -4.9)).toBe(false);
+    expect(evaluatePctDayAlert(alert, -5)).toBe(true);
+    expect(evaluatePctDayAlert(alert, 5)).toBe(true);
+  });
+
+  test("volume spike requires a usable average volume", () => {
+    const alert = createAlert("AAPL", "volume_spike", 3);
+    expect(evaluateVolumeSpikeAlert(alert, 2_999, 1_000)).toBe(false);
+    expect(evaluateVolumeSpikeAlert(alert, 3_000, 1_000)).toBe(true);
+    expect(evaluateVolumeSpikeAlert(alert, 3_000, undefined)).toBe(false);
+    expect(evaluateVolumeSpikeAlert(alert, 3_000, 0)).toBe(false);
+  });
+
+  test("news mentions baseline and only fire for newer matching articles", () => {
+    const alert = createAlert("AAPL", "news_mention", 0);
+    alert.targetText = "merger";
+    const first = evaluateNewsMentionAlert(alert, [article("old", "2026-08-18T10:00:00Z", "Merger rumors")]);
+    expect(first.triggered).toBe(false);
+    Object.assign(alert, first);
+
+    expect(evaluateNewsMentionAlert(alert, [article("old", "2026-08-18T10:00:00Z", "Merger rumors")]).triggered).toBe(false);
+    const second = evaluateNewsMentionAlert(alert, [
+      article("old", "2026-08-18T10:00:00Z", "Merger rumors"),
+      article("new", "2026-08-18T11:00:00Z", "Merger announced"),
+    ]);
+    expect(second.triggered).toBe(true);
+  });
+});
+
 describe("alert command parser", () => {
-  test("parses halted, short %, and ex-div shortcuts", () => {
+  test("parses non-price and threshold shortcuts", () => {
     expect(parseAlertShortcutValues("AAPL halted")).toEqual({
       symbol: "AAPL",
       condition: "halted",
@@ -176,6 +222,17 @@ describe("alert command parser", () => {
       symbol: "AAPL",
       condition: "ex_div",
       price: "7",
+    });
+    expect(parseAlertCommandValues(parseAlertShortcutValues("AAPL day 5"))).toEqual({
+      symbol: "AAPL",
+      condition: "pct_day",
+      price: 5,
+    });
+    expect(parseAlertCommandValues(parseAlertShortcutValues("AAPL news merger"))).toEqual({
+      symbol: "AAPL",
+      condition: "news_mention",
+      price: 0,
+      targetText: "merger",
     });
   });
 

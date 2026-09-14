@@ -29,6 +29,13 @@ export function formatCurrentPrice(alert: AlertRule, maxWidth = 9): string {
     const days = Math.round(alert.lastCheckedPrice);
     return days === 0 ? "today" : `${days}d`;
   }
+  if (alert.condition === "pct_day") {
+    return alert.lastCheckedPrice == null ? "-" : `${Math.abs(alert.lastCheckedPrice).toFixed(1)}%`;
+  }
+  if (alert.condition === "volume_spike") {
+    return alert.lastCheckedPrice == null ? "-" : `${alert.lastCheckedPrice.toFixed(1)}×`;
+  }
+  if (alert.condition === "news_mention") return alert.lastCheckedAt ? "Checked" : "-";
   if (alert.condition === "weather") return alert.lastCheckedPrice == null ? "-" : String(alert.lastCheckedPrice);
   return alert.lastCheckedPrice == null
     ? "-"
@@ -42,6 +49,9 @@ export function formatAlertTargetPrice(alert: AlertRule, maxWidth = 9): string {
   if (alert.condition === "halted") return "—";
   if (alert.condition === "short_float") return `${alert.targetPrice}%`;
   if (alert.condition === "ex_div") return `${alert.targetPrice}d`;
+  if (alert.condition === "pct_day") return `${alert.targetPrice}%`;
+  if (alert.condition === "volume_spike") return `${alert.targetPrice}×`;
+  if (alert.condition === "news_mention") return alert.targetText ?? "Keyword";
   if (alert.condition === "weather") return alert.message ?? "Weather";
   return formatMarketPrice(alert.targetPrice, {
     maxWidth,
@@ -91,6 +101,12 @@ export function conditionLabel(condition: AlertCondition): string {
       return "Ex-div";
     case "weather":
       return "Weather";
+    case "pct_day":
+      return "Day %";
+    case "volume_spike":
+      return "Volume";
+    case "news_mention":
+      return "News";
     default:
       return condition;
   }

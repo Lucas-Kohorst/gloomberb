@@ -5,6 +5,7 @@ export interface AlertCommandInput {
   symbol: string;
   condition: AlertCondition;
   price: number;
+  targetText?: string;
 }
 
 export interface WeatherAlertCommandInput {
@@ -67,6 +68,18 @@ function parseAlertCondition(value: string | undefined): AlertCondition | null {
     case "ex-div":
     case "ex_div":
       return "ex_div";
+    case "day":
+    case "pct":
+    case "pct_day":
+      return "pct_day";
+    case "volume":
+    case "vol":
+    case "volume_spike":
+      return "volume_spike";
+    case "news":
+    case "mention":
+    case "news_mention":
+      return "news_mention";
     default:
       return null;
   }
@@ -82,7 +95,7 @@ export function parseAlertShortcutValues(
     return activeTicker ? { symbol: activeTicker } : {};
   }
   if (parts.length > 3) {
-    throw new Error("Use SA SYMBOL above|below|crosses PRICE, or halted / short PCT / exdiv DAYS.");
+    throw new Error("Use SA SYMBOL above|below|crosses PRICE, halted, short PCT, exdiv DAYS, day PCT, volume MULTIPLE, or news KEYWORD.");
   }
 
   const values: Record<string, string> = {
@@ -92,7 +105,7 @@ export function parseAlertShortcutValues(
   if (parts[1]) {
     const condition = parseAlertCondition(parts[1]);
     if (!condition) {
-      throw new Error("Use above, below, crosses, halted, short, or exdiv.");
+      throw new Error("Use above, below, crosses, halted, short, exdiv, day, volume, or news.");
     }
     values.condition = condition;
   }
@@ -100,6 +113,10 @@ export function parseAlertShortcutValues(
   if (parts[2]) {
     if (values.condition === "halted") {
       throw new Error("Halted alerts do not take a target price.");
+    }
+    if (values.condition === "news_mention") {
+      values.keyword = parts[2]!;
+      return values;
     }
     const price = Number.parseFloat(parts[2]!.replace(/^\$/, "").replace(/%$/, ""));
     if (!Number.isFinite(price)) {
@@ -128,10 +145,14 @@ export function parseAlertCommandValues(
   if (condition === "halted") {
     return { symbol, condition, price: 0 };
   }
+  if (condition === "news_mention") {
+    const targetText = values?.keyword?.trim();
+    return targetText ? { symbol, condition, price: 0, targetText } : null;
+  }
   const priceStr = values?.price?.trim();
   if (!priceStr) return null;
   const price = Number.parseFloat(priceStr);
   if (!Number.isFinite(price)) return null;
-  if ((condition === "short_float" || condition === "ex_div") && price < 0) return null;
+  if ((condition === "short_float" || condition === "ex_div" || condition === "pct_day" || condition === "volume_spike") && price < 0) return null;
   return { symbol, condition, price };
 }

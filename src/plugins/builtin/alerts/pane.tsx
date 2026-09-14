@@ -161,16 +161,21 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
             type: "text",
             key: "alert",
             label: "Edit alert",
-            description: "SYMBOL above|below|crosses PRICE",
+            description: "SYMBOL above|below|crosses PRICE, day PCT, volume MULTIPLE, or news KEYWORD",
             placeholder: "AAPL above 200",
           }}
-          currentValue={`${selected.symbol} ${selected.condition} ${selected.targetPrice}`}
+          currentValue={selected.condition === "news_mention"
+            ? `${selected.symbol} news ${selected.targetText ?? ""}`
+            : `${selected.symbol} ${selected.condition} ${selected.targetPrice}`}
           onApply={async (value) => {
             const parsed = parseAlertCommandValues({ shortcut: value });
             if (!parsed) throw new Error("Use SYMBOL above|below|crosses PRICE.");
             savePaneAlerts((current) => current.map((alert) => (
               alert.id === selected.id
-                ? editAlert(alert, parsed.symbol, parsed.condition, parsed.price)
+                ? {
+                    ...editAlert(alert, parsed.symbol, parsed.condition, parsed.price),
+                    ...(parsed.targetText ? { targetText: parsed.targetText } : {}),
+                  }
                 : alert
             )));
           }}

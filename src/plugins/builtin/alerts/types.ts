@@ -1,13 +1,17 @@
 import type { QuoteDataSource } from "../../../types/financials";
 import type { WeatherAlertCondition } from "./weather";
 
-export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div" | "weather" | (string & {});
+export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div" | "weather" | "pct_day" | "volume_spike" | "news_mention" | (string & {});
 export type AlertStatus = "active" | "triggered" | "expired";
 
 export function isPriceAlertCondition(
   condition: AlertCondition,
 ): condition is "above" | "below" | "crosses" {
   return condition === "above" || condition === "below" || condition === "crosses";
+}
+
+export function isQuoteAlertCondition(condition: AlertCondition): boolean {
+  return isPriceAlertCondition(condition) || condition === "pct_day" || condition === "volume_spike";
 }
 
 export interface AlertRule {
@@ -28,6 +32,9 @@ export interface AlertRule {
   lastQuoteSource?: QuoteDataSource;
   lastQuoteProviderId?: string;
   message?: string;
+  /** Watermark for news-mention alerts; prevents historical headlines from triggering. */
+  lastSeenArticleId?: string;
+  lastSeenArticlePublishedAt?: number;
   /** Present only on weather alerts. `symbol` remains the station id for table compatibility. */
   weather?: {
     stationId: string;
