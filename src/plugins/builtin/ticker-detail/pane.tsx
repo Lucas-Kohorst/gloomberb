@@ -18,7 +18,8 @@ import { EmptyState, PaneFooterScope, Tabs, TickerEmptyState, usePaneFooter } fr
 import { useThrottledCommitValue } from "../../../react/use-throttled-commit-value";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
-import { useMarketData } from "../../runtime";
+import { useMarketData, usePluginPaneActions } from "../../runtime";
+import { useShortcut } from "../../../react/input";
 import {
   buildVisibleTickerResearchTabs,
   getTickerResearchPaneSettings,
@@ -28,6 +29,13 @@ import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { useCloudAccessFooter } from "../shared/cloud-upgrade";
 import { CLOUD_QUOTE_DELAY_MINUTES } from "../shared/plan-access";
+import {
+  EMPTY_TICKER_HISTORY,
+  moveTickerHistory,
+  pushTickerHistory,
+  tickerHistorySymbol,
+  type TickerHistory,
+} from "./ticker-history";
 
 const TICKER_RESEARCH_TAB_COMMIT_DELAY_MS = 120;
 
@@ -66,7 +74,8 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
-  const { ticker, financials } = usePaneTicker();
+  const { symbol, ticker, financials } = usePaneTicker();
+  const { selectTicker } = usePluginPaneActions();
   const liveStreaming = useLiveStreamingSetting();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   const streamingTargets = useMemo(() => (
@@ -95,6 +104,10 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const [committedActiveTabId, setCommittedActiveTabId] = usePaneStateValue<string>(
     "activeTabId",
     paneSettings.defaultTabId,
+  );
+  const [tickerHistory, setTickerHistory] = usePaneStateValue<TickerHistory>(
+    "tickerHistory",
+    EMPTY_TICKER_HISTORY,
   );
   const {
     value: activeTabId,
@@ -166,6 +179,34 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     return next;
   }, [mountedTabIds, resolvedTabId, visibleTabIds]);
   const prefetchedTabKeysRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!symbol) return;
+    setTickerHistory((current) => pushTickerHistory(current, symbol));
+  }, [setTickerHistory, symbol]);
+
+  const navigateTickerHistory = useCallback((offset: -1 | 1) => {
+    const nextHistory = moveTickerHistory(tickerHistory, offset);
+    const nextSymbol = tickerHistorySymbol(nextHistory);
+    if (nextHistory === tickerHistory || !nextSymbol) return;
+    setTickerHistory(nextHistory);
+    selectTicker(nextSymbol, paneInstance?.instanceId);
+  }, [paneInstance?.instanceId, selectTicker, setTickerHistory, tickerHistory]);
+
+  useShortcut((event) => {
+    if (!focused || pluginCaptured || event.targetEditable) return;
+    if (event.ctrl || event.meta || event.alt || event.super) return;
+    const key = event.name ?? event.key ?? event.sequence;
+    if (key === "[") {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateTickerHistory(-1);
+    } else if (key === "]") {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateTickerHistory(1);
+    }
+  }, { enabled: focused && !pluginCaptured, phase: "before" });
 
   const handlePluginCapture = useCallback((capturing: boolean) => {
     setPluginCaptured(capturing);
