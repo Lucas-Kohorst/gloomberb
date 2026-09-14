@@ -9,9 +9,9 @@ function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketN
   return {
     ...overrides,
     id: overrides.id ?? overrides.url,
-    title: "Test headline",
+    title: overrides.title ?? "Test headline",
     url: overrides.url,
-    source: "Test",
+    source: overrides.source ?? "Test",
     publishedAt: overrides.publishedAt ?? new Date(),
     topic: overrides.topic ?? "general",
     topics: overrides.topics ?? [overrides.topic ?? "general"],
@@ -123,6 +123,37 @@ describe("NewsService", () => {
 
     expect(phases[0]).toBe("ready");
     dispose();
+  });
+
+  it("re-filters cached feed queries in place when mutes change, without refetching", async () => {
+    const items = [
+      makeItem({ url: "https://mutes.example.com/1", source: "Spam Feed" }),
+      makeItem({ url: "https://mutes.example.com/2", title: "Quarterly earnings call scheduled" }),
+      makeItem({ url: "https://mutes.example.com/3", title: "Fed holds rates steady" }),
+    ];
+    const fetch = mock(async () => items);
+    agg.register(newsProvider({
+      id: "muted-source",
+      name: "Muted Source",
+      provider: { fetchNews: fetch },
+    }));
+    const state = await agg.load({ feed: "latest" });
+    expect(state.articles).toHaveLength(3);
+
+    agg.setMutes({ sources: ["spam feed"], keywords: ["Earnings"] });
+    expect(agg.getQueryState({ feed: "latest" }).articles.map((item) => item.url))
+      .toEqual(["https://mutes.example.com/3"]);
+
+    agg.setMutes(null);
+    expect(agg.getQueryState({ feed: "latest" }).articles).toHaveLength(3);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Top News free of mutes so a muted publisher still ranks", async () => {
+    agg.setMutes({ sources: ["Spam Feed"] });
+    agg.register(makeSource("top-muted", [makeItem({ url: "https://mutes.example.com/1", source: "Spam Feed", importance: 90 })]));
+    const top = await agg.load({ feed: "top" });
+    expect(top.articles.map((item) => item.url)).toEqual(["https://mutes.example.com/1"]);
   });
 
   it("deduplicates by URL, keeping higher importance", async () => {
