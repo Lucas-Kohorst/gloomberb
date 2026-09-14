@@ -348,6 +348,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `CHG` | Changelog |
 | `HELP` | Open shortcut and layout help |
 | `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |
+| `IMP` | Paste ticker symbols or `symbol, shares, average cost` portfolio rows into the active collection |
 | `RW` / `RP <ticker>` | Remove a ticker from the active watchlist or portfolio |
 | `PS` | Open focused pane settings |
 | `LAY` | Open the layout browser to switch, publish, or add layouts |

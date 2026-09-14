@@ -3,6 +3,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import {
   buildSetPortfolioPositionWorkflow,
 } from "../../../plugins/builtin/portfolio-list/command-bar";
+import { isManualPortfolio } from "../../../plugins/builtin/portfolio-list/mutations";
 import type { CommandBarWorkflowRoute } from "./types";
 import { buildCommandBarWorkflowRoute } from "./route-builder";
 
@@ -110,6 +111,37 @@ export function buildBuiltInWorkflowRoute(options: {
           values: workflow.values,
           submitLabel: "Save Position",
           pendingLabel: workflow.pendingLabel,
+          payload: { kind: "builtin", actionId },
+        }),
+      };
+    }
+
+    case "import-tickers": {
+      const watchlist = config.watchlists.find((entry) => entry.id === activeCollectionId);
+      const portfolio = config.portfolios.find((entry) => entry.id === activeCollectionId);
+      if (!watchlist && (!portfolio || !isManualPortfolio(portfolio))) {
+        return { kind: "notice", message: "Select a watchlist or manual portfolio first." };
+      }
+      const collection = watchlist ?? portfolio!;
+      return {
+        kind: "route",
+        route: buildCommandBarWorkflowRoute({
+          workflowId: "builtin:import-tickers",
+          title: "Import Tickers",
+          subtitle: `Paste symbols to add to "${collection.name}".`,
+          description: portfolio
+            ? ["Separate symbols with commas, spaces, or new lines. Use symbol, shares, average cost rows to set manual positions."]
+            : ["Separate symbols with commas, spaces, or new lines."],
+          fields: [{
+            id: "tickers",
+            label: "Tickers",
+            type: "textarea",
+            placeholder: portfolio ? "AAPL, 10, 180.50\nMSFT, 5, 400" : "AAPL, MSFT, NVDA",
+            required: true,
+          }],
+          values: { tickers: "" },
+          submitLabel: "Import Tickers",
+          pendingLabel: "Importing tickers…",
           payload: { kind: "builtin", actionId },
         }),
       };

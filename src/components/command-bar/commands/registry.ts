@@ -89,6 +89,13 @@ export const commands: Command[] = [
     description: "Create or update a manual position in a portfolio",
     category: "Portfolio",
   },
+  {
+    id: "import-tickers",
+    prefix: "IMP",
+    label: "Import Tickers...",
+    description: "Paste symbols or portfolio CSV rows into the active collection",
+    category: "Portfolio",
+  },
 
   // Create / Delete
   {

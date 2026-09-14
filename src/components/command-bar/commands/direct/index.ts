@@ -315,6 +315,9 @@ export function runDirectCommandAction(options: {
     case "security-description":
       runSecurityDescriptionShortcut(arg);
       return;
+    case "import-tickers":
+      openBuiltInWorkflow(command.id);
+      return;
     case "remove-watchlist":
     case "remove-portfolio":
     case "add-watchlist":
