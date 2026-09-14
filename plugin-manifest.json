@@ -466,6 +466,7 @@
           "news-firehose",
           "news-industry",
           "news-rss",
+          "news-saved",
           "news-top",
           "substack-article",
           "ticker-news"
