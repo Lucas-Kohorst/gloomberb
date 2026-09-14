@@ -323,7 +323,11 @@ export class AdjacentClient {
   }
 
   private filingsPath(): string {
-    return this.isPublic ? "/public/filings" : "/filings";
+    // CFTC records are on Adjacent's public filings API. Hosted always uses
+    // that twin: the Worker auth path 403s when the injected key cannot read
+    // private /filings, and the browser has no BYOK key of its own.
+    if (usesWorkerAdjacentKey() || this.isPublic) return "/public/filings";
+    return "/filings";
   }
 
   async getMarkets(params?: {

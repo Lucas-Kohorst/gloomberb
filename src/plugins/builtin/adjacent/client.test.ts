@@ -184,6 +184,14 @@ describe("AdjacentClient paths", () => {
     });
   });
 
+  test("hosted CFTC filings use the public twin even without a browser key", async () => {
+    setHosted(true);
+    mockFetch({ data: [], meta: {} });
+    await new AdjacentClient().listFilings({ perPage: 5 });
+    expect(requested[0]?.url).toStartWith("/api/data/adjacent/public/filings?");
+    expect(requested[0]?.authorization).toBeNull();
+  });
+
   test("routes filings to the public tier without a key and the auth tier with one", async () => {
     setHosted(false);
     mockFetch({ data: [], meta: {} });
