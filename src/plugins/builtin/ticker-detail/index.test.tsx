@@ -834,7 +834,7 @@ describe("TickerResearchPane", () => {
     expect(frame).toContain("$1,100.00");
     expect(frame).toContain("$1,375.00");
     expect(frame).toContain("+$275.00");
-    expect(frame).toContain("+25.00%");
+    expect(frame).toContain("+25.00");
   });
 
   test("renders an Overview fallback without overwriting a temporarily unavailable active tab", async () => {

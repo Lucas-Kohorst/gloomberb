@@ -27,7 +27,7 @@ export function buildColumns(): HolderColumn[] {
     { id: "shares", label: "AMOUNT", width: 10, align: "right" },
     { id: "changeShares", label: "CHG", width: 10, align: "right" },
     { id: "changePercent", label: "CHG%", width: 8, align: "right" },
-    { id: "percentHeld", label: "HELD", width: 7, align: "right" },
+    { id: "percentHeld", label: "HELD%", width: 7, align: "right" },
     { id: "reportDate", label: "DATE", width: 10, align: "right" },
   ];
 }

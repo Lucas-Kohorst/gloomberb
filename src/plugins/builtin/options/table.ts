@@ -35,7 +35,7 @@ export const OPTION_FIELD_DEFS: OptionFieldDef[] = [
   { id: "theta", label: "Theta", header: "Θ", width: 7, description: "Estimated value decay per calendar day." },
   { id: "vega", label: "Vega", header: "VEGA", width: 7, description: "Price sensitivity to one volatility point." },
   { id: "rho", label: "Rho", header: "RHO", width: 7, description: "Price sensitivity to one interest-rate point." },
-  { id: "iv", label: "Implied volatility", header: "IV", width: 6, description: "Volatility implied by the contract price." },
+  { id: "iv", label: "Implied volatility", header: "IV%", width: 6, description: "Volatility implied by the contract price." },
   { id: "volume", label: "Volume", header: "VOL", width: 6, description: "Contracts traded in the current session." },
   { id: "openInterest", label: "Open interest", header: "OI", width: 6, description: "Outstanding open contracts." },
 ];
@@ -117,6 +117,15 @@ export function formatIv(value: number | undefined): string {
   // as a real quote of zero vol.
   if (value == null || !Number.isFinite(value) || value <= 0) return "\u2014";
   return `${(value * 100).toFixed(1)}%`;
+}
+
+/**
+ * Unit-less IV cell for the "IV%" column whose header already reads "%".
+ * Same guards and precision as formatIv without the trailing unit.
+ */
+export function formatIvValue(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "\u2014";
+  return `${(value * 100).toFixed(1)}`;
 }
 
 function formatGreek(value: number | undefined): string {
@@ -234,7 +243,7 @@ function formatOptionContractCell(
     case "openInterest":
       return formatCompact(contract.openInterest);
     case "iv":
-      return formatIv(contract.impliedVolatility);
+      return formatIvValue(contract.impliedVolatility);
     case "delta":
       return formatGreek(greeks?.delta);
     case "gamma":

@@ -48,7 +48,8 @@ function formatRatio(value: number | null): string {
 }
 
 function formatPercent(value: number | null): string {
-  return value == null ? "-" : `${formatNumber(value, 2)}%`;
+  // The "% FLOAT" header already names the unit, so cells carry the bare value.
+  return value == null ? "-" : formatNumber(value, 2);
 }
 
 export function buildRows(records: ShortInterestRecord[]): ShortInterestRow[] {

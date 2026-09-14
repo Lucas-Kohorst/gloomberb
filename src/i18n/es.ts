@@ -958,6 +958,7 @@ export const es: Record<string, string> = {
   "Cost": "Costo",
   "Value": "Valor",
   "Ret": "Rend",
+  "Ret%": "Rend%",
   "Market Cap": "Cap. de mercado",
   "Shares Out": "Acciones en circ.",
   "P/E (TTM)": "P/E (TTM)",

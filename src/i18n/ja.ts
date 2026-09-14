@@ -975,6 +975,7 @@ export const ja: Record<string, string> = {
   "Cost": "取得額",
   "Value": "評価額",
   "Ret": "収益率",
+  "Ret%": "収益率%",
   "Market Cap": "時価総額",
   "Shares Out": "発行済株式数",
   "P/E (TTM)": "P/E（TTM）",

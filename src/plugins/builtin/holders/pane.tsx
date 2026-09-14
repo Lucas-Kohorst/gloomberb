@@ -19,8 +19,8 @@ import { useAssetData, usePluginAppActions, usePluginPaneState } from "../../run
 import { THIRTEENF_TEMPLATE_ID } from "../thirteenf/model";
 import {
   displayDate,
-  formatHolderOwnershipPercent,
-  formatMaybePercent,
+  formatHolderOwnershipPercentValue,
+  formatMaybePercentValue,
   formatMoneyCompact,
   formatSignedCompact,
   resolveHolderOwnershipPercent,
@@ -245,12 +245,12 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
         };
       case "changePercent":
         return {
-          text: formatMaybePercent(row.changePercent),
+          text: formatMaybePercentValue(row.changePercent),
           color: selectedColor ?? (row.changePercent != null ? priceColor(row.changePercent) : colors.textDim),
         };
       case "percentHeld":
         return {
-          text: formatHolderOwnershipPercent(resolveHolderOwnershipPercent(row, marketCap)),
+          text: formatHolderOwnershipPercentValue(resolveHolderOwnershipPercent(row, marketCap)),
           color: selectedColor ?? colors.textDim,
         };
       case "reportDate":

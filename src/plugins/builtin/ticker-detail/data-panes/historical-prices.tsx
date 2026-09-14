@@ -13,7 +13,7 @@ import { TIME_RANGES, type TimeRange } from "../../../../time-series/range";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
-import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
+import { formatCompact, formatNumber, formatSignedPercentValue } from "../../../../utils/format";
 import {
   applySortPreference,
   nextSortPreference,
@@ -49,7 +49,8 @@ function formatMaybePrice(value: number | undefined): string {
 }
 
 function formatMaybePercent(value: number | null): string {
-  return value == null ? "—" : formatPercent(value);
+  // The "CHG %" header already names the unit, so cells carry the bare value.
+  return value == null ? "—" : formatSignedPercentValue(value * 100);
 }
 
 function formatMaybeCompact(value: number | undefined): string {
