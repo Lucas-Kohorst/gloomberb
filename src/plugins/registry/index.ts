@@ -583,7 +583,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       navigateTicker: (symbol, options) => this.navigateTicker(symbol, options),
       openPaneSettings: (paneId) => this.openPaneSettings(paneId),
       events: this.events,
-      notify: (notification) => this.notifyFn(notification),
+      notify: (notification) => this.notifyFn({ ...notification, source: pluginId }),
       registerAgentTool: (tool) => {
         items.agentTools.push(tool.name);
         queueAgentTool(tool);

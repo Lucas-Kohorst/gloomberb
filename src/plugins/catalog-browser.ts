@@ -41,6 +41,7 @@ import { volatilityModule } from "./builtin/volatility";
 import { worldIndicesModule } from "./builtin/world-indices";
 import { worldVenueMapModule } from "./builtin/world-venue-map";
 import { yieldCurveModule } from "./builtin/yield-curve";
+import { notificationCenterPlugin } from "./builtin/notification-center";
 
 const browserApplicationPlugin = composeBuiltinPlugin({
   id: "application",
@@ -144,6 +145,7 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   browserNewsPlugin,
   browserMarketOverviewPlugin,
   browserMacroPlugin,
+  notificationCenterPlugin,
   alertsPlugin,
   adjacentPlugin,
   researchSearchPlugin,

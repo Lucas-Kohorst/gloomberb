@@ -491,6 +491,21 @@
       }
     },
     {
+      "id": "notification-center",
+      "name": "Notification Center",
+      "description": "Review alert, chat, and app notification history",
+      "categories": [
+        "productivity",
+        "alerts"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "open-corporates",
       "name": "OpenCorporates",
       "description": "Look up companies and officers by name via the free OpenCorporates API. No API key required.",

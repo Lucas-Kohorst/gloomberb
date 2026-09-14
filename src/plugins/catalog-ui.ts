@@ -19,6 +19,7 @@ import {
 import { adjacentPlugin } from "./builtin/adjacent";
 import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
+import { notificationCenterPlugin } from "./builtin/notification-center";
 
 /**
  * First-party plugins that ship inside the app.
@@ -35,6 +36,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   yahooPlugin,
   portfolioPlugin,
   tickerResearchPlugin,
+  notificationCenterPlugin,
   brokerPlugin,
   applicationPlugin,
   newsPlugin,
