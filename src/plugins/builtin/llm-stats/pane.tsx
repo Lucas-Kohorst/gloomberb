@@ -99,7 +99,7 @@ function createColumns(): BenchColumn[] {
     { id: "org", label: "ORG", width: 10, align: "left" },
     { id: "tps", label: "TPS", width: 6, align: "right" },
     { id: "p95", label: "P95", width: 6, align: "right" },
-    { id: "fail", label: "FAIL", width: 6, align: "right" },
+    { id: "fail", label: "FAIL%", width: 6, align: "right" },
     { id: "calls", label: "CALLS", width: 6, align: "right" },
     { id: "ttft", label: "TTFT", width: 6, align: "right" },
   ];
@@ -126,6 +126,13 @@ function formatFailureRate(value: number): string {
   if (value <= 0) return "0%";
   if (value < 0.1) return "<0.1%";
   return `${(value * 100).toFixed(1)}%`;
+}
+
+/** Bare failure rate for the "FAIL%" column; the header carries the unit. */
+function formatFailureRateCell(value: number): string {
+  if (value <= 0) return "0";
+  if (value < 0.1) return "<0.1";
+  return (value * 100).toFixed(1);
 }
 
 function formatContextLength(value: number | null): string {
@@ -186,7 +193,7 @@ function renderCell(
     case "p95":
       return { text: formatMs(row.p95Latency), color: sel ?? latencyColor(row.p95Latency) ?? colors.textDim };
     case "fail":
-      return { text: formatFailureRate(row.failureRate), color: sel ?? failureColor(row.failureRate) ?? colors.textDim };
+      return { text: formatFailureRateCell(row.failureRate), color: sel ?? failureColor(row.failureRate) ?? colors.textDim };
     case "calls":
       return { text: formatCalls(row.totalCalls), color: sel ?? colors.textDim };
     case "ttft":

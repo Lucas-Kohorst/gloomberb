@@ -104,13 +104,13 @@ describe("CdsPane", () => {
     await renderPane();
     const frame = setup!.captureCharFrame();
 
-    // Most active first, and the 250bp report stays 250bp while the percent one becomes 90bp.
+    // Most active first, and the 250bp report stays 250 while the percent one becomes 90.
     const oracle = frame.indexOf("Oracle Corporation");
     const ford = frame.indexOf("Ford Motor Company");
     expect(oracle).toBeGreaterThanOrEqual(0);
     expect(ford).toBeGreaterThan(oracle);
-    expect(frame).toContain("90bp");
-    expect(frame).toContain("250bp");
+    expect(frame).toContain("90");
+    expect(frame).toContain("250");
   });
 
   test("opens the selected issuer's trades and shows -- for an unreported spread", async () => {
@@ -125,7 +125,8 @@ describe("CdsPane", () => {
     expect(frame).toContain("NOTIONAL");
     // Capped notional keeps its "+", and the coupon is shown instead of an implied spread.
     expect(frame).toContain("5M+");
-    expect(frame).toContain("100bp");
+    expect(frame).toContain("COUPON BP");
+    expect(frame).toContain("100");
     expect(frame).toContain("--");
     expect(frame).not.toContain("Ford Motor Company");
   });

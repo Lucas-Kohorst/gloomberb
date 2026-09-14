@@ -34,9 +34,9 @@ import {
   BOND_SEARCH_PANE_ID,
   buildSearchColumns,
   buildYieldColumns,
-  formatSpreadBp,
+  formatSpreadValue,
   formatYieldDate,
-  formatYieldPercent,
+  formatYieldValue,
   nextColumnSort,
   nextSort,
   searchKindLabel,
@@ -77,10 +77,10 @@ function renderYieldCell(
     case "maturity":
       return { text: entry.maturityRange, color: selectedColor ?? colors.textDim };
     case "yield":
-      return { text: formatYieldPercent(entry.yield), color: selectedColor ?? colors.textBright };
+      return { text: formatYieldValue(entry.yield), color: selectedColor ?? colors.textBright };
     case "spread":
       return {
-        text: formatSpreadBp(entry.spreadBp),
+        text: formatSpreadValue(entry.spreadBp),
         color: selectedColor ?? (entry.spreadBp == null ? colors.textDim : priceColor(entry.spreadBp)),
       };
   }
