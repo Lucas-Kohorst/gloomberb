@@ -232,7 +232,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     const viewportRows = Math.max(1, Math.floor(element.clientHeight / rowHeightPx) - 1);
     const currentTop = Math.floor(element.scrollTop / rowHeightPx);
     let nextTop = currentTop;
-    if (scrollToIndexAlign === "center") {
+    if (scrollToIndexAlign === "start") {
+      nextTop = targetIndex;
+    } else if (scrollToIndexAlign === "center") {
       nextTop = Math.max(0, targetIndex - Math.floor(viewportRows / 2));
     } else if (targetIndex < currentTop) {
       nextTop = targetIndex;

@@ -31,7 +31,7 @@ export interface DataTableSectionHeader {
   onMouseDown?: (event: any) => void;
 }
 
-export type DataTableScrollAlign = "nearest" | "center";
+export type DataTableScrollAlign = "nearest" | "center" | "start";
 
 export interface DataTableRowState {
   selected: boolean;

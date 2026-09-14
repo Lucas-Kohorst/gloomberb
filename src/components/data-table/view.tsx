@@ -12,7 +12,13 @@ import { useRendererHost, type ScrollBoxRenderable } from "../../ui";
 import { t } from "../../i18n";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useShortcut } from "../../react/input";
-import { useOptionalPaneInstanceId, usePaneInstance } from "../../state/app/context";
+import {
+  useAppDispatch,
+  useAppSelector,
+  useAppStateRef,
+  useOptionalPaneInstanceId,
+  usePaneInstance,
+} from "../../state/app/context";
 import { DataTable, type DataTableColumn, type DataTableProps } from "../ui";
 import { PANE_CSV_MAX_ROWS, publishPaneCsvSnapshot } from "./csv-export";
 import {
@@ -22,6 +28,10 @@ import {
   type DataTableYankHandle,
   type YankTarget,
 } from "./yank";
+import {
+  clampTableScrollIndex,
+  createDebouncedTableScrollWriter,
+} from "./scroll-state";
 import {
   isNextTableRowKey,
   isPreviousTableRowKey,
@@ -119,6 +129,12 @@ export interface DataTableViewProps<
     event: DataTableKeyEvent,
     context: DataTableRootKeyContext,
   ) => boolean | void;
+  /** One-time starting row offset; values are clamped as rows load. */
+  initialScrollIndex?: number | null;
+  /** Debounced notification after the visible row offset changes. */
+  onScrollIndexChange?: (index: number) => void;
+  /** Stable identity for this table within its pane's persisted scroll state. */
+  scrollStateKey?: string;
   resetScrollKey?: unknown;
   /**
    * Opt-in yank: plain `y` copies the selected row as tab-separated cells,
@@ -150,15 +166,71 @@ export function DataTableView<
   onBodyScrollActivity,
   keyboardNavigation = true,
   onRootKeyDown,
+  initialScrollIndex,
+  onScrollIndexChange,
+  scrollStateKey,
   resetScrollKey,
   enableYank = false,
   yankRef,
   scrollToIndex,
+  scrollToIndexAlign,
   scrollToIndexVersion = 0,
   ...tableProps
 }: DataTableViewProps<T, C>) {
   const paneId = useOptionalPaneInstanceId();
   const pane = usePaneInstance();
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
+  const resolvedScrollStateKey = scrollStateKey
+    ?? tableProps.columns.map((column) => column.id).join("|");
+  const savedScrollIndex = useAppSelector((state) => {
+    const value = paneId
+      ? state.paneState[paneId]?.tableScrollPositions?.[resolvedScrollStateKey]
+      : undefined;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  });
+  const [restoredScrollIndex, setRestoredScrollIndex] = useState<number | null>(null);
+  const hasRestoredScrollRef = useRef(false);
+  const hasHandledInitialSelectionScrollRef = useRef(false);
+  const itemCountRef = useRef(tableProps.items.length);
+  itemCountRef.current = tableProps.items.length;
+  const onScrollIndexChangeRef = useRef(onScrollIndexChange);
+  onScrollIndexChangeRef.current = onScrollIndexChange;
+  const persistScrollRef = useRef<(index: number) => void>(() => {});
+  persistScrollRef.current = (index) => {
+    onScrollIndexChangeRef.current?.(index);
+    if (!paneId) return;
+    const current = stateRef.current.paneState[paneId];
+    const positions = current?.tableScrollPositions ?? {};
+    if (positions[resolvedScrollStateKey] === index) return;
+    dispatch({
+      type: "UPDATE_PANE_STATE",
+      paneId,
+      patch: {
+        tableScrollPositions: {
+          ...positions,
+          [resolvedScrollStateKey]: index,
+        },
+      },
+    });
+  };
+  const scrollWriterRef = useRef<ReturnType<typeof createDebouncedTableScrollWriter> | null>(null);
+  if (!scrollWriterRef.current) {
+    scrollWriterRef.current = createDebouncedTableScrollWriter(
+      (index) => persistScrollRef.current(index),
+    );
+  }
+  useEffect(() => () => {
+    scrollWriterRef.current?.flush();
+  }, []);
+  useEffect(() => {
+    if (hasRestoredScrollRef.current || tableProps.items.length === 0) return;
+    hasRestoredScrollRef.current = true;
+    const initialIndex = initialScrollIndex ?? savedScrollIndex;
+    if (initialIndex !== null && initialIndex !== undefined) {
+      setRestoredScrollIndex(clampTableScrollIndex(initialIndex, tableProps.items.length));
+    }
+  }, [initialScrollIndex, savedScrollIndex, tableProps.items.length]);
   const paneTitle = pane?.title?.trim() || pane?.paneId || "table";
   const renderer = useRendererHost();
   const csvSourceRef = useRef({
@@ -314,7 +386,11 @@ export function DataTableView<
     );
   const effectiveScrollToIndex = controlledScrollRequestChanged
     ? scrollToIndex
-    : selectionScrollTarget ?? scrollToIndex;
+    : selectionScrollTarget ?? scrollToIndex ?? restoredScrollIndex;
+  const effectiveScrollToIndexAlign = restoredScrollIndex !== null
+    && effectiveScrollToIndex === restoredScrollIndex
+    ? "start"
+    : scrollToIndexAlign;
 
   const requestSelectionScroll = useCallback((index: number) => {
     if (index < 0 || selectionScrollTargetRef.current === index) return;
@@ -385,6 +461,14 @@ export function DataTableView<
     onBodyScrollActivity,
     syncHeaderScroll: effectiveSyncHeaderScroll,
   });
+  const handlePersistedBodyScrollActivity = useCallback(() => {
+    handleBodyScrollActivity();
+    const scrollTop = effectiveScrollRef.current?.scrollTop;
+    if (typeof scrollTop !== "number" || !Number.isFinite(scrollTop)) return;
+    scrollWriterRef.current?.schedule(
+      clampTableScrollIndex(scrollTop, itemCountRef.current),
+    );
+  }, [effectiveScrollRef, handleBodyScrollActivity]);
 
   useResetTableScroll({
     headerScrollRef: effectiveHeaderScrollRef,
@@ -411,6 +495,12 @@ export function DataTableView<
       || previous.kind !== current.kind
       || previous.key !== current.key;
     const selectedRowAppeared = !previous?.resolved && current.resolved;
+    if (!hasHandledInitialSelectionScrollRef.current) {
+      hasHandledInitialSelectionScrollRef.current = true;
+      if (savedScrollIndex !== null || initialScrollIndex !== null && initialScrollIndex !== undefined) {
+        return;
+      }
+    }
     if (selectionChanged || selectedRowAppeared) {
       requestSelectionScroll(selectedIndexFromSelection);
     }
@@ -422,6 +512,8 @@ export function DataTableView<
     selectedIndexFromSelection,
     selection.kind,
     selectionKey,
+    initialScrollIndex,
+    savedScrollIndex,
   ]);
 
   const commitIndex = useCallback((
@@ -684,8 +776,9 @@ export function DataTableView<
         headerScrollRef={effectiveHeaderScrollRef}
         scrollRef={effectiveScrollRef}
         syncHeaderScroll={effectiveSyncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
+        onBodyScrollActivity={handlePersistedBodyScrollActivity}
         scrollToIndex={effectiveScrollToIndex}
+        scrollToIndexAlign={effectiveScrollToIndexAlign}
         scrollToIndexVersion={scrollToIndexVersion + selectionScrollVersion}
         isSelected={isItemSelected}
         onSelect={handleTableSelect}

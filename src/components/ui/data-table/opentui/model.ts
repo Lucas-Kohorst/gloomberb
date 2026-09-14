@@ -33,7 +33,9 @@ export function resolveDataTableScrollTop(
 ): number {
   const maxTop = Math.max(0, itemCount - visibleHeight);
   let nextTop = currentTop;
-  if (align === "center") {
+  if (align === "start") {
+    nextTop = targetIndex;
+  } else if (align === "center") {
     nextTop = targetIndex - Math.floor(visibleHeight / 2);
   } else if (targetIndex < currentTop) {
     nextTop = targetIndex;

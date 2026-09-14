@@ -51,6 +51,7 @@ describe("session persistence", () => {
           collectionSorts: {
             main: { columnId: "mkt_value", direction: "desc" },
           },
+          tableScrollPositions: { "ticker|price": 12 },
         },
         "ticker-detail:main": { activeTabId: "financials" },
       },
@@ -72,6 +73,7 @@ describe("session persistence", () => {
       collectionSorts: {
         main: { columnId: "mkt_value", direction: "desc" },
       },
+      tableScrollPositions: { "ticker|price": 12 },
     });
     expect(snapshot.paneState["ticker-detail:main"]).toEqual({ activeTabId: "financials" });
   });
@@ -99,6 +101,7 @@ describe("session persistence", () => {
           collectionSorts: {
             main: { columnId: "mkt_value", direction: "desc" },
           },
+          tableScrollPositions: { "ticker|price": 12 },
         },
         "ticker-detail:main": {
           activeTabId: "chart",
@@ -127,6 +130,7 @@ describe("session persistence", () => {
       collectionSorts: {
         main: { columnId: "mkt_value", direction: "desc" },
       },
+      tableScrollPositions: { "ticker|price": 12 },
     });
     expect(reconciled?.paneState["ticker-detail:main"]).toEqual({
       activeTabId: "chart",
