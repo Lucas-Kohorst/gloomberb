@@ -71,6 +71,12 @@ export const CHART_SETTING_KEYS = {
   timeZone: "chartTimeZone",
 } as const;
 
+/**
+ * Per-pane opt-out for same-ticker range sync. Lives outside CHART_SETTING_KEYS
+ * so chart-spec edits never wipe it, and defaults to on when unset.
+ */
+export const CHART_RANGE_SYNC_SETTING_KEY = "chartRangeSync";
+
 export const CHART_TIME_ZONE_OPTIONS: Array<PaneSettingOption & { value: typeof CHART_DISPLAY_TIME_ZONES[number] }> = [
   { value: "exchange", label: "Exchange", description: "Listing timezone of the primary series." },
   { value: "UTC", label: "UTC", description: "Coordinated Universal Time." },
@@ -359,6 +365,7 @@ export function buildChartComposerPaneSettingsDef(
       [CHART_SETTING_KEYS.dateWindow]: formatDateWindow(spec),
       [CHART_SETTING_KEYS.range]: spec.viewport.range,
       [CHART_SETTING_KEYS.resolution]: spec.viewport.resolution,
+      [CHART_RANGE_SYNC_SETTING_KEY]: settings[CHART_RANGE_SYNC_SETTING_KEY] !== false,
       [CHART_SETTING_KEYS.mode]: inlineStyleTarget?.style ?? "",
       [CHART_SETTING_KEYS.scale]: mainScale,
       [CHART_SETTING_KEYS.timeZone]: spec.viewport.timeZone ?? "UTC",
@@ -408,6 +415,12 @@ export function buildChartComposerPaneSettingsDef(
           value: resolution,
           label: resolution.toUpperCase(),
         })),
+      },
+      {
+        key: CHART_RANGE_SYNC_SETTING_KEY,
+        label: "Sync time range",
+        description: "Keep the range, interval, and zoom in step with other charts following the same ticker.",
+        type: "toggle",
       },
       ...(inlineStyleTarget
         ? [{
