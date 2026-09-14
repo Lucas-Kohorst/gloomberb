@@ -105,8 +105,7 @@ function changedFiles(): string[] {
     }
   }
   return [...files].filter((file) => (
-    !file.startsWith("plans/")
-    && !file.endsWith(".md")
+    !file.endsWith(".md")
     && file !== "worker-configuration.d.ts"
   ));
 }
