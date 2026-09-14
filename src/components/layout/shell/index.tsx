@@ -355,6 +355,13 @@ export function Shell({
     }
     focusPane(current.paneId);
   }, [closePaneMenu, config.activeLayoutIndex, config.layouts, dispatch, focusPane, setTransientFocusLayout, visibleLayout]);
+  const exitFocusedPaneFullscreen = useCallback(() => {
+    const current = transientFocusLayoutStateRef.current;
+    if (!current?.active) return false;
+    closePaneMenu();
+    setTransientFocusLayout(null);
+    return true;
+  }, [closePaneMenu, setTransientFocusLayout]);
   const toggleFocusedPaneFullscreen = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (current?.active) {
@@ -551,6 +558,8 @@ export function Shell({
     popOutFocusedPane,
     shareFocusedPane,
     startWindowMode,
+    exitFocusedPaneFullscreen,
+    isFocusedPaneFullscreen: () => transientFocusLayoutStateRef.current?.active === true,
     toggleFocusedPaneFullscreen,
     toggleFocusedPaneFloating,
     transientFocusActive,

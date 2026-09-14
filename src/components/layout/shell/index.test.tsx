@@ -587,7 +587,7 @@ describe("Shell", () => {
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
   });
 
-  test("escape exits pane focus without closing the pane", async () => {
+  test("double Escape exits pane fullscreen without closing the pane", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-escape-test");
     const mainPane = requireLayoutInstance(config, "portfolio-list:main");
     const detailPane = requireLayoutInstance(config, "ticker-detail:main");
@@ -613,7 +613,13 @@ describe("Shell", () => {
     expect(frame).toContain("Main Portfolio");
     expect(frame).not.toContain("Ticker Research Body");
 
-    await emitKeypress({ name: "escape" });
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Main Portfolio");
+    expect(frame).not.toContain("Ticker Research Body");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
     await act(async () => {
       await testSetup!.renderOnce();
     });
@@ -621,6 +627,46 @@ describe("Shell", () => {
     expect(frame).toContain("Main Portfolio");
     expect(frame).toContain("Ticker Research Body");
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("double Escape after leaving fullscreen closes the focused pane", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-then-close-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const { actions } = await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, dockedLayout, "portfolio-list:main"),
+      { width: 80, height: 18 },
+    );
+
+    await emitKeypress({ name: "f", ctrl: true, shift: true });
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).toContain("Ticker Research Body");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(actions).toContainEqual({ type: "PUSH_LAYOUT_HISTORY" });
+    expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId))
+      .toEqual(["ticker-detail:main"]);
   });
 
   test("keeps floating panes on top of a fullscreened docked pane", async () => {
