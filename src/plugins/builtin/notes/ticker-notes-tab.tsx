@@ -5,7 +5,7 @@ import type { TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneTicker } from "../../../state/app/context";
 import { MarkdownEditor } from "../../../components/markdown-editor";
 import { EmptyState, TickerEmptyState, usePaneFooter } from "../../../components";
-import { usePluginAppActions } from "../../runtime";
+import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
 import type { NotesFiles } from "./files";
 import { MarkdownNotePreview } from "./markdown-note-preview";
 import { useSyncedText } from "./text-state";
@@ -14,6 +14,7 @@ export function createNotesTab(notesFiles: NotesFiles) {
   return function NotesTab({ focused, width, onCapture }: TickerResearchTabProps) {
     const { ticker } = usePaneTicker();
     const { notify } = usePluginAppActions();
+    const { navigateTicker } = usePluginTickerActions();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [notesFocused, setNotesFocused] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -159,6 +160,7 @@ export function createNotesTab(notesFiles: NotesFiles) {
               width={width}
               placeholder="Write notes about this ticker..."
               onActivate={() => { if (!loadError) setNotesFocusedAndCapture(true); }}
+              onOpenTicker={navigateTicker}
             />
           )}
         </Box>
