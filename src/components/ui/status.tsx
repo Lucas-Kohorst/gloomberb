@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Box, Text } from "../../ui";
+import { useCallback, useContext, type ReactNode } from "react";
+import { Box, Text, TextAttributes, UiHostContext } from "../../ui";
 import { colors } from "../../theme/colors";
 import { t, tf } from "../../i18n";
 
@@ -9,6 +9,68 @@ export interface EmptyStateProps {
   hint?: string;
   /** Fill the parent and center the copy. Default true. */
   fill?: boolean;
+  /**
+   * Clickable retry for mouse users. When omitted and the hint names the
+   * pane's own reload key (`r`), the same key is replayed into the active
+   * input pipeline so existing panes get a working retry for free.
+   */
+  onRetry?: () => void;
+}
+
+/** "Press r to retry." style hints advertise a reload the pane already binds. */
+const RETRY_HINT_PATTERN = /\bretry\b|\bpress r\b/i;
+
+/**
+ * Replays the pane reload key through the running renderer's input pipeline.
+ * Pane reloads are single-key `r` shortcuts, so a mouse Retry affordance can
+ * behave exactly like the key: focus the pane, then fire `r`. The dispatch is
+ * deferred so the mousedown that opened the affordance commits its pane focus
+ * first; on the web the event is targeted at the focused element so a focused
+ * search input keeps swallowing the key exactly as a real keystroke would.
+ */
+function pressPaneReloadKey(renderer: unknown, uiKind: string): void {
+  setTimeout(() => {
+    const possibleRenderer = renderer as {
+      keyInput?: { emit?: (event: string, payload: Record<string, unknown>) => void };
+    } | null;
+    if (uiKind === "opentui" && possibleRenderer?.keyInput?.emit) {
+      possibleRenderer.keyInput.emit("keypress", {
+        name: "r",
+        sequence: "r",
+        ctrl: false,
+        meta: false,
+        option: false,
+        alt: false,
+        shift: false,
+        eventType: "press",
+        repeated: false,
+        preventDefault() {},
+        stopPropagation() {},
+      });
+      return;
+    }
+    if (typeof window === "undefined" || typeof KeyboardEvent === "undefined") return;
+    const target = (document.activeElement ?? document.body) as Element | null;
+    target?.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "r",
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, 0);
+}
+
+/** Mouse path to the focused pane's `r` reload shortcut. */
+export function usePaneRetry(): () => void {
+  const context = useContext(UiHostContext);
+  const renderer = context?.renderer ?? null;
+  const uiKind = context?.ui.kind ?? "";
+  return useCallback(
+    () => {
+      if (!renderer || !uiKind) return;
+      pressPaneReloadKey(renderer, uiKind);
+    },
+    [renderer, uiKind],
+  );
 }
 
 const DATA_ERROR_MESSAGES: Record<string, string> = {
@@ -61,9 +123,11 @@ export function footerErrorChip(error: string | null | undefined): { text: strin
   return { text: "unavailable", tone: "warning" };
 }
 
-export function EmptyState({ title, message, hint, fill = true }: EmptyStateProps) {
+export function EmptyState({ title, message, hint, fill = true, onRetry }: EmptyStateProps) {
+  const hitRetry = usePaneRetry();
+  const retryAction = onRetry ?? (hint && RETRY_HINT_PATTERN.test(hint) ? hitRetry : undefined);
   const body = (
-    <Box flexDirection="column">
+    <Box flexDirection="column" alignItems="center">
       <Box>
         <Text fg={colors.textDim}>{t(title)}</Text>
       </Box>
@@ -75,6 +139,11 @@ export function EmptyState({ title, message, hint, fill = true }: EmptyStateProp
       {hint && (
         <Box>
           <Text fg={colors.textMuted}>{t(hint)}</Text>
+        </Box>
+      )}
+      {retryAction && (
+        <Box marginTop={1}>
+          <RetryButton onRetry={retryAction} />
         </Box>
       )}
     </Box>
@@ -91,6 +160,41 @@ export function EmptyState({ title, message, hint, fill = true }: EmptyStateProp
       alignItems="center"
     >
       {body}
+    </Box>
+  );
+}
+
+/** Small bordered chip that invokes the pane retry from the mouse. */
+function RetryButton({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Box
+      marginTop={0}
+      paddingX={1}
+      role="button"
+      tabIndex={0}
+      aria-label={t("Retry")}
+      data-gloom-role="status-retry"
+      data-gloom-interactive
+      onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        onRetry();
+      }}
+      onKeyDown={(event: { key: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          onRetry();
+        }
+      }}
+      style={{
+        border: `1px solid ${colors.border}`,
+        borderRadius: 5,
+        cursor: "pointer",
+        backgroundColor: colors.panel,
+      }}
+    >
+      <Text fg={colors.text} attributes={TextAttributes.BOLD}>{` ${t("Retry")} `}</Text>
     </Box>
   );
 }
@@ -166,6 +270,8 @@ export interface PaneStatusBodyProps {
   subject?: string;
   emptyTitle?: string;
   emptyMessage?: string;
+  /** Retry the pane's own fetch from the mouse (defaults to replaying `r`). */
+  onRetry?: () => void;
   children?: ReactNode;
 }
 
@@ -181,6 +287,7 @@ export function PaneStatusBody({
   subject,
   emptyTitle,
   emptyMessage,
+  onRetry,
   children,
 }: PaneStatusBodyProps) {
   if (error && !isNoDataError(error)) {
@@ -189,6 +296,7 @@ export function PaneStatusBody({
         <EmptyState
           title={subject ? unavailableText(subject) : dataErrorMessage(error)}
           message={subject ? dataErrorMessage(error) : undefined}
+          onRetry={onRetry}
         />
       </Box>
     );

@@ -456,6 +456,7 @@ const noopNativeRenderer: NativeRendererHost = {
 };
 
 const UiHostContext = createContext<UiHostContextValue | null>(null);
+export { UiHostContext };
 
 export function UiHostProvider({
   ui,

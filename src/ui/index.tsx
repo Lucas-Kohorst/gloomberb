@@ -15,6 +15,7 @@ export {
   RGBA,
   StyledText,
   TextAttributes,
+  UiHostContext,
   UiHostProvider,
   useCommandBarShortcut,
   useNativeRenderer,
