@@ -206,6 +206,15 @@ export function cloudEarningsTranscriptPath(id: string): string {
   return `/cloud/transcripts/${encodeURIComponent(id)}`;
 }
 
+/** Executive compensation reads are open: no account, no plan. */
+export function publicProxyStatementsPath(ticker: string): string {
+  return `/public/proxies/${encodeURIComponent(ticker.toUpperCase())}`;
+}
+
+export function publicProxyStatementPath(ticker: string, year: number): string {
+  return `/public/proxies/${encodeURIComponent(ticker.toUpperCase())}/${year}`;
+}
+
 export function cloudSecFilingsPath(params: CloudSecFilingsParams): string {
   const search = new URLSearchParams({ ticker: params.ticker });
   if (params.limit != null) search.set("limit", String(params.limit));

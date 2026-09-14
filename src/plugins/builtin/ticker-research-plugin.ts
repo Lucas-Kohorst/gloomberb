@@ -5,6 +5,7 @@ import { defillamaModule } from "./defillama";
 import { dividendYieldModule } from "./dividend-yield";
 import { earningsTranscriptsModule } from "./earnings-transcripts";
 import { esgModule } from "./esg";
+import { executivesModule } from "./executives";
 import { holdersModule } from "./holders";
 import { insiderModule } from "./insider";
 import { momentumSortinoModule } from "./momentum";
@@ -34,6 +35,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     optionsCalculatorModule,
     researchModule,
     cashFlowModule,
+    executivesModule,
     dividendYieldModule,
     holdersModule,
     shortInterestModule,

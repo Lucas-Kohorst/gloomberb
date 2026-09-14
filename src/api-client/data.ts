@@ -23,6 +23,8 @@ import {
   cloudMarketSymbolPath,
   cloudNewsPath,
   cloudOptionsChainPath,
+  publicProxyStatementPath,
+  publicProxyStatementsPath,
   cloudSavedSearchHitsPath,
   cloudSavedSearchPath,
   cloudSavedSearchesPath,
@@ -66,6 +68,8 @@ import type {
   CloudMarketScreenerPayload,
   CloudNewsListResponse,
   CloudNewsPayload,
+  CloudProxyStatementListPayload,
+  CloudProxyStatementPayload,
   CloudSavedSearch,
   CloudSavedSearchInput,
   CloudSavedSearchListResponse,
@@ -263,6 +267,14 @@ export class CloudDataApi {
 
   async getCloudEarningsTranscript(id: string): Promise<CloudEarningsTranscriptPayload> {
     return this.request<CloudEarningsTranscriptPayload>(cloudEarningsTranscriptPath(id));
+  }
+
+  async getProxyStatements(ticker: string): Promise<CloudProxyStatementListPayload> {
+    return this.request<CloudProxyStatementListPayload>(publicProxyStatementsPath(ticker));
+  }
+
+  async getProxyStatement(ticker: string, year: number): Promise<CloudProxyStatementPayload> {
+    return this.request<CloudProxyStatementPayload>(publicProxyStatementPath(ticker, year));
   }
 
   async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {
