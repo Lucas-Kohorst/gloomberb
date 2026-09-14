@@ -658,6 +658,33 @@ const rawThemes: Record<string, Theme> = {
     commandBg: "#000033",
     commandBorder: "#ff6600",
   },
+
+  "cb-safe": {
+    name: "Colorblind Safe",
+    description: "Okabe-Ito blue/orange direction colors on a dark slate base",
+    // Okabe-Ito: positive #0072B2 blue, negative #E69F00 orange, plus sky blue
+    // #56B4E9 for focus accents and yellow #F0E442 for warnings. Blue/orange is
+    // the deuteranopia- and protanopia-safe direction pair; green/red is the
+    // one thing this palette deliberately never uses.
+    bg: "#0d1117",
+    panel: "#161b22",
+    border: "#30363d",
+    borderFocused: "#56b4e9",
+    text: "#c9d1d9",
+    textDim: "#8b949e",
+    textBright: "#f0f6fc",
+    textMuted: "#6e7681",
+    positive: "#0072b2",
+    negative: "#e69f00",
+    neutral: "#8b949e",
+    warning: "#f0e442",
+    header: "#1c2128",
+    headerText: "#56b4e9",
+    selected: "#2a4a6b",
+    selectedText: "#f0f6fc",
+    commandBg: "#161b22",
+    commandBorder: "#56b4e9",
+  },
 };
 
 export const themes: Record<string, Theme> = Object.fromEntries(
