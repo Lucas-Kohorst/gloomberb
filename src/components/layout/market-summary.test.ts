@@ -85,4 +85,14 @@ describe("header market cluster", () => {
       showState: false,
     });
   });
+
+  test("does not reserve Mac traffic-light columns without native window chrome", () => {
+    const hosted = resolveHeaderPromptGeometry({
+      nativePaneChrome: true,
+      nativeWindowChrome: false,
+      termWidth: 200,
+      titleBarOverlay: true,
+    });
+    expect(hosted.left).toBe(1);
+  });
 });

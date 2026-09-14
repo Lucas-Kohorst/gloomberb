@@ -70,6 +70,28 @@ describe("command bar sheet geometry", () => {
   });
 
   /**
+   * Hosted / browser chrome is a titlebar overlay without window buttons.
+   * Reserving the Mac traffic-light inset there leaves the sheet hanging
+   * eight columns in from the prompt, which is the term.gloom.sh indent.
+   */
+  test("does not reserve traffic-light inset without native window chrome", () => {
+    const hosted = {
+      ...DESKTOP,
+      nativeWindowChrome: false,
+    };
+    const layout = resolveCommandBarPanelLayout({ ...hosted, termHeight: 40, termWidth: 200 });
+    const prompt = resolveHeaderPromptGeometry({
+      nativePaneChrome: true,
+      nativeWindowChrome: false,
+      termWidth: 200,
+      titleBarOverlay: true,
+    });
+    expect(prompt.left).toBe(1);
+    expect(layout.panelBounds.x).toBe(1);
+    expect(layout.panelBounds.x).toBe(prompt.left);
+  });
+
+  /**
    * The selection bar is the row box, padding included, so the columns have
    * to add back up to the sheet: nothing capped short of it, nothing past it.
    */

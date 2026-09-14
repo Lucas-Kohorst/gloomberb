@@ -8,14 +8,31 @@ import {
 } from "./host/native";
 import { createDomUiHost } from "./dom-ui-host";
 
-export function createWebUiHost(desktopPlatform?: string): UiHost {
+export function createWebUiHost(
+  desktopPlatform?: string,
+  options: {
+    nativeContextMenu?: boolean;
+    nativeWindowChrome?: boolean;
+    publicSharing?: boolean;
+    titleBarOverlay?: boolean;
+  } = {},
+): UiHost {
   return createDomUiHost(desktopPlatform, {
-    nativeContextMenu: NATIVE_CONTEXT_MENU_SUPPORTED,
-    publicSharing: true,
+    nativeContextMenu: options.nativeContextMenu ?? NATIVE_CONTEXT_MENU_SUPPORTED,
+    nativeWindowChrome: options.nativeWindowChrome,
+    publicSharing: options.publicSharing ?? true,
+    titleBarOverlay: options.titleBarOverlay,
   });
 }
 
-export const webUiHost: UiHost = createWebUiHost();
+/**
+ * Browser / hosted web. No traffic lights, so do not reserve the Mac titlebar
+ * inset or the command bar sits eight columns in from the left edge.
+ */
+export const webUiHost: UiHost = createWebUiHost(undefined, {
+  nativeContextMenu: false,
+  nativeWindowChrome: false,
+});
 
 export const webRendererHost: RendererHost = {
   supportsNativeDesktopNotifications: true,
