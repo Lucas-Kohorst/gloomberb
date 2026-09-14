@@ -16,12 +16,14 @@ import { usePluginAppActions, usePluginConfigState } from "../../runtime";
 import {
   deserializeAlerts,
   editAlert,
+  isAlertSnoozed,
   rearmAlert as rebuildAlert,
   readAlertsStoreError,
   serializeAlerts,
+  snoozeAlert,
 } from "./alert-engine";
 import { parseAlertCommandValues } from "./command";
-import { ALERTS_KEY } from "./constants";
+import { ALERTS_KEY, SNOOZE_DURATION_MS } from "./constants";
 import { AlertHistoryPane } from "./history-pane";
 import {
   conditionLabel,
@@ -29,6 +31,7 @@ import {
   formatAlertTargetPrice,
   formatCurrentPrice,
   formatQuoteChecked,
+  formatSnoozeRemaining,
   relativeTime,
 } from "./format";
 import type { AlertRule } from "./types";
@@ -53,7 +56,8 @@ type AlertColumnId =
 type AlertColumn = DataTableColumn & { id: AlertColumnId };
 
 const ALERT_COLUMNS: AlertColumn[] = [
-  { id: "status", label: "State", width: 6, align: "left" },
+  // Wide enough for the snooze countdown, e.g. "Snooz 12m".
+  { id: "status", label: "State", width: 9, align: "left" },
   { id: "symbol", label: "Symbol", width: 7, align: "left" },
   { id: "current", label: "Current", width: 9, align: "right" },
   { id: "target", label: "Target", width: 9, align: "right" },
@@ -112,7 +116,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
         case "condition": return conditionLabel(alert.condition);
         case "quote": return alert.lastQuoteUpdatedAt ?? alert.lastCheckedAt ?? null;
         case "triggered": return alert.triggeredAt ?? null;
-        case "rearm": return alert.status === "triggered" ? 1 : 0;
+        case "rearm": return alert.status === "triggered" ? 2 : isAlertSnoozed(alert) ? 1 : 0;
       }
     }),
     [rows, sortPreference],
@@ -137,6 +141,14 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     );
   }, [alerts, savePaneAlerts]);
 
+  const snoozeAlertById = useCallback((id: string) => {
+    savePaneAlerts(alerts.map((a) => (a.id === id ? snoozeAlert(a, SNOOZE_DURATION_MS) : a)));
+  }, [alerts, savePaneAlerts]);
+
+  const wakeAlert = useCallback((id: string) => {
+    savePaneAlerts(alerts.map((a) => (a.id === id ? { ...a, snoozedUntil: undefined } : a)));
+  }, [alerts, savePaneAlerts]);
+
   const startAddAlert = useCallback(() => {
     openPluginCommandWorkflow("set-alert");
   }, [openPluginCommandWorkflow]);
@@ -148,6 +160,12 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     const selected = rows[selectedIdx];
     if (selected) deleteAlert(selected.id);
   }, [deleteAlert, rows, selectedIdx]);
+
+  const snoozeSelectedAlert = useCallback(() => {
+    const selected = sortedRows[selectedIdx];
+    if (!selected) return;
+    snoozeAlertById(selected.id);
+  }, [sortedRows, snoozeAlertById, selectedIdx]);
 
   const editSelectedAlert = useCallback(() => {
     const selected = rows[selectedIdx];
@@ -204,6 +222,13 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
         disabled: rows.length === 0,
       },
       {
+        id: "snooze",
+        key: "s",
+        label: "nooze",
+        onPress: snoozeSelectedAlert,
+        disabled: rows.length === 0,
+      },
+      {
         id: "delete",
         key: "d",
         label: "elete",
@@ -216,6 +241,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     editSelectedAlert,
     quoteError,
     rows.length,
+    snoozeSelectedAlert,
     startAddAlert,
     storeError,
   ]);
@@ -245,13 +271,18 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
       editSelectedAlert();
       return true;
     }
+    if (event.name === "s") {
+      event.preventDefault?.();
+      snoozeSelectedAlert();
+      return true;
+    }
     if (event.name === "escape") {
       event.preventDefault?.();
       close?.();
       return true;
     }
     return false;
-  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert, startAddWeatherAlert]);
+  }, [close, deleteSelectedAlert, editSelectedAlert, snoozeSelectedAlert, startAddAlert, startAddWeatherAlert]);
 
   const renderCell = useCallback((
     alert: AlertRule,
@@ -269,12 +300,15 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     };
 
     switch (column.id) {
-      case "status":
+      case "status": {
+        const snooze = formatSnoozeRemaining(alert);
+        if (snooze) return { text: snooze, color: selectedColor ?? colors.warning };
         return {
           text: alert.status === "triggered" ? "Trig" : "Active",
           color: selectedColor ?? (alert.status === "triggered" ? colors.positive : colors.textDim),
           attributes: alert.status === "triggered" ? TextAttributes.BOLD : TextAttributes.NONE,
         };
+      }
       case "symbol":
         return {
           text: alert.symbol,
@@ -309,6 +343,13 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
           color: selectedColor ?? colors.textDim,
         };
       case "rearm":
+        if (isAlertSnoozed(alert)) {
+          return {
+            text: "Wake",
+            color: selectedColor ?? colors.textBright,
+            onMouseDown: actionMouseDown(() => wakeAlert(alert.id)),
+          };
+        }
         return alert.status === "triggered"
           ? {
               text: "Re-arm",
@@ -317,7 +358,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
             }
           : { text: "-", color: selectedColor ?? colors.textDim };
     }
-  }, [rearmAlert]);
+  }, [rearmAlert, wakeAlert]);
 
   return (
     <DataTableView<AlertRule, AlertColumn>
@@ -348,13 +389,15 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
       getRowRevision={(alert) => [
         alert.id,
         alert.status,
+        alert.snoozedUntil ?? "",
         alert.lastCheckedPrice ?? "",
         alert.lastCheckError ?? "",
         alert.triggeredAt ?? "",
         alert.lastCheckedAt ?? "",
       ].join(":")}
       onActivate={(alert) => {
-        if (alert.status === "triggered") rearmAlert(alert.id);
+        if (isAlertSnoozed(alert)) wakeAlert(alert.id);
+        else if (alert.status === "triggered") rearmAlert(alert.id);
       }}
       renderCell={renderCell}
       emptyStateTitle={storeError ? "Saved alerts could not be read." : "No alerts"}

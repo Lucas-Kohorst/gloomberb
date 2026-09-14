@@ -7,8 +7,11 @@ import {
   evaluateExDivAlert,
   evaluateHaltedAlert,
   evaluateShortFloatAlert,
+  isAlertSnoozed,
   rearmAlert,
+  resolveAlertSnooze,
   serializeAlerts,
+  snoozeAlert,
 } from "./alert-engine";
 import {
   parseAlertCommandValues,
@@ -143,6 +146,109 @@ describe("serializeAlerts / deserializeAlerts", () => {
       "short_float",
       "ex_div",
     ]);
+  });
+
+  test("loads alerts persisted before snooze support unchanged", () => {
+    const legacy = JSON.stringify([{
+      id: "alert-legacy",
+      symbol: "AAPL",
+      condition: "above",
+      targetPrice: 200,
+      createdAt: 123,
+      status: "active",
+      lastCheckedPrice: 201,
+    }]);
+    const alerts = deserializeAlerts(legacy);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toEqual({
+      id: "alert-legacy",
+      symbol: "AAPL",
+      condition: "above",
+      targetPrice: 200,
+      createdAt: 123,
+      status: "active",
+      lastCheckedPrice: 201,
+    });
+    // A missing field means not snoozed, so the alert evaluates immediately.
+    expect(isAlertSnoozed(alerts[0]!)).toBe(false);
+
+    // Once set, the field survives the store roundtrip.
+    const snoozed = snoozeAlert(alerts[0]!, 60_000);
+    const restored = deserializeAlerts(serializeAlerts([snoozed]));
+    expect(restored[0]!.snoozedUntil).toBe(snoozed.snoozedUntil);
+    expect(isAlertSnoozed(restored[0]!)).toBe(true);
+  });
+});
+
+describe("alert snooze", () => {
+  const SNOOZE_MS = 15 * 60_000;
+
+  test("snoozing a triggered alert re-arms it and holds evaluation for the window", () => {
+    const now = 1_700_000_000_000;
+    const alert = {
+      ...createAlert("AAPL", "crosses", 180),
+      status: "triggered" as const,
+      triggeredAt: now - 60_000,
+      lastCheckedPrice: 185,
+      lastCheckedAt: now - 60_000,
+    };
+
+    const snoozed = snoozeAlert(alert, SNOOZE_MS, now);
+
+    expect(snoozed.status).toBe("active");
+    expect(snoozed.snoozedUntil).toBe(now + SNOOZE_MS);
+    // Re-armed like a manual re-arm: the trigger and quote lifecycle drop so
+    // `crosses` starts from a fresh baseline.
+    expect(snoozed.triggeredAt).toBeUndefined();
+    expect(snoozed.lastCheckedPrice).toBeUndefined();
+    expect(isAlertSnoozed(snoozed, now)).toBe(true);
+    expect(isAlertSnoozed(snoozed, now + SNOOZE_MS)).toBe(false);
+  });
+
+  test("snoozing an active alert keeps its state and only sets the window", () => {
+    const now = 1_700_000_000_000;
+    const alert = { ...createAlert("AAPL", "above", 200), lastCheckedPrice: 201 };
+
+    const snoozed = snoozeAlert(alert, SNOOZE_MS, now);
+
+    expect(snoozed.status).toBe("active");
+    expect(snoozed.lastCheckedPrice).toBe(201);
+    expect(snoozed.snoozedUntil).toBe(now + SNOOZE_MS);
+  });
+
+  test("snoozing keeps condition-defining fields that a plain edit would drop", () => {
+    const alert = {
+      ...createAlert("LAX", "weather", 0),
+      message: "LAX high final",
+      targetText: "Reuters",
+      weather: {
+        stationId: "LAX",
+        condition: { kind: "stale-source", sourceId: "twc-kalshi", maxAgeMs: 900_000 },
+      },
+      status: "triggered" as const,
+      triggeredAt: 123,
+    };
+
+    const snoozed = snoozeAlert(alert, SNOOZE_MS, 1);
+
+    expect(snoozed.weather).toEqual(alert.weather);
+    expect(snoozed.targetText).toBe("Reuters");
+    expect(snoozed.message).toBe("LAX high final");
+  });
+
+  test("the poll gate skips a snoozed alert and re-arms silently once the window passes", () => {
+    const now = 1_700_000_000_000;
+    const alert = { ...createAlert("AAPL", "above", 200), snoozedUntil: now + 60_000 };
+
+    expect(resolveAlertSnooze(alert, now)).toBe("snoozed");
+    // The window is untouched while it still holds.
+    expect(alert.snoozedUntil).toBe(now + 60_000);
+
+    expect(resolveAlertSnooze(alert, now + 60_001)).toBe("rearmed");
+    // Silent re-arm: the stale field is cleared so the alert evaluates as active.
+    expect(alert.snoozedUntil).toBeUndefined();
+
+    expect(resolveAlertSnooze(alert, now + 60_002)).toBe("active");
   });
 });
 

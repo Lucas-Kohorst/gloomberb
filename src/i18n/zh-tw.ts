@@ -198,6 +198,7 @@ export const zhTW: Record<string, string> = {
   "Crosses": "穿越",
   "Add Alert": "新增提醒",
   "Set Alert": "設定提醒",
+  "Snooze {minutes}m": "延後 {minutes}分鐘",
   "Choose a portfolio and optionally record the manual position now.": "選擇投資組合，並可立即輸入手動部位。",
   "Create or update a manual position without leaving the command bar.": "直接在命令列建立或更新手動部位。",
   "Create a new watchlist inside the command bar.": "在命令列內直接新增自選清單。",

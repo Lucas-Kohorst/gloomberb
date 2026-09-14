@@ -1,6 +1,7 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { GloomPlugin, GloomPluginContext } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
 import { formatMarketPrice } from "../../../market-data/market/format";
+import { tf } from "../../../i18n";
 import { getSharedNewsService } from "../../../news/hooks";
 import {
   createAlert,
@@ -9,6 +10,8 @@ import {
   evaluateHaltedAlert,
   evaluateShortFloatAlert,
   formatAlertDescription,
+  resolveAlertSnooze,
+  snoozeAlert,
   utcDaysUntil,
 } from "./alert-engine";
 import {
@@ -16,7 +19,7 @@ import {
   parseAlertShortcutValues,
   parseWeatherAlertCommandValues,
 } from "./command";
-import { POLL_INTERVAL_MS, POLL_SECONDS_KEY } from "./constants";
+import { POLL_INTERVAL_MS, POLL_SECONDS_KEY, SNOOZE_DURATION_MS, SNOOZE_MINUTES } from "./constants";
 import { appendAlertHistory, createAlertHistoryEntry } from "./history";
 import { setAlertHandler } from "./alert-registry";
 import { AlertsPane } from "./pane";
@@ -41,6 +44,27 @@ import { evaluateNewsMentionAlert, evaluateQuoteCondition } from "./condition-ev
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let pollInFlight = false;
+
+/**
+ * Snoozes a stored alert by id (the notification's secondary action). The
+ * confirmation toast separates a snooze from a plain toast dismissal.
+ */
+function snoozeStoredAlert(ctx: GloomPluginContext, id: string, description: string): void {
+  const alerts = loadAlerts(ctx);
+  let snoozed = false;
+  const next = alerts.map((alert) => {
+    if (alert.id !== id) return alert;
+    snoozed = true;
+    return snoozeAlert(alert, SNOOZE_DURATION_MS);
+  });
+  saveAlerts(ctx, next);
+  if (snoozed) {
+    ctx.notify({
+      body: `${description} snoozed ${SNOOZE_MINUTES}m`,
+      type: "info",
+    });
+  }
+}
 
 export const alertsPlugin: GloomPlugin = {
   id: "alerts",
@@ -225,6 +249,7 @@ export const alertsPlugin: GloomPlugin = {
       }));
       const quotes = new Map<string, Quote | string>(results);
 
+      const now = Date.now();
       let changed = false;
       for (const alert of alerts) {
         if (alert.status !== "active") continue;
@@ -235,6 +260,16 @@ export const alertsPlugin: GloomPlugin = {
           changed = true;
           continue;
         }
+
+        const snooze = resolveAlertSnooze(alert, now);
+        if (snooze === "snoozed") {
+          // Evaluation is held, but quote fields keep refreshing so the pane
+          // stays live and `crosses` re-arms on a current baseline.
+          Object.assign(alert, quoteAlertFields(quote));
+          changed = true;
+          continue;
+        }
+        if (snooze === "rearmed") changed = true;
 
         const triggered = evaluateAlert(alert, quote.price) || evaluateQuoteCondition(alert, quote);
         if (triggered) {
@@ -261,6 +296,10 @@ export const alertsPlugin: GloomPlugin = {
             action: {
               label: "Open",
               onClick: () => ctx.showPane("alerts"),
+            },
+            secondaryAction: {
+              label: tf("Snooze {minutes}m", { minutes: SNOOZE_MINUTES }),
+              onClick: () => snoozeStoredAlert(ctx, alert.id, formatAlertDescription(alert)),
             },
           });
         }
@@ -289,6 +328,9 @@ export const alertsPlugin: GloomPlugin = {
           }),
         ));
         for (const alert of newsAlerts) {
+          const snooze = resolveAlertSnooze(alert, now);
+          if (snooze === "snoozed") continue;
+          if (snooze === "rearmed") changed = true;
           const evaluation = evaluateNewsMentionAlert(
             alert,
             newsByKey.get(`${alert.symbol}\0${alert.exchange ?? ""}`) ?? [],
@@ -316,6 +358,10 @@ export const alertsPlugin: GloomPlugin = {
             persistent: true,
             sound: "Glass",
             action: { label: "Open", onClick: () => ctx.showPane("alerts") },
+            secondaryAction: {
+              label: tf("Snooze {minutes}m", { minutes: SNOOZE_MINUTES }),
+              onClick: () => snoozeStoredAlert(ctx, alert.id, description),
+            },
           });
           changed = true;
         }
@@ -333,6 +379,9 @@ export const alertsPlugin: GloomPlugin = {
           if (builtinConditions.has(alert.condition)) continue;
           const def = customConditions.get(alert.condition);
           if (!def) continue;
+          const snooze = resolveAlertSnooze(alert, now);
+          if (snooze === "snoozed") continue;
+          if (snooze === "rearmed") changed = true;
           try {
             const triggered = await def.evaluate({
               symbol: alert.symbol,
@@ -364,6 +413,10 @@ export const alertsPlugin: GloomPlugin = {
                 action: {
                   label: "Open",
                   onClick: () => ctx.showPane("alerts"),
+                },
+                secondaryAction: {
+                  label: tf("Snooze {minutes}m", { minutes: SNOOZE_MINUTES }),
+                  onClick: () => snoozeStoredAlert(ctx, alert.id, description),
                 },
               });
               changed = true;

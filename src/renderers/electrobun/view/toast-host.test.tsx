@@ -120,3 +120,26 @@ test("dismiss never fires the action, and the action button opens and closes", a
     await unmount();
   }
 });
+
+test("the secondary action runs its handler and dismisses the toast", async () => {
+  const { container, unmount } = await mountViewport();
+  let snoozed = 0;
+
+  try {
+    await act(async () => {
+      toastHost?.success("AAPL > 200 triggered at 201.5", {
+        duration: 0,
+        action: { label: "Open", onClick: () => {} },
+        secondaryAction: { label: "Snooze 15m", onClick: () => snoozed++ },
+      });
+    });
+    const actionButtons = container.querySelectorAll(".gloom-toast-action");
+    expect(actionButtons.length).toBe(2);
+    expect(actionButtons[1]!.textContent).toBe("Snooze 15m");
+    await click(actionButtons[1]!);
+    expect(snoozed).toBe(1);
+    expect(container.querySelector(".gloom-toast")).toBeNull();
+  } finally {
+    await unmount();
+  }
+});

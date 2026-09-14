@@ -198,6 +198,7 @@ export const zhCN: Record<string, string> = {
   "Crosses": "穿越",
   "Add Alert": "添加提醒",
   "Set Alert": "设置提醒",
+  "Snooze {minutes}m": "延后 {minutes}分钟",
   "Choose a portfolio and optionally record the manual position now.": "选择一个组合，并可顺便录入手动持仓。",
   "Create or update a manual position without leaving the command bar.": "在命令栏内直接创建或更新手动持仓。",
   "Create a new watchlist inside the command bar.": "在命令栏内直接新建自选列表。",
