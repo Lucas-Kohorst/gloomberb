@@ -10,9 +10,15 @@ import { shouldYieldToUi, whenUiQuiet } from "../../../utils/ui-yield";
  * Pass `intervalMinutes` to use a per-pane override (TWIT uses 1m when live
  * polling is on, and 0 to disable the timer).
  * The next tick is scheduled from the data's age, not from mount: a load
- * that failed is retried after a full interval, and a load that succeeded
- * early waits only the remaining freshness.
+ * that succeeded early waits only the remaining freshness. A failed or
+ * deferred tick rechecks on a 1m watchdog instead of sleeping another interval.
  */
+
+/** Recheck overdue polls this often so a throttled 15m timeout cannot sit ~2 intervals stale. */
+export const AUTO_REFRESH_WATCHDOG_MS = 60_000;
+/** Typing / Command-K can hold yield; do not let that starve a due poll forever. */
+export const AUTO_REFRESH_YIELD_MAX_MS = 5_000;
+
 export function nextAutoRefreshDelayMs(
   lastUpdated: number | null,
   intervalMs: number,
@@ -21,6 +27,16 @@ export function nextAutoRefreshDelayMs(
   if (!(intervalMs > 0)) return 0;
   if (!lastUpdated) return intervalMs;
   return Math.max(0, intervalMs - (now - lastUpdated));
+}
+
+/** Cap a long poll sleep so background-throttled timers still notice overdue data. */
+export function nextAutoRefreshWakeMs(
+  lastUpdated: number | null,
+  intervalMs: number,
+  now = Date.now(),
+  watchdogMs = AUTO_REFRESH_WATCHDOG_MS,
+): number {
+  return Math.min(nextAutoRefreshDelayMs(lastUpdated, intervalMs, now), watchdogMs);
 }
 
 export function useAutoRefresh(
@@ -40,31 +56,38 @@ export function useAutoRefresh(
     const intervalMs = resolvedMinutes * 60_000;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let yieldStartedAt = 0;
 
-    const schedule = () => {
+    const arm = (delay: number) => {
       if (cancelled) return;
-      const delay = nextAutoRefreshDelayMs(lastUpdatedRef.current, intervalMs);
-      timer = setTimeout(tick, delay);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(tick, Math.max(0, delay));
     };
 
     const tick = () => {
       if (cancelled) return;
-      const previous = lastUpdatedRef.current;
-      if (previous && Date.now() - previous < intervalMs) {
-        schedule();
+      const remaining = nextAutoRefreshDelayMs(lastUpdatedRef.current, intervalMs);
+      if (remaining > 0) {
+        yieldStartedAt = 0;
+        arm(nextAutoRefreshWakeMs(lastUpdatedRef.current, intervalMs));
         return;
       }
       if (shouldYieldToUi()) {
-        void whenUiQuiet().then(tick);
-        return;
+        if (!yieldStartedAt) yieldStartedAt = Date.now();
+        if (Date.now() - yieldStartedAt < AUTO_REFRESH_YIELD_MAX_MS) {
+          void whenUiQuiet().then(tick);
+          arm(AUTO_REFRESH_YIELD_MAX_MS);
+          return;
+        }
       }
+      yieldStartedAt = 0;
       refreshRef.current();
-      // lastUpdated updates asynchronously, so wait a full interval before
-      // checking again instead of treating the still-stale stamp as due now.
-      timer = setTimeout(tick, intervalMs);
+      // lastUpdated updates asynchronously. Recheck on the watchdog so a
+      // failed fetch retries in a minute instead of sleeping another interval.
+      arm(AUTO_REFRESH_WATCHDOG_MS);
     };
 
-    schedule();
+    arm(nextAutoRefreshWakeMs(lastUpdatedRef.current, intervalMs));
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
