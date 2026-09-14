@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { withConnectionRequest } from "../connections/register";
 import {
@@ -15,14 +16,14 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export const OPENFDA_PER_ENDPOINT_LIMIT = 30;
 export const OPENFDA_DISPLAY_CAP = 90;
 
-let resolveApiKey: () => string | undefined = () => process.env.OPENFDA_API_KEY?.trim() || undefined;
+let resolveApiKey: () => string | undefined = () => readProcessEnv("OPENFDA_API_KEY");
 
 export function setOpenFdaApiKeyResolver(resolver: () => string | undefined): void {
   resolveApiKey = resolver;
 }
 
 export function resolveOpenFdaApiKey(): string | undefined {
-  return resolveApiKey()?.trim() || process.env.OPENFDA_API_KEY?.trim() || undefined;
+  return resolveApiKey()?.trim() || readProcessEnv("OPENFDA_API_KEY");
 }
 
 /**

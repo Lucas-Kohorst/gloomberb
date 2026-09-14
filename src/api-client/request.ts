@@ -1,4 +1,5 @@
 import { httpFetch } from "../utils/http-transport";
+import { readProcessEnv } from "../utils/process-env";
 import { withDeadline } from "../utils/async-deadline";
 import { ApiRequestError, parseApiErrorMessage } from "./errors";
 import {
@@ -32,10 +33,7 @@ export function getCloudApiBaseUrl(): string {
       ? `${bundled}/api`
       : bundled;
   }
-  if (typeof process === "undefined") {
-    return DEFAULT_API_URL;
-  }
-  return process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
+  return readProcessEnv("GLOOMBERB_API_URL") ?? DEFAULT_API_URL;
 }
 
 function throwIfRequestAborted(signal: AbortSignal | null | undefined): void {

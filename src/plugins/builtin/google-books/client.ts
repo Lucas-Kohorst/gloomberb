@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import type {
   DocumentSearchHit,
@@ -125,14 +126,14 @@ export function parseVolumesPayload(data: unknown, cap = BOOKS_DISPLAY_CAP): Boo
   return { volumes, total };
 }
 
-let resolveApiKey: () => string | undefined = () => process.env.GOOGLE_BOOKS_API_KEY?.trim() || undefined;
+let resolveApiKey: () => string | undefined = () => readProcessEnv("GOOGLE_BOOKS_API_KEY");
 
 export function setGoogleBooksApiKeyResolver(resolver: () => string | undefined): void {
   resolveApiKey = resolver;
 }
 
 export function resolveGoogleBooksApiKey(): string | undefined {
-  return resolveApiKey()?.trim() || process.env.GOOGLE_BOOKS_API_KEY?.trim() || undefined;
+  return resolveApiKey()?.trim() || readProcessEnv("GOOGLE_BOOKS_API_KEY");
 }
 
 function withOptionalKey(url: string, apiKey?: string): string {

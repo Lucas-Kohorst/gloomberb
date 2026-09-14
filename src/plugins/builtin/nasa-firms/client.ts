@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { withConnectionRequest } from "../connections/register";
 import {
@@ -175,14 +176,14 @@ export interface FirmsClientOptions {
   mapKey?: string;
 }
 
-let resolveMapKey: () => string | undefined = () => process.env.NASA_FIRMS_MAP_KEY?.trim() || undefined;
+let resolveMapKey: () => string | undefined = () => readProcessEnv("NASA_FIRMS_MAP_KEY");
 
 export function setNasaFirmsMapKeyResolver(resolver: () => string | undefined): void {
   resolveMapKey = resolver;
 }
 
 export function resolveNasaFirmsMapKey(): string | undefined {
-  return resolveMapKey()?.trim() || process.env.NASA_FIRMS_MAP_KEY?.trim() || undefined;
+  return resolveMapKey()?.trim() || readProcessEnv("NASA_FIRMS_MAP_KEY");
 }
 
 export class FirmsClient {

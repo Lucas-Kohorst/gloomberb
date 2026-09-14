@@ -1,4 +1,4 @@
-import type { AppConfig } from "../../../types/config";
+import { readProcessEnv } from "../../../utils/process-env";
 import { getSharedRegistry } from "../../registry";
 import { AI_BYOK_SERVICE_IDS, OLLAMA_BYOK_SERVICE_ID, byokKeysConfigSelector } from "./ai-providers";
 import { getByokKnownServices } from "../byok/services";
@@ -23,8 +23,7 @@ export interface PluginByokRow {
 function envHasKey(service: ByokKnownService): boolean {
   const name = service.envVar?.trim();
   if (!name) return false;
-  const value = process.env[name];
-  return typeof value === "string" && value.trim().length > 0;
+  return Boolean(readProcessEnv(name));
 }
 
 export function listDiscoverableByokServices(): ByokKnownService[] {

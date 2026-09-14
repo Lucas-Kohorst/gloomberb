@@ -202,6 +202,11 @@ function renderSharePageHtml({
   </head>
   <body>
     <div id="root"><div class="share-main"><div class="share-loading-body">${loadingText}</div></div></div>
+    <script>
+if (!("process" in globalThis) || !globalThis.process) {
+  globalThis.process = { env: {} };
+}
+    </script>
     <script type="module" src="${entrySrc}"></script>
   </body>
 </html>
@@ -269,6 +274,9 @@ function renderElectrobunViewHtml({
   <body style="margin:0;background:#000;">
     <div id="root"><div class="gloom-loading">${loadingText}</div></div>
     <script>
+if (!("process" in globalThis) || !globalThis.process) {
+  globalThis.process = { env: {} };
+}
 ${bootstrapScript}
     </script>
     <script type="module" src="${entrySrc}"></script>

@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { readProcessEnv } from "../../../utils/process-env";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { colors } from "../../../theme/colors";
 import type { ResolvedSeries } from "../../../time-series/types";
@@ -11,14 +12,14 @@ import {
   type EiaSeriesDef,
 } from "./types";
 
-let resolveApiKey: () => string | undefined = () => process.env.EIA_API_KEY?.trim() || undefined;
+let resolveApiKey: () => string | undefined = () => readProcessEnv("EIA_API_KEY");
 
 export function setEiaApiKeyResolver(resolver: () => string | undefined): void {
   resolveApiKey = resolver;
 }
 
 export function resolveEiaApiKey(): string {
-  return resolveApiKey()?.trim() || process.env.EIA_API_KEY?.trim() || EIA_DEMO_KEY;
+  return resolveApiKey()?.trim() || readProcessEnv("EIA_API_KEY") || EIA_DEMO_KEY;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;

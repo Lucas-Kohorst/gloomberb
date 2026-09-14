@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { readProcessEnv } from "../../../utils/process-env";
 
 const PREVIEW_CHARS = 4_000;
 
@@ -8,8 +9,9 @@ let runsDirOverride: string | null = null;
 let defaultRunsDir: string | null = null;
 
 function resolveDefaultRunsDir(): string {
-  defaultRunsDir ??= process.env.GLOOMBERB_DATA_DIR
-    ? join(process.env.GLOOMBERB_DATA_DIR, "ai-runs")
+  const dataDir = readProcessEnv("GLOOMBERB_DATA_DIR");
+  defaultRunsDir ??= dataDir
+    ? join(dataDir, "ai-runs")
     : join(homedir(), ".gloomberb", "ai-runs");
   return defaultRunsDir;
 }
