@@ -129,7 +129,10 @@ export function AiScreenerResultsView({
                   text: truncateWithEllipsis(resultMap.get(ticker.metadata.ticker)?.reason ?? "", column.width),
                 };
               }
-              return getColumnValue(column, ticker, financials, columnContext);
+              const cell = getColumnValue(column, ticker, financials, columnContext);
+              return column.format === "percent" && cell.text.endsWith("%")
+                ? { ...cell, text: cell.text.slice(0, -1) }
+                : cell;
             }}
             financialsMap={financialsMap}
             sortColumnId={activeSort.columnId}
