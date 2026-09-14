@@ -75,6 +75,7 @@ export class ChatController {
   private pendingMessageSeq = 0;
   private notifyFn: (notification: AppNotificationRequest) => AppNotificationDelivery | void = () => {};
   private openMessageFn: ((channelId: string, messageId: string) => void) | undefined;
+  private onUnreadMessage: ((message: ChatMessage, channelId: string) => void) | undefined;
   private notifiedMessageIds = new Set<string>();
 
   private readonly storage = new ChatControllerStorage({
@@ -135,6 +136,10 @@ export class ChatController {
   ): void {
     this.notifyFn = notify;
     this.openMessageFn = openMessage;
+  }
+
+  setOnUnreadMessage(callback: (message: ChatMessage, channelId: string) => void): void {
+    this.onUnreadMessage = callback;
   }
 
   hydrate(): void {
@@ -533,6 +538,7 @@ export class ChatController {
       options,
       viewActive: this.appActive && channel.focusedViewCount > 0,
       markViewed: (persist) => this.markViewedThroughLatestMessage(channelId, persist),
+      onUnread: (message) => this.onUnreadMessage?.(message, channelId),
     });
     this.storage.persistTranscript(channelId);
     this.emit(channelId);

@@ -10,6 +10,13 @@ export interface NotificationLogEntry {
   source: string;
   at: number;
   read: boolean;
+  /**
+   * External key (e.g. a chat message id). Appending a notification with a
+   * refId that a previous entry already carries updates that entry instead of
+   * creating a duplicate, so the same chat message surfaces once even when
+   * both an unread merge and a mention/reply toast describe it.
+   */
+  refId?: string;
 }
 
 export interface NotificationLogStore {
@@ -34,6 +41,7 @@ function normalizeEntry(value: unknown): NotificationLogEntry | null {
     source: typeof entry.source === "string" && entry.source ? entry.source : "app",
     at: entry.at,
     read: entry.read === true,
+    ...(typeof entry.refId === "string" && entry.refId ? { refId: entry.refId } : {}),
   };
 }
 
@@ -81,7 +89,22 @@ export function appendNotificationLog(
     source,
     at,
     read: false,
+    ...(notification.refId ? { refId: notification.refId } : {}),
   };
+  if (entry.refId) {
+    const existingIndex = entries.findIndex((candidate) => candidate.refId === entry.refId);
+    if (existingIndex >= 0) {
+      const existing = entries[existingIndex]!;
+      entries = trim([
+        ...entries.slice(0, existingIndex),
+        { ...existing, ...entry, id: existing.id, at: existing.at, read: existing.read, source: existing.source },
+        ...entries.slice(existingIndex + 1),
+      ]);
+      persist();
+      publish();
+      return existing;
+    }
+  }
   entries = trim([...entries, entry]);
   persist();
   publish();

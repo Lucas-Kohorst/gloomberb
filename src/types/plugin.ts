@@ -711,6 +711,12 @@ export interface AppNotificationRequest {
   };
   /** Set by the registry for notification-history routing. */
   source?: string;
+  /**
+   * External key for notification-history dedupe. When a log entry already
+   * carries this refId, appending updates that entry instead of duplicating
+   * (chat uses its message id so unread merges and mention toasts stay one row).
+   */
+  refId?: string;
 }
 
 export interface BrokerInstanceUpdateOptions {

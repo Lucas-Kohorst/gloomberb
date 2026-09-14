@@ -208,6 +208,8 @@ export const notificationCenterPlugin: GloomPlugin = {
       name: "Notifications",
       component: NotificationCenterPane,
       defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 80, height: 30 },
     });
     ctx.registerPaneTemplate({
       id: "notification-center-pane",
@@ -216,6 +218,7 @@ export const notificationCenterPlugin: GloomPlugin = {
       description: "Review alert, chat, and app notification history",
       keywords: ["notifications", "alerts", "mentions", "history"],
       shortcut: { prefix: "NOT", aliases: ["NOTF", "UNREAD"] },
+      createInstance: () => ({ placement: "floating" }),
     });
     ctx.registerAgentPromptFragment("Notification Center: pane.createFromTemplate notification-center-pane (NOT) to review alert, chat, and app notification history.");
   },

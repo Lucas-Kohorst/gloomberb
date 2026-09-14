@@ -22,6 +22,8 @@ import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import { SHARE_CONNECTION_ID } from "../../../shares/connection";
 import type { SyncTransport } from "../../../sync/types";
+import { appendNotificationLog } from "../../../notifications/notification-log";
+import { formatChannelToast } from "../chat/controller/utils";
 
 interface GloomberbCloudPluginComponents {
   ChatPane: (props: PaneProps) => ReactNode;
@@ -143,6 +145,20 @@ function createChatModule(
       chatController.attachPersistence(ctx.persistence, ctx.resume);
       chatController.setNotifier(ctx.notify, (channelId, messageId) => {
         ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId, values: { messageId } });
+      });
+      // Mirror server-issued chat notifications into the notification log so a
+      // channel that is only polled (never focused here) still shows up in the
+      // Notification Center. Written straight to the log, so no toast fires.
+      // refId = message id keeps this in sync with the mention/reply entries
+      // that also describe the same message.
+      chatController.setOnUnreadMessage((message, channelId) => {
+        const channel = chatController.getChannels().find((entry) => entry.id === channelId);
+        appendNotificationLog({
+          title: formatChatPaneTitle(channel, channelId),
+          body: formatChannelToast(message, channel?.kind === "direct"),
+          type: "info",
+          refId: message.id,
+        }, "chat");
       });
       ctx.registerCommand({
         id: "direct-message",

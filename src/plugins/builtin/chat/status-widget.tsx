@@ -5,6 +5,7 @@ import { colors } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
 import { InlineAuthActions } from "../cloud/auth-actions";
+import { getNotificationLog, subscribeNotificationLog } from "../../../notifications/notification-log";
 import {
   getPreferredChatOpenChannelId,
 } from "./channels";
@@ -18,6 +19,18 @@ type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
 
 function getTotalUnreadCount(snapshot: ChatStatusSnapshot) {
   return snapshot.channelStates.reduce((total, state) => total + Math.max(0, state.unreadCount), 0);
+}
+
+/**
+ * Unread entries in the notification log that are not chat messages. Chat rows
+ * carry a refId (the message id) and are already counted by the channel unread
+ * totals, so counting them again would double-count mention/reply rows.
+ */
+function getUnreadNonChatLogCount(): number {
+  return getNotificationLog().reduce(
+    (total, entry) => total + (!entry.read && !entry.refId ? 1 : 0),
+    0,
+  );
 }
 
 function CloudStatusIcon() {
@@ -61,7 +74,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const unreadCount = getTotalUnreadCount(snapshot);
+  const [logUnreadCount, setLogUnreadCount] = useState(getUnreadNonChatLogCount);
+  const unreadCount = getTotalUnreadCount(snapshot) + logUnreadCount;
 
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
@@ -77,14 +91,18 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   };
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe((nextSnapshot) => {
+    const unsubscribeChat = controller.subscribe((nextSnapshot) => {
       setSnapshot(nextSnapshot);
       setUsername(nextSnapshot.user?.username ?? null);
       setHasSavedSession(nextSnapshot.hasSavedSession);
     });
+    const unsubscribeLog = subscribeNotificationLog(() => setLogUnreadCount(getUnreadNonChatLogCount()));
     void controller.refreshSession().catch(() => {});
     void controller.refreshPresence().catch(() => {});
-    return unsubscribe;
+    return () => {
+      unsubscribeChat();
+      unsubscribeLog();
+    };
   }, [controller]);
 
   if (cloudPluginDisabled) return null;
