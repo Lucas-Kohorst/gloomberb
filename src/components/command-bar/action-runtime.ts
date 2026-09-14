@@ -78,11 +78,13 @@ export function useCommandBarActionRuntime({
   updateTopRoute,
 }: UseCommandBarActionRuntimeOptions) {
   const {
+    closePane,
     duplicatePane,
     focusTicker,
     notifyGridlockRevert,
     persistLayoutChange,
     replacePaneTicker,
+    reopenClosedPane,
     setActiveCollection,
   } = useCommandBarPaneActions({
     dispatch,
@@ -200,6 +202,7 @@ export function useCommandBarActionRuntime({
     activeTickerSymbol,
     buildSharedWorkflowDeps,
     closeAll,
+    closePane,
     dispatch,
     duplicatePane,
     notify,
@@ -213,6 +216,7 @@ export function useCommandBarActionRuntime({
     persistLayoutChange,
     pluginRegistry,
     pushRoute,
+    reopenClosedPane,
     state,
     stateRef,
     updateTopRoute,

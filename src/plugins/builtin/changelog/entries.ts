@@ -9,6 +9,8 @@ const RELEASE_0_13_15: ChangelogRelease = {
   url: "",
   body: `Kalshi now publishes a canonical minute-resolution city temperature index used by hourly temperature markets. The weather pane surfaces this as supplementary market evidence alongside the existing NWS and TWC data — without replacing settlement authority.
 
+- Closed panes can be reopened with \`Ctrl+Shift+T\`, restoring their state and prior placement; pane menus and the Layout command list can also duplicate the focused pane.
+
 ## Weather
 
 - \`?\` now opens a contextual cheat-sheet with actions registered by the focused pane plus common global shortcuts. Select **All shortcuts** there for the full Help pane.

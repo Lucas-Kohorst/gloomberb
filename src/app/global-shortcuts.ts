@@ -118,6 +118,12 @@ export function useAppGlobalShortcuts({
 
     if (isDetachedWindow || event.targetEditable === true) return;
 
+    if (matchedShortcut?.id === "global.reopen-closed-pane") {
+      event.preventDefault();
+      event.stopPropagation();
+      pluginRegistry.reopenClosedPaneFn();
+      return;
+    }
     if (matchedShortcut?.id === "global.undo-layout") {
       event.preventDefault();
       event.stopPropagation();

@@ -9,6 +9,7 @@ import { setMarketplaceHost } from "../../plugins/builtin/plugin-marketplace/sto
 import type { InstalledPlugin } from "../../plugins/builtin/plugin-marketplace/model";
 import type { LoadedExternalPlugin } from "../../plugins/loader";
 import { materializeMarketplaceLayout } from "../../layout-marketplace/payload";
+import { captureClosedPane } from "../../core/state/app/closed-panes";
 import {
   isPaneInLayout,
   removePane,
@@ -186,6 +187,8 @@ export function bindAppPanePluginRegistry({
     const instanceId = resolvePaneTarget(paneId);
     const layout = stateRef.current.config.layout;
     if (!instanceId || !isPaneInLayout(layout, instanceId)) return;
+    const closedPane = captureClosedPane(layout, instanceId, stateRef.current.paneState[instanceId]);
+    if (closedPane) dispatch({ type: "PUSH_CLOSED_PANE", pane: closedPane });
     persistLayout(removePane(layout, instanceId));
   };
   pluginRegistry.focusPaneFn = (paneId) => {

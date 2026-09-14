@@ -144,6 +144,20 @@ async function emitKeypress(event: {
 }
 
 describe("useAppGlobalShortcuts", () => {
+  test("reopens the last closed pane with Ctrl-Shift-T", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts"));
+    let reopened = 0;
+    const registry = createRegistry();
+    registry.reopenClosedPaneFn = () => { reopened += 1; };
+    await renderHarness(state, registry, () => {});
+
+    const event = await emitKeypress({ name: "t", ctrl: true, shift: true });
+
+    expect(reopened).toBe(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
   test("toggles the command bar with Ctrl-P", async () => {
     const actions: AppAction[] = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts"));

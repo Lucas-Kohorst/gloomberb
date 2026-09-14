@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import type { DesktopWindowBridge } from "../../../../types/desktop-window";
 import {
+  addPaneFloating,
+  addPaneToLayout,
   dockFloatingPaneAtCurrentRect,
   floatAtRect,
   getDockedPaneIds,
@@ -13,7 +15,7 @@ import {
   type ResolvedPane,
 } from "../../../../plugins/pane-manager";
 import type { PluginRegistry } from "../../../../plugins/registry";
-import type { LayoutConfig } from "../../../../types/config";
+import { createPaneInstance, findPaneInstance, type LayoutConfig } from "../../../../types/config";
 import type { RendererHost } from "../../../../ui";
 import { capturePaneScreenshotPngBase64 } from "../../../../utils/dom-screenshot";
 import {
@@ -33,6 +35,7 @@ function removedFocusRestoreOptions(
 interface UseShellPaneActionsOptions {
   closePaneMenu: () => void;
   contentHeight: number;
+  onPaneClosed: (paneId: string) => void;
   desktopWindowBridge?: DesktopWindowBridge;
   focusedPaneId: string | null;
   focusPane: (paneId: string) => void;
@@ -53,6 +56,7 @@ export function useShellPaneActions({
   focusedPaneId,
   focusPane,
   nativePaneChrome,
+  onPaneClosed,
   paneMap,
   persistLayout,
   previousFocusedPaneId,
@@ -106,10 +110,29 @@ export function useShellPaneActions({
 
   const closePane = useCallback((paneId: string | null | undefined) => {
     if (!paneId || !isPaneInLayout(visibleLayout, paneId)) return false;
+    onPaneClosed(paneId);
     const nextLayout = removePane(visibleLayout, paneId);
     persistLayout(nextLayout, removedFocusRestoreOptions(nextLayout, focusedPaneId, previousFocusedPaneId));
     return true;
-  }, [focusedPaneId, persistLayout, previousFocusedPaneId, visibleLayout]);
+  }, [focusedPaneId, onPaneClosed, persistLayout, previousFocusedPaneId, visibleLayout]);
+
+  const duplicatePane = useCallback((paneId: string) => {
+    const pane = findPaneInstance(visibleLayout, paneId);
+    const paneDef = pane && pluginRegistry.panes.get(pane.paneId);
+    if (!pane || !paneDef) return false;
+    const duplicate = createPaneInstance(pane.paneId, {
+      title: pane.title,
+      binding: pane.binding,
+      params: pane.params,
+      settings: pane.settings,
+    });
+    const nextLayout = visibleLayout.floating.some((entry) => entry.instanceId === paneId)
+      ? addPaneFloating(visibleLayout, duplicate, width, contentHeight, paneDef)
+      : addPaneToLayout(visibleLayout, duplicate, { relativeTo: paneId, position: "right" });
+    persistLayout(nextLayout);
+    focusPane(duplicate.instanceId);
+    return true;
+  }, [contentHeight, focusPane, persistLayout, pluginRegistry, visibleLayout, width]);
 
   const closeFocusedPane = useCallback(() => closePane(focusedPaneId), [closePane, focusedPaneId]);
 
@@ -193,6 +216,7 @@ export function useShellPaneActions({
     unfocusFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
+    duplicatePane,
     exportFocusedPaneCsv,
     exportPaneCsv,
     gridlockVisiblePanes,

@@ -39,13 +39,19 @@ function createFloatingLayoutFixture(): { layout: LayoutConfig; state: AppState 
 function createLayoutItemsContext(
   options: {
     confirmDangerousActions?: boolean;
+    closedPaneCount?: number;
     layouts: LayoutConfig[];
     confirmations: InlineConfirmOptions[];
   },
 ): LayoutItemsContext {
   const { layout, state } = createFloatingLayoutFixture();
+  state.closedPanes = Array.from({ length: options.closedPaneCount ?? 0 }, (_, index) => ({
+    instance: { instanceId: `closed:${index}`, paneId: "ticker-detail", binding: { kind: "none" as const } },
+    paneState: {},
+  }));
   return {
     closeAll: () => {},
+    closePane: () => {},
     currentLayout: layout,
     dispatch: (_action: AppAction) => {},
     duplicatePane: () => {},
@@ -62,12 +68,33 @@ function createLayoutItemsContext(
       getTermSizeFn: () => ({ width: 80, height: 24 }),
     } as PluginRegistry,
     pushRoute: (_route: CommandBarRoute) => {},
+    reopenClosedPane: () => {},
     state,
     ...(options.confirmDangerousActions === undefined ? {} : { confirmDangerousActions: options.confirmDangerousActions }),
   };
 }
 
 describe("buildCurrentLayoutItems", () => {
+  test("disables reopening when no pane has been closed", () => {
+    const items = buildCurrentLayoutItems(createLayoutItemsContext({ layouts: [], confirmations: [] }));
+
+    expect(items.find((entry) => entry.id === "layout-reopen-closed-pane")).toMatchObject({
+      disabled: true,
+      detail: "No closed panes",
+    });
+  });
+
+  test("enables reopening when a pane is available", () => {
+    let reopened = false;
+    const context = createLayoutItemsContext({ layouts: [], confirmations: [], closedPaneCount: 1 });
+    context.reopenClosedPane = () => { reopened = true; };
+    const item = buildCurrentLayoutItems(context).find((entry) => entry.id === "layout-reopen-closed-pane");
+
+    expect(item).toMatchObject({ disabled: false, detail: "Restore the most recently closed pane" });
+    item?.action();
+    expect(reopened).toBe(true);
+  });
+
   test("exposes one-action presets that tile every visible pane", () => {
     const layouts: LayoutConfig[] = [];
     const confirmations: InlineConfirmOptions[] = [];

@@ -3,7 +3,6 @@ import {
   floatAtRect,
   getDockedPaneIds,
   getLeafRect,
-  removePane,
 } from "../../../plugins/pane-manager";
 import { findPaneInstance } from "../../../types/config";
 import type { ResultItem } from "../list/model";
@@ -12,6 +11,7 @@ import { WINDOW_MODE_COMMAND_OPTIONS } from "./window-mode";
 
 export function buildFocusedPaneLayoutItems({
   closeAll,
+  closePane,
   confirmDangerousActions,
   currentLayout,
   duplicatePane,
@@ -137,12 +137,12 @@ export function buildFocusedPaneLayoutItems({
             cancelLabel: "Back",
             tone: "danger",
             onConfirm: () => {
-              persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+              closePane(focusedPane.instanceId);
             },
           });
         }
         : () => {
-          persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+          closePane(focusedPane.instanceId);
           closeAll({ revertThemePreview: false });
         },
     },

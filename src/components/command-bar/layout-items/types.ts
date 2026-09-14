@@ -10,6 +10,7 @@ export type { OpenInlineConfirm } from "../routing/confirm";
 
 export interface LayoutItemsContext {
   closeAll: CloseAll;
+  closePane: (paneId: string) => void;
   confirmDangerousActions?: boolean;
   currentLayout: LayoutConfig;
   dispatch: Dispatch<AppAction>;
@@ -21,5 +22,6 @@ export interface LayoutItemsContext {
   persistLayoutChange: (layout: LayoutConfig) => void;
   pluginRegistry: PluginRegistry;
   pushRoute: (route: CommandBarRoute) => void;
+  reopenClosedPane: () => void;
   state: AppState;
 }

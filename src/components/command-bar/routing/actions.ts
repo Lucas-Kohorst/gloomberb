@@ -39,6 +39,7 @@ interface UseCommandBarRouteActionsOptions {
   activeTickerSymbol: string | null;
   buildSharedWorkflowDeps: Parameters<typeof executeCollectionCommandAction>[0]["buildWorkflowDeps"];
   closeAll: CloseAll;
+  closePane: (paneId: string) => void;
   dispatch: Dispatch<AppAction>;
   duplicatePane: (paneId: string) => void;
   notify: Notify;
@@ -52,6 +53,7 @@ interface UseCommandBarRouteActionsOptions {
   persistLayoutChange: (layout: AppState["config"]["layout"]) => void;
   pluginRegistry: PluginRegistry;
   pushRoute: (route: CommandBarRoute) => void;
+  reopenClosedPane: () => void;
   state: AppState;
   stateRef: MutableRefObject<AppState>;
   updateTopRoute: (updater: (route: CommandBarRoute) => CommandBarRoute) => void;
@@ -64,6 +66,7 @@ export function useCommandBarRouteActions({
   activeTickerSymbol,
   buildSharedWorkflowDeps,
   closeAll,
+  closePane,
   dispatch,
   duplicatePane,
   notify,
@@ -77,6 +80,7 @@ export function useCommandBarRouteActions({
   persistLayoutChange,
   pluginRegistry,
   pushRoute,
+  reopenClosedPane,
   state,
   stateRef,
   updateTopRoute,
@@ -93,6 +97,7 @@ export function useCommandBarRouteActions({
     options?: { confirmDangerousActions?: boolean },
   ): ResultItem[] => buildLayoutResultItems({
     closeAll,
+    closePane,
     confirmDangerousActions: options?.confirmDangerousActions,
     dispatch,
     duplicatePane,
@@ -103,9 +108,11 @@ export function useCommandBarRouteActions({
     pluginRegistry,
     pushRoute,
     query,
+    reopenClosedPane,
     state,
   }), [
     closeAll,
+    closePane,
     dispatch,
     duplicatePane,
     notifyGridlockRevert,
@@ -114,6 +121,7 @@ export function useCommandBarRouteActions({
     persistLayoutChange,
     pluginRegistry,
     pushRoute,
+    reopenClosedPane,
     state,
   ]);
 

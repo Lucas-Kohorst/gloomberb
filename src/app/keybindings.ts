@@ -20,6 +20,7 @@ export const GLOBAL_SHORTCUTS: readonly GlobalShortcutDefinition[] = [
   { id: "global.help", key: "/", shift: true, description: "Open help" },
   { id: "global.focus-next", key: "tab", description: "Focus next pane" },
   { id: "global.focus-previous", key: "tab", shift: true, description: "Focus previous pane" },
+  { id: "global.reopen-closed-pane", key: "t", ctrl: true, shift: true, description: "Reopen closed pane" },
   { id: "global.undo-layout", key: "z", ctrl: true, description: "Undo layout change" },
   { id: "global.redo-layout", key: "y", ctrl: true, description: "Redo layout change" },
   { id: "global.redo-layout-alternate", key: "z", ctrl: true, shift: true, description: "Redo layout change" },

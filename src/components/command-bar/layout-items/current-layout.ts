@@ -13,6 +13,7 @@ import type { LayoutItemsContext } from "./types";
 
 export function buildCurrentLayoutItems({
   closeAll,
+  reopenClosedPane,
   confirmDangerousActions,
   currentLayout,
   dispatch,
@@ -24,6 +25,7 @@ export function buildCurrentLayoutItems({
   state,
 }: LayoutItemsContext): ResultItem[] {
   const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+  const closedPanes = state.closedPanes ?? [];
   const floatingPaneCount = currentLayout.floating.length;
   const floatingPaneLabel = floatingPaneCount === 1 ? "floating pane" : "floating panes";
   const presetItems = ([
@@ -51,6 +53,19 @@ export function buildCurrentLayoutItems({
 
   return [
     ...presetItems,
+    {
+      id: "layout-reopen-closed-pane",
+      label: "Reopen Closed Pane",
+      detail: closedPanes.length > 0 ? "Restore the most recently closed pane" : "No closed panes",
+      category: "Current Layout",
+      kind: "action",
+      disabled: closedPanes.length === 0,
+      action: () => {
+        if (closedPanes.length === 0) return;
+        reopenClosedPane();
+        closeAll({ revertThemePreview: false });
+      },
+    },
     {
       id: "layout-undo",
       label: "Undo Layout Change",

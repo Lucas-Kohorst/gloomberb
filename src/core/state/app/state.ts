@@ -24,6 +24,7 @@ import {
 import { reduceLayoutAction } from "./layout-reducer";
 import type { AppAction, AppState, CollectionSortPreference, PaneRuntimeState } from "./types";
 import type { AppSessionSnapshot } from "../session-persistence";
+import { pushClosedPane } from "./closed-panes";
 
 export {
   clonePaneStateMap,
@@ -52,6 +53,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           },
         },
       );
+
+    case "PUSH_CLOSED_PANE":
+      return {
+        ...state,
+        closedPanes: pushClosedPane(state.closedPanes ?? [], action.pane),
+      };
+
+    case "POP_CLOSED_PANE": {
+      const closedPanes = state.closedPanes ?? [];
+      return closedPanes.length === 0
+        ? state
+        : { ...state, closedPanes: closedPanes.slice(0, -1) };
+    }
 
     case "SET_ONBOARDING_STATE":
       return {
@@ -364,5 +378,6 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     updateCheckInProgress: false,
     updateNotice: null,
     layoutHistory: {},
+    closedPanes: [],
   };
 }
