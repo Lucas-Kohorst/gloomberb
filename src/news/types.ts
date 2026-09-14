@@ -50,6 +50,17 @@ export interface NewsArticle {
   importance: number;
 }
 
+/**
+ * User-level mute settings from the news plugin. Applied to feed-list queries
+ * only — Top News and Breaking News deliberately keep muted stories visible.
+ */
+export interface NewsMutes {
+  /** Publisher names to hide, matched case-insensitively against `article.source`. */
+  sources?: string[];
+  /** Keywords to hide, matched case-insensitively as headline substrings. */
+  keywords?: string[];
+}
+
 export interface NewsQuery {
   feed?: NewsFeed;
   scope?: NewsQueryScope;

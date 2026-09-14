@@ -268,10 +268,10 @@ export const firehoseModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 36 },
-      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+      settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: FIREHOSE_COLUMNS,
         sort: FIREHOSE_DEFAULT_SORT,
-      }, { title: "Firehose Settings" }),
+      }, { title: "Firehose Settings", includeMutes: true }),
     },
   ],
   paneTemplates: [

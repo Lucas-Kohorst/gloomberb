@@ -3,7 +3,7 @@ import type { ConnectionHealthRegistry } from "../core/connection-health";
 import { whenStartupBackground } from "../utils/startup-interaction";
 import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../utils/ui-yield";
 import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
-import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
+import type { NewsArticle, NewsMutes, NewsQuery, NewsQueryState } from "./types";
 import {
   DEFAULT_GLOBAL_QUERY,
   MAX_ARTICLES,
@@ -16,6 +16,7 @@ import {
   mergeNewsArticle,
   normalizeNewsCategory,
   normalizeNewsFeed,
+  normalizeNewsMutes,
   normalizeNewsQuery,
 } from "./news-model";
 
@@ -128,6 +129,8 @@ export class NewsService {
   private queryRebuildScheduled = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
+  private mutes: NewsMutes | null = null;
+  private mutesKey = "";
   private readonly pollIntervalMs: () => number;
   private readonly inactiveQueryTtlMs: number;
   private readonly maxInactiveQueries: number;
@@ -295,6 +298,7 @@ export class NewsService {
         const articles = filterNewsArticlesForQuery(
           dedupeNewsArticles([...entry.state.articles, ...result.articles]),
           normalized,
+          this.mutes,
         );
         for (const sourceId of result.sourceIds) {
           const previous = entry.sourceArticles.get(sourceId) ?? [];
@@ -379,6 +383,27 @@ export class NewsService {
     await this.pollActiveQueries();
   }
 
+  /**
+   * User-level mutes from the news settings. Re-filters every cached query in
+   * place, so un-muting restores hidden stories without a refetch. Top and
+   * Breaking feeds deliberately ignore mutes — see `mutesApplyToFeed`.
+   */
+  setMutes(mutes: NewsMutes | null): void {
+    const { sources, keywords } = normalizeNewsMutes(mutes);
+    const key = `${sources.join("\u0000")}\u0001${keywords.join("\u0000")}`;
+    if (key === this.mutesKey) return;
+    this.mutesKey = key;
+    this.mutes = sources.length > 0 || keywords.length > 0 ? { sources, keywords } : null;
+    let changed = false;
+    for (const entry of this.queries.values()) {
+      if (this.rebuildQueryState(entry, { notify: false })) changed = true;
+    }
+    if (changed) {
+      this.rebuildArticlePool();
+      this.notify();
+    }
+  }
+
   private async pollActiveQueries(): Promise<void> {
     await whenStartupBackground();
     this.pruneInactiveQueries();
@@ -413,7 +438,7 @@ export class NewsService {
           throw new Error("News sources unavailable.");
         }
         if (entry.loadMoreInFlight) return entry.state;
-        const incoming = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query);
+        const incoming = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query, this.mutes);
         const latest = entry.state;
         const merged = mergeIncomingNewsPages(
           incoming,
@@ -421,7 +446,7 @@ export class NewsService {
           result.nextCursor,
           latest.nextCursor,
         );
-        const articles = filterNewsArticlesForQuery(merged.articles, query);
+        const articles = filterNewsArticlesForQuery(merged.articles, query, this.mutes);
         const state: NewsQueryState = {
           phase: "ready",
           articles,
@@ -649,7 +674,7 @@ export class NewsService {
   private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): boolean {
     const previousArticles = entry.state.articles;
     const snapshot = this.sourceFetchSnapshot(entry);
-    const articles = filterNewsArticlesForQuery(dedupeNewsArticles(snapshot.articles), entry.query);
+    const articles = filterNewsArticlesForQuery(dedupeNewsArticles(snapshot.articles), entry.query, this.mutes);
     const phase = articles.length > 0
       ? "ready"
       : entry.state.phase;

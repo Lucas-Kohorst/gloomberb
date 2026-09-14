@@ -1,6 +1,6 @@
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
 import type { NewsCapability } from "../capabilities";
-import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
+import type { NewsArticle, NewsFeed, NewsMutes, NewsQuery, NewsQueryState } from "./types";
 
 export const MAX_ARTICLES = 10_000;
 export const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
@@ -345,9 +345,61 @@ export function mergeNewsArticle(base: NewsArticle, detail: NewsArticle): NewsAr
   };
 }
 
-export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuery): NewsArticle[] {
+/**
+ * Mutes apply to feed lists only. Top News is a ranked digest and Breaking News
+ * is an alert surface — silently muting either would hide stories the user
+ * asked to see or be interrupted about, so both keep showing muted stories.
+ */
+function mutesApplyToFeed(feed: NewsFeed): boolean {
+  return feed !== "top" && feed !== "breaking";
+}
+
+/** Deduped, lowercased mutes ready for matching. Empty lists mean "mute nothing". */
+export function normalizeNewsMutes(mutes: NewsMutes | null | undefined): {
+  sources: string[];
+  keywords: string[];
+} {
+  const sources = [...new Set((mutes?.sources ?? [])
+    .map((source) => normalizeNewsCategory(source))
+    .filter(Boolean))].sort();
+  const keywords = [...new Set((mutes?.keywords ?? [])
+    .map((keyword) => keyword.trim().toLowerCase())
+    .filter(Boolean))].sort();
+  return { sources, keywords };
+}
+
+function isArticleMuted(
+  article: NewsArticle,
+  mutedSources: ReadonlySet<string>,
+  mutedKeywords: readonly string[],
+): boolean {
+  if (mutedSources.has(normalizeNewsCategory(article.source))) return true;
+  const title = article.title.trim().toLowerCase();
+  if (!title) return false;
+  return mutedKeywords.some((keyword) => title.includes(keyword));
+}
+
+/** Drops articles muted by publisher name or headline keyword. */
+export function applyNewsMutes(
+  items: NewsArticle[],
+  mutes: NewsMutes | null | undefined,
+): NewsArticle[] {
+  const { sources, keywords } = normalizeNewsMutes(mutes);
+  if (sources.length === 0 && keywords.length === 0) return items;
+  const sourceSet = new Set(sources);
+  return items.filter((item) => !isArticleMuted(item, sourceSet, keywords));
+}
+
+export function filterNewsArticlesForQuery(
+  items: NewsArticle[],
+  query: NewsQuery,
+  mutes?: NewsMutes | null,
+): NewsArticle[] {
   const feed = normalizeNewsFeed(query);
   let filtered = items;
+  if (mutes && mutesApplyToFeed(feed)) {
+    filtered = applyNewsMutes(filtered, mutes);
+  }
   if (feed === "top") {
     filtered = filtered.filter((item) => !item.origin || !TOP_NEWS_EXCLUDED_ORIGINS.has(item.origin));
   }

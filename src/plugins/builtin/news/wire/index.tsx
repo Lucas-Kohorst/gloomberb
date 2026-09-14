@@ -50,6 +50,13 @@ import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { registerConnectionSource } from "../../connections/register";
 import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
 import {
+  NEWS_MUTED_KEYWORDS_KEY,
+  NEWS_MUTED_SOURCES_KEY,
+  parseNewsMutedKeywords,
+  parseNewsMutedSources,
+} from "./mutes";
+import { getSharedNewsService } from "../../../../news/hooks";
+import {
   buildArticleTickerUniverse,
   setSharedArticleTickerUniverse,
 } from "../../../../news/article-tickers";
@@ -96,6 +103,7 @@ let disposeTopNewsNotifications: (() => void) | null = null;
 let disposeRssConnection: (() => void) | null = null;
 let disposeJinaConnection: (() => void) | null = null;
 let disposeSubstackConnection: (() => void) | null = null;
+let disposeMuteSync: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
@@ -107,7 +115,7 @@ export const newsWireModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 30 },
-      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+      settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: ["time", "title", "tickers", "importance"],
         sort: { columnId: "importance", direction: "desc" },
       }, { title: "Top News Settings" }),
@@ -120,10 +128,10 @@ export const newsWireModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 35 },
-      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+      settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: ["time", "source", "title", "tickers", "categories"],
         sort: { columnId: "time", direction: "desc" },
-      }, { title: "News Feed Settings" }),
+      }, { title: "News Feed Settings", includeMutes: true }),
     },
     {
       id: "news-industry",
@@ -133,10 +141,10 @@ export const newsWireModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 35 },
-      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+      settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: ["time", "source", "title", "tickers", "categories"],
         sort: { columnId: "time", direction: "desc" },
-      }, { title: "Sector News Settings", includeDefaultTab: true }),
+      }, { title: "Sector News Settings", includeDefaultTab: true, includeMutes: true }),
     },
     {
       id: "news-rss",
@@ -146,7 +154,7 @@ export const newsWireModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 30 },
-      settings: (context) => buildRssPaneSettingsDef(context.settings),
+      settings: (context) => buildRssPaneSettingsDef(context),
     },
     { id: "news-breaking",
       name: "Breaking News",
@@ -268,6 +276,18 @@ export const newsWireModule: PluginModule = {
     if (initialSettings.needsMigration) {
       void saveNewsFeedSettings(ctx.configState, initialSettings);
     }
+
+    // Muted Sources / Muted Keywords are plugin config state: push them into the
+    // shared news service so every feed-list query inherits them, and re-apply
+    // whenever a settings dialog writes a new value.
+    const applyNewsMutes = () => {
+      getSharedNewsService()?.setMutes({
+        sources: parseNewsMutedSources(ctx.configState.get(NEWS_MUTED_SOURCES_KEY)),
+        keywords: parseNewsMutedKeywords(ctx.configState.get(NEWS_MUTED_KEYWORDS_KEY)),
+      });
+    };
+    applyNewsMutes();
+    disposeMuteSync = ctx.on("config:changed", applyNewsMutes);
 
     const source = createRssNewsCapability(
       () => getEnabledNewsFeeds(loadNewsFeedSettings(ctx.configState)),
@@ -413,6 +433,8 @@ export const newsWireModule: PluginModule = {
     disposeBreakingNewsNotifications = null;
     disposeTopNewsNotifications?.();
     disposeTopNewsNotifications = null;
+    disposeMuteSync?.();
+    disposeMuteSync = null;
     disposeRssConnection?.();
     disposeRssConnection = null;
     disposeJinaConnection?.();

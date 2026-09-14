@@ -3,6 +3,7 @@ import {
   dedupeNewsArticles,
   expandNewsQueryForFetch,
   filterNewsArticlesForQuery,
+  applyNewsMutes,
   TOP_NEWS_FETCH_LIMIT,
   TOP_NEWS_WINDOW_MS,
 } from "./news-model";
@@ -159,5 +160,69 @@ describe("filterNewsArticlesForQuery top ranking", () => {
 
     const latest = filterNewsArticlesForQuery([rss, wire], { feed: "latest" });
     expect(latest.map((item) => item.id)).toEqual(["rss", "wire"]);
+  });
+});
+
+describe("filterNewsArticlesForQuery news mutes", () => {
+  const spam = makeArticle({
+    id: "spam",
+    url: "https://spam.example/1",
+    source: "Spam Feed",
+    title: "Penny stocks are back",
+  });
+  const earnings = makeArticle({
+    id: "earnings",
+    url: "https://wire.example/earnings",
+    title: "Quarterly EARNINGS call scheduled",
+  });
+  const clean = makeArticle({
+    id: "clean",
+    url: "https://wire.example/clean",
+    title: "Fed holds rates steady",
+  });
+
+  it("hides muted sources case-insensitively in feed lists", () => {
+    const latest = filterNewsArticlesForQuery(
+      [spam, earnings, clean],
+      { feed: "latest" },
+      { sources: ["SPAM feed"] },
+    );
+    expect(latest.map((item) => item.id)).toEqual(["earnings", "clean"]);
+  });
+
+  it("hides headlines containing muted keywords case-insensitively", () => {
+    const latest = filterNewsArticlesForQuery(
+      [spam, earnings, clean],
+      { feed: "latest" },
+      { keywords: ["earnings call"] },
+    );
+    expect(latest.map((item) => item.id)).toEqual(["spam", "clean"]);
+  });
+
+  it("treats empty mute lists as a no-op", () => {
+    expect(applyNewsMutes([spam, earnings, clean], { sources: [], keywords: [] })).toHaveLength(3);
+    expect(applyNewsMutes([spam, earnings, clean], null)).toHaveLength(3);
+    expect(applyNewsMutes([spam, earnings, clean], undefined)).toHaveLength(3);
+    expect(filterNewsArticlesForQuery([spam, earnings, clean], { feed: "latest" }, {}))
+      .toHaveLength(3);
+  });
+
+  it("applies mutes to every feed list: latest, ticker, sector, and topic", () => {
+    for (const feed of ["latest", "ticker", "sector", "topic"] as const) {
+      const filtered = filterNewsArticlesForQuery(
+        [spam, earnings, clean],
+        { feed, ticker: "AAPL" },
+        { sources: ["Spam Feed"], keywords: ["earnings"] },
+      );
+      expect(filtered.map((item) => item.id)).toEqual(["clean"]);
+    }
+  });
+
+  it("keeps muted stories visible in Top News and Breaking News", () => {
+    const mutes = { sources: ["Spam Feed"], keywords: ["earnings"] };
+    const top = filterNewsArticlesForQuery([spam, earnings, clean], { feed: "top" }, mutes);
+    expect(top.map((item) => item.id).sort()).toEqual(["clean", "earnings", "spam"]);
+    const breaking = filterNewsArticlesForQuery([spam, earnings, clean], { feed: "breaking" }, mutes);
+    expect(breaking.map((item) => item.id)).toEqual(["spam", "earnings", "clean"]);
   });
 });

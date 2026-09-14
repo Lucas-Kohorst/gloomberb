@@ -7,9 +7,17 @@ import {
   encodeSortPreference,
   parseSortPreference,
 } from "../../../../components/data-table/sort-settings";
-import type { PaneSettingsDef } from "../../../../types/plugin";
+import type { PaneSettingsContext, PaneSettingsDef } from "../../../../types/plugin";
 import type { ColumnVisibilityColumn } from "../../../../components/data-table/column-settings";
 import type { NewsColumnId, NewsSortPreference } from "./news/table";
+import { cachedNewsArticles } from "./article-search";
+import {
+  NEWS_MUTED_KEYWORDS_KEY,
+  NEWS_MUTED_SOURCES_KEY,
+  NEWS_PLUGIN_ID,
+  collectNewsSourceOptions,
+  readNewsMutesFromPluginConfig,
+} from "./mutes";
 
 export const NEWS_COLUMN_IDS: readonly NewsColumnId[] = [
   "rank",
@@ -96,18 +104,19 @@ export function getRssViewMode(settings: Record<string, unknown> | undefined): R
 }
 
 export function buildRssPaneSettingsDef(
-  settings: Record<string, unknown> | undefined,
+  context: PaneSettingsContext,
 ): PaneSettingsDef {
   const fallbackColumns: NewsColumnId[] = ["time", "source", "title", "categories"];
   const fallbackSort: NewsSortPreference = { columnId: "time", direction: "desc" };
-  const base = buildNewsPaneSettingsDef(settings, { columns: fallbackColumns, sort: fallbackSort }, {
+  const base = buildNewsPaneSettingsDef(context, { columns: fallbackColumns, sort: fallbackSort }, {
     title: "RSS Settings",
+    includeMutes: true,
   });
   return {
     ...base,
     values: {
       ...base.values,
-      defaultTab: getRssViewMode(settings),
+      defaultTab: getRssViewMode(context.settings),
     },
     fields: [
       {
@@ -126,13 +135,16 @@ export function buildRssPaneSettingsDef(
 }
 
 export function buildNewsPaneSettingsDef(
-  settings: Record<string, unknown> | undefined,
+  context: PaneSettingsContext,
   fallback: { columns: readonly NewsColumnId[]; sort: NewsSortPreference },
   extras?: {
     title?: string;
     includeDefaultTab?: boolean;
+    /** Add the global Muted Sources / Muted Keywords fields (feed-list panes only). */
+    includeMutes?: boolean;
   },
 ): PaneSettingsDef {
+  const settings = context.settings;
   const resolved = getNewsPaneSettings(settings, fallback);
   const fields: PaneSettingsDef["fields"] = [
     buildColumnVisibilityField(NEWS_COLUMN_DEFS.filter((column) => fallback.columns.includes(column.id as NewsColumnId))),
@@ -151,6 +163,29 @@ export function buildNewsPaneSettingsDef(
         label: sectorNewsLabel(tab),
       })),
     });
+  }
+  if (extras?.includeMutes) {
+    const currentMutes = readNewsMutesFromPluginConfig(
+      context.config.pluginConfig[NEWS_PLUGIN_ID],
+    );
+    fields.push(
+      {
+        key: NEWS_MUTED_SOURCES_KEY,
+        label: "Muted Sources",
+        description: "Hide stories from these publishers in feed lists. Top News and Breaking News still show them.",
+        type: "multi-select",
+        storage: "plugin",
+        options: collectNewsSourceOptions(cachedNewsArticles(), currentMutes.sources),
+      },
+      {
+        key: NEWS_MUTED_KEYWORDS_KEY,
+        label: "Muted Keywords",
+        description: "Hide feed-list stories whose headline contains any of these comma-separated keywords.",
+        type: "text",
+        storage: "plugin",
+        placeholder: "crypto, earnings call, giveaway",
+      },
+    );
   }
   return {
     title: extras?.title ?? "News Settings",
