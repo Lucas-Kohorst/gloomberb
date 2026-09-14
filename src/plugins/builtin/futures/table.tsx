@@ -3,7 +3,7 @@ import { marketStateColor, marketStateLabel } from "../../../market-data/market/
 import { colors, priceColor } from "../../../theme/colors";
 import type { Quote } from "../../../types/financials";
 import { TextAttributes } from "../../../ui";
-import { formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
+import { formatCompact, formatNumber, formatSignedPercentValue } from "../../../utils/format";
 import { marketStatusDot, type BoardQuoteMap } from "../shared/use-quote-board";
 import { formatQuoteTime } from "../world-indices/table";
 import { tickDecimals, type FuturesContract } from "./contracts";
@@ -38,7 +38,7 @@ const COLUMN_WIDTHS: Record<Exclude<FuturesColumnId, "name">, number> = {
   code: 5,
   price: 12,
   change: 10,
-  changePercent: 9,
+  changePercent: 8,
   volume: 9,
   prevClose: 12,
   // 5-char 24h time in an 8-wide column: the shared table's floating-pane width
@@ -197,7 +197,7 @@ export function renderFuturesCell(
       if (loadingCell) return { text: "…", color: dimmed };
       if (!quote || !Number.isFinite(quote.changePercent)) return { text: "—", color: dimmed };
       return {
-        text: formatPercentRaw(quote.changePercent),
+        text: formatSignedPercentValue(quote.changePercent),
         color: selectedColor ?? priceColor(quote.changePercent),
       };
     case "volume":

@@ -2,7 +2,7 @@ import type { DataTableCell } from "../../../components";
 import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
+import { formatCurrency, formatCompact, formatPercentValue, formatSignedPercentValue } from "../../../utils/format";
 import type { MarketMoverColumn, MarketMoverRow } from "./model";
 import { fiftyTwoWeekPositionPercent } from "./model";
 
@@ -36,14 +36,14 @@ function volRatioColor(ratio: number): string {
 
 function fiftyTwoWeekPosition(price: number, low: number | undefined, high: number | undefined): string {
   const pct = fiftyTwoWeekPositionPercent(price, low, high);
-  return pct == null ? "—" : `${Math.round(pct)}%`;
+  return formatPercentValue(pct ?? undefined);
 }
 
 export function buildMarketMoverColumns(width: number): MarketMoverColumn[] {
   const rankWidth = 3;
   const tickerWidth = 8;
   const priceWidth = 11;
-  const chgWidth = 9;
+  const chgWidth = 8;
   const volWidth = 8;
   const volRatioWidth = 6;
   const rangeWidth = 6;
@@ -88,7 +88,7 @@ export function renderMarketMoverCell(
       return { text: formatCurrency(row.price, row.currency), color: selectedColor };
     case "changePercent":
       return {
-        text: formatPercentRaw(row.changePercent),
+        text: formatSignedPercentValue(row.changePercent),
         color: selectedColor ?? priceColor(row.changePercent),
       };
     case "volume":

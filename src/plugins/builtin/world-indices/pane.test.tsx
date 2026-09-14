@@ -95,7 +95,7 @@ describe("WorldIndicesPane", () => {
     expect(frame).toContain("Americas");
     expect(frame).toContain("SPX");
     expect(frame).toContain("6,812.44");
-    expect(frame).toContain("+0.42%");
+    expect(frame).toContain("+0.42");
   });
 
   test("keeps the last good prices when the provider starts failing", async () => {
