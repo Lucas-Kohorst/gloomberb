@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import type { AppState } from "../../../state/app/context";
+import type { Dispatch } from "react";
+import type { AppAction, AppState } from "../../../state/app/context";
 import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
@@ -51,6 +52,7 @@ interface UseCommandBarPaneTemplateActionsOptions {
   buildWorkflowDeps: () => SharedWorkflowDeps;
   closeAll: CloseAllFn;
   config: AppState["config"];
+  dispatch: Dispatch<AppAction>;
   executeCollectionCommand: ExecuteCollectionCommandFn;
   focusedPaneId: string | null;
   notify: NotifyFn;
@@ -67,6 +69,7 @@ export function useCommandBarPaneTemplateActions({
   buildWorkflowDeps,
   closeAll,
   config,
+  dispatch,
   executeCollectionCommand,
   focusedPaneId,
   notify,
@@ -82,17 +85,27 @@ export function useCommandBarPaneTemplateActions({
   }), [activeCollectionId, activeTickerSymbol, config, focusedPaneId]);
 
   const openPaneTemplateWorkflow = useCallback((template: PaneTemplateDef, options?: { arg?: string }) => {
+    dispatch({
+      type: "RECORD_COMMAND",
+      id: `pane-template:${template.id}`,
+      label: getPaneTemplateDisplayLabel(template),
+    });
     openWorkflowRoute(buildPaneTemplateWorkflowRoute({
       activeTicker: activeTickerSymbol,
       arg: options?.arg,
       template,
     }));
-  }, [activeTickerSymbol, openWorkflowRoute]);
+  }, [activeTickerSymbol, dispatch, openWorkflowRoute]);
 
   const openPaneTemplateDirect = useCallback(async (
     template: PaneTemplateDef,
     createOptions?: PaneTemplateCreateOptions,
   ) => {
+    dispatch({
+      type: "RECORD_COMMAND",
+      id: `pane-template:${template.id}`,
+      label: getPaneTemplateDisplayLabel(template),
+    });
     try {
       await pluginRegistry.createPaneFromTemplateAsyncFn(template.id, createOptions);
       closeAll({ revertThemePreview: false });
@@ -103,7 +116,7 @@ export function useCommandBarPaneTemplateActions({
         { type: "error" },
       );
     }
-  }, [closeAll, notify, pluginRegistry]);
+  }, [closeAll, dispatch, notify, pluginRegistry]);
 
   const runPaneTemplateShortcut = useCallback(async (
     template: PaneTemplateDef,

@@ -259,6 +259,7 @@ export function useCommandBarActionRuntime({
     buildWorkflowDeps: buildSharedWorkflowDeps,
     closeAll,
     config,
+    dispatch,
     executeCollectionCommand,
     focusedPaneId,
     notify,

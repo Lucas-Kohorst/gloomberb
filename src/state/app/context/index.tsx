@@ -91,6 +91,16 @@ function sameStringList(left: readonly string[], right: readonly string[]): bool
   return left.every((value, index) => value === right[index]);
 }
 
+function sameRecentCommands(
+  left: AppConfig["recentCommands"],
+  right: AppConfig["recentCommands"],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => (
+    entry.id === right[index]?.id && entry.label === right[index]?.label
+  ));
+}
+
 function materializeDetachedConfig(config: AppConfig): AppConfig {
   return {
     ...config,
@@ -368,6 +378,7 @@ export function AppProvider({
   );
   const effectiveThemeId = getEffectiveThemeId(state);
   const previousRecentTickers = useRef(state.recentTickers);
+  const previousRecentCommands = useRef(state.recentCommands);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());
   const storeRef = useRef<AppContextStoreValue | null>(null);
@@ -437,6 +448,12 @@ export function AppProvider({
     previousRecentTickers.current = state.recentTickers;
     scheduleConfigSave({ ...state.config, recentTickers: state.recentTickers });
   }, [state.config, state.recentTickers]);
+
+  useEffect(() => {
+    if (sameRecentCommands(previousRecentCommands.current, state.recentCommands)) return;
+    previousRecentCommands.current = state.recentCommands;
+    scheduleConfigSave({ ...state.config, recentCommands: state.recentCommands });
+  }, [state.config, state.recentCommands]);
 
   useEffect(() => {
     if (!desktopBridge) return;

@@ -189,6 +189,7 @@ function collectCoreConfigPayload(config: AppConfig) {
     fontSize: config.fontSize,
     language: config.language,
     recentTickers: config.recentTickers,
+    recentCommands: config.recentCommands,
     // Completion is monotonic in synced state. A device only advertises the
     // completed state, while resumable progress and incomplete state stay local.
     onboardingComplete: config.onboardingComplete === true ? true : undefined,
@@ -437,6 +438,7 @@ function mergeConfigPayload(
   assign("autoRefreshInterval");
   assign("fontSize");
   assign("recentTickers");
+  assign("recentCommands");
   if (canApply("language") && isLanguagePreference(payload.language)) {
     next.language = payload.language;
   }

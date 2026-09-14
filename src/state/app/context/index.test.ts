@@ -602,3 +602,25 @@ describe("layout focus fallback", () => {
     expect(next.focusedPaneId).toBe("chat:background");
   });
 });
+
+describe("recent commands ring", () => {
+  test("records executed commands newest first and caps at the limit", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    let next = state;
+    for (let index = 0; index < 12; index += 1) {
+      next = appReducer(next, { type: "RECORD_COMMAND", id: `cmd-${index}`, label: `Command ${index}` });
+    }
+    expect(next.recentCommands).toHaveLength(10);
+    expect(next.recentCommands[0]).toEqual({ id: "cmd-11", label: "Command 11" });
+    expect(next.recentCommands[9]).toEqual({ id: "cmd-2", label: "Command 2" });
+    expect(next.recentCommands.some((entry) => entry.id === "cmd-0")).toBe(false);
+  });
+
+  test("re-running a recent command promotes it to the top instead of duplicating", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    let next = appReducer(state, { type: "RECORD_COMMAND", id: "a", label: "Alpha" });
+    next = appReducer(next, { type: "RECORD_COMMAND", id: "b", label: "Beta" });
+    next = appReducer(next, { type: "RECORD_COMMAND", id: "a", label: "Alpha" });
+    expect(next.recentCommands.map((entry) => entry.id)).toEqual(["a", "b"]);
+  });
+});

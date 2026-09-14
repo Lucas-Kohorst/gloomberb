@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PaneTemplateDef } from "../../../../types/plugin";
+import type { Command } from "../../commands/registry";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { buildRootResultModel, type RootResultModelOptions } from "./results";
 
@@ -439,5 +440,99 @@ describe("assist rows in the root result model", () => {
       "assist:candidate:0:CAT lido tvl",
       filteredCatalog.id,
     ]);
+  });
+});
+
+describe("recents in the root result model", () => {
+  const themeCommand: Command = {
+    id: "theme",
+    prefix: "TH",
+    label: "Change Theme",
+    description: "Switch color theme",
+    category: "Config",
+  };
+  const recentState = {
+    focusedPaneId: null,
+    config: { watchlists: [], portfolios: [] },
+    recentTickers: ["AAPL"],
+    recentCommands: [{ id: "theme", label: "Change Theme" }],
+  } as unknown as RootResultModelOptions["state"];
+
+  test("lead the empty query as a Recent section and re-execute command rows by id", () => {
+    const recentTicker: ResultItem = {
+      id: "ticker:AAPL",
+      label: "AAPL",
+      detail: "Apple",
+      category: "Exact Match",
+      kind: "ticker",
+      action: () => {},
+    };
+    const executed: Array<{ id: string; arg: string }> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [themeCommand],
+      buildRecentTickerItem: () => recentTicker,
+      runDirectCommand: (command, arg) => { executed.push({ id: command.id, arg }); },
+      state: recentState,
+    }));
+
+    const recentRows = items.filter((item) => item.category === "Recent");
+    expect(recentRows.map((item) => item.id)).toEqual(["ticker:AAPL", "recent:command:theme"]);
+    expect(recentRows[0]).toMatchObject({ label: "AAPL", kind: "ticker" });
+    expect(recentRows[1]).toMatchObject({ label: "Change Theme", kind: "command", shortcutQuery: "TH" });
+    // Recents come before the normal browse match for the command.
+    recentRows[1]?.action();
+    expect(executed).toEqual([{ id: "theme", arg: "" }]);
+  });
+
+  test("never leak into prefix-routed or typed queries", () => {
+    for (const query of ["TH", "margin"]) {
+      const { items } = buildRootResultModel(rootOptions({
+        availableCommands: [themeCommand],
+        rootQuery: query,
+        state: recentState,
+      }));
+      expect(items.filter((item) => item.category === "Recent")).toEqual([]);
+    }
+  });
+
+  test("re-execute recorded pane templates through the template item builder", () => {
+    const chartTemplate = {
+      id: "chart-composer-pane",
+      paneId: "chart-composer",
+      label: "Chart",
+      description: "Open a new chart",
+    } as PaneTemplateDef;
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      createPaneTemplateItem: (template) => ({
+        id: `pane-template:${template.id}`,
+        label: template.label,
+        detail: template.description,
+        category: "Panes",
+        kind: "action",
+        action: () => {},
+      }),
+      getRecentPaneTemplate: () => chartTemplate,
+      state: {
+        ...recentState,
+        recentCommands: [{ id: "pane-template:chart-composer-pane", label: "Chart" }],
+      },
+    }));
+
+    const row = items.find((item) => item.id === "recent:pane-template:chart-composer-pane");
+    expect(row?.category).toBe("Recent");
+    expect(row?.label).toBe("Chart");
+    expect(row?.action).toBeTypeOf("function");
+  });
+
+  test("skip recent entries that no longer resolve to a command or template", () => {
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      state: {
+        ...recentState,
+        recentCommands: [{ id: "gone-command", label: "Gone" }],
+      },
+    }));
+    expect(items.filter((item) => item.category === "Recent")).toEqual([]);
   });
 });
