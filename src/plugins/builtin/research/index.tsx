@@ -7,6 +7,7 @@ import { AnalystResearchView } from "./analyst-pane";
 import { CorporateActionsView } from "./corporate-actions-pane";
 import { EquityDiagnosticView } from "./equity-diagnostic-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
+import { PortfolioEventsPane } from "./portfolio-events-pane";
 
 function EarningsEstimatesPane(props: { focused: boolean; width: number; height: number }) {
   return (
@@ -53,6 +54,9 @@ export const researchModule: PluginModule = {
       isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
       prefetch: prefetchCorporateActions,
     });
+    ctx.registerAgentPromptFragment(
+      "Portfolio Events: pane.createFromTemplate portfolio-events-pane (PEVT) to review upcoming earnings, dividends, splits, and estimates across the active portfolio or watchlist.",
+    );
   },
 
   panes: [
@@ -105,6 +109,16 @@ export const researchModule: PluginModule = {
       defaultFloatingSize: { width: 104, height: 22 },
       tableExport: true,
     },
+    {
+      id: "portfolio-events",
+      name: "Portfolio Events",
+      icon: "V",
+      component: PortfolioEventsPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 92, height: 24 },
+      tableExport: true,
+    },
   ],
 
   paneTemplates: [
@@ -144,6 +158,19 @@ export const researchModule: PluginModule = {
       shortcut: "EE",
       publicShare: true,
     }),
+    {
+      id: "portfolio-events-pane",
+      paneId: "portfolio-events",
+      label: "Portfolio Events",
+      description: "Upcoming earnings, dividends, splits, and estimates across a portfolio or watchlist.",
+      keywords: ["portfolio", "watchlist", "events", "earnings", "dividend", "split", "calendar", "pevt"],
+      category: "Portfolio",
+      shortcut: { prefix: "PEVT" },
+      canCreate: (context) => context.activeCollectionId !== null,
+      createInstance: (context) => context.activeCollectionId
+        ? { settings: { collectionId: context.activeCollectionId } }
+        : null,
+    },
     {
       id: "relative-valuation-pane",
       paneId: "relative-valuation",

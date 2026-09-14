@@ -48,7 +48,7 @@ import {
 
 type EventStatus = "Earnings" | "Q Est" | "FY Est" | "TTM" | "Dividend" | "Split";
 
-type EventRow = {
+export type EventRow = {
   id: string;
   date: string;
   status: EventStatus;
@@ -362,7 +362,7 @@ export function buildEventRows(
   ));
 }
 
-function buildEventColumns(): EventColumn[] {
+export function buildEventColumns(): EventColumn[] {
   return [
     { id: "date", label: "DATE", width: 10, align: "left" },
     { id: "status", label: "EVENT", width: 8, align: "left" },
