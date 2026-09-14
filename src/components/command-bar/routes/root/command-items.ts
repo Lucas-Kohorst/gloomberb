@@ -59,6 +59,8 @@ export function createRootCommandItemBuilder({
         );
       case "set-portfolio-position":
         return manualPortfolios.length > 0;
+      case "import-tickers":
+        return isWatchlistTab || (isPortfolioTab && !!targetPortfolioId);
       case "disconnect-broker-account":
         return state.config.brokerInstances.length > 0;
       case "delete-watchlist":
@@ -84,6 +86,12 @@ export function createRootCommandItemBuilder({
         return activeTickerSymbol ? `Remove ${activeTickerSymbol} from Portfolio` : command.label;
       case "set-portfolio-position":
         return activeTickerSymbol ? `Set Position for ${activeTickerSymbol}` : command.label;
+      case "import-tickers":
+        return activeCollectionId
+          ? `Import Tickers into ${state.config.portfolios.find((entry) => entry.id === activeCollectionId)?.name
+            ?? state.config.watchlists.find((entry) => entry.id === activeCollectionId)?.name
+            ?? command.label}`
+          : command.label;
       default:
         return command.label;
     }

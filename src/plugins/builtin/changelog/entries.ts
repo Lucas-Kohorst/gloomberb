@@ -11,6 +11,7 @@ const RELEASE_0_13_15: ChangelogRelease = {
 
 ## Weather
 
+- The Portfolio and Watchlist workspace now supports an \`IMP\` command-bar import. Paste comma-, space-, or newline-separated symbols into the active collection; manual portfolios also accept \`symbol, shares, average cost\` rows. The import reports every invalid or failed row instead of silently dropping it.
 - The station detail view shows the latest complete Kalshi index value (Fahrenheit), the incomplete-point count, and the index config version. When no complete point exists yet, the pane reports "pending quorum" instead of inventing a zero.
 - The latest calibration summary (config version, station count, effective time, change reason) appears when Kalshi publishes the \`/calibrations\` endpoint. Until then the request fails gracefully and the pane omits the line.
 - Requests route through the shared Kalshi fetch path and report as \`kalshi\` traffic in the Connections pane. Hosted clients use the existing Kalshi proxy; native clients call the public endpoint directly.

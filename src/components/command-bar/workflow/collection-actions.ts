@@ -9,16 +9,24 @@ import {
 } from "../../../brokers/profile-form";
 import {
   addTickerToPortfolio,
+  addTickerToWatchlist,
   createManualPortfolio as createManualPortfolioConfig,
   deleteManualPortfolio,
   isManualPortfolio,
   resolveManualPositionCurrency,
   setManualPortfolioPosition,
 } from "../../../plugins/builtin/portfolio-list/mutations";
+import {
+  parseBulkImport,
+  resolveBulkImportEntries,
+} from "../../../plugins/builtin/portfolio-list/quick-add/import";
 import type { CommandBarFieldValue } from "./types";
 import type { WorkflowStringValues } from "./broker";
 import { coerceFieldString, slugifyName } from "../helpers";
 import { resolveTickerInputOrThrow } from "./ops";
+import { resolveQuickAddValidation } from "../../../plugins/builtin/portfolio-list/quick-add/resolution";
+import { upsertTickerFromSearchResult } from "../../../tickers/search";
+import { t, tf } from "../../../i18n";
 
 export type CommandBarNotifyFn = (
   body: string,
@@ -32,6 +40,7 @@ export interface CommandBarCollectionWorkflowActions {
   deletePortfolio: (portfolioId: string) => Promise<void>;
   deleteWatchlist: (watchlistId: string) => Promise<void>;
   disconnectBrokerInstance: (instanceId: string) => Promise<void>;
+  importTickersFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
   setPortfolioPositionFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
   addTickerMembershipFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
 }
@@ -252,6 +261,78 @@ export function createCommandBarCollectionWorkflowActions(options: {
           : `${result.ticker.metadata.ticker} is already in "${portfolio.name}".`,
         { type: result.changed ? "success" : "info" },
       );
+    },
+
+    async importTickersFromWorkflow(values) {
+      const currentState = getState();
+      const watchlist = currentState.config.watchlists.find((entry) => entry.id === activeCollectionId);
+      const portfolio = currentState.config.portfolios.find((entry) => entry.id === activeCollectionId);
+      const collectionKind = watchlist ? "watchlist" : portfolio && isManualPortfolio(portfolio) ? "portfolio" : null;
+      const collection = watchlist ?? portfolio;
+      if (!collectionKind || !collection || !activeCollectionId) {
+        throw new Error("Select a watchlist or manual portfolio first.");
+      }
+
+      const parsed = parseBulkImport(coerceFieldString(values.tickers), collectionKind);
+      const results = await resolveBulkImportEntries(parsed.entries, async (entry) => {
+        const validation = await resolveQuickAddValidation({
+          query: entry.symbol,
+          collectionId: activeCollectionId,
+          collectionKind,
+          tickers: currentState.tickers,
+          financials: currentState.financials,
+        });
+        if (validation.status === "duplicate" && entry.shares == null) {
+          return { reason: "Already in collection" };
+        }
+        if (validation.status === "ready" || validation.status === "duplicate") return { value: validation };
+        return { reason: validation.status === "idle" || validation.status === "checking"
+          ? "Ticker lookup unavailable"
+          : validation.message };
+      });
+
+      const failures = [...parsed.failures, ...results.flatMap((result) => result.failure ? [result.failure] : [])];
+      let added = 0;
+      for (const result of results) {
+        if (!result.value || (result.value.status === "duplicate" && result.entry.shares == null)) continue;
+        try {
+          let ticker = result.value.ticker;
+          if (!ticker) {
+            if (result.value.resolved.kind === "local") ticker = result.value.resolved.ticker;
+            else ticker = (await upsertTickerFromSearchResult(tickerRepository, result.value.resolved.result)).ticker;
+          }
+          const nextTicker = result.entry.shares != null && result.entry.avgCost != null
+            ? setManualPortfolioPosition(ticker, activeCollectionId, {
+                shares: result.entry.shares,
+                avgCost: result.entry.avgCost,
+                currency: resolveManualPositionCurrency("", ticker, portfolio!, currentState.config.baseCurrency),
+              }).ticker
+            : (collectionKind === "portfolio"
+              ? addTickerToPortfolio(ticker, activeCollectionId)
+              : addTickerToWatchlist(ticker, activeCollectionId)).ticker;
+          await tickerRepository.saveTicker(nextTicker);
+          dispatch({ type: "UPDATE_TICKER", ticker: nextTicker });
+          added += 1;
+        } catch (error) {
+          failures.push({
+            line: result.entry.line,
+            symbol: result.entry.symbol,
+            reason: error instanceof Error ? error.message : "Ticker add failed",
+          });
+        }
+      }
+      const summary = tf("Added {count}.", { count: added });
+      if (failures.length > 0) {
+        notify(tf("{summary} Failed: {failures}", {
+          summary,
+          failures: failures.map((failure) => tf("{symbol}: {reason}", {
+            symbol: failure.symbol || tf("line {line}", { line: failure.line }),
+            reason: t(failure.reason),
+          })).join("; "),
+        }), { type: "error" });
+      } else {
+        notify(summary, { type: "success" });
+      }
     },
 
     async disconnectBrokerInstance(instanceId) {
