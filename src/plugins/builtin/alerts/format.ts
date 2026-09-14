@@ -60,7 +60,7 @@ export function formatAlertDistance(alert: AlertRule): string {
   if (!Number.isFinite(percent)) return "-";
   const abs = Math.abs(percent);
   const decimals = abs < 10 ? 1 : 0;
-  return `${percent >= 0 ? "+" : ""}${percent.toFixed(decimals)}%`;
+  return `${percent >= 0 ? "+" : ""}${percent.toFixed(decimals)}`;
 }
 
 export function formatQuoteChecked(alert: AlertRule): string {

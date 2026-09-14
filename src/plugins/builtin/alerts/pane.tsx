@@ -55,7 +55,7 @@ const ALERT_COLUMNS: AlertColumn[] = [
   { id: "symbol", label: "Symbol", width: 7, align: "left" },
   { id: "current", label: "Current", width: 9, align: "right" },
   { id: "target", label: "Target", width: 9, align: "right" },
-  { id: "away", label: "Away", width: 8, align: "right" },
+  { id: "away", label: "Away%", width: 8, align: "right" },
   { id: "condition", label: "Trigger", width: 7, align: "left" },
   { id: "quote", label: "Quote", width: 8, align: "left" },
   { id: "triggered", label: "Alerted", width: 8, align: "left" },
