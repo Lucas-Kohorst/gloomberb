@@ -8,7 +8,7 @@ import {
   TICKER_RESEARCH_PANE_ID,
   type LayoutConfig,
 } from "../../../types/config";
-import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../../../types/config";
+import type { AppConfig, PaneBinding, PaneInstanceConfig, RecentCommand, SavedLayout } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { BrokerAccount } from "../../../types/trading";
 import { isBrokerPortfolioId } from "../../../utils/broker-instances";
@@ -182,6 +182,29 @@ export function nextRecentTickers(current: string[], symbol: string | null): str
   const next = [symbol, ...current.filter((entry) => entry !== symbol)].slice(0, 50);
   if (next.length === current.length && next.every((entry, index) => entry === current[index])) {
     return current;
+  }
+  return next;
+}
+
+/** Cap for the recently-executed command ring. */
+export const RECENT_COMMANDS_LIMIT = 10;
+
+/**
+ * MRU ring of recently executed command-bar entries, newest first. An entry
+ * already in the ring is promoted instead of duplicated; re-running a recent
+ * command therefore puts it back on top.
+ */
+export function nextRecentCommands(
+  current: readonly RecentCommand[],
+  entry: RecentCommand | null,
+): RecentCommand[] {
+  if (!entry || !entry.id || !entry.label) return [...current];
+  const next = [entry, ...current.filter((existing) => existing.id !== entry.id)]
+    .slice(0, RECENT_COMMANDS_LIMIT);
+  if (next.length === current.length && next.every((candidate, index) => (
+    candidate.id === current[index]?.id && candidate.label === current[index]?.label
+  ))) {
+    return [...current];
   }
   return next;
 }

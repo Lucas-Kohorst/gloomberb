@@ -1,5 +1,5 @@
 import type { BrokerAccount } from "../../../types/trading";
-import type { AppConfig, LayoutConfig, OnboardingProgress } from "../../../types/config";
+import type { AppConfig, LayoutConfig, OnboardingProgress, RecentCommand } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -52,6 +52,7 @@ export interface AppState {
   previousFocusedPaneId: string | null;
   paneState: Record<string, PaneRuntimeState>;
   recentTickers: string[];
+  recentCommands: RecentCommand[];
   commandBarOpen: boolean;
   commandBarQuery: string;
   commandBarLaunchRequest: CommandBarPluginLaunchRequest | CommandBarTickerSearchLaunchRequest | null;
@@ -74,6 +75,7 @@ export type AppAction =
       complete: boolean;
       progress: OnboardingProgress | undefined;
     }
+  | { type: "RECORD_COMMAND"; id: string; label: string }
   | { type: "SET_TICKERS"; tickers: Map<string, TickerRecord> }
   | { type: "UPDATE_TICKER"; ticker: TickerRecord }
   | { type: "REMOVE_TICKER"; symbol: string }

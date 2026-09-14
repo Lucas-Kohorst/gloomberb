@@ -139,6 +139,16 @@ export interface OnboardingProgress {
   checkoutOpenedAt?: string;
 }
 
+/**
+ * One recently executed command-bar entry. `id` is the registry key to
+ * re-execute (a built-in command id, or `pane-template:<templateId>`); `label`
+ * is the user-facing text shown in Recents. Persisted like `recentTickers`.
+ */
+export interface RecentCommand {
+  id: string;
+  label: string;
+}
+
 export interface AppConfig {
   dataDir: string;
   configVersion: number;
@@ -168,6 +178,8 @@ export interface AppConfig {
   /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
   fontFamily: string;
   recentTickers: string[];
+  /** Recently executed command-bar commands and pane templates, newest first. */
+  recentCommands: RecentCommand[];
   /**
    * Extra command-bar prefix that opens ticker search alongside the defaults
    * ("DES" with the "T" alias). Omitted or empty keeps the defaults untouched.
@@ -890,6 +902,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     fontSize: 12,
     fontFamily: "system-mono",
     recentTickers: [],
+    recentCommands: [],
   };
 }
 

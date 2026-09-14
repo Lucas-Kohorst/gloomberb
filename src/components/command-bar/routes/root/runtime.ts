@@ -35,6 +35,7 @@ interface UseCommandBarRootRuntimeOptions {
   availableCommands: Command[];
   buildLayoutItems(query: string, options?: { confirmDangerousActions?: boolean }): ResultItem[];
   buildPaneSettingItems(paneId: string | null, query: string): ResultItem[];
+  buildRecentTickerItem?: (symbol: string) => ResultItem | null;
   buildTickerSearchResultItems(candidates: TickerSearchCandidate[], query: string): ResultItem[];
   buildWindowModeItems(arg: string): ResultItem[];
   createPaneTemplateItem(template: PaneTemplateDef, options?: {
@@ -51,6 +52,7 @@ interface UseCommandBarRootRuntimeOptions {
     rawInput?: string,
   ): void | Promise<void>;
   getAvailablePaneShortcutTemplates(query: string): PaneTemplateDef[];
+  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
   getTickers(): AppState["tickers"];
   hasPaneSettings(paneId: string): boolean;
   localTickerSearchResultItems(query?: string, options?: { category?: string; limit?: number }): ResultItem[];
@@ -101,6 +103,7 @@ export function useCommandBarRootRuntime({
   availableCommands,
   buildLayoutItems,
   buildPaneSettingItems,
+  buildRecentTickerItem,
   buildTickerSearchResultItems,
   buildWindowModeItems,
   createPaneTemplateItem,
@@ -109,6 +112,7 @@ export function useCommandBarRootRuntime({
   dataProvider,
   executeCollectionCommand,
   getAvailablePaneShortcutTemplates,
+  getRecentPaneTemplate,
   getTickers,
   hasPaneSettings,
   localTickerSearchResultItems,
@@ -178,6 +182,7 @@ export function useCommandBarRootRuntime({
     assist,
     availableCommands,
     buildLayoutItems,
+    buildRecentTickerItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -185,6 +190,7 @@ export function useCommandBarRootRuntime({
     currentRoute,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
+    getRecentPaneTemplate,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
@@ -207,6 +213,7 @@ export function useCommandBarRootRuntime({
     assist,
     availableCommands,
     buildLayoutItems,
+    buildRecentTickerItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -214,6 +221,7 @@ export function useCommandBarRootRuntime({
     currentRoute,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
+    getRecentPaneTemplate,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,

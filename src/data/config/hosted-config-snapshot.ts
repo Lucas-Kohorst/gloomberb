@@ -122,6 +122,7 @@ function workspaceFingerprint(config: AppConfig): string {
     fontSize: config.fontSize,
     language: config.language ?? "auto",
     recentTickers: config.recentTickers,
+    recentCommands: config.recentCommands,
   }));
 }
 

@@ -4,6 +4,7 @@ import type {
   ChartPreferences,
   LayoutConfig,
   OnboardingProgress,
+  RecentCommand,
   SavedLayout,
 } from "../../../types/config";
 import {
@@ -65,6 +66,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     fontFamily: sanitizeFontFamily(candidate.fontFamily),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
+    recentCommands: sanitizeRecentCommands(candidate.recentCommands, defaults.recentCommands),
     tickerSearchShortcut: normalizeTickerSearchShortcut(candidate.tickerSearchShortcut),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
@@ -130,6 +132,7 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
     fontFamily: sanitizeFontFamily(config.fontFamily),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
+    recentCommands: sanitizeRecentCommands(config.recentCommands, []),
     tickerSearchShortcut: normalizeTickerSearchShortcut(config.tickerSearchShortcut),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
@@ -182,6 +185,19 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : fallback;
+}
+
+function sanitizeRecentCommands(value: unknown, fallback: RecentCommand[]): RecentCommand[] {
+  if (!Array.isArray(value)) return fallback;
+  return value
+    .filter((entry): entry is RecentCommand => (
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as RecentCommand).id === "string"
+      && (entry as RecentCommand).id.length > 0
+      && typeof (entry as RecentCommand).label === "string"
+    ))
+    .map((entry) => ({ id: entry.id, label: entry.label }));
 }
 
 function sanitizeUniqueStringList(value: unknown): string[] {

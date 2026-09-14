@@ -50,6 +50,7 @@ import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-compose
 import { isMarketFieldId } from "../../../time-series/field-catalog";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
+import { createQuickLookTickerCandidates } from "../routes/ticker-search/results";
 import { parseRootShortcutIntent, shortcutClaimsQuery } from "../routes/root/shortcuts";
 import { useCommandBarThemePreview } from "../theme-preview";
 import { CommandBarPanel } from "../panel";
@@ -163,6 +164,7 @@ export function CommandBar({
     getWorkflowFieldStringValue,
     getWorkflowInputRef,
     localTickerSearchResultItems,
+    mapTickerSearchCandidateToResultItem,
     moveWorkflowFocus,
     nonShortcutPaneTemplateItems,
     openInlineConfirm,
@@ -215,6 +217,19 @@ export function CommandBar({
 
   const getTickerSearchTickers = useCallback(() => stateRef.current.tickers, []);
   const hasPaneSettings = useCallback((paneId: string) => pluginRegistry.hasPaneSettings(paneId), [pluginRegistry]);
+
+  // Recents rows reuse the ticker-search select/pin execute path so a recent
+  // symbol behaves exactly like a ticker-search hit.
+  const buildRecentTickerItem = useCallback((symbol: string) => {
+    const ticker = state.tickers.get(symbol);
+    if (!ticker) return null;
+    const candidate = createQuickLookTickerCandidates([ticker])[0];
+    return candidate ? mapTickerSearchCandidateToResultItem(candidate) : null;
+  }, [mapTickerSearchCandidateToResultItem, state.tickers]);
+  const getRecentPaneTemplate = useCallback(
+    (id: string) => pluginRegistry.paneTemplates.get(id),
+    [pluginRegistry],
+  );
 
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
@@ -581,6 +596,7 @@ export function CommandBar({
     assist,
     availableCommands,
     buildLayoutItems,
+    buildRecentTickerItem,
     buildPaneSettingItems,
     buildTickerSearchResultItems,
     buildWindowModeItems,
@@ -590,6 +606,7 @@ export function CommandBar({
     dataProvider,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
+    getRecentPaneTemplate,
     getTickers: getTickerSearchTickers,
     hasPaneSettings,
     localTickerSearchResultItems,
