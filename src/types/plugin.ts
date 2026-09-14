@@ -709,6 +709,8 @@ export interface AppNotificationRequest {
     label: string;
     onClick: () => void;
   };
+  /** Set by the registry for notification-history routing. */
+  source?: string;
 }
 
 export interface BrokerInstanceUpdateOptions {

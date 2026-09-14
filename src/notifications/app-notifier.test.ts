@@ -1,10 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildDesktopNotificationCommand,
   buildSoundCommand,
   createAppNotifier,
   createDesktopNotifier,
 } from "./app-notifier";
+import { getNotificationLog, resetNotificationLogForTest } from "./notification-log";
+
+afterEach(resetNotificationLogForTest);
 
 describe("desktop notification commands", () => {
   test("builds a macOS notification command", () => {
@@ -104,6 +107,11 @@ describe("app notifier", () => {
     expect(toasts).toEqual([{ message: "@bob mentioned you", type: "info", duration: 5000 }]);
     expect(desktops).toEqual(["@bob mentioned you"]);
     expect(inactiveDelivery).toEqual({ toastVisible: false, desktopRequested: true });
+    expect(getNotificationLog()).toMatchObject([{
+      body: "@bob mentioned you",
+      source: "app",
+      read: false,
+    }]);
 
     active = true;
     const activeDelivery = notifier.notify({

@@ -189,6 +189,7 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb portfolio [action]` | Manage manual portfolios |
 | `gloomberb watchlist [action]` | Manage watchlists |
 | `gloomberb notes|alerts [action]` | Manage local notes and alerts |
+| `NOTF` | Open notification center history |
 | `gloomberb broker|ibkr [action]` | Inspect broker profiles |
 | `gloomberb ai providers|ask` | Use configured AI providers |
 | `gloomberb rss fetch <url>` | Fetch an RSS feed |
