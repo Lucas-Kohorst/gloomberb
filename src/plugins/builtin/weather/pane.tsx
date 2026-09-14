@@ -347,7 +347,7 @@ interface ReportColumn extends DataTableColumn {
 function createReportColumns(): ReportColumn[] {
   return [
     { id: "city", label: "CITY", width: 10, align: "left", flexGrow: 1 },
-    { id: "hit", label: "HIT", width: 6, align: "right" },
+    { id: "hit", label: "HIT%", width: 5, align: "right" },
     { id: "mae", label: "MAE", width: 5, align: "right" },
     { id: "bias", label: "BIAS", width: 6, align: "right" },
     { id: "samples", label: "N", width: 4, align: "right" },

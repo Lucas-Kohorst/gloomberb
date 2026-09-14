@@ -94,7 +94,7 @@ export function buildWeatherAccuracyReport(
 
 export function formatHitRate(value: number): string {
   if (!Number.isFinite(value) || value < 0) return "—";
-  return `${Math.round(value * 100)}%`;
+  return `${Math.round(value * 100)}`;
 }
 
 export function formatBias(value: number): string {

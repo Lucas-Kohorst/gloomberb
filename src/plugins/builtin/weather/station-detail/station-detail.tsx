@@ -221,9 +221,9 @@ function ObservationTable({ observations, timeZone, width }: {
   );
   const columns = useMemo<StationObservationColumn[]>(() => [
     { id: "local", label: `LOCAL (${timeZoneLabel(timeZone)})`, width: 12, align: "left" },
-    { id: "temp", label: "TEMP", width: 6, align: "right" },
-    { id: "dew", label: "DEW", width: 6, align: "right" },
-    { id: "humidity", label: "RH", width: 5, align: "right" },
+    { id: "temp", label: "TEMP°F", width: 6, align: "right" },
+    { id: "dew", label: "DEW°F", width: 6, align: "right" },
+    { id: "humidity", label: "RH%", width: 5, align: "right" },
     { id: "wind", label: "WIND", width: 13, align: "left" },
     { id: "visibility", label: "VIS", width: 6, align: "right" },
     { id: "pressure", label: "PRES", width: 7, align: "right" },
@@ -251,9 +251,9 @@ function ObservationTable({ observations, timeZone, width }: {
       renderCell={(row, column): DataTableCell => {
         switch (column.id) {
           case "local": return { text: formatTimestamp(row.timestamp, timeZone), color: colors.textMuted };
-          case "temp": return { text: `${formattedNumber(row.temperatureF)}°`, color: colors.text };
-          case "dew": return { text: `${formattedNumber(row.dewpointF)}°`, color: colors.text };
-          case "humidity": return { text: `${formattedNumber(row.humidityPct)}%`, color: colors.text };
+          case "temp": return { text: formattedNumber(row.temperatureF), color: colors.text };
+          case "dew": return { text: formattedNumber(row.dewpointF), color: colors.text };
+          case "humidity": return { text: formattedNumber(row.humidityPct), color: colors.text };
           case "wind": return { text: formatWind(row), color: colors.text };
           case "visibility": return { text: formattedNumber(row.visibilityMiles, 1), color: colors.text };
           case "pressure": return { text: formattedNumber(row.pressureInHg, 2), color: colors.text };

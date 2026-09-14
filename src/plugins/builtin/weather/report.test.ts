@@ -29,7 +29,7 @@ describe("weather accuracy report", () => {
     const lax = report.cities.find((row) => row.stationId === "LAX");
     expect(lax?.samples).toBe(2);
     expect(lax?.hitRate).toBe(0.5);
-    expect(formatHitRate(report.hitRate)).toBe("33%");
+    expect(formatHitRate(report.hitRate)).toBe("33");
     expect(formatBias(report.bias)).toBe("+0.3");
   });
 
