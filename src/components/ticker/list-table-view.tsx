@@ -23,6 +23,7 @@ import type { TickerFinancials, PricePoint } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { PRICE_SPARKLINE_COLUMN_ID, PriceSparkline } from "../price-sparkline/view";
 import { DataTableView, type DataTableKeyEvent } from "../data-table/view";
+import type { DataTableYankHandle } from "../data-table/yank";
 import type { QuoteFlashDirection } from "../quote-flash";
 
 export interface TickerTableCell {
@@ -74,6 +75,10 @@ export interface TickerListTableViewProps {
   revisionScope?: string | number;
   virtualize?: boolean;
   overscan?: number;
+  /** Opt-in yank on `y` / `Shift+Y`; only enable where `y` is free. */
+  enableYank?: boolean;
+  /** Receives the table's yank handle, for pane footer chrome. */
+  yankRef?: RefObject<DataTableYankHandle | null>;
 }
 
 const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
@@ -175,6 +180,8 @@ export function TickerListTableView({
   revisionScope,
   virtualize = true,
   overscan = 4,
+  enableYank = false,
+  yankRef,
 }: TickerListTableViewProps) {
   const commandBarShortcut = useCommandBarShortcut();
   const resolvedEmptyHint = emptyHint ?? tf("Press {shortcut} to add one.", { shortcut: commandBarShortcut });
@@ -331,6 +338,8 @@ export function TickerListTableView({
       keyboardNavigation={keyboardNavigation}
       onRootKeyDown={onRootKeyDown}
       resetScrollKey={resetScrollKey}
+      enableYank={enableYank}
+      yankRef={yankRef}
     />
   );
 }

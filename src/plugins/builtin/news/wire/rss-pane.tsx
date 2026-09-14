@@ -14,6 +14,7 @@ import {
   type DataTableKeyEvent,
   type StackSortPreference,
 } from "../../../../components";
+import type { DataTableYankHandle } from "../../../../components/data-table/yank";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
 import { useDebouncedPluginPaneState } from "../../../runtime";
@@ -226,6 +227,8 @@ function FeedsManager({ focused, width, height, onBack }: {
   const [error, setError] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<FeedSortPreference>(DEFAULT_FEED_SORT);
   const settingsVersion = useRef(0);
+  const yankRef = useRef<DataTableYankHandle | null>(null);
+  const yankSelectedRow = useCallback(() => yankRef.current?.yank("row"), []);
 
   const rows = useMemo(
     () => sortStackItems(
@@ -344,11 +347,12 @@ function FeedsManager({ focused, width, height, onBack }: {
     hints: [
       { id: "feeds", key: "f", label: "eeds", onPress: onBack },
       { id: "add", key: "a", label: "dd", onPress: () => setShowAddForm(true) },
+      ...(selected ? [{ id: "yank", key: "y", label: "ank", onPress: yankSelectedRow }] : []),
       { id: "toggle", key: "t", label: "oggle", onPress: () => selected && void toggleFeed(selected) },
       ...(selected?.url ? [{ id: "open", key: "o", label: "pen", onPress: () => void rendererHost.openExternal(selected.url) }] : []),
       ...(selected && !selected.isDefault ? [{ id: "delete", key: "d", label: "elete", onPress: () => void deleteFeed(selected) }] : []),
     ],
-  }), [deleteFeed, error, onBack, selected, toggleFeed]);
+  }), [deleteFeed, error, onBack, selected, toggleFeed, yankSelectedRow]);
 
   if (showAddForm) {
     return (
@@ -400,6 +404,8 @@ function FeedsManager({ focused, width, height, onBack }: {
         getItemKey={(row) => row.id}
         renderCell={renderCell}
         emptyStateTitle="No feeds"
+        enableYank
+        yankRef={yankRef}
       />
     </Box>
   );

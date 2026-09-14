@@ -1,9 +1,10 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type RefObject } from "react";
 import {
   TickerListTableView,
   type DataTableKeyEvent,
   type TickerListVisibleRange,
 } from "../../../components";
+import type { DataTableYankHandle } from "../../../components/data-table/yank";
 import type { QuoteFlashDirection } from "../../../components/quote-flash";
 import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import type { ColumnConfig } from "../../../types/config";
@@ -64,6 +65,8 @@ export function PortfolioTickerTable({
   resetScrollKey,
   onRowActivate,
   rootHeight,
+  enableYank,
+  yankRef,
 }: {
   columns: ColumnConfig[];
   focused?: boolean;
@@ -82,6 +85,8 @@ export function PortfolioTickerTable({
   resetScrollKey?: unknown;
   onRowActivate?: (ticker: TickerRecord) => void;
   rootHeight?: number;
+  enableYank?: boolean;
+  yankRef?: RefObject<DataTableYankHandle | null>;
 }) {
   const cellCacheRef = useRef(createRowValueCache<string, ReturnType<typeof getColumnValue>>(5000));
   const resolveCell = useCallback(
@@ -114,6 +119,8 @@ export function PortfolioTickerTable({
       resetScrollKey={resetScrollKey}
       onRowActivate={onRowActivate}
       rootHeight={rootHeight}
+      enableYank={enableYank}
+      yankRef={yankRef}
       revisionScope={[
         columnContext.portfolioTotalMarketValue ?? 0,
         columnContext.baseCurrency,

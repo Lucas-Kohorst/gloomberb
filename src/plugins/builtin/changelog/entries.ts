@@ -16,7 +16,11 @@ const RELEASE_0_13_15: ChangelogRelease = {
 - Requests route through the shared Kalshi fetch path and report as \`kalshi\` traffic in the Connections pane. Hosted clients use the existing Kalshi proxy; native clients call the public endpoint directly.
 - Only explicitly supported stations (currently \`MIA → miami\`) issue a request. Unsupported stations skip the network call entirely.
 - Malformed records and incomplete points never become fake zero values. Timestamps tolerate both seconds and milliseconds. Bounded in-memory caches prevent redundant API calls.
-- The archive merge loop now coalesces \`null\` and \`undefined\` observation fields consistently, so a missing high/low/precip is treated the same way regardless of how the provider omitted it.`,
+- The archive merge loop now coalesces \`null\` and \`undefined\` observation fields consistently, so a missing high/low/precip is treated the same way regardless of how the provider omitted it.
+
+## Data tables
+
+- \`y\` copies the selected table row to the clipboard as tab-separated cells and \`Shift+Y\` copies its leading cell (the ticker symbol), with a confirmation toast. Panes opt in where \`y\` is free — the Portfolio/Watchlist table and the RSS feed manager ship it first; article panes keep \`y\` for sharing.`,
 };
 
 const RELEASE_0_13_14: ChangelogRelease = {
