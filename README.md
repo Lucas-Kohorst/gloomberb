@@ -148,6 +148,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 | `PF` | Portfolios and watchlists |
 | `KELLY AAPL` | Position sizing |
 | `HELP` | Full in-app shortcut list |
+| `KEYS` | Browse and rebind global and plugin shortcuts |
 
 ## What It Does
 
@@ -349,6 +350,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `BR` | Broker connections |
 | `CHG` | Changelog |
 | `HELP` | Open shortcut and layout help |
+| `KEYS` | Browse and rebind global and plugin keyboard shortcuts |
 | `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |
 | `IMP` | Paste ticker symbols or `symbol, shares, average cost` portfolio rows into the active collection |
 | `RW` / `RP <ticker>` | Remove a ticker from the active watchlist or portfolio |

@@ -6,6 +6,7 @@ import type {
   OnboardingProgress,
   RecentCommand,
   SavedLayout,
+  KeybindingConfig,
 } from "../../../types/config";
 import {
   cloneLayout,
@@ -21,6 +22,7 @@ import { clampFontSize } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig } from "./migrations";
 import { normalizeTickerSearchShortcut } from "../ticker-search-shortcut";
+import { normalizeKeybinding } from "../../../app/keybindings";
 
 export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
@@ -67,6 +69,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     fontFamily: sanitizeFontFamily(candidate.fontFamily),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     recentCommands: sanitizeRecentCommands(candidate.recentCommands, defaults.recentCommands),
+    keybindings: optionalKeybindings(candidate.keybindings),
     tickerSearchShortcut: normalizeTickerSearchShortcut(candidate.tickerSearchShortcut),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
@@ -92,6 +95,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     || !isChartPreferences(candidate.chartPreferences)
     || (candidate.language !== undefined && !isLanguagePreference(candidate.language))
     || (candidate.tickerSearchShortcut !== undefined && !normalizeTickerSearchShortcut(candidate.tickerSearchShortcut))
+    || !isKeybindingMap(candidate.keybindings)
     || (candidate.onboardingProgress !== undefined && !sanitizeOnboardingProgress(candidate.onboardingProgress))
     || (isPlainRecord(candidate.onboardingProgress) && candidate.onboardingProgress.stage === "open-security")
     || (!!onboardingProgress && candidate.onboardingComplete !== false)
@@ -133,12 +137,33 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     fontFamily: sanitizeFontFamily(config.fontFamily),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
     recentCommands: sanitizeRecentCommands(config.recentCommands, []),
+    keybindings: optionalKeybindings(config.keybindings),
     tickerSearchShortcut: normalizeTickerSearchShortcut(config.tickerSearchShortcut),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
   };
 
   return persisted;
+}
+
+function isKeybindingMap(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isPlainRecord(value)) return false;
+  return Object.values(value).every((binding) => !!normalizeKeybinding(binding));
+}
+
+function sanitizeKeybindings(value: unknown): Record<string, KeybindingConfig> {
+  if (!isPlainRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([id, binding]) => [id, normalizeKeybinding(binding)] as const)
+      .filter((entry): entry is [string, KeybindingConfig] => !!entry[1]),
+  );
+}
+
+function optionalKeybindings(value: unknown): Record<string, KeybindingConfig> | undefined {
+  const keybindings = sanitizeKeybindings(value);
+  return Object.keys(keybindings).length > 0 ? keybindings : undefined;
 }
 
 function sanitizeFontSize(value: unknown, fallback: number): number {

@@ -16,6 +16,10 @@ import {
   pasteSystemClipboard,
 } from "../utils/selection-clipboard";
 import { ContextualCheatsheet, createGlobalCheatsheetActions } from "./contextual-cheatsheet";
+import {
+  matchesKeybinding,
+  resolveKeybindings,
+} from "./keybindings";
 
 export function useAppGlobalShortcuts({
   dispatch,
@@ -78,16 +82,27 @@ export function useAppGlobalShortcuts({
 
     if (dialogOpen) return;
 
+    const eventBinding = {
+      key: (event.name === "?" || event.key === "?" || event.sequence === "?")
+        ? "/"
+        : (event.name ?? event.key ?? "").toLowerCase(),
+      ctrl: event.ctrl || event.meta || event.super,
+      shift: event.shift,
+      alt: event.alt,
+    };
+    const resolvedShortcuts = resolveKeybindings(state.config, pluginRegistry.shortcuts.values());
+    const matchedShortcut = resolvedShortcuts.find((shortcut) => matchesKeybinding(shortcut, eventBinding));
+
     if (!isDetachedWindow && (
-      (event.name === "p" && event.ctrl)
-      || (event.name === "k" && (event.ctrl || event.meta || event.super))
+      matchedShortcut?.id === "global.command-bar"
+      || matchedShortcut?.id === "global.command-bar-alternate"
     )) {
       event.preventDefault();
       event.stopPropagation();
       dispatch({ type: "TOGGLE_COMMAND_BAR" });
       return;
     }
-    if (!isDetachedWindow && event.name === "`" && !state.commandBarOpen) {
+    if (!isDetachedWindow && matchedShortcut?.id === "global.ticker-search" && !state.commandBarOpen) {
       event.preventDefault();
       event.stopPropagation();
       dispatch({
@@ -99,29 +114,24 @@ export function useAppGlobalShortcuts({
       return;
     }
 
-    const hasShortcutModifier = event.ctrl || event.meta || event.super || event.alt;
-
     if (state.commandBarOpen) return;
 
-    if (!isDetachedWindow && (event.ctrl || event.meta || event.super) && event.targetEditable !== true) {
-      const name = event.name?.toLowerCase() ?? "";
-      const isUndo = name === "z" && !event.shift;
-      const isRedo = (name === "z" && event.shift) || name === "y";
-      if (isUndo) {
-        event.preventDefault();
-        event.stopPropagation();
-        dispatch({ type: "UNDO_LAYOUT" });
-        return;
-      }
-      if (isRedo) {
-        event.preventDefault();
-        event.stopPropagation();
-        dispatch({ type: "REDO_LAYOUT" });
-        return;
-      }
+    if (isDetachedWindow || event.targetEditable === true) return;
+
+    if (matchedShortcut?.id === "global.undo-layout") {
+      event.preventDefault();
+      event.stopPropagation();
+      dispatch({ type: "UNDO_LAYOUT" });
+      return;
+    }
+    if (matchedShortcut?.id === "global.redo-layout" || matchedShortcut?.id === "global.redo-layout-alternate") {
+      event.preventDefault();
+      event.stopPropagation();
+      dispatch({ type: "REDO_LAYOUT" });
+      return;
     }
 
-    if (event.name === "tab") {
+    if (matchedShortcut?.id === "global.focus-next" || matchedShortcut?.id === "global.focus-previous") {
       const paneOrder = getVisiblePaneCycleOrder(
         state.config.layout,
         pluginRegistry,
@@ -129,7 +139,7 @@ export function useAppGlobalShortcuts({
       );
       if (paneOrder.length === 0) return;
 
-      if (event.shift) {
+      if (matchedShortcut.id === "global.focus-previous") {
         dispatch({ type: "FOCUS_PREV", paneOrder });
       } else {
         dispatch({ type: "FOCUS_NEXT", paneOrder });
@@ -141,11 +151,7 @@ export function useAppGlobalShortcuts({
 
     if (state.inputCaptured) return;
 
-    const isQuestionMark = event.name === "?"
-      || event.key === "?"
-      || event.sequence === "?"
-      || (event.name === "/" && event.shift);
-    if (!isDetachedWindow && !hasShortcutModifier && isQuestionMark) {
+    if (matchedShortcut?.id === "global.help") {
       event.preventDefault();
       event.stopPropagation();
       const paneOrder = getVisiblePaneCycleOrder(
@@ -190,28 +196,27 @@ export function useAppGlobalShortcuts({
       return;
     }
 
-    if (!hasShortcutModifier && !isDetachedWindow && event.name === "q") {
+    if (matchedShortcut?.id === "global.quit") {
       rendererHost.requestExit();
-    } else if (!hasShortcutModifier && event.name === "r") {
+    } else if (matchedShortcut?.id === "global.refresh") {
       if (focusedTickerSymbol) {
         const ticker = state.tickers.get(focusedTickerSymbol);
         if (ticker) refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
       }
-    } else if (!hasShortcutModifier && (event.name === "R" || (event.name === "r" && event.shift))) {
+    } else if (matchedShortcut?.id === "global.refresh-all") {
       for (const ticker of state.tickers.values()) {
         refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 1);
       }
-    } else if (!hasShortcutModifier && event.name === "u" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
+    } else if (matchedShortcut?.id === "global.update" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
       startUpdate(state.updateAvailable);
     } else {
       const disabledPlugins = new Set(state.config.disabledPlugins || []);
-      for (const shortcut of pluginRegistry.shortcuts.values()) {
+      for (const shortcut of resolvedShortcuts) {
+        if (shortcut.group !== "plugin") continue;
         const ownerId = pluginRegistry.getShortcutPluginId(shortcut.id);
         if (ownerId && disabledPlugins.has(ownerId)) continue;
-        if (shortcut.key === event.name
-            && (shortcut.ctrl ?? false) === (event.ctrl ?? false)
-            && (shortcut.shift ?? false) === (event.shift ?? false)) {
-          shortcut.execute();
+        if (shortcut.id === matchedShortcut?.id) {
+          pluginRegistry.shortcuts.get(shortcut.id)?.execute();
           break;
         }
       }
