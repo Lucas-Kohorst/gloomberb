@@ -16,6 +16,7 @@ import {
   parseWeatherAlertCommandValues,
 } from "./command";
 import { POLL_INTERVAL_MS, POLL_SECONDS_KEY } from "./constants";
+import { appendAlertHistory, createAlertHistoryEntry } from "./history";
 import { setAlertHandler } from "./alert-registry";
 import { AlertsPane } from "./pane";
 import {
@@ -25,7 +26,9 @@ import {
   resolveAlertQuote,
 } from "./quotes";
 import {
+  loadAlertHistory,
   loadAlerts,
+  saveAlertHistory,
   saveAlerts,
 } from "./storage";
 import { canonicalWeatherStationId } from "../weather/stations";
@@ -219,10 +222,16 @@ export const alertsPlugin: GloomPlugin = {
 
         if (evaluateAlert(alert, quote.price)) {
           alert.status = "triggered";
-          alert.triggeredAt = Date.now();
+          const triggeredAt = Date.now();
+          alert.triggeredAt = triggeredAt;
+          const description = formatAlertDescription(alert);
+          saveAlertHistory(ctx, appendAlertHistory(
+            loadAlertHistory(ctx),
+            createAlertHistoryEntry(alert, description, triggeredAt, quote.price),
+          ));
           ctx.log.info("poll: TRIGGERED", { symbol: alert.symbol, price: quote.price });
           ctx.notify({
-            body: `${formatAlertDescription(alert)} triggered at ${quote.price}`,
+            body: `${description} triggered at ${quote.price}`,
             type: "success",
             desktop: "always",
             persistent: true,
@@ -258,13 +267,18 @@ export const alertsPlugin: GloomPlugin = {
             }, controller.signal);
             if (triggered) {
               alert.status = "triggered";
-              alert.triggeredAt = Date.now();
+              const triggeredAt = Date.now();
+              alert.triggeredAt = triggeredAt;
               const description = def.formatDescription?.({
                 symbol: alert.symbol,
                 targetPrice: alert.targetPrice,
                 ...(alert.targetText ? { targetText: alert.targetText } : {}),
                 ...(alert.message ? { message: alert.message } : {}),
               }) ?? formatAlertDescription(alert);
+              saveAlertHistory(ctx, appendAlertHistory(
+                loadAlertHistory(ctx),
+                createAlertHistoryEntry(alert, description, triggeredAt),
+              ));
               ctx.log.info("poll: TRIGGERED (custom)", { symbol: alert.symbol, condition: alert.condition });
               ctx.notify({
                 body: `${description} triggered`,
