@@ -13,6 +13,7 @@ import {
 import {
   combinePaneFooterRegistrations,
   samePaneFooterRegistration,
+  selectPaneFooterHints,
   type CombinedPaneFooter,
   type PaneFooterRegistration,
   type PaneHint,
@@ -21,6 +22,15 @@ import { useAppLanguage } from "../../../../i18n/react";
 
 const usePaneFooterRegistrationEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
+
+const paneFooterRegistrations = new Map<string, Map<string, PaneFooterRegistration>>();
+
+/** Returns the focused pane's current enabled footer hints without a second registry. */
+export function readPaneFooterHints(paneId: string | null | undefined): PaneHint[] {
+  if (!paneId) return [];
+  const registrations = paneFooterRegistrations.get(paneId);
+  return registrations ? selectPaneFooterHints(registrations) : [];
+}
 
 interface PaneFooterContextValue {
   register(registrationId: string, registration: PaneFooterRegistration | null): void;
@@ -31,8 +41,10 @@ const PaneFooterContext = createContext<PaneFooterContextValue | null>(null);
 
 export function PaneFooterProvider({
   children,
+  paneId,
 }: {
   children: (footer: CombinedPaneFooter) => ReactNode;
+  paneId?: string;
 }) {
   const [registrations, setRegistrations] = useState<Map<string, PaneFooterRegistration>>(() => new Map());
 
@@ -64,6 +76,16 @@ export function PaneFooterProvider({
 
   const value = useMemo(() => ({ register, unregister }), [register, unregister]);
   const footer = useMemo(() => combinePaneFooterRegistrations(registrations), [registrations]);
+
+  useEffect(() => {
+    if (!paneId) return;
+    paneFooterRegistrations.set(paneId, registrations);
+    return () => {
+      if (paneFooterRegistrations.get(paneId) === registrations) {
+        paneFooterRegistrations.delete(paneId);
+      }
+    };
+  }, [paneId, registrations]);
 
   return (
     <PaneFooterContext.Provider value={value}>

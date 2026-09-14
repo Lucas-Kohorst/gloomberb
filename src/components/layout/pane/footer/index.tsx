@@ -37,6 +37,7 @@ export { measurePaneFooterHintRows } from "./hint-layout";
 export {
   PaneFooterProvider,
   PaneFooterScope,
+  readPaneFooterHints,
   usePaneFooter,
   usePaneHints,
 } from "./registration";

@@ -138,6 +138,22 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   return { info, trailingInfo, hints };
 }
 
+/** Read enabled action hints from selected footer registrations in display order. */
+export function selectPaneFooterHints(
+  registrations: Map<string, PaneFooterRegistration>,
+  registrationIds?: readonly string[],
+): PaneHint[] {
+  if (!registrationIds) {
+    return combinePaneFooterRegistrations(registrations).hints.filter((hint) => !hint.disabled);
+  }
+  const selected = new Map<string, PaneFooterRegistration>();
+  for (const registrationId of registrationIds) {
+    const registration = registrations.get(registrationId);
+    if (registration) selected.set(registrationId, registration);
+  }
+  return combinePaneFooterRegistrations(selected).hints.filter((hint) => !hint.disabled);
+}
+
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {
   return left.length === right.length && left.every((part, index) => {
     const other = right[index];

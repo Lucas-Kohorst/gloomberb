@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   combinePaneFooterRegistrations,
   isPaneFooterLeftSegment,
+  selectPaneFooterHints,
   type PaneFooterRegistration,
   type PaneFooterSegment,
 } from "./model";
@@ -40,5 +41,22 @@ describe("pane footer left chrome", () => {
     const footer = combinePaneFooterRegistrations(registrations);
     expect(footer.info.map((entry) => entry.id)).toEqual(["updated", "external-link"]);
     expect(footer.hints).toHaveLength(1);
+  });
+
+  test("selects enabled hints for requested registrations", () => {
+    const registrations = new Map<string, PaneFooterRegistration>([
+      ["table", { order: 2, hints: [{ id: "search", key: "s", label: "earch" }] }],
+      ["detail", {
+        order: 1,
+        hints: [
+          { id: "open", key: "o", label: "pen" },
+          { id: "disabled", key: "x", label: "Unavailable", disabled: true },
+        ],
+      }],
+    ]);
+
+    expect(selectPaneFooterHints(registrations, ["table"]).map((hint) => hint.id)).toEqual(["search"]);
+    expect(selectPaneFooterHints(registrations, ["missing"])).toEqual([]);
+    expect(selectPaneFooterHints(registrations).map((hint) => hint.id)).toEqual(["open", "search"]);
   });
 });

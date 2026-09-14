@@ -181,6 +181,10 @@ function HelpPane({ focused, width, height }: PaneProps) {
 
             <HelpSection title="Global Keys">
               <ShortcutRow
+                badges={["?"]}
+                description="Show actions for the focused pane and common global keys; choose All shortcuts for this help pane."
+              />
+              <ShortcutRow
                 badges={["Tab", "Shift+Tab"]}
                 description="Move focus between panes and floating windows."
               />

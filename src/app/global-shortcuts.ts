@@ -1,8 +1,8 @@
-import type { Dispatch } from "react";
+import { createElement, type Dispatch } from "react";
 import { useShortcut } from "../react/input";
 import { useNativeRenderer, useRendererHost, useUiHost } from "../ui";
 import { isLayoutSwitchShortcut, layoutSwitchUsesOption } from "../utils/layout-switch-shortcut";
-import { useDialogState } from "../ui/dialog";
+import { useDialog, useDialogState } from "../ui/dialog";
 import type { PluginRegistry } from "../plugins/registry";
 import type { AppAction, AppState } from "../state/app/context";
 import type { TickerRecord } from "../types/ticker";
@@ -15,6 +15,7 @@ import {
   isPasteShortcut,
   pasteSystemClipboard,
 } from "../utils/selection-clipboard";
+import { ContextualCheatsheet, createGlobalCheatsheetActions } from "./contextual-cheatsheet";
 
 export function useAppGlobalShortcuts({
   dispatch,
@@ -34,6 +35,7 @@ export function useAppGlobalShortcuts({
   state: AppState;
 }) {
   const dialogOpen = useDialogState((s) => s.isOpen);
+  const dialog = useDialog();
   const nativeRenderer = useNativeRenderer();
   const rendererHost = useRendererHost();
   const uiHost = useUiHost();
@@ -146,7 +148,45 @@ export function useAppGlobalShortcuts({
     if (!isDetachedWindow && !hasShortcutModifier && isQuestionMark) {
       event.preventDefault();
       event.stopPropagation();
-      pluginRegistry.showPane("help");
+      const paneOrder = getVisiblePaneCycleOrder(
+        state.config.layout,
+        pluginRegistry,
+        state.config.disabledPlugins,
+      );
+      void dialog.alert({
+        size: "small",
+        style: { width: 60, maxHeight: 26 },
+        closeOnClickOutside: true,
+        content: (context: { dialogId: string; dismiss(): void }) => (
+          createElement(ContextualCheatsheet, {
+            ...context,
+            paneId: state.focusedPaneId,
+            actions: createGlobalCheatsheetActions({
+              openCommandBar: () => dispatch({ type: "TOGGLE_COMMAND_BAR" }),
+              openTickerSearch: () => dispatch({
+                type: "SET_COMMAND_BAR",
+                open: true,
+                query: "",
+                launch: { kind: "ticker-search", query: "" },
+              }),
+              refreshFocused: () => {
+                if (!focusedTickerSymbol) return;
+                const ticker = state.tickers.get(focusedTickerSymbol);
+                if (ticker) refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
+              },
+              refreshAll: () => {
+                for (const ticker of state.tickers.values()) {
+                  refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 1);
+                }
+              },
+              focusNextPane: () => {
+                if (paneOrder.length > 0) dispatch({ type: "FOCUS_NEXT", paneOrder });
+              },
+              openHelp: () => pluginRegistry.showPane("help"),
+            }),
+          })
+        ),
+      });
       return;
     }
 
