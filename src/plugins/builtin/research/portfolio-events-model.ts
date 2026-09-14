@@ -1,7 +1,34 @@
+import type { AppConfig } from "../../../types/config";
 import type { CorporateActionsData } from "../../../types/financials";
 import { buildEventRows, type EventRow } from "./corporate-actions-pane";
 
 export type PortfolioEventRow = EventRow & { symbol: string; name?: string };
+
+type CollectionConfig = Pick<AppConfig, "portfolios" | "watchlists">;
+
+function isKnownCollectionId(config: CollectionConfig, collectionId: string | null): boolean {
+  if (!collectionId) return false;
+  return config.portfolios.some((portfolio) => portfolio.id === collectionId)
+    || config.watchlists.some((watchlist) => watchlist.id === collectionId);
+}
+
+/**
+ * The pane is not a `portfolio-list` pane, so pane-binding resolution alone
+ * returns nothing and the table would read as an empty book. Scope falls back
+ * through the pane's own setting, the collection pane it follows, then the first
+ * book in the config. A configured id that no longer exists falls through as
+ * well, so deleting a collection does not pin the pane to it.
+ */
+export function resolvePortfolioEventsCollectionId(
+  config: CollectionConfig,
+  settings: Record<string, unknown> | undefined,
+  boundCollectionId: string | null,
+): string | null {
+  const configured = typeof settings?.collectionId === "string" ? settings.collectionId.trim() : "";
+  if (isKnownCollectionId(config, configured)) return configured;
+  if (isKnownCollectionId(config, boundCollectionId)) return boundCollectionId;
+  return config.portfolios[0]?.id ?? config.watchlists[0]?.id ?? null;
+}
 
 export function buildPortfolioEventRows(
   entries: Iterable<{ symbol: string; name?: string; currency: string; data: CorporateActionsData | null }>,

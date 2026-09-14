@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataTableView, LoadingState, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DataTableView, LoadingState, type DataTableCell, type DataTableColumn, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { TextAttributes } from "../../../ui";
-import { useAppSelector, usePaneCollection } from "../../../state/app/context";
+import { useAppSelector, usePaneCollection, usePaneInstance } from "../../../state/app/context";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { getCollectionTickersFromConfig } from "../portfolio-list/pane/data";
 import { handleRefreshKey } from "../shared/table-pane";
+import { usePaneStatusFooter } from "../shared/pane-footer";
 import { colors } from "../../../theme/colors";
+import { mapPool } from "../../../utils/map-pool";
 import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
-import { buildPortfolioEventRows, type PortfolioEventRow } from "./portfolio-events-model";
+import { buildPortfolioEventRows, resolvePortfolioEventsCollectionId, type PortfolioEventRow } from "./portfolio-events-model";
 import type { CorporateActionsData } from "../../../types/financials";
 
 type ColumnId = "date" | "symbol" | "event" | "period" | "value" | "detail";
@@ -22,27 +24,56 @@ const columns: Column[] = [
   { id: "detail", label: "DETAIL", width: 10, flexGrow: 1, align: "left" },
 ];
 
+/** A collection can hold hundreds of tickers, and each one is its own request. */
+const CORPORATE_ACTIONS_CONCURRENCY = 4;
+
+type TickerEvents = { data: CorporateActionsData | null; name?: string; failed?: boolean };
+
 export function PortfolioEventsPane({ focused, width, height }: PaneProps) {
   const provider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
-  const { collectionId } = usePaneCollection();
+  const { collectionId: boundCollectionId } = usePaneCollection();
+  const paneInstance = usePaneInstance();
   const config = useAppSelector((state) => state.config);
+  const collectionId = useMemo(
+    () => resolvePortfolioEventsCollectionId(config, paneInstance?.settings, boundCollectionId),
+    [boundCollectionId, config, paneInstance?.settings],
+  );
   const tickerMap = useAppSelector((state) => state.tickers);
   const tickers = useMemo(() => getCollectionTickersFromConfig(config, tickerMap, collectionId), [collectionId, config, tickerMap]);
-  const [data, setData] = useState<Map<string, { data: CorporateActionsData | null; name?: string }>>(new Map());
+  const [data, setData] = useState<Map<string, TickerEvents>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [failedCount, setFailedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sortPreference, setSortPreference] = useState<SortPreference<ColumnId>>({ columnId: "date", direction: "asc" });
+  const requestRef = useRef(0);
 
   const reload = useCallback(() => {
     const getCorporateActions = provider?.getCorporateActions;
-    if (!getCorporateActions || tickers.length === 0) { setData(new Map()); setLoading(false); return; }
+    // Re-scoping the pane starts a new fetch while the old one is still in
+    // flight, so a superseded batch must not land on the newer collection.
+    requestRef.current += 1;
+    const requestId = requestRef.current;
+    if (!getCorporateActions || tickers.length === 0) {
+      setData(new Map()); setFailedCount(0); setError(null); setLoading(false);
+      return;
+    }
     setLoading(true); setError(null);
-    Promise.all(tickers.map(async (ticker): Promise<[string, { data: CorporateActionsData | null; name?: string }]> => {
+    void mapPool(tickers, CORPORATE_ACTIONS_CONCURRENCY, async (ticker): Promise<[string, TickerEvents]> => {
       try { return [ticker.metadata.ticker, { data: await getCorporateActions(ticker.metadata.ticker, ticker.metadata.exchange), name: ticker.metadata.name }]; }
-      catch { return [ticker.metadata.ticker, { data: null, name: ticker.metadata.name }]; }
-    })).then((entries) => setData(new Map(entries))).finally(() => setLoading(false));
+      catch { return [ticker.metadata.ticker, { data: null, name: ticker.metadata.name, failed: true }]; }
+    }).then((entries) => {
+      if (requestRef.current !== requestId) return;
+      const failed = entries.filter(([, entry]) => entry.failed).length;
+      setData(new Map(entries));
+      setFailedCount(failed);
+      // Every request failing reads as "no events" otherwise, which is a
+      // different answer from "the provider never replied".
+      setError(failed > 0 && failed === entries.length ? "events unavailable" : null);
+    }).finally(() => {
+      if (requestRef.current === requestId) setLoading(false);
+    });
   }, [provider, tickers]);
   useEffect(() => { reload(); }, [reload]);
 
@@ -57,7 +88,13 @@ export function PortfolioEventsPane({ focused, width, height }: PaneProps) {
     attributes: column.id === "event" ? TextAttributes.BOLD : undefined,
   }), []);
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => handleRefreshKey(event, reload, { stopPropagation: true }), [reload]);
-  usePaneFooter("portfolio-events", () => ({ info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : [] }), [error, loading]);
+  // A partial failure still fills the table, so the gap only shows up here.
+  const partialInfo = useMemo<PaneFooterSegment[]>(() => (
+    !error && failedCount > 0 && tickers.length > 0
+      ? [{ id: "partial", parts: [{ text: `${failedCount}/${tickers.length} unavailable`, tone: "warning" as const }] }]
+      : []
+  ), [error, failedCount, tickers.length]);
+  usePaneStatusFooter({ registrationId: "portfolio-events", loading, error, info: partialInfo });
   if (loading && rows.length === 0) return <LoadingState title="Loading portfolio events..." />;
   return <DataTableView<PortfolioEventRow, Column>
     focused={focused} rootWidth={width} rootHeight={height} columns={columns} items={sortedRows}

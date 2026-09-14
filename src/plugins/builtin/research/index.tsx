@@ -1,6 +1,6 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
-import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
+import type { PaneSettingsContext, PaneSettingsDef, TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
@@ -27,6 +27,27 @@ function prefetchAnalystResearch({ ticker, dataProvider }: TickerResearchTabPref
 function prefetchCorporateActions({ ticker, dataProvider }: TickerResearchTabPrefetchContext): void {
   if (!dataProvider?.getCorporateActions) return;
   void dataProvider.getCorporateActions(ticker.metadata.ticker, ticker.metadata.exchange).catch(() => {});
+}
+
+/** The pane's scope lives in its settings, so it has to be editable there too. */
+function portfolioEventsSettings(context: PaneSettingsContext): PaneSettingsDef | null {
+  const collections = [
+    ...context.config.portfolios.map((portfolio) => ({ value: portfolio.id, label: portfolio.name })),
+    ...context.config.watchlists.map((watchlist) => ({ value: watchlist.id, label: watchlist.name })),
+  ];
+  if (collections.length === 0) return null;
+  return {
+    title: "Portfolio Events Scope",
+    fields: [
+      {
+        key: "collectionId",
+        label: "Collection",
+        description: "Automatic follows the collection this pane was opened from, then the first portfolio or watchlist.",
+        type: "select",
+        options: [{ value: "", label: "Automatic" }, ...collections],
+      },
+    ],
+  };
 }
 
 export const researchModule: PluginModule = {
@@ -118,6 +139,7 @@ export const researchModule: PluginModule = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 24 },
       tableExport: true,
+      settings: portfolioEventsSettings,
     },
   ],
 
@@ -166,10 +188,11 @@ export const researchModule: PluginModule = {
       keywords: ["portfolio", "watchlist", "events", "earnings", "dividend", "split", "calendar", "pevt"],
       category: "Portfolio",
       shortcut: { prefix: "PEVT" },
-      canCreate: (context) => context.activeCollectionId !== null,
-      createInstance: (context) => context.activeCollectionId
-        ? { settings: { collectionId: context.activeCollectionId } }
-        : null,
+      createInstance: (context) => ({
+        settings: context.activeCollectionId
+          ? { collectionId: context.activeCollectionId }
+          : undefined,
+      }),
     },
     {
       id: "relative-valuation-pane",
