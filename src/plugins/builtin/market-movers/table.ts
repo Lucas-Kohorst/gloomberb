@@ -2,7 +2,7 @@ import type { DataTableCell } from "../../../components";
 import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatCompact, formatSignedPercentValue } from "../../../utils/format";
+import { formatCurrency, formatCompact, formatPercentValue, formatSignedPercentValue } from "../../../utils/format";
 import type { MarketMoverColumn, MarketMoverRow } from "./model";
 import { fiftyTwoWeekPositionPercent } from "./model";
 
@@ -36,7 +36,7 @@ function volRatioColor(ratio: number): string {
 
 function fiftyTwoWeekPosition(price: number, low: number | undefined, high: number | undefined): string {
   const pct = fiftyTwoWeekPositionPercent(price, low, high);
-  return pct == null ? "—" : `${Math.round(pct)}`;
+  return formatPercentValue(pct ?? undefined);
 }
 
 export function buildMarketMoverColumns(width: number): MarketMoverColumn[] {
@@ -46,7 +46,7 @@ export function buildMarketMoverColumns(width: number): MarketMoverColumn[] {
   const chgWidth = 8;
   const volWidth = 8;
   const volRatioWidth = 6;
-  const rangeWidth = 4;
+  const rangeWidth = 6;
   const mcapWidth = 8;
   const columnCount = 9;
   const fixedWidth = rankWidth + tickerWidth + priceWidth + chgWidth + volWidth + volRatioWidth + rangeWidth + mcapWidth;
