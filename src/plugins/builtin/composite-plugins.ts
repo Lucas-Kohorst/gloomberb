@@ -22,6 +22,7 @@ import { fearGreedModule } from "./fear-greed";
 import { futuresModule } from "./futures";
 import { fxMatrixModule } from "./fx-matrix";
 import { helpModule } from "./help";
+import { keybindingsModule } from "./keybindings";
 import { positionSizerModule } from "./kelly-sizer";
 import { layoutManagerModule } from "./layout-manager";
 import { marketHaltsModule } from "./market-halts";
@@ -59,7 +60,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, pluginMarketplaceModule, helpModule, changelogModule, connectionsModule],
+  modules: [layoutManagerModule, pluginMarketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

@@ -106,6 +106,7 @@ function workspaceFingerprint(config: AppConfig): string {
     autoRefreshInterval: config.autoRefreshInterval,
     fontFamily: config.fontFamily,
     tickerSearchShortcut: config.tickerSearchShortcut,
+    keybindings: config.keybindings,
     activeLayoutIndex: config.activeLayoutIndex,
     layouts: config.layouts.map((layout) => ({
       name: layout.name,

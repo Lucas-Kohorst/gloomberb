@@ -1,9 +1,11 @@
 import type { CommandDef, KeyboardShortcut } from "../../../types/plugin";
+import type { AppConfig } from "../../../types/config";
 import { getPluginCommandCategory } from "../../../components/command-bar/commands/plugin/items";
 import { commands as coreCommands } from "../../../components/command-bar/commands/registry";
 import { resolvePaneTemplateSection } from "../../pane-sections";
 import { getSharedRegistry } from "../../registry";
 import type { HelpShortcutEntry } from "./components";
+import { formatKeybinding, resolveKeybindings } from "../../../app/keybindings";
 
 type SharedRegistry = ReturnType<typeof getSharedRegistry>;
 
@@ -99,27 +101,46 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
   return [...coreRows, ...pluginRows];
 }
 
-function formatShortcutKey(shortcut: KeyboardShortcut): string {
-  const key = shortcut.key.length === 1
-    ? shortcut.key.toUpperCase()
-    : shortcut.key[0]!.toUpperCase() + shortcut.key.slice(1);
-  return [
-    shortcut.ctrl ? "Ctrl" : null,
-    shortcut.shift ? "Shift" : null,
-    key,
-  ].filter((value): value is string => !!value).join("+");
+function formatShortcutKey(shortcut: Pick<KeyboardShortcut, "key" | "ctrl" | "shift" | "alt">): string {
+  return formatKeybinding(shortcut);
+}
+
+export function resolveGlobalShortcuts(registry: SharedRegistry): HelpShortcutEntry[] {
+  if (!registry) return [];
+  let config: AppConfig | undefined;
+  try {
+    config = registry.getConfigFn?.();
+  } catch {
+    return [];
+  }
+  if (!config) return [];
+  return resolveKeybindings(config, registry.shortcuts?.values())
+    .filter((shortcut) => shortcut.group === "global")
+    .map((shortcut) => ({
+      id: shortcut.id,
+      badges: [formatKeybinding(shortcut)],
+      description: formatShortcutDescription(shortcut.description),
+      category: "Global",
+    }));
 }
 
 export function resolvePluginShortcuts(registry: SharedRegistry): HelpShortcutEntry[] {
   if (!registry || !registry.shortcuts) return [];
 
   const disabledPlugins = resolveDisabledPlugins(registry);
-  return [...registry.shortcuts.values()]
-    .filter((shortcut: KeyboardShortcut) => {
+  let config: Pick<AppConfig, "keybindings">;
+  try {
+    config = registry.getConfigFn?.() ?? { keybindings: {} };
+  } catch {
+    config = { keybindings: {} };
+  }
+  return resolveKeybindings(config, registry.shortcuts.values())
+    .filter((shortcut) => shortcut.group === "plugin")
+    .filter((shortcut) => {
       const pluginId = registry.getShortcutPluginId?.(shortcut.id);
       return !pluginId || !disabledPlugins.has(pluginId);
     })
-    .map((shortcut: KeyboardShortcut) => {
+    .map((shortcut) => {
       const pluginId = registry.getShortcutPluginId?.(shortcut.id);
       return {
         id: `plugin-shortcut:${shortcut.id}`,

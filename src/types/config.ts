@@ -10,6 +10,13 @@ export interface ChartPreferences {
   renderer: ChartRendererPreference;
 }
 
+export interface KeybindingConfig {
+  key: string;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+}
+
 export interface BrokerInstanceConfig {
   id: string;
   brokerType: string;
@@ -180,6 +187,8 @@ export interface AppConfig {
   recentTickers: string[];
   /** Recently executed command-bar commands and pane templates, newest first. */
   recentCommands: RecentCommand[];
+  /** User overrides for global and plugin-registered keyboard shortcuts. */
+  keybindings?: Record<string, KeybindingConfig>;
   /**
    * Extra command-bar prefix that opens ticker search alongside the defaults
    * ("DES" with the "T" alias). Omitted or empty keeps the defaults untouched.

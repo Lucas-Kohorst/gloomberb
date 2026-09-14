@@ -22,7 +22,11 @@ const RELEASE_0_13_15: ChangelogRelease = {
 
 ## Data tables
 
-- \`y\` copies the selected table row to the clipboard as tab-separated cells and \`Shift+Y\` copies its leading cell (the ticker symbol), with a confirmation toast. Panes opt in where \`y\` is free — the Portfolio/Watchlist table and the RSS feed manager ship it first; article panes keep \`y\` for sharing.`,
+- \`y\` copies the selected table row to the clipboard as tab-separated cells and \`Shift+Y\` copies its leading cell (the ticker symbol), with a confirmation toast. Panes opt in where \`y\` is free — the Portfolio/Watchlist table and the RSS feed manager ship it first; article panes keep \`y\` for sharing.
+
+## Keyboard
+
+- Enter \`KEYS\` to browse, search, reset, and rebind global or plugin-registered keyboard shortcuts. Help now shows each effective binding.`,
 };
 
 const RELEASE_0_13_14: ChangelogRelease = {

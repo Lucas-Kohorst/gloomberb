@@ -18,6 +18,7 @@ import {
 import {
   groupShortcutEntries,
   resolveCommandShortcuts,
+  resolveGlobalShortcuts,
   resolvePluginShortcuts,
   resolveWindowTemplates,
 } from "./shortcut-model";
@@ -38,6 +39,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
   const [activeTabId, setActiveTabId] = useState<HelpTabId>("basics");
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
+  const globalShortcuts = resolveGlobalShortcuts(registry);
   const windowTemplates = resolveWindowTemplates(registry);
   const uiHost = useUiHost();
   const isDesktopWeb = uiHost.kind === "desktop-web";
@@ -188,17 +190,10 @@ function HelpPane({ focused, width, height }: PaneProps) {
                 badges={["Tab", "Shift+Tab"]}
                 description="Move focus between panes and floating windows."
               />
+              <ShortcutGroup title={t("Effective bindings")} entries={globalShortcuts} />
               <ShortcutRow
                 badges={isDesktopWeb ? ["OPT 1-9"] : ["Ctrl+1-9"]}
                 description="Switch saved layouts by number."
-              />
-              <ShortcutRow
-                badges={["r", "Shift+R"]}
-                description="Refresh the focused ticker or refresh everything."
-              />
-              <ShortcutRow
-                badges={["q"]}
-                description="Quit the terminal app."
               />
               <ShortcutRow
                 badges={copyBadges}
