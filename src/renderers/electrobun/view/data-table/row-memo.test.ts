@@ -19,6 +19,7 @@ function baseProps(): WebDataTableRowMemoProps {
     item: { id: "AAPL" },
     itemKey: "AAPL",
     gridTemplateColumns: "8ch",
+    frozenColumnId: null,
     renderCell: () => ({ text: "1" }),
     renderSectionHeader: undefined,
     getRowBackgroundColor: undefined,
@@ -72,6 +73,12 @@ describe("webDataTableRowPropsAreEqual", () => {
   test("re-renders when the item identity changes even if revision matches", () => {
     const prev = baseProps();
     const next = { ...prev, item: { id: "AAPL" } };
+    expect(webDataTableRowPropsAreEqual(prev, next)).toBe(false);
+  });
+
+  test("re-renders when the frozen column changes so toggling the setting is visible", () => {
+    const prev = baseProps();
+    const next = { ...prev, frozenColumnId: "price" };
     expect(webDataTableRowPropsAreEqual(prev, next)).toBe(false);
   });
 });

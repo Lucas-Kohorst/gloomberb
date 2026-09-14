@@ -26,7 +26,7 @@ async function mount(renderedWidth = 12) {
   await act(async () => root!.render(<WebDataTableHeader
     columns={[{ id: "name", label: "Name", width: 12 }]}
     columnGap={1} horizontalPadding={1} focusPane={() => focused++}
-    gridTemplateColumns="100px" sortColumnId={null} sortDirection="asc"
+    gridTemplateColumns="100px" frozenColumnId={null} sortColumnId={null} sortDirection="asc"
     onHeaderClick={() => sorted++}
     onColumnResize={(_, width) => resized.push(width)}
     onColumnResizeEnd={() => ended++} onColumnResizeReset={() => reset++}

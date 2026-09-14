@@ -8,6 +8,7 @@ export type WebDataTableRowMemoProps = {
   rowSize: number;
   rowStart: number;
   gridTemplateColumns: string;
+  frozenColumnId: string | null;
   rowContextMenuSurface: boolean;
   rowRevision?: string | number;
   item: unknown;
@@ -35,6 +36,7 @@ function layoutPropsEqual(
     && prev.columnGap === next.columnGap
     && prev.horizontalPadding === next.horizontalPadding
     && prev.gridTemplateColumns === next.gridTemplateColumns
+    && prev.frozenColumnId === next.frozenColumnId
     && prev.rowContextMenuSurface === next.rowContextMenuSurface
     && prev.columns === next.columns;
 }

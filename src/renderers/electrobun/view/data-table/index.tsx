@@ -23,6 +23,7 @@ import {
   getTableWidth,
   hasMeaningfulTableHorizontalOverflow,
 } from "../../../../components/ui/table-layout";
+import { frozenTableColumnId } from "../../../../components/data-table/freeze-column";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import { useScrollbarActivity } from "../scrollbar-activity";
 import {
@@ -76,6 +77,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   emptyStateTitle,
   emptyStateMessage,
   emptyStateHint,
+  freezeFirstColumn = false,
   virtualize = true,
   overscan = 3,
   columnGap = 1,
@@ -111,6 +113,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     () => buildTableGridTemplateColumns(columns, fillAvailableWidth),
     [columns, fillAvailableWidth],
   );
+  const frozenColumnId = freezeFirstColumn
+    ? frozenTableColumnId(columns)
+    : null;
   const selectRow = useCallback((item: T, index: number) => {
     onSelect(item, index);
   }, [onSelect]);
@@ -336,6 +341,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             focusPane={focusPane}
             onTableMouseDown={onTableMouseDown}
             gridTemplateColumns={gridTemplateColumns}
+            frozenColumnId={frozenColumnId}
             onHeaderClick={onHeaderClick}
             onColumnResize={onColumnResize}
             onColumnResizeEnd={onColumnResizeEnd}
@@ -393,6 +399,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     focusPane={focusPane}
                     onTableMouseDown={onTableMouseDown}
                     gridTemplateColumns={gridTemplateColumns}
+                    frozenColumnId={frozenColumnId}
                     onActivateRow={onActivate ? activateRow : undefined}
                     onRowContextMenu={onRowContextMenu}
                     onRowMouseDown={onRowMouseDown}
