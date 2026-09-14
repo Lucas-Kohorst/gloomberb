@@ -67,6 +67,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "market-overview": { categories: ["markets"] },
   news: { categories: ["news"] },
   notes: { categories: ["productivity"] },
+  "notification-center": { categories: ["productivity", "alerts"] },
   "plugin-inspector": { categories: ["developer"] },
   portfolio: { categories: ["portfolio"] },
   "research-search": { categories: ["research", "news"] },
