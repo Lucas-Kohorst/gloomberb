@@ -68,9 +68,10 @@ export function formatPrice(record: IPORecord): string {
 }
 
 export function formatReturn(value: number | null): string {
+  // The "RETURN%" header already names the unit, so cells carry the bare value.
   if (value == null) return "—";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}%`;
+  return `${sign}${value.toFixed(1)}`;
 }
 
 export function stockAnalysisUrl(ticker: string): string {
@@ -90,7 +91,7 @@ export function buildColumns(): IPOColumn[] {
     { id: "offer", label: "OFFER", width: 8, align: "right" },
     { id: "price", label: "PRICE", width: PRICE_WIDTH, align: "right" },
     { id: "shares", label: "SHARES", width: 7, align: "right" },
-    { id: "return", label: "RETURN", width: 8, align: "right" },
+    { id: "return", label: "RETURN%", width: 8, align: "right" },
   ];
 }
 

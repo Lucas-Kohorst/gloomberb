@@ -246,7 +246,7 @@ function positionColumns(): PositionColumn[] {
     { id: "cost", label: t("Cost"), width: 11, align: "right" },
     { id: "value", label: t("Value"), width: 11, align: "right" },
     { id: "pnl", label: t("P&L"), width: 12, align: "right" },
-    { id: "ret", label: t("Ret"), width: 7, align: "right" },
+    { id: "ret", label: t("Ret%"), width: 7, align: "right" },
   ];
 }
 

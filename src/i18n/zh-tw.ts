@@ -975,6 +975,7 @@ export const zhTW: Record<string, string> = {
   "Cost": "成本",
   "Value": "市值",
   "Ret": "報酬",
+  "Ret%": "報酬%",
   "Market Cap": "市值",
   "Shares Out": "流通在外股數",
   "P/E (TTM)": "本益比（P/E，TTM）",

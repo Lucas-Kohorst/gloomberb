@@ -18,7 +18,7 @@ import { usePaneInstance } from "../../../state/app/context";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { colors, priceColor } from "../../../theme/colors";
 import { applySortPreference, compareSortValues, type SortDirection } from "../../../utils/sort-values";
-import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
+import { formatCompact, formatCurrency, formatNumber, formatSignedPercentValue } from "../../../utils/format";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
 import { paneSearchHint } from "../shared/pane-footer";
@@ -72,6 +72,16 @@ function fcfYield(financials: TickerFinancials | null): number | undefined {
   const fcf = financials?.fundamentals?.freeCashFlow;
   const marketCap = financials?.quote?.marketCap;
   return fcf != null && marketCap ? fcf / marketCap : undefined;
+}
+
+/**
+ * Signed percent without the "%" for columns whose header already reads "%"
+ * (FCF%, REV%, OP%). Input is a fraction (0.085 -> +8.50), like formatPercent.
+ */
+function formatPercentMaybeValue(value: number | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(2)}`;
 }
 
 function relativeSortValue(row: RelativeRow, columnId: RelativeColumnId): string | number | null {
@@ -210,7 +220,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       case "price":
         return { text: quote?.price != null ? formatCurrency(quote.price, quote.currency) : "—", color: selectedColor ?? colors.text };
       case "change":
-        return { text: quote?.changePercent != null ? formatPercentRaw(quote.changePercent) : "—", color: selectedColor ?? priceColor(quote?.changePercent ?? 0) };
+        return { text: quote?.changePercent != null ? formatSignedPercentValue(quote.changePercent) : "—", color: selectedColor ?? priceColor(quote?.changePercent ?? 0) };
       case "marketCap":
         return { text: formatCompact(quote?.marketCap), color: selectedColor ?? colors.textDim };
       case "pe":
@@ -220,11 +230,11 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       case "evSales":
         return { text: formatNumber(evSales(row.financials), 1), color: selectedColor ?? colors.text };
       case "fcfYield":
-        return { text: formatPercent(fcfYield(row.financials)), color: selectedColor ?? priceColor(fcfYield(row.financials) ?? 0) };
+        return { text: formatPercentMaybeValue(fcfYield(row.financials)), color: selectedColor ?? priceColor(fcfYield(row.financials) ?? 0) };
       case "revenueGrowth":
-        return { text: formatPercent(fundamentals?.revenueGrowth ?? fundamentals?.lastQuarterGrowth), color: selectedColor ?? priceColor(fundamentals?.revenueGrowth ?? fundamentals?.lastQuarterGrowth ?? 0) };
+        return { text: formatPercentMaybeValue(fundamentals?.revenueGrowth ?? fundamentals?.lastQuarterGrowth), color: selectedColor ?? priceColor(fundamentals?.revenueGrowth ?? fundamentals?.lastQuarterGrowth ?? 0) };
       case "margin":
-        return { text: formatPercent(fundamentals?.operatingMargin), color: selectedColor ?? colors.text };
+        return { text: formatPercentMaybeValue(fundamentals?.operatingMargin), color: selectedColor ?? colors.text };
     }
   }, []);
 

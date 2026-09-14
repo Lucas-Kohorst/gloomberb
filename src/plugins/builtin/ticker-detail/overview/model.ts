@@ -7,7 +7,7 @@ import {
   formatCurrency,
   formatNumber,
   formatPercent,
-  formatPercentRaw,
+  formatSignedPercentValue,
 } from "../../../../utils/format";
 import {
   formatMarketCostWithCurrency,
@@ -127,7 +127,7 @@ export function buildPositionRows({
         ? marketValueBase - costBasisBase
         : null;
     const returnPercent = pnlValue != null && costBasisBase !== 0
-      ? formatPercentRaw((pnlValue / Math.abs(costBasisBase)) * 100)
+      ? formatSignedPercentValue((pnlValue / Math.abs(costBasisBase)) * 100)
       : "—";
     const unit = position.multiplier && position.multiplier > 1 ? " ct" : " sh";
 

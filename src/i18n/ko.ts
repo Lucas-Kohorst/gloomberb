@@ -973,6 +973,7 @@ export const ko: Record<string, string> = {
   "Cost": "원가",
   "Value": "가치",
   "Ret": "수익률",
+  "Ret%": "수익률%",
   "Market Cap": "시가총액",
   "Shares Out": "발행주식수",
   "P/E (TTM)": "P/E (TTM)",

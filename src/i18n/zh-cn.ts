@@ -975,6 +975,7 @@ export const zhCN: Record<string, string> = {
   "Cost": "成本",
   "Value": "市值",
   "Ret": "收益",
+  "Ret%": "收益%",
   "Market Cap": "市值",
   "Shares Out": "流通股数",
   "P/E (TTM)": "市盈率（TTM）",

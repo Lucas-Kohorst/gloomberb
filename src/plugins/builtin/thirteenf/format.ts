@@ -1,7 +1,7 @@
 import {
   formatCompact,
   formatMoneyCompact as sharedFormatMoneyCompact,
-  formatPercentRaw,
+  formatSignedPercentValue,
 } from "../../../utils/format";
 import type { HoldingAction } from "./types";
 
@@ -14,15 +14,23 @@ export function formatShares(value: number | null | undefined): string {
   return formatCompact(value);
 }
 
-export function formatPercentMaybe(value: number | null | undefined): string {
+/**
+ * Unit-less signed percent for "%"-headed columns (WEIGHT%, VALUE%). Matches
+ * the sign and dynamic precision of the previous unit-suffixed formatter.
+ */
+export function formatPercentMaybeValue(value: number | null | undefined): string {
   if (value == null) return "--";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${(value * 100).toFixed(Math.abs(value) >= 0.1 ? 1 : 2)}%`;
+  return `${sign}${(value * 100).toFixed(Math.abs(value) >= 0.1 ? 1 : 2)}`;
 }
 
-export function formatRawPercentMaybe(value: number | null | undefined): string {
+/**
+ * Unit-less sign-prefixed percent for the "EST 13F%" column whose header
+ * already reads "%". Same "--" missing marker as the previous formatter.
+ */
+export function formatRawPercentMaybeValue(value: number | null | undefined): string {
   if (value == null) return "--";
-  return formatPercentRaw(value);
+  return formatSignedPercentValue(value);
 }
 
 export function formatShortDate(value: string | null | undefined): string {
