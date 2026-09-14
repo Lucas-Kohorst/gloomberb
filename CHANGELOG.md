@@ -1,12 +1,8 @@
 # Changelog
 
-## Unreleased — Exec tab for named-executive pay
+## Unreleased — Command-bar Plugins prefix on the left
 
-`EXEC <ticker>` opens named executive officers and what they were paid, read from the company's proxy statement. Ticker research also gets an Exec tab beside Calls.
-
-- Key figures first (CEO total, pay ratio, equity share, prior say-on-pay), then a pay-mix bar, the named-officer table, and what the compensation committee changed.
-- Year switcher when more than one proxy is on file; `[o]`pen the DEF 14A.
-- Open Gloom Cloud `/public/proxies` reads, registered as a Connections source.
+The Plugin Marketplace shortcut was `PLUGINS`, seven characters, so the command-bar badge rule left it on the right of the row. The prefix is now `PLUG` (with `PLUGINS` and `PL` still accepted), which lifts into the left badge column with the other command tags.
 
 ## Unreleased — Freeze the first table column on desktop and web
 

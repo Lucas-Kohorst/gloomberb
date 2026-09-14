@@ -1,7 +1,6 @@
 export const PLUGIN_MARKET_PLUGIN_ID = "plugin-market";
 export const PLUGIN_MARKET_PANE_ID = "plugin-market";
 export const PLUGIN_MARKET_TEMPLATE_ID = "plugin-market-pane";
-export const PLUGIN_MARKET_PLUG_TEMPLATE_ID = "plugin-market-plug-pane";
 export const GITHUB_PLUGIN_SEARCH_CONNECTION_ID = "github-plugin-search";
 
 export type PluginSource = "built-in" | "external" | "github";

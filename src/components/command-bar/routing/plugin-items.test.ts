@@ -50,7 +50,7 @@ describe("buildPluginToggleItems", () => {
 
     expect(items.map((item) => item.id)).toEqual(["plugin:notes", "plugin-market-open"]);
     expect(items[0]?.kind).toBe("plugin");
-    expect(items[1]?.right).toBe("PLUGINS");
+    expect(items[1]?.right).toBe("PLUG");
     await items[0]?.action();
     expect(persisted).toEqual([{ disabledPlugins: ["notes"] }]);
     items[1]?.action();

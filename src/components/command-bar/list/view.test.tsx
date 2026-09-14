@@ -112,6 +112,32 @@ test("keeps labels in place when a later section brings wider badges", async () 
   expect(columnOf(after, "DERIV") + "DERIV".length).toBe(columnOf(after, "Call spread") - 1);
 });
 
+test("plugin marketplace shortcut sits in the left badge column", async () => {
+  testSetup = await testRender(
+    <ListHarness
+      nativeListRows={rows([
+        item({
+          id: "plugin-market-open",
+          label: "Plugin Marketplace",
+          kind: "action",
+          right: "PLUG",
+        }),
+      ])}
+    />,
+    { width: 60, height: 20 },
+  );
+  await testSetup.renderOnce();
+  const frame = testSetup.captureCharFrame();
+  const titleCol = columnOf(frame, "Plugin Marketplace");
+  expect(titleCol).toBeGreaterThan(0);
+  expect(columnOf(frame, "PLUG") + "PLUG".length).toBe(titleCol - 1);
+  expect(frame.split("\n").some((row) => {
+    const plug = row.indexOf("PLUG");
+    const title = row.indexOf("Plugin Marketplace");
+    return plug >= 0 && title >= 0 && plug < title;
+  })).toBe(true);
+});
+
 test("searching label shares the result title column", async () => {
   testSetup = await testRender(
     <ListHarness
