@@ -40,7 +40,7 @@ export const notesPlugin: GloomPlugin = {
     disposeConnection = registerConnectionSource({
       id: "gloom-cloud:notes",
       name: "Gloom Cloud Notes",
-      kind: "cloud",
+      kind: "data",
       pluginId: "notes",
     });
 
