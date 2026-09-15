@@ -94,9 +94,14 @@ describe("FloatingPaneWrapper", () => {
         flexDirection: "row",
         alignItems: "center",
         position: "relative",
+        gap: 4,
         zIndex: 2,
       }),
-      expect.objectContaining({ "data-gloom-role": "pane-close", position: "relative", zIndex: 2 }),
+      expect.objectContaining({
+        "data-gloom-role": "pane-close",
+        position: "relative",
+        zIndex: 2,
+      }),
     ]);
     expect(resizeHandles.find((handle) => handle["data-corner"] === "top")?.width)
       .toBeLessThan(32 - 4);
@@ -271,16 +276,15 @@ describe("FloatingPaneWrapper", () => {
       return { closeTargets, markup };
     };
 
-    // Docked panes used to be closable only through the actions menu, because
-    // the header gated its close control on floating/fullscreen.
+    // Docked panes always show a close button now, regardless of handler.
     const closable = renderDocked(() => {});
     expect(closable.closeTargets).toHaveLength(1);
     expect(closable.markup).toContain('aria-label="Close pane"');
 
-    // A close button with nothing wired to it would be a dead affordance.
+    // Even without a close handler the button renders (no-op on click).
     const plain = renderDocked(undefined);
-    expect(plain.closeTargets).toHaveLength(0);
-    expect(plain.markup).not.toContain('aria-label="Close pane"');
+    expect(plain.closeTargets).toHaveLength(1);
+    expect(plain.markup).toContain('aria-label="Close pane"');
   });
 
   test("lets native pane-header buttons focus and activate without pane shortcuts or dragging", () => {
