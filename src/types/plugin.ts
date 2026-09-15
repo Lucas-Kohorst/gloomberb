@@ -674,6 +674,31 @@ export interface PluginConfigState {
   keys(): string[];
 }
 
+export interface PluginTeamStateEntry<T> {
+  value: T;
+  revision: number;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+/**
+ * Plugin-owned data shared with a team, keyed per plugin. Writes take the
+ * revision they expect and fail when a teammate wrote first, so nothing is
+ * overwritten silently. Scoped to the active team unless a teamId is given.
+ */
+export interface PluginTeamState {
+  activeTeamId(): string | null;
+  get<T>(key: string, options?: { teamId?: string }): Promise<PluginTeamStateEntry<T> | null>;
+  list<T>(options?: { teamId?: string }): Promise<Array<PluginTeamStateEntry<T> & { key: string }>>;
+  set<T>(key: string, value: T, options?: { teamId?: string; expectRevision?: number }): Promise<{ revision: number }>;
+  delete(key: string, options?: { teamId?: string }): Promise<void>;
+  subscribe<T>(
+    key: string,
+    listener: (entry: PluginTeamStateEntry<T> | null) => void,
+    options?: { teamId?: string },
+  ): () => void;
+}
+
 export interface PluginPaneSettingsState {
   get<T = unknown>(paneId: string, key: string): T | null;
   set(paneId: string, key: string, value: unknown): Promise<void>;
@@ -815,6 +840,7 @@ export interface GloomPluginContext {
   readonly resume: PluginResumeState;
   readonly configState: PluginConfigState;
   readonly paneSettings: PluginPaneSettingsState;
+  readonly teamState: PluginTeamState;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;

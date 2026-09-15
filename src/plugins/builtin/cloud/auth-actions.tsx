@@ -50,6 +50,24 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
   );
 }
 
+export interface SignInWallProps {
+  /** Finishes the headline: "Sign in to {action}." */
+  action: string;
+  needsVerification?: boolean;
+  hint?: string;
+}
+
+/** The account wall for a pane body that cannot render until the account is right. */
+export function SignInWall({ action, needsVerification = false, hint }: SignInWallProps) {
+  return (
+    <CloudAuthNotice
+      message={needsVerification ? `Verify your email to ${action}.` : `Sign in to ${action}.`}
+      needsVerification={needsVerification}
+      showSignup={!needsVerification}
+    />
+  );
+}
+
 export function CloudAuthNotice({
   message,
   showSignup = true,

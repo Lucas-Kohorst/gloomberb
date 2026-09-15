@@ -19,6 +19,7 @@ import type { NewsQuery, NewsQueryState } from "../../types/news-source";
 import type { SyncContributor, SyncTransport } from "../../sync/types";
 import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
+import { createPluginTeamState } from "../team-state";
 import { createAlert as createAlertHandler } from "../builtin/alerts/alert-registry";
 import { registerByokKnownService } from "../builtin/byok/services";
 import type { PluginEvents } from "../event-bus";
@@ -218,6 +219,7 @@ export function createRegistryPluginContext({
     log,
     resume,
     paneSettings,
+    teamState: createPluginTeamState(pluginId),
     configState: {
       get: getConfigState,
       set: setConfigState,

@@ -19,6 +19,8 @@ import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
+import { teamChannelId } from "./team/model";
+import { teamStore } from "./team/store";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import { SHARE_CONNECTION_ID } from "../../../shares/connection";
 import type { SyncTransport } from "../../../sync/types";
@@ -115,8 +117,16 @@ function createChatModule(
       shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
       singleton: true,
       createInstance: async (context, options) => {
-        const channelId = options?.arg
-          ? await chatController.resolveRequiredChannelId(normalizeShortcutChannelId(options.arg))
+        // `CHAT MD` or `CHAT "Macro Desk"` opens that team's #general. A raw
+        // channel id (team ids are mixed case) is kept as typed.
+        const rawArg = options?.arg?.trim() ?? "";
+        const team = rawArg ? teamStore.findTeam(rawArg) : null;
+        const channelId = team
+          ? teamChannelId(team.id)
+          : rawArg && chatController.getChannels().some((entry) => entry.id === rawArg)
+          ? rawArg
+          : rawArg
+          ? await chatController.resolveRequiredChannelId(normalizeShortcutChannelId(rawArg))
           : await chatController.resolvePreferredChannelId(
             getPreferredChatOpenChannelId(context.config, chatController.getSnapshot()),
           );

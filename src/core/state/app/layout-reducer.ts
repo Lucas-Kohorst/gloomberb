@@ -228,6 +228,42 @@ export function reduceLayoutAction(state: AppState, action: AppAction): AppState
       });
     }
 
+    case "REPLACE_LAYOUT_CONTENT": {
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
+      const replaced: SavedLayout = {
+        ...currentConfig.layouts[action.index]!,
+        ...(action.name ? { name: action.name } : {}),
+        layout: cloneLayout(action.layout),
+        paneState: clonePaneStateMap(action.paneState),
+        focusedPaneId: null,
+        origin: action.origin,
+      };
+      const layouts = currentConfig.layouts.map((savedLayout, index) => (
+        index === action.index ? replaced : savedLayout
+      ));
+      const nextState = {
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, action.index, { past: [], future: [] }),
+      };
+      if (action.index !== currentConfig.activeLayoutIndex) {
+        return { ...nextState, config: { ...currentConfig, layouts } };
+      }
+      return withFocusedPane(nextState, {
+        ...currentConfig,
+        layout: cloneLayout(replaced.layout),
+        layouts,
+      }, {
+        paneState: clonePaneStateMap(replaced.paneState ?? {}),
+        focusedPaneId: null,
+      });
+    }
+
     case "RENAME_LAYOUT": {
       if (action.index < 0 || action.index >= state.config.layouts.length) return state;
       const currentConfig = syncConfigActiveLayoutState(

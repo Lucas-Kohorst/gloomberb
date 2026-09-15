@@ -55,6 +55,7 @@ import { PasswordChangeDialog } from "./password-dialog";
 import { AiProvidersTab } from "./ai-providers-tab";
 import { AccountByokTab } from "./byok-tab";
 import { DisplayTab, cycleDisplayFieldValue } from "./display-tab";
+import { TeamsAccountTab } from "../cloud/team/acm-tab";
 import { isHostedWebClient } from "../ai/providers";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
@@ -86,6 +87,7 @@ const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = 
   { label: "Emails", value: "emails" },
   { label: "AI", value: "ai" },
   { label: "BYOK", value: "byok" },
+  { label: "Teams", value: "teams" },
   { label: "Pro", value: "pro" },
   { label: "Advanced", value: "advanced" },
 ];
@@ -112,6 +114,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
   ],
   ai: ["aiProvidersAction"],
   byok: ["byokKeysAction"],
+  teams: [],
   pro: ["upgradeAction"],
   advanced: ["passwordAction", "deleteAccountAction"],
 };
@@ -894,6 +897,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           width={Math.max(1, width - 2)}
           height={Math.max(3, height - 2)}
         />
+      ) : activeTab === "teams" ? (
+        <TeamsAccountTab focused={focused} width={Math.max(1, width - 2)} />
       ) : (
         <ScrollBox height={Math.max(3, bodyHeight - 2)} scrollY focusable={false}>
           <Box flexDirection="column" width={contentWidth} gap={1}>

@@ -1,72 +1,84 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Input, Text, type InputRenderable, type TextareaRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, type InputRenderable, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { t } from "../../../i18n";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { ConfirmDialog, EmptyState, Tabs, usePaneFooter } from "../../../components";
+import { ConfirmDialog, EmptyState, Tabs, TextField, usePaneFooter } from "../../../components";
 import { type PromptContext, useDialog } from "../../../ui/dialog";
-import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
-import type { NotesFiles } from "./files";
+import { usePluginAppActions } from "../../runtime";
 import { MarkdownNotePreview } from "./markdown-note-preview";
 import {
   formatDeleteNoteTitle,
   formatLastEdited,
   generateNoteId,
-  searchNotes,
   type QuickNoteEntry,
 } from "./model";
+import { chooseNoteOwner, ownerColor, ownerLabel, resolveNoteConflict, useNoteTeams } from "./owner";
+import { asNotesRegistry, NoteConflictError, type NoteOwner, noteOwnerKey, type NotesStore, type NotesStoreRegistry } from "./store";
 import { useSyncedText } from "./text-state";
 
-export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery: () => string = () => "") {
+/** A tab in the pane: a quick note plus who owns it. */
+interface OwnedQuickNote extends QuickNoteEntry {
+  owner: NoteOwner;
+}
+
+export function createQuickNotesPane(
+  store: NotesStoreRegistry | NotesStore,
+  _consumeSearchQuery: () => string = () => "",
+) {
+  const registry = asNotesRegistry(store);
   return function QuickNotesPane({ focused, width }: PaneProps) {
     const dialog = useDialog();
     const { notify } = usePluginAppActions();
-    const { navigateTicker, pinTicker } = usePluginTickerActions();
-    const { switchTab } = usePluginPaneActions();
+    const teams = useNoteTeams();
+    const teamKey = teams.map((team) => team.id).join(",");
+    const owners = useMemo<NoteOwner[]>(
+      () => [{ kind: "user" }, ...teams.map((team) => ({ kind: "team" as const, teamId: team.id }))],
+      // teamKey stands in for the team list identity.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [teamKey],
+    );
+    const storeFor = useCallback((owner: NoteOwner) => registry.forOwner(owner), []);
+    const tabOwner = useCallback((tabId: string | null, list: readonly OwnedQuickNote[]): NoteOwner => (
+      list.find((tab) => tab.id === tabId)?.owner ?? { kind: "user" }
+    ), []);
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [editing, setEditing] = useState(false);
-    const [tabs, setTabs] = useState<QuickNoteEntry[]>([]);
+    const [tabs, setTabs] = useState<OwnedQuickNote[]>([]);
+    const tabsRef = useRef<OwnedQuickNote[]>([]);
+    tabsRef.current = tabs;
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState("");
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [initialSearchQuery] = useState(consumeSearchQuery);
-    const [searching, setSearching] = useState(Boolean(initialSearchQuery));
-    const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-    const [searchResults, setSearchResults] = useState<ReturnType<typeof searchNotes>>([]);
-    const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
     const { text: noteText, textRef: noteTextRef, setText: setNoteText } = useSyncedText("");
     const renameInputRef = useRef<InputRenderable>(null);
-    const searchInputRef = useRef<InputRenderable>(null);
     const prevTabRef = useRef<string | null>(null);
     const lastSavedTextRef = useRef<Map<string, string>>(new Map());
     const loadedTabIdRef = useRef<string | null>(null);
     const loadedRef = useRef(false);
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
-    useEffect(() => {
-      if (!searching) {
-        setSearchResults([]);
-        return;
+    const saveQuickNotesIndex = useCallback((entries: OwnedQuickNote[]) => {
+      // Each owner keeps its own index; a title change only touches that store.
+      const byOwner = new Map<string, { owner: NoteOwner; entries: QuickNoteEntry[] }>();
+      for (const entry of entries) {
+        const key = noteOwnerKey(entry.owner);
+        const bucket = byOwner.get(key) ?? { owner: entry.owner, entries: [] };
+        bucket.entries.push({ id: entry.id, title: entry.title, ...(entry.updatedAt ? { updatedAt: entry.updatedAt } : {}) });
+        byOwner.set(key, bucket);
       }
-      let cancelled = false;
-      Promise.all([notesFiles.list(), notesFiles.loadQuickNotesIndex()]).then(([entries, quickNotes]) => {
-        if (!cancelled) {
-          setSearchResults(searchNotes(entries, quickNotes, searchQuery));
-          setSelectedSearchIndex(0);
-        }
-      });
-      return () => { cancelled = true; };
-    }, [notesFiles, searchQuery, searching, tabs]);
-
-    const saveQuickNotesIndex = useCallback((entries: QuickNoteEntry[]) => {
-      notesFiles.saveQuickNotesIndex(entries).catch((error) => {
-        console.error("[notes] Failed to save notes index:", error);
-        notify({ body: "Failed to save notes index. Check disk space and permissions.", type: "error" });
-      });
-    }, [notesFiles, notify]);
+      for (const owner of owners) {
+        const bucket = byOwner.get(noteOwnerKey(owner));
+        const store = storeFor(owner);
+        if (store.readOnly) continue;
+        store.saveQuickNotesIndex(bucket?.entries ?? []).catch((error) => {
+          console.error("[notes] Failed to save notes index:", error);
+          notify({ body: error instanceof Error ? error.message : "Failed to save notes index.", type: "error" });
+        });
+      }
+    }, [notify, owners, storeFor]);
 
     const readActiveNoteText = useCallback(() => (
       textareaRef.current?.editBuffer.getText() ?? noteTextRef.current
@@ -88,9 +100,34 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       if (lastSavedTextRef.current.get(tabId) === text) return;
 
       lastSavedTextRef.current.set(tabId, text);
-      notesFiles.save(notesFiles.quickNoteKey(tabId), text).catch((error) => {
+      const owner = tabOwner(tabId, tabsRef.current);
+      const store = storeFor(owner);
+      if (store.readOnly) return;
+      const key = store.quickNoteKey(tabId);
+      store.save(key, text).catch(async (error: unknown) => {
+        if (error instanceof NoteConflictError) {
+          lastSavedTextRef.current.delete(tabId);
+          const choice = await resolveNoteConflict(dialog, error);
+          const cloud = registry.cloud(owner);
+          if (choice === "reload") {
+            const theirs = error.current?.content ?? "";
+            if (cloud && error.current) cloud.acceptCurrent(key, error.current);
+            lastSavedTextRef.current.set(tabId, theirs);
+            if (loadedTabIdRef.current === tabId) {
+              setNoteText(theirs);
+              textareaRef.current?.setText(theirs);
+            }
+          } else if (choice === "overwrite") {
+            if (cloud && error.current) cloud.acceptCurrent(key, error.current);
+            lastSavedTextRef.current.set(tabId, text);
+            await store.save(key, text).catch((again: unknown) => {
+              notify({ body: again instanceof Error ? again.message : "Could not save the note.", type: "error" });
+            });
+          }
+          return;
+        }
         console.error("[notes] Failed to save note:", error);
-        notify({ body: "Failed to save note. Check disk space and permissions.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : "Failed to save note.", type: "error" });
       });
 
       const updatedAt = Date.now();
@@ -100,39 +137,43 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
         saveQuickNotesIndex(next);
         return next;
       });
-    }, [activeTabId, noteTextRef, notesFiles, notify, readActiveNoteText, saveQuickNotesIndex]);
-
-    const openSearchResult = useCallback((index: number) => {
-      const result = searchResults[index];
-      if (!result) return;
-      if (result.kind === "quick") {
-        saveTab(activeTabId);
-        setActiveTabId(result.key.slice("__note-".length, -2));
-        setSearching(false);
-        setEditing(false);
-        return;
-      }
-      pinTicker(result.key);
-      switchTab("notes");
-    }, [activeTabId, pinTicker, saveTab, searchResults, switchTab]);
+    }, [activeTabId, dialog, noteTextRef, notify, readActiveNoteText, saveQuickNotesIndex, setNoteText, storeFor, tabOwner]);
 
     useEffect(() => {
-      if (loadedRef.current) return;
-      loadedRef.current = true;
-      notesFiles.loadQuickNotesIndex().then((entries) => {
+      // Mine first, then each team's notes; reloads when the team list changes.
+      let cancelled = false;
+      void Promise.all(owners.map(async (owner) => {
+        try {
+          return (await storeFor(owner).loadQuickNotesIndex()).map((entry) => ({ ...entry, owner }));
+        } catch {
+          return [] as OwnedQuickNote[];
+        }
+      })).then((lists) => {
+        if (cancelled) return;
+        const entries = lists.flat();
         if (entries.length === 0) {
+          if (loadedRef.current) return;
           const id = generateNoteId();
-          const initial: QuickNoteEntry[] = [{ id, title: "New" }];
+          const initial: OwnedQuickNote[] = [{ id, title: "New", owner: { kind: "user" } }];
           lastSavedTextRef.current.set(id, "");
           setTabs(initial);
           setActiveTabId(id);
           saveQuickNotesIndex(initial);
         } else {
-          setTabs(entries);
-          setActiveTabId(entries[0]!.id);
+          setTabs((previous) => {
+            // Keep a tab the person just added locally while the server catches up.
+            const known = new Set(entries.map((entry) => entry.id));
+            const pending = previous.filter((entry) => !known.has(entry.id) && lastSavedTextRef.current.has(entry.id));
+            return [...entries, ...pending];
+          });
+          setActiveTabId((current) => (current && entries.some((entry) => entry.id === current) ? current : entries[0]!.id));
         }
+        loadedRef.current = true;
       });
-    }, [notesFiles, saveQuickNotesIndex]);
+      return () => {
+        cancelled = true;
+      };
+    }, [owners, saveQuickNotesIndex, storeFor]);
 
     useEffect(() => {
       if (!activeTabId) {
@@ -156,14 +197,15 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
         setNoteText(text);
         textareaRef.current?.setText(text);
       };
-      notesFiles.load(notesFiles.quickNoteKey(activeTabId)).then(applyLoaded, (error: unknown) => {
+      const store = storeFor(tabOwner(activeTabId, tabsRef.current));
+      store.load(store.quickNoteKey(activeTabId)).then(applyLoaded, (error: unknown) => {
         // Leave the tab unloaded so nothing can save over content we failed to read.
         if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
       });
       return () => {
         cancelled = true;
       };
-    }, [activeTabId, notesFiles, setNoteText]);
+    }, [activeTabId, setNoteText, storeFor, tabOwner]);
 
     useEffect(() => {
       if (!editing) saveTab(activeTabId);
@@ -173,10 +215,16 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       if (!focused && editing) setEditing(false);
     }, [editing, focused]);
 
-    const addTab = useCallback(() => {
+    const addTab = useCallback(async () => {
       saveTab(activeTabId);
+      const owner = await chooseNoteOwner(dialog, teams);
+      if (!owner) return;
+      if (storeFor(owner).readOnly) {
+        notify({ body: `${ownerLabel(owner, teams)} notes are read-only right now.`, type: "info" });
+        return;
+      }
       const id = generateNoteId();
-      const entry: QuickNoteEntry = { id, title: "New" };
+      const entry: OwnedQuickNote = { id, title: "New", owner };
       lastSavedTextRef.current.set(id, "");
       setTabs((prev) => {
         const next = [...prev, entry];
@@ -187,15 +235,16 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       setNoteText("");
       setEditing(false);
       setRenaming(false);
-    }, [activeTabId, saveQuickNotesIndex, saveTab, setNoteText]);
+    }, [activeTabId, dialog, notify, saveQuickNotesIndex, saveTab, setNoteText, storeFor, teams]);
 
     const removeTab = useCallback((id: string) => {
       lastSavedTextRef.current.delete(id);
+      const owner = tabOwner(id, tabsRef.current);
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== id);
         if (next.length === 0) {
           const newId = generateNoteId();
-          const fresh: QuickNoteEntry[] = [{ id: newId, title: "New" }];
+          const fresh: OwnedQuickNote[] = [{ id: newId, title: "New", owner: { kind: "user" } }];
           lastSavedTextRef.current.set(newId, "");
           saveQuickNotesIndex(fresh);
           setActiveTabId(newId);
@@ -213,19 +262,21 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
         }
         return next;
       });
-      notesFiles.delete(notesFiles.quickNoteKey(id)).catch((error) => {
+      const store = storeFor(owner);
+      store.delete(store.quickNoteKey(id)).catch((error) => {
         console.error("[notes] Failed to delete note:", error);
-        notify({ body: "Failed to delete note. Check disk space and permissions.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : "Failed to delete note.", type: "error" });
       });
       setEditing(false);
       setRenaming(false);
-    }, [activeTabId, notesFiles, notify, saveQuickNotesIndex, setNoteText]);
+    }, [activeTabId, notify, saveQuickNotesIndex, setNoteText, storeFor, tabOwner]);
 
     const requestRemoveTab = useCallback(async (id: string) => {
       const tab = tabs.find((entry) => entry.id === id);
+      const store = storeFor(tab?.owner ?? { kind: "user" });
       const text = id === activeTabId
         ? readActiveNoteText()
-        : await notesFiles.load(notesFiles.quickNoteKey(id));
+        : await store.load(store.quickNoteKey(id));
 
       if (text.trim().length > 0) {
         const confirmed = await dialog.prompt<boolean>({
@@ -250,7 +301,7 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       }
 
       removeTab(id);
-    }, [activeTabId, dialog, notesFiles, readActiveNoteText, removeTab, tabs]);
+    }, [activeTabId, dialog, readActiveNoteText, removeTab, storeFor, tabs]);
 
     const startRename = useCallback(() => {
       if (!activeTab) return;
@@ -299,24 +350,6 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       }
 
       const isEnter = event.name === "enter" || event.name === "return";
-      if (searching) {
-        if (isEnter) {
-          openSearchResult(selectedSearchIndex);
-          return;
-        }
-        if (event.name === "escape") {
-          setSearching(false);
-          return;
-        }
-        if (event.name === "up" || event.name === "down") {
-          setSelectedSearchIndex((current) => Math.max(0, Math.min(
-            searchResults.length - 1,
-            current + (event.name === "down" ? 1 : -1),
-          )));
-          return;
-        }
-        return;
-      }
       if (isEnter && !editing) {
         setEditing(true);
         return;
@@ -327,7 +360,7 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       }
       if (!editing) {
         if (event.name === "n") {
-          addTab();
+          void addTab();
           return;
         }
         if (event.name === "w" && tabs.length > 0) {
@@ -337,10 +370,6 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
         // Not `r`: that is the app-wide refresh key.
         if (event.name === "t") {
           startRename();
-          return;
-        }
-        if (event.name === "/") {
-          setSearching(true);
           return;
         }
         if ((event.name === "[" || event.name === "]") && tabs.length > 1) {
@@ -364,19 +393,19 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
       hints: editing || renaming
         ? []
         : [
-            { id: "new", key: "n", label: "ew", onPress: addTab },
+            { id: "new", key: "n", label: "ew", onPress: () => { void addTab(); } },
             { id: "title", key: "t", label: "itle", onPress: startRename, disabled: !activeTabId },
-            { id: "search", key: "/", label: "search", onPress: () => setSearching(true) },
           ],
-    }), [activeTab, activeTabId, addTab, editing, loadError, renaming, startRename, searching]);
+    }), [activeTab, activeTabId, addTab, editing, loadError, renaming, startRename]);
 
     return (
       <Box flexDirection="column" flexGrow={1}>
         <Box height={1}>
           <Tabs
             tabs={tabs.map((tab) => ({
-              label: tab.title,
+              label: tab.owner.kind === "team" ? `${ownerLabel(tab.owner, teams)} ${tab.title}` : tab.title,
               value: tab.id,
+              ...(tab.owner.kind === "team" ? { fg: ownerColor(tab.owner, teams) } : {}),
               onClose: tabs.length > 1 ? (id) => { void requestRemoveTab(id); } : undefined,
               onDoubleClick: startRenameTab,
             }))}
@@ -390,55 +419,26 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
             compact
             variant="pill"
             closeMode="active"
-            onAdd={addTab}
+            onAdd={() => { void addTab(); }}
             focused={focused && !editing && !renaming}
           />
         </Box>
         {renaming && (
           <Box height={1} flexDirection="row" paddingLeft={1}>
             <Text fg={colors.textDim}>{"Rename: "}</Text>
-            <Input
-              ref={renameInputRef}
-              initialValue={renameValue}
+            <TextField
+              inputRef={renameInputRef}
+              value={renameValue}
               focused={renaming}
               textColor={colors.text}
               backgroundColor={colors.panel}
-              flexGrow={1}
-              onChange={(val: string) => setRenameValue(val)}
+              width={Math.max(1, width - 10)}
+              variant="plain"
+              onChange={setRenameValue}
             />
           </Box>
         )}
-        {searching && (
-          <Box flexDirection="column" paddingX={1}>
-            <Box height={1} flexDirection="row">
-              <Text fg={colors.textDim}>{t("Search: ")}</Text>
-              <Input
-                ref={searchInputRef}
-                initialValue={searchQuery}
-                focused={focused}
-                textColor={colors.text}
-                backgroundColor={colors.panel}
-                flexGrow={1}
-                onChange={setSearchQuery}
-              />
-            </Box>
-            {searchResults.map((result, index) => (
-              <Box
-                key={result.key}
-                backgroundColor={index === selectedSearchIndex ? colors.selected : undefined}
-                onMouseDown={() => openSearchResult(index)}
-              >
-                <Text fg={index === selectedSearchIndex ? colors.selectedText : colors.text}>
-                  {result.kind === "ticker" ? `$${result.title}` : result.title}
-                </Text>
-              </Box>
-            ))}
-            {searchQuery && searchResults.length === 0 && (
-              <Text fg={colors.textDim}>{t("No matching notes.")}</Text>
-            )}
-          </Box>
-        )}
-        {!searching && <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!editing && !renaming && !loadError) setEditing(true); }}>
+        <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!editing && !renaming && !loadError) setEditing(true); }}>
           {loadError ? (
             <EmptyState
               title="This note could not be read."
@@ -460,10 +460,9 @@ export function createQuickNotesPane(notesFiles: NotesFiles, consumeSearchQuery:
               width={width}
               placeholder="Write notes..."
               onActivate={() => { if (!renaming && !loadError) setEditing(true); }}
-              onOpenTicker={navigateTicker}
             />
           )}
-        </Box>}
+        </Box>
       </Box>
     );
   };

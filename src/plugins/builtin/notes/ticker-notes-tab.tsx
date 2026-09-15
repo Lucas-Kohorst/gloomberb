@@ -1,20 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, type TextareaRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import type { TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneTicker } from "../../../state/app/context";
+import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { EmptyState, TickerEmptyState, usePaneFooter } from "../../../components";
-import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
-import type { NotesFiles } from "./files";
+import { EmptyState, usePaneFooter } from "../../../components";
+import { usePluginAppActions } from "../../runtime";
+import { useDialog } from "../../../ui/dialog";
 import { MarkdownNotePreview } from "./markdown-note-preview";
+import {
+  defaultNoteOwner,
+  NoteOwnerStrip,
+  ReadOnlyBanner,
+  resolveNoteConflict,
+  useNoteTeams,
+} from "./owner";
+import { asNotesRegistry, NoteConflictError, type NoteOwner, type NotesStore, type NotesStoreRegistry } from "./store";
 import { useSyncedText } from "./text-state";
 
-export function createNotesTab(notesFiles: NotesFiles) {
+export function createNotesTab(store: NotesStoreRegistry | NotesStore) {
+  const registry = asNotesRegistry(store);
   return function NotesTab({ focused, width, onCapture }: TickerResearchTabProps) {
     const { ticker } = usePaneTicker();
     const { notify } = usePluginAppActions();
-    const { navigateTicker } = usePluginTickerActions();
+    const dialog = useDialog();
+    const teams = useNoteTeams();
+    const [owner, setOwner] = useState<NoteOwner>(defaultNoteOwner);
+    // A team the account left falls back to personal notes.
+    const effectiveOwner = owner.kind === "team" && !teams.some((team) => team.id === owner.teamId)
+      ? { kind: "user" as const }
+      : owner;
+    const notesFiles = useMemo(() => registry.forOwner(effectiveOwner), [effectiveOwner.kind, effectiveOwner.kind === "team" ? effectiveOwner.teamId : ""]);
+    const ownerKey = `${effectiveOwner.kind}:${effectiveOwner.kind === "team" ? effectiveOwner.teamId : ""}`;
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [notesFocused, setNotesFocused] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -55,16 +73,35 @@ export function createNotesTab(notesFiles: NotesFiles) {
     }, [noteTextRef, setNoteText, tickerSymbol]);
 
     const saveNotesFor = useCallback((symbol: string | null, text: string) => {
-      if (!symbol) return;
+      if (!symbol || notesFiles.readOnly) return;
       // Blur and symbol switches both save; without this every ticker switch
       // rewrites an unchanged file and can clobber another pane on the same symbol.
       if (lastSavedTextRef.current.get(symbol) === text) return;
       lastSavedTextRef.current.set(symbol, text);
-      notesFiles.save(symbol, text).catch((error) => {
+      notesFiles.save(symbol, text).catch(async (error: unknown) => {
+        if (error instanceof NoteConflictError) {
+          // Keep the buffer; the person chooses between the two versions.
+          lastSavedTextRef.current.delete(symbol);
+          const choice = await resolveNoteConflict(dialog, error);
+          const cloud = registry.cloud(effectiveOwner);
+          if (choice === "reload") {
+            const theirs = error.current?.content ?? "";
+            if (cloud && error.current) cloud.acceptCurrent(symbol, error.current);
+            lastSavedTextRef.current.set(symbol, theirs);
+            if (loadedSymbolRef.current === symbol) applyNoteText(theirs);
+          } else if (choice === "overwrite") {
+            if (cloud && error.current) cloud.acceptCurrent(symbol, error.current);
+            lastSavedTextRef.current.set(symbol, text);
+            await notesFiles.save(symbol, text).catch((again: unknown) => {
+              notify({ body: again instanceof Error ? again.message : "Could not save the note.", type: "error" });
+            });
+          }
+          return;
+        }
         console.error("[notes] Failed to save ticker note:", error);
-        notify({ body: "Failed to save note. Check disk space and permissions.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : "Failed to save note.", type: "error" });
       });
-    }, [notesFiles, notify]);
+    }, [applyNoteText, dialog, effectiveOwner, notesFiles, notify]);
 
     useEffect(() => {
       if (
@@ -86,6 +123,7 @@ export function createNotesTab(notesFiles: NotesFiles) {
 
     useEffect(() => {
       loadedSymbolRef.current = null;
+      lastSavedTextRef.current.clear();
       applyNoteText("");
       setLoadError(null);
 
@@ -113,12 +151,12 @@ export function createNotesTab(notesFiles: NotesFiles) {
           saveNotesFor(tickerSymbol, getCurrentNoteText());
         }
       };
-    }, [tickerSymbol, applyNoteText, getCurrentNoteText, saveNotesFor, notesFiles]);
+    }, [tickerSymbol, applyNoteText, getCurrentNoteText, saveNotesFor, notesFiles, ownerKey]);
 
     useShortcut((event) => {
       if (!focused || loadError) return;
       const isEnter = event.name === "enter" || event.name === "return";
-      if (isEnter && !notesFocused) {
+      if (isEnter && !notesFocused && !notesFiles.readOnly) {
         setNotesFocusedAndCapture(true);
         return;
       }
@@ -131,14 +169,24 @@ export function createNotesTab(notesFiles: NotesFiles) {
     usePaneFooter("ticker-notes", () => ({
       info: loadError
         ? [{ id: "load-error", parts: [{ text: loadError, tone: "warning" as const }] }]
-        : [{ id: "mode", parts: [{ text: notesFocused ? "editing" : "viewing", tone: "muted" as const }] }],
-    }), [loadError, notesFocused]);
+        : [{ id: "mode", parts: [{ text: notesFiles.readOnly ? "read-only" : notesFocused ? "editing" : "viewing", tone: "muted" as const }] }],
+    }), [loadError, notesFiles.readOnly, notesFocused]);
 
-    if (!ticker) return <TickerEmptyState kind="notes" symbol={null} detail="notes" />;
+    if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
 
     return (
       <Box flexDirection="column" flexGrow={1}>
-        <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!notesFocused && !loadError) setNotesFocusedAndCapture(true); }}>
+        <NoteOwnerStrip
+          owner={effectiveOwner}
+          teams={teams}
+          focused={focused && !notesFocused}
+          onSelect={(next) => {
+            if (tickerSymbol && loadedSymbolRef.current === tickerSymbol) saveNotesFor(tickerSymbol, getCurrentNoteText());
+            setOwner(next);
+          }}
+        />
+        {notesFiles.readOnly && <ReadOnlyBanner owner={effectiveOwner} teams={teams} />}
+        <Box flexGrow={1} minHeight={0} paddingX={1} onMouseDown={() => { if (!notesFocused && !loadError && !notesFiles.readOnly) setNotesFocusedAndCapture(true); }}>
           {loadError ? (
             <EmptyState
               title="These notes could not be read."
@@ -159,8 +207,7 @@ export function createNotesTab(notesFiles: NotesFiles) {
               text={noteText}
               width={width}
               placeholder="Write notes about this ticker..."
-              onActivate={() => { if (!loadError) setNotesFocusedAndCapture(true); }}
-              onOpenTicker={navigateTicker}
+              onActivate={() => { if (!loadError && !notesFiles.readOnly) setNotesFocusedAndCapture(true); }}
             />
           )}
         </Box>

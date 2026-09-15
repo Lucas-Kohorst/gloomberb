@@ -47,8 +47,9 @@ export interface ChatMessage {
 export interface ChatChannel {
   id: string;
   name: string;
-  kind?: "public" | "direct" | "group";
+  kind?: "public" | "direct" | "group" | "team";
   created_at: string;
+  teamId?: string;
   dmUser?: ChatUserSummary | null;
   members?: ChatUserSummary[];
 }
@@ -1183,3 +1184,243 @@ export interface QuoteStreamTarget {
   selected?: boolean;
   weight?: number;
 }
+
+export const TEAM_ACCENT_COLORS = [
+  "amber",
+  "blue",
+  "cyan",
+  "green",
+  "magenta",
+  "orange",
+  "red",
+  "violet",
+] as const;
+
+export type TeamAccentColor = (typeof TEAM_ACCENT_COLORS)[number];
+
+export type TeamRole = "owner" | "admin" | "member";
+
+export interface TeamSummary {
+  id: string;
+  name: string;
+  slug: string;
+  accentColor: TeamAccentColor;
+  shortName: string;
+  allowMemberInvites: boolean;
+  channelId: string;
+  createdAt: string;
+  role: TeamRole;
+  memberCount: number;
+}
+
+export interface TeamMember {
+  id: string;
+  role: TeamRole;
+  joinedAt: string;
+  user: { id: string; username: string | null; displayName: string };
+}
+
+export interface TeamInviteLink {
+  token: string;
+  url: string;
+  teamId: string;
+  createdBy: string;
+  expiresAt: string;
+  maxUses: number | null;
+  uses: number;
+  createdAt: string;
+}
+
+export interface TeamInvitePreview {
+  team: {
+    id: string;
+    name: string;
+    accentColor: TeamAccentColor;
+    shortName: string;
+    memberCount: number;
+  };
+  expiresAt: string;
+  viewer: { signedIn: boolean; emailVerified: boolean; role: TeamRole | null };
+}
+
+/** A Better Auth organization invitation as returned by /auth/organization/* endpoints. */
+export interface TeamUser {
+  id: string;
+  username: string | null;
+  displayName: string;
+}
+
+/** An invitation addressed to the signed-in person. */
+export interface TeamReceivedInvitation {
+  id: string;
+  role: TeamRole;
+  expiresAt: string;
+  createdAt: string;
+  team: {
+    id: string;
+    name: string;
+    slug: string;
+    accentColor: TeamAccentColor;
+    shortName: string;
+    memberCount: number;
+  };
+  inviter: TeamUser;
+}
+
+/** An invitation a team sent; the invitee is null for addresses without an account. */
+export interface TeamSentInvitation {
+  id: string;
+  status: string;
+  role: TeamRole;
+  expiresAt: string;
+  createdAt: string;
+  inviter: TeamUser;
+  invitee: TeamUser | null;
+}
+
+export interface TeamUpdatedEvent {
+  teamId: string;
+  change: "settings" | "members" | "channels" | "deleted";
+}
+
+export interface TeamUsernameInvitation {
+  id: string;
+  status: string;
+  expiresAt: string;
+  invitee: { id: string; username: string | null; displayName: string };
+}
+
+interface TeamActor {
+  id: string;
+  username: string | null;
+  displayName: string;
+}
+
+interface TeamNotificationTeam {
+  id: string;
+  name: string;
+  accentColor: TeamAccentColor;
+  shortName: string;
+}
+
+export type TeamNotificationData =
+  | {
+      kind: "team-invite";
+      team: TeamNotificationTeam;
+      invitationId: string;
+      expiresAt: string;
+      inviter: TeamActor;
+    }
+  | { kind: "team-joined"; team: TeamNotificationTeam; member: TeamActor }
+  | {
+      kind: "layout-updated";
+      team: TeamNotificationTeam;
+      layoutId: string;
+      layoutName: string;
+      revision: number;
+      author: TeamActor;
+    };
+
+export type TeamNotificationType = TeamNotificationData["kind"];
+
+export interface TeamNotification {
+  id: string;
+  type: TeamNotificationType;
+  channelId: string;
+  createdAt: string;
+  data: TeamNotificationData;
+}
+
+export type NoteOwnerKind = "user" | "team";
+export type NoteKind = "ticker" | "quick";
+
+export interface CloudNoteOwner {
+  kind: NoteOwnerKind;
+  id: string;
+}
+
+export interface CloudNoteSummary {
+  id: string;
+  owner: CloudNoteOwner;
+  kind: NoteKind;
+  key: string;
+  title: string | null;
+  revision: number;
+  updatedBy: { id: string; username: string | null; displayName: string };
+  createdAt: string;
+  updatedAt: string;
+  size: number;
+}
+
+export interface CloudNote extends Omit<CloudNoteSummary, "size"> {
+  content: string;
+}
+
+export interface CloudNoteScope {
+  scope: NoteOwnerKind;
+  teamId?: string;
+}
+
+export type TeamCollectionKind = "watchlist" | "portfolio";
+
+export interface TeamCollection {
+  id: string;
+  teamId: string;
+  kind: TeamCollectionKind;
+  name: string;
+  currency: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  itemCount: number;
+}
+
+export interface TeamCollectionItem {
+  collectionId: string;
+  symbol: string;
+  exchange: string;
+  quantity: number | null;
+  note: string | null;
+  addedBy: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
+export type TeamCollectionChange =
+  | { change: "created"; collection: TeamCollection }
+  | { change: "updated"; collection: TeamCollection }
+  | { change: "deleted"; collectionId: string }
+  | { change: "item-added" | "item-updated" | "item-removed"; collectionId: string; item: TeamCollectionItem };
+
+export type TeamCollectionEvent = TeamCollectionChange & { teamId: string; actorId: string };
+
+export interface TeamView {
+  id: string;
+  teamId: string;
+  name: string;
+  revision: number;
+  spec: Record<string, unknown>;
+  createdBy: string;
+  author: { username: string | null; displayName: string };
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+}
+
+export type TeamViewEvent =
+  | { teamId: string; actorId: string; view: TeamView }
+  | { teamId: string; actorId: string; viewId: string };
+
+export interface TeamPluginStateEntry {
+  teamId: string;
+  pluginId: string;
+  key: string;
+  value: unknown;
+  revision: number;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export type TeamPluginStateEvent =
+  | { teamId: string; actorId: string; state: TeamPluginStateEntry }
+  | { teamId: string; actorId: string; pluginId: string; key: string; deleted: true };
