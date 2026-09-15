@@ -155,7 +155,7 @@ export function createRegistryPluginContext({
 
     registerPane: (pane) => contributions.registerPane(pluginId, pane, items),
     registerPaneType: (pane) => contributions.registerPane(pluginId, pane, items),
-    registerPaneTemplate: (template) => contributions.registerPaneTemplate(pluginId, template, items),
+    registerPaneTemplate: (template) => { contributions.registerPaneTemplate(pluginId, template, items); return () => {}; },
     registerCommand: (command) => contributions.registerCommand(pluginId, command, items),
     registerCommandBarSearchProvider: (provider) => (
       contributions.registerCommandBarSearchProvider(pluginId, provider, items)

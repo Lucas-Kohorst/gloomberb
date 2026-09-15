@@ -49,7 +49,7 @@ function MissingPanePlaceholder({ paneType, width }: PaneProps) {
     setError(null);
     void installer.install(requirement.repo).then((result) => {
       setInstalling(false);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) setError(result.error ?? "Install failed");
     });
   }, [installer, installing, requirement]);
 

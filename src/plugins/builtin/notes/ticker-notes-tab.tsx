@@ -208,6 +208,7 @@ export function createNotesTab(store: NotesStoreRegistry | NotesStore) {
               width={width}
               placeholder="Write notes about this ticker..."
               onActivate={() => { if (!loadError && !notesFiles.readOnly) setNotesFocusedAndCapture(true); }}
+              onOpenTicker={() => {}}
             />
           )}
         </Box>

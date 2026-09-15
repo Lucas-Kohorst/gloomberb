@@ -2,6 +2,7 @@ import { ConnectionHealthRegistry } from "../../core/connection-health";
 import type { AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import { normalizeRegisteredPane } from "../../plugins/runtime/normalize-pane";
+import { createPluginTeamState } from "../../plugins/team-state";
 import type {
   GloomPlugin,
   GloomPluginContext,
@@ -82,7 +83,7 @@ function buildDiscoveryContext({
     pluginId: "discovery",
     registerPane: registerDiscoveredPane,
     registerPaneType: registerDiscoveredPane,
-    registerPaneTemplate: (template: PaneTemplateDef) => paneTemplates.set(template.id, template),
+    registerPaneTemplate: (template: PaneTemplateDef) => { paneTemplates.set(template.id, template); return () => { paneTemplates.delete(template.id); }; },
     registerCommand: () => {},
     registerCommandBarSearchProvider: () => () => {},
     registerDocumentSearchProvider: () => () => {},
@@ -98,6 +99,7 @@ function buildDiscoveryContext({
     registerShortcut: () => {},
     registerTickerAction: () => {},
     registerContextMenuProvider: () => {},
+    teamState: createPluginTeamState("discovery"),
     registerAgentTool: () => {},
     registerAgentPromptFragment: () => {},
     registerSyncContributor: () => () => {},

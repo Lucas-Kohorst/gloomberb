@@ -774,7 +774,7 @@ export interface GloomPluginContext {
   registerPane(pane: PluginPaneRegistration): void;
   /** Agent plugins often call this; same as registerPane. */
   registerPaneType(pane: PluginPaneRegistration): void;
-  registerPaneTemplate(template: PaneTemplateDef): void;
+  registerPaneTemplate(template: PaneTemplateDef): () => void;
   registerCommand(command: CommandDef): void;
   registerCommandBarSearchProvider(provider: CommandBarSearchProvider): () => void;
   registerDocumentSearchProvider(provider: DocumentSearchProvider): () => void;

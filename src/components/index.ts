@@ -48,6 +48,7 @@ export type {
 export { useExternalLinkFooter } from "./use-external-link-footer";
 export { openUrl } from "./ui/external-link";
 export { Button } from "./ui/button";
+export type { ButtonVariant } from "./ui/button";
 export { Checkbox } from "./ui/checkbox";
 export { ConfirmDialog } from "./ui/confirm-dialog";
 export { ChoiceDialog } from "./ui/choice-dialog";

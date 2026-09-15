@@ -460,6 +460,7 @@ export function createQuickNotesPane(
               width={width}
               placeholder="Write notes..."
               onActivate={() => { if (!renaming && !loadError) setEditing(true); }}
+              onOpenTicker={() => {}}
             />
           )}
         </Box>
