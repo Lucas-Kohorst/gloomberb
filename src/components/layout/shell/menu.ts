@@ -40,6 +40,8 @@ export function menuForPane(
   duplicatePane?: (paneId: string) => void,
   closePane?: (paneId: string) => void,
   refreshPane?: (paneId: string) => void,
+  toggleFullscreenPane?: (paneId: string) => void,
+  paneIsFullscreen?: boolean,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -88,6 +90,15 @@ export function menuForPane(
       id: "refresh-pane",
       label: "Refresh Pane",
       onSelect: () => refreshPane(pane.instance.instanceId),
+    });
+  }
+
+  if (toggleFullscreenPane) {
+    baseActions.push({
+      id: "fullscreen-pane",
+      label: paneIsFullscreen ? "Exit Fullscreen" : "Fullscreen Pane",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.fullscreen,
+      onSelect: () => toggleFullscreenPane(pane.instance.instanceId),
     });
   }
 
