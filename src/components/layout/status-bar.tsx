@@ -55,6 +55,7 @@ type StatusBarViewProps = {
   layoutTabsWidth: number;
   openChangelog?: (event?: StatusBarEvent) => void;
   openLayoutContextMenu: (index: number, event: any) => void | Promise<unknown>;
+  openNewLayout?: (event?: StatusBarEvent) => void;
   rightAvailableWidth: number;
   setHoveredControl: SetHoveredControl;
   showTidyWindows: boolean;
@@ -163,6 +164,12 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
     event?.preventDefault?.();
     event?.stopPropagation?.();
     onOpenChangelog?.(VERSION);
+  };
+
+  const openNewLayout = (event?: StatusBarEvent) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    registry?.openPluginCommandWorkflow("new-layout");
   };
 
   const requestDeleteLayout = useCallback(async (index: number) => {
@@ -295,6 +302,7 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
     layoutTabsWidth,
     openChangelog: onOpenChangelog ? openChangelog : undefined,
     openLayoutContextMenu,
+    openNewLayout: registry ? openNewLayout : undefined,
     rightAvailableWidth: Math.max(0, termWidth - leftWidth - STATUS_WIDGET_COLUMNS),
     setHoveredControl,
     showTidyWindows,
@@ -332,6 +340,7 @@ function NativeStatusBar({
       }}
     >
       <StatusBarLayoutControl nativePaneChrome {...props} />
+      <NativeNewLayout {...props} />
       {showTidyWindows && <NativeTidyWindows {...props} />}
       <Box flexGrow={1} minWidth={0} />
       <StatusBarSummary nativePaneChrome {...props} />
@@ -463,6 +472,38 @@ function VersionChip({
         style={openChangelog ? { cursor: "pointer" } : undefined}
       >
         {label}
+      </Text>
+    </Box>
+  );
+}
+
+/**
+ * Adding a layout was reachable only from the layout tab context menu or the
+ * command bar, and the tab strip itself is hidden until a second layout exists,
+ * so the first one could not be created with the mouse at all.
+ */
+function NativeNewLayout({
+  hoveredControl,
+  openNewLayout,
+  setHoveredControl,
+}: Pick<StatusBarViewProps, "hoveredControl" | "openNewLayout" | "setHoveredControl">) {
+  const colors = useThemeColors();
+  if (!openNewLayout) return null;
+  const hovered = hoveredControl === "new-layout";
+  return (
+    <Box flexShrink={0} flexDirection="row" alignItems="center">
+      <Text
+        fg={hovered ? colors.textBright : colors.textDim}
+        attributes={TextAttributes.BOLD}
+        title={t("New Layout")}
+        aria-label={t("New Layout")}
+        role="button"
+        onMouseOver={() => setHoveredControl((current) => (current === "new-layout" ? current : "new-layout"))}
+        onMouseDown={openNewLayout}
+        data-gloom-interactive="true"
+        style={{ cursor: "pointer" }}
+      >
+        +
       </Text>
     </Box>
   );

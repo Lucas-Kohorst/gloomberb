@@ -1,7 +1,7 @@
 import { Box, Text } from "../../ui";
 import { useCallback, useState } from "react";
-import { blendHex } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
+import { tf } from "../../i18n";
 import { getSharedRegistry } from "../../plugins/registry";
 
 export interface PaneSuggestion {
@@ -87,8 +87,10 @@ export function PaneSuggestions({
     registry.createPaneFromTemplate(suggestion.templateId, options);
   }, [tickerSymbol]);
 
-  const labelFg = blendHex(colors.headerText, colors.header, 0.45);
-  const shortcutFg = blendHex(colors.headerText, colors.header, 0.7);
+  // Toned for the empty layout canvas that hosts these, alongside the wordmark
+  // and the command-bar hint, rather than for a header strip.
+  const labelFg = colors.text;
+  const shortcutFg = colors.textMuted;
 
   return (
     <Box flexDirection="row" alignItems="center" gap={2} data-gloom-role="pane-suggestions">
@@ -106,11 +108,14 @@ export function PaneSuggestions({
             onMouseDown={() => handleClick(suggestion)}
             data-gloom-role="pane-suggestion"
             data-gloom-interactive="true"
+            role="button"
+            aria-label={tf("Open {pane}", { pane: suggestion.label })}
+            title={tf("Open {pane}", { pane: suggestion.label })}
           >
-            <Text fg={hovered ? colors.headerText : labelFg}>
+            <Text fg={hovered ? colors.textBright : labelFg}>
               {suggestion.label}
             </Text>
-            <Text fg={hovered ? blendHex(colors.headerText, colors.header, 0.3) : shortcutFg}>
+            <Text fg={hovered ? colors.textDim : shortcutFg}>
               {suggestion.shortcut}
             </Text>
           </Box>
