@@ -13,7 +13,7 @@ import {
 } from "../types/context-menu";
 import { useRendererHost, useUiCapabilities } from "./host";
 
-interface ContextMenuEventLike {
+export interface ContextMenuEventLike {
   preventDefault?: () => void;
   stopPropagation?: () => void;
 }
@@ -470,4 +470,31 @@ export function useTickerContextMenu({
       event,
     );
   }, [financials, onOpen, registry, renderer, showContextMenu, ticker]);
+}
+
+/** Row surfaces (tables, grids) pick the ticker per event, so the menu is built per right-click. */
+export function useTickerRowContextMenu(
+  financialsMap: Map<string, TickerFinancials>,
+): (ticker: TickerRecord, event?: ContextMenuEventLike) => Promise<boolean> {
+  const { showContextMenu } = useContextMenu();
+  const renderer = useRendererHost();
+  return useCallback((ticker, event) => {
+    const financials = financialsMap.get(ticker.metadata.ticker) ?? null;
+    return showContextMenu(
+      {
+        kind: "ticker",
+        symbol: ticker.metadata.ticker,
+        ticker,
+        financials,
+      },
+      tickerContextMenuItems({
+        ticker,
+        financials,
+        registry: getSharedRegistry() ?? null,
+        openExternal: renderer.openExternal.bind(renderer),
+        copyText: renderer.copyText.bind(renderer),
+      }),
+      event,
+    );
+  }, [financialsMap, renderer, showContextMenu]);
 }

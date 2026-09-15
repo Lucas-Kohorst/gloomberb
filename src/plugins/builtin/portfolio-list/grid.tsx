@@ -10,7 +10,7 @@ import { useShortcut } from "../../../react/input";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { useUiCapabilities } from "../../../ui";
+import { useTickerRowContextMenu, useUiCapabilities } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { getColumnValue, getSortValue, type ColumnContext } from "./metrics";
 import { getPortfolioPositionMetrics } from "./position-metrics";
@@ -109,6 +109,7 @@ export function PortfolioGrid({
   height: number;
 }) {
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
+  const tickerRowContextMenu = useTickerRowContextMenu(financialsMap);
   const chartWidth = Math.max(1, width - 2);
   const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
   const items = useMemo(
@@ -210,6 +211,7 @@ export function PortfolioGrid({
       selectedId={cursorSymbol}
       onSelect={(item) => setCursorSymbol(item.data.metadata.ticker)}
       onActivate={(item) => onRowActivate(item.data)}
+      onContextMenu={(item, event) => void tickerRowContextMenu(item.data, event)}
       emptyStateTitle={isPortfolioTab ? "No portfolio positions" : "No watchlist tickers"}
     />
   );

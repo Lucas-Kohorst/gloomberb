@@ -179,6 +179,7 @@ function DialogLayer({
             dialog={api}
             isOpen={true}
             dialogId={dialog.id}
+            dismiss={context.dismiss}
             keyboardEnabled={isTopmost}
           >
             {renderDialogContent(dialog.content, context)}

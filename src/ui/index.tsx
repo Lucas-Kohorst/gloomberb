@@ -32,7 +32,9 @@ export {
   tickerContextMenuItems,
   useContextMenu,
   useTickerContextMenu,
+  useTickerRowContextMenu,
 } from "./context-menu";
+export type { ContextMenuEventLike } from "./context-menu";
 export { contextMenuDivider } from "../types/context-menu";
 export type {
   BitmapSurface,

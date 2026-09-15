@@ -19,6 +19,8 @@ interface DialogContextValue {
   dialog: DialogApi;
   isOpen: boolean;
   dialogId?: string;
+  /** The active dialog layer's dismiss; DialogFrame falls back to it for its close affordance. */
+  dismiss?: () => void;
   keyboardEnabled: boolean;
 }
 
@@ -28,17 +30,19 @@ export function DialogHostProvider({
   dialog,
   isOpen,
   dialogId,
+  dismiss,
   keyboardEnabled = true,
   children,
 }: {
   dialog: DialogApi;
   isOpen: boolean;
   dialogId?: string;
+  dismiss?: () => void;
   keyboardEnabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <DialogContext value={{ dialog, isOpen, dialogId, keyboardEnabled }}>
+    <DialogContext value={{ dialog, isOpen, dialogId, dismiss, keyboardEnabled }}>
       {children}
     </DialogContext>
   );
@@ -58,6 +62,11 @@ export function useDialogState<T>(selector: (state: { isOpen: boolean }) => T): 
   const context = useContext(DialogContext);
   if (!context) throw new Error("useDialogState must be used inside DialogHostProvider");
   return selector({ isOpen: context.isOpen });
+}
+
+/** The active dialog layer's dismiss, or undefined outside an open dialog layer. */
+export function useDialogDismiss(): (() => void) | undefined {
+  return useContext(DialogContext)?.dismiss;
 }
 
 export function useDialogKeyboard(

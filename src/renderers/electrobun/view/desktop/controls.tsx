@@ -3,6 +3,7 @@ import { useRef, type KeyboardEvent, type RefObject } from "react";
 import { Box, Input, Text, Textarea, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../../ui";
 import { TextAttributes, type InputRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
+import { t } from "../../../../i18n";
 import { blendHex, type ThemeColors } from "../../../../theme/colors";
 import { contrastRatio } from "../../../../theme/color-utils";
 import { useThemeColors } from "../../../../theme/theme-context";
@@ -460,6 +461,7 @@ export function WebDialogFrame({
   children,
   footer,
   showTitleDivider = false,
+  dismiss,
 }: DialogFrameProps) {
   const colors = useThemeColors();
   return (
@@ -468,6 +470,7 @@ export function WebDialogFrame({
         height={1}
         flexDirection="row"
         alignItems="center"
+        justifyContent="space-between"
         style={{
           borderBottom: showTitleDivider ? `1px solid ${panelBorder(colors)}` : "none",
           paddingBottom: showTitleDivider ? 8 : 0,
@@ -477,6 +480,17 @@ export function WebDialogFrame({
         <Text fg={colors.text} attributes={TextAttributes.BOLD} style={{ fontWeight: 700 }}>
           {title}
         </Text>
+        {dismiss && (
+          <button
+            type="button"
+            className="gloom-dialog-frame-close"
+            aria-label={t("Close")}
+            title={t("Close")}
+            onClick={dismiss}
+          >
+            ×
+          </button>
+        )}
       </Box>
       {children}
       {footer && (

@@ -137,7 +137,11 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
   }), [open]);
 
   return (
-    <DialogHostProvider dialog={api} isOpen={dialogState !== null}>
+    <DialogHostProvider
+      dialog={api}
+      isOpen={dialogState !== null}
+      dismiss={dialogState ? () => close(undefined) : undefined}
+    >
       {children}
       {dialogState && (
         <div

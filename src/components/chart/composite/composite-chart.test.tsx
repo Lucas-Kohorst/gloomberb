@@ -1257,6 +1257,84 @@ describe("CompositeChart", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Δ");
   });
 
+  test("resets the viewport and deletes a drawing from the toolbar", async () => {
+    const viewportChanges: Array<{ start: string; end: string } | null> = [];
+    const viewportInteractions: string[] = [];
+    testSetup = await testRender(
+      <CaptureChartSurfaceProvider>
+        <CompositeChart
+          width={60}
+          height={12}
+          interactive
+          series={[series("price", "main", "left", "USD", [100, 101, 102, 103, 104, 105, 106, 107, 108])]}
+          panels={[{ id: "main" }]}
+          onViewportChange={(next, interaction) => {
+            viewportInteractions.push(interaction);
+            viewportChanges.push(next
+              ? { start: next.start.toISOString(), end: next.end.toISOString() }
+              : null);
+          }}
+        />
+      </CaptureChartSurfaceProvider>,
+      { width: 62, height: 14 },
+    );
+    await act(async () => testSetup!.renderOnce());
+    const toolbarRow = () => (testSetup!.captureCharFrame().split("\n")[1] ?? "");
+    const chipX = (glyph: string, from = 0) => toolbarRow().indexOf(glyph, from);
+
+    // Ctrl+wheel zooms in; the reset chip returns the authored range.
+    await act(async () => {
+      capturedSurfaceProps!.onMouseScroll(pointerEvent(30, 6, {
+        ctrl: true,
+        scroll: { direction: "up", delta: 1 },
+      }));
+    });
+    await act(async () => testSetup!.renderOnce());
+    expect(viewportInteractions.at(-1)).toBe("zoom");
+    expect(viewportChanges.at(-1)).not.toBeNull();
+
+    const magnetX = chipX("\u25c8");
+    expect(magnetX).toBeGreaterThanOrEqual(0);
+    const resetX = chipX("0", magnetX + 1);
+    expect(resetX).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(resetX + 1, 1);
+      await testSetup!.mockMouse.click(resetX + 1, 1);
+    });
+    await act(async () => testSetup!.renderOnce());
+    expect(viewportInteractions.at(-1)).toBe("reset");
+    expect(viewportChanges.at(-1)).toBeNull();
+
+    // Draw with the line chip, then remove the drawing with the delete chip.
+    const lineX = chipX("\u2571");
+    expect(lineX).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(lineX + 1, 1);
+      await testSetup!.mockMouse.click(lineX + 1, 1);
+    });
+    await act(async () => testSetup!.renderOnce());
+    const base = capturedSurfaceProps!.bitmaps?.[0] as { pixels: Uint8Array } | undefined;
+
+    await act(async () => {
+      capturedSurfaceProps!.onMouseDown(pointerEvent(8, 6));
+      capturedSurfaceProps!.onMouseDrag(pointerEvent(30, 2));
+      capturedSurfaceProps!.onMouseUp(pointerEvent(30, 2));
+    });
+    await act(async () => testSetup!.renderOnce());
+    const drawn = capturedSurfaceProps!.bitmaps?.[0] as { pixels: Uint8Array } | undefined;
+    expect(Buffer.from(drawn!.pixels).equals(Buffer.from(base!.pixels))).toBe(false);
+
+    const deleteX = chipX("\u232b");
+    expect(deleteX).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(deleteX + 1, 1);
+      await testSetup!.mockMouse.click(deleteX + 1, 1);
+    });
+    await act(async () => testSetup!.renderOnce());
+    const cleared = capturedSurfaceProps!.bitmaps?.[0] as { pixels: Uint8Array } | undefined;
+    expect(Buffer.from(cleared!.pixels).equals(Buffer.from(base!.pixels))).toBe(true);
+  });
+
   test("draws a line, then grabs its end to reshape it", async () => {
     testSetup = await testRender(
       <InputHostProvider host={chartInputHost}>

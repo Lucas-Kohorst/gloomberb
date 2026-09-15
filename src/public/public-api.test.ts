@@ -51,6 +51,7 @@ const PUBLIC_API: Record<string, readonly string[]> = {
     "useRendererHost",
     "useSyntaxStyleFactory",
     "useTickerContextMenu",
+    "useTickerRowContextMenu",
     "useUiCapabilities",
     "useUiHost",
   ],

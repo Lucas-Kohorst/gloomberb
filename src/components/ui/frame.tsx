@@ -1,9 +1,10 @@
-import { Box, Text, useUiHost } from "../../ui";
+import { Box, Text, useUiHost, type ContextMenuEventLike } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { type ComponentType, type ReactNode } from "react";
 import { t } from "../../i18n";
 import { blendHex, type ThemeColors } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
+import { useDialogDismiss } from "../../ui/dialog";
 
 export interface ModalSurfaceOptions {
   width?: string;
@@ -37,16 +38,25 @@ export interface DialogFrameProps {
   children: ReactNode;
   footer?: string;
   showTitleDivider?: boolean;
+  dismiss?: () => void;
 }
 
-export function DialogFrame({ title: rawTitle, children, footer: rawFooter, showTitleDivider = false }: DialogFrameProps) {
+export function DialogFrame({
+  title: rawTitle,
+  children,
+  footer: rawFooter,
+  showTitleDivider = false,
+  dismiss,
+}: DialogFrameProps) {
   const title = t(rawTitle);
   const footer = rawFooter === undefined ? undefined : t(rawFooter);
   const colors = useThemeColors();
+  const contextDismiss = useDialogDismiss();
+  const closeDialog = dismiss ?? contextDismiss;
   const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
   if (HostDialogFrame) {
     return (
-      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider}>
+      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider} dismiss={closeDialog}>
         {children}
       </HostDialogFrame>
     );
@@ -54,8 +64,32 @@ export function DialogFrame({ title: rawTitle, children, footer: rawFooter, show
 
   return (
     <Box flexDirection="column">
-      <Box height={1}>
+      <Box height={1} flexDirection="row" alignItems="center">
         <Text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</Text>
+        {closeDialog && (
+          // Adjacent, not cornered: the frame cannot know the content width, and
+          // a stretched close cell would poke past narrow dialogs' content area.
+          <Box
+            width={3}
+            height={1}
+            flexShrink={0}
+            marginLeft={1}
+            justifyContent="center"
+            alignItems="center"
+            onMouseDown={(event: ContextMenuEventLike) => {
+              event.stopPropagation?.();
+              event.preventDefault?.();
+              closeDialog();
+            }}
+            data-gloom-interactive="true"
+            data-gloom-role="dialog-close"
+            title={t("Close")}
+            aria-label={t("Close")}
+            style={{ cursor: "pointer" }}
+          >
+            <Text fg={colors.textMuted}>×</Text>
+          </Box>
+        )}
       </Box>
       <Box height={1} />
       {children}
