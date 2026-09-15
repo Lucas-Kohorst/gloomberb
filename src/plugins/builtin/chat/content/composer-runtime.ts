@@ -166,16 +166,22 @@ export function useChatComposerRuntime({
     setFollowMessages(index === messages.length - 1);
     replaceLocalComposer(message.content);
     persistDraft(message.content);
-    if (options?.deferFocus) {
-      queueMicrotask(() => focusInput());
-    } else {
+    const restoreEditCaret = () => {
       focusInput();
+      const textarea = inputRef.current;
+      if (textarea) moveComposerCursorToOffset(textarea, message.content, message.content.length);
+    };
+    if (options?.deferFocus) {
+      queueMicrotask(restoreEditCaret);
+    } else {
+      restoreEditCaret();
     }
     return true;
   }, [
     canSend,
     clearReplyTarget,
     focusInput,
+    inputRef,
     latestEditableMessageId,
     messages,
     persistDraft,
@@ -348,6 +354,16 @@ export function useChatComposerRuntime({
     if (canSend || !editingMessage) return;
     cancelEditMessage();
   }, [canSend, cancelEditMessage, editingMessage]);
+
+  useEffect(() => {
+    if (!editingMessage) return;
+    const draft = inputValueRef.current;
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    // The editing banner inserts a row, which can remount the textarea with
+    // initialValue and caret 0. Put the caret at the end after that layout.
+    moveComposerCursorToOffset(textarea, draft, draft.length);
+  }, [editingMessage, inputRef, inputValueRef]);
 
   const replyPreview = replyTo
     ? formatInlinePreview(
