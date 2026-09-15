@@ -144,20 +144,34 @@ export function pluginSupportsTarget(plugin: GloomPlugin, target: PluginTarget):
   return !plugin.targets || plugin.targets.length === 0 || plugin.targets.includes(target);
 }
 
+/**
+ * Sorts plugin entries and links each folder to the host.
+ *
+ * Linking has to finish for all of them before any is imported. A plugin
+ * that imports a sibling pulls the sibling's files in during its own import,
+ * and those files resolve `gloomberb/*` from the sibling's folder. If that
+ * folder is linked only when its own turn comes, the lookup fails, and Bun
+ * caches the miss, so linking it afterwards does not repair the sibling
+ * either. Which plugin comes first is up to readdir.
+ */
+export function linkAllExternalPluginEntries(
+  entries: readonly ExternalPluginEntry[],
+): ExternalPluginEntry[] {
+  const sorted = [...entries].sort((a, b) => a.pluginDir.localeCompare(b.pluginDir));
+  for (const entry of sorted) linkHostPackages(entry.pluginDir);
+  return sorted;
+}
+
 export async function loadExternalPlugins(target: PluginTarget = "cli"): Promise<LoadedExternalPlugin[]> {
   const rootDir = getPluginsDir();
   if (!existsSync(rootDir)) return [];
 
   const results: LoadedExternalPlugin[] = [];
-  const entries = await listExternalPluginEntries(rootDir);
+  const entries = linkAllExternalPluginEntries(await listExternalPluginEntries(rootDir));
 
   for (const entry of entries) {
     const pluginDir = entry.pluginDir;
     const entryFile = entry.entryFile;
-
-    // Repairs `gloomberb`/`react` links for plugins copied in by hand or left
-    // behind by a `bun install` that pruned them.
-    linkHostPackages(pluginDir);
 
     try {
       const mod = await import(entryFile);

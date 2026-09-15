@@ -1,4 +1,5 @@
 import { PLUGIN_HOST_GLOBAL, SHARED_SPECIFIERS } from "./host-contract";
+import { importAllPluginHostModules } from "./host-module-imports";
 
 export function createPluginJsxDevRuntime(
   jsxRuntime: Record<string, unknown>,
@@ -27,50 +28,12 @@ export async function installPluginHostModules(): Promise<void> {
   const globals = globalThis as Record<string, unknown>;
   if (globals[PLUGIN_HOST_GLOBAL]) return;
 
-  const [
-    react,
-    jsxRuntime,
-    jsxDevRuntime,
-    typesPlugin,
-    typesPersistence,
-    ui,
-    components,
-    theme,
-    capabilities,
-    utils,
-    pluginReact,
-    pluginsHelpers,
-  ] = await Promise.all([
-    import("react"),
-    import("react/jsx-runtime"),
-    import("react/jsx-dev-runtime"),
-    // Type-only modules still need an entry: a plugin may import a runtime
-    // value from them, and a missing key throws a clearer error than undefined.
-    import("../types/plugin"),
-    import("../types/persistence"),
-    import("../ui"),
-    import("../components"),
-    import("../theme/colors"),
-    import("../capabilities"),
-    import("../public/utils"),
-    import("../public/react"),
-    import("./helpers"),
-  ]);
-
-  const registry: Record<string, unknown> = {
-    "react": react,
-    "react/jsx-runtime": jsxRuntime,
-    "react/jsx-dev-runtime": createPluginJsxDevRuntime(jsxRuntime, jsxDevRuntime),
-    "gloomberb/types/plugin": typesPlugin,
-    "gloomberb/types/persistence": typesPersistence,
-    "gloomberb/ui": ui,
-    "gloomberb/components": components,
-    "gloomberb/theme": theme,
-    "gloomberb/capabilities": capabilities,
-    "gloomberb/utils": utils,
-    "gloomberb/react": pluginReact,
-    "gloomberb/plugins": pluginsHelpers,
-  };
+  const modules = await importAllPluginHostModules();
+  const registry: Record<string, unknown> = { ...modules };
+  registry["react/jsx-dev-runtime"] = createPluginJsxDevRuntime(
+    modules["react/jsx-runtime"] as Record<string, unknown>,
+    modules["react/jsx-dev-runtime"] as Record<string, unknown>,
+  );
 
   for (const specifier of SHARED_SPECIFIERS) {
     if (!registry[specifier]) throw new Error(`Plugin host registry is missing "${specifier}"`);

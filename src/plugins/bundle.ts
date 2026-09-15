@@ -3,6 +3,7 @@ import { join } from "path";
 
 import { resolvePluginEntryFile } from "./loader";
 import { PLUGIN_HOST_GLOBAL, SHARED_SPECIFIERS } from "./host-contract";
+import { importPluginHostModule } from "./host-module-imports";
 
 /**
  * Compiles an external plugin for a renderer that cannot read the filesystem.
@@ -83,8 +84,8 @@ export function createSharedModuleResolver(
   };
 }
 
-async function hostExportNames(specifier: string): Promise<readonly string[]> {
-  const mod = await import(specifier);
+export async function hostExportNames(specifier: string): Promise<readonly string[]> {
+  const mod = await importPluginHostModule(specifier);
   return Object.keys(mod).sort();
 }
 

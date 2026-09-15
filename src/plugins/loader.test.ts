@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { listExternalPluginEntries } from "./loader";
+import { linkAllExternalPluginEntries, listExternalPluginEntries } from "./loader";
 
 let tempRoot: string | undefined;
 
@@ -49,5 +49,22 @@ describe("external plugin loader", () => {
     // Top-level plugins have no management repo.
     expect(direct.pluginDir).toBe(directDir);
     expect(direct.managementDirName).toBeUndefined();
+  });
+
+  test("links every plugin folder, in sorted order, before any import can run", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), "gloomberb-plugin-link-"));
+    const zebra = join(tempRoot, "zebra");
+    const alpha = join(tempRoot, "alpha");
+    mkdirSync(zebra);
+    mkdirSync(alpha);
+    writeFileSync(join(zebra, "index.ts"), "export default { id: 'zebra', name: 'Zebra' };\n");
+    writeFileSync(join(alpha, "index.ts"), "export default { id: 'alpha', name: 'Alpha' };\n");
+
+    const linked = linkAllExternalPluginEntries(await listExternalPluginEntries(tempRoot));
+
+    expect(linked.map((entry) => entry.dirName)).toEqual(["alpha", "zebra"]);
+    for (const entry of linked) {
+      expect(existsSync(join(entry.pluginDir, "node_modules", "gloomberb"))).toBe(true);
+    }
   });
 });
