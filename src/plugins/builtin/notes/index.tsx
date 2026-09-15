@@ -1,5 +1,6 @@
 import { apiClient } from "../../../api-client";
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerConnectionSource } from "../connections/register";
 import { teamStore } from "../cloud/team/store";
 import { exportNotesToDirectory, exportSourceLabel } from "./export";
 import { NotesFiles } from "./files";
@@ -9,6 +10,7 @@ import { createNotesSyncContributor } from "./sync";
 import { createNotesTab } from "./ticker-notes-tab";
 
 let disposeNotes: (() => void) | null = null;
+let disposeConnection: (() => void) | null = null;
 
 export const notesPlugin: GloomPlugin = {
   id: "notes",
@@ -34,6 +36,13 @@ export const notesPlugin: GloomPlugin = {
     });
 
     ctx.registerSyncContributor(createNotesSyncContributor(notesFiles));
+
+    disposeConnection = registerConnectionSource({
+      id: "gloom-cloud:notes",
+      name: "Gloom Cloud Notes",
+      kind: "cloud",
+      pluginId: "notes",
+    });
 
     const disposers = [
       apiClient.subscribeCurrentUser(() => {
@@ -115,6 +124,8 @@ export const notesPlugin: GloomPlugin = {
   },
 
   dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
     disposeNotes?.();
     disposeNotes = null;
   },

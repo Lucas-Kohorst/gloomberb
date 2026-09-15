@@ -203,6 +203,23 @@
       }
     },
     {
+      "id": "custom-view",
+      "name": "Custom Views",
+      "description": "Tables built from any data function: columns, a filter, a sort. Made by the agent, shared with a team.",
+      "categories": [
+        "productivity",
+        "cloud"
+      ],
+      "toggleable": false,
+      "contributes": {
+        "panes": [
+          "custom-view"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",
@@ -315,10 +332,13 @@
         "panes": [
           "account-management",
           "buildout",
-          "chat"
+          "chat",
+          "team"
         ],
         "capabilities": [
           "asset-data.gloomberb-cloud",
+          "cloud.team",
+          "cloud.views",
           "news.gloomberb-cloud"
         ],
         "broker": false
@@ -478,7 +498,7 @@
     {
       "id": "notes",
       "name": "Notes",
-      "description": "Add markdown notes to your tickers.",
+      "description": "Add markdown notes to your tickers, personally or shared with a team.",
       "categories": [
         "productivity"
       ],

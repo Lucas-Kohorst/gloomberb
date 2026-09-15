@@ -42,6 +42,7 @@ export const teamModule: PluginModule = {
     label: "Team",
     description: "Members, invites, channels, and settings for your teams",
     keywords: ["team", "teams", "members", "invite", "collaborate"],
+    canCreate: () => true,
     createInstance: () => ({ placement: "floating", instanceId: "team" }),
   }],
   slots: {
