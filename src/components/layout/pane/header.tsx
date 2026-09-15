@@ -312,7 +312,7 @@ export function PaneHeader({
           flexDirection="row"
           alignItems="center"
           justifyContent="center"
-          gap={2}
+          gap={1}
           height="100%"
           flexShrink={0}
           position="relative"
