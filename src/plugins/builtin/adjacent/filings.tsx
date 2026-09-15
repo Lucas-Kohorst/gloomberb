@@ -222,11 +222,11 @@ function FilingDetail({
           {summaryText ? (
             <>
               <Box height={1} />
-              <MarkdownText text={summaryText} lineWidth={lineWidth} textColor={colors.text} />
+              <MarkdownText text={summaryText} lineWidth={lineWidth} textColor={colors.text} selectable />
             </>
           ) : null}
           <Box height={1} />
-          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} />
+          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} selectable />
         </Box>
       </ScrollBox>
     </Box>

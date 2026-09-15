@@ -1095,6 +1095,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
                   catalog={catalog}
                   textColor={colors.text}
                   openTicker={openTicker}
+                  selectable
                 />
               ) : message.id === runningMessageId ? (
                 <Spinner label="Waiting for provider…" />
@@ -1122,6 +1123,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
                   catalog={catalog}
                   textColor={colors.text}
                   openTicker={openTicker}
+                  selectable
                 />
               ) : streamingThinking !== null ? null : (
                 <Spinner label="Waiting for provider…" />

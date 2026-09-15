@@ -1,6 +1,14 @@
 import { Box, Span, Text } from "../ui";
 import { useState } from "react";
-import { TextAttributes } from "../ui";
+import {
+  TextAttributes,
+  linkContextMenuItems,
+  useContextMenu,
+  useRendererHost,
+  useUiCapabilities,
+  useUiHost,
+} from "../ui";
+import { safeExternalUrl } from "../utils/external-url";
 import { TickerBadge } from "./ticker/badge";
 import { tokenizeTickerText } from "../tickers/tokenizer";
 import type { InlineTickerCatalogEntry } from "../state/hooks/inline-tickers";
@@ -19,6 +27,12 @@ export interface MarkdownTextProps {
   >;
   /** Render valid ticker links even when they are not in the local catalog. */
   allowUnknownTickers?: boolean;
+  /**
+   * Let the pointer select and copy this text on hosts that have a real DOM.
+   * Off by default: the app suppresses selection so drags pan and resize, which
+   * only long-form reading surfaces want to give up.
+   */
+  selectable?: boolean;
 }
 
 export interface StyledSegment {
@@ -319,7 +333,75 @@ function wrappedInlineTextStyle() {
   } as const;
 }
 
+/**
+ * A `[label](href)` segment the pointer can actually use. Kept as its own
+ * component because it needs host hooks that a plain styled segment does not.
+ */
+function MarkdownLinkSpan({
+  segment,
+  attrs,
+  wrapProps,
+}: {
+  segment: StyledSegment;
+  attrs: number | undefined;
+  wrapProps: Record<string, unknown>;
+}) {
+  const rendererHost = useRendererHost();
+  const { showContextMenu } = useContextMenu();
+  const { nativeContextMenu } = useUiCapabilities();
+  const url = safeExternalUrl(segment.link ?? "");
+  const styled = (
+    <Span fg={segment.color ?? undefined} attributes={attrs} {...wrapProps}>
+      {segment.text}
+    </Span>
+  );
+  if (!url) return styled;
+
+  const open = () => {
+    void rendererHost.openExternal(url);
+  };
+  const openLinkContextMenu = (event: any) => showContextMenu(
+    { kind: "link", url, label: segment.text },
+    linkContextMenuItems({
+      url,
+      open,
+      copy: (text) => { void rendererHost.copyText(text); },
+    }),
+    event,
+  );
+
+  return (
+    <Span
+      fg={segment.color ?? undefined}
+      attributes={attrs}
+      {...wrapProps}
+      // Links inside an article are not tab stops: Tab drives pane navigation
+      // here, and a long article would bury it under hundreds of stops. The
+      // keyboard path to a link stays the pane's own open action.
+      role="link"
+      title={url}
+      data-gloom-interactive="true"
+      data-gloom-context-menu-surface="true"
+      onMouseDown={(event: any) => {
+        if (event?.button === 2) {
+          if (nativeContextMenu !== true) void openLinkContextMenu(event);
+          return;
+        }
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        open();
+      }}
+      onContextMenu={(event: any) => {
+        void openLinkContextMenu(event);
+      }}
+    >
+      {segment.text}
+    </Span>
+  );
+}
+
 function SegmentSpan({ segment, wrap = false }: { segment: StyledSegment; wrap?: boolean }) {
+  const uiKind = useUiHost().kind;
   const wrapProps = wrap
     ? {
         wrapText: true,
@@ -337,6 +419,11 @@ function SegmentSpan({ segment, wrap = false }: { segment: StyledSegment; wrap?:
     (segment.dim ? TextAttributes.DIM : 0) |
     (segment.underline ? TextAttributes.UNDERLINE : 0) |
     (segment.strikethrough ? TextAttributes.STRIKETHROUGH : 0);
+  // Terminal spans carry no mouse handlers of their own, so the TUI keeps
+  // rendering links as plain styled text.
+  if (segment.link && uiKind !== "opentui") {
+    return <MarkdownLinkSpan segment={segment} attrs={attrs || undefined} wrapProps={wrapProps} />;
+  }
   return (
     <Span
       fg={segment.color ?? undefined}
@@ -475,12 +562,17 @@ export function MarkdownText({
   openTicker = () => {},
   tokenizeTickers,
   allowUnknownTickers = false,
+  selectable = false,
 }: MarkdownTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const lines = parseMarkdownDocument(text);
 
   return (
-    <Box flexDirection="column" {...(lineWidth != null ? { width: lineWidth } : {})}>
+    <Box
+      flexDirection="column"
+      {...(lineWidth != null ? { width: lineWidth } : {})}
+      data-gloom-text-selectable={selectable ? "true" : undefined}
+    >
       {lines.map((parsed, index) => {
         if (parsed.segments.length === 0) {
           return <Text key={index}>{" "}</Text>;

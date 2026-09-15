@@ -432,6 +432,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
                         catalog={catalog}
                         textColor={colors.text}
                         openTicker={openTicker}
+                        selectable
                       />
                     ) : message.loading ? (
                       <Spinner label={t("Generating...")} />
