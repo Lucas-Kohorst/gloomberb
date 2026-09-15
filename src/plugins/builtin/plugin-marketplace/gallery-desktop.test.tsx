@@ -98,12 +98,12 @@ async function renderGallery(controller: PluginGalleryController) {
   return container;
 }
 
-function rows(container: Element) {
-  return [...container.querySelectorAll('[data-gloom-role="plugin-gallery-row"]')];
+function rows(container: { querySelectorAll: (selector: string) => NodeListOf<Element> }) {
+  return Array.from(container.querySelectorAll('[data-gloom-role="plugin-gallery-row"]'));
 }
 
-function pressButton(container: Element, label: string) {
-  const button = [...container.querySelectorAll('[data-gloom-role="desktop-button"]')]
+function pressButton(container: { querySelectorAll: (selector: string) => NodeListOf<Element> }, label: string) {
+  const button = Array.from(container.querySelectorAll('[data-gloom-role="desktop-button"]'))
     .find((node) => node.textContent?.includes(label));
   if (!button) throw new Error(`no button labelled ${label}`);
   return act(async () => {
@@ -182,10 +182,10 @@ test("sidebar arrow keys move focus to the next plugin", async () => {
     sidebarRows[0]!.dispatchEvent(new testWindow.KeyboardEvent("keydown", {
       bubbles: true,
       key: "ArrowDown",
-    }));
+    }) as unknown as Event);
   });
 
-  expect(testWindow.document.activeElement).toBe(sidebarRows[1]);
+  expect(testWindow.document.activeElement).toBe(sidebarRows[1] as unknown as typeof testWindow.document.activeElement);
   expect(selections.at(-1)).toBe("hackernews");
 });
 
