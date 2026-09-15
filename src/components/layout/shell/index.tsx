@@ -34,6 +34,7 @@ import {
 import { useThemeColors } from "../../../theme/theme-context";
 import { tf } from "../../../i18n";
 import { getPaneDisplayTitle } from "../pane/title";
+import { PaneSuggestions } from "../pane-suggestions";
 import type { PaneHeaderQuickSetting } from "../pane/header";
 import { formatCommandBarShortcut, getShortcutDisplayMode } from "../../../utils/shortcut-labels";
 import {
@@ -476,6 +477,7 @@ export function Shell({
     () => resolveExternalDockPreview(desktopDockPreview, bounds, visibleLayout, dockGeometryOptions),
     [bounds, desktopDockPreview, dockGeometryOptions, visibleLayout],
   );
+  const layoutIsEmpty = dockLeafLayouts.length === 0 && visibleFloatingPanes.length === 0;
   const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
   const activeHoverOverlay = activePaneDrag && dragCursor && dockPreview?.kind !== "compact"
     ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
@@ -754,6 +756,14 @@ export function Shell({
           <Text fg={colors.textDim}>
             {tf("{shortcut} to get started.", { shortcut: formatCommandBarShortcut(shortcutDisplayMode) })}
           </Text>
+          {/* Only while the canvas is bare: these sit behind the panes, and
+              chips peeking through a gap between panes would be clickable. */}
+          {layoutIsEmpty ? (
+            <>
+              <Box height={1} />
+              <PaneSuggestions paneId={null} tickerSymbol={null} />
+            </>
+          ) : null}
         </Box>
       </Box>
 
