@@ -4,8 +4,7 @@ import { join } from "path";
 
 import type { DesktopExternalPluginBundle } from "../shared/protocol";
 import { bundleExternalPlugin, pluginBundleCacheDir } from "../../../plugins/bundle";
-import { linkHostPackages } from "../../../plugins/host-link";
-import { getPluginsDir, listExternalPluginEntries } from "../../../plugins/loader";
+import { getPluginsDir, linkAllExternalPluginEntries, listExternalPluginEntries } from "../../../plugins/loader";
 import type { GloomPlugin } from "../../../types/plugin";
 import { debugLog } from "../../../utils/debug-log";
 
@@ -67,11 +66,11 @@ export async function collectExternalPluginBundles(): Promise<DesktopExternalPlu
   const outDir = pluginBundleCacheDir(join(pluginsDir, ".cache"));
   const bundles: DesktopExternalPluginBundle[] = [];
 
-  for (const entry of await listExternalPluginEntries(pluginsDir)) {
+  // Links every folder before reading any: a plugin that imports a sibling
+  // needs the sibling linked too, whichever of them is read first.
+  for (const entry of linkAllExternalPluginEntries(await listExternalPluginEntries(pluginsDir))) {
     const pluginDir = entry.pluginDir;
     const entryFile = entry.entryFile;
-
-    linkHostPackages(pluginDir);
 
     const plugin = await readPluginMetadata(entryFile);
     const base = {
