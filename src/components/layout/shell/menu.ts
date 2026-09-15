@@ -39,6 +39,7 @@ export function menuForPane(
   exportPaneCsv?: (paneId: string) => void | Promise<void>,
   duplicatePane?: (paneId: string) => void,
   closePane?: (paneId: string) => void,
+  refreshPane?: (paneId: string) => void,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -79,6 +80,14 @@ export function menuForPane(
       id: "duplicate-pane",
       label: "Duplicate Pane",
       onSelect: () => duplicatePane(pane.instance.instanceId),
+    });
+  }
+
+  if (refreshPane) {
+    baseActions.push({
+      id: "refresh-pane",
+      label: "Refresh Pane",
+      onSelect: () => refreshPane(pane.instance.instanceId),
     });
   }
 

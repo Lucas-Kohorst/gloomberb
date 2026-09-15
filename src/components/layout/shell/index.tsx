@@ -17,6 +17,7 @@ import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutConfig } from "../../../types/config";
 import { captureClosedPane } from "../../../core/state/app/closed-panes";
 import { contextMenuDivider } from "../../../types/context-menu";
+import { usePaneRetry } from "../../../components";
 import {
   resolveTickerForPane,
   syncConfigActiveLayoutState,
@@ -318,6 +319,7 @@ export function Shell({
     visibleLayout,
     width,
   });
+  const hitPaneRetry = usePaneRetry();
   const openLayoutGallery = useCallback(() => {
     pluginRegistry.showPane("layout-marketplace");
   }, [pluginRegistry]);
@@ -609,6 +611,7 @@ export function Shell({
       canExportPaneCsv(paneId) ? exportPaneCsv : undefined,
       duplicatePane,
       closePane,
+      () => hitPaneRetry(),
     );
     void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
@@ -632,7 +635,7 @@ export function Shell({
         items: fallbackItems,
       });
     });
-  }, [canExportPaneCsv, closePane, contentHeight, copyPaneScreenshot, desktopWindowBridge, duplicatePane, exportPaneCsv, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
+  }, [canExportPaneCsv, closePane, contentHeight, copyPaneScreenshot, desktopWindowBridge, duplicatePane, exportPaneCsv, focusPane, getPaneTitle, hitPaneRetry, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
 
   const {
     handleFloatingCloseMouseDown,
