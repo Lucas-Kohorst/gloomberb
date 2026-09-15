@@ -45,6 +45,7 @@ import {
   fetchPrimaryClimate,
   loadWeatherHourly,
 } from "./client";
+import { loadDsmPrints, type DsmPrint } from "./dsm";
 import { loadKalshiImpliedHighs } from "./kalshi-forecast";
 import { kalshiHighSeriesForStation, zonedDateKey } from "./mapping";
 import {
@@ -70,9 +71,30 @@ import { useWeatherPolling } from "./polling";
 import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
 import { StationDetail, type StationObservation } from "./station-detail";
 import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
+import { defaultTargetForStation, stationDateKey, windowLabel } from "./resolution";
+import { findAnalogDays, type AnalogDay } from "./analogs";
+import { loadIemHourly, type IemHourlyPoint } from "./iem-asos";
+import {
+  EMPTY_JOURNAL,
+  WEATHER_JOURNAL_SCHEMA_VERSION,
+  WEATHER_JOURNAL_STATE_KEY,
+  freezeJournalCase,
+  normalizeJournal,
+  recordJournalOutcome,
+  type JournalState,
+} from "./journal";
+import { AnalogsPanel } from "./analogs-panel";
+import { JournalPanel } from "./journal-panel";
+import { confirmedExtremes, extremeModeForWindow } from "./hvt";
+import { buildLayerRows } from "./layers";
+import { addCalendarDays } from "./day-window";
+import { fetchNwsCliHistory } from "./nws-client";
+import type { NwsCliPrint } from "../../../sources/nws-cli/types";
+import { printsFromObservations } from "./observation-tape";
+import { TapePanel } from "./tape-panel";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
-type WeatherPaneTab = WeatherScope | "report";
+type WeatherPaneTab = WeatherScope | "report" | "analogs" | "journal";
 type WeatherSortColumnId = "city" | "station" | "high" | "implied" | "yForecast" | "ySettlement" | "low" | "now" | "status";
 type ReportSortColumnId = "city" | "hit" | "mae" | "bias" | "samples";
 
@@ -202,7 +224,10 @@ function WeatherDetail({
   nwsObservations,
   kalshiIndex,
   kalshiCalibrations,
+  dsmPrints,
+  cliPrints,
   width,
+  height,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
@@ -210,7 +235,10 @@ function WeatherDetail({
   nwsObservations: NwsStationObservation[];
   kalshiIndex: KalshiWeatherIndex | null;
   kalshiCalibrations: KalshiWeatherCalibrationTimeline | null;
+  dsmPrints: DsmPrint[];
+  cliPrints: NwsCliPrint[];
   width: number;
+  height: number;
 }) {
   const { degreeDays } = useWeatherPolling(row.stationId);
   const indexPoint = latestCompleteKalshiWeatherPoint(kalshiIndex);
@@ -242,12 +270,39 @@ function WeatherDetail({
     skyCondition: observation.textDescription,
     status: "NWS ASOS",
   }));
-  if (stationObservations.length > 0) {
+  const target = defaultTargetForStation({ id: row.stationId, icao: row.icao });
+  const prints = printsFromObservations({
+    stationId: row.stationId,
+    icao: row.icao,
+    dateKey: row.date,
+    timeZone: row.timezone,
+    kind: target.window,
+    observations: nwsObservations,
+    dsm: dsmPrints,
+    cli: cliPrints,
+  });
+  const extremes = confirmedExtremes(prints, extremeModeForWindow(target.window));
+  const yesterday = addCalendarDays(row.date, -1);
+  const yesterdayHigh = findWeatherDayRecord(archive, row.stationId, yesterday)?.settlementHigh ?? null;
+  const recentHighs = archive.records
+    .filter((record) => record.stationId === row.stationId && record.settlementHigh != null && record.date < row.date)
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, 5)
+    .map((record) => record.settlementHigh as number);
+  const layers = buildLayerRows({
+    prints,
+    extremes,
+    timeZone: row.timezone,
+    yesterdayHigh,
+    fiveDayMin: recentHighs.length ? Math.min(...recentHighs) : null,
+    fiveDayMax: recentHighs.length ? Math.max(...recentHighs) : null,
+  });
+  if (prints.length > 0 || stationObservations.length > 0) {
     return (
-      <Box flexDirection="column" flexGrow={1}>
-        <Box paddingX={1} paddingBottom={1} flexDirection="column">
+      <Box flexDirection="column" flexGrow={1} height={height}>
+        <Box paddingX={1} flexShrink={0} flexDirection="column">
           <Text fg={colors.textDim}>
-            {cliProductForStation(row.stationId)} · {row.icao} · print high {formatTemp(row.high)}°F · {statusLabel(row.status)}
+            {cliProductForStation(row.stationId)} · {row.icao} · {windowLabel(target.window)} · {target.source}
           </Text>
           {settlement && (
             <Text fg={settlement.meta.official ? colors.positive : colors.warning}>
@@ -256,20 +311,15 @@ function WeatherDetail({
             </Text>
           )}
           {indexSummary && <Text fg={indexPoint ? colors.positive : colors.warning}>{indexSummary}</Text>}
-          {kalshiIndex?.configVersion && <Text fg={colors.textMuted}>Index config {kalshiIndex.configVersion}</Text>}
-          {calibration && (
-            <Text fg={colors.textMuted}>
-              Calibration {calibration.configVersion} · {calibration.stations.length} stations
-              {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
-            </Text>
-          )}
           {degreeDaysLine}
         </Box>
-        <StationDetail
-          observations={stationObservations}
-          stationLabel={`NWS ASOS cross-check · ${row.icao} · not Kalshi settlement authority`}
+        <TapePanel
+          prints={prints}
+          layers={layers}
+          extremes={extremes}
           timeZone={row.timezone}
           width={width}
+          height={Math.max(8, height - 4)}
         />
       </Box>
     );
@@ -473,6 +523,16 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [kalshiCalibrationsByStation, setKalshiCalibrationsByStation] = useState<Record<string, KalshiWeatherCalibrationTimeline | null>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
+  const [dsmByStation, setDsmByStation] = useState<Record<string, DsmPrint[]>>({});
+  const [cliByStation, setCliByStation] = useState<Record<string, NwsCliPrint[]>>({});
+  const [iemByStation, setIemByStation] = useState<Record<string, IemHourlyPoint[]>>({});
+  const [analogsError, setAnalogsError] = useState<string | null>(null);
+  const [journal, setJournal] = usePluginState<JournalState>(
+    WEATHER_JOURNAL_STATE_KEY,
+    EMPTY_JOURNAL,
+    { schemaVersion: WEATHER_JOURNAL_SCHEMA_VERSION },
+  );
+  const [journalSelectedId, setJournalSelectedId] = useState<string | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
   const archiveRef = useRef(archive);
@@ -491,7 +551,17 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     () => applySortPreference(filteredRows, sortPreference, weatherSortValue),
     [filteredRows, sortPreference],
   );
-  const selected = rows.find((row) => row.id === selectedId) ?? null;
+  const selected = rows.find((row) => row.id === selectedId) ?? allRows.find((row) => row.id === selectedId) ?? null;
+  const analogDays = useMemo((): AnalogDay[] => {
+    if (!selected) return [];
+    const target = defaultTargetForStation({ id: selected.stationId, icao: selected.icao });
+    return findAnalogDays({
+      points: iemByStation[selected.stationId] ?? [],
+      todayKey: selected.date,
+      timeZone: selected.timezone,
+      kind: target.window,
+    });
+  }, [iemByStation, selected]);
   const report = useMemo(() => buildWeatherAccuracyReport(archive, reportKind), [archive, reportKind]);
   const reportRows = useMemo(
     () => sortStackItems(report.cities, reportSort, compareReportRows),
@@ -744,6 +814,27 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           if (cancelled) return;
           setKalshiCalibrationsByStation((current) => ({ ...current, [selected.stationId]: null }));
         }),
+      loadDsmPrints(selected.stationId).then((prints) => {
+        if (cancelled) return;
+        setDsmByStation((current) => ({ ...current, [selected.stationId]: prints }));
+      }).catch(() => {
+        if (cancelled) return;
+        setDsmByStation((current) => ({ ...current, [selected.stationId]: [] }));
+      }),
+      fetchNwsCliHistory(selected.stationId, 5).then((prints) => {
+        if (cancelled) return;
+        setCliByStation((current) => ({ ...current, [selected.stationId]: prints }));
+      }).catch(() => {
+        if (cancelled) return;
+        setCliByStation((current) => ({ ...current, [selected.stationId]: [] }));
+      }),
+      loadIemHourly(selected.stationId).then((points) => {
+        if (cancelled) return;
+        setIemByStation((current) => ({ ...current, [selected.stationId]: points }));
+      }).catch(() => {
+        if (cancelled) return;
+        setIemByStation((current) => ({ ...current, [selected.stationId]: [] }));
+      }),
     ]).catch(() => undefined);
     return () => {
       cancelled = true;
@@ -758,6 +849,68 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     if (!selected) return;
     popOutChart(`WX:${selected.stationId}:high`);
   }, [popOutChart, selected]);
+
+  const freezeSelected = useCallback((method: "wethr-high" | "implied") => {
+    if (!selected) return;
+    const target = defaultTargetForStation({ id: selected.stationId, icao: selected.icao });
+    const prints = printsFromObservations({
+      stationId: selected.stationId,
+      icao: selected.icao,
+      dateKey: selected.date,
+      timeZone: selected.timezone,
+      kind: target.window,
+      observations: nwsByStation[selected.stationId] ?? [],
+      dsm: dsmByStation[selected.stationId] ?? [],
+      cli: cliByStation[selected.stationId] ?? [],
+    });
+    const extremes = confirmedExtremes(prints, extremeModeForWindow(target.window));
+    const forecastF = method === "implied" ? selected.implied : extremes.wethrHigh;
+    if (forecastF == null) {
+      setError(method === "implied" ? "No Kalshi implied high to freeze." : "No Wethr high to freeze yet.");
+      return;
+    }
+    const result = freezeJournalCase(normalizeJournal(journal), {
+      stationId: selected.stationId,
+      date: selected.date,
+      metric: "high",
+      method,
+      forecastF,
+      frozenAt: Date.now(),
+      window: target.window,
+      source: target.source,
+      notes: "",
+    });
+    if ("error" in result) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    setJournal(result);
+    setTab("journal");
+  }, [cliByStation, dsmByStation, journal, nwsByStation, selected, setJournal]);
+
+  const recordSelectedOutcome = useCallback(() => {
+    const current = normalizeJournal(journal);
+    const entry = current.cases.find((item) => item.id === journalSelectedId) ?? current.cases[0];
+    if (!entry) {
+      setError("No journal case selected.");
+      return;
+    }
+    const outcome = findWeatherDayRecord(archive, entry.stationId, entry.date)?.settlementHigh
+      ?? rows.find((row) => row.stationId === entry.stationId)?.high
+      ?? null;
+    if (outcome == null) {
+      setError("No official print to record as outcome.");
+      return;
+    }
+    const result = recordJournalOutcome(current, entry.id, outcome, "cli");
+    if ("error" in result) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    setJournal(result);
+  }, [archive, journal, journalSelectedId, rows, setJournal]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -798,8 +951,26 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       setReportKind((current) => current === "twc" ? "implied" : "twc");
       return true;
     }
+    if (isPlainKey(event, "f") && selected) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      freezeSelected("wethr-high");
+      return true;
+    }
+    if (isPlainKey(event, "i") && selected) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      freezeSelected("implied");
+      return true;
+    }
+    if (tab === "journal" && isPlainKey(event, "c")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      recordSelectedOutcome();
+      return true;
+    }
     return false;
-  }, [focusSearch, graphSelected, load, openSelected, scope, selected, tab]);
+  }, [focusSearch, freezeSelected, graphSelected, load, openSelected, recordSelectedOutcome, scope, selected, tab]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
@@ -1003,7 +1174,10 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
               nwsObservations={nwsByStation[selected.stationId] ?? []}
               kalshiIndex={kalshiIndexByStation[selected.stationId] ?? null}
               kalshiCalibrations={kalshiCalibrationsByStation[selected.stationId] ?? null}
+              dsmPrints={dsmByStation[selected.stationId] ?? []}
+              cliPrints={cliByStation[selected.stationId] ?? []}
               width={width}
+              height={height}
             />
           ) : null
         }

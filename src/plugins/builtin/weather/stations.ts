@@ -54,6 +54,37 @@ const INTERNATIONAL: ReadonlyArray<Omit<WeatherStation, "scope" | "aliases"> & {
   { id: "PVG", city: "Shanghai", country: "China", icao: "ZSPD", timezone: "Asia/Shanghai", region: "Asia" },
 ];
 
+const STATION_COORDS: Readonly<Record<string, { latitude: number; longitude: number }>> = {
+  ATL: { latitude: 33.6367, longitude: -84.4281 },
+  AUS: { latitude: 30.1945, longitude: -97.6699 },
+  BOS: { latitude: 42.3656, longitude: -71.0096 },
+  DCA: { latitude: 38.8512, longitude: -77.0402 },
+  DEN: { latitude: 39.8561, longitude: -104.6737 },
+  DFW: { latitude: 32.8977, longitude: -97.0377 },
+  GNV: { latitude: 29.6901, longitude: -82.2718 },
+  HOU: { latitude: 29.6454, longitude: -95.2789 },
+  IAH: { latitude: 29.9844, longitude: -95.3414 },
+  JAX: { latitude: 30.4941, longitude: -81.6879 },
+  LAS: { latitude: 36.0796, longitude: -115.1536 },
+  LAX: { latitude: 33.9416, longitude: -118.4085 },
+  MDW: { latitude: 41.7868, longitude: -87.7522 },
+  MIA: { latitude: 25.7959, longitude: -80.2870 },
+  MSP: { latitude: 44.8848, longitude: -93.2223 },
+  MSY: { latitude: 29.9934, longitude: -90.2580 },
+  NYC: { latitude: 40.7791, longitude: -73.9680 },
+  OKC: { latitude: 35.2140, longitude: -97.3867 },
+  ORD: { latitude: 41.9742, longitude: -87.9073 },
+  PHL: { latitude: 39.8729, longitude: -75.2437 },
+  PHX: { latitude: 33.4373, longitude: -112.0078 },
+  SAN: { latitude: 32.7338, longitude: -117.1933 },
+  SAT: { latitude: 29.5337, longitude: -98.4698 },
+  SEA: { latitude: 47.4502, longitude: -122.3088 },
+  SFO: { latitude: 37.6213, longitude: -122.3790 },
+  SPG: { latitude: 27.7651, longitude: -82.6269 },
+  TPA: { latitude: 27.9756, longitude: -82.5333 },
+  HKG: { latitude: 22.3080, longitude: 113.9185 },
+};
+
 function toStation(
   entry: Omit<WeatherStation, "scope" | "aliases"> & { aliases?: string[] },
   scope: WeatherScope,
@@ -64,7 +95,8 @@ function toStation(
     entry.icao,
     ...(entry.aliases ?? []),
   ]);
-  return { ...entry, scope, aliases: [...aliases] };
+  const coords = STATION_COORDS[entry.id];
+  return { ...entry, scope, aliases: [...aliases], latitude: coords?.latitude, longitude: coords?.longitude };
 }
 
 export const WEATHER_STATIONS: readonly WeatherStation[] = [
