@@ -11,6 +11,10 @@ Portfolio Events could not be reached from the command bar, and read "No tickers
 
 A single Esc used to drop a fullscreen pane, so a double-tap could exit and then immediately fullscreen again before the next close. Double Esc now minimizes fullscreen; another double Esc closes the focused docked or floating pane.
 
+## Unreleased — Remove the top-level `wx/` archive
+
+The Kalshi weather-book CLI, cutoff/print join, and notes lived under a tracked `wx/` tree that was not compiled or registered. That work now lives in the weather plugin in gloomberb-plugins (`wx-book`). The host no longer ships the archive.
+
 ## Unreleased — Command-bar Plugins prefix on the left
 
 The Plugin Marketplace shortcut was `PLUGINS`, seven characters, so the command-bar badge rule left it on the right of the row. The prefix is now `PLUG` (with `PLUGINS` and `PL` still accepted), which lifts into the left badge column with the other command tags.
