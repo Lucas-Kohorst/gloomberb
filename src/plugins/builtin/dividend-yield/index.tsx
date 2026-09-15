@@ -6,6 +6,7 @@ import {
   resetDividendYieldHealth,
   YAHOO_DIVIDENDS_CONNECTION_ID,
 } from "./client";
+import { dividendYieldHeadless } from "./headless";
 import { DividendYieldPane } from "./pane";
 
 let disposeConnection: (() => void) | null = null;
@@ -51,13 +52,16 @@ export const dividendYieldModule: PluginModule = {
   ],
 
   paneTemplates: [
-    createTickerSurfacePaneTemplate({
-      id: "dividend-yield-pane",
-      paneId: "dividend-yield",
-      label: "Dividend Yield",
-      description: "Dividend history, trailing/forward yield, growth rates, and payment schedule.",
-      keywords: ["dividend", "yield", "dvd", "income", "payout", "ex-date", "distribution"],
-      shortcut: "DVD",
-    }),
+    {
+      ...createTickerSurfacePaneTemplate({
+        id: "dividend-yield-pane",
+        paneId: "dividend-yield",
+        label: "Dividend Yield",
+        description: "Dividend history, trailing/forward yield, growth rates, and payment schedule.",
+        keywords: ["dividend", "yield", "dvd", "income", "payout", "ex-date", "distribution"],
+        shortcut: "DVD",
+      }),
+      headless: dividendYieldHeadless,
+    },
   ],
 };

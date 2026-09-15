@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { TickerFinancials } from "../../../../types/financials";
 import {
   buildFinancialTableModel,
+  computeGrowth,
+  formatFinancialCell,
   resolveFinancialPeriodOption,
   resolveFinancialSubTabKey,
 } from "./model";
@@ -23,6 +25,24 @@ function createFinancials(): TickerFinancials {
 }
 
 describe("financial statement table model", () => {
+  test("large growth fits beside precise EPS without truncating its sign or percent unit", () => {
+    const growth = computeGrowth(0.004125, -0.00000254)!;
+    const cell = formatFinancialCell("0.004125", growth);
+    expect(cell.valueText.trim()).toBe("0.004125");
+    expect(cell.growthText.trim()).toBe("+163k%");
+    expect(cell.valueText.length + cell.growthText.length).toBe(18);
+    for (const rate of [-999.995, -100, 99.995, 9999.995, 1e12, -1e100, 1e100, -1e307, 1e307]) {
+      const formatted = formatFinancialCell("0.004125", rate).growthText.trim();
+      expect(formatted.endsWith("%")).toBe(true);
+      expect(formatted.length).toBeLessThanOrEqual(6);
+      expect(formatted).toContain(rate < 0 ? "-" : formatted.startsWith(">") ? ">" : "+");
+    }
+    expect(computeGrowth(Number.MAX_VALUE, Number.MIN_VALUE)).toBeUndefined();
+    expect(computeGrowth(Number.MAX_VALUE, -Number.MAX_VALUE)).toBe(2);
+    expect(computeGrowth(-Number.MAX_VALUE, Number.MAX_VALUE)).toBe(-2);
+    expect(formatFinancialCell("1", Number.POSITIVE_INFINITY).growthText.trim()).toBe("");
+  });
+
   test("uses annual rows with a TTM column when quarterly data is available", () => {
     const table = buildFinancialTableModel(createFinancials(), {
       period: "annual",
