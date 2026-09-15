@@ -190,6 +190,10 @@ export function PaneHeader({
     ? "Pane is floating — tile pane"
     : "Pane is tiled — float pane";
   const textColor = paneTitleText(visuallyFocused, floating);
+  // Fullscreen swaps the close control for a restore one. Rendering on the
+  // handler rather than on floating/fullscreen is what gives docked panes a
+  // close affordance, and it keeps a button that would do nothing off screen.
+  const closeAction = fullscreen ? onRestoreMouseDown : onCloseMouseDown;
   const terminalGeometry = resolveTerminalPaneHeaderGeometry(width, {
     floating,
     focused: visuallyFocused,
@@ -357,7 +361,7 @@ export function PaneHeader({
             )
           ) : <Box width={2} />}
         </Box>
-        {(fullscreen || floating) && (
+        {closeAction && (
           <Box
             data-gloom-role={fullscreen ? "pane-restore" : "pane-close"}
             marginLeft={1}
@@ -372,12 +376,12 @@ export function PaneHeader({
                 text={fullscreen ? PANE_HEADER_RESTORE : PANE_HEADER_CLOSE}
                 fg={colors.textDim}
                 role={fullscreen ? "pane-restore" : "pane-close"}
-                onMouseDown={fullscreen ? onRestoreMouseDown : onCloseMouseDown}
+                onMouseDown={closeAction}
               />
             ) : (
               <DesktopPaneButton
                 label={fullscreen ? "Restore pane" : "Close pane"}
-                onActivate={fullscreen ? onRestoreMouseDown : onCloseMouseDown}
+                onActivate={closeAction}
                 role={fullscreen ? "pane-restore" : "pane-close"}
                 icon={fullscreen ? (
                   <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
