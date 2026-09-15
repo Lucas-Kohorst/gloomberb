@@ -323,8 +323,9 @@ function FooterContent({
     ? Math.min(availableWidth ?? totalHintsWidth(primaryHints), totalHintsWidth(primaryHints))
     : 0;
   const rightWidth = primaryHintsWidth + trailingWidth + trailingGap;
+  const MIN_INFO_WIDTH = 10;
   const infoWidth = availableWidth !== null && hasInfo
-    ? Math.max(0, availableWidth - rightWidth)
+    ? Math.max(MIN_INFO_WIDTH, availableWidth - rightWidth)
     : undefined;
   const rowCount = nativePaneChrome ? 1 : Math.max(1, hintRows.length);
 
