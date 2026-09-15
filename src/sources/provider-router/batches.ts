@@ -17,6 +17,7 @@ import {
   hasDeepStatementHistory,
   hasDetailedStatementRows,
   isProviderQuoteUsableForCurrentSession,
+  providerFinancialsMatchTarget,
   quoteWithFreshnessExchange,
   type CachedFinancialsSelection,
 } from "./financials";
@@ -166,8 +167,10 @@ export class ProviderRouterBatchRoutes {
       const batchResults = await batchProvider.getTickerFinancialsBatch!(uniqueTargets, options).catch(() => []);
       for (const item of batchResults) {
         if (!item.financials) continue;
+        if (!item.target.instrument && !providerFinancialsMatchTarget(item.financials, item.target.symbol, item.target.exchange)) continue;
         const key = this.cachedFinancialsBatchKey(item.target);
         let value = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(item.financials));
+        if (value && !item.target.instrument && !providerFinancialsMatchTarget(value, item.target.symbol, item.target.exchange)) continue;
         if (value) value = dropUnusableProviderQuote(value, item.target.exchange);
         if (!value) continue;
         const sourceKey = this.deps.providerSourceKey(batchProvider);

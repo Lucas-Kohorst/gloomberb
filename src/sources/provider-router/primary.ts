@@ -9,6 +9,7 @@ import {
   hasDeepStatementHistory,
   hasStatementRows,
   isProviderQuoteUsableForCurrentSession,
+  providerFinancialsMatchTarget,
   mergeMissingStatementArrays,
   mergeFinancials,
 } from "./financials";
@@ -64,7 +65,9 @@ export class ProviderRouterPrimaryRoutes {
       try {
         if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) continue;
         const rawValue = await provider.getTickerFinancials(ticker, exchange, context);
+        if (rawValue && !context?.instrument && !providerFinancialsMatchTarget(rawValue, ticker, exchange)) continue;
         const resolvedValue = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(rawValue));
+        if (resolvedValue && !context?.instrument && !providerFinancialsMatchTarget(resolvedValue, ticker, exchange)) continue;
         const value = resolvedValue ? dropUnusableProviderQuote(resolvedValue, exchange) : null;
         if (!value) continue;
         const sourceKey = this.options.providerSourceKey(provider);
