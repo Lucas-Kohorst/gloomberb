@@ -212,7 +212,7 @@ export const federalRegisterPlugin: GloomPlugin = {
   id: FEDERAL_REGISTER_PLUGIN_ID, name: "Federal Register", version: "1.0.0",
   description: "Search Federal Register documents: proposed rules, final rules, and agency notices.", toggleable: true,
   panes: [{ id: "federal-register", name: "Fed Register", icon: "R", component: FederalRegisterPane,
-    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 } }],
+    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 }, tableExport: true }],
   paneTemplates: [{
     id: "federal-register-pane", paneId: "federal-register", label: "Fed Register",
     description: "Search Federal Register documents, proposed rules, final rules, and agency notices.",

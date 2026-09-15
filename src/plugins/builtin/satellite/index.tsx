@@ -376,6 +376,7 @@ export const satellitePlugin: GloomPlugin = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 96, height: 32 },
+    tableExport: true,
   }],
   paneTemplates: [{
     id: "satellite-pane",

@@ -3,6 +3,7 @@ export const WEATHER_PANE_ID = "weather";
 export const WEATHER_CONNECTION_ID = "twc-kalshi";
 export const NWS_CLI_CONNECTION_ID = "nws-cli";
 export const NWS_OBSERVATIONS_CONNECTION_ID = "nws-observations";
+export const OPEN_METEO_CONNECTION_ID = "open-meteo";
 export const TWC_KALSHI_URL = "https://weather.com/kalshi";
 export const TWC_KALSHI_ORIGIN = "https://weather.com";
 
@@ -22,6 +23,8 @@ export interface WeatherStation {
   region?: string;
   scope: WeatherScope;
   aliases: readonly string[];
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface WeatherDailyObservation {

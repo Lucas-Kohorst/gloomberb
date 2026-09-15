@@ -543,6 +543,7 @@ export const spaceWeatherPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+      tableExport: true,
     },
   ],
 

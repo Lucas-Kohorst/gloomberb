@@ -133,7 +133,7 @@ let disposeConnection: (() => void) | null = null;
 export const usaspendingPlugin: GloomPlugin = {
   id: USASPENDING_PLUGIN_ID, name: "USAspending", version: "1.0.0",
   description: "Search federal contract awards by recipient, agency, or keyword.", toggleable: true,
-  panes: [{ id: "usaspending", name: "Federal Spending", icon: "$", component: FederalSpendingPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 } }],
+  panes: [{ id: "usaspending", name: "Federal Spending", icon: "$", component: FederalSpendingPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 }, tableExport: true }],
   paneTemplates: [{ id: "usaspending-pane", paneId: "usaspending", label: "Federal Spending", description: "Search federal contract awards by recipient, agency, or keyword.", keywords: ["usa", "usaspending", "federal", "contracts", "spending", "awards"], category: "Data", shortcut: { prefix: "USA", argPlaceholder: "recipient or keyword", argKind: "text", argOptional: true }, createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) { const query = queryFromOptions(options); return { instanceId: query ? `usaspending:${encodeURIComponent(query)}` : "usaspending:latest", title: query ? `Federal Spending ${query}` : "Federal Spending", placement: "floating", settings: { query } }; } }],
   setup() { disposeConnection = registerConnectionSource({ id: USASPENDING_CONNECTION_ID, name: "USAspending", kind: "api", pluginId: USASPENDING_PLUGIN_ID, authRequired: false }); },
   dispose() { disposeConnection?.(); disposeConnection = null; },

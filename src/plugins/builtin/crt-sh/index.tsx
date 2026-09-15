@@ -201,7 +201,7 @@ export const crtShPlugin: GloomPlugin = {
   description: "Search Certificate Transparency logs for domains, subdomains, and certificate history.",
   toggleable: true,
   panes: [{ id: "crt-sh", name: "Cert Transparency", icon: "C", component: CrtShPane,
-    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 } }],
+    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 }, tableExport: true }],
   paneTemplates: [{
     id: "crt-sh-pane", paneId: "crt-sh", label: "Cert Transparency",
     description: "Search Certificate Transparency logs for domains, subdomains, and certificate history.",

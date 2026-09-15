@@ -11,6 +11,7 @@ export const worldVenueMapModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 124, height: 36 },
+      tableExport: true,
     },
   ],
   paneTemplates: [

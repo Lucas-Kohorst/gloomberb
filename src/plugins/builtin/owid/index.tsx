@@ -33,6 +33,7 @@ export const owidModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 88, height: 30 },
+      tableExport: true,
     },
   ],
 
