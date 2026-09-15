@@ -17,9 +17,11 @@ describe("pane footer left chrome", () => {
     expect(isPaneFooterLeftSegment(segment("external-link", "source European Central Bank"))).toBe(true);
     expect(isPaneFooterLeftSegment(segment("updated", "updated ~0m"))).toBe(true);
     expect(isPaneFooterLeftSegment(segment("error", "failed"))).toBe(true);
+    expect(isPaneFooterLeftSegment(segment("data-warnings", "⚠"))).toBe(true);
     expect(isPaneFooterLeftSegment(segment("live", "live"))).toBe(false);
     expect(isPaneFooterLeftSegment(segment("running", "Streaming reply"))).toBe(false);
     expect(isPaneFooterLeftSegment(segment("cloud-access", "Pro trial · 6d left"))).toBe(false);
+    expect(isPaneFooterLeftSegment(segment("warning", "No CUSIP found for AAPL"))).toBe(false);
   });
 
   test("combined left info only includes source and updated", () => {

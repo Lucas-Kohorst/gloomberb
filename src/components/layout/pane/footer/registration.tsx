@@ -39,6 +39,11 @@ interface PaneFooterContextValue {
 
 const PaneFooterContext = createContext<PaneFooterContextValue | null>(null);
 
+/** Also gates non-footer interaction owned by an inactive pane/tab. */
+export function usePaneFooterScopeActive(): boolean {
+  return useContext(PaneFooterContext) !== null;
+}
+
 export function PaneFooterProvider({
   children,
   paneId,

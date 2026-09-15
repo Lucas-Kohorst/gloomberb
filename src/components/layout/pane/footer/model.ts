@@ -97,7 +97,7 @@ export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolea
     || footer.hints.some((hint) => !hint.disabled);
 }
 
-/** Bottom-left pane chrome: source, last-updated, and errors only. */
+/** Bottom-left pane chrome: source, last-updated, errors, and data warnings. */
 export function isPaneFooterLeftSegment(segment: PaneFooterSegment): boolean {
   const id = segment.id.toLowerCase();
   if (
@@ -105,9 +105,11 @@ export function isPaneFooterLeftSegment(segment: PaneFooterSegment): boolean {
     || id === "updated"
     || id === "external-link"
     || id === "error"
+    || id === "data-warnings"
     || id.endsWith("-updated")
     || id.endsWith("-source")
     || id.endsWith("-error")
+    || id.endsWith("-warnings")
   ) {
     return true;
   }

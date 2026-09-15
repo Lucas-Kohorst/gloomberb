@@ -39,6 +39,7 @@ export {
   PaneFooterScope,
   readPaneFooterHints,
   usePaneFooter,
+  usePaneFooterScopeActive,
   usePaneHints,
 } from "./registration";
 

@@ -30,6 +30,7 @@ export { activeStackIndex, nextStackSortPreference, sortStackItems } from "./fee
 export type { StackSortPreference } from "./feed-stack-controller";
 export { isBindableFooterHintKey, PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
 export type { PaneFooterPressEvent, PaneFooterSelectMenu, PaneFooterSegment, PaneHint } from "./layout/pane/footer";
+export { usePaneNoticeFooter, type UsePaneNoticeFooterOptions } from "./use-pane-notice-footer";
 export { usePaneHeaderAccessory } from "./layout/pane/header-accessory";
 export { useUpdatedAgo } from "./use-updated-ago";
 export {
