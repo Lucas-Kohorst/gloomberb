@@ -255,7 +255,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
             </Text>
           </Box>
           {item.body?.trim() ? (
-            <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} />
+            <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} selectable />
           ) : (
             <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
           )}

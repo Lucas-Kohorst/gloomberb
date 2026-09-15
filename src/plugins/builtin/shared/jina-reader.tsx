@@ -185,7 +185,7 @@ export function JinaArticleReader({
           <Text fg={colors.warning} wrapText width={lineWidth}>{notice}</Text>
         ) : null}
         {body ? (
-          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} />
+          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} selectable />
         ) : !state.error ? <Text fg={colors.textDim}>No article text returned.</Text> : null}
       </Box>
     </ScrollBox>

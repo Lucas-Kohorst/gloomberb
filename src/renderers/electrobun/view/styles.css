@@ -38,6 +38,19 @@ body {
 #root > * { height: 100%; min-height: 100%; }
 input, textarea, button { font: inherit; }
 input, textarea { cursor: text; user-select: text; }
+/* Long-form readers opt back into native selection. The body is unselectable so
+   that dragging pans and resizes panes instead of highlighting cells, which
+   leaves article text uncopyable unless a surface asks for it. Declared ahead of
+   the interactive cursor rule below so links keep their pointer. */
+[data-gloom-text-selectable="true"] {
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+[data-gloom-text-selectable="true"] * {
+  -webkit-user-select: text;
+  user-select: text;
+}
 /* Hide Safari/iCloud, Chrome, and password-manager suggestion UI on every field. */
 input::-webkit-credentials-auto-fill-button,
 textarea::-webkit-credentials-auto-fill-button,

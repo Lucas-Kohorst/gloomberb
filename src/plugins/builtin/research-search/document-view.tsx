@@ -247,7 +247,11 @@ export function SearchDocumentView({
           {document.document.metadata
             ? <Text fg={colors.textDim}>{Object.values(document.document.metadata).filter(Boolean).join(" · ")}</Text>
             : null}
-          <MarkdownText text={document.document.markdown || "No further detail was published."} lineWidth={bodyWidth} />
+          <MarkdownText
+            text={document.document.markdown || "No further detail was published."}
+            lineWidth={bodyWidth}
+            selectable
+          />
           {document.document.documentLinks?.map((link) => (
             <Button key={link.url} label={link.label} variant="secondary" onPress={() => openUrl(link.url)} />
           ))}

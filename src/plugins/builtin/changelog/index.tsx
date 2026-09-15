@@ -112,7 +112,7 @@ function ChangelogDetail({
           {/* The stack title already carries the version. */}
           <Text fg={colors.textMuted}>{formatReleaseDate(release.publishedAt)}</Text>
           <Text>{" "}</Text>
-          <MarkdownText text={release.body} lineWidth={lineWidth} />
+          <MarkdownText text={release.body} lineWidth={lineWidth} selectable />
         </Box>
       </ScrollBox>
     </Box>
