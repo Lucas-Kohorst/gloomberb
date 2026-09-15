@@ -154,6 +154,7 @@ describe("pane settings action rows", () => {
     testSetup = await testRender(
       <TuiPaneSettingsDialogBody
         title="AI Settings"
+        dismiss={() => {}}
         fields={[enabled, disabled]}
         selectedIndex={0}
         settings={{}}

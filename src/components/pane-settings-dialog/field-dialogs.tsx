@@ -62,6 +62,7 @@ export function TuiSelectFieldDialog(props: SelectFieldDialogProps) {
   return (
     <DialogFrame
       title={field.label}
+      dismiss={props.dismiss}
     >
       <ListView
         items={field.options.map((option) => ({
@@ -158,6 +159,7 @@ function TuiTextFieldDialog(props: TextFieldDialogProps) {
   return (
     <DialogFrame
       title={field.label}
+      dismiss={dismiss}
     >
       <Box flexDirection="column" gap={1}>
         <TextField

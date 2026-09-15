@@ -148,7 +148,7 @@ export function PaneSettingsDialogContent({
   if (!descriptor) {
     return isDesktop
       ? <DesktopUnavailablePaneSettingsDialog dismiss={dismiss} />
-      : <TuiUnavailablePaneSettingsDialog />;
+      : <TuiUnavailablePaneSettingsDialog dismiss={dismiss} />;
   }
 
   const title = descriptor.settingsDef.title ?? `${descriptor.paneDef.name} Settings`;
@@ -178,6 +178,7 @@ export function PaneSettingsDialogContent({
   ) : (
     <TuiPaneSettingsDialogBody
       title={title}
+      dismiss={dismiss}
       fields={fields}
       selectedIndex={selectedIndex}
       settings={descriptor.context.settings}

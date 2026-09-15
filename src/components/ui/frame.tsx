@@ -37,16 +37,23 @@ export interface DialogFrameProps {
   children: ReactNode;
   footer?: string;
   showTitleDivider?: boolean;
+  dismiss?: () => void;
 }
 
-export function DialogFrame({ title: rawTitle, children, footer: rawFooter, showTitleDivider = false }: DialogFrameProps) {
+export function DialogFrame({
+  title: rawTitle,
+  children,
+  footer: rawFooter,
+  showTitleDivider = false,
+  dismiss,
+}: DialogFrameProps) {
   const title = t(rawTitle);
   const footer = rawFooter === undefined ? undefined : t(rawFooter);
   const colors = useThemeColors();
   const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
   if (HostDialogFrame) {
     return (
-      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider}>
+      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider} dismiss={dismiss}>
         {children}
       </HostDialogFrame>
     );
@@ -54,8 +61,34 @@ export function DialogFrame({ title: rawTitle, children, footer: rawFooter, show
 
   return (
     <Box flexDirection="column">
-      <Box height={1}>
+      <Box height={1} flexDirection="row" alignItems="center">
         <Text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</Text>
+        {dismiss && (
+          <>
+            {/* Adjacent, not cornered: the frame cannot know the content width, and
+                a stretched close cell would poke past narrow dialogs' content area. */}
+            <Box width={1} height={1} flexShrink={0} />
+            <Box
+              width={3}
+              height={1}
+              flexShrink={0}
+              justifyContent="center"
+              alignItems="center"
+              onMouseDown={(event: any) => {
+                event.stopPropagation?.();
+                event.preventDefault?.();
+                dismiss();
+              }}
+              data-gloom-interactive="true"
+              data-gloom-role="dialog-close"
+              title={t("Close")}
+              aria-label={t("Close")}
+              style={{ cursor: "pointer" }}
+            >
+              <Text fg={colors.textMuted}>×</Text>
+            </Box>
+          </>
+        )}
       </Box>
       <Box height={1} />
       {children}

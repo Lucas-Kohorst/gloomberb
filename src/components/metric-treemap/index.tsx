@@ -43,6 +43,10 @@ export function useMetricTreemapLayout<T>(
 }
 
 type PreventableMouseEvent = { preventDefault(): void };
+type ContextMenuMouseEvent = {
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
+};
 
 export interface MetricTreemapSurfaceProps<T> {
   items: MetricTreemapItem<T>[];
@@ -51,6 +55,7 @@ export interface MetricTreemapSurfaceProps<T> {
   selectedId: string | null;
   onSelect: (item: MetricTreemapItem<T>) => void;
   onActivate?: (item: MetricTreemapItem<T>) => void;
+  onContextMenu?: (item: MetricTreemapItem<T>, event: ContextMenuMouseEvent) => void;
   emptyStateTitle?: string;
 }
 
@@ -88,11 +93,12 @@ function visibleLines(item: MetricTreemapItem): string[] {
   ].filter((line): line is string => !!line);
 }
 
-function Tile<T>({ tile, selected, onSelect, onActivate }: {
+function Tile<T>({ tile, selected, onSelect, onActivate, onContextMenu }: {
   tile: MetricTreemapTile<T>;
   selected: boolean;
   onSelect: () => void;
   onActivate?: () => void;
+  onContextMenu?: (event: ContextMenuMouseEvent) => void;
 }) {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
   const renderHeight = Math.max(1, tile.height - (tile.height > 2 ? 1 : 0));
@@ -117,6 +123,8 @@ function Tile<T>({ tile, selected, onSelect, onActivate }: {
       onMouseOver={onSelect}
       onMouseMove={onSelect}
       onDoubleClick={onActivate}
+      onContextMenu={onContextMenu}
+      data-gloom-context-menu-surface={onContextMenu ? "true" : undefined}
     >
       {lines.slice(0, renderHeight).map((line, index) => (
         <Text key={`${tile.item.id}:${index}`} fg={textColor} attributes={attributes}>
@@ -131,7 +139,7 @@ function pct(value: number, total: number): string {
   return `${total > 0 ? value / total * 100 : 0}%`;
 }
 
-function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSelect, onActivate, onHover }: {
+function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSelect, onActivate, onContextMenu, onHover }: {
   tile: FloatMetricTreemapTile<T>;
   chartWidth: number;
   chartHeight: number;
@@ -139,6 +147,7 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
   hovered: boolean;
   onSelect: () => void;
   onActivate?: () => void;
+  onContextMenu?: (event: ContextMenuMouseEvent) => void;
   onHover: (hovered: boolean) => void;
 }) {
   const lines = visibleLines(tile.item);
@@ -208,6 +217,8 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
       onMouseOver={startHover}
       onMouseMove={startHover}
       onMouseOut={() => onHover(false)}
+      onContextMenu={onContextMenu}
+      data-gloom-context-menu-surface={onContextMenu ? "true" : undefined}
     >
       {canShowLabel && (
         <Text
@@ -231,7 +242,7 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
   );
 }
 
-function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSelect, onActivate, cellAspect, emptyStateTitle }: MetricTreemapSurfaceProps<T> & {
+function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSelect, onActivate, onContextMenu, cellAspect, emptyStateTitle }: MetricTreemapSurfaceProps<T> & {
   cellAspect: number;
 }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -278,6 +289,7 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
             hovered={tile.item.id === hoveredId}
             onSelect={() => onSelect(tile.item)}
             onActivate={onActivate ? () => onActivate(tile.item) : undefined}
+            onContextMenu={onContextMenu ? (event) => onContextMenu(tile.item, event) : undefined}
             onHover={(isHovered) => setHoveredId((current) => (isHovered ? tile.item.id : current === tile.item.id ? null : current))}
           />
         ))}
@@ -293,6 +305,7 @@ function TerminalMetricTreemapSurface<T>({
   selectedId,
   onSelect,
   onActivate,
+  onContextMenu,
   cellAspect,
   emptyStateTitle,
 }: MetricTreemapSurfaceProps<T> & { cellAspect: number }) {
@@ -317,6 +330,7 @@ function TerminalMetricTreemapSurface<T>({
             selected={tile.item.id === selectedId}
             onSelect={() => onSelect(tile.item)}
             onActivate={onActivate ? () => onActivate(tile.item) : undefined}
+            onContextMenu={onContextMenu ? (event) => onContextMenu(tile.item, event) : undefined}
           />
         ))}
       </Box>
@@ -331,6 +345,7 @@ export function MetricTreemapSurface<T>({
   selectedId,
   onSelect,
   onActivate,
+  onContextMenu,
   emptyStateTitle,
 }: MetricTreemapSurfaceProps<T>) {
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
@@ -345,6 +360,7 @@ export function MetricTreemapSurface<T>({
         selectedId={selectedId}
         onSelect={onSelect}
         onActivate={onActivate}
+        onContextMenu={onContextMenu}
         cellAspect={cellAspect}
         emptyStateTitle={emptyStateTitle}
       />
@@ -359,6 +375,7 @@ export function MetricTreemapSurface<T>({
       selectedId={selectedId}
       onSelect={onSelect}
       onActivate={onActivate}
+      onContextMenu={onContextMenu}
       cellAspect={cellAspect}
       emptyStateTitle={emptyStateTitle}
     />

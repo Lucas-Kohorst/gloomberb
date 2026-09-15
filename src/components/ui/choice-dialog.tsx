@@ -50,6 +50,7 @@ function choiceDialogWidth(title: string, choices: ChoiceDialogChoice[]): number
 }
 
 export function ChoiceDialog({
+  dismiss,
   resolve,
   title,
   choices,
@@ -94,7 +95,7 @@ export function ChoiceDialog({
   });
 
   return (
-    <DialogFrame title={title} footer={footer} showTitleDivider={false}>
+    <DialogFrame title={title} footer={footer} showTitleDivider={false} dismiss={dismiss}>
       <Box flexDirection="column" width={width}>
         <ListView
           items={items}

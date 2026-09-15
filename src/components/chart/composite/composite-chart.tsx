@@ -377,6 +377,8 @@ const HLINE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
 const FIB_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2 3.2h12M2 6.2h12M2 9.2h12M2 12.8h12" stroke="#000" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 const MAGNET_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.2 2.4v6.2a3.8 3.8 0 0 0 7.6 0V2.4" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><path d="M4.2 5.2h2.2M9.6 5.2h2.2" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 const MARQUEE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.2 6V3.4a1.2 1.2 0 0 1 1.2-1.2H6M10 2.2h2.6a1.2 1.2 0 0 1 1.2 1.2V6M13.8 10v2.6a1.2 1.2 0 0 1-1.2 1.2H10M6 13.8H3.4a1.2 1.2 0 0 1-1.2-1.2V10" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+const RESET_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 7a5 5 0 1 1 1.5 4.1" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/><path d="M3 3.5V7h3.5" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const DELETE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 5.5v7h7v-7M3 5.5h10M6 3.5h4M6.5 7.5v3M9.5 7.5v3" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 const CHART_TOOLS: ReadonlyArray<{
   /** null is the resting state: the pointer pans and nothing is armed. */
@@ -468,8 +470,8 @@ function nextDrawingId(): string {
   return `drawing:${nextDrawingSequence++}`;
 }
 
-/** Icon cells plus the gap between chips. Magnet sits after the tools. */
-const CHART_TOOLBAR_CHIP_COUNT = CHART_TOOLS.length + 1;
+/** Icon cells plus the gap between chips. Magnet and reset sit after the tools. */
+const CHART_TOOLBAR_CHIP_COUNT = CHART_TOOLS.length + 2;
 const CHART_TOOLBAR_WIDTH = CHART_TOOLBAR_CHIP_COUNT * 3 + (CHART_TOOLBAR_CHIP_COUNT - 1);
 
 function ChartToolChip({
@@ -601,7 +603,10 @@ function ChartToolbar({
   top,
   drawColor,
   showColors,
+  canDeleteDrawing,
   onArmTool,
+  onResetViewport,
+  onDeleteDrawing,
   onToggleMagnet,
   onPickColor,
 }: {
@@ -612,7 +617,10 @@ function ChartToolbar({
   top: number;
   drawColor: string;
   showColors: boolean;
+  canDeleteDrawing: boolean;
   onArmTool: (tool: ChartToolKind | null) => void;
+  onResetViewport: () => void;
+  onDeleteDrawing: () => void;
   onToggleMagnet: () => void;
   onPickColor: (color: string) => void;
 }) {
@@ -661,6 +669,34 @@ function ChartToolbar({
         isDesktopWeb={isDesktopWeb}
         onPress={onToggleMagnet}
       />
+      <ChartToolChip
+        tool={{
+          kind: null,
+          label: "Reset chart",
+          shortcut: "0",
+          hint: "Return the chart to its authored range",
+          glyph: "0",
+          icon: RESET_ICON,
+        }}
+        active={false}
+        isDesktopWeb={isDesktopWeb}
+        onPress={onResetViewport}
+      />
+      {canDeleteDrawing ? (
+        <ChartToolChip
+          tool={{
+            kind: null,
+            label: "Delete drawing",
+            shortcut: "Backspace",
+            hint: "Delete the selected drawing",
+            glyph: "\u232b",
+            icon: DELETE_ICON,
+          }}
+          active={false}
+          isDesktopWeb={isDesktopWeb}
+          onPress={onDeleteDrawing}
+        />
+      ) : null}
       {/* Colours only take space while something can use them. */}
       {showColors ? CHART_DRAWING_COLORS.map((color) => (
         <ChartColorSwatch
@@ -2252,9 +2288,19 @@ export function CompositeChart({
           top={legendRows}
           drawColor={drawColor}
           showColors={isDrawingTool(armedTool) || !!selectedDrawingId}
+          // Delete joins only with room to spare so drawing on a narrow chart never hides the toolbar.
+          canDeleteDrawing={drawings.length > 0 && plotWidth > CHART_TOOLBAR_WIDTH + 8}
           onArmTool={(tool) => {
             onActivate?.();
             armTool(tool);
+          }}
+          onResetViewport={() => {
+            onActivate?.();
+            resetViewport();
+          }}
+          onDeleteDrawing={() => {
+            onActivate?.();
+            removeDrawing();
           }}
           onToggleMagnet={() => {
             onActivate?.();

@@ -6,9 +6,9 @@ import { colors } from "../../theme/colors";
 import { DialogFrame, ListView } from "../ui";
 import { summarizePaneSettingValue } from "./value";
 
-export function TuiUnavailablePaneSettingsDialog() {
+export function TuiUnavailablePaneSettingsDialog({ dismiss }: { dismiss: () => void }) {
   return (
-    <DialogFrame title={t("Pane Settings")} footer={t("Press esc to cancel")}>
+    <DialogFrame title={t("Pane Settings")} footer={t("Press esc to cancel")} dismiss={dismiss}>
       <Text fg={colors.textDim}>{t("This pane is no longer configurable.")}</Text>
     </DialogFrame>
   );
@@ -16,6 +16,7 @@ export function TuiUnavailablePaneSettingsDialog() {
 
 export function TuiPaneSettingsDialogBody({
   title,
+  dismiss,
   fields,
   selectedIndex,
   settings,
@@ -23,6 +24,7 @@ export function TuiPaneSettingsDialogBody({
   onActivate,
 }: {
   title: string;
+  dismiss: () => void;
   fields: PaneSettingField[];
   selectedIndex: number;
   settings: Record<string, unknown>;
@@ -30,7 +32,7 @@ export function TuiPaneSettingsDialogBody({
   onActivate: (field: PaneSettingField | undefined) => void;
 }) {
   return (
-    <DialogFrame title={t(title)}>
+    <DialogFrame title={t(title)} dismiss={dismiss}>
       <ListView
         items={fields.map((field) => ({
           id: field.key,
