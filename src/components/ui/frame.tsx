@@ -1,9 +1,10 @@
-import { Box, Text, useUiHost } from "../../ui";
+import { Box, Text, useUiHost, type ContextMenuEventLike } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { type ComponentType, type ReactNode } from "react";
 import { t } from "../../i18n";
 import { blendHex, type ThemeColors } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
+import { useDialogDismiss } from "../../ui/dialog";
 
 export interface ModalSurfaceOptions {
   width?: string;
@@ -50,10 +51,12 @@ export function DialogFrame({
   const title = t(rawTitle);
   const footer = rawFooter === undefined ? undefined : t(rawFooter);
   const colors = useThemeColors();
+  const contextDismiss = useDialogDismiss();
+  const closeDialog = dismiss ?? contextDismiss;
   const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
   if (HostDialogFrame) {
     return (
-      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider} dismiss={dismiss}>
+      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider} dismiss={closeDialog}>
         {children}
       </HostDialogFrame>
     );
@@ -63,31 +66,29 @@ export function DialogFrame({
     <Box flexDirection="column">
       <Box height={1} flexDirection="row" alignItems="center">
         <Text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</Text>
-        {dismiss && (
-          <>
-            {/* Adjacent, not cornered: the frame cannot know the content width, and
-                a stretched close cell would poke past narrow dialogs' content area. */}
-            <Box width={1} height={1} flexShrink={0} />
-            <Box
-              width={3}
-              height={1}
-              flexShrink={0}
-              justifyContent="center"
-              alignItems="center"
-              onMouseDown={(event: any) => {
-                event.stopPropagation?.();
-                event.preventDefault?.();
-                dismiss();
-              }}
-              data-gloom-interactive="true"
-              data-gloom-role="dialog-close"
-              title={t("Close")}
-              aria-label={t("Close")}
-              style={{ cursor: "pointer" }}
-            >
-              <Text fg={colors.textMuted}>×</Text>
-            </Box>
-          </>
+        {closeDialog && (
+          // Adjacent, not cornered: the frame cannot know the content width, and
+          // a stretched close cell would poke past narrow dialogs' content area.
+          <Box
+            width={3}
+            height={1}
+            flexShrink={0}
+            marginLeft={1}
+            justifyContent="center"
+            alignItems="center"
+            onMouseDown={(event: ContextMenuEventLike) => {
+              event.stopPropagation?.();
+              event.preventDefault?.();
+              closeDialog();
+            }}
+            data-gloom-interactive="true"
+            data-gloom-role="dialog-close"
+            title={t("Close")}
+            aria-label={t("Close")}
+            style={{ cursor: "pointer" }}
+          >
+            <Text fg={colors.textMuted}>×</Text>
+          </Box>
         )}
       </Box>
       <Box height={1} />

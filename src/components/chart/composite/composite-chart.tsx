@@ -447,6 +447,32 @@ const CHART_TOOLS: ReadonlyArray<{
   },
 ];
 
+/** One-shot action chips after the drawing tools; magnet is the toggle among them. */
+const MAGNET_TOOL = {
+  kind: null,
+  label: "Magnet",
+  shortcut: "Shift+N",
+  hint: "Snap drawings to the nearest open, high, low, or close",
+  glyph: "\u25c8",
+  icon: MAGNET_ICON,
+} satisfies (typeof CHART_TOOLS)[number];
+const RESET_TOOL = {
+  kind: null,
+  label: "Reset chart",
+  shortcut: "0",
+  hint: "Return the chart to its authored range",
+  glyph: "0",
+  icon: RESET_ICON,
+} satisfies (typeof CHART_TOOLS)[number];
+const DELETE_TOOL = {
+  kind: null,
+  label: "Delete drawing",
+  shortcut: "Backspace",
+  hint: "Delete the selected drawing",
+  glyph: "\u232b",
+  icon: DELETE_ICON,
+} satisfies (typeof CHART_TOOLS)[number];
+
 interface ChartToolSpan {
   startXRatio: number;
   endXRatio: number;
@@ -656,46 +682,10 @@ function ChartToolbar({
           onPress={() => onArmTool(tool.kind)}
         />
       ))}
-      <ChartToolChip
-        tool={{
-          kind: null,
-          label: "Magnet",
-          shortcut: "Shift+N",
-          hint: "Snap drawings to the nearest open, high, low, or close",
-          glyph: "\u25c8",
-          icon: MAGNET_ICON,
-        }}
-        active={magnet}
-        isDesktopWeb={isDesktopWeb}
-        onPress={onToggleMagnet}
-      />
-      <ChartToolChip
-        tool={{
-          kind: null,
-          label: "Reset chart",
-          shortcut: "0",
-          hint: "Return the chart to its authored range",
-          glyph: "0",
-          icon: RESET_ICON,
-        }}
-        active={false}
-        isDesktopWeb={isDesktopWeb}
-        onPress={onResetViewport}
-      />
+      <ChartToolChip tool={MAGNET_TOOL} active={magnet} isDesktopWeb={isDesktopWeb} onPress={onToggleMagnet} />
+      <ChartToolChip tool={RESET_TOOL} active={false} isDesktopWeb={isDesktopWeb} onPress={onResetViewport} />
       {canDeleteDrawing ? (
-        <ChartToolChip
-          tool={{
-            kind: null,
-            label: "Delete drawing",
-            shortcut: "Backspace",
-            hint: "Delete the selected drawing",
-            glyph: "\u232b",
-            icon: DELETE_ICON,
-          }}
-          active={false}
-          isDesktopWeb={isDesktopWeb}
-          onPress={onDeleteDrawing}
-        />
+        <ChartToolChip tool={DELETE_TOOL} active={false} isDesktopWeb={isDesktopWeb} onPress={onDeleteDrawing} />
       ) : null}
       {/* Colours only take space while something can use them. */}
       {showColors ? CHART_DRAWING_COLORS.map((color) => (

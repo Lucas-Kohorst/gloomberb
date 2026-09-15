@@ -21,7 +21,7 @@ export function PaneTemplateInfoStep({
   }, dialogId);
 
   return (
-    <DialogFrame title={step.label} footer="Press Enter to continue" dismiss={dismiss}>
+    <DialogFrame title={step.label} footer="Press Enter to continue">
       <Box flexDirection="column">
         {step.body?.map((line, index) => (
           <Box key={`${step.key}:${index}`} height={1}>
@@ -34,7 +34,6 @@ export function PaneTemplateInfoStep({
 }
 
 export function PaneTemplateInputStep({
-  dismiss,
   resolve,
   step,
 }: PromptContext<string> & { step: WizardStep }) {
@@ -48,7 +47,6 @@ export function PaneTemplateInputStep({
   return (
     <DialogFrame
       title={step.label}
-      dismiss={dismiss}
       footer={step.defaultValue
         ? `Press Enter to use ${step.defaultValue}`
         : step.required === false
@@ -80,7 +78,6 @@ export function PaneTemplateInputStep({
 }
 
 export function PaneTemplateTextareaStep({
-  dismiss,
   resolve,
   step,
   dialogId,
@@ -111,7 +108,6 @@ export function PaneTemplateTextareaStep({
   return (
     <DialogFrame
       title={step.label}
-      dismiss={dismiss}
       footer="Ctrl+S save · Esc cancel"
     >
       <Box flexDirection="column" flexGrow={1}>
@@ -161,7 +157,6 @@ export function PaneTemplateTextareaStep({
 }
 
 export function PaneTemplateSelectStep({
-  dismiss,
   resolve,
   step,
   dialogId,
@@ -188,7 +183,7 @@ export function PaneTemplateSelectStep({
   }, dialogId);
 
   return (
-    <DialogFrame title={step.label} footer="Use ↑↓ to choose · enter to select · esc to cancel" dismiss={dismiss}>
+    <DialogFrame title={step.label} footer="Use ↑↓ to choose · enter to select · esc to cancel">
       <Box flexDirection="column">
         {step.body?.map((line, index) => (
           <Box key={`${step.key}:${index}`} height={1}>

@@ -284,7 +284,7 @@ export function MultiSelectDialogContent({
   }, dialogId);
 
   return (
-    <DialogFrame title={title} showTitleDivider={!isDesktopWeb} dismiss={dismiss}>
+    <DialogFrame title={title} showTitleDivider={!isDesktopWeb}>
       <Box
         flexDirection="column"
         gap={1}

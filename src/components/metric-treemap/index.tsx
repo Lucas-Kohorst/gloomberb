@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
+import { Box, Text, TextAttributes, useUiCapabilities, type ContextMenuEventLike } from "../../ui";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { blendForContrast, higherContrast } from "../../theme/color-utils";
 import { EmptyState } from "../ui/status";
@@ -43,10 +43,6 @@ export function useMetricTreemapLayout<T>(
 }
 
 type PreventableMouseEvent = { preventDefault(): void };
-type ContextMenuMouseEvent = {
-  preventDefault?: () => void;
-  stopPropagation?: () => void;
-};
 
 export interface MetricTreemapSurfaceProps<T> {
   items: MetricTreemapItem<T>[];
@@ -55,7 +51,7 @@ export interface MetricTreemapSurfaceProps<T> {
   selectedId: string | null;
   onSelect: (item: MetricTreemapItem<T>) => void;
   onActivate?: (item: MetricTreemapItem<T>) => void;
-  onContextMenu?: (item: MetricTreemapItem<T>, event: ContextMenuMouseEvent) => void;
+  onContextMenu?: (item: MetricTreemapItem<T>, event: ContextMenuEventLike) => void;
   emptyStateTitle?: string;
 }
 
@@ -98,7 +94,7 @@ function Tile<T>({ tile, selected, onSelect, onActivate, onContextMenu }: {
   selected: boolean;
   onSelect: () => void;
   onActivate?: () => void;
-  onContextMenu?: (event: ContextMenuMouseEvent) => void;
+  onContextMenu?: (event: ContextMenuEventLike) => void;
 }) {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
   const renderHeight = Math.max(1, tile.height - (tile.height > 2 ? 1 : 0));
@@ -147,7 +143,7 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
   hovered: boolean;
   onSelect: () => void;
   onActivate?: () => void;
-  onContextMenu?: (event: ContextMenuMouseEvent) => void;
+  onContextMenu?: (event: ContextMenuEventLike) => void;
   onHover: (hovered: boolean) => void;
 }) {
   const lines = visibleLines(tile.item);

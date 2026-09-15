@@ -34,7 +34,7 @@ export function LayoutNameDialog({
   }, { allowEditable: true });
 
   return (
-    <DialogFrame title={title} dismiss={dismiss}>
+    <DialogFrame title={title}>
       <Box flexDirection="column" width={FIELD_WIDTH + 4} gap={1}>
         <TextField
           label={t(label)}

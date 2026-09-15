@@ -10,13 +10,7 @@ import { useShortcut } from "../../../react/input";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import {
-  tickerContextMenuItems,
-  useContextMenu,
-  useRendererHost,
-  useUiCapabilities,
-} from "../../../ui";
-import { getSharedRegistry } from "../../registry";
+import { useTickerRowContextMenu, useUiCapabilities } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { getColumnValue, getSortValue, type ColumnContext } from "./metrics";
 import { getPortfolioPositionMetrics } from "./position-metrics";
@@ -115,8 +109,7 @@ export function PortfolioGrid({
   height: number;
 }) {
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
-  const renderer = useRendererHost();
-  const { showContextMenu } = useContextMenu();
+  const tickerRowContextMenu = useTickerRowContextMenu(financialsMap);
   const chartWidth = Math.max(1, width - 2);
   const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
   const items = useMemo(
@@ -144,30 +137,6 @@ export function PortfolioGrid({
     const target = findMetricTreemapNeighbor(navigationTiles, cursorSymbol, direction);
     if (target) setCursorSymbol(target.item.data.metadata.ticker);
   }, [cursorSymbol, navigationTiles, setCursorSymbol]);
-
-  const showTickerContextMenu = useCallback((ticker: TickerRecord, event: {
-    preventDefault?: () => void;
-    stopPropagation?: () => void;
-  }) => {
-    const registry = getSharedRegistry() ?? null;
-    const financials = financialsMap.get(ticker.metadata.ticker) ?? null;
-    void showContextMenu(
-      {
-        kind: "ticker",
-        symbol: ticker.metadata.ticker,
-        ticker,
-        financials,
-      },
-      tickerContextMenuItems({
-        ticker,
-        financials,
-        registry,
-        openExternal: renderer.openExternal.bind(renderer),
-        copyText: renderer.copyText.bind(renderer),
-      }),
-      event,
-    );
-  }, [financialsMap, renderer, showContextMenu]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -242,7 +211,7 @@ export function PortfolioGrid({
       selectedId={cursorSymbol}
       onSelect={(item) => setCursorSymbol(item.data.metadata.ticker)}
       onActivate={(item) => onRowActivate(item.data)}
-      onContextMenu={(item, event) => showTickerContextMenu(item.data, event)}
+      onContextMenu={(item, event) => void tickerRowContextMenu(item.data, event)}
       emptyStateTitle={isPortfolioTab ? "No portfolio positions" : "No watchlist tickers"}
     />
   );

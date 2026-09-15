@@ -8,16 +8,13 @@ import {
 } from "react";
 import {
   TextAttributes,
-  tickerContextMenuItems,
   useCommandBarShortcut,
-  useContextMenu,
-  useRendererHost,
+  useTickerRowContextMenu,
   useUiCapabilities,
   type ScrollBoxRenderable,
 } from "../../ui";
 import { colors } from "../../theme/colors";
 import { t, tf } from "../../i18n";
-import { getSharedRegistry } from "../../plugins/registry";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerFinancials, PricePoint } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
@@ -185,8 +182,6 @@ export function TickerListTableView({
 }: TickerListTableViewProps) {
   const commandBarShortcut = useCommandBarShortcut();
   const resolvedEmptyHint = emptyHint ?? tf("Press {shortcut} to add one.", { shortcut: commandBarShortcut });
-  const renderer = useRendererHost();
-  const { showContextMenu } = useContextMenu();
   const { nativeContextMenu } = useUiCapabilities();
   const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
   const internalScrollRef = useRef<ScrollBoxRenderable>(null);
@@ -260,42 +255,19 @@ export function TickerListTableView({
     );
   }, [financialsMap, revisionScope, safeFlashSymbols]);
 
-  const showTickerContextMenu = useCallback((
-    ticker: TickerRecord,
-    rowKey: string,
-    event: TableMouseEvent,
-  ) => {
-    const financials = financialsMap.get(rowKey);
-    const registry = getSharedRegistry() ?? null;
-    void showContextMenu(
-      {
-        kind: "ticker",
-        symbol: rowKey,
-        ticker,
-        financials: financials ?? null,
-      },
-      tickerContextMenuItems({
-        ticker,
-        financials: financials ?? null,
-        registry,
-        openExternal: renderer.openExternal.bind(renderer),
-        copyText: renderer.copyText.bind(renderer),
-      }),
-      event,
-    );
-  }, [financialsMap, renderer, showContextMenu]);
+  const showTickerRowContextMenu = useTickerRowContextMenu(financialsMap);
 
   const handleRowMouseDown = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
     if (event.button !== 2) return false;
     if (nativeContextMenu !== true) {
-      showTickerContextMenu(ticker, ticker.metadata.ticker, event);
+      void showTickerRowContextMenu(ticker, event);
     }
     return true;
-  }, [nativeContextMenu, showTickerContextMenu]);
+  }, [nativeContextMenu, showTickerRowContextMenu]);
 
-  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, rowKey: string, event: TableMouseEvent) => {
-    showTickerContextMenu(ticker, rowKey, event);
-  }, [showTickerContextMenu]);
+  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, _rowKey: string, event: TableMouseEvent) => {
+    void showTickerRowContextMenu(ticker, event);
+  }, [showTickerRowContextMenu]);
 
   return (
     <DataTableView<TickerRecord, ColumnConfig>

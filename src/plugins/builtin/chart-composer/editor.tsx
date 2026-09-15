@@ -18,7 +18,7 @@ export interface SeriesEditorDialogProps extends PromptContext<ChartSpec | null>
   initialSpec: ChartSpec;
 }
 
-export function SeriesEditorDialog({ dialogId, dismiss, resolve, initialSpec }: SeriesEditorDialogProps) {
+export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEditorDialogProps) {
   const isDesktop = useUiHost().kind === "desktop-web";
   const nativeRenderer = useNativeRenderer();
   const controller = useSeriesEditorController({
@@ -74,7 +74,6 @@ export function SeriesEditorDialog({ dialogId, dismiss, resolve, initialSpec }: 
   return (
     <DialogFrame
       title="Chart Series"
-      dismiss={dismiss}
       footer={isDesktop
         ? undefined
         : "Tab/Shift+Tab field · ←→ change · ↑↓ series"}
