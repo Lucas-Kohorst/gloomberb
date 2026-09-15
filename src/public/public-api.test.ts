@@ -110,6 +110,7 @@ const PUBLIC_API: Record<string, readonly string[]> = {
     "useExternalLinkFooter",
     "useMetricTreemapLayout",
     "usePaneFooter",
+    "usePaneNoticeFooter",
     "usePaneHeaderAccessory",
     "usePaneRetry",
     "usePaneTicker",
