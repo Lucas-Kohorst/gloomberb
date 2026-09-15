@@ -51,13 +51,17 @@ function DefaultDesktopRow({
   );
 }
 
-function listRowStyle(selected: boolean, colors: ThemeColors): CSSProperties {
+function listRowStyle(
+  selected: boolean,
+  colors: ThemeColors,
+  disabled = false,
+): CSSProperties {
   return {
     borderRadius: CONTROL_RADIUS,
     border: `1px solid ${selected ? colors.borderFocused : "transparent"}`,
     boxShadow: selected ? `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}` : undefined,
     boxSizing: "border-box",
-    cursor: "pointer",
+    cursor: disabled ? "default" : "pointer",
     maxWidth: "100%",
     minWidth: 0,
     paddingInline: 10,
@@ -166,7 +170,8 @@ export function WebListView({
             onActivate?.(item, index);
           }}
           data-gloom-role="desktop-list-row"
-          style={listRowStyle(selected, colors)}
+          data-gloom-interactive={disabled ? undefined : "true"}
+          style={listRowStyle(selected, colors, disabled)}
         >
           {renderRow
             ? renderRow(item, state, index)

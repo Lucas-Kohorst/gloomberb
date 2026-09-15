@@ -782,7 +782,7 @@ export function DataTableView<
         scrollToIndexVersion={scrollToIndexVersion + selectionScrollVersion}
         isSelected={isItemSelected}
         onSelect={handleTableSelect}
-        onActivate={handleTableActivate}
+        onActivate={onActivate ? handleTableActivate : undefined}
         onRowMouseDown={handleRowMouseDown}
         onRowContextMenu={handleRowContextMenu}
       />

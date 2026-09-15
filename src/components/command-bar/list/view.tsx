@@ -163,8 +163,12 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
       onMouseOut={() => onHoverIndex(null)}
       {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
       onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}
+      data-gloom-interactive={item.disabled === true ? undefined : "true"}
       data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
-      style={nativePaneChrome ? { borderRadius: 6 } : undefined}
+      style={{
+        ...(nativePaneChrome ? { borderRadius: 6 } : null),
+        cursor: item.disabled === true ? "default" : "pointer",
+      }}
     >
       <Box flexDirection="row" height={1}>
         <Box width={BADGE_INDENT} flexDirection="row">

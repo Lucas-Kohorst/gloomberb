@@ -3,6 +3,7 @@ import type { TextareaRenderable } from "../../../../ui";
 import type { ChatMessage } from "../../../../api-client";
 import type { ChatContentController } from "./types";
 import type { ChatPrependAnchor } from "./scroll";
+import { moveComposerCursorToOffset } from "./composer-cursor";
 
 type ChatSnapshot = ReturnType<ChatContentController["getSnapshot"]>;
 
@@ -50,6 +51,7 @@ function syncDraftFromSnapshot({
   if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
     applyingExternalDraftRef.current = true;
     textarea.setText(snapshot.draft);
+    moveComposerCursorToOffset(textarea, snapshot.draft, snapshot.draft.length);
     applyingExternalDraftRef.current = false;
   }
 }

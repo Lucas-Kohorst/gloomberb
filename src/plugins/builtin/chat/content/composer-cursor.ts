@@ -19,8 +19,15 @@ export function moveComposerCursorToOffset(
   const editBuffer = textarea.editBuffer as typeof textarea.editBuffer & {
     setCursorByOffset?: (offset: number) => void;
   };
-  if (typeof editBuffer.setCursorByOffset === "function") return editBuffer.setCursorByOffset(nextOffset);
-  if (typeof textarea.setCursorOffset === "function") return textarea.setCursorOffset(nextOffset);
+  // `setText` resets the caret. OpenTUI keeps an editBuffer cursor and a visual
+  // editorView cursor; setting only one leaves typing at offset 0 (` fixtypo`).
+  if (typeof editBuffer.setCursorByOffset === "function") {
+    editBuffer.setCursorByOffset(nextOffset);
+  }
+  if (typeof textarea.setCursorOffset === "function") {
+    textarea.setCursorOffset(nextOffset);
+    return;
+  }
   try {
     textarea.cursorOffset = nextOffset;
   } catch {
