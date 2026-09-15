@@ -11,9 +11,7 @@
       "toggleable": true,
       "contributes": {
         "panes": [
-          "adjacent-indices",
-          "adjacent-rates",
-          "cftc-filings",
+          "adjacent",
           "llm-stats",
           "owid"
         ],
@@ -63,8 +61,7 @@
           "connections",
           "help",
           "keybindings",
-          "layout-marketplace",
-          "plugin-marketplace"
+          "marketplace"
         ],
         "capabilities": [],
         "broker": false
@@ -409,7 +406,6 @@
           "cds",
           "credit-conditions",
           "earnings-calendar",
-          "earnings-calls",
           "econ-calendar",
           "econ-statistics",
           "ipo-calendar",
@@ -684,36 +680,20 @@
       "toggleable": true,
       "contributes": {
         "panes": [
-          "analyst-research",
-          "assets-under-management",
-          "cash-flow",
           "chart-composer",
-          "corporate-actions",
           "data-catalog",
-          "dividend-yield",
           "earnings-estimates",
           "earnings-transcripts",
-          "equity-diagnostic",
-          "esg",
-          "executives",
           "financial-analysis",
           "historical-prices",
-          "holders",
-          "insider",
-          "momentum-sortino",
-          "options",
           "options-calculator",
           "options-vol-surface",
-          "pattern-recognition",
           "portfolio-events",
           "quote-monitor",
           "relative-valuation",
           "sec",
-          "short-interest",
-          "technical-summary",
           "thirteenf-funds",
-          "ticker-research",
-          "trend-analysis"
+          "ticker-research"
         ],
         "capabilities": [],
         "broker": false

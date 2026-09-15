@@ -144,7 +144,7 @@ export function buildOwnedEntries(
     layout: removePaneInstances(
       saved.layout,
       saved.layout.instances
-        .filter((instance) => instance.paneId === "layout-marketplace")
+        .filter((instance) => ["layout-marketplace", "plugin-marketplace", "marketplace"].includes(instance.paneId))
         .map((instance) => instance.instanceId),
     ),
     paneState: saved.paneState ?? {},
