@@ -406,6 +406,30 @@ export function Shell({
     setTransientFocusLayout,
     visibleLayout,
   ]);
+  /**
+   * Fullscreen for a named pane rather than the focused one. The context menu
+   * acts on the pane it was opened from, and focusing that pane first would not
+   * help: `focusedPaneId` only updates on a later render, so the focused-pane
+   * toggle would still read the previous pane.
+   */
+  const toggleFullscreenPane = useCallback((paneId: string) => {
+    const current = transientFocusLayoutStateRef.current;
+    closePaneMenu();
+    if (current?.active && current.paneId === paneId) {
+      setTransientFocusLayout(null);
+      return;
+    }
+    const nextLayout = resolvePaneFocusSourceLayout(visibleLayout, paneId);
+    if (!nextLayout) return;
+    setTransientFocusLayout({
+      paneId,
+      layout: nextLayout,
+      sourceLayoutIndex: config.activeLayoutIndex,
+      active: true,
+      hiddenDockedIds: captureFullscreenHiddenDockedIds(visibleLayout, paneId),
+    });
+    focusPane(paneId);
+  }, [closePaneMenu, config.activeLayoutIndex, focusPane, setTransientFocusLayout, visibleLayout]);
   const activateTransientFocusLayout = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (!current) return;
@@ -612,6 +636,8 @@ export function Shell({
       duplicatePane,
       closePane,
       () => hitPaneRetry(),
+      toggleFullscreenPane,
+      transientFocusActive && transientFocusPaneId === paneId,
     );
     void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
@@ -635,7 +661,7 @@ export function Shell({
         items: fallbackItems,
       });
     });
-  }, [canExportPaneCsv, closePane, contentHeight, copyPaneScreenshot, desktopWindowBridge, duplicatePane, exportPaneCsv, focusPane, getPaneTitle, hitPaneRetry, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
+  }, [canExportPaneCsv, closePane, contentHeight, copyPaneScreenshot, desktopWindowBridge, duplicatePane, exportPaneCsv, focusPane, getPaneTitle, hitPaneRetry, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, toggleFullscreenPane, transientFocusActive, transientFocusPaneId, visibleLayout, width]);
 
   const {
     handleFloatingCloseMouseDown,

@@ -81,4 +81,41 @@ describe("menuForPane", () => {
     expect(ids).toContain("close-pane");
     expect(ids).not.toContain("dock");
   });
+
+  test("labels and targets the named pane fullscreen action", async () => {
+    let toggledPaneId: string | null = null;
+    const toggleFullscreenPane = (paneId: string) => {
+      toggledPaneId = paneId;
+    };
+    const makeItems = (paneIsFullscreen: boolean) => menuForPane(
+      pane,
+      { x: 0, y: 0, width: 80, height: 24 },
+      layout,
+      80,
+      24,
+      { hasPaneSettings: () => false, openWindowMode: () => {} } as never,
+      () => {},
+      () => {},
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      toggleFullscreenPane,
+      paneIsFullscreen,
+    );
+
+    const enter = makeItems(false).find((item) => item.id === "fullscreen-pane");
+    expect(enter?.label).toBe("Fullscreen Pane");
+    expect(enter?.accelerator).toBe("CmdOrCtrl+Shift+F");
+    await enter?.onSelect?.();
+    expect(toggledPaneId).toBe("p1");
+
+    const exit = makeItems(true).find((item) => item.id === "fullscreen-pane");
+    expect(exit?.label).toBe("Exit Fullscreen");
+  });
 });
