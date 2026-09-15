@@ -519,13 +519,13 @@ function DomMenuRow({
         userSelect: "none",
       }}
     >
-      <span style={{ flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{ flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
         {item.label}
-      </span>
+      </div>
       {item.accelerator && (
-        <span style={{ color: "var(--gloom-text-dim)", fontSize: 11 }}>{item.accelerator}</span>
+        <div style={{ color: "var(--gloom-text-dim)", fontSize: 11 }}>{item.accelerator}</div>
       )}
-      {item.submenu && <span style={{ color: "var(--gloom-text-dim)" }}>›</span>}
+      {item.submenu && <div style={{ color: "var(--gloom-text-dim)" }}>›</div>}
     </div>
   );
 }
