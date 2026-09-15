@@ -92,8 +92,10 @@ const FINANCIAL_GROWTH_W = 7;
 const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
 
 export function computeGrowth(current: number | undefined, previous: number | undefined): number | undefined {
-  if (current == null || previous == null || previous === 0) return undefined;
-  return (current - previous) / Math.abs(previous);
+  if (current == null || previous == null || !Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return undefined;
+  const direct = (current - previous) / Math.abs(previous);
+  const growth = Number.isFinite(direct) ? direct : current / Math.abs(previous) - Math.sign(previous);
+  return Number.isFinite(growth) ? growth : undefined;
 }
 
 export function semanticGrowthValue(
@@ -107,11 +109,30 @@ export function semanticGrowthValue(
 }
 
 export function formatFinancialCell(value: string, growth: number | undefined) {
-  const growthText = growth != null ? formatGrowthShort(growth) : "";
+  const growthText = growth != null && Number.isFinite(growth) ? formatFinancialGrowth(growth) : "";
   return {
     valueText: padTo(value, FINANCIAL_VALUE_W, "right"),
     growthText: padTo(growthText ? ` ${growthText}` : "", FINANCIAL_GROWTH_W, "right"),
   };
+}
+
+function formatFinancialGrowth(growth: number): string {
+  const plain = formatGrowthShort(growth);
+  const budget = FINANCIAL_GROWTH_W - 1;
+  if (plain.length <= budget) return plain;
+  const percent = growth * 100;
+  if (!Number.isFinite(percent)) return growth < 0 ? "<-99T%" : ">99T%";
+  const sign = percent < 0 ? "-" : "+";
+  const magnitude = Math.abs(percent);
+  for (const [scale, suffix] of [[1e3, "k"], [1e6, "M"], [1e9, "B"], [1e12, "T"]] as const) {
+    if (magnitude < scale) continue;
+    const scaled = magnitude / scale;
+    const digits = scaled < 10 ? 1 : 0;
+    const compact = `${sign}${scaled.toFixed(digits).replace(/\.0$/, "")}${suffix}%`;
+    if (compact.length <= budget) return compact;
+  }
+  const exponential = `${sign}${magnitude.toExponential(0).replace("e+", "e")}%`;
+  return exponential.length <= budget ? exponential : percent < 0 ? "<-99T%" : ">99T%";
 }
 
 export function formatFinancialValue(
