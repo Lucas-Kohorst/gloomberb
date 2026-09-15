@@ -312,6 +312,7 @@ export function PaneHeader({
           flexDirection="row"
           alignItems="center"
           justifyContent="center"
+          gap={4}
           height="100%"
           flexShrink={0}
           position="relative"
@@ -342,29 +343,24 @@ export function PaneHeader({
               )}
             />
           )}
-          {showActions ? (
-            uiKind === "opentui" ? (
-              <TerminalPaneButton text={PANE_HEADER_ACTION} fg={colors.textDim} role="pane-action" onMouseDown={onActionMouseDown} />
-            ) : (
-              <DesktopPaneButton
-                label="Pane actions"
-                onActivate={onActionMouseDown}
-                role="pane-action"
-                icon={(
-                  <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
-                    <circle cx="2" cy="6" r="1.1" fill="currentColor" />
-                    <circle cx="6" cy="6" r="1.1" fill="currentColor" />
-                    <circle cx="10" cy="6" r="1.1" fill="currentColor" />
-                  </svg>
-                )}
-              />
-            )
-          ) : <Box width={2} />}
-        </Box>
-        {closeAction && (
+          {uiKind === "opentui" ? (
+            <TerminalPaneButton text={PANE_HEADER_ACTION} fg={colors.textDim} role="pane-action" onMouseDown={onActionMouseDown} />
+          ) : (
+            <DesktopPaneButton
+              label="Pane actions"
+              onActivate={onActionMouseDown}
+              role="pane-action"
+              icon={(
+                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
+                  <circle cx="2" cy="6" r="1.1" fill="currentColor" />
+                  <circle cx="6" cy="6" r="1.1" fill="currentColor" />
+                  <circle cx="10" cy="6" r="1.1" fill="currentColor" />
+                </svg>
+              )}
+            />
+          )}
           <Box
             data-gloom-role={fullscreen ? "pane-restore" : "pane-close"}
-            marginLeft={1}
             height="100%"
             alignItems="center"
             justifyContent="center"
@@ -400,7 +396,7 @@ export function PaneHeader({
               />
             )}
           </Box>
-        )}
+        </Box>
       </Box>
     );
   }
