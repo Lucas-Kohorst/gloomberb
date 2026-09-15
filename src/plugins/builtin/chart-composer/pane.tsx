@@ -4,6 +4,7 @@ import {
   ChoiceDialog,
   Tabs,
   usePaneFooter,
+  usePaneNoticeFooter,
   type PaneFooterPressEvent,
 } from "../../../components";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
@@ -715,13 +716,17 @@ function ChartComposerSurface({
     }
   }, { enabled: focused && !dialogOpen });
 
+  usePaneNoticeFooter({
+    registrationId: `${footerId}:notices`,
+    notices: resolution.warnings,
+    focused: shortcutActive,
+    title: "Chart data",
+  });
+
   usePaneFooter(footerId, () => ({
     info: [
       ...(resolution.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(resolution.errors[0] ? [{ id: "error", parts: [{ text: resolution.errors[0], tone: "warning" as const }] }] : []),
-      ...(!resolution.errors[0] && resolution.warnings[0]
-        ? [{ id: "warning", parts: [{ text: resolution.warnings[0], tone: "warning" as const }] }]
-        : []),
     ],
     hints: [
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
@@ -755,7 +760,6 @@ function ChartComposerSurface({
     shareData,
     resolution.errors,
     resolution.loading,
-    resolution.warnings,
   ]);
 
   const displayTimeZone = resolveChartDisplayTimeZone(

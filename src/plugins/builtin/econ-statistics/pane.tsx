@@ -7,6 +7,7 @@ import {
   SegmentedControl,
   sortStackItems,
   Spinner,
+  usePaneNoticeFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -17,7 +18,7 @@ import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, ScrollBox, Text, type InputRenderable } from "../../../ui";
+import { Box, ScrollBox, type InputRenderable } from "../../../ui";
 import { formatNumber } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -253,6 +254,10 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   }, [selectionOnScreen, setStatId, views]);
 
   const error = state.status === "error" ? state.message : bundle?.errors[0] ?? null;
+  const dataNotices = useMemo(() => [...new Set([
+    ...(state.status === "error" && state.message ? [state.message] : []),
+    ...(bundle?.errors ?? []),
+  ])], [bundle?.errors, state]);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selected) return [];
     const info: PaneFooterSegment[] = [
@@ -267,10 +272,17 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   usePaneStatusFooter({
     registrationId: "econ-statistics",
     loading: state.status === "loading",
-    error,
+    error: selected ? null : error,
     info: footerInfo,
     focused,
     hints: [paneSearchHint(focusSearch)],
+  });
+  usePaneNoticeFooter({
+    registrationId: "econ-statistics:notices",
+    notices: dataNotices,
+    focused: focused && !searchFocused,
+    enabled: !!selected,
+    title: "Economic data",
   });
 
   if (!bundle && state.status !== "error") {
@@ -372,11 +384,6 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
           </ScrollBox>
         </Box>
       </Box>
-      {error ? (
-        <Box height={1} paddingX={1} overflow="hidden">
-          <Text fg={colors.warning}>{error}</Text>
-        </Box>
-      ) : null}
     </Box>
   );
 }

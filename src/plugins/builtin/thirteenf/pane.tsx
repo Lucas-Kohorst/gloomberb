@@ -14,6 +14,7 @@ import {
   InputSearchBar,
   Spinner,
   Tabs,
+  usePaneNoticeFooter,
   type PaneFooterSegment,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -264,8 +265,7 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
 
   const browserStatusInfo = useMemo<PaneFooterSegment[]>(() => [
         ...(loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
-        ...(warning ? [{ id: "warning", parts: [{ text: warning, tone: "warning" as const }] }] : []),
-  ], [loadingMore, warning]);
+  ], [loadingMore]);
   usePaneStatusFooter({
     registrationId: THIRTEENF_PANE_ID,
     enabled: !detailSeed,
@@ -275,6 +275,12 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
     ],
+  });
+  usePaneNoticeFooter({
+    registrationId: "thirteenf-browser-notices",
+    notices: warning ? [warning] : [],
+    focused: focused && !searchFocused,
+    enabled: !detailSeed,
   });
 
   const rootBefore = (

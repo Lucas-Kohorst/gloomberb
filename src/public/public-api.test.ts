@@ -112,6 +112,7 @@ const PUBLIC_API: Record<string, readonly string[]> = {
     "useMetricTreemapLayout",
     "usePaneFooter",
     "usePaneHeaderAccessory",
+    "usePaneNoticeFooter",
     "usePaneRetry",
     "usePaneTicker",
     "useTableLoadMore",
