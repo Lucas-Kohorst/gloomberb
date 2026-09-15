@@ -163,6 +163,9 @@ export function ShellPaneLayers({
                         onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
                         onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
                         onFloatToggleMouseDown={nativePaneChrome && !isFullscreenBase ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
+                        onCloseMouseDown={nativePaneChrome && !isFullscreenBase
+                          ? (event) => handleFloatingCloseMouseDown(leaf.instanceId, event)
+                          : undefined}
                         onRestoreMouseDown={isFullscreenBase ? handleRestoreFullscreen : undefined}
                         fullscreen={isFullscreenBase}
                         onTitleMouseDown={onTitleMouseDown && !isArticleReaderPane(pane.instance.paneId)

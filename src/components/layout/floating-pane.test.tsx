@@ -238,6 +238,51 @@ describe("FloatingPaneWrapper", () => {
     expect(windows.find((pane) => pane["data-floating"] === "false")?.overflow).toBeUndefined();
   });
 
+  test("a docked pane carries a close button, and drops it when there is no close handler", () => {
+    const renderDocked = (onCloseMouseDown?: () => void) => {
+      const closeTargets: Array<Record<string, unknown>> = [];
+      const Box = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
+        if (props["data-gloom-role"] === "pane-close") closeTargets.push(props);
+        return <div>{children}</div>;
+      };
+      const Inline = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+      const ui = {
+        capabilities: { nativePaneChrome: true },
+        Box,
+        Text: Inline,
+        Span: Inline,
+        Strong: Inline,
+        Underline: Inline,
+        ScrollBox: Box,
+        Input: Box,
+        Textarea: Box,
+        ChartSurface: Box,
+        ImageSurface: Box,
+        SpinnerMark: Inline,
+        AsciiText: Inline,
+      } as unknown as UiHost;
+      const markup = renderToStaticMarkup(
+        <UiHostProvider ui={ui} renderer={rendererHost}>
+          <PaneWrapper title="Tiled" focused width={32} height={10} onCloseMouseDown={onCloseMouseDown}>
+            <span>body</span>
+          </PaneWrapper>
+        </UiHostProvider>,
+      );
+      return { closeTargets, markup };
+    };
+
+    // Docked panes used to be closable only through the actions menu, because
+    // the header gated its close control on floating/fullscreen.
+    const closable = renderDocked(() => {});
+    expect(closable.closeTargets).toHaveLength(1);
+    expect(closable.markup).toContain('aria-label="Close pane"');
+
+    // A close button with nothing wired to it would be a dead affordance.
+    const plain = renderDocked(undefined);
+    expect(plain.closeTargets).toHaveLength(0);
+    expect(plain.markup).not.toContain('aria-label="Close pane"');
+  });
+
   test("lets native pane-header buttons focus and activate without pane shortcuts or dragging", () => {
     let activations = 0;
     let focusedPaneShortcuts = 0;
