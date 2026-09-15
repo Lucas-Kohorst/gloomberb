@@ -26,6 +26,7 @@ export const marketValuationModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 88, height: 34 },
+    tableExport: true,
     settings: buildValuationSettingsDef(),
   }],
   paneTemplates: [{

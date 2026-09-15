@@ -36,6 +36,7 @@ export const llmStatsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
+      tableExport: true,
     },
   ],
 

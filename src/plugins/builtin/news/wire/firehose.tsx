@@ -274,6 +274,7 @@ export const firehoseModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 36 },
+      tableExport: true,
       settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: FIREHOSE_COLUMNS,
         sort: FIREHOSE_DEFAULT_SORT,

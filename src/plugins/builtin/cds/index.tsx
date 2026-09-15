@@ -37,6 +37,7 @@ export const cdsModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 92, height: 22 },
+    tableExport: true,
   }],
   paneTemplates: [{
     id: "cds-pane",

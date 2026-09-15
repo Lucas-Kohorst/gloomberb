@@ -339,6 +339,7 @@ export const brokerManagerModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 24 },
+      tableExport: true,
       portableShare: {
         private: { title: true, params: true, settings: true, state: true },
       },

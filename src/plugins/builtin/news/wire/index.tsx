@@ -115,6 +115,7 @@ export const newsWireModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 30 },
+      tableExport: true,
       settings: (context) => buildNewsPaneSettingsDef(context, {
         columns: ["time", "title", "tickers", "importance"],
         sort: { columnId: "importance", direction: "desc" },

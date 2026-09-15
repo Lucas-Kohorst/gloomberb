@@ -308,6 +308,7 @@ export const countryEconModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 88, height: 30 },
+      tableExport: true,
     },
   ],
   paneTemplates: [

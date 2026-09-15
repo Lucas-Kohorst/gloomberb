@@ -17,6 +17,7 @@ export const screenerModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 120, height: 36 },
+      tableExport: true,
     },
   ],
 

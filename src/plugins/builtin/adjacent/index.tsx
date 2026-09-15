@@ -82,6 +82,7 @@ const adjacentMarketsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 30 },
+      tableExport: true,
     },
     {
       id: "adjacent-rates",
@@ -91,6 +92,7 @@ const adjacentMarketsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 60, height: 24 },
+      tableExport: true,
     },
     {
       id: "cftc-filings",
@@ -100,6 +102,7 @@ const adjacentMarketsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
+      tableExport: true,
     },
   ],
 

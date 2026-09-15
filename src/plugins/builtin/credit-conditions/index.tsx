@@ -212,6 +212,7 @@ export const creditConditionsModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 72, height: 18 },
+    tableExport: true,
   }],
   paneTemplates: [{
     id: "credit-conditions-pane",
