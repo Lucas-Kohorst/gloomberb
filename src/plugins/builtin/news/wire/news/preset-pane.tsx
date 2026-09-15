@@ -90,7 +90,6 @@ export function NewsPresetPane({
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
     onBookmark: toggleArticleSaved,
-    savedCount: savedArticleIds.size,
     updatedAt: newsState.updatedAt,
     showPoll: !detailArticle,
   });

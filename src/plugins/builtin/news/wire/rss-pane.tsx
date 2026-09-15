@@ -17,7 +17,7 @@ import {
 import type { DataTableYankHandle } from "../../../../components/data-table/yank";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
-import { useDebouncedPluginPaneState, usePluginAppActions } from "../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../runtime";
 import { usePaneSettingValue } from "../../../../state/app/context";
 import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { usePluginRenderContext } from "../../../runtime/context";
@@ -31,7 +31,7 @@ import { NewsArticleStackView } from "./news/table";
 import { getNewsPaneSettings, getRssViewMode, type RssViewMode } from "./settings";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
-import { NEWS_SAVED_PANE_TEMPLATE_ID, useNewsSavedState } from "./saved-state";
+import { useNewsSavedState } from "./saved-state";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useArticleArchiveAction } from "../../shared/article-archive";
@@ -422,7 +422,6 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   onManageFeeds: () => void;
 }) {
   const rendererHost = useRendererHost();
-  const { createPaneFromTemplate } = usePluginAppActions();
   const newsState = useNewsArticles({ feed: "latest", limit: 200 });
   const liveHead = useMemo(
     () => newsState.articles.length <= 200
@@ -481,20 +480,11 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const bookmarkSelectedArticle = useCallback(() => {
     if (readableArticle) toggleArticleSaved(readableArticle.id);
   }, [readableArticle, toggleArticleSaved]);
-  const openSavedNewsPane = useCallback(() => {
-    createPaneFromTemplate(NEWS_SAVED_PANE_TEMPLATE_ID);
-  }, [createPaneFromTemplate]);
   const poll = useFeedPollInterval();
   const updatedAgo = useUpdatedAgo(newsState.updatedAt);
 
   useShortcut((event) => {
     if (!focused) return;
-    if (savedArticleIds.size > 0 && isPlainKey(event, "v")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      openSavedNewsPane();
-      return;
-    }
     if (!readableArticle) return;
     if (isPlainKey(event, "p")) {
       event.stopPropagation?.();
@@ -585,12 +575,11 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       paneSearchHint(focusSearch),
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "bookmark", key: "b", label: "ookmark", onPress: bookmarkSelectedArticle }] : []),
-      ...(savedArticleIds.size > 0 ? [{ id: "view-saved", key: "v", label: "iew saved", onPress: openSavedNewsPane }] : []),
       ...(readableArticle ? [{ id: "share", key: "s", label: "hare", onPress: shareSelectedArticle }] : []),
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, bookmarkSelectedArticle, detailArticle, focusSearch, loading, onManageFeeds, openSavedNewsPane, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, savedArticleIds.size, shareSelectedArticle, updatedAgo]);
+  }), [archiveAction.archive, archiveAction.enabled, bookmarkSelectedArticle, detailArticle, focusSearch, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle, updatedAgo]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
