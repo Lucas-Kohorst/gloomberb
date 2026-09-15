@@ -22,6 +22,7 @@ import { ChannelMemberList, listChannelMembers } from "./members";
 import {
   ChannelSidebar,
 } from "../sidebar";
+import { openTeamPane } from "../../cloud/team/pane-request";
 import { isChatUserOnline, isSidebarChannelOnline } from "../peer-online";
 import { ChatTitlePresenceDot } from "../presence-dot";
 import { useChatSnapshotState } from "./snapshot";
@@ -77,7 +78,7 @@ export function ChatContent({
   onTargetMessageHandled,
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
-  const { showPane } = usePluginAppActions();
+  const { showPane, createPaneFromTemplate } = usePluginAppActions();
   const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
   const channelId = normalizeChannelId(rawChannelId);
   const channelIdRef = useRef(channelId);
@@ -710,6 +711,7 @@ export function ChatContent({
         controller.setChannelNotificationsEnabled(nextChannelId, enabled);
       }}
       onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
+      onCreateTeamChannel={(teamId) => openTeamPane(createPaneFromTemplate, { teamId, section: "channels" })}
     />
   );
 

@@ -50,10 +50,14 @@ export interface Portfolio {
   brokerInstanceId?: string;
   brokerAccountId?: string;
   lastSyncedAt?: number;
+  /** Set on paper portfolios shared with a team; the server holds the items. */
+  teamId?: string;
 }
 
 export interface Watchlist {
   id: string;
   name: string;
   description?: string;
+  /** Set on watchlists shared with a team; the server holds the items. */
+  teamId?: string;
 }

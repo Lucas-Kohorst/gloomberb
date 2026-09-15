@@ -63,6 +63,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   coingecko: { categories: ["data"] },
   debug: { categories: ["developer"] },
   "gloomberb-cloud": { categories: ["data", "cloud"], featured: true },
+  "custom-view": { categories: ["productivity", "cloud"] },
   macro: { categories: ["macro"] },
   "market-overview": { categories: ["markets"] },
   news: { categories: ["news"] },

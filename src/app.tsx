@@ -20,6 +20,8 @@ import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { SignInGate } from "./components/sign-in-gate";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
+import { useLinkedLayoutSync } from "./layout-marketplace/linked-sync";
+import { useTeamCollectionsSync } from "./plugins/builtin/cloud/team/collections-sync";
 import type { LoadedExternalPlugin } from "./plugins/loader";
 import type { AppServicesFactory, AppTickerRepositoryPort } from "./core/app-service-ports";
 import { useThemeColors } from "./theme/theme-context";
@@ -122,6 +124,7 @@ function AppInner({
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
   const getRemoteState = useCallback(() => stateRef.current, [stateRef]);
+  useLinkedLayoutSync(pluginRegistry);
   const config = useAppSelector((state) => state.config);
   const tickers = useAppSelector((state) => state.tickers);
   const paneState = useAppSelector((state) => state.paneState);
@@ -367,6 +370,7 @@ function AppInner({
   const persistConfig = useCallback((nextConfig: AppState["config"]) => {
     scheduleConfigSave(nextConfig);
   }, []);
+  useTeamCollectionsSync({ persistConfig, tickerRepository });
 
   useAppPaneRuntime({
     dataProvider,

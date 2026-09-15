@@ -5,6 +5,7 @@ import type {
 } from "../../types/config";
 import type { PaneDef } from "../../types/plugin";
 import { findPaneInstance } from "../../types/config";
+import { missingPanePlaceholderDef } from "../../components/layout/missing-pane";
 import {
   collectDockLeafRefs,
   countColumnsFromGeometry,
@@ -38,8 +39,7 @@ export function resolveDocked(
   for (const leaf of collectDockLeafRefs(layout.dockRoot)) {
     const instance = findPaneInstance(layout, leaf.instanceId);
     if (!instance) continue;
-    const def = registeredPanes.get(instance.paneId);
-    if (!def) continue;
+    const def = registeredPanes.get(instance.paneId) ?? missingPanePlaceholderDef(instance.paneId);
     result.push({ instance, def, path: leaf.path });
   }
   return result;
@@ -53,8 +53,7 @@ export function resolveFloating(
   for (const entry of layout.floating) {
     const instance = findPaneInstance(layout, entry.instanceId);
     if (!instance) continue;
-    const def = registeredPanes.get(instance.paneId);
-    if (!def) continue;
+    const def = registeredPanes.get(instance.paneId) ?? missingPanePlaceholderDef(instance.paneId);
     result.push({ instance, def, floating: entry });
   }
   result.sort((a, b) => (a.floating?.zIndex ?? 50) - (b.floating?.zIndex ?? 50));

@@ -114,6 +114,9 @@ function isHostedNotesDir(dataDir: string): boolean {
 }
 
 export class NotesFiles {
+  readonly readOnly = false;
+  readonly owner = { kind: "user" as const };
+
   constructor(private readonly dataDir: string) {}
 
   private pathFor(symbol: string): string {

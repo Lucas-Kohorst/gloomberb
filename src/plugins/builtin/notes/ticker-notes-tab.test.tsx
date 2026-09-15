@@ -209,7 +209,7 @@ describe("createNotesTab", () => {
     }
 
     expect(notesFiles.saves).toEqual([{ symbol: "AAPL", text: "ab" }]);
-    expect(notifications).toEqual(["Failed to save note. Check disk space and permissions."]);
+    expect(notifications).toEqual(["disk full"]);
   });
 
   test("does not save stale buffer text to a new ticker before its notes load", async () => {

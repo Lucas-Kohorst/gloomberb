@@ -207,6 +207,7 @@ export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): Com
 export function channelPrefix(channel: ChatChannel | undefined, active: boolean) {
   if (channel?.kind === "direct") return " ";
   if (channel?.kind === "group") return active ? "+" : " ";
+  if (channel?.kind === "team") return active ? " #" : "  ";
   return active ? "#" : " ";
 }
 

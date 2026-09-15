@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import {
   getPaneSidebarWidth,
   PaneSidebar,
@@ -11,7 +11,9 @@ import { Box, Span, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
-import type { ChatChannel } from "../../../api-client";
+import type { ChatChannel, TeamSummary } from "../../../api-client";
+import { sortTeamChannels, teamAccentHex, teamPrefix } from "../cloud/team/model";
+import { teamStore } from "../cloud/team/store";
 import type { ChatController } from "./controller";
 import {
   channelPrefix,
@@ -179,6 +181,7 @@ export function ChannelSidebar({
   onOpenProfile,
   onToggleNotifications,
   onToggleDirectExpanded,
+  onCreateTeamChannel,
 }: {
   channels: ChatChannel[];
   channelStates: ReturnType<ChatController["getSnapshot"]>["channelStates"];
@@ -203,6 +206,7 @@ export function ChannelSidebar({
   onOpenProfile?: () => void;
   onToggleNotifications?: (channelId: string, enabled: boolean) => void;
   onToggleDirectExpanded?: () => void;
+  onCreateTeamChannel?: (teamId: string) => void;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const notificationWidth = canManageNotifications ? (nativePaneChrome ? DESKTOP_NOTIFICATION_ICON_WIDTH : 2) : 0;
@@ -211,11 +215,34 @@ export function ChannelSidebar({
   const publicChannels = useMemo(() => channels.filter((channel) => (channel.kind ?? "public") === "public"), [channels]);
   const conversationChannels = useMemo(() => channels.filter((channel) => channel.kind === "direct" || channel.kind === "group"), [channels]);
   const conversationUnread = conversationChannels.some((channel) => (channelStateById.get(channel.id)?.unreadCount ?? 0) > 0);
+  const teamSnapshot = useSyncExternalStore(
+    (onChange) => teamStore.subscribe(onChange),
+    () => teamStore.getSnapshot(),
+  );
+  const teamSections = useMemo(() => {
+    const byTeam = new Map<string, { team: TeamSummary | null; channels: ChatChannel[] }>();
+    for (const channel of channels) {
+      if (channel.kind !== "team") continue;
+      const teamId = channel.teamId ?? channel.id;
+      const entry = byTeam.get(teamId) ?? { team: teamStore.getTeam(channel.teamId) ?? null, channels: [] };
+      entry.channels.push(channel);
+      byTeam.set(teamId, entry);
+    }
+    return [...byTeam.entries()]
+      .map(([teamId, entry]) => ({ teamId, team: entry.team, channels: sortTeamChannels(entry.channels) }))
+      .sort((a, b) => (a.team?.name ?? "").localeCompare(b.team?.name ?? ""));
+  }, [channels, teamSnapshot.teams]);
   const sidebarRows = useMemo(() => [
     ...publicChannels.map((channel) => ({ kind: "channel" as const, channel })),
+    ...teamSections.flatMap((section) => [
+      { kind: "team-header" as const, teamId: section.teamId, team: section.team, channels: section.channels },
+      ...(teamSnapshot.collapsedTeams.has(section.teamId)
+        ? []
+        : section.channels.map((channel) => ({ kind: "channel" as const, channel }))),
+    ]),
     ...(conversationChannels.length > 0 || canCreateConversation ? [{ kind: "direct-header" as const }] : []),
     ...(directExpanded ? conversationChannels.map((channel) => ({ kind: "channel" as const, channel })) : []),
-  ], [canCreateConversation, conversationChannels, directExpanded, publicChannels]);
+  ], [canCreateConversation, conversationChannels, directExpanded, publicChannels, teamSections, teamSnapshot.collapsedTeams]);
 
   return (
     <PaneSidebar
@@ -230,6 +257,49 @@ export function ChannelSidebar({
           <>
             <PaneSidebarList>
             {sidebarRows.map((row) => {
+              if (row.kind === "team-header") {
+                const unread = row.channels.some((channel) => (channelStateById.get(channel.id)?.unreadCount ?? 0) > 0);
+                const accent = row.team ? teamAccentHex(row.team.accentColor) : colors.textDim;
+                const label = row.team ? `${teamPrefix(row.team)} ${row.team.name}` : "Team";
+                const expanded = !teamSnapshot.collapsedTeams.has(row.teamId);
+                const canAddChannel = !!row.team && !!onCreateTeamChannel;
+                return (
+                  <Box
+                    key={`team-header:${row.teamId}`}
+                    height={1}
+                    width={listWidth}
+                    flexDirection="row"
+                    backgroundColor={sidebarBg}
+                    aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
+                    data-gloom-role="pane-sidebar-section"
+                    onMouseDown={(event: any) => {
+                      event?.preventDefault?.();
+                      event?.stopPropagation?.();
+                      teamStore.toggleTeamCollapsed(row.teamId);
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Text
+                      fg={unread ? accent : colors.textDim}
+                      attributes={unread ? TextAttributes.BOLD : 0}
+                    >
+                      {` ${expanded ? "▾" : "▸"} ${truncateChannelLabel(label, Math.max(1, listWidth - 4 - (canAddChannel ? 3 : 0)))}`}
+                    </Text>
+                    <Box flexGrow={1} />
+                    {canAddChannel ? (
+                      <PaneSidebarAction
+                        width={3}
+                        ariaLabel={`New channel in ${row.team?.name ?? "team"}`}
+                        onPress={() => onCreateTeamChannel?.(row.teamId)}
+                      >
+                        {({ foregroundColor, onMouseDown }) => (
+                          <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}>+</Text>
+                        )}
+                      </PaneSidebarAction>
+                    ) : null}
+                  </Box>
+                );
+              }
               if (row.kind === "direct-header") {
                 return (
                   <Box

@@ -5,6 +5,7 @@ import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
+import { customViewPlugin } from "./builtin/custom-view";
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
 import { alertsPlugin } from "./builtin/alerts";
@@ -32,6 +33,7 @@ import { notificationCenterPlugin } from "./builtin/notification-center";
 export const uiBuiltinPlugins: GloomPlugin[] = [
   ...researchDataPlugins,
   gloomberbCloudPlugin,
+  customViewPlugin,
   coingeckoPlugin,
   yahooPlugin,
   portfolioPlugin,

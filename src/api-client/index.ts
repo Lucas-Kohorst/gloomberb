@@ -2,10 +2,14 @@ import type { TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { CloudAuthApi } from "./auth";
 import { CloudChatApi } from "./chat";
+import { CloudCollectionsApi } from "./collections";
 import { CloudDataApi } from "./data";
 import { ApiRequestError } from "./errors";
+import { CloudNotesApi } from "./notes";
 import { CloudApiRequestTransport } from "./request";
 import { CloudApiSocket } from "./socket";
+import { CloudTeamsApi } from "./teams";
+import { CloudViewsApi } from "./views";
 import type {
   CloudCdsParams,
   CloudCongressHouseParams,
@@ -95,10 +99,22 @@ import {
   type LayoutMarketplaceEntry,
   type LayoutMarketplacePayload,
 } from "../layout-marketplace/payload";
+import {
+  type CloudLayoutEntry,
+  type CloudLayoutVisibility,
+  type LayoutRequirement,
+  LayoutRevisionConflictError,
+  parseCloudLayoutEntry,
+  parseCloudLayoutList,
+} from "../layout-marketplace/cloud";
 
 export type * from "./types";
 export { setCloudApiFetchTransport } from "./request";
 export { emptyChatPresence, mergeChatPresence, normalizeChatPresence } from "./normalizers";
+export { NoteConflictError } from "./notes";
+export { TeamRevisionConflictError } from "./views";
+export { LayoutRevisionConflictError } from "../layout-marketplace/cloud";
+export { TEAM_ACCENT_COLORS } from "./types";
 
 /** Server-side caps for `/assist/command`; enforced here so a 422 is never sent. */
 const ASSIST_QUERY_MAX_LENGTH = 200;
@@ -116,7 +132,11 @@ class GloomApiClient {
   private readonly auth: CloudAuthApi;
   private readonly socket: CloudApiSocket;
   private readonly chat: CloudChatApi;
+  private readonly teams: CloudTeamsApi;
   private readonly data: CloudDataApi;
+  private readonly notes: CloudNotesApi;
+  private readonly collections: CloudCollectionsApi;
+  private readonly views: CloudViewsApi;
 
   constructor() {
     this.auth = new CloudAuthApi({
@@ -154,7 +174,14 @@ class GloomApiClient {
       request: (path, options) => this.request(path, options),
       socket: this.socket,
     });
+    this.teams = new CloudTeamsApi({
+      request: (path, options) => this.request(path, options),
+      socket: this.socket,
+    });
     this.data = new CloudDataApi((path, options) => this.request(path, options));
+    this.notes = new CloudNotesApi((path, options) => this.request(path, options));
+    this.collections = new CloudCollectionsApi((path, options) => this.request(path, options));
+    this.views = new CloudViewsApi((path, options) => this.request(path, options));
   }
 
   getSessionToken(): string | null {
@@ -468,6 +495,87 @@ class GloomApiClient {
     return item;
   }
 
+  async getCloudLayout(id: string, options?: { signal?: AbortSignal }): Promise<CloudLayoutEntry | null> {
+    if (!isMarketplaceLayoutId(id)) return null;
+    try {
+      return parseCloudLayoutEntry(await this.request<unknown>(`/layouts/${encodeURIComponent(id)}?v=2`, {
+        method: "GET",
+        signal: options?.signal,
+      }));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listTeamLayouts(teamId: string, options?: { signal?: AbortSignal }): Promise<CloudLayoutEntry[]> {
+    const items = parseCloudLayoutList(await this.request<unknown>(`/teams/${encodeURIComponent(teamId)}/layouts`, {
+      method: "GET",
+      signal: options?.signal,
+    }));
+    if (!items) throw new Error("The layout service returned invalid data.");
+    return items;
+  }
+
+  async publishTeamLayout(
+    teamId: string,
+    name: string,
+    payload: LayoutMarketplacePayload,
+    options: { requires?: LayoutRequirement[]; note?: string | null; visibility?: "team" | "public" } = {},
+  ): Promise<CloudLayoutEntry> {
+    const item = parseCloudLayoutEntry(await this.request<unknown>(`/teams/${encodeURIComponent(teamId)}/layouts`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: name.trim(),
+        ...payload,
+        requires: options.requires ?? [],
+        ...(options.note ? { note: options.note } : {}),
+        ...(options.visibility ? { visibility: options.visibility } : {}),
+      }),
+    }));
+    if (!item) throw new Error("The layout service returned invalid data.");
+    return item;
+  }
+
+  async publishLayoutRevision(
+    id: string,
+    payload: LayoutMarketplacePayload,
+    options: { expectedRevision?: number; requires?: LayoutRequirement[]; note?: string | null; name?: string } = {},
+  ): Promise<CloudLayoutEntry> {
+    try {
+      const item = parseCloudLayoutEntry(await this.request<unknown>(`/layouts/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: options.expectedRevision ? { "if-match": String(options.expectedRevision) } : {},
+        body: JSON.stringify({
+          ...payload,
+          requires: options.requires ?? [],
+          ...(options.note ? { note: options.note } : {}),
+          ...(options.name ? { name: options.name } : {}),
+        }),
+      }));
+      if (!item) throw new Error("The layout service returned invalid data.");
+      return item;
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 412) {
+        const current = await this.getCloudLayout(id).catch(() => null);
+        throw new LayoutRevisionConflictError(error.message, current?.revision ?? (options.expectedRevision ?? 0) + 1);
+      }
+      throw error;
+    }
+  }
+
+  async updateCloudLayout(
+    id: string,
+    patch: { name?: string; visibility?: CloudLayoutVisibility },
+  ): Promise<CloudLayoutEntry> {
+    const item = parseCloudLayoutEntry(await this.request<unknown>(`/layouts/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }));
+    if (!item) throw new Error("The layout service returned invalid data.");
+    return item;
+  }
+
   async updateSyncSettings(update: Partial<SyncSettings>): Promise<SyncSettings> {
     const result = await this.request<{ settings: SyncSettings }>("/sync/settings", {
       method: "PATCH",
@@ -602,6 +710,158 @@ class GloomApiClient {
 
   subscribeChatPresence(listener: (presence: ChatPresence) => void): () => void {
     return this.chat.subscribePresence(listener);
+  }
+
+  async listTeams() {
+    return this.teams.listTeams();
+  }
+  async createTeam(input: Parameters<CloudTeamsApi["createTeam"]>[0]) {
+    return this.teams.createTeam(input);
+  }
+  async getTeamMembers(teamId: string) {
+    return this.teams.getTeamMembers(teamId);
+  }
+  async inviteTeamMemberByUsername(teamId: string, username: string) {
+    return this.teams.inviteTeamMemberByUsername(teamId, username);
+  }
+  async listTeamInviteLinks(teamId: string) {
+    return this.teams.listTeamInviteLinks(teamId);
+  }
+  async createTeamInviteLink(teamId: string, options?: Parameters<CloudTeamsApi["createTeamInviteLink"]>[1]) {
+    return this.teams.createTeamInviteLink(teamId, options);
+  }
+  async deleteTeamInviteLink(teamId: string, token: string) {
+    return this.teams.deleteTeamInviteLink(teamId, token);
+  }
+  async previewTeamInviteLink(token: string) {
+    return this.teams.previewTeamInviteLink(token);
+  }
+  async joinTeamThroughLink(token: string) {
+    return this.teams.joinTeamThroughLink(token);
+  }
+  async getTeamNotifications() {
+    return this.teams.getTeamNotifications();
+  }
+  async listTeamInvitations(teamId: string) {
+    return this.teams.listTeamInvitations(teamId);
+  }
+  async listMyTeamInvitations() {
+    return this.teams.listMyTeamInvitations();
+  }
+  async acceptTeamInvitation(invitationId: string) {
+    return this.teams.acceptTeamInvitation(invitationId);
+  }
+  async rejectTeamInvitation(invitationId: string) {
+    return this.teams.rejectTeamInvitation(invitationId);
+  }
+  async cancelTeamInvitation(teamId: string, invitationId: string) {
+    return this.teams.cancelTeamInvitation(teamId, invitationId);
+  }
+  async updateTeam(teamId: string, data: Parameters<CloudTeamsApi["updateTeam"]>[1]) {
+    return this.teams.updateTeam(teamId, data);
+  }
+  async updateTeamMemberRole(teamId: string, memberId: string, role: Parameters<CloudTeamsApi["updateTeamMemberRole"]>[2]) {
+    return this.teams.updateTeamMemberRole(teamId, memberId, role);
+  }
+  async removeTeamMember(teamId: string, memberId: string) {
+    return this.teams.removeTeamMember(teamId, memberId);
+  }
+  async leaveTeam(teamId: string) {
+    return this.teams.leaveTeam(teamId);
+  }
+  async deleteTeam(teamId: string) {
+    return this.teams.deleteTeam(teamId);
+  }
+  async listTeamChannels(teamId: string) {
+    return this.teams.listTeamChannels(teamId);
+  }
+  async createTeamChannel(teamId: string, name: string) {
+    return this.teams.createTeamChannel(teamId, name);
+  }
+  async deleteTeamChannel(teamId: string, channelId: string) {
+    return this.teams.deleteTeamChannel(teamId, channelId);
+  }
+  subscribeTeamUpdates(listener: Parameters<CloudTeamsApi["subscribeTeamUpdates"]>[0]) {
+    return this.teams.subscribeTeamUpdates(listener);
+  }
+  subscribeTeamNotifications(listener: Parameters<CloudTeamsApi["subscribeTeamNotifications"]>[0]) {
+    return this.teams.subscribeTeamNotifications(listener);
+  }
+  subscribeCloudEvent(type: string, listener: Parameters<CloudTeamsApi["subscribeCloudEvent"]>[1]) {
+    return this.teams.subscribeCloudEvent(type, listener);
+  }
+  async listCloudNotes(scope: Parameters<CloudNotesApi["listNotes"]>[0]) {
+    return this.notes.listNotes(scope);
+  }
+  async getCloudNote(id: string) {
+    return this.notes.getNote(id);
+  }
+  async putCloudNote(input: Parameters<CloudNotesApi["putNote"]>[0]) {
+    return this.notes.putNote(input);
+  }
+  async deleteCloudNote(id: string) {
+    return this.notes.deleteNote(id);
+  }
+  async listTeamCollections(teamId: string) {
+    return this.collections.listTeamCollections(teamId);
+  }
+  async getTeamCollection(teamId: string, collectionId: string) {
+    return this.collections.getTeamCollection(teamId, collectionId);
+  }
+  async createTeamCollection(teamId: string, input: Parameters<CloudCollectionsApi["createTeamCollection"]>[1]) {
+    return this.collections.createTeamCollection(teamId, input);
+  }
+  async updateTeamCollection(teamId: string, collectionId: string, patch: Parameters<CloudCollectionsApi["updateTeamCollection"]>[2]) {
+    return this.collections.updateTeamCollection(teamId, collectionId, patch);
+  }
+  async deleteTeamCollection(teamId: string, collectionId: string) {
+    return this.collections.deleteTeamCollection(teamId, collectionId);
+  }
+  async putTeamCollectionItem(
+    teamId: string,
+    collectionId: string,
+    item: Parameters<CloudCollectionsApi["putTeamCollectionItem"]>[2],
+  ) {
+    return this.collections.putTeamCollectionItem(teamId, collectionId, item);
+  }
+  async removeTeamCollectionItem(teamId: string, collectionId: string, symbol: string, exchange = "") {
+    return this.collections.removeTeamCollectionItem(teamId, collectionId, symbol, exchange);
+  }
+  async listTeamViews(teamId: string) {
+    return this.views.listTeamViews(teamId);
+  }
+  async getTeamView(viewId: string) {
+    return this.views.getTeamView(viewId);
+  }
+  async createTeamView(teamId: string, input: Parameters<CloudViewsApi["createTeamView"]>[1]) {
+    return this.views.createTeamView(teamId, input);
+  }
+  async publishTeamViewRevision(viewId: string, input: Parameters<CloudViewsApi["publishTeamViewRevision"]>[1]) {
+    return this.views.publishTeamViewRevision(viewId, input);
+  }
+  async renameTeamView(viewId: string, name: string) {
+    return this.views.renameTeamView(viewId, name);
+  }
+  async deleteTeamView(viewId: string) {
+    return this.views.deleteTeamView(viewId);
+  }
+  async listTeamPluginState(teamId: string, pluginId: string) {
+    return this.views.listTeamPluginState(teamId, pluginId);
+  }
+  async getTeamPluginState(teamId: string, pluginId: string, key: string) {
+    return this.views.getTeamPluginState(teamId, pluginId, key);
+  }
+  async putTeamPluginState(
+    teamId: string,
+    pluginId: string,
+    key: string,
+    value: unknown,
+    expectedRevision?: number,
+  ) {
+    return this.views.putTeamPluginState(teamId, pluginId, key, value, expectedRevision);
+  }
+  async deleteTeamPluginState(teamId: string, pluginId: string, key: string) {
+    return this.views.deleteTeamPluginState(teamId, pluginId, key);
   }
 
   subscribeQuotes(

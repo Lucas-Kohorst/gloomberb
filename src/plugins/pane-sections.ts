@@ -36,6 +36,7 @@ const PLUGIN_PANE_SECTIONS: Record<string, PaneSection> = {
 
   application: PANE_SECTION.workspace,
   "gloomberb-cloud": PANE_SECTION.workspace,
+  "custom-view": PANE_SECTION.workspace,
   ai: PANE_SECTION.workspace,
   notes: PANE_SECTION.workspace,
   alerts: PANE_SECTION.workspace,

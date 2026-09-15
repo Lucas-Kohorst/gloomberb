@@ -1,5 +1,5 @@
 import type { BrokerAccount } from "../../../types/trading";
-import type { AppConfig, LayoutConfig, OnboardingProgress, PaneInstanceConfig, RecentCommand } from "../../../types/config";
+import type { AppConfig, LayoutConfig, LayoutOrigin, OnboardingProgress, PaneInstanceConfig, RecentCommand } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -127,6 +127,14 @@ export type AppAction =
       name: string;
       layout: LayoutConfig;
       paneState: Record<string, PaneRuntimeState>;
+    }
+  | {
+      type: "REPLACE_LAYOUT_CONTENT";
+      index: number;
+      layout: LayoutConfig;
+      paneState: Record<string, PaneRuntimeState>;
+      origin: LayoutOrigin;
+      name?: string;
     }
   | { type: "DELETE_LAYOUT"; index: number }
   | { type: "RENAME_LAYOUT"; index: number; name: string }

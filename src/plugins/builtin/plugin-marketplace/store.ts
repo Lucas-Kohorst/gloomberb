@@ -56,3 +56,13 @@ export function setPluginRemover(next: PluginRemover | null): void {
 export function getPluginRemover(): PluginRemover | null {
   return remover;
 }
+
+export interface PluginManager {
+  install(repo: string): Promise<{ ok: boolean; error?: string }>;
+}
+
+export function getPluginManager(): PluginManager | null {
+  const installFn = installer;
+  if (!installFn) return null;
+  return { install: installFn };
+}
