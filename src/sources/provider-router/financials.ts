@@ -1,6 +1,7 @@
 import type { CachedResourceRecord } from "../../data/resource-store";
 import type { AnalystResearchData, CorporateActionsData, FinancialStatement, Quote, TickerFinancials } from "../../types/financials";
 import { hasLikelyQuoteUnitMismatch } from "../../utils/currency-units";
+import { canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
 import { mergeFinancialStatementRows } from "../../utils/financial-statements";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../../utils/price-history";
 import { exchangeHasTimedCashSession } from "../../market-data/market/freshness";
@@ -97,8 +98,19 @@ function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now()): boolean {
   return now - quote.lastUpdated > maxAge;
 }
 
-export function isProviderQuoteUsableForCurrentSession(quote: Quote | null | undefined, exchange?: string): quote is Quote {
+export function providerQuoteMatchesTarget(quote: Quote | null | undefined, symbol?: string, exchange?: string): quote is Quote {
   if (!quote) return false;
+  if (typeof quote.symbol !== "string" || !quote.symbol.trim()) return false;
+  const requested = parsePublicTickerKey(symbol ?? "");
+  const actual = parsePublicTickerKey(quote.symbol);
+  const requestedExchange = canonicalExchange(requested.exchange || exchange);
+  const actualExchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName || actual.exchange);
+  if (requestedExchange && actualExchange && requestedExchange !== actualExchange) return false;
+  return true;
+}
+
+export function isProviderQuoteUsableForCurrentSession(quote: Quote | null | undefined, exchange?: string, symbol?: string): quote is Quote {
+  if (!providerQuoteMatchesTarget(quote, symbol, exchange)) return false;
   const normalized = quoteWithFreshnessExchange(quote, exchange);
   if (isQuoteStaleForCurrentSession(normalized)) return false;
   if (isActiveProviderQuoteTooOld(normalized)) return false;
@@ -110,6 +122,11 @@ export function isProviderQuoteUsableForCurrentSession(quote: Quote | null | und
     normalized.ask,
     normalized.mark,
   ].some(finitePositiveNumber);
+}
+
+export function providerFinancialsMatchTarget(value: TickerFinancials, symbol: string, exchange?: string): boolean {
+  if (value.quote && !providerQuoteMatchesTarget(value.quote, symbol, exchange)) return false;
+  return !Object.values(value.quoteContributions ?? {}).some((quote) => !providerQuoteMatchesTarget(quote, symbol, exchange));
 }
 
 export function dropUnusableProviderQuote(value: TickerFinancials, exchange?: string): TickerFinancials {

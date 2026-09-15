@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { getYahooSymbol, getYahooSymbolsToTry } from "./symbols";
+import {
+  getYahooSymbol,
+  getYahooSymbolsToTry,
+  tickerHasYahooSuffix,
+  yahooSuffixConflictsWithExchange,
+  yahooSuffixExchange,
+} from "./symbols";
 
 describe("Yahoo symbol routing", () => {
   test("canonicalizes MIC aliases before applying exchange suffixes", () => {
@@ -17,5 +23,16 @@ describe("Yahoo symbol routing", () => {
 
   test("preserves a dotted US equity ahead of its hyphenated Yahoo form", () => {
     expect(getYahooSymbolsToTry("BRK.B", "")).toEqual(["BRK-B", "BRK.B"]);
+  });
+
+  test("does not treat Yahoo's Philippines PSE suffix as the host Prague venue", () => {
+    expect(tickerHasYahooSuffix("AC.PS")).toBe(true);
+    expect(yahooSuffixExchange("AC.PS")).toBeUndefined();
+    expect(yahooSuffixExchange("CEZ.PR")).toBe("PSE");
+    expect(yahooSuffixConflictsWithExchange("CEZ.PR", "PSE")).toBe(false);
+    expect(yahooSuffixConflictsWithExchange("AC.PS", "PSE")).toBe(true);
+    expect(yahooSuffixConflictsWithExchange("7203.T", "TSE")).toBe(true);
+    expect(yahooSuffixConflictsWithExchange("7203.T", "JPX")).toBe(false);
+    expect(yahooSuffixConflictsWithExchange("RY.TO", "TSX")).toBe(false);
   });
 });

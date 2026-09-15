@@ -24,6 +24,9 @@ describe("exchange metadata", () => {
   test("normalizes broker venue aliases used by portfolio rows", () => {
     expect(canonicalExchange("LSEETF")).toBe("LSE");
     expect(canonicalExchange("TSE")).toBe("TSX");
+    expect(canonicalExchange("PCX")).toBe("ARCA");
+    expect(canonicalExchange("NYSEARCA")).toBe("ARCA");
+    expect(canonicalExchange("NYSE Arca")).toBe("ARCA");
     expect(canonicalExchange("AEB")).toBe("AMS");
     expect(canonicalExchange("EURONEXT")).toBe("AMS");
     expect(resolveExchangeTimeZone("LSEETF")).toBe("Europe/London");

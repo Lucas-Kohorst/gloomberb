@@ -1,9 +1,10 @@
+import { yahooSuffixExchange } from "../yahoo-finance/symbols";
 import type { CachedResourceRecord, ResourceStoreContract } from "../../data/resource-store";
 import type { TimeRange } from "../../time-series/range";
 import type { BrokerContractRef } from "../../types/instrument";
-import type { PricePoint } from "../../types/financials";
+import type { PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import type { CachePolicy, CachePolicyMap } from "../../types/persistence";
-import { canonicalExchange } from "../../utils/exchanges";
+import { canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
 import { isPriceHistoryStaleForCurrentWindow } from "../../utils/price-history";
 
 const MARKET_NAMESPACE = "market";
@@ -51,7 +52,11 @@ export function getRouterEntityKey(ticker: string, instrument?: BrokerContractRe
   if (instrument?.conId != null) return `contract:${instrument.conId}`;
   if (instrument?.localSymbol) return `contract:${instrument.localSymbol.toUpperCase()}`;
   if (instrument?.symbol) return `contract:${instrument.symbol.toUpperCase()}`;
-  return normalizeTicker(ticker);
+  const target = parsePublicTickerKey(ticker);
+  const suffixExchange = !target.exchange && yahooSuffixExchange(target.symbol);
+  // Earlier bare-suffix caches may have parsed dates using unrelated exchange
+  // metadata or UTC. A qualified entity bypasses those records on upgrade.
+  return suffixExchange ? `${target.symbol}:${suffixExchange}` : normalizeTicker(ticker);
 }
 
 export function getTickerVariantCandidates(exchange?: string): string[] {
@@ -145,7 +150,21 @@ export function listCachedResources<T>(
   });
   if (records.length === 0) return [];
 
-  return sortCachedRecords(records, variantKeys, sourceKeys);
+  return sortCachedRecords(records.filter((record) => {
+    if (record.sourceKey.startsWith("provider:") && !entityKey.startsWith("contract:")
+      && (kind === "financials" || kind === "quote")) {
+      const requestedExchange = parsePublicTickerKey(entityKey).exchange
+        || canonicalExchange(variantKeys.find((key) => /(?:^|;)exchange=/.test(key))?.match(/(?:^|;)exchange=([^;]+)/)?.[1]);
+      const quote = kind === "quote" ? record.value as Quote : (record.value as TickerFinancials).quote;
+      const declaredExchange = canonicalExchange(quote?.listingExchangeName || quote?.exchangeName
+        || parsePublicTickerKey(quote?.symbol ?? "").exchange);
+      // Generic legacy entries can retain a venue normalized under old alias
+      // rules (PCX used to mean AMEX). Refetch a conflicting public listing;
+      // never relabel it or let it outrank a fresh exact-listing response.
+      if (requestedExchange && declaredExchange && requestedExchange !== declaredExchange) return false;
+    }
+    return true;
+  }), variantKeys, sourceKeys);
 }
 
 export function selectCachedResource<T>(

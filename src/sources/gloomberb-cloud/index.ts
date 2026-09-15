@@ -29,9 +29,11 @@ import {
 } from "../../api-client";
 import type { NewsArticle, NewsQuery } from "../../types/news-source";
 import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
-import { canonicalTickerKey } from "../../utils/exchanges";
+import { canonicalTickerKey, parsePublicTickerKey } from "../../utils/exchanges";
 import { normalizePriceHistory } from "../../utils/price-history";
 import { createProviderMiss } from "../provider-errors";
+import { publicListingTarget } from "../listing-target";
+import { tickerHasYahooSuffix } from "../yahoo-finance/symbols";
 import { hasMalformedIntradayHistory } from "../../time-series/history-quality";
 import {
   cloudNewsParams,
@@ -153,7 +155,64 @@ function mapCloudPriceHistory(
 }
 
 function quoteTargetKey(symbol: string, exchange?: string): string {
-  return canonicalTickerKey(symbol, exchange);
+  const target = publicListingTarget(symbol, exchange);
+  const base = target.exchange && tickerHasYahooSuffix(target.symbol)
+    ? target.symbol.slice(0, target.symbol.indexOf("."))
+    : target.symbol;
+  return canonicalTickerKey(base, target.exchange);
+}
+
+function cloudResponseTargetKey(key: string, requested: Set<string>): string | undefined {
+  if (requested.has(key)) return key;
+  const symbol = parsePublicTickerKey(key).symbol;
+  // A venue-less request may discover one listing. Never guess between two
+  // requested listings or erase an unresolved suffix to make it match.
+  return requested.has(symbol) && [...requested].filter((candidate) => parsePublicTickerKey(candidate).symbol === symbol).length === 1
+    ? symbol : undefined;
+}
+
+const cloudInstrumentTarget = publicListingTarget;
+
+function cloudBatchTargets<T extends { symbol: string; exchange?: string }>(targets: T[]) {
+  const valid: Array<{ target: T; request: ReturnType<typeof cloudInstrumentTarget> }> = [];
+  const invalid: Array<{ target: T; error: unknown }> = [];
+  for (const target of targets) {
+    try { valid.push({ target, request: cloudInstrumentTarget(target.symbol, target.exchange) }); }
+    catch (error) { invalid.push({ target, error }); }
+  }
+  return { valid, invalid };
+}
+
+function matchCloudBatchItems<T extends { symbol: string; exchange?: string }, I extends { symbol: string; exchange?: string }>(targets: T[], items: I[]) {
+  const pending = new Map<string, T[]>();
+  for (const target of targets) {
+    const key = quoteTargetKey(target.symbol, target.exchange);
+    pending.set(key, [...(pending.get(key) ?? []), target]);
+  }
+  const matched: Array<{ target: T; item: I }> = [];
+  const requested = new Set(pending.keys());
+  const responses = items.flatMap((item) => {
+    try { return [{ item, key: quoteTargetKey(item.symbol, item.exchange) }]; }
+    catch { return []; }
+  });
+  for (const { item, key: responseKey } of responses) {
+    const key = cloudResponseTargetKey(responseKey, requested);
+    if (!key) continue;
+    if (key !== responseKey && new Set(responses.filter((response) => parsePublicTickerKey(response.key).symbol === key).map((response) => response.key)).size !== 1) continue;
+    for (const target of pending.get(key) ?? []) matched.push({ target, item });
+    pending.delete(key);
+  }
+  return { matched, missing: [...pending.values()].flat() };
+}
+
+function retainRequestedQuoteSymbol(quote: Quote, ticker: string): Quote {
+  return parsePublicTickerKey(ticker).exchange || tickerHasYahooSuffix(ticker) ? { ...quote, symbol: ticker } : quote;
+}
+
+function retainRequestedFinancialsSymbol(financials: TickerFinancials, ticker: string): TickerFinancials {
+  return financials.quote
+    ? { ...financials, quote: retainRequestedQuoteSymbol(financials.quote, ticker) }
+    : financials;
 }
 
 async function requireVerifiedSession(): Promise<void> {
@@ -191,15 +250,16 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     return withCloudFallback(async () => {
-      const response = await apiClient.getCloudFinancials(ticker, exchange);
+      const response = await apiClient.getCloudFinancials(target.symbol, target.exchange);
       if (isStaleCloudResponse(response)) {
         throw createProviderMiss(`Cloud financials are stale for ${ticker}`);
       }
-      return mapCloudFinancials(
+      return retainRequestedFinancialsSymbol(mapCloudFinancials(
         unwrapRequiredCloudResponse(response, `Cloud financials are unavailable for ${ticker}`),
         response.providerMeta,
-      );
+      ), ticker);
     }, `Cloud financials are unavailable for ${ticker}`);
   }
 
@@ -207,50 +267,62 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: CachedFinancialsTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<TickerFinancialsBatchResult[]> {
-    const results: TickerFinancialsBatchResult[] = targets.map((target) => ({ target, financials: null }));
-    if (targets.length === 0) return results;
+    const { valid, invalid } = cloudBatchTargets(targets);
+    const rejected = invalid.map((entry) => ({ ...entry, financials: null as TickerFinancials | null }));
+    if (!valid.length) {
+      const byTarget = new Map(rejected.map((entry) => [entry.target, entry] as const));
+      return targets.map((target) => byTarget.get(target) ?? { target, financials: null });
+    }
+    const submitted = valid.map((entry) => entry.target);
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancialsBatch(
-        targets.map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange,
-        })),
+        valid.map((entry) => entry.request),
         options.forceRefresh ? "refresh" : "cache-first",
       );
       if (isStaleCloudResponse(response)) {
         throw createProviderMiss("Cloud financials are stale");
       }
       const payload = unwrapRequiredCloudResponse(response, "Cloud financials are unavailable");
-      payload.items.forEach((item, itemIndex) => {
-        const target = targets[itemIndex] ?? {
-          symbol: item.symbol,
-          exchange: item.exchange,
-        };
+      const { matched, missing } = matchCloudBatchItems(submitted, payload.items);
+      const byTarget = new Map<CachedFinancialsTarget, TickerFinancialsBatchResult>();
+      for (const entry of rejected) byTarget.set(entry.target, entry);
+      for (const { target, item } of matched) {
         if ((item.status === "success" || item.status === "partial") && item.data) {
-          results[itemIndex] = { target, financials: mapCloudFinancials(item.data) };
-          return;
+          byTarget.set(target, {
+            target,
+            financials: retainRequestedFinancialsSymbol(mapCloudFinancials(item.data), target.symbol),
+          });
+          continue;
         }
-        results[itemIndex] = {
+        byTarget.set(target, {
           target,
           financials: null,
           error: mapBatchError(item, `Cloud financials are unavailable for ${target.symbol}`),
-        };
-      });
-      return results;
+        });
+      }
+      for (const target of missing) {
+        byTarget.set(target, {
+          target,
+          financials: null,
+          error: createProviderMiss(`Cloud financials are unavailable for ${target.symbol}`),
+        });
+      }
+      return targets.map((target) => byTarget.get(target) ?? { target, financials: null });
     }, "Cloud financials are unavailable");
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     return withCloudFallback(
       async () => {
-        const response = await apiClient.getCloudQuote(ticker, exchange);
+        const response = await apiClient.getCloudQuote(target.symbol, target.exchange);
         if (isStaleCloudResponse(response)) {
           throw createProviderMiss(`Cloud quotes are stale for ${ticker}`);
         }
-        return mapQuote(
+        return retainRequestedQuoteSymbol(mapQuote(
           unwrapRequiredCloudResponse(response, `Cloud quotes are unavailable for ${ticker}`),
           response.providerMeta,
-        );
+        ), ticker);
       },
       `Cloud quotes are unavailable for ${ticker}`,
     );
@@ -260,44 +332,58 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<QuoteBatchResult[]> {
-    const results: QuoteBatchResult[] = targets.map((target) => ({ target, quote: null }));
-    if (targets.length === 0) return results;
+    const { valid, invalid } = cloudBatchTargets(targets);
+    const rejected = invalid.map((entry) => ({ ...entry, quote: null as Quote | null }));
+    if (!valid.length) {
+      const byTarget = new Map(rejected.map((entry) => [entry.target, entry] as const));
+      return targets.map((target) => byTarget.get(target) ?? { target, quote: null });
+    }
+    const submitted = valid.map((entry) => entry.target);
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudQuotesBatch(
-        targets.map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange,
-        })),
+        valid.map((entry) => entry.request),
         options.forceRefresh ? "refresh" : "cache-first",
       );
       if (isStaleCloudResponse(response)) {
         throw createProviderMiss("Cloud quotes are stale");
       }
       const payload = unwrapRequiredCloudResponse(response, "Cloud quotes are unavailable");
-      payload.items.forEach((item, itemIndex) => {
-        const target = targets[itemIndex] ?? {
-          symbol: item.symbol,
-          exchange: item.exchange,
-        };
+      const { matched, missing } = matchCloudBatchItems(submitted, payload.items);
+      const byTarget = new Map<QuoteSubscriptionTarget, QuoteBatchResult>();
+      for (const entry of rejected) byTarget.set(entry.target, entry);
+      for (const { target, item } of matched) {
+        // A successful batch can contain an expired cache fallback for only
+        // one listing. Match the single-quote freshness boundary and let the
+        // normal router retry that item without discarding its healthy peers.
         if (item.stale === true) {
-          results[itemIndex] = {
+          byTarget.set(target, {
             target,
             quote: null,
             error: createProviderMiss(`Cloud quotes are stale for ${target.symbol}`),
-          };
-          return;
+          });
+          continue;
         }
         if ((item.status === "success" || item.status === "partial") && item.data) {
-          results[itemIndex] = { target, quote: mapQuote(item.data) };
-          return;
+          byTarget.set(target, {
+            target,
+            quote: retainRequestedQuoteSymbol(mapQuote(item.data), target.symbol),
+          });
+          continue;
         }
-        results[itemIndex] = {
+        byTarget.set(target, {
           target,
           quote: null,
           error: mapBatchError(item, `Cloud quotes are unavailable for ${target.symbol}`),
-        };
-      });
-      return results;
+        });
+      }
+      for (const target of missing) {
+        byTarget.set(target, {
+          target,
+          quote: null,
+          error: createProviderMiss(`Cloud quotes are unavailable for ${target.symbol}`),
+        });
+      }
+      return targets.map((target) => byTarget.get(target) ?? { target, quote: null });
     }, "Cloud quotes are unavailable");
   }
 
@@ -351,25 +437,28 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     await requireVerifiedSession();
     return withCloudFallback(async () => {
-      const response = await apiClient.getCloudHolders(ticker, exchange);
+      const response = await apiClient.getCloudHolders(target.symbol, target.exchange);
       return unwrapRequiredCloudResponse(response, `Cloud holders are unavailable for ${ticker}`) as CloudHoldersPayload;
     }, `Cloud holders are unavailable for ${ticker}`);
   }
 
   async getAnalystResearch(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<AnalystResearchData> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     await requireVerifiedSession();
     return withCloudFallback(async () => {
-      const response = await apiClient.getCloudAnalystResearch(ticker, exchange);
+      const response = await apiClient.getCloudAnalystResearch(target.symbol, target.exchange);
       return unwrapRequiredCloudResponse(response, `Cloud analyst research is unavailable for ${ticker}`) as CloudAnalystResearchPayload;
     }, `Cloud analyst research is unavailable for ${ticker}`);
   }
 
   async getCorporateActions(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<CorporateActionsData> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     await requireVerifiedSession();
     return withCloudFallback(async () => {
-      const response = await apiClient.getCloudCorporateActions(ticker, exchange);
+      const response = await apiClient.getCloudCorporateActions(target.symbol, target.exchange);
       return unwrapRequiredCloudResponse(response, `Cloud corporate actions are unavailable for ${ticker}`) as CloudCorporateActionsPayload;
     }, `Cloud corporate actions are unavailable for ${ticker}`);
   }
@@ -379,12 +468,14 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
+    const target = cloudInstrumentTarget(ticker, exchange);
+    const listing = target.exchange ?? "";
     const request = toHistoryRequest(range);
     const response = await withCloudFallback(
-      () => apiClient.getCloudHistory(ticker, exchange, request),
+      () => apiClient.getCloudHistory(target.symbol, listing, request),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    return mapCloudPriceHistory(response, ticker, exchange, request.interval);
+    return mapCloudPriceHistory(response, ticker, listing, request.interval);
   }
 
   async getPriceHistoryForResolution(
@@ -394,20 +485,22 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
+    const target = cloudInstrumentTarget(ticker, exchange);
+    const listing = target.exchange ?? "";
     const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
     const interval = toCloudInterval(sourceResolution);
     const endDate = new Date();
     const startDate = getRangeStartDate(bufferRange, endDate);
     const includeTime = /(min|h)$/i.test(interval);
     const response = await withCloudFallback(
-      () => apiClient.getCloudHistory(ticker, exchange, {
+      () => apiClient.getCloudHistory(target.symbol, listing, {
         interval,
-        startDate: formatCloudDateTime(startDate, includeTime, exchange),
-        endDate: formatCloudDateTime(endDate, includeTime, exchange),
+        startDate: formatCloudDateTime(startDate, includeTime, listing),
+        endDate: formatCloudDateTime(endDate, includeTime, listing),
       }),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    const points = mapCloudPriceHistory(response, ticker, exchange, interval);
+    const points = mapCloudPriceHistory(response, ticker, listing, interval);
     return resolution === "4h" ? aggregateTo4h(points) : points;
   }
 
@@ -419,24 +512,27 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     barSize: string,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
+    const target = cloudInstrumentTarget(ticker, exchange);
+    const listing = target.exchange ?? "";
     const sourceBarSize = barSize === "4h" ? "1h" : barSize;
     const interval = toCloudInterval(sourceBarSize);
     const includeTime = /(min|h)$/i.test(interval);
     const response = await withCloudFallback(
-      () => apiClient.getCloudHistory(ticker, exchange, {
+      () => apiClient.getCloudHistory(target.symbol, listing, {
         interval,
-        startDate: formatCloudDateTime(startDate, includeTime, exchange),
-        endDate: formatCloudDateTime(endDate, includeTime, exchange),
+        startDate: formatCloudDateTime(startDate, includeTime, listing),
+        endDate: formatCloudDateTime(endDate, includeTime, listing),
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
-    const points = mapCloudPriceHistory(response, ticker, exchange, interval);
+    const points = mapCloudPriceHistory(response, ticker, listing, interval);
     return barSize === "4h" ? aggregateTo4h(points) : points;
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
+    const target = cloudInstrumentTarget(ticker, exchange);
     return withCloudFallback(async () => {
-      const response = await apiClient.getCloudOptionsChain(ticker, exchange, expirationDate);
+      const response = await apiClient.getCloudOptionsChain(target.symbol, target.exchange, expirationDate);
       const chain = unwrapRequiredCloudResponse(
         response,
         `Cloud options chains are unavailable for ${ticker}`,
@@ -449,35 +545,36 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
+    const { valid } = cloudBatchTargets(targets);
+    if (!valid.length) return () => {};
     // No-op without a session credential; covers browser cookie sessions too.
     void apiClient.ensureVerifiedSession().catch(() => {});
     const targetMap = new Map<string, QuoteSubscriptionTarget[]>();
-    if (targets.length === 0) return () => {};
-    for (const target of targets) {
+    for (const { target } of valid) {
       const key = quoteTargetKey(target.symbol, target.exchange);
       const matches = targetMap.get(key) ?? [];
       matches.push(target);
       targetMap.set(key, matches);
     }
+    const requested = new Set(targetMap.keys());
 
     return apiClient.subscribeQuotes(
-      targets.map((target) => ({
-        symbol: target.symbol,
-        exchange: target.exchange,
+      valid.map(({ target, request }) => ({
+        ...request,
         surface: target.surface,
         visible: target.visible,
         selected: target.selected,
         weight: target.weight,
       })),
       (target, quote) => {
-        const key = quoteTargetKey(target.symbol, target.exchange);
-        const matches = targetMap.get(key) ?? [{
-          symbol: target.symbol,
-          exchange: target.exchange,
-        }];
+        let key: string;
+        try { key = quoteTargetKey(target.symbol, target.exchange); }
+        catch { return; }
+        const matchedKey = cloudResponseTargetKey(key, requested);
+        const matches = matchedKey ? targetMap.get(matchedKey) ?? [] : [];
         const mappedQuote = mapQuote(quote);
         for (const match of matches) {
-          onQuote(match, mappedQuote);
+          onQuote(match, retainRequestedQuoteSymbol(mappedQuote, match.symbol));
         }
       },
     );
