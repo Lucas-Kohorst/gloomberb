@@ -13,6 +13,7 @@ import {
 } from "../../state/selectors-ui";
 import { useViewport } from "../../react/input";
 import { getSharedRegistry } from "../../plugins/registry";
+import { openMarketplaceTab } from "../../plugins/builtin/marketplace";
 import {
   gridlockAllPanes,
   shouldShowTidyWindows,
@@ -169,7 +170,7 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
   const openNewLayout = (event?: StatusBarEvent) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    registry?.openPluginCommandWorkflow("new-layout");
+    if (registry) openMarketplaceTab(registry, "layouts");
   };
 
   const requestDeleteLayout = useCallback(async (index: number) => {
@@ -243,7 +244,7 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
       {
         id: "layout:gallery",
         label: "Browse Layouts...",
-        onSelect: () => registry?.showPane("layout-marketplace"),
+        onSelect: () => { if (registry) openMarketplaceTab(registry, "layouts"); },
       },
       {
         id: "layout:actions",
@@ -477,11 +478,7 @@ function VersionChip({
   );
 }
 
-/**
- * Adding a layout was reachable only from the layout tab context menu or the
- * command bar, and the tab strip itself is hidden until a second layout exists,
- * so the first one could not be created with the mouse at all.
- */
+/** Open the unified marketplace from the compact layout control. */
 function NativeNewLayout({
   hoveredControl,
   openNewLayout,
@@ -495,8 +492,8 @@ function NativeNewLayout({
       <Text
         fg={hovered ? colors.textBright : colors.textDim}
         attributes={TextAttributes.BOLD}
-        title={t("New Layout")}
-        aria-label={t("New Layout")}
+        title={t("Browse Layouts")}
+        aria-label={t("Browse Layouts")}
         role="button"
         onMouseOver={() => setHoveredControl((current) => (current === "new-layout" ? current : "new-layout"))}
         onMouseDown={openNewLayout}

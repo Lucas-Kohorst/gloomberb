@@ -8,7 +8,7 @@ import { brokerManagerModule } from "./broker-manager";
 import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
 import { connectionsModule } from "./connections/index.ts";
-import { pluginMarketplaceModule } from "./plugin-marketplace";
+import { marketplaceModule } from "./marketplace";
 import { correlationModule } from "./correlation";
 import { cdsModule } from "./cds";
 import { creditConditionsModule } from "./credit-conditions";
@@ -60,7 +60,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, pluginMarketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
+  modules: [layoutManagerModule, marketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

@@ -544,7 +544,7 @@ describe("Shell", () => {
 
     await emitKeypress({ name: "l", ctrl: true, shift: true });
 
-    expect(opened).toEqual(["layout-marketplace"]);
+    expect(opened).toEqual(["marketplace"]);
   });
 
   test("toggles the focused pane fullscreen without persisting layout", async () => {

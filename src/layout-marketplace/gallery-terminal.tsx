@@ -201,7 +201,7 @@ export function LayoutGalleryTerminal({
   ];
 
   usePaneFooterHintBindings(focused && !searchFocused && !dialogOpen, hints);
-  usePaneFooter("layout-marketplace", () => ({
+  usePaneFooter("marketplace", () => ({
     info,
     trailingInfo: [
       ...(publishing ? [{ id: "publishing", parts: [{ text: "publishing", tone: "muted" as const }] }] : []),

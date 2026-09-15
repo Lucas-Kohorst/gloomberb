@@ -1,3 +1,4 @@
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
@@ -39,22 +40,10 @@ export const executivesModule: PluginModule = {
     resetExecutivesPersistence();
   },
 
-  panes: [
-    {
-      id: EXECUTIVES_PANE_ID,
-      name: "Executives",
-      icon: "X",
-      component: ExecutivesPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 30 },
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "executives-pane",
-      paneId: EXECUTIVES_PANE_ID,
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Executives",
       description,
       keywords: [
@@ -70,6 +59,7 @@ export const executivesModule: PluginModule = {
       ],
       shortcut: "EXEC",
       publicShare: false,
+      settings: () => ({ defaultTabId: "executives" }),
     }),
   ],
 };

@@ -10,7 +10,6 @@ import {
   EmptyState,
   InputSearchBar,
   Spinner,
-  Tabs,
   nextStackSortPreference,
   sortStackItems,
   useTableLoadMore,
@@ -37,9 +36,7 @@ import { useNewsReadState } from "../news/wire/read-state";
 import { formatTimeAgo } from "../../../utils/format";
 import { wrapTextLines } from "../../../utils/text-wrap";
 import type { AdjacentClient } from "./client";
-import { cftcPageHasMore, loadCftcFilings, loadCftcFilingsFeed } from "./client";
-import { CftcStackedBarChartView } from "./filings-chart";
-import { parseCftcTemplateArg, rollupCftcFilingsByOrgMonth } from "./filings-rollup";
+import { cftcPageHasMore, loadCftcFilings } from "./client";
 import {
   buildDetailBody,
   buildDetailMeta,
@@ -233,27 +230,18 @@ function FilingDetail({
   );
 }
 
-function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
-  return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
-}
-
 export function createCftcBrowserInstance(
   prefix: string,
   titlePrefix: string,
   options?: PaneTemplateCreateOptions,
 ) {
-  const parsed = parseCftcTemplateArg(queryFromTemplateOptions(options));
-  const view = options?.values?.view === "chart" ? "chart" : parsed.view;
-  const query = parsed.query;
-  const encoded = encodeURIComponent(`${view}:${query}`.toUpperCase()).replace(/%/g, "~");
+  const query = (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
   return {
-    instanceId: query || view === "chart" ? `${prefix}:${encoded}` : `${prefix}:latest`,
-    title: view === "chart"
-      ? `${titlePrefix} chart`
-      : query ? `${titlePrefix} ${query.toUpperCase()}` : titlePrefix,
+    instanceId: query ? `${prefix}:${encodeURIComponent(query.toUpperCase()).replace(/%/g, "~")}` : `${prefix}:latest`,
+    title: query ? `${titlePrefix} ${query.toUpperCase()}` : titlePrefix,
     placement: "floating" as const,
     binding: { kind: "none" as const },
-    settings: { query, view },
+    settings: { query },
   };
 }
 
@@ -264,13 +252,8 @@ export function AdjacentFilingsPane({
   client,
 }: PaneProps & { client: AdjacentClient }) {
   const [storedQuery] = usePaneSettingValue("query", "");
-  const [storedView] = usePaneSettingValue("view", "list");
   const initialQuery = String(storedQuery ?? "").trim();
-  const initialView = storedView === "chart" ? "chart" : "list";
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [view, setView] = usePluginPaneState<"list" | "chart">("view", initialView);
-  const [chartFilings, setChartFilings] = useState<CftcFiling[]>([]);
-  const [chartStatus, setChartStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -370,42 +353,12 @@ export function AdjacentFilingsPane({
     loadMore,
   );
 
-  const loadChart = useCallback((nextQuery: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setChartStatus("loading");
-    setError(null);
-    void loadCftcFilingsFeed(client, {
-      feed: "dcm_products",
-      search: nextQuery.trim() || undefined,
-    }).then((next) => {
-      if (abortRef.current !== controller) return;
-      setChartFilings(next);
-      setChartStatus("loaded");
-      setLastUpdated(Date.now());
-    }).catch((loadError) => {
-      if (abortRef.current !== controller) return;
-      if (loadError instanceof Error && loadError.name === "AbortError") return;
-      setChartStatus("error");
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
-    });
-  }, [client]);
-
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       load(query);
     }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
     return () => clearTimeout(timeoutId);
   }, [load, query]);
-
-  useEffect(() => {
-    if (view !== "chart") return;
-    const timeoutId = setTimeout(() => {
-      loadChart(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [loadChart, query, view]);
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -457,9 +410,7 @@ export function AdjacentFilingsPane({
     };
   }, [client, detailFilingId]);
 
-  const loading = view === "chart"
-    ? (chartStatus === "idle" || chartStatus === "loading") && chartFilings.length === 0
-    : status === "loading" && filings.length === 0;
+  const loading = status === "loading" && filings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const poll = useFeedPollInterval();
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
@@ -533,8 +484,7 @@ export function AdjacentFilingsPane({
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      if (view === "chart") loadChart(query);
-      else load(query);
+      load(query);
       return;
     }
     if (isPlainKey(event, "y") && detailFiling) {
@@ -545,7 +495,7 @@ export function AdjacentFilingsPane({
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
-    registrationId: "cftc-filings",
+    registrationId: "adjacent-cftc",
     focused,
     url: error ? null : detail?.sourceUrl || null,
     source: detailFiling ? feedLabel(detailFiling) : undefined,
@@ -567,7 +517,7 @@ export function AdjacentFilingsPane({
     },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
-      ...(view === "list" && detailFiling
+      ...(detailFiling
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),
       ...(detailFiling && !openFiling
@@ -594,12 +544,11 @@ export function AdjacentFilingsPane({
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      if (view === "chart") loadChart(query);
-      else load(query);
+      load(query);
       return true;
     }
     return false;
-  }, [focusSearch, load, loadChart, query, view]);
+  }, [focusSearch, load, query]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -636,31 +585,11 @@ export function AdjacentFilingsPane({
     return false;
   }, [detailFiling, detailLoading, handleSummarize, openFiling, popOutSelected, scrollDetailBy]);
 
-  const chart = useMemo(
-    () => rollupCftcFilingsByOrgMonth(chartFilings, {
-      feed: "dcm_products",
-      publicWindow: client.isPublic,
-    }),
-    [chartFilings, client.isPublic],
-  );
   const rootBefore = (
     <>
-      <Box height={1} paddingX={1}>
-        <Tabs
-          tabs={[
-            { label: "List", value: "list" },
-            { label: "Chart", value: "chart" },
-          ]}
-          activeValue={view}
-          onSelect={(value) => setView(value === "chart" ? "chart" : "list")}
-          compact
-          variant="bare"
-          focused={focused}
-        />
-      </Box>
       <InputSearchBar
         value={query}
-        focused={focused && !openItemId && view === "list"}
+        focused={focused && !openItemId}
         active={searchFocused}
         width={width}
         focusToken={searchFocusToken}
@@ -682,38 +611,9 @@ export function AdjacentFilingsPane({
         {rootBefore}
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Spinner label={
-            view === "chart"
-              ? "Loading DCM product filings..."
-              : query.trim() ? `Searching CFTC filings for ${query.trim()}...` : "Loading CFTC filings..."
+            query.trim() ? `Searching CFTC filings for ${query.trim()}...` : "Loading CFTC filings..."
           } />
         </Box>
-      </Box>
-    );
-  }
-
-  if (view === "chart") {
-    if (error && chartFilings.length === 0) {
-      return (
-        <Box flexDirection="column" width={width} height={height}>
-          {rootBefore}
-          <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-            <EmptyState
-            title="CFTC filings unavailable."
-            message={error}
-            hint="Press r to retry."
-          />
-          </Box>
-        </Box>
-      );
-    }
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <CftcStackedBarChartView
-          chart={chart}
-          width={width}
-          height={Math.max(8, height - 3)}
-        />
       </Box>
     );
   }

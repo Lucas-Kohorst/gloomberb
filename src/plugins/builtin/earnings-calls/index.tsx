@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { attachEarningsCallsPersistence, resetEarningsCallsPersistence } from "./data";
@@ -24,24 +25,11 @@ export const earningsCallsModule: PluginModule = {
     resetEarningsCallsPersistence();
   },
 
-  panes: [
-    {
-      id: EARNINGS_CALLS_PANE_ID,
-      name: "Earnings Calls",
-      icon: "C",
-      component: EarningsCallsPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 30 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     // Browse every transcribed call, unbound to a ticker.
     {
       id: "earnings-calls-pane",
-      paneId: EARNINGS_CALLS_PANE_ID,
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Earnings Calls",
       description,
       keywords: [
@@ -55,16 +43,20 @@ export const earningsCallsModule: PluginModule = {
         "qa",
       ],
       shortcut: { prefix: "CALLS" },
-      createInstance: () => ({ placement: "floating" }),
+      createInstance: () => ({
+        placement: "floating",
+        settings: { defaultTabId: "earnings-calls" },
+      }),
     },
     createTickerSurfacePaneTemplate({
       id: "earnings-call-transcripts-pane",
-      paneId: EARNINGS_CALLS_PANE_ID,
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Earnings Call Transcripts",
       description,
       keywords: ["earnings", "call", "transcript", "ect", "qa", "guidance"],
       shortcut: "ECT",
       publicShare: false,
+      settings: () => ({ defaultTabId: "earnings-calls" }),
     }),
   ],
 };

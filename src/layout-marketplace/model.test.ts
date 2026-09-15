@@ -75,9 +75,9 @@ describe("gallery layout summaries", () => {
 
   test("does not preview the layout browser inside its own active layout", () => {
     const layout = testLayout();
-    layout.instances.push({ instanceId: "layout-marketplace:1", paneId: "layout-marketplace" });
+    layout.instances.push({ instanceId: "marketplace:1", paneId: "marketplace" });
     layout.floating.push({
-      instanceId: "layout-marketplace:1",
+      instanceId: "marketplace:1",
       x: 20,
       y: 5,
       width: 100,
@@ -85,7 +85,7 @@ describe("gallery layout summaries", () => {
     });
 
     const entry = buildOwnedEntries([{ name: "Desk", layout }], 0)[0]!;
-    expect(entry.layout.instances.some((instance) => instance.paneId === "layout-marketplace")).toBe(false);
+    expect(entry.layout.instances.some((instance) => instance.paneId === "marketplace")).toBe(false);
     expect(describeArrangement(entry.layout)).toBe("3 docked · 1 floating · 1 detached");
   });
 });

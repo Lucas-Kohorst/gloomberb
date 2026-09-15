@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { CashFlowPane } from "./pane";
@@ -15,28 +16,15 @@ export const cashFlowModule: PluginModule = {
     });
   },
 
-  panes: [
-    {
-      id: "cash-flow",
-      name: "Cash Flow Statement",
-      icon: "C",
-      component: CashFlowPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 30 },
-      tableExport: true,
-      settings: buildCashFlowSettingsDef(),
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "cash-flow-pane",
-      paneId: "cash-flow",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Cash Flow Statement",
       description: "Cash flow statement: operating, investing, and financing cash flows with free cash flow and capital expenditure breakdown.",
       keywords: ["cash", "flow", "cf", "operating", "investing", "financing", "free cash flow", "fcf", "capex"],
       shortcut: "CF",
+      settings: () => ({ defaultTabId: "cash-flow" }),
     }),
   ],
 };
