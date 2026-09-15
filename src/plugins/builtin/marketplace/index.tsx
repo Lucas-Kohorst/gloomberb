@@ -7,10 +7,17 @@ export const MARKETPLACE_PANE_ID = "marketplace";
 export const MARKETPLACE_TEMPLATE_ID = "marketplace-pane";
 
 export function openMarketplaceTab(
-  registry: { createPaneFromTemplate: (templateId: string, options?: { values?: Record<string, string> }) => void },
+  registry: {
+    createPaneFromTemplate?: (templateId: string, options?: { values?: Record<string, string> }) => void;
+    showPane?: (paneId: string) => void;
+  },
   tab: "plugins" | "layouts",
 ): void {
-  registry.createPaneFromTemplate(MARKETPLACE_TEMPLATE_ID, { values: { tab } });
+  if (typeof registry.createPaneFromTemplate === "function") {
+    registry.createPaneFromTemplate(MARKETPLACE_TEMPLATE_ID, { values: { tab } });
+    return;
+  }
+  registry.showPane?.(MARKETPLACE_PANE_ID);
 }
 
 let disposeRegistryConnection: (() => void) | null = null;
