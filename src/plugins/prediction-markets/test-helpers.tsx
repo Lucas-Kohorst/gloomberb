@@ -175,28 +175,54 @@ export function installPredictionMarketMocks() {
   globalThis.fetch = (async (input: Request | string | URL) => {
     const url = String(input);
     fetchUrls.push(url);
-    if (url.includes("gamma-api.polymarket.com/public-search")) {
+    if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
+      const isPolymarket = url.includes("platform=polymarket") || url.includes("platform=kalshi,polymarket");
+      const isKalshi = url.includes("platform=kalshi") && !url.includes("platform=kalshi,polymarket");
+      const data = [];
+      if (isPolymarket) {
+        data.push({
+          market_id: "polymarket:pm-1",
+          ticker: "inflation-fall",
+          platform: "polymarket",
+          question: "Will inflation fall?",
+          link: "https://polymarket.com/event/inflation-fall",
+          category: "Macro",
+          status: "active",
+          probability: 62,
+          yes_bid: 61,
+          yes_ask: 63,
+          last_trade_price: 62,
+          volume_24h: 250000,
+          volume: 4500000,
+          open_interest: 1200000,
+          end_date: "2026-05-01T12:00:00Z",
+          event_id: "polymarket:event-1",
+          event_title: "US inflation",
+        });
+      }
+      if (isKalshi) {
+        data.push({
+          market_id: "kalshi:KAL-1",
+          ticker: "KAL-1",
+          platform: "kalshi",
+          question: "Will the Fed cut rates?",
+          link: "https://kalshi.com/markets/KAL-1",
+          category: "Economics",
+          status: "active",
+          probability: 48,
+          yes_bid: 47,
+          yes_ask: 49,
+          last_trade_price: 48,
+          volume_24h: 15000,
+          volume: 90000,
+          open_interest: 45000,
+          end_date: "2026-05-02T12:00:00Z",
+          event_id: "kalshi:FED-1",
+          event_title: "Fed series",
+        });
+      }
       return new Response(
-        JSON.stringify({
-          events: [
-            {
-              id: "event-1",
-              title: "US inflation",
-              markets: [
-                {
-                  question: "Will inflation fall?",
-                  slug: "inflation-fall",
-                  outcomes: ["Yes", "No"],
-                  outcomePrices: ["0.62", "0.38"],
-                  bestBid: 0.61,
-                  bestAsk: 0.63,
-                  lastTradePrice: 0.62,
-                  spread: 0.02,
-                },
-              ],
-            },
-          ],
-        }),
+        JSON.stringify({ data, meta: { has_next: false } }),
         { status: 200 },
       );
     }

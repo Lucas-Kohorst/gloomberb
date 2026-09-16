@@ -69,6 +69,7 @@ function mapAdjacentSearchMarket(
   const lastTradePrice = row.last_trade_price != null ? row.last_trade_price / 100 : yesPrice;
   const noPrice = yesPrice != null ? Math.max(0, 1 - yesPrice) : null;
   const eventTicker = eventTickerFromAdjacentRow(row);
+  const eventId = row.event_id?.trim() || eventTicker;
   const title = (row.question ?? row.title ?? ticker).trim();
   const outcomeLabel = eventTicker && ticker.startsWith(`${eventTicker}-`)
     ? ticker.slice(eventTicker.length + 1)
@@ -84,6 +85,7 @@ function mapAdjacentSearchMarket(
     title,
     marketLabel,
     eventLabel,
+    eventId,
     eventTicker,
     seriesTicker: row.series_ticker?.trim() || ticker.split("-")[0] || undefined,
     category,
@@ -120,38 +122,43 @@ function mapAdjacentSearchMarket(
 }
 
 function adjacentMarketToCatalogRow(market: AdjacentMarket): AdjacentKalshiCatalogRow {
-  const id = market.id ?? "";
+  const raw = market as unknown as Record<string, unknown>;
+  const rawId = (raw.market_id as string) ?? (raw.id as string) ?? "";
+  const hasPlatformPrefix = /^(kalshi|polymarket):/i.test(rawId);
+  const marketId = hasPlatformPrefix ? rawId : `${market.platform}:${rawId}`;
+  const rawTicker = (raw.ticker as string) ?? market.slug ?? rawId.replace(/^(kalshi|polymarket):/i, "");
+  const question = (raw.question as string) ?? market.title ?? "";
   return {
-    market_id: `${market.platform}:${id}`,
-    id,
-    ticker: market.slug ?? id,
+    market_id: marketId,
+    id: rawId,
+    ticker: rawTicker,
     platform: market.platform,
-    question: market.title,
-    title: market.title,
-    subtitle: market.subtitle,
-    category: market.category,
-    tags: market.tags,
+    question,
+    title: question,
+    subtitle: (raw.subtitle as string) ?? market.subtitle,
+    category: (raw.category as string) ?? market.category,
+    tags: (raw.tags as string[]) ?? market.tags,
     status: market.status,
-    probability: market.yes_price,
-    yes_price: market.yes_price,
-    latest_price: market.yes_price,
-    yes_bid: market.yes_bid,
-    yes_ask: market.yes_ask,
-    no_bid: market.no_bid,
-    no_ask: market.no_ask,
-    last_trade_price: market.last_trade_price,
-    volume_24h: market.volume_24h,
-    volume: market.total_volume,
-    open_interest: market.open_interest,
-    end_date: market.ends_at,
+    probability: (raw.probability as number) ?? market.yes_price,
+    yes_price: (raw.probability as number) ?? market.yes_price,
+    latest_price: (raw.probability as number) ?? market.yes_price,
+    yes_bid: (raw.yes_bid as number) ?? market.yes_bid,
+    yes_ask: (raw.yes_ask as number) ?? market.yes_ask,
+    no_bid: (raw.no_bid as number) ?? market.no_bid,
+    no_ask: (raw.no_ask as number) ?? market.no_ask,
+    last_trade_price: (raw.last_trade_price as number) ?? market.last_trade_price,
+    volume_24h: (raw.volume_24h as number) ?? market.volume_24h,
+    volume: (raw.volume as number) ?? market.total_volume,
+    open_interest: (raw.open_interest as number) ?? market.open_interest,
+    end_date: (raw.end_date as string) ?? market.ends_at,
     ends_at: market.ends_at,
-    link: market.url,
+    link: (raw.link as string) ?? market.url,
     url: market.url,
-    event_id: market.event_id,
-    event_title: market.event_title,
+    event_id: (raw.event_id as string) ?? market.event_id,
+    event_title: (raw.event_title as string) ?? market.event_title,
     created_at: null,
     updated_at: market.updated_at,
-    series_ticker: id.split("-")[0] || undefined,
+    series_ticker: rawTicker.split("-")[0] || undefined,
   };
 }
 
@@ -188,7 +195,10 @@ export async function searchAdjacentCatalog(options: {
     platform,
   );
 
-  const markets = (response.markets ?? [])
+  const rawMarkets = (response as unknown as { data?: AdjacentMarket[] }).data
+    ?? response.markets
+    ?? [];
+  const markets = rawMarkets
     .map(adjacentMarketToCatalogRow)
     .map(mapAdjacentSearchMarket)
     .filter((market): market is PredictionMarketSummary => market != null);
@@ -197,10 +207,11 @@ export async function searchAdjacentCatalog(options: {
     ? markets
     : markets.filter((market) => matchesPredictionCategory(market, categoryId));
 
-  const hasMore = !!response.next_cursor;
+  const rawMeta = (response as unknown as { meta?: { has_next?: boolean } }).meta;
+  const hasMore = response.next_cursor != null || rawMeta?.has_next === true;
   return {
     markets: filtered,
     hasMore,
-    nextCursor: response.next_cursor ?? null,
+    nextCursor: response.next_cursor ?? (hasMore ? adjacentSearchPageCursor(page + 1) : null),
   };
 }

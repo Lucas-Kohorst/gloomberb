@@ -1153,7 +1153,9 @@ describe("prediction markets plugin registration and services", () => {
 
     expect(
       fetchUrls.some((url) =>
-        url.includes("gamma-api.polymarket.com/public-search?q=inflation"),
+        url.includes("api.adjacent.markets/api/v1/") &&
+        url.includes("search=inflation") &&
+        url.includes("platform=polymarket"),
       ),
     ).toBe(true);
     expect(
@@ -1202,6 +1204,9 @@ describe("prediction markets plugin registration and services", () => {
           headers: { "x-gloom-kalshi-source": "kalshi" },
         });
       }
+      if (url.includes("api.adjacent.markets/api/v1/markets") || url.includes("/api/data/adjacent/markets")) {
+        return new Response(JSON.stringify({ data: [], meta: { has_next: false } }), { status: 200 });
+      }
       throw new Error(`Unexpected hosted catalog URL: ${url}`);
     }) as unknown as typeof fetch;
 
@@ -1216,8 +1221,9 @@ describe("prediction markets plugin registration and services", () => {
 
       fetchUrls.length = 0;
       await loadKalshiCatalog("nba", "all", "top", { force: true });
-      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events`))).toBe(true);
-      expect(fetchUrls.some((url) => url.includes("search=nba"))).toBe(false);
+      expect(fetchUrls.some((url) =>
+        (url.includes("api.adjacent.markets") || url.includes("/api/data/adjacent/")) && url.includes("search=nba"),
+      )).toBe(true);
     } finally {
       delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
     }
@@ -1327,32 +1333,46 @@ describe("prediction markets plugin registration and services", () => {
   test("falls back to thin Polymarket search results when event hydration fails", async () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("gamma-api.polymarket.com/public-search")) {
+      if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
         return new Response(
           JSON.stringify({
-            events: [
+            markets: [
               {
-                id: "event-1",
-                title: "Fed decision in April?",
-                endDate: "2026-04-29T00:00:00Z",
-                markets: [
-                  {
-                    question:
-                      "Will the Fed decrease interest rates by 25 bps after the April 2026 meeting?",
-                    groupItemTitle: "25 bps decrease",
-                    slug: "will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
-                    outcomes: ["Yes", "No"],
-                    outcomePrices: ["0.22", "0.78"],
-                    bestBid: 0.21,
-                    bestAsk: 0.23,
-                    lastTradePrice: 0.22,
-                    spread: 0.02,
-                    active: true,
-                    closed: false,
-                  },
-                ],
+                id: "pm-1",
+                platform: "polymarket",
+                title: "Will the Fed decrease interest rates by 25 bps after the April 2026 meeting?",
+                slug: "will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
+                status: "active",
+                yes_price: 22,
+                no_price: 78,
+                ends_at: "2026-04-29T00:00:00Z",
+                event_id: "polymarket:event-1",
+                event_title: "Fed decision in April?",
+                url: "https://polymarket.com/event/will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
               },
             ],
+            next_cursor: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("gamma-api.polymarket.com/markets?slug=")) {
+        return new Response(
+          JSON.stringify({
+            id: "pm-1",
+            slug: "will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
+            question:
+              "Will the Fed decrease interest rates by 25 bps after the April 2026 meeting?",
+            conditionId: "cond-1",
+            outcomes: '["Yes","No"]',
+            outcomePrices: '["0.22","0.78"]',
+            clobTokenIds: '["yes-1","no-1"]',
+            bestBid: 0.21,
+            bestAsk: 0.23,
+            lastTradePrice: 0.22,
+            spread: 0.02,
+            active: true,
+            closed: false,
           }),
           { status: 200 },
         );
@@ -1433,6 +1453,26 @@ describe("prediction markets plugin registration and services", () => {
           { status: 200 },
         );
       }
+      if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
+        return new Response(
+          JSON.stringify({
+            data: [{
+              market_id: "polymarket:pm-1",
+              ticker: "will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
+              platform: "polymarket",
+              question: "Will the Fed decrease interest rates by 25 bps after the April 2026 meeting?",
+              link: "https://polymarket.com/event/will-the-fed-decrease-interest-rates-by-25-bps-after-the-april-2026-meeting",
+              status: "active",
+              probability: 22,
+              end_date: "2026-04-29T00:00:00Z",
+              event_id: "polymarket:event-1",
+              event_title: "Fed decision in April?",
+            }],
+            meta: { has_next: false },
+          }),
+          { status: 200 },
+        );
+      }
       return new Response(JSON.stringify({}), { status: 200 });
     }) as unknown as typeof fetch;
 
@@ -1450,25 +1490,21 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes("gamma-api.polymarket.com/public-search")) {
+      if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
         return new Response(
           JSON.stringify({
-            events: [
-              {
-                id: "event-1",
-                title: "Fed decision in April?",
-                markets: [
-                  {
-                    question: "Will the Fed cut rates?",
-                    slug: "will-the-fed-cut-rates",
-                    outcomes: ["Yes", "No"],
-                    outcomePrices: ["0.22", "0.78"],
-                    active: true,
-                    closed: false,
-                  },
-                ],
-              },
-            ],
+            data: [{
+              market_id: "polymarket:pm-1",
+              ticker: "will-the-fed-cut-rates",
+              platform: "polymarket",
+              question: "Will the Fed cut rates?",
+              link: "https://polymarket.com/event/will-the-fed-cut-rates",
+              status: "active",
+              probability: 22,
+              event_id: "polymarket:event-1",
+              event_title: "Fed decision in April?",
+            }],
+            meta: { has_next: false },
           }),
           { status: 200 },
         );
@@ -1510,6 +1546,25 @@ describe("prediction markets plugin registration and services", () => {
     let eventPages = 0;
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
+      if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
+        return new Response(
+          JSON.stringify({
+            data: [{
+              market_id: "kalshi:KAL-FED",
+              ticker: "KAL-FED",
+              platform: "kalshi",
+              question: "Will the Fed cut rates?",
+              link: "https://kalshi.com/markets/KAL-FED",
+              status: "active",
+              probability: 48,
+              event_id: "kalshi:FED-1",
+              event_title: "Fed series",
+            }],
+            meta: { has_next: false },
+          }),
+          { status: 200 },
+        );
+      }
       if (url.includes("/trade-api/v2/events?")) {
         eventPages += 1;
         return new Response(
@@ -1524,7 +1579,7 @@ describe("prediction markets plugin registration and services", () => {
     }) as unknown as typeof fetch;
 
     await loadKalshiCatalog("fed", "all", "top", { force: true });
-    expect(eventPages).toBe(1);
+    expect(eventPages).toBe(0);
   });
 
   test("filters Kalshi markets locally when venue category responses bleed across buckets", async () => {
