@@ -14,6 +14,7 @@ import {
   looksLikeArticleQuery,
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
+import { getStashedNewsArticle } from "../../../plugins/builtin/news/wire/news/article-stash";
 import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
 import {
   buildArticleSearchResultItems,
@@ -230,6 +231,25 @@ export function CommandBar({
     (id: string) => pluginRegistry.paneTemplates.get(id),
     [pluginRegistry],
   );
+  const buildRecentArticleItem = useCallback((articleId: string, label: string) => {
+    const article = getStashedNewsArticle(articleId);
+    if (!article) return null;
+    return {
+      id: `article:${article.id}`,
+      label: label || article.title,
+      detail: article.source,
+      category: "Recent",
+      kind: "action" as const,
+      right: "ART",
+      searchText: `${article.title} ${article.source} article news`,
+      action: () => {
+        openNewsArticle(article, (templateId, options) => {
+          pluginRegistry.createPaneFromTemplate(templateId, options);
+        });
+        closeAll({ revertThemePreview: false });
+      },
+    };
+  }, [closeAll, pluginRegistry]);
 
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
@@ -295,6 +315,7 @@ export function CommandBar({
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
+        dispatch({ type: "RECORD_COMMAND", id: `article:${article.id}`, label: article.title });
         openNewsArticle(article, (templateId, options) => {
           pluginRegistry.createPaneFromTemplate(templateId, options);
         });
@@ -305,6 +326,7 @@ export function CommandBar({
     adjacentNews.articles,
     adjacentNews.phase,
     closeAll,
+    dispatch,
     filingNews.articles,
     filingNews.phase,
     newsState.articles,
@@ -597,6 +619,7 @@ export function CommandBar({
     availableCommands,
     buildLayoutItems,
     buildRecentTickerItem,
+    buildRecentArticleItem,
     buildPaneSettingItems,
     buildTickerSearchResultItems,
     buildWindowModeItems,

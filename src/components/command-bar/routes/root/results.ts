@@ -51,6 +51,8 @@ export interface RootResultModelOptions {
   availableCommands: Command[];
   /** Builds one select/pin ticker row for a recent symbol (ticker-search path). */
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
+  /** Resolves an opened article retained in the local article stash. */
+  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
   buildLayoutItems: (query: string, options?: { confirmDangerousActions?: boolean }) => ResultItem[];
   buildPaneSettingItems: (paneId: string | null, query: string) => ResultItem[];
   buildWindowModeItems: (arg: string) => ResultItem[];
@@ -135,6 +137,7 @@ const MAX_RECENT_TICKER_ROWS = 8;
 function buildRecentResultItems(options: {
   availableCommands: Command[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
+  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
   createPaneTemplateItem: (template: PaneTemplateDef, options?: PaneTemplateItemOptions) => ResultItem;
   getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
   recentCommands: AppState["recentCommands"];
@@ -144,6 +147,7 @@ function buildRecentResultItems(options: {
   const {
     availableCommands,
     buildRecentTickerItem = () => null,
+    buildRecentArticleItem = () => null,
     createPaneTemplateItem,
     getRecentPaneTemplate = () => undefined,
     recentCommands,
@@ -170,6 +174,11 @@ function buildRecentResultItems(options: {
       });
       continue;
     }
+    if (recent.id.startsWith("article:")) {
+      const item = buildRecentArticleItem(recent.id.slice("article:".length), recent.label);
+      if (item) items.push({ ...item, id: `recent:${recent.id}`, category: "Recent" });
+      continue;
+    }
     if (recent.id.startsWith("pane-template:")) {
       const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
       if (!template) continue;
@@ -192,6 +201,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     availableCommands,
     buildLayoutItems,
     buildRecentTickerItem,
+    buildRecentArticleItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -242,6 +252,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   const recentItems = buildRecentResultItems({
     availableCommands,
     buildRecentTickerItem,
+    buildRecentArticleItem,
     createPaneTemplateItem,
     getRecentPaneTemplate,
     recentCommands: state.recentCommands ?? [],

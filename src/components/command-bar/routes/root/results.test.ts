@@ -495,6 +495,30 @@ describe("recents in the root result model", () => {
     }
   });
 
+  test("re-execute recorded article searches through the article item builder", () => {
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      buildRecentArticleItem: (articleId, label) => ({
+        id: `article:${articleId}`,
+        label,
+        detail: "Reuters",
+        category: "Articles",
+        kind: "action",
+        action: () => {},
+      }),
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [{ id: "article:story-1", label: "Fed decision" }],
+      },
+    }));
+
+    const row = items.find((item) => item.id === "recent:article:story-1");
+    expect(row?.category).toBe("Recent");
+    expect(row?.label).toBe("Fed decision");
+    expect(row?.action).toBeTypeOf("function");
+  });
+
   test("re-execute recorded pane templates through the template item builder", () => {
     const chartTemplate = {
       id: "chart-composer-pane",

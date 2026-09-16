@@ -14,6 +14,9 @@ import {
 } from "./kalshi/adjacent-catalog";
 
 const ADJACENT_SEARCH_PER_PAGE = 50;
+const ADJACENT_SEARCH_STOP_WORDS = new Set([
+  "a", "an", "and", "any", "are", "by", "for", "from", "in", "is", "of", "on", "the", "to", "what", "will",
+]);
 
 export interface AdjacentSearchResult {
   markets: PredictionMarketSummary[];
@@ -256,6 +259,19 @@ export async function searchAdjacentCatalog(options: {
     .map(adjacentMarketToCatalogRow)
     .map(mapAdjacentSearchMarket)
     .filter((market): market is PredictionMarketSummary => market != null);
+
+  if (markets.length === 0 && query.includes(" ")) {
+    const fallbackToken = query
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .find((token) => token.length >= 3 && !ADJACENT_SEARCH_STOP_WORDS.has(token.toLowerCase()));
+    if (fallbackToken && fallbackToken.toLowerCase() !== query.toLowerCase()) {
+      // Adjacent uses AND matching. A phrase can be absent from the market
+      // question, or return rows whose shape cannot be mapped, even though one
+      // meaningful token identifies the contract.
+      return searchAdjacentCatalog({ ...options, query: fallbackToken });
+    }
+  }
 
   const filtered = categoryId === "all"
     ? markets
