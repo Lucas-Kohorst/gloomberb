@@ -16,6 +16,14 @@ export interface BrokerContractRef {
   tradingClass?: string;
 }
 
+/** Public listing metadata supplied by a selected search result. */
+export interface TickerListingRef {
+  name: string;
+  exchange: string;
+  currency?: string;
+  type: string;
+}
+
 export interface InstrumentSearchResult {
   providerId: string;
   brokerInstanceId?: string;

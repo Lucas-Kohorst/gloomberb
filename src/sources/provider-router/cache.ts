@@ -1,4 +1,5 @@
 import { yahooSuffixExchange } from "../yahoo-finance/symbols";
+import { retractKnownCloudValuation } from "../gloomberb-cloud/valuation-observations";
 import type { CachedResourceRecord, ResourceStoreContract } from "../../data/resource-store";
 import type { TimeRange } from "../../time-series/range";
 import type { BrokerContractRef } from "../../types/instrument";
@@ -150,7 +151,7 @@ export function listCachedResources<T>(
   });
   if (records.length === 0) return [];
 
-  return sortCachedRecords(records.filter((record) => {
+  const filtered = records.filter((record) => {
     if (record.sourceKey.startsWith("provider:") && !entityKey.startsWith("contract:")
       && (kind === "financials" || kind === "quote")) {
       const requestedExchange = parsePublicTickerKey(entityKey).exchange
@@ -158,13 +159,19 @@ export function listCachedResources<T>(
       const quote = kind === "quote" ? record.value as Quote : (record.value as TickerFinancials).quote;
       const declaredExchange = canonicalExchange(quote?.listingExchangeName || quote?.exchangeName
         || parsePublicTickerKey(quote?.symbol ?? "").exchange);
-      // Generic legacy entries can retain a venue normalized under old alias
-      // rules (PCX used to mean AMEX). Refetch a conflicting public listing;
-      // never relabel it or let it outrank a fresh exact-listing response.
       if (requestedExchange && declaredExchange && requestedExchange !== declaredExchange) return false;
     }
     return true;
-  }), variantKeys, sourceKeys);
+  });
+  const normalized = filtered.map((record) => {
+    if (kind !== "financials" || !record.sourceKey.startsWith("provider:")) return record;
+    const value = retractKnownCloudValuation(record.value as TickerFinancials, {
+      symbol: record.entityKey,
+      exchange: variantKeys.find((key) => /(?:^|;)exchange=/.test(key))?.match(/(?:^|;)exchange=([^;]+)/)?.[1],
+    }) as T;
+    return value === record.value ? record : { ...record, value, stale: true };
+  });
+  return sortCachedRecords(normalized, variantKeys, sourceKeys);
 }
 
 export function selectCachedResource<T>(

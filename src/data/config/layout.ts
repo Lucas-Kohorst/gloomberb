@@ -6,6 +6,7 @@ import type {
   PaneInstanceConfig,
   PanePlacementMemory,
 } from "../../types/config";
+import type { BrokerContractRef, TickerListingRef } from "../../types/instrument";
 import {
   cloneLayout,
   clonePaneSettings,
@@ -31,13 +32,45 @@ export function isLayoutConfig(value: unknown): value is LayoutConfig {
 function sanitizePaneBinding(value: unknown, fallback: PaneBinding = { kind: "none" }): PaneBinding {
   if (!value || typeof value !== "object") return fallback;
   if ((value as PaneBinding).kind === "fixed" && typeof (value as Extract<PaneBinding, { kind: "fixed" }>).symbol === "string") {
-    return { kind: "fixed", symbol: (value as Extract<PaneBinding, { kind: "fixed" }>).symbol };
+    const binding = value as Extract<PaneBinding, { kind: "fixed" }>;
+    const instrument = sanitizeBoundInstrument(binding.instrument);
+    const listing = sanitizeBoundListing(binding.listing);
+    return { kind: "fixed", symbol: binding.symbol,
+      ...(instrument !== undefined ? { instrument } : {}),
+      ...(listing ? { listing } : {}),
+    };
   }
   if ((value as PaneBinding).kind === "follow" && typeof (value as Extract<PaneBinding, { kind: "follow" }>).sourceInstanceId === "string") {
     return { kind: "follow", sourceInstanceId: (value as Extract<PaneBinding, { kind: "follow" }>).sourceInstanceId };
   }
   if ((value as PaneBinding).kind === "none") return { kind: "none" };
   return fallback;
+}
+
+function sanitizeBoundInstrument(value: unknown): BrokerContractRef | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.brokerId !== "string" || !raw.brokerId.trim()
+    || typeof raw.symbol !== "string" || !raw.symbol.trim()) return undefined;
+  const result: BrokerContractRef = { brokerId: raw.brokerId, symbol: raw.symbol };
+  for (const key of ["brokerInstanceId", "localSymbol", "secType", "exchange", "primaryExchange", "currency",
+    "lastTradeDateOrContractMonth", "multiplier", "tradingClass"] as const) {
+    if (typeof raw[key] === "string") result[key] = raw[key];
+  }
+  if (typeof raw.conId === "number" && Number.isSafeInteger(raw.conId) && raw.conId > 0) result.conId = raw.conId;
+  if (typeof raw.strike === "number" && Number.isFinite(raw.strike)) result.strike = raw.strike;
+  if (raw.right === "C" || raw.right === "P") result.right = raw.right;
+  return result;
+}
+
+function sanitizeBoundListing(value: unknown): TickerListingRef | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.name !== "string" || typeof raw.exchange !== "string" || typeof raw.type !== "string") return undefined;
+  return { name: raw.name, exchange: raw.exchange, type: raw.type,
+    ...(typeof raw.currency === "string" ? { currency: raw.currency } : {}),
+  };
 }
 
 function sanitizeFloatingPlacementMemory(value: unknown): FloatingPlacementMemory | undefined {

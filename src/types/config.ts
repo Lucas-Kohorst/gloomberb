@@ -37,7 +37,7 @@ export interface ColumnConfig {
 
 export type PaneBinding =
   | { kind: "none" }
-  | { kind: "fixed"; symbol: string }
+  | { kind: "fixed"; symbol: string; instrument?: import("./instrument").BrokerContractRef | null; listing?: import("./instrument").TickerListingRef }
   | { kind: "follow"; sourceInstanceId: string };
 
 export interface DockedPlacementMemory {

@@ -31,6 +31,7 @@ import {
   installAiRunHost,
 } from "../../plugins/builtin/ai/runner";
 import { createAppServices } from "../../core/app-services";
+import { flushPendingPersistence } from "../../state/persist-scheduler";
 import { DEFAULT_THEME } from "../../theme/themes";
 import { loadCustomThemes } from "../../theme/custom-themes";
 
@@ -126,7 +127,7 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
     stopMainThreadMonitor();
     if (exitTimer) return;
     exitTimer = setTimeout(() => {
-      process.exit(process.exitCode ?? 0);
+      void flushPendingPersistence().finally(() => process.exit(process.exitCode ?? 0));
     }, 0);
   };
   try {

@@ -1,3 +1,4 @@
+import { assertTradingPriceHistory, hasCircleOfferingPriceHistory } from "../listing-history";
 import type { BrokerCandidate } from "./brokers";
 import { withBrokerTimeout } from "./brokers";
 import type { DataProvider, MarketDataRequestContext } from "../../types/data-provider";
@@ -416,6 +417,11 @@ export class ProviderRouterHistoryRoutes {
     return this.firstProviderArrayResult(async (provider) => {
       const fetched = await request.fetchProvider(provider);
       if (fetched === null) return null;
+      assertTradingPriceHistory(
+        fetched,
+        { symbol: request.identity.entityKey },
+        this.deps.providerSourceKey(provider),
+      );
       const value = normalizeRequestHistory(fetched, request);
       if (request.isFetchedValueStale(value)) return null;
       this.deps.cacheResource(

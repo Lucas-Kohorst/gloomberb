@@ -114,3 +114,36 @@ describe("createPersistScheduler", () => {
     expect(errors[0]).toBeInstanceOf(Error);
   });
 });
+
+for (const mode of ["timer", "immediate"] as const) test(`exit waits for an in-flight ${mode} save and changes scheduled while it is running`, async () => {
+  let start!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { start = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const saved: string[] = [];
+  const scheduler = createPersistScheduler<string>({
+    delayMs: 0,
+    save: async value => {
+      if (value === "first") { start(); await held; }
+      saved.push(value);
+    },
+  });
+  if (mode === "timer") scheduler.schedule("first");
+  else void scheduler.saveImmediately("first");
+  await started;
+  let flushed = false;
+  const exit = flushPendingPersistence().then(() => { flushed = true; });
+  try {
+    await delay(1);
+    expect(flushed).toBe(false);
+    // This update was not in the initial snapshot of pending exit work.
+    scheduler.schedule("last");
+    release();
+    await exit;
+    expect(saved).toEqual(["first", "last"]);
+  } finally {
+    release();
+    await scheduler.flush();
+    await exit;
+  }
+});

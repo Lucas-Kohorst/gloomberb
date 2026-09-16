@@ -7,6 +7,7 @@ import type {
   HolderRecord,
   OptionsChain,
   Quote,
+  TickerFinancials,
 } from "../types/financials";
 import type { SyncSettings, SyncSnapshot } from "../sync/types";
 
@@ -258,9 +259,16 @@ export interface CloudRoundupPreviewResponse {
   recipient: string;
 }
 
-export interface CloudQuotePayload extends Quote {
+export interface CloudQuotePayload extends Omit<Quote, "change" | "changePercent"> {
+  // JSON encodes the provider's unavailable numeric values as null.
+  change?: number | null;
+  changePercent?: number | null;
   providerId: "gloomberb-cloud";
   dataSource: "live" | "delayed";
+}
+
+export interface CloudFinancialsPayload extends Omit<TickerFinancials, "quote"> {
+  quote?: CloudQuotePayload;
 }
 
 export interface CloudWorldVenuePayload {

@@ -57,6 +57,7 @@ import type {
   CloudEconEventPayload,
   CloudEquityDiagnosticMode,
   CloudEquityDiagnosticResult,
+  CloudFinancialsPayload,
   CloudFredSeriesPayload,
   CloudShillerPayload,
   CloudFundamentals,
@@ -161,14 +162,14 @@ export class CloudDataApi {
     return this.requestMarketSymbol("/market/fundamentals", symbol, exchange);
   }
 
-  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<TickerFinancials>> {
+  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudFinancialsPayload>> {
     return this.requestMarketSymbol("/market/financials", symbol, exchange);
   }
 
   async getCloudFinancialsBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
-  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>> {
+  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudFinancialsPayload>>> {
     return this.postMarketBatch("/market/financials/batch", targets, mode);
   }
 

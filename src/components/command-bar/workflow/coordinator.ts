@@ -137,7 +137,6 @@ export function useCommandBarWorkflowCoordinator({
       kind: "workflow",
       workflowId: "builtin:add-portfolio",
       title: `Add ${ticker.metadata.ticker} to Portfolio`,
-      subtitle: "Choose a portfolio and optionally record the manual position now.",
       fields: workflow.fields,
       values: workflow.values,
       activeFieldId: getFirstVisibleFieldId(workflow.fields, workflow.values),
