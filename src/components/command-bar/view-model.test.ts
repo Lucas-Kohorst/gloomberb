@@ -60,6 +60,28 @@ describe("command bar view model helpers", () => {
     expect(sections.map((section) => section.category)).toEqual(["Config", "Tickers", "Danger", "Debug"]);
   });
 
+  test("orders the empty command bar as recent, portfolio, assets, then config and danger", () => {
+    const sections = buildSections([
+      { id: "danger", category: "Danger" },
+      { id: "data", category: "Data" },
+      { id: "assets", category: "Assets" },
+      { id: "config", category: "Config" },
+      { id: "recent", category: "Recent" },
+      { id: "portfolio", category: "Portfolio" },
+      { id: "workspace", category: "Workspace" },
+    ], { sectionOrder: "browse" });
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Recent",
+      "Portfolio",
+      "Assets",
+      "Data",
+      "Workspace",
+      "Config",
+      "Danger",
+    ]);
+  });
+
   test("drops an offer-only section below real matches whatever its category priority", () => {
     const sections = buildSections([
       { id: "exact", category: "Exact Match", disabled: true, defaultSelectable: false },

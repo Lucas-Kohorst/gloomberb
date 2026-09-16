@@ -27,7 +27,10 @@ export function MarketplacePane({ focused, width, height, ...paneProps }: PanePr
   }, [defaultTabId, fallbackTab, setActiveTab]);
   const registry = getSharedRegistry();
   const { hidePane } = usePluginAppActions();
-  const contentHeight = Math.max(1, height - 1);
+  // The nested gallery receives the pane's pre-footer height on native hosts.
+  // Reserve enough rows here for the outer footer so the gallery action bar
+  // remains fully visible instead of being painted underneath it.
+  const contentHeight = Math.max(1, height - 5);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -38,22 +41,24 @@ export function MarketplacePane({ focused, width, height, ...paneProps }: PanePr
         focused={focused}
       />
       <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
-        {activeTab === "plugins" ? (
-          <PluginMarketplacePane
-            {...paneProps}
-            focused={focused}
-            width={width}
-            height={contentHeight}
-          />
-        ) : registry ? (
-          <LayoutMarketplaceGallery
-            pluginRegistry={registry}
-            focused={focused}
-            width={width}
-            height={contentHeight}
-            onClose={() => hidePane("marketplace")}
-          />
-        ) : null}
+        <Box flexGrow={1} flexBasis={0} minHeight={0} marginBottom={2} overflow="hidden">
+          {activeTab === "plugins" ? (
+            <PluginMarketplacePane
+              {...paneProps}
+              focused={focused}
+              width={width}
+              height={Math.max(1, contentHeight - 2)}
+            />
+          ) : registry ? (
+            <LayoutMarketplaceGallery
+              pluginRegistry={registry}
+              focused={focused}
+              width={width}
+              height={Math.max(1, contentHeight - 2)}
+              onClose={() => hidePane("marketplace")}
+            />
+          ) : null}
+        </Box>
       </Box>
     </Box>
   );

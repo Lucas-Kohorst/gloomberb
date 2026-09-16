@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   PaneSidebar,
   PaneSidebarRow,
@@ -14,7 +15,7 @@ import { TextField } from "../components/ui/fields";
 import { Spinner } from "../components/ui/loading";
 import { t, tf } from "../i18n";
 import { useThemeColors } from "../theme/theme-context";
-import { Box, ScrollBox, Text, TextAttributes } from "../ui";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../ui";
 import type { LayoutGalleryController } from "./gallery";
 import { MiniWorkspace } from "./mini-workspace";
 import {
@@ -204,7 +205,7 @@ function PreviewPane({ controller, entry }: { controller: LayoutGalleryControlle
       </Box>
 
       <Box
-        height={2}
+        height={1}
         flexDirection="row"
         alignItems="center"
         paddingX={1}
@@ -260,6 +261,8 @@ export function LayoutGalleryDesktop({
   height?: number;
 }) {
   const sidebarWidth = marketplaceSidebarWidth(width);
+  const inputRef = useRef<InputRenderable | null>(null);
+
   const selected = controller.entries.find((entry) => entry.id === controller.selectedId)
     ?? controller.owned.find((entry) => entry.active)
     ?? controller.entries[0]
@@ -283,6 +286,7 @@ export function LayoutGalleryDesktop({
                 placeholder={t("Search layouts")}
                 onChange={controller.setQuery}
                 width={Math.max(1, listWidth - 2)}
+                inputRef={inputRef}
               />
             </Box>
             <ScrollBox

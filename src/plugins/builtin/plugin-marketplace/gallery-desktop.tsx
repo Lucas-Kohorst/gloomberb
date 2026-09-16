@@ -357,7 +357,7 @@ function PreviewPane({
       </ScrollBox>
 
       <Box
-        height={2}
+        height={1}
         flexDirection="row"
         alignItems="center"
         paddingX={1}
@@ -456,6 +456,13 @@ export function PluginGalleryDesktop({
                 inputRef={searchInputRef}
                 onMouseDown={controller.onSearchFocus}
                 onBlur={controller.onSearchBlur}
+                onKeyDown={(event) => {
+                  if (event.name === "escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    controller.onSearchBlur?.();
+                  }
+                }}
               />
             </Box>
             <ScrollBox

@@ -197,7 +197,7 @@ export function useRootProviderSearch(options: {
     ? "app-first"
     : rootTickerSearchArg
       ? "ranked"
-      : "default";
+      : "browse";
   const orderedRootResults = useMemo(
     () => orderListResults(rootResults, { sectionOrder: rootSectionOrder, categoryPriorities }),
     [categoryPriorities, rootResults, rootSectionOrder],

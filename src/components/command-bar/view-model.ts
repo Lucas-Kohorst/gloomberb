@@ -34,7 +34,7 @@ export interface CommandBarSection<T> {
   items: T[];
 }
 
-export type CommandBarSectionOrder = "default" | "app-first" | "ranked";
+export type CommandBarSectionOrder = "default" | "browse" | "app-first" | "ranked";
 
 /** Sort positions contributed by plugin search providers, keyed by section heading. */
 export type CommandBarCategoryPriorities = ReadonlyMap<string, number>;
@@ -207,6 +207,15 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
   if (sectionOrder === "ranked") {
     if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
     if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;
+    return 0;
+  }
+  if (sectionOrder === "browse") {
+    if (normalized === "recent") return -200;
+    if (normalized === "portfolio") return -150;
+    if (normalized === "assets") return -140;
+    if (normalized === "config") return 800;
+    if (normalized.includes("danger")) return 900;
+    if (normalized.includes("debug")) return 910;
     return 0;
   }
   if (normalized === "ask ai") return ASSIST_SECTION_PRIORITY;

@@ -50,6 +50,15 @@ export function WebButton({
       onMouseDown={() => {
         if (!disabled) onPress?.();
       }}
+      onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+        if (disabled || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onPress?.();
+      }}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
       data-gloom-role="desktop-button"
       data-gloom-interactive={disabled ? undefined : "true"}
       style={{
