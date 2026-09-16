@@ -56,8 +56,38 @@ test("catalog limit bounds provider search hydration", async () => {
   const requested: string[] = [];
   setHttpFetchTransport(async (url) => {
     requested.push(url);
-    if (url.includes("public-search")) {
-      return json({ events: Array.from({ length: 5 }, (_, index) => ({ id: `event-${index + 1}` })) });
+    if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
+      const isPolymarket = url.includes("platform=polymarket");
+      const isKalshi = url.includes("platform=kalshi") && !url.includes("platform=kalshi,polymarket");
+      const data = [];
+      if (isPolymarket) {
+        data.push(
+          ...Array.from({ length: 5 }, (_, index) => ({
+            market_id: `polymarket:0x${String(index + 1).padStart(8, "0")}`,
+            ticker: `0x${String(index + 1).padStart(8, "0")}`,
+            display_ticker: `will-rates-event-${index + 1}`,
+            platform: "polymarket",
+            question: `Rates event-${index + 1}`,
+            status: "active",
+            probability: 50,
+            link: `https://polymarket.com/event/rates-event-${index + 1}`,
+            event_title: `Rates event-${index + 1}`,
+          })),
+        );
+      }
+      if (isKalshi) {
+        data.push({
+          market_id: "kalshi:KXFED-26SEP-T3.00",
+          ticker: "KXFED-26SEP-T3.00",
+          display_ticker: "KXFED-26SEP-T3.00",
+          platform: "kalshi",
+          question: "Kalshi rates",
+          status: "active",
+          probability: 50,
+          event_title: "Kalshi event",
+        });
+      }
+      return json({ data, meta: { has_next: false } });
     }
     if (url.includes("gamma-api.polymarket.com/events/event-")) {
       const eventId = url.split("/").at(-1)!;
@@ -84,8 +114,7 @@ test("catalog limit bounds provider search hydration", async () => {
   const items = await predictionChartSeriesCapability.provider.search!({ query: "rates", limit: 2 });
 
   expect(items).toHaveLength(2);
-  expect(requested.filter((url) => url.includes("gamma-api.polymarket.com/events/event-"))).toHaveLength(2);
-  expect(requested.some((url) => url.includes("api.elections.kalshi.com") && url.includes("limit=20"))).toBe(true);
+  expect(requested.some((url) => url.includes("api.adjacent.markets") && url.includes("search=rates"))).toBe(true);
 });
 
 test("polymarket resolution reloads the event and follows a rotated YES token", async () => {
@@ -214,40 +243,38 @@ test("polymarket pans request and cache their bounded history windows", async ()
   expect(panned.points[0]?.date.toISOString()).toBe("2026-02-01T00:00:01.000Z");
 });
 
-test("aborting catalog search stops Polymarket event hydration without caching it", async () => {
+test("aborting catalog search abandons the in-flight Adjacent request", async () => {
   attachPredictionMarketsPersistence(new MemoryPersistence());
   let searchRequests = 0;
-  let eventRequests = 0;
-  let markHydrationStarted: (() => void) | undefined;
-  const hydrationStarted = new Promise<void>((resolve) => {
-    markHydrationStarted = resolve;
+  let markStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
   });
+  const liveRow = {
+    market_id: "polymarket:0xabc",
+    ticker: "0xabc",
+    display_ticker: "will-rates",
+    platform: "polymarket",
+    question: "Rates",
+    status: "active",
+    probability: 50,
+    link: "https://polymarket.com/event/rates-event",
+    event_title: "Rates",
+  };
   setHttpFetchTransport(async (url, init) => {
-    if (url.includes("public-search")) {
+    if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
       searchRequests += 1;
-      return json({ events: [{ id: "event-1" }] });
-    }
-    if (url.endsWith("/events/event-1")) {
-      eventRequests += 1;
-      if (eventRequests === 1) {
-        markHydrationStarted?.();
+      if (searchRequests === 1) {
+        markStarted?.();
         return await new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+          init?.signal?.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
         });
       }
-      return json({
-        id: "event-1",
-        title: "Rates",
-        markets: [{
-          id: "market-1",
-          question: "Rates",
-          active: true,
-          closed: false,
-          outcomes: ["Yes", "No"],
-          outcomePrices: ["0.5", "0.5"],
-          clobTokenIds: ["yes", "no"],
-        }],
-      });
+      return json({ data: [liveRow], meta: { has_next: false } });
     }
     if (url.includes("api.elections.kalshi.com")) return json({ events: [] });
     throw new Error(`Unexpected URL ${url}`);
@@ -259,14 +286,13 @@ test("aborting catalog search stops Polymarket event hydration without caching i
     limit: 1,
     signal: controller.signal,
   });
-  await hydrationStarted;
+  await started;
   controller.abort();
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 
   const retried = await predictionChartSeriesCapability.provider.search!({ query: "rates", limit: 1 });
   expect(retried).toHaveLength(1);
-  expect(searchRequests).toBe(2);
-  expect(eventRequests).toBe(2);
+  expect(searchRequests).toBeGreaterThanOrEqual(2);
 });
 
 test("kalshi resolution reloads the event before requesting current market history", async () => {

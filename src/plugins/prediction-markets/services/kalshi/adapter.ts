@@ -34,6 +34,10 @@ import {
   parseHostedAdjacentKalshiPageCursor,
 } from "./adjacent-catalog";
 import {
+  searchAdjacentCatalog,
+  parseAdjacentSearchPageCursor,
+} from "../adjacent-search";
+import {
   fetchHostedAdjacentKalshiMarket,
   loadHostedAdjacentKalshiDetail,
   loadHostedAdjacentKalshiHistory,
@@ -230,6 +234,18 @@ export async function loadKalshiCatalog(
     "catalog",
     resourceKey,
     async () => {
+      if (normalizedQuery) {
+        const searchResult = await searchAdjacentCatalog({
+          query: normalizedQuery,
+          venue: "kalshi",
+          categoryId,
+          page: 1,
+          signal: options.signal,
+        });
+        rememberKalshiCursor(normalizedQuery, categoryId, searchResult.nextCursor);
+        return searchResult.markets.slice(0, requestedLimit);
+      }
+
       let page: { events: KalshiEventRecord[]; nextCursor: string | null };
       try {
         page = categoryId === "all"
@@ -271,6 +287,16 @@ export async function loadMoreKalshiCatalog(
   cursor: string,
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (normalizedQuery) {
+    return await searchAdjacentCatalog({
+      query: normalizedQuery,
+      venue: "kalshi",
+      categoryId,
+      page: parseAdjacentSearchPageCursor(cursor),
+      signal,
+    });
+  }
   if (isHostedWebClient() && kalshiCatalogFeed === "delayed") {
     return await fetchHostedAdjacentKalshiCatalogPage({
       searchQuery,
@@ -278,7 +304,6 @@ export async function loadMoreKalshiCatalog(
       page: parseHostedAdjacentKalshiPageCursor(cursor),
     });
   }
-  const normalizedQuery = searchQuery.trim().toLowerCase();
   const page = categoryId === "all"
     ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
     : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);
