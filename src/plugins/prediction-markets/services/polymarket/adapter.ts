@@ -18,13 +18,13 @@ import {
 } from "../fetch";
 import {
   normalizePolymarketCatalog,
-  reconcilePolymarketSearchEvents,
 } from "./normalize";
+import {
+  searchAdjacentCatalog,
+} from "../adjacent-search";
 import type {
   PolymarketEventRecord,
-  PolymarketSearchResponse,
 } from "./types";
-import { loadPolymarketEvent } from "./detail";
 
 export {
   normalizePolymarketCatalog,
@@ -60,17 +60,6 @@ function buildPolymarketCatalogUrl(
   url.searchParams.set("order", sortOrder);
   url.searchParams.set("ascending", sortOrder === "endDate" ? "true" : "false");
   if (tagSlug) url.searchParams.set("tag_slug", tagSlug);
-  return url.toString();
-}
-
-function buildPolymarketSearchUrl(query: string, limit = 40): string {
-  const url = new URL("https://gamma-api.polymarket.com/public-search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("limit_per_type", String(limit));
-  url.searchParams.set("search_profiles", "false");
-  url.searchParams.set("search_tags", "false");
-  url.searchParams.set("events_status", "open");
-  url.searchParams.set("optimized", "true");
   return url.toString();
 }
 
@@ -130,24 +119,14 @@ export async function loadPolymarketCatalog(
     resourceKey,
     async () => {
       if (normalizedQuery.length > 0) {
-        const response = await fetchJson<PolymarketSearchResponse>(
-          buildPolymarketSearchUrl(normalizedQuery, Math.min(40, pageLimit)),
-          options.signal,
-        );
-        const searchEvents = (response.events ?? []).slice(0, requestedLimit);
-        const hydratedEvents = await Promise.all(
-          searchEvents
-            .filter((event) => !event.markets?.length && event.id)
-            .map((event) => loadPolymarketEvent(event.id, options.signal)),
-        );
-        return normalizePolymarketCatalog(
-          reconcilePolymarketSearchEvents(
-            searchEvents,
-            hydratedEvents.filter((event): event is PolymarketEventRecord => event != null),
-          ),
-          normalizedQuery,
+        const searchResult = await searchAdjacentCatalog({
+          query: normalizedQuery,
+          venue: "polymarket",
           categoryId,
-        ).slice(0, requestedLimit);
+          browseTab,
+          page: 1,
+        });
+        return searchResult.markets.slice(0, requestedLimit);
       }
 
       if (categoryId !== "all") {
