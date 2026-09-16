@@ -1,4 +1,5 @@
 import type { TickerFinancials } from "../types/financials";
+import type { CloudFinancialsPayload } from "./types";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { CloudAuthApi } from "./auth";
 import { CloudChatApi } from "./chat";
@@ -923,14 +924,14 @@ class GloomApiClient {
     return this.data.getCloudFundamentals(symbol, exchange);
   }
 
-  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<TickerFinancials>> {
+  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudFinancialsPayload>> {
     return this.data.getCloudFinancials(symbol, exchange);
   }
 
   async getCloudFinancialsBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
-  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>> {
+  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudFinancialsPayload>>> {
     return this.data.getCloudFinancialsBatch(targets, mode);
   }
 

@@ -1,3 +1,4 @@
+import { sanitizeListingFinancialHistory } from "../listing-history";
 import type { MarketDataRequestContext } from "../../types/data-provider";
 import type { Quote, TickerFinancials } from "../../types/financials";
 import { normalizeTickerFinancialsPriceHistory } from "../../utils/price-history";
@@ -70,14 +71,15 @@ export class ProviderRouterPrimaryRoutes {
         if (resolvedValue && !context?.instrument && !providerFinancialsMatchTarget(resolvedValue, ticker, exchange)) continue;
         const value = resolvedValue ? dropUnusableProviderQuote(resolvedValue, exchange) : null;
         if (!value) continue;
+        const sanitized = sanitizeListingFinancialHistory(value, { symbol: ticker, exchange }, this.options.providerSourceKey(provider));
         const sourceKey = this.options.providerSourceKey(provider);
         const cacheValue = primaryResult
           ? {
-            annualStatements: value.annualStatements,
-            quarterlyStatements: value.quarterlyStatements,
+            annualStatements: sanitized.annualStatements,
+            quarterlyStatements: sanitized.quarterlyStatements,
             priceHistory: [],
           }
-          : value;
+          : sanitized;
         this.options.cacheResource(
           "financials",
           entityKey,
@@ -87,25 +89,25 @@ export class ProviderRouterPrimaryRoutes {
           this.options.resolveProviderPolicy("financials", provider),
         );
         if (!primaryResult) {
-          primaryResult = { sourceKey, value };
+          primaryResult = { sourceKey, value: sanitized };
           if (hasDetailedStatementRows(value) && hasDeepStatementHistory(value)) return primaryResult;
           continue;
         }
-        if (!primaryResult.value.quote && value.quote) {
+        if (!primaryResult.value.quote && sanitized.quote) {
           primaryResult = {
             sourceKey: primaryResult.sourceKey,
             value: mergeFinancials(primaryResult.value, {
               annualStatements: [],
               quarterlyStatements: [],
               priceHistory: [],
-              quote: value.quote,
+              quote: sanitized.quote,
             }) ?? primaryResult.value,
           };
         }
-        if (hasStatementRows(value)) {
+        if (hasStatementRows(sanitized)) {
           primaryResult = {
             sourceKey: primaryResult.sourceKey,
-            value: mergeMissingStatementArrays(primaryResult.value, value),
+            value: mergeMissingStatementArrays(primaryResult.value, sanitized),
           };
           if (hasDetailedStatementRows(primaryResult.value) && hasDeepStatementHistory(primaryResult.value)) return primaryResult;
         }

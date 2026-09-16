@@ -1,5 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { mapCloudFinancials, mapQuote } from "./normalizers";
+import type { CloudQuotePayload } from "../../api-client";
+
+describe("cloud quote wire values", () => {
+  test.each([null, undefined, Number.NaN, Infinity, -Infinity])(
+    "normalizes unavailable daily changes independently, including %s",
+    (missing) => {
+      const quote: CloudQuotePayload = {
+        symbol: "VOD", currency: "GBp", price: 100, lastUpdated: 1,
+        providerId: "gloomberb-cloud", dataSource: "delayed",
+        change: missing, changePercent: 0,
+      };
+      const withoutChange = mapQuote(quote);
+      expect(withoutChange.change).toBeNaN();
+      expect(withoutChange.changePercent).toBe(0);
+      const withoutPercent = mapQuote({ ...quote, change: 2, changePercent: missing });
+      expect(withoutPercent.change).toBe(0.02);
+      expect(withoutPercent.changePercent).toBeNaN();
+    },
+  );
+});
 
 describe("mapQuote session state", () => {
   const base = { price: 100, currency: "USD", change: 1, changePercent: 1, lastUpdated: Date.now() };

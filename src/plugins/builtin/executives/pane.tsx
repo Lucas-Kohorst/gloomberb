@@ -167,6 +167,27 @@ function ExecutiveRows({
   rows: CloudExecutiveRowPayload[];
   width: number;
 }) {
+  if (width < 52) {
+    return (
+      <Box flexDirection="column">
+        {rows.map((row) => (
+          <Box key={`${row.name}-${row.total}`} flexDirection="column">
+            <Box height={1} flexDirection="row">
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                {formatPay(row.total)}{" "}
+              </Text>
+              <Text fg={colors.textBright}>{row.name}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>
+                {[row.title, equityShare(row) ? `${equityShare(row)} equity` : null].filter(Boolean).join(" · ")}
+              </Text>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    );
+  }
   const totalWidth = 9;
   const equityWidth = 5;
   const nameWidth = Math.min(24, Math.max(10, ...rows.map((row) => row.name.length)));
@@ -203,7 +224,7 @@ function ExecutiveRows({
 function figuresOf(statement: CloudProxyStatementPayload) {
   const figures: Array<{ value: string; label: string; note?: string }> = [];
   const ceo = statement.ceo;
-  if (ceo?.total) {
+  if (ceo?.total != null && Number.isFinite(ceo.total)) {
     const change = formatChange(ceo.total, ceo.priorYearTotal);
     figures.push({
       value: formatPay(ceo.total),

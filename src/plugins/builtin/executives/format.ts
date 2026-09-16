@@ -1,4 +1,5 @@
 import type { CloudExecutiveRowPayload } from "../../../api-client";
+import { formatPercentRaw } from "../../../utils/format";
 
 /** "$36.3M", "$282K", "$50,000". */
 export function formatPay(value: number | null | undefined): string {
@@ -15,11 +16,16 @@ export function formatRatio(value: number | null | undefined): string {
   return `${Math.round(value)}:1`;
 }
 
-/** "+17%" or "-27%"; empty when either year is missing. */
-export function formatChange(current: number | null, prior: number | null): string {
-  if (!current || !prior || prior <= 0) return "";
-  const change = Math.round(((current - prior) / prior) * 100);
-  return `${change > 0 ? "+" : ""}${change}%`;
+/** Preserve the direction of small changes; empty without a valid comparison. */
+export function formatChange(
+  current: number | null | undefined,
+  prior: number | null | undefined,
+): string {
+  if (current == null || prior == null || !Number.isFinite(current) || !Number.isFinite(prior) || prior <= 0) return "";
+  const change = ((current - prior) / prior) * 100;
+  if (!Number.isFinite(change)) return "";
+  if (change !== 0 && Math.abs(change) < 0.01) return `${change > 0 ? "+" : "-"}<0.01%`;
+  return formatPercentRaw(change).replace(/\.00%$/, "%");
 }
 
 export function formatFiled(value: string | null): string {
@@ -27,6 +33,8 @@ export function formatFiled(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("en-US", {
+    // Filing and meeting dates are calendar labels, not local event times.
+    timeZone: "UTC",
     month: "short",
     day: "2-digit",
     year: "numeric",

@@ -6,6 +6,7 @@ import type {
   TickerFinancials,
 } from "../../types/financials";
 import {
+  type CloudFinancialsPayload,
   type CloudMarketBatchItem,
   type CloudMarketResponse,
   type CloudOptionsChainPayload,
@@ -16,6 +17,7 @@ import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../../utils/c
 import { resolveExchangeTimeZone } from "../../utils/exchanges";
 import { isCryptoMarketInstrument } from "../coingecko/ids";
 import { createProviderMiss } from "../provider-errors";
+import { retractKnownCloudValuation } from "./valuation-observations";
 
 export const GLOOMBERB_CLOUD_PROVIDER_ID = "gloomberb-cloud" as const;
 
@@ -46,6 +48,12 @@ export function mapQuote(
     quote.marketState == null && isCryptoMarketInstrument(quote.symbol, listingExchangeName)
       ? ("REGULAR" as const)
       : undefined;
+  const change = typeof quote.change === "number" && Number.isFinite(quote.change)
+    ? quote.change / divisor
+    : Number.NaN;
+  const changePercent = typeof quote.changePercent === "number" && Number.isFinite(quote.changePercent)
+    ? quote.changePercent
+    : Number.NaN;
   return {
     ...quote,
     ...(derivedMarketState
@@ -53,7 +61,8 @@ export function mapQuote(
       : {}),
     currency: currency || quote.currency,
     price: normalizePriceValueByDivisor(quote.price, divisor) ?? quote.price,
-    change: normalizePriceValueByDivisor(quote.change, divisor) ?? quote.change,
+    change,
+    changePercent,
     previousClose: normalizePriceValueByDivisor(quote.previousClose, divisor),
     high52w: normalizePriceValueByDivisor(quote.high52w, divisor),
     low52w: normalizePriceValueByDivisor(quote.low52w, divisor),
@@ -198,14 +207,15 @@ export function mapPricePoint(
 }
 
 export function mapCloudFinancials(
-  financials: TickerFinancials,
+  financials: CloudFinancialsPayload,
   providerMeta?: CloudProviderMeta,
+  target?: { symbol: string; exchange?: string },
 ): TickerFinancials {
-  const rawQuote = financials.quote as CloudQuotePayload | undefined;
+  const rawQuote = financials.quote;
   const quote = rawQuote ? mapQuote(rawQuote, providerMeta) : undefined;
   const divisor = rawQuote ? resolveCurrencyUnit(rawQuote.currency).divisor : 1;
   const exchange = rawQuote?.listingExchangeName ?? rawQuote?.exchangeName ?? "";
-  return {
+  return retractKnownCloudValuation({
     quote,
     quoteContributions: financials.quoteContributions,
     profile: financials.profile,
@@ -217,7 +227,7 @@ export function mapCloudFinancials(
         ? point
         : mapPricePoint(point as unknown as CloudPricePointPayload, divisor, exchange),
     ),
-  };
+  }, target);
 }
 
 export function mapOptionsChain(

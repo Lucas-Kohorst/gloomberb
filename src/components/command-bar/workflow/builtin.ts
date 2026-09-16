@@ -106,7 +106,6 @@ export function buildBuiltInWorkflowRoute(options: {
         route: buildCommandBarWorkflowRoute({
           workflowId: "builtin:set-portfolio-position",
           title: "Set Portfolio Position",
-          subtitle: "Create or update a manual position without leaving the command bar.",
           fields: workflow.fields,
           values: workflow.values,
           submitLabel: "Save Position",

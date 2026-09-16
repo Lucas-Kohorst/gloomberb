@@ -1,3 +1,4 @@
+import { sanitizeListingFinancialHistory } from "../listing-history";
 import type {
   CachedFinancialsTarget,
   DataProvider,
@@ -174,6 +175,7 @@ export class ProviderRouterBatchRoutes {
         if (value) value = dropUnusableProviderQuote(value, item.target.exchange);
         if (!value) continue;
         const sourceKey = this.deps.providerSourceKey(batchProvider);
+        value = sanitizeListingFinancialHistory(value, item.target, sourceKey);
         for (const entry of providerIndexes.get(key) ?? []) {
           const entityKey = this.deps.getEntityKey(entry.target.symbol, entry.target.instrument ?? undefined);
           const variantKey = this.deps.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";

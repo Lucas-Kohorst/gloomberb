@@ -14,7 +14,7 @@ function finiteNumber(value: unknown): value is number {
 }
 
 function percentChange(value: number, previousValue: number): number {
-  return previousValue !== 0 ? (value / previousValue) * 100 : 0;
+  return previousValue !== 0 ? (value / previousValue) * 100 : Number.NaN;
 }
 
 export function resolveBrokerPortfolioMarketValue(

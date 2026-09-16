@@ -52,6 +52,25 @@ async function writeConfigJson(dataDir: string, config: Record<string, unknown>)
 }
 
 describe("sanitizeLayout", () => {
+  test("disk reload keeps explicit public and broker selections for fixed panes and their followers", async () => {
+    const dataDir = await createTempConfigDir();
+    const selections = [
+      { kind: "fixed", symbol: "ASML:XAMS", instrument: null, listing: { name: "ASML", exchange: "AMS", currency: "EUR", type: "EQUITY" } },
+      { kind: "fixed", symbol: "ES", instrument: { brokerId: "ibkr", brokerInstanceId: "retirement", conId: 123, symbol: "ES", localSymbol: "ESZ6", secType: "FUT", exchange: "CME", primaryExchange: "CME", currency: "USD", lastTradeDateOrContractMonth: "20261218", multiplier: "50", tradingClass: "ES" } },
+      { kind: "fixed", symbol: "SPY", instrument: { brokerId: "ibkr", brokerInstanceId: "taxable", symbol: "SPY", secType: "OPT", exchange: "SMART", currency: "USD", lastTradeDateOrContractMonth: "20260918", right: "P", strike: 700, multiplier: "100" } },
+    ];
+    const layout = { dockRoot: null, instances: [
+      ...selections.map((binding, i) => ({ instanceId: `ticker-research:${i}`, paneId: "ticker-research", binding })),
+      { instanceId: "follower", paneId: "chart-composer", binding: { kind: "follow", sourceInstanceId: "ticker-research:1" } },
+    ], floating: [...selections.map((_, i) => `ticker-research:${i}`), "follower"].map(instanceId => ({ instanceId, x: 0, y: 0, width: 80, height: 24 })), detached: [] };
+    await writeConfigJson(dataDir, createSavedConfig({ layout, layouts: [{ name: "Contracts", layout }] }));
+    const loaded = await loadConfig(dataDir);
+    await saveConfig(loaded);
+    const reopened = await loadConfig(dataDir);
+    expect(reopened.layout.instances.map(pane => pane.binding)).toEqual(layout.instances.map(pane => pane.binding));
+    expect(reopened.layouts[0]?.layout.instances.map(pane => pane.binding)).toEqual(layout.instances.map(pane => pane.binding));
+  });
+
   test("preserves an intentionally blank layout", () => {
     expect(sanitizeLayout({
       dockRoot: null,

@@ -245,10 +245,15 @@ export function parsePublicTickerKey(value: string): { symbol: string; exchange?
   const normalized = normalizeSymbol(value);
   const separator = normalized.lastIndexOf(":");
   if (separator <= 0 || separator === normalized.length - 1) return { symbol: normalized };
-  return {
-    symbol: normalized.slice(0, separator),
-    exchange: canonicalExchange(normalized.slice(separator + 1)),
-  };
+  const exchange = canonicalExchange(normalized.slice(separator + 1));
+  let symbol = normalized.slice(0, separator);
+  // Older callers could append the same exchange more than once. Repair only
+  // repeated aliases of that exchange, preserving any other symbol content.
+  for (let nested = symbol.lastIndexOf(":"); nested > 0; nested = symbol.lastIndexOf(":")) {
+    if (canonicalExchange(symbol.slice(nested + 1)) !== exchange) break;
+    symbol = symbol.slice(0, nested);
+  }
+  return { symbol, exchange };
 }
 
 export function canonicalTickerKey(symbol: string, exchange?: string): string {
