@@ -77,6 +77,27 @@ describe("resolveTickerForPane", () => {
     expect(resolveTickerForPane(state, instance.instanceId)).toBe("MSFT");
   });
 
+  test("initializes ticker research from a pane-specific default tab", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const instance = createPaneInstance("ticker-research", {
+      instanceId: "ticker-research:AAPL:ESG",
+      binding: { kind: "fixed", symbol: "AAPL" },
+      settings: { defaultTabId: "esg" },
+    });
+    config.layout.instances.push(instance);
+    config.layout.floating.push({
+      instanceId: instance.instanceId,
+      x: 0,
+      y: 0,
+      width: 60,
+      height: 20,
+    });
+
+    const state = createInitialState(config);
+
+    expect(state.paneState[instance.instanceId]).toEqual({ activeTabId: "esg" });
+  });
+
   test("hydrates remembered pane-local tab and sort state from the previous session", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const sessionSnapshot: AppSessionSnapshot = {

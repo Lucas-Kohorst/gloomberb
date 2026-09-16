@@ -50,7 +50,11 @@ function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceCo
     };
   }
   if (instance.paneId === TICKER_RESEARCH_PANE_ID) {
-    return { activeTabId: "overview" };
+    const defaultTabId = typeof instance.settings?.defaultTabId === "string"
+      && instance.settings.defaultTabId.trim()
+      ? instance.settings.defaultTabId
+      : "overview";
+    return { activeTabId: defaultTabId };
   }
   return {};
 }
