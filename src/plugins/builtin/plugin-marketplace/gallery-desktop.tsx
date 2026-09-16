@@ -393,6 +393,7 @@ function PreviewPane({
           </Text>
         ) : null}
       </Box>
+      <Box height={3} flexShrink={0} />
     </Box>
   );
 }
