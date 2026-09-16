@@ -45,14 +45,14 @@ export async function searchPredictionInstruments(
   signal?: AbortSignal,
 ): Promise<PredictionMarketSummary[]> {
   const trimmed = query.trim();
-  const searchResult = await searchAdjacentCatalog({
-    query: trimmed,
-    browseTab: "top",
-    page: 1,
-  }).catch(() => ({ markets: [], hasMore: false, nextCursor: null }));
+  const empty = { markets: [] as PredictionMarketSummary[], hasMore: false, nextCursor: null };
+  const [kalshiResult, polyResult] = await Promise.all([
+    searchAdjacentCatalog({ query: trimmed, venue: "kalshi", page: 1, signal }).catch(() => empty),
+    searchAdjacentCatalog({ query: trimmed, venue: "polymarket", page: 1, signal }).catch(() => empty),
+  ]);
   if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 
-  const ranked = searchResult.markets
+  const ranked = [...kalshiResult.markets, ...polyResult.markets]
     .map((summary) => ({ summary, score: hitScore(trimmed, summary) }))
     .filter((entry) => entry.score >= 0)
     .sort((left, right) => (

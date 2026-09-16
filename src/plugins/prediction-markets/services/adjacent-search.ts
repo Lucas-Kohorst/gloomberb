@@ -1,5 +1,4 @@
 import type {
-  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
   PredictionVenue,
@@ -7,7 +6,12 @@ import type {
 import { matchesPredictionCategory } from "../categories";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import type { AdjacentMarket } from "../../builtin/adjacent/types";
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import type { AdjacentKalshiCatalogRow } from "./kalshi/adjacent-catalog";
+import {
+  fetchHostedAdjacentJson,
+  kalshiEventTickerFromAdjacent,
+} from "./kalshi/adjacent-catalog";
 
 const ADJACENT_SEARCH_PER_PAGE = 50;
 
@@ -17,21 +21,12 @@ export interface AdjacentSearchResult {
   nextCursor: string | null;
 }
 
-function adjacentSearchSortParams(
-  searchQuery: string,
-  browseTab: PredictionBrowseTab,
-): { sort?: string; sortDir?: string } {
-  if (searchQuery) return {};
-  if (browseTab === "ending") return { sort: "expiration", sortDir: "asc" };
-  return { sort: "volume", sortDir: "desc" };
-}
-
 function adjacentPlatformParam(
   venue: PredictionVenue | undefined,
 ): string | undefined {
   if (venue === "polymarket") return "polymarket";
   if (venue === "kalshi") return "kalshi";
-  return "kalshi,polymarket";
+  return undefined;
 }
 
 function platformFromMarketId(
@@ -43,23 +38,46 @@ function platformFromMarketId(
   return null;
 }
 
-function eventTickerFromAdjacentRow(
-  row: AdjacentKalshiCatalogRow,
-): string | undefined {
-  const fromEventId = row.event_id?.replace(/^(kalshi|polymarket):/i, "").trim();
-  if (fromEventId) return fromEventId;
-  return row.event_ticker?.trim();
+function stripPlatformPrefix(value: string | undefined): string | undefined {
+  const stripped = value?.replace(/^(kalshi|polymarket):/i, "").trim();
+  return stripped || undefined;
+}
+
+function polymarketEventSlugFromUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  return /\/event\/([^/?#]+)/.exec(url)?.[1] ?? undefined;
+}
+
+function isConditionId(value: string | undefined): boolean {
+  return !!value && /^0x[0-9a-f]+$/i.test(value);
 }
 
 function mapAdjacentSearchMarket(
   row: AdjacentKalshiCatalogRow,
 ): PredictionMarketSummary | null {
-  const marketId = row.market_id ?? row.id;
-  const platform = platformFromMarketId(marketId) ?? (row.platform?.trim().toLowerCase() as PredictionVenue | null);
+  const platform = platformFromMarketId(row.market_id ?? row.id)
+    ?? (row.platform?.trim().toLowerCase() as PredictionVenue | null);
   if (!platform || (platform !== "kalshi" && platform !== "polymarket")) return null;
 
-  const ticker = row.ticker?.trim() ?? marketId?.replace(/^(kalshi|polymarket):/i, "").trim() ?? "";
-  if (!ticker) return null;
+  const rawTicker = stripPlatformPrefix(row.ticker)
+    ?? stripPlatformPrefix(row.market_id ?? row.id)
+    ?? "";
+  const displayTicker = stripPlatformPrefix(row.display_ticker);
+  const link = row.link?.trim() || row.url?.trim() || "";
+  const eventSlug = polymarketEventSlugFromUrl(link);
+
+  let marketId: string;
+  let conditionId: string | undefined;
+  if (platform === "polymarket") {
+    if (isConditionId(rawTicker)) conditionId = rawTicker;
+    marketId = displayTicker
+      || (!isConditionId(rawTicker) ? rawTicker : "")
+      || eventSlug
+      || "";
+  } else {
+    marketId = rawTicker;
+  }
+  if (!marketId) return null;
 
   const yesPrice = row.probability != null ? row.probability / 100 : null;
   const yesBid = row.yes_bid != null ? row.yes_bid / 100 : null;
@@ -68,36 +86,39 @@ function mapAdjacentSearchMarket(
   const noAsk = row.no_ask != null ? row.no_ask / 100 : null;
   const lastTradePrice = row.last_trade_price != null ? row.last_trade_price / 100 : yesPrice;
   const noPrice = yesPrice != null ? Math.max(0, 1 - yesPrice) : null;
-  const eventTicker = eventTickerFromAdjacentRow(row);
-  const eventId = row.event_id?.trim() || eventTicker;
-  const title = (row.question ?? row.title ?? ticker).trim();
-  const outcomeLabel = eventTicker && ticker.startsWith(`${eventTicker}-`)
-    ? ticker.slice(eventTicker.length + 1)
+  const eventTicker = platform === "kalshi"
+    ? kalshiEventTickerFromAdjacent(row, marketId)
+    : undefined;
+  const eventId = platform === "polymarket"
+    ? stripPlatformPrefix(row.event_id) || eventSlug
+    : undefined;
+  const title = (row.question ?? row.title ?? marketId).trim();
+  const outcomeLabel = eventTicker && marketId.startsWith(`${eventTicker}-`)
+    ? marketId.slice(eventTicker.length + 1)
     : "";
   const marketLabel = outcomeLabel || row.subtitle?.trim() || title;
   const eventLabel = (row.event_title ?? title).trim();
   const category = row.category?.trim();
 
   return {
-    key: `${platform}:${ticker}`,
+    key: `${platform}:${marketId}`,
     venue: platform,
-    marketId: ticker,
+    marketId,
     title,
     marketLabel,
     eventLabel,
     eventId,
     eventTicker,
-    seriesTicker: row.series_ticker?.trim() || ticker.split("-")[0] || undefined,
+    seriesTicker: row.series_ticker?.trim() || marketId.split("-")[0] || undefined,
     category,
     tags: category
       ? [category]
       : [],
     status: row.status === "active" ? "open" : (row.status ?? "unknown"),
-    url: row.link?.trim()
-      || row.url?.trim()
+    url: link
       || (platform === "kalshi"
-        ? `https://kalshi.com/markets/${ticker}`
-        : `https://polymarket.com/event/${ticker}`),
+        ? `https://kalshi.com/markets/${marketId}`
+        : `https://polymarket.com/event/${marketId}`),
     description: "",
     endsAt: row.end_date ?? row.ends_at ?? null,
     updatedAt: row.updated_at ?? null,
@@ -118,6 +139,7 @@ function mapAdjacentSearchMarket(
     openInterestUnit: "usd",
     liquidity: null,
     liquidityUnit: "usd",
+    conditionId,
   };
 }
 
@@ -132,6 +154,7 @@ function adjacentMarketToCatalogRow(market: AdjacentMarket): AdjacentKalshiCatal
     market_id: marketId,
     id: rawId,
     ticker: rawTicker,
+    display_ticker: (raw.display_ticker as string) || undefined,
     platform: market.platform,
     question,
     title: question,
@@ -155,11 +178,23 @@ function adjacentMarketToCatalogRow(market: AdjacentMarket): AdjacentKalshiCatal
     link: (raw.link as string) ?? market.url,
     url: market.url,
     event_id: (raw.event_id as string) ?? market.event_id,
+    event_ticker: (raw.event_ticker as string) || undefined,
     event_title: (raw.event_title as string) ?? market.event_title,
     created_at: null,
     updated_at: market.updated_at,
     series_ticker: rawTicker.split("-")[0] || undefined,
   };
+}
+
+function marketsFromAdjacentResponse(response: {
+  data?: AdjacentMarket[];
+  markets?: AdjacentMarket[];
+  next_cursor?: string | null;
+  meta?: { has_next?: boolean };
+}): { rawMarkets: AdjacentMarket[]; hasMore: boolean } {
+  const rawMarkets = response.data ?? response.markets ?? [];
+  const hasMore = response.next_cursor != null || response.meta?.has_next === true;
+  return { rawMarkets, hasMore };
 }
 
 export function adjacentSearchPageCursor(page: number): string {
@@ -180,24 +215,43 @@ export async function searchAdjacentCatalog(options: {
   query: string;
   venue?: PredictionVenue;
   categoryId?: PredictionCategoryId;
-  browseTab?: PredictionBrowseTab;
   page?: number;
+  signal?: AbortSignal;
 }): Promise<AdjacentSearchResult> {
   const query = options.query.trim();
   const categoryId = options.categoryId ?? "all";
   const page = options.page ?? 1;
+  const signal = options.signal;
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 
-  const client = getSharedAdjacentClient();
   const platform = adjacentPlatformParam(options.venue);
-  const response = await client.searchMarkets(
-    query,
-    ADJACENT_SEARCH_PER_PAGE,
-    platform,
-  );
+  let response: {
+    data?: AdjacentMarket[];
+    markets?: AdjacentMarket[];
+    next_cursor?: string | null;
+    meta?: { has_next?: boolean };
+  };
 
-  const rawMarkets = (response as unknown as { data?: AdjacentMarket[] }).data
-    ?? response.markets
-    ?? [];
+  if (isHostedWebClient()) {
+    const search: Record<string, string | number | undefined> = {
+      search: query,
+      per_page: ADJACENT_SEARCH_PER_PAGE,
+      page,
+      platform,
+      scope: "all",
+    };
+    response = await fetchHostedAdjacentJson<typeof response>("markets", search, signal);
+  } else {
+    const client = getSharedAdjacentClient();
+    response = await client.searchMarkets(query, ADJACENT_SEARCH_PER_PAGE, platform, {
+      page,
+      signal,
+    });
+  }
+
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+
+  const { rawMarkets, hasMore } = marketsFromAdjacentResponse(response);
   const markets = rawMarkets
     .map(adjacentMarketToCatalogRow)
     .map(mapAdjacentSearchMarket)
@@ -207,8 +261,6 @@ export async function searchAdjacentCatalog(options: {
     ? markets
     : markets.filter((market) => matchesPredictionCategory(market, categoryId));
 
-  const rawMeta = (response as unknown as { meta?: { has_next?: boolean } }).meta;
-  const hasMore = response.next_cursor != null || rawMeta?.has_next === true;
   return {
     markets: filtered,
     hasMore,

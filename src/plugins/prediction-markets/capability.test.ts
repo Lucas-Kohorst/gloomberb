@@ -63,26 +63,27 @@ test("catalog limit bounds provider search hydration", async () => {
       if (isPolymarket) {
         data.push(
           ...Array.from({ length: 5 }, (_, index) => ({
-            market_id: `polymarket:market-${index + 1}`,
-            ticker: `market-${index + 1}`,
+            market_id: `polymarket:0x${String(index + 1).padStart(8, "0")}`,
+            ticker: `0x${String(index + 1).padStart(8, "0")}`,
+            display_ticker: `will-rates-event-${index + 1}`,
             platform: "polymarket",
             question: `Rates event-${index + 1}`,
             status: "active",
             probability: 50,
-            event_id: `polymarket:event-${index + 1}`,
+            link: `https://polymarket.com/event/rates-event-${index + 1}`,
             event_title: `Rates event-${index + 1}`,
           })),
         );
       }
       if (isKalshi) {
         data.push({
-          market_id: "kalshi:KAL-1",
-          ticker: "KAL-1",
+          market_id: "kalshi:KXFED-26SEP-T3.00",
+          ticker: "KXFED-26SEP-T3.00",
+          display_ticker: "KXFED-26SEP-T3.00",
           platform: "kalshi",
           question: "Kalshi rates",
           status: "active",
           probability: 50,
-          event_id: "kalshi:EVT-1",
           event_title: "Kalshi event",
         });
       }
@@ -242,25 +243,38 @@ test("polymarket pans request and cache their bounded history windows", async ()
   expect(panned.points[0]?.date.toISOString()).toBe("2026-02-01T00:00:01.000Z");
 });
 
-test("aborting catalog search does not corrupt subsequent searches", async () => {
+test("aborting catalog search abandons the in-flight Adjacent request", async () => {
   attachPredictionMarketsPersistence(new MemoryPersistence());
   let searchRequests = 0;
-  setHttpFetchTransport(async (url) => {
+  let markStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const liveRow = {
+    market_id: "polymarket:0xabc",
+    ticker: "0xabc",
+    display_ticker: "will-rates",
+    platform: "polymarket",
+    question: "Rates",
+    status: "active",
+    probability: 50,
+    link: "https://polymarket.com/event/rates-event",
+    event_title: "Rates",
+  };
+  setHttpFetchTransport(async (url, init) => {
     if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
       searchRequests += 1;
-      return json({
-        data: [{
-          market_id: "polymarket:market-1",
-          ticker: "market-1",
-          platform: "polymarket",
-          question: "Rates",
-          status: "active",
-          probability: 50,
-          event_id: "polymarket:event-1",
-          event_title: "Rates",
-        }],
-        meta: { has_next: false },
-      });
+      if (searchRequests === 1) {
+        markStarted?.();
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+      }
+      return json({ data: [liveRow], meta: { has_next: false } });
     }
     if (url.includes("api.elections.kalshi.com")) return json({ events: [] });
     throw new Error(`Unexpected URL ${url}`);
@@ -272,6 +286,7 @@ test("aborting catalog search does not corrupt subsequent searches", async () =>
     limit: 1,
     signal: controller.signal,
   });
+  await started;
   controller.abort();
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 

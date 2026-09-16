@@ -239,8 +239,8 @@ export async function loadKalshiCatalog(
           query: normalizedQuery,
           venue: "kalshi",
           categoryId,
-          browseTab,
           page: 1,
+          signal: options.signal,
         });
         rememberKalshiCursor(normalizedQuery, categoryId, searchResult.nextCursor);
         return searchResult.markets.slice(0, requestedLimit);
@@ -294,6 +294,7 @@ export async function loadMoreKalshiCatalog(
       venue: "kalshi",
       categoryId,
       page: parseAdjacentSearchPageCursor(cursor),
+      signal,
     });
   }
   if (isHostedWebClient() && kalshiCatalogFeed === "delayed") {

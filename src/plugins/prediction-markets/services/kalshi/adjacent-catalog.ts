@@ -142,12 +142,14 @@ function hostedAdjacentCandidateUrls(
 export async function fetchHostedAdjacentJson<T>(
   keyPath: string,
   search?: Record<string, string | number | undefined>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const urls = hostedAdjacentCandidateUrls(keyPath, search);
   let lastError: unknown;
   for (const [index, url] of urls.entries()) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
     try {
-      const result = await fetchJson<T>(url);
+      const result = await fetchJson<T>(url, signal);
       hostedAdjacentPathMode = url.includes(ADJACENT_PUBLIC_ORIGIN)
         ? "public-origin"
         : "feed";

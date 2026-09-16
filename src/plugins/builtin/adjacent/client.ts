@@ -219,10 +219,11 @@ function adjacentPriceInterval(interval: string): string {
 async function adjacentFetchJson<T>(
   url: string,
   apiKey: string | null | undefined,
+  signal?: AbortSignal,
 ): Promise<T> {
   return withConnectionRequest("adjacent", "fetch", async () => {
     const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
-    const response = await ADJACENT_FETCH.fetch(url, { headers });
+    const response = await ADJACENT_FETCH.fetch(url, { headers, signal });
     if (!response.ok) {
       if (response.status === 401) {
         throw new Error("Adjacent request unauthorized.");
@@ -357,16 +358,17 @@ export class AdjacentClient {
     query: string,
     limit = 30,
     platform?: string,
+    options?: { page?: number; signal?: AbortSignal },
   ): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(this.marketsPath(), {
       search: query,
       per_page: limit,
-      page: 1,
+      page: options?.page ?? 1,
       platform,
       scope: this.isPublic ? "all" : undefined,
     });
     // Don't cache search results persistently
-    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey, options?.signal);
   }
 
   async getMarket(id: string): Promise<AdjacentMarketDetail> {

@@ -123,8 +123,8 @@ export async function loadPolymarketCatalog(
           query: normalizedQuery,
           venue: "polymarket",
           categoryId,
-          browseTab,
           page: 1,
+          signal: options.signal,
         });
         return searchResult.markets.slice(0, requestedLimit);
       }

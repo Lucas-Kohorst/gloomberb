@@ -1,7 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { setHttpFetchTransport } from "../../../../utils/http-transport";
 import {
   buildPredictionMarketResultItems,
   looksLikePredictionInstrumentQuery,
+  searchPredictionInstruments,
 } from "./prediction-results";
 import type { PredictionMarketSummary } from "../../../../plugins/prediction-markets/types";
 
@@ -67,5 +69,30 @@ describe("buildPredictionMarketResultItems", () => {
     ]);
     items[0]?.action();
     expect(opened).toEqual(["KXCLANCY-YES"]);
+  });
+});
+
+describe("searchPredictionInstruments", () => {
+  afterEach(() => {
+    setHttpFetchTransport(null);
+  });
+
+  test("issues separate Kalshi and Polymarket Adjacent searches", async () => {
+    const requested: string[] = [];
+    setHttpFetchTransport(async (url) => {
+      requested.push(url);
+      return new Response(JSON.stringify({ data: [], meta: { has_next: false } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    await searchPredictionInstruments("fed decision");
+
+    const kalshi = requested.find((url) => url.includes("platform=kalshi") && !url.includes("platform=kalshi,"));
+    const poly = requested.find((url) => url.includes("platform=polymarket"));
+    expect(kalshi).toContain("search=fed");
+    expect(poly).toContain("search=fed");
+    expect(requested.some((url) => url.includes("platform=kalshi,polymarket"))).toBe(false);
   });
 });

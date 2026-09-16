@@ -1204,7 +1204,11 @@ describe("prediction markets plugin registration and services", () => {
           headers: { "x-gloom-kalshi-source": "kalshi" },
         });
       }
-      if (url.includes("api.adjacent.markets/api/v1/markets") || url.includes("/api/data/adjacent/markets")) {
+      if (
+        url.includes("api.adjacent.markets/api/v1/markets")
+        || url.includes("/api/data/adjacent/markets")
+        || (url.includes("/api/feed/mkt/markets") && url.includes("search="))
+      ) {
         return new Response(JSON.stringify({ data: [], meta: { has_next: false } }), { status: 200 });
       }
       throw new Error(`Unexpected hosted catalog URL: ${url}`);
@@ -1221,9 +1225,8 @@ describe("prediction markets plugin registration and services", () => {
 
       fetchUrls.length = 0;
       await loadKalshiCatalog("nba", "all", "top", { force: true });
-      expect(fetchUrls.some((url) =>
-        (url.includes("api.adjacent.markets") || url.includes("/api/data/adjacent/")) && url.includes("search=nba"),
-      )).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("/api/feed/mkt/markets") && url.includes("search=nba"))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("/api/data/adjacent"))).toBe(false);
     } finally {
       delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
     }
