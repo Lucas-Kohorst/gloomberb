@@ -373,7 +373,7 @@ describe("PaneFooterBar", () => {
     expect(openCount).toBe(1);
   });
 
-  test("spaces non-prefix hints and wraps extra actions onto a second row", async () => {
+  test("keeps hints compact and wraps extra actions onto a second row", async () => {
     testSetup = await testRender(<CrowdedFooterHarness />, { width: 42, height: 2 });
     await act(async () => {
       await testSetup!.renderOnce();
