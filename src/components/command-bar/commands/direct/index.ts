@@ -9,6 +9,7 @@ import { exportConfig, importConfig, resetAllData } from "../../../../data/confi
 import { HostedConfigImportCancelledError } from "../../../../data/config/hosted-file-ops";
 import { isHostedWebClient } from "../../../../shared/hosted-api";
 import type { PluginRegistry } from "../../../../plugins/registry";
+import { openMarketplaceTab } from "../../../../plugins/builtin/marketplace";
 import {
   applyTheme,
   clearTransientThemePreview,
@@ -91,7 +92,7 @@ export function runDirectCommandAction(options: {
       return;
     case "layout-marketplace":
       closeAll({ revertThemePreview: false });
-      pluginRegistry.showPane("layout-marketplace");
+      openMarketplaceTab(pluginRegistry, "layouts");
       return;
     case "pane-settings":
       if (state.focusedPaneId) openPaneSettingsRoute(state.focusedPaneId);

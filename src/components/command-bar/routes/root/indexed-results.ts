@@ -1,5 +1,5 @@
 import { t } from "../../../../i18n";
-import { PLUGIN_MARKETPLACE_TEMPLATE_ID } from "../../../../plugins/builtin/plugin-marketplace";
+import { MARKETPLACE_TEMPLATE_ID } from "../../../../plugins/builtin/marketplace";
 import {
   enabledNewsFeedNamesFromPluginConfig,
 } from "../../../../plugins/builtin/news/wire/feed-config";
@@ -222,4 +222,4 @@ export function buildPluginFallbackItem(onOpenMarketplace: () => void): ResultIt
   };
 }
 
-export { PLUGIN_MARKETPLACE_TEMPLATE_ID };
+export { MARKETPLACE_TEMPLATE_ID };

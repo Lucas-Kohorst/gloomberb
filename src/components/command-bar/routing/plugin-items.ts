@@ -1,5 +1,5 @@
 import type { Dispatch } from "react";
-import { PLUGIN_MARKETPLACE_TEMPLATE_ID } from "../../../plugins/builtin/plugin-marketplace";
+import { MARKETPLACE_TEMPLATE_ID } from "../../../plugins/builtin/marketplace";
 import { nextDisabledPluginIds } from "../../../plugins/builtin/plugin-market/rows";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { AppAction, AppState } from "../../../state/app/context";
@@ -20,15 +20,15 @@ export function marketplaceJumpMatchesQuery(query: string): boolean {
 export function buildMarketplaceJumpItem(pluginRegistry: PluginRegistry): ResultItem {
   return {
     id: "plugin-market-open",
-    label: "Plugin Marketplace",
-    detail: "Search installed and GitHub plugins, then install, toggle, update, or remove",
+    label: "Marketplace",
+    detail: "Browse plugins and shared layouts",
     category: "Plugins",
     kind: "action",
-    right: "PLUG",
-    shortcutQuery: "PLUG",
+    right: "MARKET",
+    shortcutQuery: "MARKET",
     defaultSelectable: false,
     action: () => {
-      pluginRegistry.createPaneFromTemplate(PLUGIN_MARKETPLACE_TEMPLATE_ID);
+      pluginRegistry.createPaneFromTemplate(MARKETPLACE_TEMPLATE_ID);
     },
   };
 }

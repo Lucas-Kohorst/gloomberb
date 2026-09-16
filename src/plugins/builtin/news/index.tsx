@@ -148,7 +148,6 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
     onBookmark: toggleArticleSaved,
-    savedCount: savedArticleIds.size,
     onRefresh: equityNews && instrument
       ? () => {
         void getSharedNewsService()?.load({

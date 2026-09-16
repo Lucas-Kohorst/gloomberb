@@ -25,7 +25,7 @@ describe("Factory droid-exec provider", () => {
   });
 
   test("teaches themed layout.new with panes across multiple themes, not name-only", () => {
-    expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"panes":["polls","congress-trades","adjacent-indices","prediction-markets","news-firehose"]');
+    expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"panes":["polls","congress-trades","adjacent","prediction-markets","news-firehose"]');
     expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"panes":["portfolio-list","ticker-research","market-movers","fear-greed","sectors"]');
     expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"panes":["econ-calendar","yield-curve","world-indices","treasury-auctions","federal-register","news-firehose"]');
     expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"panes":["news-firehose","news-top-pane","substack-pane","macro-tv-pane","twitter-feed-pane"]');

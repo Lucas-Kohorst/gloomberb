@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AumPane } from "./pane";
@@ -14,27 +15,15 @@ export const assetsUnderManagementModule: PluginModule = {
     });
   },
 
-  panes: [
-    {
-      id: "assets-under-management",
-      name: "Assets Under Management",
-      icon: "A",
-      component: AumPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 80, height: 20 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "assets-under-management-pane",
-      paneId: "assets-under-management",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Assets Under Management",
       description: "Market cap, shares outstanding, fund size, and AUM metrics.",
       keywords: ["aum", "assets", "under", "management", "market cap", "fund size", "shares"],
       shortcut: "AUM",
+      settings: () => ({ defaultTabId: "assets-under-management" }),
     }),
   ],
 };

@@ -281,7 +281,7 @@ describe("CommandBar pane and layout routes", () => {
 
     await clickFrameText("Layouts");
 
-    expect(opened).toEqual(["layout-marketplace"]);
+    expect(opened).toEqual(["marketplace"]);
   });
 
   test("renders filtered saved layouts with textual previews", async () => {

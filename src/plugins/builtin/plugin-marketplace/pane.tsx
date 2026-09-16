@@ -42,7 +42,7 @@ import { DetailRow } from "./detail-row";
 import { getMarketplaceHost, getPluginInstaller, getPluginRemover } from "./store";
 import { statusOf } from "./status";
 
-export const PLUGIN_MARKETPLACE_PANE_ID = "plugin-marketplace";
+export const PLUGIN_MARKETPLACE_PANE_ID = "marketplace";
 
 type ColumnId = "name" | "tagline" | "stars" | "status";
 type Column = DataTableColumn & { id: ColumnId };

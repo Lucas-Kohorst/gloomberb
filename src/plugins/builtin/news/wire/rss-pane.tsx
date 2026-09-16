@@ -585,12 +585,11 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       paneSearchHint(focusSearch),
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "bookmark", key: "b", label: "ookmark", onPress: bookmarkSelectedArticle }] : []),
-      ...(savedArticleIds.size > 0 ? [{ id: "view-saved", key: "v", label: "iew saved", onPress: openSavedNewsPane }] : []),
       ...(readableArticle ? [{ id: "share", key: "s", label: "hare", onPress: shareSelectedArticle }] : []),
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, bookmarkSelectedArticle, detailArticle, focusSearch, loading, onManageFeeds, openSavedNewsPane, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, savedArticleIds.size, shareSelectedArticle, updatedAgo]);
+  }), [archiveAction.archive, archiveAction.enabled, bookmarkSelectedArticle, detailArticle, focusSearch, loading, onManageFeeds, openSavedNewsPane, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle, updatedAgo]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;

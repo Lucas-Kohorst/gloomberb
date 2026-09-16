@@ -103,7 +103,7 @@ export function LayoutMarketplaceGallery({
 
   const close = useCallback(() => {
     if (onClose) onClose();
-    else pluginRegistry.hidePane("layout-marketplace");
+    else pluginRegistry.hidePane("marketplace");
   }, [onClose, pluginRegistry]);
 
   const activate = useCallback((entry: GalleryEntry) => {

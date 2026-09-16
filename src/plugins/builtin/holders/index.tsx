@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
@@ -21,27 +22,15 @@ export const holdersModule: PluginModule = {
     });
   },
 
-  panes: [
-    {
-      id: "holders",
-      name: "Holders",
-      icon: "H",
-      component: HoldersView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 105, height: 34 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "holders-pane",
-      paneId: "holders",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Holders",
       description: "Institutional holders for the selected ticker.",
       keywords: ["holders", "ownership", "institutional", "owners", "hds"],
       shortcut: "HDS",
+      settings: () => ({ defaultTabId: "holders" }),
     }),
   ],
 };

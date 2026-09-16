@@ -16,6 +16,7 @@ import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { truncateWithEllipsis as truncateText } from "../../../utils/text-wrap";
 import { parseForm4Xml, type InsiderTransaction } from "./insider-data";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   buildInsiderTransactionDetailBody,
@@ -287,28 +288,16 @@ function InsiderView({ width, height, focused }: { width: number; height: number
 }
 
 export const insiderModule: PluginModule = {
-  panes: [
-    {
-      id: "insider",
-      name: "Insider",
-      icon: "I",
-      component: InsiderView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 30 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "insider-pane",
-      paneId: "insider",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Insider",
       description: "Insider transaction activity for the selected ticker.",
       keywords: ["insider", "form 4", "ownership", "transactions", "ins"],
       shortcut: "INS",
       canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
+      settings: () => ({ defaultTabId: "insider" }),
     }),
   ],
 

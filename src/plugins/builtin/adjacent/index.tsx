@@ -13,9 +13,7 @@ import {
 } from "./client";
 import { useAppSelector } from "../../../state/app/context";
 import { byokKeysConfigSelector } from "../account-management/ai-providers";
-import { AdjacentIndicesPane } from "./indices";
-import { AdjacentRatesPane } from "./rates";
-import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
+import { AdjacentPane } from "./pane";
 import { createAdjacentNewsCapability } from "./news";
 import { createAdjacentCatalogSearchProvider } from "./command-bar-search";
 import { createCftcDocumentSearchProvider } from "./document-search";
@@ -57,51 +55,21 @@ function useAdjacentClient(): AdjacentClient {
   return client;
 }
 
-function AdjacentIndicesPaneWrapper(props: PaneProps) {
+function AdjacentPaneWrapper(props: PaneProps) {
   const client = useAdjacentClient();
-  return <AdjacentIndicesPane client={client} {...props} />;
-}
-
-function AdjacentRatesPaneWrapper(props: PaneProps) {
-  const client = useAdjacentClient();
-  return <AdjacentRatesPane client={client} {...props} />;
-}
-
-function AdjacentFilingsPaneWrapper(props: PaneProps) {
-  const client = useAdjacentClient();
-  return <AdjacentFilingsPane client={client} {...props} />;
+  return <AdjacentPane client={client} {...props} />;
 }
 
 const adjacentMarketsModule: PluginModule = {
   panes: [
     {
-      id: "adjacent-indices",
-      name: "Adjacent Indices",
+      id: "adjacent",
+      name: "Adjacent",
       icon: "A",
-      component: AdjacentIndicesPaneWrapper,
+      component: AdjacentPaneWrapper,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 30 },
-      tableExport: true,
-    },
-    {
-      id: "adjacent-rates",
-      name: "Adjacent Rates",
-      icon: "A",
-      component: AdjacentRatesPaneWrapper,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 60, height: 24 },
-      tableExport: true,
-    },
-    {
-      id: "cftc-filings",
-      name: "CFTC Filings",
-      icon: "C",
-      component: AdjacentFilingsPaneWrapper,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 32 },
       tableExport: true,
     },
   ],
@@ -109,7 +77,7 @@ const adjacentMarketsModule: PluginModule = {
   paneTemplates: [
     {
       id: "adjacent-indices-pane",
-      paneId: "adjacent-indices",
+      paneId: "adjacent",
       label: "Adjacent Indices",
       description: "Browse Adjacent prediction-market indices (RED, BLUE, NTI, house). Chart one with G ADJ:red.",
       keywords: [
@@ -135,13 +103,13 @@ const adjacentMarketsModule: PluginModule = {
         const query = (options?.arg ?? "").trim();
         return {
           placement: "floating",
-          ...(query ? { params: { query }, title: query } : {}),
+          ...(query ? { params: { query }, settings: { defaultTabId: "indices", query }, title: query } : { settings: { defaultTabId: "indices" } }),
         };
       },
     },
     {
       id: "adjacent-rates-pane",
-      paneId: "adjacent-rates",
+      paneId: "adjacent",
       label: "Adjacent Reference Rates",
       description: "Cross-platform prediction market reference rates with source markets. Chart one with G ADJ:house.",
       keywords: ["adjacent", "rates", "reference", "prediction", "markets", "benchmarks"],
@@ -156,13 +124,13 @@ const adjacentMarketsModule: PluginModule = {
         const query = (options?.arg ?? "").trim();
         return {
           placement: "floating",
-          ...(query ? { params: { query }, title: query } : {}),
+          ...(query ? { params: { query }, settings: { defaultTabId: "rates", query }, title: query } : { settings: { defaultTabId: "rates" } }),
         };
       },
     },
     {
       id: "cftc-filings-pane",
-      paneId: "cftc-filings",
+      paneId: "adjacent",
       label: "CFTC Filings",
       description:
         "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or pass chart to open a stacked DCM-products-by-exchange chart.",
@@ -187,7 +155,11 @@ const adjacentMarketsModule: PluginModule = {
         argOptional: true,
       },
       createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
-        return createCftcBrowserInstance("cftc", "CFTC", options);
+        const query = (options?.arg ?? "").trim();
+        return {
+          placement: "floating",
+          ...(query ? { params: { query }, settings: { defaultTabId: "cftc", query }, title: `CFTC ${query.toUpperCase()}` } : { settings: { defaultTabId: "cftc" } }),
+        };
       },
     },
   ],

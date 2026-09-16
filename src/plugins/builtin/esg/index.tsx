@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { EsgPane } from "./pane";
@@ -14,26 +15,15 @@ export const esgModule: PluginModule = {
     });
   },
 
-  panes: [
-    {
-      id: "esg",
-      name: "ESG & Climate",
-      icon: "E",
-      component: EsgPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 70, height: 24 },
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "esg-pane",
-      paneId: "esg",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "ESG & Climate",
       description: "ESG scores, carbon emissions, climate risk, and peer/sector comparison.",
       keywords: ["esg", "climate", "carbon", "sustainability", "emissions", "controversy"],
       shortcut: "ESG",
+      settings: () => ({ defaultTabId: "esg" }),
     }),
   ],
 };

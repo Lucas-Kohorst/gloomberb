@@ -50,9 +50,12 @@ function createTickerSurfacePaneInstance(
   viewKey?: string,
 ): PaneTemplateInstanceConfig | null {
   const ticker = resolveTickerSurfaceSymbol(context, options);
+  const defaultTabId = typeof settings?.defaultTabId === "string" ? settings.defaultTabId : undefined;
   return ticker
     ? {
-      instanceId: buildTickerSurfaceInstanceId(paneId, ticker, viewKey),
+      // A tab-specific shortcut must not reuse an existing ticker-research
+      // instance that is currently showing another tab.
+      instanceId: buildTickerSurfaceInstanceId(paneId, ticker, viewKey ?? defaultTabId),
       title: `${titlePrefix} ${ticker}`,
       binding: { kind: "fixed", symbol: ticker },
       placement: "floating",
