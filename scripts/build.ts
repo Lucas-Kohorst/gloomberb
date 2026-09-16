@@ -158,8 +158,12 @@ async function build(targetConfig: BuildTarget) {
   const target = `bun-${bunOs}-${arch}`;
   console.log(`Building ${target}...`);
   writeFileSync(compileEntry, buildCompileEntrySource(nativePackageName));
+  // `--production` is the only switch that flips both the JSX transform and
+  // React itself to production builds. Setting NODE_ENV in the environment or
+  // through --define leaves jsxDEV calls behind that resolve to nothing at
+  // runtime, so the binary crashes on first render.
   const buildExitCode = await runProcess(
-    ["bun", "build", "--compile", `--target=${target}`, compileEntry, `--outfile=${outfile}`],
+    ["bun", "build", "--compile", "--production", `--target=${target}`, compileEntry, `--outfile=${outfile}`],
     `Failed to build ${target}`,
     { env: { ...process.env, GLOOMBERB_API_URL: "https://api.gloom.sh" } },
     true,
