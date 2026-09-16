@@ -282,6 +282,7 @@ export async function createPaneTemplateOrThrow(
     return;
   }
   const spec = createInstanceResult ?? {};
+  spec.placement = "floating";
 
   // Reuse an existing instance with the same pane id + binding + params +
   // settings instead of opening a duplicate (e.g. re-running `SEC AAPL`).
