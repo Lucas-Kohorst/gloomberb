@@ -31,6 +31,6 @@ describe("terminalPaneHeaderTitleHit", () => {
       fullscreen: true,
     });
     expect(geometry.controls.toggle).toBeNull();
-    expect(geometry.controls.close?.text).toBe(" _ ");
+    expect(geometry.controls.close?.text).toBe("_");
   });
 });

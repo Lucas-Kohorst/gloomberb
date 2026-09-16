@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { apiClient } from "../api-client";
 import { rememberLayoutRequirements } from "../components/layout/missing-pane";
 import type { PluginRegistry } from "../plugins/registry";
+import { openMarketplaceTab } from "../plugins/builtin/marketplace";
 import { teamStore } from "../plugins/builtin/cloud/team/store";
 import { useAppDispatch, useAppSelector } from "../state/app/context";
 import { selectSavedLayouts } from "../state/selectors-ui";
@@ -66,7 +67,7 @@ export function useLinkedLayoutSync(pluginRegistry: PluginRegistry): void {
           pluginRegistry.notify({
             body: `The team published "${cloud.name}" r${cloud.revision}. You have local edits; open LAY to pull or publish.`,
             type: "info",
-            action: { label: "Open", onClick: () => pluginRegistry.showPane("layout-marketplace") },
+            action: { label: "Open", onClick: () => openMarketplaceTab(pluginRegistry, "layouts") },
           });
         }
         checkedRef.current.set(origin.layoutId, cloud.revision);

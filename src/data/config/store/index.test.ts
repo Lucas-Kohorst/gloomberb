@@ -128,13 +128,13 @@ describe("sanitizeLayout", () => {
 
     expect(DEFAULT_ADJACENT_LAYOUT.instances.map((instance) => instance.instanceId)).toEqual([
       "portfolio-list:adjacent",
-      "adjacent-indices:main",
+      "adjacent:main",
       "polls:main",
       "news-firehose:main",
     ]);
     expect(getDockedPaneIds(DEFAULT_ADJACENT_LAYOUT)).toEqual([
       "portfolio-list:adjacent",
-      "adjacent-indices:main",
+      "adjacent:main",
       "polls:main",
       "news-firehose:main",
     ]);
@@ -147,7 +147,7 @@ describe("sanitizeLayout", () => {
       },
     });
     expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "news-firehose:main")?.paneId).toBe("news-firehose");
-    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "adjacent-indices:main")?.paneId).toBe("adjacent-indices");
+    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "adjacent:main")?.paneId).toBe("adjacent");
     expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "polls:main")?.paneId).toBe("polls");
   });
 
@@ -1076,7 +1076,7 @@ describe("loadConfig", () => {
     expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
     expect(getDockedPaneIds(config.layouts[2]!.layout)).toEqual([
       "portfolio-list:adjacent",
-      "adjacent-indices:main",
+      "adjacent:main",
       "polls:main",
       "news-firehose:main",
     ]);
@@ -1098,7 +1098,7 @@ describe("loadConfig", () => {
     expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
     expect(getDockedPaneIds(config.layouts[2]!.layout)).toEqual([
       "portfolio-list:adjacent",
-      "adjacent-indices:main",
+      "adjacent:main",
       "polls:main",
       "news-firehose:main",
     ]);

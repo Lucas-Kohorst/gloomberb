@@ -14,7 +14,7 @@ export function LayoutMarketplacePane({ focused, width, height }: PaneProps) {
       focused={focused}
       width={width}
       height={height}
-      onClose={() => hidePane("layout-marketplace")}
+      onClose={() => hidePane("marketplace")}
     />
   );
 }

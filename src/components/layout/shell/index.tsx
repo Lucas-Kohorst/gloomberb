@@ -65,6 +65,7 @@ import {
   useShellVisibleLayout,
 } from "./layout-state";
 import { AuthDialogHost } from "../../../plugins/builtin/cloud/auth-dialog";
+import { openMarketplaceTab } from "../../../plugins/builtin/marketplace";
 import { DeviceSignInDialogHost } from "../../../plugins/builtin/cloud/device-signin-dialog";
 import { useShellPaneActions } from "./pane/actions";
 import {
@@ -322,7 +323,7 @@ export function Shell({
   });
   const hitPaneRetry = usePaneRetry();
   const openLayoutGallery = useCallback(() => {
-    pluginRegistry.showPane("layout-marketplace");
+    openMarketplaceTab(pluginRegistry, "layouts");
   }, [pluginRegistry]);
   const setTransientFocusLayout = useCallback((next: TransientFocusLayoutState | null) => {
     transientFocusLayoutStateRef.current = next;

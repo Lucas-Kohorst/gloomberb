@@ -1,4 +1,5 @@
 import type { PaneSettingsDef, TickerResearchTabPrefetchContext } from "../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { OptionsView } from "./view";
@@ -70,18 +71,6 @@ function optionsSettings(settings: Record<string, unknown>): PaneSettingsDef {
 export const optionsModule: PluginModule = {
   panes: [
     {
-      id: "options",
-      name: "Options",
-      icon: "O",
-      component: OptionsView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 112, height: 28 },
-      quickSettings: [LIVE_STREAMING_QUICK_SETTING],
-      settings: (context) => withLiveStreamingSetting(optionsSettings(context.settings), context.settings),
-      tableExport: true,
-    },
-    {
       id: OPTIONS_VOL_SURFACE_PANE_ID,
       name: "Vol Surface",
       icon: "V",
@@ -97,12 +86,13 @@ export const optionsModule: PluginModule = {
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "options-pane",
-      paneId: "options",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Options",
       description: "Options chain for the selected ticker.",
       keywords: ["options", "chain", "calls", "puts", "omon"],
       shortcut: "OMON",
       publicShare: true,
+      settings: () => ({ defaultTabId: "options" }),
     }),
     createTickerSurfacePaneTemplate({
       id: "options-vol-surface-pane",

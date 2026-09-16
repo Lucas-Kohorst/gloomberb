@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { registerConnectionSource } from "../connections/register";
@@ -48,28 +49,16 @@ export const shortInterestModule: PluginModule = {
     resetShortInterestHealth();
   },
 
-  panes: [
-    {
-      id: "short-interest",
-      name: "Short Interest",
-      icon: "S",
-      component: ShortInterestView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 90, height: 25 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "short-interest-pane",
-      paneId: "short-interest",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Short Interest",
       // Yahoo's key-statistics module only carries the current and prior settlement dates.
       description: "Bi-monthly short interest settlements from FINRA with days to cover and average daily volume.",
       keywords: ["short", "interest", "si", "shorts", "borrow", "days", "cover"],
       shortcut: "SI",
+      settings: () => ({ defaultTabId: "short-interest" }),
     }),
   ],
 };

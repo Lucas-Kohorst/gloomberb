@@ -1,8 +1,8 @@
 import { displayWidth } from "../../../utils/format";
 
-export const PANE_HEADER_ACTION = " ... ";
-export const PANE_HEADER_CLOSE = " x ";
-export const PANE_HEADER_RESTORE = " _ ";
+export const PANE_HEADER_ACTION = "...";
+export const PANE_HEADER_CLOSE = "x";
+export const PANE_HEADER_RESTORE = "_";
 export const PANE_HEADER_TILED = "T▦";
 export const PANE_HEADER_FLOATING = "F◇";
 export const PANE_HEADER_GRIP = ":: ";

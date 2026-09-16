@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { esgModule } from "./index";
 
 describe("esgModule", () => {
-  test("registers an ESG pane with the correct id", () => {
-    const pane = esgModule.panes?.[0];
-    expect(pane?.id).toBe("esg");
-    expect(pane?.name).toBe("ESG & Climate");
+  test("registers ESG as a Ticker Research tab", () => {
+    expect(esgModule.panes ?? []).toHaveLength(0);
   });
 
   test("registers a pane template with the ESG shortcut prefix", () => {
     const template = esgModule.paneTemplates?.[0];
     expect(template?.id).toBe("esg-pane");
-    expect(template?.paneId).toBe("esg");
+    expect(template?.paneId).toBe("ticker-research");
     expect(template?.shortcut?.prefix).toBe("ESG");
     expect(template?.shortcut?.argKind).toBe("ticker");
     expect(template?.shortcut?.argPlaceholder).toBe("ticker");
