@@ -76,6 +76,23 @@ describe("adjacent catalog search", () => {
     expect(predictionSeriesId(market!)).toBe("kalshi/KXFED-26SEP/KXFED-26SEP-T3.00");
   });
 
+  test("falls back to a meaningful token when Adjacent AND search finds no phrase match", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    const requested: string[] = [];
+    setHttpFetchTransport(async (url) => {
+      requested.push(url);
+      if (url.includes("search=fed+decision")) {
+        return json({ data: [], meta: { has_next: false } });
+      }
+      return json({ data: [KALSHI_LIVE], meta: { has_next: false } });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "fed decision", venue: "kalshi" });
+    expect(markets[0]?.marketId).toBe("KXFED-26SEP-T3.00");
+    expect(requested.some((url) => url.includes("search=fed+decision"))).toBe(true);
+    expect(requested.some((url) => url.includes("search=fed"))).toBe(true);
+  });
+
   test("sends the Adjacent page cursor on load-more", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     const requested: string[] = [];

@@ -36,6 +36,7 @@ interface UseCommandBarRootRuntimeOptions {
   buildLayoutItems(query: string, options?: { confirmDangerousActions?: boolean }): ResultItem[];
   buildPaneSettingItems(paneId: string | null, query: string): ResultItem[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
+  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
   buildTickerSearchResultItems(candidates: TickerSearchCandidate[], query: string): ResultItem[];
   buildWindowModeItems(arg: string): ResultItem[];
   createPaneTemplateItem(template: PaneTemplateDef, options?: {
@@ -104,6 +105,7 @@ export function useCommandBarRootRuntime({
   buildLayoutItems,
   buildPaneSettingItems,
   buildRecentTickerItem,
+  buildRecentArticleItem,
   buildTickerSearchResultItems,
   buildWindowModeItems,
   createPaneTemplateItem,
@@ -183,6 +185,7 @@ export function useCommandBarRootRuntime({
     availableCommands,
     buildLayoutItems,
     buildRecentTickerItem,
+    buildRecentArticleItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -214,6 +217,7 @@ export function useCommandBarRootRuntime({
     availableCommands,
     buildLayoutItems,
     buildRecentTickerItem,
+    buildRecentArticleItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,

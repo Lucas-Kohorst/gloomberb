@@ -160,7 +160,11 @@ export async function loadPolymarketCatalog(
       return normalizePolymarketCatalog(pages, "", categoryId).slice(0, requestedLimit);
     },
     PREDICTION_CACHE_POLICIES.catalog,
-    options,
+    {
+      ...options,
+      // Search results must not be served from a previous empty/stale query.
+      force: options.force || normalizedQuery.length > 0,
+    },
   );
 }
 

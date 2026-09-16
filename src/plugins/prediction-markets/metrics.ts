@@ -1,7 +1,7 @@
 import { colors } from "../../theme/colors";
 import { formatCompact, formatNumber, formatTimeAgo } from "../../utils/format";
 import { compareSortValues } from "../../utils/sort-values";
-import { matchesPredictionSearchHaystack } from "./search";
+import { matchesPredictionSearchHaystack, predictionSearchTokens } from "./search";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -234,9 +234,13 @@ function matchesPredictionSearchQuery(
   market: PredictionListRow,
   searchQuery: string,
 ): boolean {
-  return matchesPredictionSearchHaystack(
-    predictionSearchHaystack(market),
-    searchQuery,
+  const haystack = predictionSearchHaystack(market);
+  if (matchesPredictionSearchHaystack(haystack, searchQuery)) return true;
+  // Adjacent may have to fall back from an AND query such as "fed decision"
+  // to one meaningful token. Keep those returned rows visible instead of
+  // applying the stricter original query a second time in the pane.
+  return predictionSearchTokens(searchQuery).some((token) =>
+    matchesPredictionSearchHaystack(haystack, token),
   );
 }
 
