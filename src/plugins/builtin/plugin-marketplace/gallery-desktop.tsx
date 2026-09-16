@@ -306,7 +306,7 @@ function PreviewPane({
         : null;
 
   return (
-    <Box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} data-gloom-role="plugin-gallery-preview">
+    <Box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} paddingBottom={2} position="relative" data-gloom-role="plugin-gallery-preview">
       <Box
         height={3}
         flexDirection="column"
@@ -361,6 +361,7 @@ function PreviewPane({
         flexDirection="row"
         alignItems="center"
         paddingX={1}
+        marginBottom={3}
         flexShrink={0}
         style={{ borderTop: `1px solid ${colors.border}` }}
       >
@@ -438,7 +439,7 @@ export function PluginGalleryDesktop({
   return (
     <Box
       width={width}
-      height={height}
+      height={Math.max(1, height - 1)}
       flexDirection="row"
       overflow="hidden"
       data-gloom-role="plugin-gallery"

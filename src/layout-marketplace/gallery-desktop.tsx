@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import {
   PaneSidebar,
   PaneSidebarRow,
@@ -163,7 +163,7 @@ function PreviewPane({ controller, entry }: { controller: LayoutGalleryControlle
   ].filter(Boolean).join(" · ");
 
   return (
-    <Box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} data-gloom-role="layout-gallery-preview">
+    <Box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} paddingBottom={2} position="relative" data-gloom-role="layout-gallery-preview">
       <Box
         height={3}
         flexDirection="column"
@@ -209,6 +209,7 @@ function PreviewPane({ controller, entry }: { controller: LayoutGalleryControlle
         flexDirection="row"
         alignItems="center"
         paddingX={1}
+        marginBottom={3}
         flexShrink={0}
         style={{ borderTop: `1px solid ${colors.border}` }}
       >

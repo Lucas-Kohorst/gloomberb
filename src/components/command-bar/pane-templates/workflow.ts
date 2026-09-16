@@ -89,6 +89,7 @@ export function useCommandBarPaneTemplateActions({
       type: "RECORD_COMMAND",
       id: `pane-template:${template.id}`,
       label: getPaneTemplateDisplayLabel(template),
+      ...(options?.arg?.trim() ? { arg: options.arg.trim() } : {}),
     });
     openWorkflowRoute(buildPaneTemplateWorkflowRoute({
       activeTicker: activeTickerSymbol,
@@ -105,6 +106,7 @@ export function useCommandBarPaneTemplateActions({
       type: "RECORD_COMMAND",
       id: `pane-template:${template.id}`,
       label: getPaneTemplateDisplayLabel(template),
+      ...((createOptions?.arg ?? "").trim() ? { arg: createOptions!.arg!.trim() } : {}),
     });
     try {
       await pluginRegistry.createPaneFromTemplateAsyncFn(template.id, createOptions);

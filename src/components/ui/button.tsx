@@ -89,6 +89,18 @@ export function Button({
       onMouseDown={() => {
         if (!disabled) onPress?.();
       }}
+      onKeyDown={(event: { key?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+        if (disabled || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        onPress?.();
+      }}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
+      data-gloom-role="terminal-button"
+      data-gloom-interactive={disabled ? undefined : "true"}
+      style={{ cursor: disabled ? "default" : "pointer" }}
     >
       <Text fg={palette.fg} attributes={active ? TextAttributes.BOLD : 0}>
         {` ${label} `}

@@ -40,21 +40,27 @@ export function MarketplacePane({ focused, width, height, ...paneProps }: PanePr
         onSelect={(value) => setActiveTab(value as MarketplaceTab)}
         focused={focused}
       />
-      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
-        <Box flexGrow={1} flexBasis={0} minHeight={0} marginBottom={2} overflow="hidden">
+      <Box height={contentHeight} flexGrow={0} flexShrink={0} overflow="hidden">
+        <Box
+          height={Math.max(1, contentHeight - 4)}
+          flexGrow={0}
+          flexShrink={0}
+          minHeight={0}
+          overflow="hidden"
+        >
           {activeTab === "plugins" ? (
             <PluginMarketplacePane
               {...paneProps}
               focused={focused}
               width={width}
-              height={Math.max(1, contentHeight - 2)}
+              height={Math.max(1, contentHeight - 4)}
             />
           ) : registry ? (
             <LayoutMarketplaceGallery
               pluginRegistry={registry}
               focused={focused}
               width={width}
-              height={Math.max(1, contentHeight - 2)}
+              height={Math.max(1, contentHeight - 4)}
               onClose={() => hidePane("marketplace")}
             />
           ) : null}

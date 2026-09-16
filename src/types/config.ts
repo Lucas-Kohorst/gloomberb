@@ -166,6 +166,8 @@ export interface OnboardingProgress {
 export interface RecentCommand {
   id: string;
   label: string;
+  /** Argument used when the command or pane was opened, such as a ticker or search. */
+  arg?: string;
 }
 
 export interface AppConfig {
@@ -197,7 +199,7 @@ export interface AppConfig {
   /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
   fontFamily: string;
   recentTickers: string[];
-  /** Recently executed command-bar commands and pane templates, newest first. */
+  /** Recently executed command-bar commands, pane templates, and searches, newest first. */
   recentCommands: RecentCommand[];
   /** User overrides for global and plugin-registered keyboard shortcuts. */
   keybindings?: Record<string, KeybindingConfig>;

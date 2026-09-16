@@ -40,6 +40,7 @@ import { attachSubstackPersistence } from "../../substack/api/store";
 import {
   buildOpenArticleCommandResults,
   cachedNewsArticles,
+  createNewsArticleSearchProvider,
   cancelRssNewsWarm,
   loadNewsArticles,
   openNewsArticle,
@@ -317,6 +318,7 @@ export const newsWireModule: PluginModule = {
     ctx.registerCapability(source);
     attachSubstackPersistence(ctx.persistence);
     ctx.registerCapability(createSubstackNewsCapability());
+    ctx.registerCommandBarSearchProvider(createNewsArticleSearchProvider(ctx));
     disposeSubstackConnection = registerConnectionSource({
       id: "substack",
       name: "Substack",

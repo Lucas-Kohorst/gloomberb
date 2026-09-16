@@ -136,7 +136,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "RECORD_COMMAND":
       return {
         ...state,
-        recentCommands: nextRecentCommands(state.recentCommands, { id: action.id, label: action.label }),
+        recentCommands: nextRecentCommands(state.recentCommands, {
+          id: action.id,
+          label: action.label,
+          ...(action.arg?.trim() ? { arg: action.arg.trim() } : {}),
+        }),
       };
 
     case "SET_ACTIVE_PANEL": {

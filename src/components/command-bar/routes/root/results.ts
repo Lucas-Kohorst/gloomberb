@@ -64,6 +64,7 @@ export interface RootResultModelOptions {
   getAvailablePaneShortcutTemplates: (query: string) => PaneTemplateDef[];
   /** Looks a recorded `pane-template:<id>` entry back up for re-execution. */
   getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  runRecentActivity?: (entry: AppState["recentCommands"][number]) => void;
   hasPaneSettings: (paneId: string) => boolean;
   localTickerSearchResultItems: (query?: string, options?: { category?: string; limit?: number }) => ResultItem[];
   nonShortcutPaneTemplateItems: (filterQuery?: string) => ResultItem[];
@@ -137,6 +138,7 @@ function buildRecentResultItems(options: {
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
   createPaneTemplateItem: (template: PaneTemplateDef, options?: PaneTemplateItemOptions) => ResultItem;
   getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  runRecentActivity?: (entry: AppState["recentCommands"][number]) => void;
   recentCommands: AppState["recentCommands"];
   recentTickers: string[];
   runDirectCommand: (command: Command, arg: string) => void;
@@ -146,6 +148,7 @@ function buildRecentResultItems(options: {
     buildRecentTickerItem = () => null,
     createPaneTemplateItem,
     getRecentPaneTemplate = () => undefined,
+    runRecentActivity,
     recentCommands,
     recentTickers,
     runDirectCommand,
@@ -156,17 +159,31 @@ function buildRecentResultItems(options: {
     if (item) items.push({ ...item, category: "Recent" });
   }
   for (const recent of recentCommands) {
+    if (recent.id === "ticker-search" || recent.id === "article-search") {
+      const isArticleSearch = recent.id === "article-search";
+      items.push({
+        id: `recent:${recent.id}:${recent.arg ?? recent.label}`,
+        label: recent.arg || recent.label,
+        detail: isArticleSearch ? "Article search" : "Ticker search",
+        category: "Recent",
+        kind: "search",
+        right: isArticleSearch ? "ART" : "DES",
+        searchText: `${recent.label} ${recent.arg ?? ""} ${isArticleSearch ? "article news headline" : "ticker search"}`,
+        action: () => runRecentActivity?.(recent),
+      });
+      continue;
+    }
     const command = availableCommands.find((entry) => entry.id === recent.id);
     if (command) {
       items.push({
         id: `recent:command:${command.id}`,
         label: recent.label,
-        detail: command.description,
+        detail: recent.arg ? `${command.description} · ${recent.arg}` : command.description,
         category: "Recent",
         kind: "command",
         shortcutQuery: command.prefix || undefined,
-        searchText: recent.label,
-        action: () => runDirectCommand(command, ""),
+        searchText: `${recent.label} ${recent.arg ?? ""}`,
+        action: () => runRecentActivity?.(recent) ?? runDirectCommand(command, recent.arg ?? ""),
       });
       continue;
     }
@@ -174,9 +191,10 @@ function buildRecentResultItems(options: {
       const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
       if (!template) continue;
       items.push({
-        ...createPaneTemplateItem(template),
+        ...createPaneTemplateItem(template, recent.arg ? { createOptions: { arg: recent.arg } } : undefined),
         id: `recent:${recent.id}`,
         category: "Recent",
+        ...(recent.arg ? { detail: recent.arg } : {}),
       });
     }
   }
@@ -200,6 +218,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
     getRecentPaneTemplate,
+    runRecentActivity,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
@@ -244,6 +263,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     buildRecentTickerItem,
     createPaneTemplateItem,
     getRecentPaneTemplate,
+    runRecentActivity,
     recentCommands: state.recentCommands ?? [],
     recentTickers: state.recentTickers ?? [],
     runDirectCommand,

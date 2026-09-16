@@ -644,4 +644,21 @@ describe("recent commands ring", () => {
     next = appReducer(next, { type: "RECORD_COMMAND", id: "a", label: "Alpha" });
     expect(next.recentCommands.map((entry) => entry.id)).toEqual(["a", "b"]);
   });
+
+  test("keeps separate arguments for recent searches and pane opens", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    let next = appReducer(state, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "AAPL",
+    });
+    next = appReducer(next, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "MSFT",
+    });
+    expect(next.recentCommands.map((entry) => entry.arg)).toEqual(["MSFT", "AAPL"]);
+  });
 });

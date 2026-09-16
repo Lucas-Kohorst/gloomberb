@@ -101,6 +101,12 @@ export function useCommandBarDirectCommandRuntime({
       closeAll({ revertThemePreview: false });
       return;
     }
+    dispatch({
+      type: "RECORD_COMMAND",
+      id: "ticker-search",
+      label: "Ticker Search",
+      arg: trimmed,
+    });
     openModeRoute("ticker-search", trimmed);
   }, [
     activeCollectionId,
@@ -112,7 +118,12 @@ export function useCommandBarDirectCommandRuntime({
   ]);
 
   const runDirectCommand = useCallback((command: Command, arg: string) => {
-    dispatch({ type: "RECORD_COMMAND", id: command.id, label: command.label });
+    dispatch({
+      type: "RECORD_COMMAND",
+      id: command.id,
+      label: command.label,
+      ...(arg.trim() ? { arg: arg.trim() } : {}),
+    });
     runDirectCommandAction({
       activeCollectionId,
       activeTickerSymbol,

@@ -28,7 +28,7 @@ export function getAvailableCommandBarSearchProviders(
 export function toProviderResultItem(
   provider: CommandBarSearchProvider,
   result: CommandBarResultDef,
-  onExecuted: () => void,
+  onExecuted: (providerId: string) => void,
 ): ResultItem {
   return {
     id: `search-provider:${provider.id}:${result.id}`,
@@ -44,7 +44,7 @@ export function toProviderResultItem(
     action: async () => {
       if (result.disabled) return;
       await result.execute();
-      onExecuted();
+      onExecuted(provider.id);
     },
   };
 }
@@ -61,7 +61,7 @@ interface UseCommandBarSearchProvidersOptions {
   /** False while a route is open or a prefix already claimed the query. */
   enabled: boolean;
   context: CommandBarSearchContext;
-  onExecuted: () => void;
+  onExecuted: (providerId: string) => void;
 }
 
 /**
@@ -124,7 +124,7 @@ export function useCommandBarSearchProviders({
           items: results.map((result) => toProviderResultItem(
             provider,
             result,
-            () => onExecutedRef.current(),
+            (providerId) => onExecutedRef.current(providerId),
           )),
         },
       }));

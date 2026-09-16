@@ -1,8 +1,17 @@
-import type { CommandResultDef, PaneTemplateCreateOptions } from "../../../../types/plugin";
+import type {
+  CommandBarResultDef,
+  CommandBarSearchProvider,
+  CommandResultDef,
+  GloomPluginContext,
+  PaneTemplateCreateOptions,
+} from "../../../../types/plugin";
 import type { NewsArticle } from "../../../../news/types";
 import { getSharedNewsService } from "../../../../news/hooks";
 import { scheduleOnIdle } from "../../../../utils/schedule-on-idle";
-import { NEWS_ARTICLE_READER_TEMPLATE_ID } from "../../shared/article-pop-out";
+import {
+  NEWS_ARTICLE_READER_TEMPLATE_ID,
+  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+} from "../../shared/article-pop-out";
 import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { stashNewsArticle } from "./news/article-stash";
 
@@ -171,7 +180,11 @@ export function openNewsArticle(
   createPaneFromTemplate: (templateId: string, options?: PaneTemplateCreateOptions) => void,
 ): void {
   stashNewsArticle(article);
-  createPaneFromTemplate(NEWS_ARTICLE_READER_TEMPLATE_ID, {
+  const templateId = article.origin === "substack-news" || article.origin === "substack"
+    || article.id.startsWith("substack:")
+    ? SUBSTACK_ARTICLE_READER_TEMPLATE_ID
+    : NEWS_ARTICLE_READER_TEMPLATE_ID;
+  createPaneFromTemplate(templateId, {
     arg: article.id,
     values: {
       title: article.title,
@@ -206,6 +219,33 @@ export function buildOpenArticleCommandResults(
     ],
     execute: () => openNewsArticle(article, createPaneFromTemplate),
   }));
+}
+
+export function createNewsArticleSearchProvider(
+  ctx: GloomPluginContext,
+): CommandBarSearchProvider {
+  return {
+    id: "news-articles",
+    category: "Articles",
+    priority: 120,
+    minQueryLength: 3,
+    debounceMs: 250,
+    async provide(query, _context, signal): Promise<CommandBarResultDef[]> {
+      const [newsArticles, adjacentArticles] = await Promise.all([
+        loadNewsArticles().catch(() => [] as NewsArticle[]),
+        searchAdjacentRelatedArticles(query),
+      ]);
+      if (signal.aborted) return [];
+      return buildOpenArticleCommandResults(
+        [...newsArticles, ...adjacentArticles],
+        query,
+        ctx.createPaneFromTemplate,
+      ).map((result) => ({
+        ...result,
+        category: "Articles",
+      }));
+    },
+  };
 }
 
 export function cachedNewsArticles(): NewsArticle[] {

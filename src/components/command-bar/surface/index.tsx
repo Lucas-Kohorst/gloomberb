@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataProvider } from "../../../types/data-provider";
 import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
+import type { AppState } from "../../../state/app/context";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutBounds } from "../../../plugins/pane-manager";
 import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
@@ -230,6 +231,20 @@ export function CommandBar({
     (id: string) => pluginRegistry.paneTemplates.get(id),
     [pluginRegistry],
   );
+  const recordArticleSearch = useCallback((query: string) => {
+    const arg = query.trim();
+    if (!arg) return;
+    dispatch({ type: "RECORD_COMMAND", id: "article-search", label: "Article Search", arg });
+  }, [dispatch]);
+  const runRecentActivity = useCallback((entry: AppState["recentCommands"][number]) => {
+    if (entry.id === "ticker-search") {
+      openModeRoute("ticker-search", entry.arg ?? entry.label);
+      return;
+    }
+    if (entry.id === "article-search") {
+      setRootQuery(entry.arg ?? entry.label);
+    }
+  }, [openModeRoute, setRootQuery]);
 
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
@@ -295,6 +310,7 @@ export function CommandBar({
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
+        recordArticleSearch(rootQuery);
         openNewsArticle(article, (templateId, options) => {
           pluginRegistry.createPaneFromTemplate(templateId, options);
         });
@@ -311,6 +327,7 @@ export function CommandBar({
     newsState.phase,
     newsCacheVersion,
     pluginRegistry,
+    recordArticleSearch,
     rootQuery,
     warmingNewsCache,
   ]);
@@ -505,9 +522,10 @@ export function CommandBar({
     activeTicker: activeTickerSymbol,
     activeCollectionId,
   }), [activeCollectionId, activeTickerSymbol]);
-  const closeAfterProviderResult = useCallback(() => {
+  const closeAfterProviderResult = useCallback((providerId: string) => {
+    if (providerId === "news-articles") recordArticleSearch(rootQuery);
     closeAll({ revertThemePreview: false });
-  }, [closeAll]);
+  }, [closeAll, recordArticleSearch, rootQuery]);
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
     query: rootQuery.replace(/^\s*(ART|LAW|ETF)\s+/i, ""),
@@ -607,6 +625,7 @@ export function CommandBar({
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
     getRecentPaneTemplate,
+    runRecentActivity,
     getTickers: getTickerSearchTickers,
     hasPaneSettings,
     localTickerSearchResultItems,

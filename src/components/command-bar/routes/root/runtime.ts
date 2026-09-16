@@ -53,6 +53,7 @@ interface UseCommandBarRootRuntimeOptions {
   ): void | Promise<void>;
   getAvailablePaneShortcutTemplates(query: string): PaneTemplateDef[];
   getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  runRecentActivity?: (entry: AppState["recentCommands"][number]) => void;
   getTickers(): AppState["tickers"];
   hasPaneSettings(paneId: string): boolean;
   localTickerSearchResultItems(query?: string, options?: { category?: string; limit?: number }): ResultItem[];
@@ -113,6 +114,7 @@ export function useCommandBarRootRuntime({
   executeCollectionCommand,
   getAvailablePaneShortcutTemplates,
   getRecentPaneTemplate,
+  runRecentActivity,
   getTickers,
   hasPaneSettings,
   localTickerSearchResultItems,
@@ -191,6 +193,7 @@ export function useCommandBarRootRuntime({
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
     getRecentPaneTemplate,
+    runRecentActivity,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
@@ -222,6 +225,7 @@ export function useCommandBarRootRuntime({
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
     getRecentPaneTemplate,
+    runRecentActivity,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,

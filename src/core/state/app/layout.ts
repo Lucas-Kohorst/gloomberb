@@ -203,10 +203,14 @@ export function nextRecentCommands(
   entry: RecentCommand | null,
 ): RecentCommand[] {
   if (!entry || !entry.id || !entry.label) return [...current];
-  const next = [entry, ...current.filter((existing) => existing.id !== entry.id)]
+  const next = [entry, ...current.filter((existing) => (
+    existing.id !== entry.id || existing.arg !== entry.arg
+  ))]
     .slice(0, RECENT_COMMANDS_LIMIT);
   if (next.length === current.length && next.every((candidate, index) => (
-    candidate.id === current[index]?.id && candidate.label === current[index]?.label
+    candidate.id === current[index]?.id
+    && candidate.label === current[index]?.label
+    && candidate.arg === current[index]?.arg
   ))) {
     return [...current];
   }
