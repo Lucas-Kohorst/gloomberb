@@ -94,7 +94,7 @@ describe("FloatingPaneWrapper", () => {
         flexDirection: "row",
         alignItems: "center",
         position: "relative",
-        gap: 1,
+        gap: 0,
         zIndex: 2,
       }),
       expect.objectContaining({

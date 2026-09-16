@@ -230,7 +230,8 @@ export function normalizePaneId(paneId: string): string {
   ) {
     return CHART_COMPOSER_PANE_ID;
   }
-  if (paneId === "plugin-discovery" || paneId === "plugin-market") return "plugin-marketplace";
+  if (paneId === "plugin-discovery" || paneId === "plugin-market" || paneId === "plugin-marketplace") return "marketplace";
+  if (paneId === "layout-marketplace") return "marketplace";
   if (paneId === "commodities") return "futures";
   return paneId;
 }
@@ -459,7 +460,7 @@ export const DEFAULT_ADJACENT_LAYOUT: LayoutConfig = {
         kind: "split",
         axis: "horizontal",
         ratio: 0.5,
-        first: { kind: "pane", instanceId: "adjacent-indices:main" },
+        first: { kind: "pane", instanceId: "adjacent:main" },
         second: { kind: "pane", instanceId: "polls:main" },
       },
     },
@@ -479,8 +480,8 @@ export const DEFAULT_ADJACENT_LAYOUT: LayoutConfig = {
       binding: { kind: "none" },
     },
     {
-      instanceId: "adjacent-indices:main",
-      paneId: "adjacent-indices",
+      instanceId: "adjacent:main",
+      paneId: "adjacent",
       binding: { kind: "none" },
     },
     {

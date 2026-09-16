@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import type { PaneSettingsContext, PaneSettingsDef, TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
@@ -82,35 +83,6 @@ export const researchModule: PluginModule = {
 
   panes: [
     {
-      id: "analyst-research",
-      name: "Analyst Research",
-      icon: "A",
-      component: AnalystResearchView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 90, height: 28 },
-      tableExport: true,
-    },
-    {
-      id: "equity-diagnostic",
-      name: "Equity Diagnostic",
-      icon: "D",
-      component: EquityDiagnosticView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 96, height: 30 },
-    },
-    {
-      id: "corporate-actions",
-      name: "Corporate Actions",
-      icon: "E",
-      component: CorporateActionsView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 104, height: 24 },
-      tableExport: true,
-    },
-    {
       id: "relative-valuation",
       name: "Relative Valuation",
       icon: "R",
@@ -146,30 +118,33 @@ export const researchModule: PluginModule = {
   paneTemplates: [
     createTickerSurfacePaneTemplate({
       id: "analyst-research-pane",
-      paneId: "analyst-research",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Analyst Research",
       description: "Price targets, recommendations, and recent analyst actions.",
       keywords: ["analyst", "research", "ratings", "target", "anr"],
       shortcut: "ANR",
       publicShare: true,
+      settings: () => ({ defaultTabId: "analyst-research" }),
     }),
     createTickerSurfacePaneTemplate({
       id: "equity-diagnostic-pane",
-      paneId: "equity-diagnostic",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Equity Diagnostic",
       description: "Red flags, anomalies, green flags, and watch items for one company, with cited evidence.",
       keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
       shortcut: "DIAG",
       publicShare: true,
+      settings: () => ({ defaultTabId: "equity-diagnostic" }),
     }),
     createTickerSurfacePaneTemplate({
       id: "corporate-actions-pane",
-      paneId: "corporate-actions",
+      paneId: TICKER_RESEARCH_PANE_ID,
       label: "Corporate Actions",
       description: "Dividends, splits, reported earnings, and analyst estimates.",
       keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "estimate", "revenue", "evt"],
       shortcut: "EVT",
       publicShare: true,
+      settings: () => ({ defaultTabId: "corporate-actions" }),
     }),
     createTickerSurfacePaneTemplate({
       id: "earnings-estimates-pane",

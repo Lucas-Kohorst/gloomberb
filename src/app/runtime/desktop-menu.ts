@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch } from "react";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
+import { openMarketplaceTab } from "../../plugins/builtin/marketplace";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
@@ -47,7 +48,7 @@ export function useDesktopApplicationMenuRuntime({
           dispatch({ type: "TOGGLE_STATUS_BAR" });
           break;
         case "open-layout-gallery":
-          pluginRegistry.showPane("layout-marketplace");
+          openMarketplaceTab(pluginRegistry, "layouts");
           break;
         case "layout-undo":
           dispatch({ type: "UNDO_LAYOUT" });

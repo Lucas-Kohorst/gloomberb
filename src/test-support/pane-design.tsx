@@ -412,7 +412,7 @@ export const WRITTEN_DATA_LIST_PANE_IDS = [
   "sec",
   "comment-letters",
   "companies",
-  "cftc-filings",
+  "adjacent",
 ] as const;
 
 export type WrittenDataListPaneId = (typeof WRITTEN_DATA_LIST_PANE_IDS)[number];

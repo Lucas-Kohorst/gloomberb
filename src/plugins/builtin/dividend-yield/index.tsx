@@ -1,4 +1,5 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
@@ -38,28 +39,16 @@ export const dividendYieldModule: PluginModule = {
     resetDividendYieldHealth();
   },
 
-  panes: [
-    {
-      id: "dividend-yield",
-      name: "Dividend Yield",
-      icon: "D",
-      component: DividendYieldPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 90, height: 28 },
-      tableExport: true,
-    },
-  ],
-
   paneTemplates: [
     {
       ...createTickerSurfacePaneTemplate({
         id: "dividend-yield-pane",
-        paneId: "dividend-yield",
+        paneId: TICKER_RESEARCH_PANE_ID,
         label: "Dividend Yield",
         description: "Dividend history, trailing/forward yield, growth rates, and payment schedule.",
         keywords: ["dividend", "yield", "dvd", "income", "payout", "ex-date", "distribution"],
         shortcut: "DVD",
+        settings: () => ({ defaultTabId: "dividend-yield" }),
       }),
       headless: dividendYieldHeadless,
     },

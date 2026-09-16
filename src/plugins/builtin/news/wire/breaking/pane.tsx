@@ -56,7 +56,6 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     onShare: shareArticle,
     onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
     onBookmark: toggleArticleSaved,
-    savedCount: savedArticleIds.size,
     showPoll: !detailArticle,
     updatedAt: breakingState.updatedAt,
   });

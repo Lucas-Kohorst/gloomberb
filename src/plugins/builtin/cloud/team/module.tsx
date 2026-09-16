@@ -1,4 +1,5 @@
 import type { PluginModule } from "../../plugin-module";
+import { openMarketplaceTab } from "../../marketplace";
 import { chatController } from "../../chat/controller";
 import { createCloudTeamCapability } from "./capability";
 import { registerTeamCommands } from "./command";
@@ -54,7 +55,7 @@ export const teamModule: PluginModule = {
       openTeamChannel: (teamId) => ctx.createPaneFromTemplate("new-chat-pane", { arg: teamChannelId(teamId) }),
       openTeamInvites: () => openTeamPane(ctx.createPaneFromTemplate, {}),
       openTeamLayout: () => {
-        ctx.showPane("layout-marketplace");
+        openMarketplaceTab(ctx, "layouts");
       },
     });
     teamStore.start();

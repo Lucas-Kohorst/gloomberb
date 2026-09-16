@@ -81,7 +81,6 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
     onRefresh: jina.refresh,
     onShare: shareArticle,
     onBookmark: toggleArticleSaved,
-    savedCount: savedArticleIds.size,
     showPoll: false,
   });
 

@@ -1,8 +1,8 @@
 import type { CombinedPaneFooter, PaneFooterSegment, PaneHint } from "./model";
 import { getShortcutHintWidth } from "../../../ui/shortcut-hint-format";
 
-/** Monospace cells between adjacent hints. Native chrome uses CSS gap instead. */
-export const PANE_FOOTER_HINT_GAP = 1;
+/** Keep adjacent footer hints compact; labels already provide their own separation when needed. */
+export const PANE_FOOTER_HINT_GAP = 0;
 export const PANE_FOOTER_MAX_HINT_ROWS = 2;
 
 export function paneHintDisplayWidth(hint: PaneHint, prefix = ""): number {

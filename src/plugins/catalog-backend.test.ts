@@ -31,9 +31,7 @@ describe("desktop backend plugin catalog", () => {
     expect(adjacent?.name).toBe("Adjacent Cloud");
     expect(adjacent?.toggleable).toBe(true);
     expect(adjacent?.panes?.map((pane) => pane.id)).toEqual([
-      "adjacent-indices",
-      "adjacent-rates",
-      "cftc-filings",
+      "adjacent",
       "llm-stats",
       "owid",
     ]);

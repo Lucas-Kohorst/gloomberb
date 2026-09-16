@@ -31,7 +31,7 @@ import {
 import {
   buildRssFeedResultItems,
   buildTwitterFeedResultItems,
-  PLUGIN_MARKETPLACE_TEMPLATE_ID,
+  MARKETPLACE_TEMPLATE_ID,
   twitterFeedsFromConfig,
   twitterFeedsFromOpenPanes,
 } from "../routes/root/indexed-results";
@@ -571,7 +571,7 @@ export function CommandBar({
     twitterFeedResultItems,
   ]);
   const openPluginMarketplace = useCallback(() => {
-    pluginRegistry.createPaneFromTemplate(PLUGIN_MARKETPLACE_TEMPLATE_ID);
+    pluginRegistry.createPaneFromTemplate(MARKETPLACE_TEMPLATE_ID);
     closeAll({ revertThemePreview: false });
   }, [closeAll, pluginRegistry]);
   const providerCategoryPriorities = useMemo(
