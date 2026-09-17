@@ -13,7 +13,6 @@ import {
   kalshiEventTickerFromAdjacent,
 } from "./kalshi/adjacent-catalog";
 import {
-  normalizePredictionSearchQuery,
   predictionSearchTokens,
 } from "../search";
 
@@ -225,7 +224,7 @@ export async function searchAdjacentCatalog(options: {
   page?: number;
   signal?: AbortSignal;
 }): Promise<AdjacentSearchResult> {
-  const query = normalizePredictionSearchQuery(options.query);
+  const query = predictionSearchTokens(options.query).join(" ");
   const categoryId = options.categoryId ?? "all";
   const page = options.page ?? 1;
   const signal = options.signal;

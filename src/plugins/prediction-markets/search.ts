@@ -1,12 +1,12 @@
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 
 /**
- * Pane search chrome is `/`. Focusing search with that key can leak it into
- * the query (`/diesel`). Adjacent AND-search for `/diesel` returns nothing;
- * command-bar compact matching still finds `KXDIESEL…`.
+ * Pane search chrome is `/` unfocused and `?` focused. Those keys can leak
+ * into the query (`/diesel`, `? diesel`). Adjacent AND-search for `?diesel`
+ * returns nothing; command-bar compact matching still finds `KXDIESEL…`.
  */
 export function normalizePredictionSearchQuery(query: string): string {
-  return query.trim().replace(/^\/+\s*/, "").trim();
+  return query.trim().replace(/^[/?]+\s*/, "").trim();
 }
 
 export function predictionSearchTokens(query: string): string[] {

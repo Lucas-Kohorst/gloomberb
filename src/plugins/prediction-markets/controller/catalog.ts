@@ -19,6 +19,7 @@ import { useAutoRefresh } from "../../builtin/shared/use-auto-refresh";
 import { getCachedPredictionResource } from "../services/fetch";
 import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog } from "../services/kalshi/adapter";
 import { loadMorePolymarketCatalog, loadPolymarketCatalog, nextPolymarketCatalogOffset } from "../services/polymarket/adapter";
+import { searchAdjacentCatalog } from "../services/adjacent-search";
 import { normalizePredictionSearchQuery } from "../search";
 import type {
   PredictionBrowseTab,
@@ -247,23 +248,18 @@ export function usePredictionCatalogData({
       const searched: PredictionMarketSummary[] = [];
       if (includePolymarket) searched.push(...polymarketSearch);
       if (includeKalshi) searched.push(...kalshiSearch);
-      // Adjacent is the search index. Do not keep filtering the volume-sorted
-      // browse catalog once those hits have landed — diesel never appears in
-      // the top browse page, which is why command-bar finds it and the pane
+      // Adjacent is the search index. Once this session has written the search
+      // key — hits or [] — do not fall back to the volume-sorted browse page.
+      // Diesel is missing there, which is why command-bar finds it and the pane
       // used to show "No markets matched".
-      if (searched.length > 0) return searched;
+      if (searched.length > 0 || catalogSearchReady) return searched;
     }
     const merged: PredictionMarketSummary[] = [];
-    if (includePolymarket) {
-      merged.push(
-        ...mergeCatalogMarkets(polymarketBrowse, polymarketSearch),
-      );
-    }
-    if (includeKalshi) {
-      merged.push(...mergeCatalogMarkets(kalshiBrowse, kalshiSearch));
-    }
+    if (includePolymarket) merged.push(...polymarketBrowse);
+    if (includeKalshi) merged.push(...kalshiBrowse);
     return merged;
   }, [
+    catalogSearchReady,
     includeKalshi,
     includePolymarket,
     kalshiBrowse,
@@ -401,53 +397,134 @@ export function usePredictionCatalogData({
   // hardcoded intervals nobody can change.
   useEffect(() => {
     if (!includePolymarket) return;
-    void loadPolymarket(
-      polymarketCatalogKey,
-      debouncedSearchQuery,
-      categoryId,
-    );
+    if (normalizedSearchQuery) return;
+    void loadPolymarket(polymarketBrowseKey, "", categoryId);
   }, [
     categoryId,
-    debouncedSearchQuery,
     includePolymarket,
     loadPolymarket,
     normalizedSearchQuery,
-    polymarketCatalogKey,
-    polymarketSearchKey,
+    polymarketBrowseKey,
   ]);
 
-  useAutoRefresh(includePolymarket ? polymarketLoadedAt : null, useCallback(() => {
-    void loadPolymarket(polymarketCatalogKey, debouncedSearchQuery, categoryId);
-  }, [categoryId, debouncedSearchQuery, loadPolymarket, polymarketCatalogKey]), pollIntervalMs / 60_000);
+  useAutoRefresh(includePolymarket && !normalizedSearchQuery ? polymarketLoadedAt : null, useCallback(() => {
+    void loadPolymarket(polymarketBrowseKey, "", categoryId);
+  }, [categoryId, loadPolymarket, polymarketBrowseKey]), pollIntervalMs / 60_000);
 
   useEffect(() => {
     if (!includeKalshi) return;
-    void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
+    if (normalizedSearchQuery) return;
+    void loadKalshi(kalshiBrowseKey, "", categoryId);
   }, [
     categoryId,
-    debouncedSearchQuery,
     includeKalshi,
-    kalshiCatalogKey,
-    kalshiSearchKey,
+    kalshiBrowseKey,
     loadKalshi,
     normalizedSearchQuery,
   ]);
 
+  const loadAdjacentSearch = useCallback(
+    async (
+      venue: PredictionVenue,
+      cacheKey: string,
+      query: string,
+      signal?: AbortSignal,
+    ) => {
+      setCatalogPending((current) =>
+        updatePredictionPendingCounts(current, cacheKey, 1),
+      );
+      try {
+        const result = await searchAdjacentCatalog({
+          query,
+          venue,
+          categoryId,
+          page: 1,
+          signal,
+        });
+        if (signal?.aborted) return;
+        setCatalogCache((current) =>
+          commitCatalogCache(current, cacheKey, current[cacheKey], result.markets),
+        );
+        setCatalogErrors((current) =>
+          updatePredictionErrorState(current, cacheKey, null),
+        );
+        if (venue === "kalshi") {
+          setKalshiNextCursor(result.nextCursor);
+        }
+        if (venue === "polymarket") {
+          setPolymarketNextOffset(null);
+        }
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+          return;
+        }
+        setCatalogErrors((current) =>
+          updatePredictionErrorState(
+            current,
+            cacheKey,
+            formatPredictionLoadError(venue, "markets", error),
+          ),
+        );
+        setCatalogCache((current) => seedEmptyCatalogCache(current, cacheKey));
+      } finally {
+        setCatalogPending((current) =>
+          updatePredictionPendingCounts(current, cacheKey, -1),
+        );
+        if (signal?.aborted) return;
+        const loadedAt = Date.now();
+        if (venue === "kalshi") setKalshiLoadedAt(loadedAt);
+        if (venue === "polymarket") setPolymarketLoadedAt(loadedAt);
+        setCatalogLastRefreshAt(loadedAt);
+      }
+    },
+    [categoryId],
+  );
+
+  useEffect(() => {
+    if (!normalizedSearchQuery) return;
+    const kalshiKey = includeKalshi ? kalshiSearchKey : null;
+    const polymarketKey = includePolymarket ? polymarketSearchKey : null;
+    if (!kalshiKey && !polymarketKey) return;
+    const controller = new AbortController();
+    if (kalshiKey) {
+      void loadAdjacentSearch("kalshi", kalshiKey, normalizedSearchQuery, controller.signal);
+    }
+    if (polymarketKey) {
+      void loadAdjacentSearch(
+        "polymarket",
+        polymarketKey,
+        normalizedSearchQuery,
+        controller.signal,
+      );
+    }
+    return () => {
+      controller.abort();
+    };
+  }, [
+    includeKalshi,
+    includePolymarket,
+    kalshiSearchKey,
+    loadAdjacentSearch,
+    normalizedSearchQuery,
+    polymarketSearchKey,
+  ]);
+
   const refreshCatalog = useCallback(() => {
+    if (normalizedSearchQuery) {
+      if (includePolymarket && polymarketSearchKey) {
+        void loadAdjacentSearch("polymarket", polymarketSearchKey, normalizedSearchQuery);
+      }
+      if (includeKalshi && kalshiSearchKey) {
+        void loadAdjacentSearch("kalshi", kalshiSearchKey, normalizedSearchQuery);
+      }
+      return;
+    }
     if (includePolymarket) {
       void loadPolymarket(polymarketBrowseKey, "", categoryId, {
         showPending: true,
         force: true,
         firstPageOnly: true,
       });
-      if (polymarketSearchKey && normalizedSearchQuery) {
-        void loadPolymarket(
-          polymarketSearchKey,
-          debouncedSearchQuery,
-          categoryId,
-          { force: true },
-        );
-      }
     }
     if (includeKalshi) {
       void (async () => {
@@ -458,19 +535,14 @@ export function usePredictionCatalogData({
         });
         await loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
       })();
-      if (kalshiSearchKey && normalizedSearchQuery) {
-        void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
-          force: true,
-        });
-      }
     }
   }, [
     categoryId,
-    debouncedSearchQuery,
     includeKalshi,
     includePolymarket,
     kalshiBrowseKey,
     kalshiSearchKey,
+    loadAdjacentSearch,
     loadKalshi,
     loadPolymarket,
     normalizedSearchQuery,
@@ -478,9 +550,9 @@ export function usePredictionCatalogData({
     polymarketSearchKey,
   ]);
 
-  useAutoRefresh(includeKalshi ? kalshiLoadedAt : null, useCallback(() => {
-    void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
-  }, [categoryId, debouncedSearchQuery, kalshiCatalogKey, loadKalshi]), pollIntervalMs / 60_000);
+  useAutoRefresh(includeKalshi && !normalizedSearchQuery ? kalshiLoadedAt : null, useCallback(() => {
+    void loadKalshi(kalshiBrowseKey, "", categoryId);
+  }, [categoryId, kalshiBrowseKey, loadKalshi]), pollIntervalMs / 60_000);
 
   const loadMoreCatalog = useCallback(async () => {
     if (loadingMore) return;
