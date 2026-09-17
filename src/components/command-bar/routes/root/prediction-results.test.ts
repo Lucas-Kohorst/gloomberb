@@ -3,6 +3,7 @@ import { setHttpFetchTransport } from "../../../../utils/http-transport";
 import {
   buildPredictionMarketResultItems,
   looksLikePredictionInstrumentQuery,
+  openCommandBarPredictionInstrument,
   searchPredictionInstruments,
 } from "./prediction-results";
 import type { PredictionMarketSummary } from "../../../../plugins/prediction-markets/types";
@@ -55,6 +56,38 @@ describe("looksLikePredictionInstrumentQuery", () => {
     expect(looksLikePredictionInstrumentQuery("AAPL")).toBe(false);
     expect(looksLikePredictionInstrumentQuery("MSFT")).toBe(false);
     expect(looksLikePredictionInstrumentQuery("ab")).toBe(false);
+  });
+});
+
+describe("openCommandBarPredictionInstrument", () => {
+  test("pins a floating ticker pane instead of docking via navigateTicker", async () => {
+    const pinTicker = (symbol: string, options?: { floating?: boolean }) => {
+      calls.push({ symbol, options });
+    };
+    const calls: Array<{ symbol: string; options?: { floating?: boolean } }> = [];
+    const dispatched: unknown[] = [];
+
+    openCommandBarPredictionInstrument({
+      summary: summary("kalshi", "KXDIESELW-26SEP21-T6.38", "Diesel < $6.38"),
+      tickerRepository: { saveTicker: () => {} },
+      dispatch: (action) => dispatched.push(action),
+      pluginRegistry: {
+        events: { emit() {} },
+        pinTicker,
+      },
+    });
+    await Promise.resolve();
+
+    expect(calls).toEqual([{
+      symbol: "KALSHI:KXDIESELW-26SEP21-T6.38",
+      options: { floating: true },
+    }]);
+    expect(dispatched).toEqual([expect.objectContaining({
+      type: "UPDATE_TICKER",
+      ticker: expect.objectContaining({
+        metadata: expect.objectContaining({ ticker: "KALSHI:KXDIESELW-26SEP21-T6.38" }),
+      }),
+    })]);
   });
 });
 

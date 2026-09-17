@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { ResultItem } from "../../list/model";
 import {
   predictionCollectionSymbol,
+  predictionTickerRecord,
 } from "../../../../plugins/prediction-markets/collection-watchlist";
 import { searchAdjacentCatalog } from "../../../../plugins/prediction-markets/services/adjacent-search";
 import type { PredictionMarketSummary } from "../../../../plugins/prediction-markets/types";
+import type { TickerRecord } from "../../../../types/ticker";
 import { useDebouncedAbortableEffect } from "./use-debounced-effect";
 
 const PREDICTION_SEARCH_LIMIT = 5;
@@ -100,6 +102,33 @@ export function usePredictionInstrumentSearch(query: string): {
   );
 
   return { markets };
+}
+
+/**
+ * Command-bar Instruments rows must float a ticker pane. `navigateTicker`
+ * docks a new inspector beside the focused layout pane; `pinTicker` is the
+ * same path DES / other Instruments hits use for a new window.
+ */
+export function openCommandBarPredictionInstrument(options: {
+  summary: PredictionMarketSummary;
+  tickers?: ReadonlyMap<string, TickerRecord>;
+  tickerRepository: { saveTicker: (ticker: TickerRecord) => unknown };
+  dispatch: (action: { type: "UPDATE_TICKER"; ticker: TickerRecord }) => void;
+  pluginRegistry: {
+    events: { emit: (name: "ticker:added", payload: { symbol: string; ticker: TickerRecord }) => void };
+    pinTicker: (symbol: string, options?: { floating?: boolean }) => void;
+  };
+}): void {
+  const existingTicker = options.tickers?.get(predictionCollectionSymbol(options.summary)) ?? null;
+  const ticker = predictionTickerRecord(options.summary, existingTicker);
+  void Promise.resolve(options.tickerRepository.saveTicker(ticker)).then(() => {
+    options.dispatch({ type: "UPDATE_TICKER", ticker });
+    options.pluginRegistry.events.emit("ticker:added", {
+      symbol: ticker.metadata.ticker,
+      ticker,
+    });
+    options.pluginRegistry.pinTicker(ticker.metadata.ticker, { floating: true });
+  });
 }
 
 export function buildPredictionMarketResultItems(options: {

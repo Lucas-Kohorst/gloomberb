@@ -137,6 +137,43 @@ describe("createPaneTemplateOrThrow", () => {
     expect(createdSymbol).toBe("MSFT");
   });
 
+  test("opens new command-bar panes floating even when the template omits placement", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const state = createInitialState(config);
+    const placed: Array<{ placement?: string }> = [];
+
+    await createPaneTemplateOrThrow("article-pane", undefined, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([["article-pane", {
+          id: "article-pane",
+          paneId: "news-article",
+          label: "Article",
+          description: "Open an article",
+          createInstance: () => ({ title: "Headline" }),
+        }]]),
+        panes: new Map([["news-article", {
+          id: "news-article",
+          name: "Article",
+          component: () => null,
+          defaultPosition: "right",
+        }]]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => ({ instanceId: "news-article:1", paneId: "news-article" }) as any,
+      placePaneInstance: (_instance, _def, options) => {
+        placed.push({ placement: options?.placement });
+      },
+      focusPaneInstance: () => {},
+    });
+
+    expect(placed).toEqual([{ placement: "floating" }]);
+  });
+
   test("passes pane template instance ids through to pane creation", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
     const state = createInitialState(config);
