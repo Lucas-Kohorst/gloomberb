@@ -37,6 +37,7 @@ import {
   searchAdjacentCatalog,
   parseAdjacentSearchPageCursor,
 } from "../adjacent-search";
+import { normalizePredictionSearchQuery } from "../../search";
 import {
   fetchHostedAdjacentKalshiMarket,
   loadHostedAdjacentKalshiDetail,
@@ -216,7 +217,7 @@ export async function loadKalshiCatalog(
     browseOrOptions,
     legacyOptions,
   );
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const normalizedQuery = normalizePredictionSearchQuery(searchQuery).toLowerCase();
   const requestedLimit = Math.max(1, Math.min(KALSHI_EVENT_PAGE_LIMIT, options.limit ?? KALSHI_EVENT_PAGE_LIMIT));
   const pageLimit = Math.max(20, requestedLimit);
   const maxPages = options.firstPageOnly || options.limit || normalizedQuery
@@ -292,7 +293,7 @@ export async function loadMoreKalshiCatalog(
   cursor: string,
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const normalizedQuery = normalizePredictionSearchQuery(searchQuery).toLowerCase();
   if (normalizedQuery) {
     return await searchAdjacentCatalog({
       query: normalizedQuery,

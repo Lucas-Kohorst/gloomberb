@@ -564,6 +564,41 @@ describe("prediction markets plugin registration and services", () => {
     ).toEqual(["KAL-BTC"]);
     expect(filterPredictionMarkets(rows, "all", "all", "", new Set())).toBe(rows);
     expect(filterPredictionMarkets(rows, "all", "all", "   ", new Set())).toBe(rows);
+    expect(filterPredictionMarkets(rows, "all", "all", "/", new Set())).toBe(rows);
+  });
+
+  test("keeps Kalshi diesel tickers for a leaked /diesel pane query", () => {
+    const rows = buildPredictionListRows([
+      normalizeKalshiMarket({
+        ticker: "KXDIESELMON-26SEP30-T6.60",
+        title: "Will the U.S. EIA weekly average diesel price be above $6.60?",
+        yes_sub_title: "Above $6.60",
+        event_ticker: "KXDIESELMON-26SEP30",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.12",
+      } as any)!,
+      normalizeKalshiMarket({
+        ticker: "KAL-FED",
+        title: "Will the Fed cut rates?",
+        yes_sub_title: "Yes",
+        event_ticker: "FED-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.48",
+      } as any)!,
+    ]);
+
+    expect(
+      filterPredictionMarkets(rows, "all", "all", "/diesel", new Set()).map(
+        (row) => row.representative.marketId,
+      ),
+    ).toEqual(["KXDIESELMON-26SEP30-T6.60"]);
+    expect(
+      filterPredictionMarkets(rows, "all", "all", "/ diesel", new Set()).map(
+        (row) => row.representative.marketId,
+      ),
+    ).toEqual(["KXDIESELMON-26SEP30-T6.60"]);
   });
 
   test("does not keep unrelated grouped events for a multi-word search", () => {

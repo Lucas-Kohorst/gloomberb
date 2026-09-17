@@ -22,6 +22,7 @@ import {
 import {
   searchAdjacentCatalog,
 } from "../adjacent-search";
+import { normalizePredictionSearchQuery } from "../../search";
 import type {
   PolymarketEventRecord,
 } from "./types";
@@ -103,7 +104,7 @@ export async function loadPolymarketCatalog(
     : browseTab === "new"
       ? "createdAt"
       : "volume24hr";
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const normalizedQuery = normalizePredictionSearchQuery(searchQuery).toLowerCase();
   const requestedLimit = Math.max(1, Math.min(200, options.limit ?? 200));
   const pageLimit = Math.max(20, requestedLimit);
   const resourceKey = buildPredictionCatalogLoadResourceKey(
@@ -174,7 +175,7 @@ export async function loadMorePolymarketCatalog(
   offset: number,
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; hasMore: boolean; nextOffset: number }> {
-  if (searchQuery.trim()) {
+  if (normalizePredictionSearchQuery(searchQuery)) {
     return { markets: [], hasMore: false, nextOffset: offset };
   }
   const tagSlugs = categoryId === "all" ? [undefined] : getPolymarketCategoryTagSlugs(categoryId);

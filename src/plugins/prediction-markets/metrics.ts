@@ -1,7 +1,11 @@
 import { colors } from "../../theme/colors";
 import { formatCompact, formatNumber, formatTimeAgo } from "../../utils/format";
 import { compareSortValues } from "../../utils/sort-values";
-import { matchesPredictionSearchHaystack, predictionSearchTokens } from "./search";
+import {
+  matchesPredictionSearchHaystack,
+  normalizePredictionSearchQuery,
+  predictionSearchTokens,
+} from "./search";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -251,7 +255,7 @@ export function filterPredictionMarkets(
   searchQuery: string,
   watchlist: Set<string>,
 ): PredictionListRow[] {
-  const hasSearch = searchQuery.trim().length > 0;
+  const hasSearch = normalizePredictionSearchQuery(searchQuery).length > 0;
   if (venueScope === "all" && categoryId === "all" && !hasSearch) {
     return markets;
   }
