@@ -22,6 +22,7 @@ import type { TradingViewChartProps } from "../../../../ui/host";
 import {
   formatChartLegendValue,
   formatChartVolume,
+  formatCompositeCursorDate,
   formatCompositeTimeAxisDate,
   formatOhlcvHud,
 } from "../../../../components/chart/composite/format";
@@ -342,6 +343,19 @@ export function WebTradingViewChart({
           return formatCompositeTimeAxisDate(new Date(ms), start, end, timeZoneRef.current);
         },
       },
+      // Market packing stores session slots as small integers so LWC does not
+      // draw weekend holes. LWC's default clock treats numeric time as Unix
+      // seconds, which prints those slots as 1970s (e.g. `10 May '73 00:00`).
+      localization: {
+        timeFormatter: (time: Time) => {
+          const ms = timeToMs(time, packingRef.current);
+          if (ms === null) return "";
+          const view = viewportRef.current;
+          const start = view?.start.getTime() ?? ms;
+          const end = view?.end.getTime() ?? ms;
+          return formatCompositeCursorDate(new Date(ms), start, end, timeZoneRef.current);
+        },
+      },
       handleScroll: {
         // Wheel is owned below: LWC pinch is two TouchEvents, which a Mac
         // trackpad never sends. Chrome pinch is ctrl+wheel; WKWebView pinch is
@@ -396,6 +410,16 @@ export function WebTradingViewChart({
         if (tooltip) tooltip.hidden = true;
         return;
       }
+      const cursorMs = timeToMs(param.time, packingRef.current);
+      const view = viewportRef.current;
+      const dateLabel = cursorMs === null
+        ? null
+        : formatCompositeCursorDate(
+          new Date(cursorMs),
+          view?.start.getTime() ?? cursorMs,
+          view?.end.getTime() ?? cursorMs,
+          timeZoneRef.current,
+        );
       const values = seriesRef.current.flatMap((entry) => {
         const value = param.seriesData.get(entry.api) as
           | { value?: number; close?: number; open?: number; high?: number; low?: number }
@@ -420,7 +444,7 @@ export function WebTradingViewChart({
         tooltip.hidden = true;
         return;
       }
-      tooltip.textContent = values.join("  ");
+      tooltip.textContent = (dateLabel ? [dateLabel, ...values] : values).join("  ");
       tooltip.style.left = `${Math.min(param.point.x + 10, Math.max(0, container.clientWidth - tooltip.offsetWidth - 8))}px`;
       tooltip.style.top = `${Math.max(4, param.point.y - 28)}px`;
       tooltip.hidden = false;
