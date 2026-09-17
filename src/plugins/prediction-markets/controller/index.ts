@@ -25,6 +25,7 @@ import { usePredictionMarketsDataState } from "./data";
 import { usePredictionControllerEffects } from "./effects";
 import { usePredictionControllerKeyboard } from "./keyboard";
 import { getDefaultPredictionSort, getNextPredictionSort } from "../metrics";
+import { normalizePredictionSearchQuery } from "../search";
 import {
   predictionFilterTab,
   type PredictionFilterId,
@@ -405,9 +406,12 @@ export function usePredictionMarketsController({
     refreshCatalog: data.actions.refreshCatalog,
   });
 
-  const searchPending = searchQuery.trim() !== data.debouncedSearchQuery.trim();
+  const searchPending =
+    normalizePredictionSearchQuery(searchQuery).toLowerCase()
+    !== normalizePredictionSearchQuery(data.debouncedSearchQuery).toLowerCase();
   const searchLoading =
-    searchQuery.trim().length > 0 && (searchPending || data.catalogLoadCount > 0);
+    normalizePredictionSearchQuery(searchQuery).length > 0
+    && (searchPending || data.catalogLoadCount > 0);
 
   return {
     paneSettings,

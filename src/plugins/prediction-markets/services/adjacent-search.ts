@@ -12,6 +12,10 @@ import {
   fetchHostedAdjacentJson,
   kalshiEventTickerFromAdjacent,
 } from "./kalshi/adjacent-catalog";
+import {
+  normalizePredictionSearchQuery,
+  predictionSearchTokens,
+} from "../search";
 
 const ADJACENT_SEARCH_PER_PAGE = 50;
 const ADJACENT_SEARCH_STOP_WORDS = new Set([
@@ -221,10 +225,13 @@ export async function searchAdjacentCatalog(options: {
   page?: number;
   signal?: AbortSignal;
 }): Promise<AdjacentSearchResult> {
-  const query = options.query.trim();
+  const query = normalizePredictionSearchQuery(options.query);
   const categoryId = options.categoryId ?? "all";
   const page = options.page ?? 1;
   const signal = options.signal;
+  if (!query) {
+    return { markets: [], hasMore: false, nextCursor: null };
+  }
   if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 
   const platform = adjacentPlatformParam(options.venue);
@@ -260,12 +267,16 @@ export async function searchAdjacentCatalog(options: {
     .map(mapAdjacentSearchMarket)
     .filter((market): market is PredictionMarketSummary => market != null);
 
-  if (markets.length === 0 && query.includes(" ")) {
-    const fallbackToken = query
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .find((token) => token.length >= 3 && !ADJACENT_SEARCH_STOP_WORDS.has(token.toLowerCase()));
-    if (fallbackToken && fallbackToken.toLowerCase() !== query.toLowerCase()) {
+  if (markets.length === 0) {
+    const tokens = predictionSearchTokens(query);
+    const fallbackToken = tokens.find((token) => (
+      token.length >= 3 && !ADJACENT_SEARCH_STOP_WORDS.has(token)
+    ));
+    if (
+      fallbackToken
+      && tokens.length > 1
+      && fallbackToken !== query.toLowerCase()
+    ) {
       // Adjacent uses AND matching. A phrase can be absent from the market
       // question, or return rows whose shape cannot be mapped, even though one
       // meaningful token identifies the contract.

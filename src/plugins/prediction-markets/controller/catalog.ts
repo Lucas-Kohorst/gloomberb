@@ -20,6 +20,7 @@ import { useAutoRefresh } from "../../builtin/shared/use-auto-refresh";
 import { getCachedPredictionResource } from "../services/fetch";
 import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog } from "../services/kalshi/adapter";
 import { loadMorePolymarketCatalog, loadPolymarketCatalog, nextPolymarketCatalogOffset } from "../services/polymarket/adapter";
+import { normalizePredictionSearchQuery } from "../search";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -70,7 +71,9 @@ export function usePredictionCatalogData({
   const [catalogErrors, setCatalogErrors] = useState<
     Record<string, string | null>
   >({});
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(() =>
+    normalizePredictionSearchQuery(searchQuery),
+  );
   const [catalogLastRefreshAt, setCatalogLastRefreshAt] = useState<number | null>(null);
   const [polymarketLoadedAt, setPolymarketLoadedAt] = useState<number | null>(null);
   const [kalshiLoadedAt, setKalshiLoadedAt] = useState<number | null>(null);
@@ -395,12 +398,13 @@ export function usePredictionCatalogData({
   );
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    const normalized = normalizePredictionSearchQuery(searchQuery);
+    if (!normalized) {
       setDebouncedSearchQuery("");
       return;
     }
     const timeoutId = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery.trim());
+      setDebouncedSearchQuery(normalized);
     }, 250);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
