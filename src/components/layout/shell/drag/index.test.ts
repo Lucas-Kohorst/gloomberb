@@ -11,7 +11,9 @@ import {
   LAYOUT_GRID_ROWS,
   makeLayoutGridCells,
   makeSnapGuides,
+  paneDragAllowsSnap,
   resolveFloatResizeRect,
+  resolvePaneDragPreview,
   resolveSnapGuide,
   type SnapGuide,
 } from "./index";
@@ -314,6 +316,109 @@ describe("layout construction grid", () => {
       height: 4,
       zIndex: 75,
       fixedGeometry: true,
+    });
+  });
+
+  test("does not snap a floating drag to the grid or other panes", () => {
+    expect(paneDragAllowsSnap("floating")).toBe(false);
+    expect(paneDragAllowsSnap("docked")).toBe(true);
+
+    const layout: LayoutConfig = {
+      dockRoot: { kind: "pane", instanceId: "b:main" },
+      instances: [
+        createPaneInstance("a", { instanceId: "a:main" }),
+        createPaneInstance("b", { instanceId: "b:main" }),
+      ],
+      floating: [{ instanceId: "a:main", x: 80, y: 4, width: 20, height: 10, zIndex: 75 }],
+      detached: [],
+    };
+    const leaves = getDockLeafLayouts(layout, BOUNDS, { reserveDividerGutters: true });
+    const guides = makeSnapGuides(BOUNDS.width, BOUNDS.height);
+    const targetLeaf = leaves.find((leaf) => leaf.instanceId === "b:main")!;
+    const overlay = {
+      x: targetLeaf.rect.x + Math.floor(targetLeaf.rect.width / 2),
+      y: targetLeaf.rect.y + Math.floor(targetLeaf.rect.height / 2),
+    };
+
+    expect(resolvePaneDragPreview(
+      "floating",
+      layout,
+      "a:main",
+      overlay.x,
+      overlay.y,
+      leaves,
+      guides,
+      BOUNDS,
+      { reserveDividerGutters: true },
+    )).toBeNull();
+    expect(resolvePaneDragPreview(
+      "floating",
+      layout,
+      "a:main",
+      100,
+      50,
+      leaves,
+      guides,
+      BOUNDS,
+      { reserveDividerGutters: true },
+    )).toBeNull();
+
+    const snapPreview = createSnapDropPreview(layout, "a:main", "cell-5-5", { x: 80, y: 40, width: 20, height: 10 }, BOUNDS);
+    expect(finalizePaneDragRelease(
+      layout,
+      "a:main",
+      { x: 12, y: 9, width: 20, height: 10 },
+      snapPreview,
+      "floating",
+    )).toMatchObject({
+      dockRoot: { kind: "pane", instanceId: "b:main" },
+      floating: [expect.objectContaining({ instanceId: "a:main", x: 12, y: 9, width: 20, height: 10 })],
+    });
+  });
+
+  test("snaps a docked drag to another pane or a grid cell", () => {
+    const layout = threePaneLayout();
+    const leaves = getDockLeafLayouts(layout, BOUNDS, { reserveDividerGutters: true });
+    const guides = makeSnapGuides(BOUNDS.width, BOUNDS.height);
+    const targetLeaf = leaves.find((leaf) => leaf.instanceId === "b:main")!;
+    const dockPreview = resolvePaneDragPreview(
+      "docked",
+      layout,
+      "a:main",
+      targetLeaf.rect.x + Math.floor(targetLeaf.rect.width / 2),
+      targetLeaf.rect.y + Math.floor(targetLeaf.rect.height / 2),
+      leaves,
+      guides,
+      BOUNDS,
+      { reserveDividerGutters: true },
+    );
+
+    expect(dockPreview).toMatchObject({
+      kind: "dock",
+      target: { kind: "leaf", targetId: "b:main", position: "center" },
+    });
+
+    const emptyDock: LayoutConfig = {
+      dockRoot: { kind: "pane", instanceId: "a:main" },
+      instances: [createPaneInstance("a", { instanceId: "a:main" })],
+      floating: [],
+      detached: [],
+    };
+    const emptyLeaves = getDockLeafLayouts(emptyDock, BOUNDS);
+    const snapPreview = resolvePaneDragPreview(
+      "docked",
+      emptyDock,
+      "a:main",
+      90,
+      45,
+      emptyLeaves,
+      makeSnapGuides(BOUNDS.width, BOUNDS.height),
+      BOUNDS,
+    );
+
+    expect(snapPreview).toMatchObject({
+      kind: "snap",
+      position: "cell-5-5",
     });
   });
 });

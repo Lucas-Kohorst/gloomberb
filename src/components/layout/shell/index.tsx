@@ -45,6 +45,7 @@ import {
 import { tickerLinkMenuItems } from "./ticker-link-menu";
 import {
   makeSnapGuides,
+  paneDragAllowsSnap,
   resolveExternalDockPreview,
   resolveHoverOverlay,
 } from "./drag";
@@ -480,7 +481,10 @@ export function Shell({
   );
   const layoutIsEmpty = dockLeafLayouts.length === 0 && visibleFloatingPanes.length === 0;
   const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
-  const activeHoverOverlay = activePaneDrag && dragCursor && dockPreview?.kind !== "compact"
+  const activeHoverOverlay = activePaneDrag
+    && paneDragAllowsSnap(activePaneDrag.mode)
+    && dragCursor
+    && dockPreview?.kind !== "compact"
     ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
     : null;
   const effectiveDockPreview = dockPreview ?? externalDockPreview;
@@ -849,7 +853,7 @@ export function Shell({
             dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect.y : rect.y
           )),
         ]}
-        showGrid={!!dragRef.current && !windowMode}
+        showGrid={!!activePaneDrag && paneDragAllowsSnap(activePaneDrag.mode) && !windowMode}
       />
 
       <ShellActionMenuOverlay

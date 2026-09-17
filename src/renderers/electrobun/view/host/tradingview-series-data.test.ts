@@ -92,6 +92,11 @@ describe("tradingview series data", () => {
     expect(packed[1]!.time - packed[0]!.time).toBeLessThan(
       (monday.date.getTime() - friday.date.getTime()) / 1000,
     );
+    // Packed slots are small integers. Lightweight Charts' default clock treats
+    // them as Unix seconds (1970s). Formatters must unpack first.
+    expect(new Date(packed[0]!.time * 1000).getUTCFullYear()).toBe(1970);
+    expect(new Date(packing.fromPackedSeconds(packed[0]!.time)).toISOString()).toBe(friday.date.toISOString());
+    expect(new Date(packing.fromPackedSeconds(packed[1]!.time)).toISOString()).toBe(monday.date.toISOString());
   });
 
   test("maps styles to lightweight-charts series types", () => {

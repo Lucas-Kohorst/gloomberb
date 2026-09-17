@@ -26,12 +26,9 @@ import {
 } from "../routes/root/article-results";
 import {
   buildPredictionMarketResultItems,
+  openCommandBarPredictionInstrument,
   usePredictionInstrumentSearch,
 } from "../routes/root/prediction-results";
-import {
-  predictionCollectionSymbol,
-  predictionTickerRecord,
-} from "../../../plugins/prediction-markets/collection-watchlist";
 import {
   buildRssFeedResultItems,
   buildTwitterFeedResultItems,
@@ -397,15 +394,12 @@ export function CommandBar({
   const predictionResultItems = useMemo(() => buildPredictionMarketResultItems({
     markets: predictionSearch.markets,
     onOpen: (summary) => {
-      const symbol = predictionCollectionSymbol(summary);
-      const ticker = predictionTickerRecord(
+      openCommandBarPredictionInstrument({
         summary,
-        state.tickers.get(symbol) ?? null,
-      );
-      void Promise.resolve(tickerRepository.saveTicker(ticker)).then(() => {
-        dispatch({ type: "UPDATE_TICKER", ticker });
-        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
-        pluginRegistry.navigateTicker(ticker.metadata.ticker);
+        tickers: state.tickers,
+        tickerRepository,
+        dispatch,
+        pluginRegistry,
       });
       closeAll({ revertThemePreview: false });
     },

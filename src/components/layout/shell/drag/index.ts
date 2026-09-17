@@ -422,6 +422,64 @@ export function createSnapDropPreview(
   };
 }
 
+/** Snap (grid cells and other panes) is for docked moves only. Floating stays free-placed. */
+export function paneDragAllowsSnap(mode: PaneDragRectState["mode"]): boolean {
+  return mode === "docked";
+}
+
+export function resolvePaneDragPreview(
+  mode: PaneDragRectState["mode"],
+  layout: LayoutConfig,
+  paneId: string,
+  hitX: number,
+  hitY: number,
+  leaves: DockLeafLayout[],
+  snapGuides: SnapGuide[],
+  bounds: LayoutBounds,
+  options?: Parameters<typeof getDockLeafLayouts>[2],
+): DragPreview | null {
+  if (!paneDragAllowsSnap(mode)) return null;
+
+  const hoveredOverlay = resolveHoverOverlay(hitX, hitY, leaves, paneId);
+  const hoveredCell = hoveredOverlay?.cells.find((cell) => pointInRect(cell.rect, hitX, hitY));
+  if (hoveredOverlay && hoveredCell) {
+    return createLeafDropPreview(
+      layout,
+      paneId,
+      { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position },
+      bounds,
+      options,
+    );
+  }
+
+  const occupiedDockLeaf = leaves.find((leaf) => (
+    leaf.instanceId !== paneId && pointInRect(leaf.rect, hitX, hitY)
+  ));
+  if (occupiedDockLeaf) {
+    return createCompactedDropPreview(
+      layout,
+      paneId,
+      occupiedDockLeaf,
+      hitX,
+      hitY,
+      bounds,
+      options,
+    );
+  }
+
+  const snapGuide = resolveSnapGuide(hitX, hitY, snapGuides);
+  return snapGuide
+    ? createSnapDropPreview(
+      layout,
+      paneId,
+      snapGuide.position,
+      snapGuide.previewRect,
+      bounds,
+      options,
+    )
+    : null;
+}
+
 export function resolveDividerPreviewRect(
   axis: "horizontal" | "vertical",
   bounds: LayoutBounds,
@@ -460,8 +518,9 @@ export function finalizePaneDragRelease(
   paneId: string,
   previewRect: FloatingRect,
   dockPreview: DragPreview | null,
+  dragMode: PaneDragRectState["mode"] = "docked",
 ): LayoutConfig {
-  if (dockPreview) {
+  if (paneDragAllowsSnap(dragMode) && dockPreview) {
     return dockPreview.layout;
   }
   return floatAtRect(layout, paneId, previewRect);

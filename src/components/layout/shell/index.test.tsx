@@ -1110,11 +1110,11 @@ describe("Shell", () => {
     expect({ x: committedPane!.x, y: committedPane!.y, width: committedPane!.width, height: committedPane!.height }).toEqual(expected);
   });
 
-  test("center-swaps a snapped floating pane through pointer preview, release, and rendered geometry", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-shell-snapped-center-drop-test");
+  test("does not snap a floating pane to the grid or other panes while dragging", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-floating-no-snap-test");
     const dockedPane = requireLayoutInstance(config, "portfolio-list:main");
     const floatingPane = requireLayoutInstance(config, "ticker-detail:main");
-    const snappedRect = {
+    const floatingRect = {
       instanceId: floatingPane.instanceId,
       x: 80,
       y: 4,
@@ -1126,7 +1126,7 @@ describe("Shell", () => {
     const layout: LayoutConfig = {
       dockRoot: { kind: "pane", instanceId: dockedPane.instanceId },
       instances: [{ ...dockedPane }, { ...floatingPane }],
-      floating: [snappedRect],
+      floating: [floatingRect],
       detached: [],
     };
     const controls: {
@@ -1151,14 +1151,12 @@ describe("Shell", () => {
       await testSetup!.renderOnce();
     });
 
-    const dockPreview = testSetup.renderer.root.findDescendantById(`drag-preview:${floatingPane.instanceId}`) as BoxRenderable | undefined;
-    expect(dockPreview).toBeDefined();
-    expect({ x: dockPreview!.x, y: dockPreview!.y, width: dockPreview!.width, height: dockPreview!.height })
-      .toEqual({ x: 0, y: 0, width: 120, height: 59 });
-    const floatingPreview = testSetup.renderer.root.findDescendantById(`floating-pane:${dockedPane.instanceId}`) as BoxRenderable | undefined;
-    expect(floatingPreview).toBeDefined();
-    expect({ x: floatingPreview!.x, y: floatingPreview!.y, width: floatingPreview!.width, height: floatingPreview!.height })
-      .toEqual({ x: 80, y: 4, width: 20, height: 10 });
+    expect(testSetup.renderer.root.findDescendantById(`drag-preview:${floatingPane.instanceId}`)).toBeUndefined();
+    expect(testSetup.renderer.root.findDescendantById(`floating-pane:${dockedPane.instanceId}`)).toBeUndefined();
+    const liveFloating = testSetup.renderer.root.findDescendantById(`floating-pane:${floatingPane.instanceId}`) as BoxRenderable | undefined;
+    expect(liveFloating).toBeDefined();
+    expect({ x: liveFloating!.x, y: liveFloating!.y, width: liveFloating!.width, height: liveFloating!.height })
+      .not.toEqual({ x: 0, y: 0, width: 120, height: 59 });
 
     await act(async () => {
       await testSetup!.mockMouse.release(59, 30);
@@ -1168,15 +1166,20 @@ describe("Shell", () => {
 
     expect(controls.state?.config.layout.dockRoot).toEqual({
       kind: "pane",
-      instanceId: floatingPane.instanceId,
+      instanceId: dockedPane.instanceId,
     });
     expect(controls.state?.config.layout.floating).toEqual([
-      { ...snappedRect, instanceId: dockedPane.instanceId },
+      expect.objectContaining({
+        instanceId: floatingPane.instanceId,
+        width: 20,
+        height: 10,
+        fixedGeometry: true,
+      }),
     ]);
-    const committedPane = testSetup.renderer.root.findDescendantById(`floating-pane:${dockedPane.instanceId}`) as BoxRenderable | undefined;
+    expect(controls.state?.config.layout.floating[0]).not.toEqual(floatingRect);
+    const committedPane = testSetup.renderer.root.findDescendantById(`floating-pane:${floatingPane.instanceId}`) as BoxRenderable | undefined;
     expect(committedPane).toBeDefined();
-    expect({ x: committedPane!.x, y: committedPane!.y, width: committedPane!.width, height: committedPane!.height })
-      .toEqual({ x: 80, y: 4, width: 20, height: 10 });
+    expect(committedPane!.x).not.toBe(floatingRect.x);
   });
 
   test("keeps the focused textarea cursor visible when it is not covered", async () => {

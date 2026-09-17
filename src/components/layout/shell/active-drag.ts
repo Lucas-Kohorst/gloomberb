@@ -5,26 +5,20 @@ import {
   resizeSplitAtPath,
   type DockGeometryOptions,
   type DockLeafLayout,
-  type DropTarget,
   type LayoutBounds,
   type ResolvedPane,
 } from "../../../plugins/pane-manager";
 import type { LayoutConfig } from "../../../types/config";
 import {
-  createCompactedDropPreview,
-  createLeafDropPreview,
-  createSnapDropPreview,
   finalizePaneDragRelease,
   isMeaningfulPaneDrag,
   makeSnapGuides,
   PANE_DRAG_THRESHOLD,
-  pointInRect,
   PRECISE_PANE_DRAG_THRESHOLD,
   resolveDividerPreviewRect,
   resolveFloatResizeRect,
-  resolveHoverOverlay,
   resolvePaneDragFloatingRect,
-  resolveSnapGuide,
+  resolvePaneDragPreview,
 } from "./drag";
 import type { ShellDragRuntimeState, ShellMouseEvent } from "./drag/runtime";
 import type { WindowEditState } from "../window-edit/mode";
@@ -113,45 +107,17 @@ export function useShellActiveDrag({
         const nextRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
         updateDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
         setDragCursor({ x: hitX, y: hitShellY });
-
-        const occupiedDockLeaf = dockLeafLayouts.find((leaf) => (
-          leaf.instanceId !== drag.paneId && pointInRect(leaf.rect, hitX, hitShellY)
+        updateDockPreview(resolvePaneDragPreview(
+          drag.mode,
+          baseLayout,
+          drag.paneId,
+          hitX,
+          hitShellY,
+          dockLeafLayouts,
+          snapGuides,
+          bounds,
+          dockGeometryOptions,
         ));
-        const hoveredOverlay = resolveHoverOverlay(hitX, hitShellY, dockLeafLayouts, drag.paneId);
-        const hoveredCell = hoveredOverlay?.cells.find((cell) => pointInRect(cell.rect, hitX, hitShellY));
-        if (hoveredOverlay && hoveredCell) {
-          const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
-          updateDockPreview(createLeafDropPreview(baseLayout, drag.paneId, target, bounds, dockGeometryOptions));
-        } else if (drag.mode === "docked" && occupiedDockLeaf) {
-          updateDockPreview(createCompactedDropPreview(
-            baseLayout,
-            drag.paneId,
-            occupiedDockLeaf,
-            hitX,
-            hitShellY,
-            bounds,
-            dockGeometryOptions,
-          ));
-        } else {
-          if (drag.mode === "floating") {
-            // Floating panes are the free-placement escape hatch. Only an explicit
-            // dock hover above may tile one; the dashboard-wide grid must not make
-            // every otherwise-free pointer position an implicit dock target.
-            updateDockPreview(null);
-          } else {
-            const snapGuide = resolveSnapGuide(hitX, hitShellY, snapGuides);
-            updateDockPreview(snapGuide
-              ? createSnapDropPreview(
-                baseLayout,
-                drag.paneId,
-                snapGuide.position,
-                snapGuide.previewRect,
-                bounds,
-                dockGeometryOptions,
-              )
-              : null);
-          }
-        }
       } else if (drag.type === "float-resize") {
         updateDragFloatingRect({
           paneId: drag.paneId,
@@ -187,7 +153,13 @@ export function useShellActiveDrag({
             ? getRememberedFloatingRect(baseLayout, drag.paneId, width, contentHeight, pane?.def)
             : drag.origRect;
           const releaseRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
-          const nextLayout = finalizePaneDragRelease(baseLayout, drag.paneId, releaseRect, dockPreviewRef.current);
+          const nextLayout = finalizePaneDragRelease(
+            baseLayout,
+            drag.paneId,
+            releaseRect,
+            dockPreviewRef.current,
+            drag.mode,
+          );
           if (windowMode) {
             updateWindowModePreviewLayout(nextLayout, drag.paneId);
           } else {
