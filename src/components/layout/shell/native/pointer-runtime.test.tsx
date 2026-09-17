@@ -8,9 +8,9 @@ import {
 import { createPaneInstance, type LayoutConfig } from "../../../../types/config";
 import { useShellActiveDrag } from "../active-drag";
 import {
-  constrainFloatingRectToBounds,
   makeSnapGuides,
   resolveHoverOverlay,
+  resolvePaneDragFloatingRect,
 } from "../drag";
 import type { ShellDragRuntimeState, ShellMouseEvent } from "../drag/runtime";
 import { useShellNativePointerRuntime } from "./pointer-runtime";
@@ -108,7 +108,6 @@ function renderIntegratedPointerRuntime(layout: LayoutConfig) {
       appHeaderHeight: NATIVE_APP_HEADER_HEIGHT,
       bounds: NATIVE_BOUNDS,
       contentHeight: NATIVE_BOUNDS.height,
-      dispatch() {},
       dockGeometryOptions: { precise: true },
       dockLeafLayouts,
       dragRuntime,
@@ -397,9 +396,8 @@ describe("useShellNativePointerRuntime", () => {
     });
   }
 
-  test("center-drops a snapped floating pane onto a docked pane through native preview and release", () => {
-    const snappedRect = {
-      instanceId: "source:main",
+  test("keeps a floating pane free-placed instead of snapping to the grid or other panes", () => {
+    const floatingRect = {
       x: 80,
       y: 4,
       width: 6,
@@ -413,53 +411,48 @@ describe("useShellNativePointerRuntime", () => {
         createPaneInstance("source", { instanceId: "source:main" }),
         createPaneInstance("target", { instanceId: "target:main" }),
       ],
-      floating: [snappedRect],
+      floating: [{ instanceId: "source:main", ...floatingRect }],
       detached: [],
     };
     const { dragRuntime, persistedLayouts, runtime } = renderIntegratedPointerRuntime(layout);
     const pointer = overlayCellCenter(layout, "source:main", "target:main", "center");
     const down = createPointerEvent(
       "down",
-      snappedRect.x + 1,
-      snappedRect.y + NATIVE_APP_HEADER_HEIGHT + 1,
+      floatingRect.x + 1,
+      floatingRect.y + NATIVE_APP_HEADER_HEIGHT + 1,
+    );
+    const expectedRect = resolvePaneDragFloatingRect(
+      {
+        mode: "floating",
+        startX: floatingRect.x + 1,
+        startY: floatingRect.y + 1,
+        origRect: floatingRect,
+      },
+      floatingRect,
+      pointer.x,
+      pointer.shellY,
+      NATIVE_BOUNDS.width,
+      NATIVE_BOUNDS.height,
     );
 
-    runtime.startNativeFloatingDrag("source:main", snappedRect, down);
+    runtime.startNativeFloatingDrag("source:main", floatingRect, down);
     const move = createPointerEvent("drag", pointer.x, pointer.shellY + NATIVE_APP_HEADER_HEIGHT);
     runtime.handleNativeDrag(move);
 
-    const preview = dragRuntime.dockPreviewRef.current;
-    expect(preview).toMatchObject({
-      kind: "dock",
-      target: { kind: "leaf", targetId: "target:main", position: "center" },
-      rect: NATIVE_BOUNDS,
+    expect(dragRuntime.dockPreviewRef.current).toBeNull();
+    expect(dragRuntime.dragFloatingRect).toEqual({
+      paneId: "source:main",
+      rect: expectedRect,
     });
-    expect(preview!.layout.floating).toEqual([
-      { ...snappedRect, instanceId: "target:main" },
-    ]);
 
     const release = createPointerEvent("drag-end", pointer.x, pointer.shellY + NATIVE_APP_HEADER_HEIGHT);
     runtime.handleNativeDrag(release);
 
     expect(persistedLayouts).toHaveLength(1);
-    expect(persistedLayouts[0]).toEqual(preview!.layout);
-    expect(getDockLeafLayouts(persistedLayouts[0]!, NATIVE_BOUNDS, { precise: true })).toEqual([
-      { instanceId: "source:main", path: [], rect: NATIVE_BOUNDS },
+    expect(persistedLayouts[0]!.dockRoot).toEqual({ kind: "pane", instanceId: "target:main" });
+    expect(persistedLayouts[0]!.floating).toEqual([
+      { ...expectedRect, instanceId: "source:main" },
     ]);
-    const { instanceId: renderedInstanceId, ...renderedTarget } = constrainFloatingRectToBounds(
-      persistedLayouts[0]!.floating[0]!,
-      NATIVE_BOUNDS.width,
-      NATIVE_BOUNDS.height,
-    ) as typeof snappedRect;
-    expect(renderedInstanceId).toBe("target:main");
-    expect(renderedTarget).toEqual({
-      x: snappedRect.x,
-      y: snappedRect.y,
-      width: snappedRect.width,
-      height: snappedRect.height,
-      zIndex: snappedRect.zIndex,
-      fixedGeometry: true,
-    });
     expect(dragRuntime.dragRef.current).toBeNull();
   });
 });
