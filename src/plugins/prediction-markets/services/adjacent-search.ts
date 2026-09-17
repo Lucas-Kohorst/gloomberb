@@ -224,7 +224,9 @@ export async function searchAdjacentCatalog(options: {
   page?: number;
   signal?: AbortSignal;
 }): Promise<AdjacentSearchResult> {
-  const query = predictionSearchTokens(options.query).join(" ");
+  // Command-bar compact matching is lowercase. Adjacent AND-search is not, so
+  // pane `Diesel` / `/ Diesel` must go out as `diesel`.
+  const query = predictionSearchTokens(options.query).join(" ").toLowerCase();
   const categoryId = options.categoryId ?? "all";
   const page = options.page ?? 1;
   const signal = options.signal;

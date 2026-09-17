@@ -6,12 +6,13 @@ import { fuzzyFilter } from "../../utils/fuzzy-search";
  * returns nothing; command-bar compact matching still finds `KXDIESEL…`.
  */
 export function normalizePredictionSearchQuery(query: string): string {
-  return query.trim().replace(/^[/?]+\s*/, "").trim();
+  // Adjacent AND-search is case-sensitive (`Diesel` misses `KXDIESEL…`;
+  // command-bar `diesel` hits). Lowercase after stripping pane chrome.
+  return query.trim().replace(/^[/?]+\s*/, "").trim().toLowerCase();
 }
 
 export function predictionSearchTokens(query: string): string[] {
   return normalizePredictionSearchQuery(query)
-    .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 }

@@ -82,6 +82,7 @@ export function usePredictionCatalogData({
   const [loadingMore, setLoadingMore] = useState(false);
   const [kalshiFeed, setKalshiFeed] = useState<"live" | "delayed">("live");
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
+  const searchGenerationRef = useRef(0);
 
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
   const polymarketBrowseKey = useMemo(
@@ -428,8 +429,9 @@ export function usePredictionCatalogData({
       venue: PredictionVenue,
       cacheKey: string,
       query: string,
-      signal?: AbortSignal,
+      options?: { generation?: number },
     ) => {
+      const generation = options?.generation;
       setCatalogPending((current) =>
         updatePredictionPendingCounts(current, cacheKey, 1),
       );
@@ -439,9 +441,8 @@ export function usePredictionCatalogData({
           venue,
           categoryId,
           page: 1,
-          signal,
         });
-        if (signal?.aborted) return;
+        if (generation != null && generation !== searchGenerationRef.current) return;
         setCatalogCache((current) =>
           commitCatalogCache(current, cacheKey, current[cacheKey], result.markets),
         );
@@ -455,9 +456,7 @@ export function usePredictionCatalogData({
           setPolymarketNextOffset(null);
         }
       } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
-          return;
-        }
+        if (generation != null && generation !== searchGenerationRef.current) return;
         setCatalogErrors((current) =>
           updatePredictionErrorState(
             current,
@@ -470,7 +469,7 @@ export function usePredictionCatalogData({
         setCatalogPending((current) =>
           updatePredictionPendingCounts(current, cacheKey, -1),
         );
-        if (signal?.aborted) return;
+        if (generation != null && generation !== searchGenerationRef.current) return;
         const loadedAt = Date.now();
         if (venue === "kalshi") setKalshiLoadedAt(loadedAt);
         if (venue === "polymarket") setPolymarketLoadedAt(loadedAt);
@@ -485,21 +484,18 @@ export function usePredictionCatalogData({
     const kalshiKey = includeKalshi ? kalshiSearchKey : null;
     const polymarketKey = includePolymarket ? polymarketSearchKey : null;
     if (!kalshiKey && !polymarketKey) return;
-    const controller = new AbortController();
+    // Do not AbortController the Adjacent GET. Electrobun dedupes in-flight
+    // GETs; aborting poisons the shared promise so command-bar `diesel` hits
+    // never land in the pane, and `finally` skips lastRefreshAt (`updated ~8m`).
+    const generation = ++searchGenerationRef.current;
     if (kalshiKey) {
-      void loadAdjacentSearch("kalshi", kalshiKey, normalizedSearchQuery, controller.signal);
+      void loadAdjacentSearch("kalshi", kalshiKey, normalizedSearchQuery, { generation });
     }
     if (polymarketKey) {
-      void loadAdjacentSearch(
-        "polymarket",
-        polymarketKey,
-        normalizedSearchQuery,
-        controller.signal,
-      );
+      void loadAdjacentSearch("polymarket", polymarketKey, normalizedSearchQuery, {
+        generation,
+      });
     }
-    return () => {
-      controller.abort();
-    };
   }, [
     includeKalshi,
     includePolymarket,
