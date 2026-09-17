@@ -81,7 +81,7 @@ describe("AdjacentClient paths", () => {
       "/api/data/adjacent/news/latest?per_page=20",
       "/api/data/adjacent/news?limit=50&offset=10",
       `/api/data/adjacent/markets/${HEX_MARKET_ID}/news?per_page=20`,
-      "/api/data/adjacent/markets?search=bitcoin&per_page=8&page=1&platform=polymarket",
+      "/api/data/adjacent/markets?search=bitcoin&per_page=8&page=1&platform=polymarket&scope=all",
       `/api/data/adjacent/markets/${HEX_MARKET_ID}/prices?interval=1hour`,
     ]);
     expect(requested.every((entry) => !entry.url.includes("/public/"))).toBe(true);
@@ -100,7 +100,7 @@ describe("AdjacentClient paths", () => {
 
     expect(requested.map((entry) => entry.url)).toEqual([
       "https://api.adjacent.markets/api/v1/markets/kalshi:KXPRESPARTY-2028-D/similar",
-      "https://api.adjacent.markets/api/v1/markets?search=senate&per_page=5&page=1",
+      "https://api.adjacent.markets/api/v1/markets?search=senate&per_page=5&page=1&scope=all",
       "https://api.adjacent.markets/api/v1/markets/kalshi:KXPRESPARTY-2028-D/news?per_page=20",
       "https://api.adjacent.markets/api/v1/news?limit=25",
     ]);
@@ -181,6 +181,32 @@ describe("AdjacentClient paths", () => {
       title: "Will the New York win the 2026 Pro Basketball Finals?",
       yes_price: 37,
       similarity: 0.91,
+    });
+  });
+
+  test("searchMarkets unwraps live { data } rows and always asks for scope=all", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [{
+        market_id: "kalshi:KXRECOGROC-29",
+        ticker: "KXRECOGROC-29",
+        platform: "kalshi",
+        question: "Will Trump recognize Somaliland?",
+        status: "active",
+        probability: 15,
+      }],
+      meta: { has_next: false },
+    });
+    const client = new AdjacentClient({ apiKey: "ak_test" });
+    const response = await client.searchMarkets("trump", 8, "kalshi");
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/markets?search=trump&per_page=8&page=1&platform=kalshi&scope=all",
+    );
+    expect(response.markets?.[0]).toMatchObject({
+      id: "kalshi:KXRECOGROC-29",
+      platform: "kalshi",
+      title: "Will Trump recognize Somaliland?",
+      slug: "KXRECOGROC-29",
     });
   });
 

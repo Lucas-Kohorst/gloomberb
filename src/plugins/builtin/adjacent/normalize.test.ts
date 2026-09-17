@@ -7,6 +7,8 @@ import {
   normalizeAdjacentNewsArticle,
   normalizeAdjacentRate,
   unwrapAdjacentMarketIds,
+  unwrapAdjacentMarkets,
+  unwrapAdjacentMarketsResponse,
   unwrapAdjacentNewsArticles,
   unwrapAdjacentSimilarMarkets,
   formatYesOddsPercent,
@@ -270,5 +272,29 @@ describe("adjacent normalize", () => {
     });
     expect(formatYesOddsPercent(markets[0]!.yes_price)).toBe("37%");
     expect(formatYesOddsPercent(null)).toBeNull();
+  });
+
+  test("unwraps live Adjacent market list rows onto id/title/slug", () => {
+    const response = unwrapAdjacentMarketsResponse({
+      data: [{
+        market_id: "kalshi:KXRECOGROC-29",
+        ticker: "KXRECOGROC-29",
+        platform: "kalshi",
+        question: "Will Trump recognize Somaliland?",
+        status: "active",
+        probability: 15,
+        volume_24h: 120,
+      }],
+      meta: { has_next: true },
+    });
+    expect(response.meta?.has_next).toBe(true);
+    expect(unwrapAdjacentMarkets(response)[0]).toMatchObject({
+      id: "kalshi:KXRECOGROC-29",
+      platform: "kalshi",
+      title: "Will Trump recognize Somaliland?",
+      slug: "KXRECOGROC-29",
+      ticker: "KXRECOGROC-29",
+      yes_price: 15,
+    });
   });
 });

@@ -14,7 +14,12 @@ export function looksLikePredictionInstrumentQuery(query: string): boolean {
   const trimmed = query.trim();
   if (trimmed.length < MIN_QUERY_LENGTH) return false;
   if (/^(KALSHI|POLY|PM)\s*:/i.test(trimmed)) return true;
-  if (/^[A-Z]{1,5}$/i.test(trimmed)) return false;
+  // Kalshi series tickers (KXFED, KXMI) are 4–5 letters and would otherwise
+  // look like equities.
+  if (/^KX[A-Z0-9]{2,}/i.test(trimmed)) return true;
+  // Equity tickers are 1–5 letters in all caps. Lowercase topic words
+  // ("trump", "fed", "oscar") are prediction searches, not AAPL.
+  if (/^[A-Z]{1,5}$/.test(trimmed)) return false;
   return /[a-z]{3,}/i.test(trimmed);
 }
 

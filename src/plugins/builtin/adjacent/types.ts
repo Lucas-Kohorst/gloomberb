@@ -12,6 +12,8 @@ export interface AdjacentMarket {
   title: string;
   subtitle?: string;
   slug?: string;
+  ticker?: string;
+  display_ticker?: string;
   url?: string;
   category?: string;
   tags?: string[];
@@ -39,7 +41,9 @@ export interface AdjacentMarket {
 
 export interface AdjacentMarketsResponse {
   markets?: AdjacentMarket[];
+  data?: AdjacentMarket[];
   next_cursor?: string | null;
+  meta?: { has_next?: boolean; total_pages?: number };
 }
 
 export interface AdjacentMarketDetail extends AdjacentMarket {

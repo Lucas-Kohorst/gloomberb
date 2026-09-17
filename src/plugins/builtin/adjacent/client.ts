@@ -32,6 +32,7 @@ import type {
 } from "./types";
 import {
   unwrapAdjacentMarketIds,
+  unwrapAdjacentMarketsResponse,
   unwrapAdjacentNewsArticles,
   unwrapAdjacentPriceSamples,
   unwrapAdjacentSimilarMarkets,
@@ -365,10 +366,13 @@ export class AdjacentClient {
       per_page: limit,
       page: options?.page ?? 1,
       platform,
-      scope: this.isPublic ? "all" : undefined,
+      // Search is the full tradable universe. Auth defaults to index
+      // constituents, which drops most Kalshi contracts.
+      scope: "all",
     });
     // Don't cache search results persistently
-    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey, options?.signal);
+    const raw = await adjacentFetchJson<unknown>(url, this.apiKey, options?.signal);
+    return unwrapAdjacentMarketsResponse(raw);
   }
 
   async getMarket(id: string): Promise<AdjacentMarketDetail> {
@@ -585,7 +589,7 @@ export class AdjacentClient {
   ): Promise<string[]> {
     const url = buildUrl(this.marketsPath(), {
       search: query,
-      scope: this.isPublic ? "all" : undefined,
+      scope: "all",
       per_page: limit,
       platform,
     });
