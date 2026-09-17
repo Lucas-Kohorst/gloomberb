@@ -75,6 +75,26 @@ export function createCommandBarTestControls(
     });
   };
 
+  const selectFrameText = async (text: string): Promise<void> => {
+    const renderer = getRenderer();
+    const frame = renderer.captureCharFrame();
+    const rows = frame.split("\n");
+    const row = rows.findIndex((line) => !/^\s*>/.test(line) && line.includes(text));
+    const col = row >= 0 ? rows[row]!.indexOf(text) : -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await renderer.mockMouse.moveTo(col + 1, row);
+      await renderer.renderOnce();
+      // Park the pointer on the query line so later rows inserting above this
+      // cell cannot steal the highlight via hover.
+      await renderer.mockMouse.moveTo(2, 0);
+      await renderer.renderOnce();
+    });
+  };
+
   const renderFrames = async (count = 2): Promise<void> => {
     const renderer = getRenderer();
     for (let index = 0; index < count; index += 1) {
@@ -85,6 +105,7 @@ export function createCommandBarTestControls(
   return {
     waitForFrameToContain,
     clickFrameText,
+    selectFrameText,
     renderFrames,
   };
 }

@@ -65,6 +65,13 @@ export function useCommandBarListNavigation({
   const setHoveredIndex = useCallback((index: number | null) => {
     if (!currentRouteRef.current) {
       setRootHoveredIdx((current) => (current === index ? current : index));
+      if (index != null) {
+        const item = visibleListStateRef.current?.results[index];
+        if (item && item.disabled !== true) {
+          markRootSelectionNavigated(item.id);
+          setRootSelectedIdx((current) => (current === index ? current : index));
+        }
+      }
       return;
     }
     setRouteStack((current) => {
@@ -79,7 +86,7 @@ export function useCommandBarListNavigation({
       }
       return current;
     });
-  }, [currentRouteRef, setRootHoveredIdx, setRouteStack]);
+  }, [currentRouteRef, markRootSelectionNavigated, setRootHoveredIdx, setRootSelectedIdx, setRouteStack, visibleListStateRef]);
 
   const handleListScroll = useCallback((event: CommandBarListScrollEvent) => {
     event.stopPropagation();
