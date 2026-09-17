@@ -2,28 +2,33 @@ import type { TextareaRenderable } from "../../../../ui";
 
 const clampCursorOffset = (offset: number, draft: string) => Math.max(0, Math.min(offset, draft.length));
 
+function numericOffset(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function logicalCursorOffset(textarea: TextareaRenderable | null | undefined): number | undefined {
+  const logical = numericOffset((textarea as TextareaRenderable & {
+    logicalCursor?: { offset?: number };
+  } | null | undefined)?.logicalCursor?.offset);
+  if (logical != null) return logical;
+  const getCursorPosition = textarea?.editBuffer
+    && "getCursorPosition" in textarea.editBuffer
+    ? (textarea.editBuffer as { getCursorPosition?: () => { offset?: number } }).getCursorPosition
+    : undefined;
+  return numericOffset(getCursorPosition?.()?.offset);
+}
+
 export function getComposerCursorOffset(
   textarea: TextareaRenderable | null | undefined,
   draft: string,
 ): number {
-  const visual = textarea?.visualCursor?.offset;
-  const stored = textarea?.cursorOffset;
-  const hasVisual = typeof visual === "number";
-  const hasStored = typeof stored === "number";
-  // OpenTUI's editorView cursor can lag at 0 after an insert while the
-  // textarea cursorOffset already reflects the caret after the typed text.
-  // Preferring that stale 0 makes `@` look like it is not a mention trigger,
-  // so Enter sends "@" instead of inserting the selected username.
-  let offset: number;
-  if (hasVisual && hasStored) {
-    offset = visual === 0 && stored > 0 ? stored : visual;
-  } else if (hasVisual) {
-    offset = visual;
-  } else if (hasStored) {
-    offset = stored;
-  } else {
-    offset = draft.length;
-  }
+  // OpenTUI's `cursorOffset` getter is the editorView visual caret, which can
+  // lag at 0 after an insert. Mentions key off the caret, so that stale 0
+  // makes `@` look like it is not a trigger and Enter sends "@".
+  const offset = logicalCursorOffset(textarea)
+    ?? numericOffset(textarea?.visualCursor?.offset)
+    ?? numericOffset(textarea?.cursorOffset)
+    ?? draft.length;
   return clampCursorOffset(offset, draft);
 }
 

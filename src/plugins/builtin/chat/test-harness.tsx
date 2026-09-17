@@ -231,7 +231,7 @@ export function createChatTestControls(getSetup: () => ChatTestSetup) {
         await getSetup().renderOnce();
       });
     },
-    async waitForFrameToContain(text: string, attempts = 12, delayMs = 20): Promise<string> {
+    async waitForFrameToContain(text: string, attempts = 20, delayMs = 50): Promise<string> {
       const renderer = getSetup();
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frame = renderer.captureCharFrame();

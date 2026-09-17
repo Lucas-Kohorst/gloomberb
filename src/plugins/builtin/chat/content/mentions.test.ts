@@ -25,6 +25,17 @@ describe("chat mention suggestions", () => {
     });
     expect(detectChatMentionTrigger("email a@b", "email a@b".length)).toBeNull();
     expect(detectChatMentionTrigger("done @al now", "done @al now".length)).toBeNull();
+    expect(detectChatMentionTrigger("@", 0)).toEqual({
+      start: 0,
+      end: 1,
+      query: "",
+    });
+    expect(detectChatMentionTrigger("@bravo", 0)).toEqual({
+      start: 0,
+      end: 6,
+      query: "bravo",
+    });
+    expect(detectChatMentionTrigger("hi @br", 0)).toBeNull();
   });
 
   test("orders visible users by recent messages, filters by prefix, and skips direct channels", () => {
