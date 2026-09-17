@@ -97,10 +97,15 @@ export function makeLayoutGridCells(
 
   for (let row = 0; row < rowCount; row += 1) {
     const y = Math.floor((safeHeight * row) / rowCount);
-    const bottom = Math.floor((safeHeight * (row + 1)) / rowCount);
+    // Last row absorbs leftover pixels so floor-division cannot leave a 1px gap.
+    const bottom = row === rowCount - 1
+      ? safeHeight
+      : Math.floor((safeHeight * (row + 1)) / rowCount);
     for (let column = 0; column < columnCount; column += 1) {
       const x = Math.floor((safeWidth * column) / columnCount);
-      const right = Math.floor((safeWidth * (column + 1)) / columnCount);
+      const right = column === columnCount - 1
+        ? safeWidth
+        : Math.floor((safeWidth * (column + 1)) / columnCount);
       cells.push({
         column,
         row,
@@ -472,8 +477,55 @@ export function makeSnapGuides(width: number, height: number): SnapGuide[] {
   }));
 }
 
+const SNAP_EDGE_SLACK_PX = 1;
+
+function chebyshevDistanceToRect(rect: LayoutBounds, x: number, y: number): number {
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+  const dx = x < rect.x ? rect.x - x : x >= right ? x - right : 0;
+  const dy = y < rect.y ? rect.y - y : y >= bottom ? y - bottom : 0;
+  return Math.max(dx, dy);
+}
+
+function snapGuidesBounds(guides: SnapGuide[]): LayoutBounds | null {
+  if (guides.length === 0) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxRight = Number.NEGATIVE_INFINITY;
+  let maxBottom = Number.NEGATIVE_INFINITY;
+  for (const guide of guides) {
+    const rect = guide.triggerRect;
+    minX = Math.min(minX, rect.x);
+    minY = Math.min(minY, rect.y);
+    maxRight = Math.max(maxRight, rect.x + rect.width);
+    maxBottom = Math.max(maxBottom, rect.y + rect.height);
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: maxRight - minX,
+    height: maxBottom - minY,
+  };
+}
+
 export function resolveSnapGuide(x: number, y: number, guides: SnapGuide[]): SnapGuide | null {
-  return guides.find((guide) => pointInRect(guide.triggerRect, x, y)) ?? null;
+  const contained = guides.find((guide) => pointInRect(guide.triggerRect, x, y));
+  if (contained) return contained;
+
+  const bounds = snapGuidesBounds(guides);
+  // Exclusive overall far edges: x === width stays outside, matching pointInRect.
+  if (!bounds || !pointInRect(bounds, x, y)) return null;
+
+  let nearest: SnapGuide | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const guide of guides) {
+    const distance = chebyshevDistanceToRect(guide.triggerRect, x, y);
+    if (distance <= SNAP_EDGE_SLACK_PX && distance < nearestDistance) {
+      nearest = guide;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 export function resolveExternalDockPreview(
