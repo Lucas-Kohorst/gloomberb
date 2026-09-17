@@ -43,6 +43,16 @@ describe("prediction-market NL → series expression", () => {
       marketId: "KXMI-SEN-2026",
       title: "Michigan Senate 2026",
     });
+    expect(venueChartHitFromAdjacentMarket({
+      market_id: "kalshi:KXRECOGROC-29",
+      ticker: "KXRECOGROC-29",
+      platform: "kalshi",
+      question: "Will Trump recognize Somaliland?",
+    })).toEqual({
+      venue: "kalshi",
+      marketId: "KXRECOGROC-29",
+      title: "Will Trump recognize Somaliland?",
+    });
   });
 
   test("maps a Kalshi search hit onto KALSHI:ticker", () => {

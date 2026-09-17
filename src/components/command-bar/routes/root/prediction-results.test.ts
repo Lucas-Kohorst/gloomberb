@@ -47,8 +47,13 @@ function summary(
 describe("looksLikePredictionInstrumentQuery", () => {
   test("accepts topic text and prefixed ids, skips short equity tickers", () => {
     expect(looksLikePredictionInstrumentQuery("clancy")).toBe(true);
+    expect(looksLikePredictionInstrumentQuery("trump")).toBe(true);
+    expect(looksLikePredictionInstrumentQuery("fed")).toBe(true);
+    expect(looksLikePredictionInstrumentQuery("oscar")).toBe(true);
+    expect(looksLikePredictionInstrumentQuery("KXFED")).toBe(true);
     expect(looksLikePredictionInstrumentQuery("KALSHI:KXCLANCY")).toBe(true);
     expect(looksLikePredictionInstrumentQuery("AAPL")).toBe(false);
+    expect(looksLikePredictionInstrumentQuery("MSFT")).toBe(false);
     expect(looksLikePredictionInstrumentQuery("ab")).toBe(false);
   });
 });
@@ -94,5 +99,45 @@ describe("searchPredictionInstruments", () => {
     expect(kalshi).toContain("search=fed");
     expect(poly).toContain("search=fed");
     expect(requested.some((url) => url.includes("platform=kalshi,polymarket"))).toBe(false);
+  });
+
+  test("keeps Kalshi rows when Adjacent returns the live list shape", async () => {
+    setHttpFetchTransport(async (url) => {
+      const kalshi = url.includes("platform=kalshi") && !url.includes("platform=kalshi,");
+      const body = kalshi
+        ? {
+          data: [{
+            market_id: "kalshi:KXRECOGROC-29",
+            ticker: "KXRECOGROC-29",
+            platform: "kalshi",
+            question: "Will Trump recognize Somaliland?",
+            status: "active",
+            probability: 15,
+            volume_24h: 0,
+          }],
+          meta: { has_next: false },
+        }
+        : {
+          data: [{
+            market_id: "polymarket:0x501986de68bd14841c835ec33df35e3cb5355ecff2ace13c0b31d8b907f7f018",
+            ticker: "0x501986de68bd14841c835ec33df35e3cb5355ecff2ace13c0b31d8b907f7f018",
+            display_ticker: "trump-renames-strait-of-hormuz",
+            platform: "polymarket",
+            question: "Trump renames Strait of Hormuz to Strait of Trump?",
+            link: "https://polymarket.com/event/trump-renames-strait-of-hormuz",
+            status: "active",
+            probability: 10,
+          }],
+          meta: { has_next: false },
+        };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const markets = await searchPredictionInstruments("trump");
+    expect(markets.some((market) => market.venue === "kalshi" && market.marketId === "KXRECOGROC-29")).toBe(true);
+    expect(markets.some((market) => market.venue === "polymarket")).toBe(true);
   });
 });

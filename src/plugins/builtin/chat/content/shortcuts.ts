@@ -108,20 +108,41 @@ export function useChatContentShortcuts({
 
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
-    if (
-      event.name !== "tab"
-      || event.ctrl
-      || event.meta
-      || event.super
-      || event.alt
-    ) {
+    if (event.ctrl || event.meta || event.super || event.alt) return;
+
+    if (event.name === "tab") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      commitMentionSelection();
       return;
     }
 
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    commitMentionSelection();
-  }, { allowEditable: true, phase: "before" });
+    if (event.name === "escape") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      dismissMentionSuggestions();
+      return;
+    }
+
+    if (isPlainKey(event, "up", "down")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (event.name === "up" || event.name === "down") {
+        moveMentionSelection(event.name);
+      }
+      return;
+    }
+
+    if (event.name === "return" || event.name === "enter") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      commitMentionSelection();
+    }
+  }, {
+    allowEditable: true,
+    phase: "before",
+    interceptNative: (event) => event.targetEditable === true,
+  });
 
   useShortcut((event) => {
     if (!focused || commandBarOpen) return;
@@ -192,24 +213,6 @@ export function useChatContentShortcuts({
     }
 
     if (inputFocused) {
-      if (mentionMenuOpen) {
-        if (event.name === "escape") {
-          event.preventDefault?.();
-          event.stopPropagation?.();
-          dismissMentionSuggestions();
-          return;
-        }
-
-        if (isPlainKey(event, "up", "down")) {
-          event.preventDefault?.();
-          event.stopPropagation?.();
-          if (event.name === "up" || event.name === "down") {
-            moveMentionSelection(event.name);
-          }
-          return;
-        }
-      }
-
       if (event.name === "escape") {
         event.preventDefault?.();
         event.stopPropagation?.();

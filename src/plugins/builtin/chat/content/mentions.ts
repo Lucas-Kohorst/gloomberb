@@ -25,10 +25,18 @@ export function detectChatMentionTrigger(
   const cursor = Math.max(0, Math.min(cursorOffset, draft.length));
   const beforeCursor = draft.slice(0, cursor);
   const match = beforeCursor.match(MENTION_TRIGGER_RE);
-  if (!match) return null;
-  const query = match[2] ?? "";
-  const start = beforeCursor.length - query.length - 1;
-  return { start, end: cursor, query };
+  if (match) {
+    const query = match[2] ?? "";
+    const start = beforeCursor.length - query.length - 1;
+    return { start, end: cursor, query };
+  }
+  // OpenTUI can report caret 0 for one frame after inserting `@` into an
+  // empty composer. Treat the whole-draft mention as active so Enter inserts
+  // instead of sending "@".
+  if (cursor === 0 && /^@[A-Za-z0-9_]{0,30}$/.test(draft)) {
+    return detectChatMentionTrigger(draft, draft.length);
+  }
+  return null;
 }
 
 export function buildRecentMentionSuggestions({

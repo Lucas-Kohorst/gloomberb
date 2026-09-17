@@ -5,6 +5,8 @@ import type {
   AdjacentIndexRow,
   AdjacentIndexPricePoint,
   AdjacentIndexSleeve,
+  AdjacentMarket,
+  AdjacentMarketsResponse,
   AdjacentNewsArticle,
   AdjacentPlatform,
   AdjacentPriceHistoryPoint,
@@ -277,6 +279,89 @@ export function unwrapAdjacentSimilarMarkets(raw: unknown): AdjacentSimilarMarke
   return rows
     .map(parseAdjacentSimilarMarket)
     .filter((market): market is AdjacentSimilarMarket => market !== null);
+}
+
+function adjacentListRows(raw: unknown): unknown[] {
+  if (!raw || typeof raw !== "object") return [];
+  const record = raw as Record<string, unknown>;
+  if (Array.isArray(record.data)) return record.data;
+  if (Array.isArray(record.markets)) return record.markets;
+  return [];
+}
+
+function stripVenuePrefix(value: string): string {
+  return value.replace(/^(kalshi|polymarket):/i, "").trim();
+}
+
+/** Live Adjacent list rows use `market_id` / `question`; the UI type uses `id` / `title`. */
+export function parseAdjacentMarket(value: unknown): AdjacentMarket | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const id = stringField(record, "id", "market_id");
+  if (!id) return null;
+  const platformRaw = stringField(record, "platform")?.toLowerCase();
+  const platform: AdjacentPlatform = platformRaw === "kalshi" || platformRaw === "polymarket"
+    ? platformRaw
+    : platformFromId(id);
+  const ticker = stringField(record, "ticker");
+  const displayTicker = stringField(record, "display_ticker", "slug");
+  const slug = platform === "kalshi"
+    ? (ticker ?? displayTicker ?? stripVenuePrefix(id) ?? undefined)
+    : (displayTicker && !/^0x[0-9a-f]+$/i.test(displayTicker) ? displayTicker : undefined);
+  const tags = Array.isArray(record.tags)
+    ? record.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+    : undefined;
+  return {
+    id,
+    platform,
+    title: stringField(record, "title", "question") ?? slug ?? stripVenuePrefix(id) ?? id,
+    subtitle: stringField(record, "subtitle"),
+    slug,
+    ticker,
+    display_ticker: displayTicker,
+    url: stringField(record, "url", "link"),
+    category: stringField(record, "category"),
+    tags,
+    status: stringField(record, "status") ?? "unknown",
+    ends_at: stringField(record, "ends_at", "end_date") ?? null,
+    updated_at: stringField(record, "updated_at") ?? null,
+    yes_price: numberField(record, "yes_price", "latest_price", "probability"),
+    no_price: numberField(record, "no_price"),
+    yes_bid: numberField(record, "yes_bid") ?? undefined,
+    yes_ask: numberField(record, "yes_ask") ?? undefined,
+    no_bid: numberField(record, "no_bid") ?? undefined,
+    no_ask: numberField(record, "no_ask") ?? undefined,
+    last_trade_price: numberField(record, "last_trade_price") ?? undefined,
+    volume_24h: numberField(record, "volume_24h") ?? undefined,
+    total_volume: numberField(record, "volume", "total_volume") ?? undefined,
+    open_interest: numberField(record, "open_interest") ?? undefined,
+    event_id: stringField(record, "event_id"),
+    event_title: stringField(record, "event_title"),
+  };
+}
+
+export function unwrapAdjacentMarkets(raw: unknown): AdjacentMarket[] {
+  return adjacentListRows(raw)
+    .map(parseAdjacentMarket)
+    .filter((market): market is AdjacentMarket => market !== null);
+}
+
+export function unwrapAdjacentMarketsResponse(raw: unknown): AdjacentMarketsResponse {
+  if (!raw || typeof raw !== "object") return { markets: [] };
+  const record = raw as Record<string, unknown>;
+  const nextCursor = typeof record.next_cursor === "string" && record.next_cursor.trim()
+    ? record.next_cursor.trim()
+    : null;
+  const meta = record.meta && typeof record.meta === "object" && !Array.isArray(record.meta)
+    ? record.meta as { has_next?: boolean; total_pages?: number }
+    : undefined;
+  const markets = unwrapAdjacentMarkets(raw);
+  return {
+    markets,
+    data: markets,
+    next_cursor: nextCursor,
+    meta,
+  };
 }
 
 function venueFromConstituent(row: {
