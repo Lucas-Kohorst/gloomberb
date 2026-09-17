@@ -3,7 +3,8 @@ import { createShare, getShare } from "./api";
 import { decodeArticleSharePayload, type SharePayload } from "./payload";
 import { publishArticleShare, publishShare, tableSnapshotSharePayload } from "./publish";
 import { buildTableSharePayload } from "./table-snapshot";
-import { parseShareId } from "./routes";
+import { parseArticleSlugPath, parseShareId } from "./routes";
+import { slugifyArticleTitle } from "../utils/slugify";
 
 const id = "0123456789abcdef0123456789abcdef";
 
@@ -98,6 +99,57 @@ test("falls back to a Cloud share URL when the news index cannot be written", as
     register: async () => false,
   });
   expect(new URL(url).pathname).toBe(`/s/${id}`);
+});
+
+test("publishes a human-readable slug URL when the slug index is written", async () => {
+  const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+  const title = "BRIEF-Situational Awareness Active In Options Market - CNBC";
+  let registered: { slug: string; articleId: string; shareId: string } | undefined;
+  const url = await publishArticleShare({
+    type: "news",
+    id: articleId,
+    title,
+    source: "Reuters News",
+    url: "https://www.reuters.com/article",
+    summary: "body",
+  }, async () => ({ id, expiresAt: "2026-10-01T00:00:00Z" }), {
+    lookup: async () => null,
+    register: async () => true,
+  }, async () => null, {
+    register: async (slug, registeredArticleId, shareId) => {
+      registered = { slug, articleId: registeredArticleId, shareId };
+      return true;
+    },
+  });
+  const path = new URL(url).pathname;
+  expect(path.startsWith("/article/")).toBe(true);
+  expect(path).toContain(slugifyArticleTitle(title));
+  expect(registered?.slug).toContain("--");
+  expect(parseArticleSlugPath(path)).toBe(registered?.slug);
+  expect(registered).toEqual({
+    slug: registered!.slug,
+    articleId,
+    shareId: id,
+  });
+});
+
+test("falls back to /news when slug registration fails but the news index was written", async () => {
+  const articleId = "reuters-urn:newsml:reuters.com:20260911:nFWN4530A2";
+  const url = await publishArticleShare({
+    type: "news",
+    id: articleId,
+    title: "BRIEF",
+    source: "Reuters News",
+    url: "https://www.reuters.com/article",
+    summary: "body",
+  }, async () => ({ id, expiresAt: "2026-10-01T00:00:00Z" }), {
+    lookup: async () => null,
+    register: async () => true,
+  }, async () => null, {
+    register: async () => false,
+  });
+  expect(new URL(url).pathname).toBe(`/news/${articleId}`);
+  expect(new URL(url).pathname.startsWith("/article/")).toBe(false);
 });
 
 test("falls back to a hosted short id when Cloud is unavailable", async () => {

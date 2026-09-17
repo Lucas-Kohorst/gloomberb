@@ -6,8 +6,10 @@ import {
   encodeNewsPathId,
   isCanonicalNewsId,
   isStoredShareId,
+  parseArticleSlugPath,
   PUBLIC_SHARE_ORIGIN,
 } from "./routes";
+import { parseArticleSlugRecord, type ArticleSlugRecord } from "./news-index";
 import { isShareId } from "./short-id";
 export { PUBLIC_SHARE_ORIGIN, publicShareUrl, openLiveShareUrl, parseShareId } from "./routes";
 
@@ -227,6 +229,46 @@ export async function registerNewsShare(
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ shareId }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function articleSlugIndexUrl(fullSlug: string): string {
+  return `${NEWS_INDEX_API_ORIGIN}/article-slug/${encodeURIComponent(fullSlug)}`;
+}
+
+/** Public lookup: hosted slug → article id (and optional Cloud share id). */
+export async function getArticleSlug(
+  fullSlug: string,
+  fetchImpl: ShareFetch = fetch,
+): Promise<ArticleSlugRecord | null> {
+  if (!parseArticleSlugPath(`/article/${fullSlug}`)) return null;
+  const response = await fetchShare(fetchImpl, articleSlugIndexUrl(fullSlug));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("Could not load share.");
+  return parseArticleSlugRecord(await readJson(response));
+}
+
+/**
+ * Point `/article/{titleSlug}--{hash}` at an article id. The KV key is the
+ * full slug, the same string `parseArticleSlugPath` returns.
+ */
+export async function registerArticleSlug(
+  fullSlug: string,
+  articleId: string,
+  shareId?: string,
+  fetchImpl: ShareFetch = fetch,
+): Promise<boolean> {
+  if (!parseArticleSlugPath(`/article/${fullSlug}`) || !isCanonicalNewsId(articleId)) return false;
+  if (shareId !== undefined && !isStoredShareId(shareId)) return false;
+  try {
+    const response = await fetchShare(fetchImpl, articleSlugIndexUrl(fullSlug), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ articleId, ...(shareId ? { shareId } : {}) }),
     });
     return response.ok;
   } catch {

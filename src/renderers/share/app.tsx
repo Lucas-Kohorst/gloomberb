@@ -8,6 +8,7 @@ import {
 import type { LayoutMarketplaceEntry } from "../../layout-marketplace/payload";
 import {
   deleteShare,
+  getArticleSlug,
   getNewsShare,
   getShare,
   openLiveShareUrl,
@@ -28,6 +29,7 @@ import {
 import {
   buildTerminalArticleUrl,
   buildTerminalShareUrl,
+  parseArticleSlugPath,
   parseNewsArticleId,
   parseShortShareId,
 } from "../../shares/routes";
@@ -171,6 +173,54 @@ function NewsShareApp({ articleId, origin }: { articleId: string; origin: string
   return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
 }
 
+function ArticleSlugApp({ slug, origin }: { slug: string; origin: string }) {
+  const [state, setState] = useState<{
+    share?: ShareRecord;
+    shareId?: string;
+    error?: string;
+  }>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchImpl = (url: string, init?: RequestInit) => fetch(url, { ...init, signal: controller.signal });
+    (async () => {
+      try {
+        const record = await getArticleSlug(slug, fetchImpl);
+        if (controller.signal.aborted) return;
+        if (!record) {
+          setState({ error: "This article is unavailable or has expired." });
+          return;
+        }
+        let share: ShareRecord | null = null;
+        let shareId: string | undefined;
+        try {
+          const news = await getNewsShare(record.articleId, fetchImpl);
+          if (news) {
+            share = news;
+            shareId = news.id;
+          }
+        } catch {
+          // Indexed news is optional; the slug record may still point at a Cloud share.
+        }
+        if (!share && record.shareId) {
+          share = await getShare(record.shareId, fetchImpl);
+          shareId = record.shareId;
+        }
+        if (controller.signal.aborted) return;
+        setState(share && shareId
+          ? { share, shareId }
+          : { error: "This article is unavailable or has expired." });
+      } catch {
+        if (!controller.signal.aborted) setState({ error: "This article could not be loaded." });
+      }
+    })();
+    return () => controller.abort();
+  }, [slug]);
+  if (state.share && state.shareId) {
+    return <ShareRecordView share={state.share} shareId={state.shareId} origin={origin} />;
+  }
+  return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
+}
+
 export function SocialShareApp({ location = window.location }: {
   location?: Pick<Location, "pathname" | "search" | "origin">;
 }) {
@@ -185,6 +235,8 @@ export function SocialShareApp({ location = window.location }: {
   const layoutId = parseMarketplaceLayoutId(pathname);
   if (layoutId) return <LayoutApp id={layoutId} />;
   if (pathname.startsWith("/l/")) return <main><h1>Gloomberb</h1><p>Invalid layout link.</p></main>;
+  const articleSlug = parseArticleSlugPath(pathname);
+  if (articleSlug) return <ArticleSlugApp slug={articleSlug} origin={location.origin} />;
   const newsId = parseNewsArticleId(pathname);
   if (newsId) return <NewsShareApp articleId={newsId} origin={location.origin} />;
   const shareId = parseShareId(pathname) ?? parseShortShareId(pathname);
