@@ -145,7 +145,9 @@ export function stripJinaPreamble(raw: string): string {
  * Drop site chrome and bot-wall copy that Jina includes when readability
  * fails (Seeking Alpha is the usual case: skip-to-content, nav menus,
  * "enable Javascript and cookies", ad-blocker warnings). Keep the first
- * real article block and anything after it, including "More on …" links.
+ * real article and stop at the next boundary: a "More on …" / related-stories
+ * heading, or a second title+byline. The opening title+date is the article
+ * itself, not a boundary.
  *
  * Returns an empty string when the page is only a challenge wall so a
  * share payload can keep its summary instead of replacing it with junk.
@@ -164,15 +166,18 @@ export function cleanJinaArticle(raw: string): string {
 
   const kept: string[] = [];
   const seen = new Set<string>();
+  let keptContent = false;
   for (let i = start; i < blocks.length; i++) {
     if (kinds[i] === "chrome") continue;
     // A lone nav label can be a real subheading; a run of them is a menu.
     if (kinds[i] === "nav-label" && (kinds[i - 1] === "nav-label" || kinds[i + 1] === "nav-label")) continue;
     if (isPaywallStub(blocks[i]!)) continue;
+    if (keptContent && isArticleBoundary(blocks, kinds, i)) break;
     const key = blockKey(blocks[i]!);
     if (key && seen.has(key)) continue;
     if (key) seen.add(key);
     kept.push(blocks[i]!);
+    if (kinds[i] === "content") keptContent = true;
   }
   const cleaned = kept.join("\n\n").trim();
   return isPaywallStub(cleaned) ? "" : cleaned;
@@ -436,6 +441,29 @@ function isTimestampOrByline(line: string): boolean {
 
 function isRelatedHeading(line: string): boolean {
   return /^more on\b/i.test(visibleLineText(line));
+}
+
+const RELATED_SECTION_RE = (
+  /^(?:related|also from|more stories|more articles|more news|read more|see also|trending|top stories|latest news)\b(?:\s|:|$)/i
+);
+
+/** True when this block starts a related-stories list or a second article. */
+function isArticleBoundary(blocks: string[], kinds: BlockKind[], i: number): boolean {
+  const block = blocks[i]!;
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  const first = visibleLineText(lines[0] ?? "");
+  if (first && (isRelatedHeading(first) || RELATED_SECTION_RE.test(first))) return true;
+
+  if (kinds[i] === "nav-label" || isNavLabel(first)) return false;
+  if (lines.length === 0 || lines.length > 3) return false;
+  if (first.length > 80 || isProseLine(first) || isTimestampOrByline(first)) return false;
+
+  const next = blocks[i + 1];
+  if (!next) return false;
+  const nextFirst = visibleLineText(
+    next.split("\n").map((line) => line.trim()).filter(Boolean)[0] ?? "",
+  );
+  return isTimestampOrByline(nextFirst);
 }
 
 function visibleLineText(line: string): string {

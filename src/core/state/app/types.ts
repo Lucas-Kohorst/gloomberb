@@ -82,7 +82,7 @@ export type AppAction =
       complete: boolean;
       progress: OnboardingProgress | undefined;
     }
-  | { type: "RECORD_COMMAND"; id: string; label: string }
+  | { type: "RECORD_COMMAND"; id: string; label: string; arg?: string; article?: RecentCommand["article"] }
   | { type: "SET_TICKERS"; tickers: Map<string, TickerRecord> }
   | { type: "UPDATE_TICKER"; ticker: TickerRecord }
   | { type: "REMOVE_TICKER"; symbol: string }

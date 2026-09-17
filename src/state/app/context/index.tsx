@@ -96,9 +96,17 @@ function sameRecentCommands(
   right: AppConfig["recentCommands"],
 ): boolean {
   if (left.length !== right.length) return false;
-  return left.every((entry, index) => (
-    entry.id === right[index]?.id && entry.label === right[index]?.label
-  ));
+  return left.every((entry, index) => {
+    const other = right[index];
+    return !!other
+      && entry.id === other.id
+      && entry.label === other.label
+      && entry.arg === other.arg
+      && entry.article?.id === other.article?.id
+      && entry.article?.title === other.article?.title
+      && entry.article?.source === other.article?.source
+      && entry.article?.url === other.article?.url;
+  });
 }
 
 function materializeDetachedConfig(config: AppConfig): AppConfig {

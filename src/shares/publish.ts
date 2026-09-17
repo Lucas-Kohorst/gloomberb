@@ -1,4 +1,5 @@
-import { createHostedShare, createShare, lookupNewsShareId, registerNewsShare } from "./api";
+import { createHostedShare, createShare, lookupNewsShareId, registerArticleSlug, registerNewsShare } from "./api";
+import { slugifyArticleTitle } from "../utils/slugify";
 import {
   articleShareStoreData,
   encodeArticleSharePayload,
@@ -9,8 +10,11 @@ import {
   type TableSharePayload,
 } from "./payload";
 import {
+  articleShareSlug,
+  buildArticleSlugUrl,
   buildInlineArticleShareUrl,
   buildShortShareUrl,
+  hashArticleId,
   isCanonicalNewsId,
   isStoredShareId,
   publicNewsUrl,
@@ -34,6 +38,18 @@ const noopNewsIndex: NewsShareIndex = {
   register: async () => false,
 };
 
+export interface ArticleSlugIndex {
+  register(slug: string, articleId: string, shareId: string): Promise<boolean>;
+}
+
+const hostedSlugIndex: ArticleSlugIndex = {
+  register: (slug, articleId, shareId) => registerArticleSlug(slug, articleId, shareId),
+};
+
+const noopSlugIndex: ArticleSlugIndex = {
+  register: async () => false,
+};
+
 type HostedShareCreator = (payload: SharePayload) => Promise<{ id: string } | null>;
 
 const hostedShareCreator: HostedShareCreator = (payload) => createHostedShare(payload);
@@ -49,11 +65,11 @@ export async function publishShare(payload: SharePayload, create: ShareCreator =
 }
 
 /**
- * Prefer a canonical `/news/{articleId}` page when the story has a stable id.
- * Cloud still stores the snapshot; the hosted worker indexes article id →
- * share id so the same story keeps the same public URL.
+ * Prefer a human-readable `/article/{title}--{hash}` page when the slug index
+ * can be written. `/news/{articleId}` stays the reuse URL for stories already
+ * indexed, and the fallback when slug registration fails.
  *
- * Inline `/article?a=` is only the fallback when Cloud rejects or the payload
+ * Inline `/article?a=` is only the last resort when Cloud rejects or the payload
  * will not fit the stored envelope (huge Substack HTML).
  */
 export async function publishArticleShare(
@@ -61,6 +77,7 @@ export async function publishArticleShare(
   create: ShareCreator = createShare,
   newsIndex: NewsShareIndex = create === createShare ? hostedNewsIndex : noopNewsIndex,
   hostedCreate: HostedShareCreator = create === createShare ? hostedShareCreator : noopHostedShareCreator,
+  slugIndex: ArticleSlugIndex = create === createShare ? hostedSlugIndex : noopSlugIndex,
 ): Promise<string> {
   const inlineUrl = () => buildInlineArticleShareUrl(encodeArticleSharePayload(article));
   const articleId = article.id.trim();
@@ -75,7 +92,20 @@ export async function publishArticleShare(
     if (!envelope) continue;
     try {
       const { id } = await create(envelope);
-      if (canonical && await newsIndex.register(articleId, id)) return publicNewsUrl(articleId);
+      const newsRegistered = canonical && await newsIndex.register(articleId, id);
+      if (canonical) {
+        try {
+          const titleSlug = slugifyArticleTitle(article.title);
+          const idHash = await hashArticleId(articleId);
+          const fullSlug = articleShareSlug(titleSlug, idHash);
+          if (await slugIndex.register(fullSlug, articleId, id)) {
+            return buildArticleSlugUrl(titleSlug, idHash);
+          }
+        } catch {
+          // Never return a slug URL that was not written to the index.
+        }
+      }
+      if (newsRegistered) return publicNewsUrl(articleId);
       return publicUrlForShareId(id);
     } catch {
       // Cloud auth/size/network: try a smaller body, then hosted KV, then inline.

@@ -6,7 +6,7 @@
  */
 
 import { parseSharePayload, type SharePayload } from "./payload";
-import { isStoredShareId } from "./routes";
+import { isCanonicalNewsId, isStoredShareId } from "./routes";
 
 export const NEWS_INDEX_KEY_PREFIX = "news:";
 export const NEWS_INDEX_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -40,4 +40,36 @@ export function parseNewsIndexRecord(value: unknown): NewsIndexRecord | null {
 
 export function serializeNewsIndexRecord(shareId: string, verifiedArticle?: SharePayload): string {
   return JSON.stringify({ shareId, ...(verifiedArticle ? { provenanceVersion: 1, verifiedArticle } : {}) });
+}
+
+export const ARTICLE_SLUG_KEY_PREFIX = "slug:";
+
+export function slugIndexKey(fullSlug: string): string {
+  return `${ARTICLE_SLUG_KEY_PREFIX}${fullSlug}`;
+}
+
+export interface ArticleSlugRecord {
+  articleId: string;
+  shareId?: string;
+}
+
+export function parseArticleSlugRecord(value: unknown): ArticleSlugRecord | null {
+  if (typeof value === "string") {
+    try {
+      return parseArticleSlugRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const articleId = (value as { articleId?: unknown }).articleId;
+  if (typeof articleId !== "string" || !isCanonicalNewsId(articleId)) return null;
+  const shareId = (value as { shareId?: unknown }).shareId;
+  if (shareId === undefined || shareId === null) return { articleId };
+  if (typeof shareId !== "string" || !isStoredShareId(shareId)) return null;
+  return { articleId, shareId };
+}
+
+export function serializeArticleSlugRecord(articleId: string, shareId?: string): string {
+  return JSON.stringify({ articleId, ...(shareId ? { shareId } : {}) });
 }

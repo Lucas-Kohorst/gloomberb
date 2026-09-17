@@ -212,6 +212,21 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
     : fallback;
 }
 
+function sanitizeRecentCommandArticle(value: unknown): RecentCommand["article"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const article = value as Record<string, unknown>;
+  if (
+    typeof article.id !== "string"
+    || article.id.length === 0
+    || typeof article.title !== "string"
+    || typeof article.source !== "string"
+    || typeof article.url !== "string"
+  ) {
+    return undefined;
+  }
+  return { id: article.id, title: article.title, source: article.source, url: article.url };
+}
+
 function sanitizeRecentCommands(value: unknown, fallback: RecentCommand[]): RecentCommand[] {
   if (!Array.isArray(value)) return fallback;
   return value
@@ -222,7 +237,16 @@ function sanitizeRecentCommands(value: unknown, fallback: RecentCommand[]): Rece
       && (entry as RecentCommand).id.length > 0
       && typeof (entry as RecentCommand).label === "string"
     ))
-    .map((entry) => ({ id: entry.id, label: entry.label }));
+    .map((entry) => {
+      const arg = typeof entry.arg === "string" && entry.arg.length > 0 ? entry.arg : undefined;
+      const article = sanitizeRecentCommandArticle(entry.article);
+      return {
+        id: entry.id,
+        label: entry.label,
+        ...(arg ? { arg } : {}),
+        ...(article ? { article } : {}),
+      };
+    });
 }
 
 function sanitizeUniqueStringList(value: unknown): string[] {

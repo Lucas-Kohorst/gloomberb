@@ -198,6 +198,11 @@ const ASSIST_SECTION_PRIORITY = -100;
  */
 const INSTRUMENTS_SECTION_PRIORITY = 100;
 const DATA_CATALOG_SECTION_PRIORITY = INSTRUMENTS_SECTION_PRIORITY + 100;
+const SUGGESTED_SECTION_PRIORITY = -90;
+const ASSETS_SECTION_PRIORITY = -80;
+const DATA_SECTION_PRIORITY = -70;
+const COMMANDS_SECTION_PRIORITY = -60;
+const CONFIG_SECTION_PRIORITY = 950;
 
 function getCategoryPriority(category: string, options?: CommandBarSectionOptions): number {
   const contributed = options?.categoryPriorities?.get(category);
@@ -219,12 +224,16 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
     if (normalized === "other listings") return 120;
     if (normalized === "funds & derivatives") return 130;
   }
+  if (normalized === "suggested" || normalized === "recent") return SUGGESTED_SECTION_PRIORITY;
+  if (normalized === "assets") return ASSETS_SECTION_PRIORITY;
+  if (normalized === "data") return DATA_SECTION_PRIORITY;
+  if (normalized === "commands") return COMMANDS_SECTION_PRIORITY;
   if (normalized === "saved") return -40;
   if (normalized === "primary listing") return -30;
   if (normalized === "other listings") return -20;
   if (normalized === "funds & derivatives") return -10;
-  if (normalized === "config") return -1;
   if (normalized.includes("danger")) return 900;
   if (normalized.includes("debug")) return 910;
+  if (normalized === "config") return CONFIG_SECTION_PRIORITY;
   return 0;
 }

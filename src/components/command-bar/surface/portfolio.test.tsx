@@ -307,10 +307,7 @@ describe("CommandBar portfolio commands", () => {
     );
 
     await testSetup.renderOnce();
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
+    await clickFrameText("Set Position for AAPL");
 
     const frame = await waitForFrameToContain("Avg Cost");
     expect(frame).toContain("Research");
@@ -337,10 +334,7 @@ describe("CommandBar portfolio commands", () => {
     );
 
     await testSetup.renderOnce();
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
+    await clickFrameText("Set Position for AAPL");
 
     await act(async () => {
       testSetup!.mockInput.pressTab();
@@ -437,18 +431,7 @@ describe("CommandBar portfolio commands", () => {
     );
 
     await testSetup.renderOnce();
-    // Related pane shortcuts ("PF Portfolio", "Watchlist") and the assist
-    // offer lead the list for this query; walk down to the Delete Portfolio row.
-    for (let i = 0; i < 3; i++) {
-      await act(async () => {
-        testSetup!.mockInput.pressArrow("down");
-        await testSetup!.renderOnce();
-      });
-    }
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
+    await clickFrameText("Delete Portfolio");
     await act(async () => {
       testSetup!.mockInput.pressEnter();
       await testSetup!.renderOnce();

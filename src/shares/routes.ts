@@ -106,8 +106,70 @@ export function publicNewsUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string 
   return new URL(`/news/${encodeNewsPathId(id)}`, origin).toString();
 }
 
+export const ARTICLE_ID_HASH_LENGTH = 8;
+
+function base64urlFromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const base64 = typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(bytes).toString("base64");
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * 8-character base64url of SHA-256(articleId). Hashes the full id so
+ * `reuters-urn:` stories that share a prefix still get distinct URLs.
+ */
+export async function hashArticleId(articleId: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(articleId));
+  return base64urlFromBytes(new Uint8Array(digest).subarray(0, 6));
+}
+
+export function articleShareSlug(titleSlug: string, idHash: string): string {
+  return `${titleSlug}--${idHash}`;
+}
+
+export function isArticleShareSlug(fullSlug: string): boolean {
+  if (fullSlug.length < ARTICLE_ID_HASH_LENGTH + 3) return false;
+  if (fullSlug.slice(-ARTICLE_ID_HASH_LENGTH - 2, -ARTICLE_ID_HASH_LENGTH) !== "--") return false;
+  const titleSlug = fullSlug.slice(0, -ARTICLE_ID_HASH_LENGTH - 2);
+  const idHash = fullSlug.slice(-ARTICLE_ID_HASH_LENGTH);
+  return titleSlug.length > 0
+    && titleSlug.length <= 60
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(titleSlug)
+    && /^[A-Za-z0-9_-]{8}$/.test(idHash);
+}
+
+/**
+ * Path segment after `/article/`, including `--{hash}`. That full string is
+ * both the public URL slug and the KV index key.
+ */
+export function parseArticleSlugPath(pathname: string): string | null {
+  const path = pathname.startsWith("/api/article-slug/")
+    ? `/article/${pathname.slice("/api/article-slug/".length)}`
+    : pathname;
+  if (!path.startsWith("/article/")) return null;
+  const raw = path.slice("/article/".length).replace(/\/$/, "");
+  if (!raw || raw.includes("/")) return null;
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  return isArticleShareSlug(decoded) ? decoded : null;
+}
+
+export function buildArticleSlugUrl(titleSlug: string, idHash: string, origin = PUBLIC_SHARE_ORIGIN): string {
+  const fullSlug = articleShareSlug(titleSlug, idHash);
+  if (!isArticleShareSlug(fullSlug)) throw new Error("Invalid article slug.");
+  return new URL(`/article/${fullSlug}`, origin).toString();
+}
+
 export function isShareDocumentPath(pathname: string): boolean {
   return pathname === "/article"
+    || parseArticleSlugPath(pathname) !== null
     || parseShortShareId(pathname) !== null
     || isLayoutSharePath(pathname)
     || parseNewsArticleId(pathname) !== null;

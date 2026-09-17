@@ -61,7 +61,9 @@ export function createCommandBarTestControls(
     const renderer = getRenderer();
     const frame = renderer.captureCharFrame();
     const rows = frame.split("\n");
-    const row = rows.findIndex((line) => line.includes(text));
+    // The query prompt (`> …`) often repeats the selected command's label, so
+    // matching it would click the search box instead of the result row.
+    const row = rows.findIndex((line) => !/^\s*>/.test(line) && line.includes(text));
     const col = row >= 0 ? rows[row]!.indexOf(text) : -1;
 
     expect(row).toBeGreaterThanOrEqual(0);
@@ -69,6 +71,26 @@ export function createCommandBarTestControls(
 
     await act(async () => {
       await renderer.mockMouse.click(col + 1, row);
+      await renderer.renderOnce();
+    });
+  };
+
+  const selectFrameText = async (text: string): Promise<void> => {
+    const renderer = getRenderer();
+    const frame = renderer.captureCharFrame();
+    const rows = frame.split("\n");
+    const row = rows.findIndex((line) => !/^\s*>/.test(line) && line.includes(text));
+    const col = row >= 0 ? rows[row]!.indexOf(text) : -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await renderer.mockMouse.moveTo(col + 1, row);
+      await renderer.renderOnce();
+      // Park the pointer on the query line so later rows inserting above this
+      // cell cannot steal the highlight via hover.
+      await renderer.mockMouse.moveTo(2, 0);
       await renderer.renderOnce();
     });
   };
@@ -83,6 +105,7 @@ export function createCommandBarTestControls(
   return {
     waitForFrameToContain,
     clickFrameText,
+    selectFrameText,
     renderFrames,
   };
 }

@@ -14,7 +14,10 @@ import {
   looksLikeArticleQuery,
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
-import { getStashedNewsArticle } from "../../../plugins/builtin/news/wire/news/article-stash";
+import type { NewsArticle } from "../../../news/types";
+import { getStashedNewsArticle, stashNewsArticle } from "../../../plugins/builtin/news/wire/news/article-stash";
+import type { RecentCommand } from "../../../types/config";
+import type { CommandBarResultDef, CommandBarSearchProvider } from "../../../types/plugin";
 import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
 import {
   buildArticleSearchResultItems,
@@ -69,6 +72,35 @@ interface CommandBarProps {
   quitApp: () => void;
   onCheckForUpdates?: () => void | Promise<void>;
   onNativeOccluderChange?: (rect: LayoutBounds | null) => void;
+}
+
+function newsArticleFromPersisted(article: NonNullable<RecentCommand["article"]>): NewsArticle {
+  return {
+    id: article.id,
+    title: article.title,
+    url: article.url,
+    source: article.source,
+    publishedAt: new Date(),
+    topic: "",
+    topics: [],
+    sectors: [],
+    categories: [],
+    tickers: [],
+    scores: {
+      importance: 0,
+      urgency: 0,
+      marketImpact: 0,
+      novelty: 0,
+      confidence: 0,
+    },
+    isBreaking: false,
+    isDeveloping: false,
+    importance: 0,
+  };
+}
+
+function articleCommandId(resultId: string): string {
+  return resultId.startsWith("article:") ? resultId : `article:${resultId}`;
 }
 
 export function CommandBar({
@@ -132,6 +164,7 @@ export function CommandBar({
     rootQuery,
     rootQueryRef,
     rootSelectionNavigatedRef,
+    rootSelectedItemIdRef,
     rootSelectedIdx,
     setRootHoveredIdx,
     setRootQuery,
@@ -231,19 +264,31 @@ export function CommandBar({
     (id: string) => pluginRegistry.paneTemplates.get(id),
     [pluginRegistry],
   );
-  const buildRecentArticleItem = useCallback((articleId: string, label: string) => {
-    const article = getStashedNewsArticle(articleId);
+  const buildRecentArticleItem = useCallback((
+    articleId: string,
+    label: string,
+    persistedArticle?: RecentCommand["article"],
+  ) => {
+    let article = getStashedNewsArticle(articleId);
+    if (!article && persistedArticle) {
+      article = newsArticleFromPersisted({
+        ...persistedArticle,
+        id: persistedArticle.id || articleId,
+      });
+      stashNewsArticle(article);
+    }
     if (!article) return null;
+    const resolved = article;
     return {
-      id: `article:${article.id}`,
-      label: label || article.title,
-      detail: article.source,
-      category: "Recent",
+      id: `article:${resolved.id}`,
+      label: label || resolved.title,
+      detail: resolved.source,
+      category: "Suggested",
       kind: "action" as const,
       right: "ART",
-      searchText: `${article.title} ${article.source} article news`,
+      searchText: `${resolved.title} ${resolved.source} article news`,
       action: () => {
-        openNewsArticle(article, (templateId, options) => {
+        openNewsArticle(resolved, (templateId, options) => {
           pluginRegistry.createPaneFromTemplate(templateId, options);
         });
         closeAll({ revertThemePreview: false });
@@ -315,7 +360,17 @@ export function CommandBar({
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
-        dispatch({ type: "RECORD_COMMAND", id: `article:${article.id}`, label: article.title });
+        dispatch({
+          type: "RECORD_COMMAND",
+          id: `article:${article.id}`,
+          label: article.title,
+          article: {
+            id: article.id,
+            title: article.title,
+            source: article.source,
+            url: article.url,
+          },
+        });
         openNewsArticle(article, (templateId, options) => {
           pluginRegistry.createPaneFromTemplate(templateId, options);
         });
@@ -530,12 +585,32 @@ export function CommandBar({
   const closeAfterProviderResult = useCallback(() => {
     closeAll({ revertThemePreview: false });
   }, [closeAll]);
+  const recordSearchProviderArticle = useCallback((
+    result: CommandBarResultDef,
+    provider: CommandBarSearchProvider,
+  ) => {
+    const category = (result.category ?? provider.category).trim().toLowerCase();
+    if (category !== "news" && category !== "articles") return;
+    const id = articleCommandId(result.id);
+    dispatch({
+      type: "RECORD_COMMAND",
+      id,
+      label: result.label,
+      article: {
+        id: id.slice("article:".length),
+        title: result.label,
+        source: result.detail ?? "",
+        url: result.url ?? "",
+      },
+    });
+  }, [dispatch]);
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
     query: rootQuery.replace(/^\s*(ART|LAW|ETF)\s+/i, ""),
     enabled: !currentRoute && (!shortcutOwnsQuery || looksLikeArticleQuery(rootQuery) || corpusPrefixQuery),
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
+    beforeExecute: recordSearchProviderArticle,
   });
   const rssFeedResultItems = useMemo(() => buildRssFeedResultItems({
     pluginConfig: state.config.pluginConfig,
@@ -647,6 +722,7 @@ export function CommandBar({
     rootModeKind: rootModeInfo.kind,
     rootQuery,
     rootSelectionNavigatedRef,
+    rootSelectedItemIdRef,
     rootShortcutIntent,
     runDirectCommand,
     runSecurityDescriptionShortcut,

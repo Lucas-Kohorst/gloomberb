@@ -52,7 +52,11 @@ export interface RootResultModelOptions {
   /** Builds one select/pin ticker row for a recent symbol (ticker-search path). */
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
   /** Resolves an opened article retained in the local article stash. */
-  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
+  buildRecentArticleItem?: (
+    articleId: string,
+    label: string,
+    persistedArticle?: AppState["recentCommands"][number]["article"],
+  ) => ResultItem | null;
   buildLayoutItems: (query: string, options?: { confirmDangerousActions?: boolean }) => ResultItem[];
   buildPaneSettingItems: (paneId: string | null, query: string) => ResultItem[];
   buildWindowModeItems: (arg: string) => ResultItem[];
@@ -137,7 +141,11 @@ const MAX_RECENT_TICKER_ROWS = 8;
 function buildRecentResultItems(options: {
   availableCommands: Command[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
-  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
+  buildRecentArticleItem?: (
+    articleId: string,
+    label: string,
+    persistedArticle?: AppState["recentCommands"][number]["article"],
+  ) => ResultItem | null;
   createPaneTemplateItem: (template: PaneTemplateDef, options?: PaneTemplateItemOptions) => ResultItem;
   getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
   recentCommands: AppState["recentCommands"];
@@ -157,7 +165,7 @@ function buildRecentResultItems(options: {
   const items: ResultItem[] = [];
   for (const symbol of recentTickers.slice(0, MAX_RECENT_TICKER_ROWS)) {
     const item = buildRecentTickerItem(symbol);
-    if (item) items.push({ ...item, category: "Recent" });
+    if (item) items.push({ ...item, category: "Suggested" });
   }
   for (const recent of recentCommands) {
     const command = availableCommands.find((entry) => entry.id === recent.id);
@@ -166,17 +174,21 @@ function buildRecentResultItems(options: {
         id: `recent:command:${command.id}`,
         label: recent.label,
         detail: command.description,
-        category: "Recent",
+        category: "Suggested",
         kind: "command",
         shortcutQuery: command.prefix || undefined,
         searchText: recent.label,
-        action: () => runDirectCommand(command, ""),
+        action: () => runDirectCommand(command, recent.arg ?? ""),
       });
       continue;
     }
     if (recent.id.startsWith("article:")) {
-      const item = buildRecentArticleItem(recent.id.slice("article:".length), recent.label);
-      if (item) items.push({ ...item, id: `recent:${recent.id}`, category: "Recent" });
+      const item = buildRecentArticleItem(
+        recent.id.slice("article:".length),
+        recent.label,
+        recent.article,
+      );
+      if (item) items.push({ ...item, id: `recent:${recent.id}`, category: "Suggested" });
       continue;
     }
     if (recent.id.startsWith("pane-template:")) {
@@ -185,7 +197,7 @@ function buildRecentResultItems(options: {
       items.push({
         ...createPaneTemplateItem(template),
         id: `recent:${recent.id}`,
-        category: "Recent",
+        category: "Suggested",
       });
     }
   }

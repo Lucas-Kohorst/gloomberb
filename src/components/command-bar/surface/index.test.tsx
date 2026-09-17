@@ -221,9 +221,7 @@ describe("CommandBar", () => {
     const frame = await waitForFrameToContain("Account Management");
     expect(frame).not.toMatch(/\n\s*Profile\s*(?:\n|$)/);
 
-    // The Config section leads the list, so walk down to the pane row.
-    await emitKeypress(testSetup, { name: "down" });
-    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    await clickFrameText("Account Management");
 
     expect(created).toEqual([{ templateId: "account-management-pane", options: undefined }]);
   });
