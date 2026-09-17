@@ -2,6 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
+  resetUiYieldForTests,
+  setUiYieldReason,
+} from "../../utils/ui-yield";
+import {
   Harness,
   MemoryPersistence,
   PREDICTION_CACHE_POLICIES,
@@ -22,6 +26,7 @@ import { normalizePolymarketMarket } from "./services/polymarket/adapter";
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 afterEach(async () => {
+  resetUiYieldForTests();
   await cleanupPredictionTest(testSetup);
   testSetup = undefined;
 });
@@ -408,6 +413,71 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Will the Fed cut rates?");
     expect(frame).not.toContain("Will inflation fall?");
     expect(frame).not.toContain("Searching markets...");
+  });
+
+  test("shows Adjacent Kalshi diesel hits that are missing from the browse catalog", async () => {
+    installPredictionMarketMocks();
+    const innerFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("search=")) {
+        const parsed = new URL(url);
+        if (
+          parsed.searchParams.get("search") === "diesel"
+          && parsed.searchParams.get("platform") === "kalshi"
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: [{
+                market_id: "kalshi:KXDIESELMON-26SEP30-T6.60",
+                ticker: "KXDIESELMON-26SEP30-T6.60",
+                platform: "kalshi",
+                question: "Will the U.S. EIA weekly average diesel price be above $6.60?",
+                link: "https://kalshi.com/markets/kxdieselmon/kxdieselmon-26sep30",
+                status: "active",
+                probability: 12,
+                event_title: "Monthly U.S. diesel price",
+              }],
+              meta: { has_next: false },
+            }),
+            { status: 200 },
+          );
+        }
+        if (parsed.searchParams.get("search") === "diesel") {
+          return new Response(
+            JSON.stringify({ data: [], meta: { has_next: false } }),
+            { status: 200 },
+          );
+        }
+      }
+      return innerFetch(input, init);
+    }) as typeof fetch;
+
+    // Desktop search holds the `input` yield reason with no timeout. Results
+    // still have to paint; waiting for quiet is how the pane used to stay empty.
+    setUiYieldReason("input", true);
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    await emitKeypress(testSetup, { name: "/", sequence: "/" });
+    await flushFrames(testSetup, 1);
+    for (const letter of "diesel") {
+      await emitKeypress(testSetup, {
+        name: letter,
+        sequence: letter,
+        targetEditable: true,
+      });
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await flushFrames(testSetup, 8);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("diesel");
+    expect(frame).not.toContain("No markets matched.");
+    expect(frame).not.toContain("Will the Fed cut rates?");
   });
 
   test("moves selection through the list with keyboard navigation without opening detail", async () => {

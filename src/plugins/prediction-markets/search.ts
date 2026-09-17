@@ -51,9 +51,10 @@ export function matchesPredictionSearchHaystack(
   const tokens = predictionSearchTokens(query);
   if (tokens.length === 0) return true;
   const text = haystack.toLowerCase();
+  const compactHay = text.replace(/[^a-z0-9]+/g, "");
   const words = text.split(/[^a-z0-9]+/).filter(Boolean);
   return tokens.every((token) => {
-    if (text.includes(token)) return true;
+    if (text.includes(token) || compactHay.includes(token)) return true;
     return fuzzyFilter(words, token, (word) => word).length > 0
       || words.some((word) => matchesTypo(word, token));
   });

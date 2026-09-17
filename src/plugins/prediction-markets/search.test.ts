@@ -29,5 +29,6 @@ describe("prediction pane search query", () => {
     expect(matchesPredictionSearchHaystack(haystack, "diesel")).toBe(true);
     expect(matchesPredictionSearchHaystack(haystack, "/diesel")).toBe(true);
     expect(matchesPredictionSearchHaystack(haystack, "/ diesel")).toBe(true);
+    expect(matchesPredictionSearchHaystack("kxdieselmon-26sep30-t6.60", "diesel")).toBe(true);
   });
 });
