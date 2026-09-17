@@ -31,7 +31,7 @@ function setup(): ChatTestSetup {
   if (!testSetup) throw new Error("chat test setup is missing");
   return testSetup;
 }
-const { flushFrame, emitKeypress } = createChatTestControls(setup);
+const { flushFrame, emitKeypress, waitForFrameToContain } = createChatTestControls(setup);
 
 function recentChatTimestamp(offsetMs = 60_000) {
   return new Date(Date.now() - offsetMs).toISOString();
@@ -267,21 +267,17 @@ describe("ChatContent", () => {
 
     await renderFocusedComposerWithDraft(controller, "@");
 
-    let frame = setup().captureCharFrame();
-    expect(frame).toContain("@charlie");
+    let frame = await waitForFrameToContain("@charlie");
     expect(frame).toContain("@bravo");
 
     await emitKeypress({ name: "down", sequence: "\u001b[B" });
-
-    await act(async () => {
-      setup().mockInput.pressEnter();
-      await setup().renderOnce();
-      await setup().renderOnce();
-    });
+    await flushFrame();
+    await emitKeypress({ name: "return", sequence: "\r" });
     await flushFrame();
 
     frame = setup().captureCharFrame();
     expect(frame).toContain("> @bravo");
+    expect(frame).not.toContain("sending...");
     expect(frame).not.toContain("@charlie");
   });
 
