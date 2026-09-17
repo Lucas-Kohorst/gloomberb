@@ -321,15 +321,6 @@ describe("CommandBar pane and layout routes", () => {
     });
 
     await testSetup.renderOnce();
-    // The Config section leads the browse list, so pane shortcuts sit below
-    // the initial window; scroll down to them.
-    for (let i = 0; i < 24; i++) {
-      await act(async () => {
-        testSetup!.mockInput.pressArrow("down");
-        await testSetup!.renderOnce();
-      });
-    }
-
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Assets");
     expect(frame).toContain("Quote Monitor");
@@ -855,13 +846,8 @@ describe("CommandBar pane and layout routes", () => {
     expect(frame).toContain("Quote Monitor Settings");
     expect(frame).toContain("Symbol");
 
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Apply");
+    await clickFrameText("Symbol");
+    frame = await waitForFrameToContain("Apply");
     expect(frame).toContain("Symbol");
 
     await act(async () => {

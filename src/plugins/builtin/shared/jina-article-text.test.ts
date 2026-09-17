@@ -161,8 +161,8 @@ describe("cleanJinaArticle", () => {
     expect(cleaned).toContain("Forward yield 8.91%");
     expect(cleaned).toContain("Payable Aug. 17; record Aug. 3");
     expect(cleaned).toContain("IHD Scorecard");
-    expect(cleaned).toContain("More on Voya Emerging Markets High Dividend Equity Fund");
-    expect(cleaned).toContain("IHD: Emerging Markets Equities CEF");
+    expect(cleaned).not.toContain("More on Voya Emerging Markets High Dividend Equity Fund");
+    expect(cleaned).not.toContain("IHD: Emerging Markets Equities CEF");
 
     expect(cleaned).not.toContain("Skip to content");
     expect(cleaned).not.toContain("Create Free Account");
@@ -171,6 +171,29 @@ describe("cleanJinaArticle", () => {
     expect(cleaned).not.toContain("ad-blocker");
     expect(cleaned.startsWith("Stock Analysis")).toBe(false);
     expect(cleaned.startsWith("Market News")).toBe(false);
+  });
+
+  test("stops at a second concatenated article title and byline", () => {
+    const raw = [
+      "Voya fund trims the monthly payout",
+      "",
+      "Jan. 15, 2026 8:00 AM ET",
+      "",
+      "The first article explains the dividend cut in enough detail to count as body copy.",
+      "",
+      "Second story title that should not survive",
+      "",
+      "Jan. 16, 2026 9:30 AM ET",
+      "",
+      "The second article body must not leak into the reader.",
+    ].join("\n");
+    const cleaned = cleanJinaArticle(raw);
+    expect(cleaned).toContain("Voya fund trims the monthly payout");
+    expect(cleaned).toContain("Jan. 15, 2026 8:00 AM ET");
+    expect(cleaned).toContain("The first article explains the dividend cut");
+    expect(cleaned).not.toContain("Second story title that should not survive");
+    expect(cleaned).not.toContain("Jan. 16, 2026 9:30 AM ET");
+    expect(cleaned).not.toContain("The second article body must not leak");
   });
 
   test("leaves a clean article body intact after dropping the preamble", () => {

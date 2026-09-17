@@ -623,4 +623,33 @@ describe("recent commands ring", () => {
     next = appReducer(next, { type: "RECORD_COMMAND", id: "a", label: "Alpha" });
     expect(next.recentCommands.map((entry) => entry.id)).toEqual(["a", "b"]);
   });
+
+  test("keeps a persisted article payload on the recent entry", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const article = {
+      id: "story-1",
+      title: "Fed decision",
+      source: "Reuters",
+      url: "https://example.com/fed",
+    };
+    let next = appReducer(state, {
+      type: "RECORD_COMMAND",
+      id: "article:story-1",
+      label: "Fed decision",
+      article,
+    });
+    expect(next.recentCommands).toEqual([{
+      id: "article:story-1",
+      label: "Fed decision",
+      article,
+    }]);
+
+    next = appReducer(next, {
+      type: "RECORD_COMMAND",
+      id: "article:story-1",
+      label: "Fed decision",
+      article: { ...article, url: "https://example.com/fed-update" },
+    });
+    expect(next.recentCommands[0]?.article?.url).toBe("https://example.com/fed-update");
+  });
 });

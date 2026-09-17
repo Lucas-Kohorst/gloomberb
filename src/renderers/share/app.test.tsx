@@ -41,3 +41,16 @@ test("canonical news paths boot the slim reader instead of the terminal", async 
   expect(documentPath).toBe("/share.html");
   expect(renderToStaticMarkup(<SocialShareApp location={url} />)).toContain("Loading shared view");
 });
+
+test("human-readable article slug paths boot the slim reader instead of the terminal", async () => {
+  const url = new URL("https://terminal.kohor.st/article/brief-situational-awareness--AbCd1234");
+  let documentPath = "";
+  await handleRequest(new Request(url), { ASSETS: { fetch: async (request) => {
+    documentPath = new URL(request.url).pathname;
+    return new Response("share document");
+  } } });
+  expect(documentPath).toBe("/share.html");
+  expect(renderToStaticMarkup(<SocialShareApp location={url} />)).toContain("Loading shared view");
+  const inline = renderToStaticMarkup(<SocialShareApp location={new URL("https://terminal.kohor.st/article?a=invalid")} />);
+  expect(inline).toContain("could not be read");
+});

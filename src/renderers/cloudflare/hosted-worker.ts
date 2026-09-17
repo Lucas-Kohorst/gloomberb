@@ -1,17 +1,22 @@
 import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { handleHostedBackendRpc } from "./backend";
 import {
+  isCanonicalNewsId,
   isShareDocumentPath,
   isShareScriptPath,
   isStoredShareId,
+  parseArticleSlugPath,
   parseNewsArticleId,
   parseShareId,
 } from "../../shares/routes";
 import {
   NEWS_INDEX_TTL_SECONDS,
   newsIndexKey,
+  parseArticleSlugRecord,
   parseNewsIndexRecord,
+  serializeArticleSlugRecord,
   serializeNewsIndexRecord,
+  slugIndexKey,
 } from "../../shares/news-index";
 import {
   MAX_SHARE_BYTES,
@@ -73,6 +78,10 @@ export default {
     if (url.pathname.startsWith("/api/news/")) {
       return handleNewsShareIndex(request, env, url).catch(() =>
         newsIndexResponse({ error: "News share temporarily unavailable." }, 503));
+    }
+    if (url.pathname.startsWith("/api/article-slug/")) {
+      return handleArticleSlugIndex(request, env, url).catch(() =>
+        newsIndexResponse({ error: "Article slug temporarily unavailable." }, 503));
     }
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
@@ -298,6 +307,70 @@ async function handleNewsShareIndex(request: Request, env: Env, url: URL): Promi
   return newsIndexResponse({ shareId: requestedShareId }, 201);
 }
 
+async function handleArticleSlugIndex(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: NEWS_INDEX_CORS });
+  }
+
+  const fullSlug = parseArticleSlugPath(url.pathname);
+  if (!fullSlug) return newsIndexResponse({ error: "Invalid article slug." }, 400);
+
+  if (request.method === "GET" || request.method === "HEAD") {
+    const raw = await env.SHARES.get(slugIndexKey(fullSlug));
+    const record = parseArticleSlugRecord(raw);
+    if (!record) return newsIndexResponse({ error: "Share not found." }, 404);
+    if (request.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: { ...NEWS_INDEX_CORS, "cache-control": "private, no-store", "content-type": "application/json" },
+      });
+    }
+    return newsIndexResponse(record);
+  }
+
+  if (request.method !== "PUT") {
+    return newsIndexResponse({ error: "Method not allowed." }, 405);
+  }
+
+  if (!hasTrustedHostedOrigin(request, url)) return newsIndexResponse({ error: "Invalid origin" }, 403);
+  const token = readSessionCookie(request);
+  if (!token || !await fetchSessionUser(request, env)) {
+    return newsIndexResponse({ error: "Authentication required." }, 401);
+  }
+
+  let articleId: string | null = null;
+  let requestedShareId: string | undefined;
+  try {
+    const raw = await request.text();
+    const parsed: unknown = JSON.parse(raw || "null");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const body = parsed as { articleId?: unknown; shareId?: unknown };
+      articleId = typeof body.articleId === "string" ? body.articleId : null;
+      requestedShareId = typeof body.shareId === "string" ? body.shareId : undefined;
+    }
+  } catch {
+    return newsIndexResponse({ error: "Invalid share payload." }, 400);
+  }
+  if (!articleId || !isCanonicalNewsId(articleId)) {
+    return newsIndexResponse({ error: "Invalid news id." }, 400);
+  }
+  if (!requestedShareId || !isStoredShareId(requestedShareId)) {
+    return newsIndexResponse({ error: "Invalid share id." }, 400);
+  }
+
+  const live = await readCloudShare(env, requestedShareId, token);
+  if (!live) return newsIndexResponse({ error: "Share not found." }, 404);
+  if (live.body.ownedByViewer !== true) return newsIndexResponse({ error: "Only the share owner can register it." }, 403);
+  if (live.payload.kind !== "article" || live.payload.data.id !== articleId) {
+    return newsIndexResponse({ error: "Share does not match this article." }, 409);
+  }
+
+  await env.SHARES.put(slugIndexKey(fullSlug), serializeArticleSlugRecord(articleId, requestedShareId), {
+    expirationTtl: NEWS_INDEX_TTL_SECONDS,
+  });
+  return newsIndexResponse({ articleId, shareId: requestedShareId }, 201);
+}
+
 async function resolveSharePageMeta(
   request: Request,
   env: Env,
@@ -312,6 +385,29 @@ async function resolveSharePageMeta(
       description: typeof article.summary === "string" ? article.summary
         : typeof article.previewText === "string" ? article.previewText : undefined,
     };
+  }
+  const articleSlug = parseArticleSlugPath(url.pathname);
+  if (articleSlug) {
+    const record = parseArticleSlugRecord(await env.SHARES.get(slugIndexKey(articleSlug)));
+    if (!record) return null;
+    const indexed = await loadIndexedNewsShare(env, record.articleId);
+    if (indexed) {
+      if (indexed.payload.kind === "article") {
+        const article = articleShareFromStored(indexed.payload.data);
+        return { title: article.title, description: article.summary };
+      }
+      return { title: indexed.payload.data.title };
+    }
+    if (record.shareId) {
+      const live = await readCloudShare(env, record.shareId);
+      if (!live) return null;
+      if (live.payload.kind === "article") {
+        const article = articleShareFromStored(live.payload.data);
+        return { title: article.title, description: article.summary };
+      }
+      return { title: live.payload.data.title };
+    }
+    return null;
   }
   const newsId = parseNewsArticleId(url.pathname);
   if (newsId) {

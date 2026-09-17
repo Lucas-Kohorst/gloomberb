@@ -345,6 +345,8 @@ export interface CommandBarResultDef {
   id: string;
   label: string;
   detail?: string;
+  /** External URL when the row opens a written article. */
+  url?: string;
   /** Rendered under the label. Each entry is one additional row. */
   lines?: CommandBarResultLine[];
   category?: string;

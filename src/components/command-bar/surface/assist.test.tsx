@@ -20,7 +20,7 @@ afterEach(() => {
   }
 });
 
-const { waitForFrameToContain } = createCommandBarTestControls(() => testSetup!);
+const { waitForFrameToContain, selectFrameText } = createCommandBarTestControls(() => testSetup!);
 
 function signInVerified(): void {
   apiClient.setSessionToken("assist-test-token");
@@ -171,13 +171,13 @@ describe("CommandBar AI assist", () => {
 
     await testSetup.renderOnce();
     await waitForRequest(requests);
-    // Down lands on the local match while a single "Thinking…" row sits above.
-    await emitKeypress(testSetup, { name: "down" });
+    await waitForFrameToContain("Chat", ASSIST_WAIT_ATTEMPTS);
+    await selectFrameText("Chat");
     releaseResponse();
     await waitForFrameToContain("#random · Open the random channel", ASSIST_WAIT_ATTEMPTS);
 
-    // Two answers replaced that one row, so the chosen row moved down by one;
-    // Enter still runs it rather than whatever now sits at its old index.
+    // Two answers replaced the Thinking row above the Chat shortcut the user
+    // picked; Enter still runs that local match rather than the new AI rows.
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "new-chat-pane", options: undefined }]);
   });

@@ -13,6 +13,7 @@ import {
   makeSnapGuides,
   resolveFloatResizeRect,
   resolveSnapGuide,
+  type SnapGuide,
 } from "./index";
 
 const BOUNDS = { x: 0, y: 0, width: 120, height: 60 };
@@ -66,6 +67,64 @@ describe("layout construction grid", () => {
       previewRect: { x: 100, y: 35, width: 20, height: 7 },
     });
     expect(resolveSnapGuide(120, 41, guides)).toBeNull();
+  });
+
+  test("snaps the last interior pixel with 1px inclusive slack, not the exclusive far edge outside the grid", () => {
+    const evenGuides = makeSnapGuides(120, 42);
+    expect(resolveSnapGuide(119, 41, evenGuides)).toMatchObject({ position: "cell-6-6" });
+    expect(resolveSnapGuide(120, 41, evenGuides)).toBeNull();
+
+    const oddGuides = makeSnapGuides(121, 41);
+    expect(resolveSnapGuide(120, 40, oddGuides)).toMatchObject({
+      position: "cell-6-6",
+      previewRect: { x: 100, y: 34, width: 21, height: 7 },
+    });
+    expect(resolveSnapGuide(121, 40, oddGuides)).toBeNull();
+    expect(resolveSnapGuide(120, 41, oddGuides)).toBeNull();
+  });
+
+  test("returns null for a pointer far from every cell instead of snapping to the nearest", () => {
+    const guides = makeSnapGuides(120, 42);
+    expect(resolveSnapGuide(800, 10, guides)).toBeNull();
+    expect(resolveSnapGuide(10, 800, guides)).toBeNull();
+
+    const sparse: SnapGuide[] = [
+      {
+        position: "cell-1-1",
+        column: 0,
+        row: 0,
+        triggerRect: { x: 0, y: 0, width: 8, height: 8 },
+        previewRect: { x: 0, y: 0, width: 8, height: 8 },
+      },
+      {
+        position: "cell-6-6",
+        column: 5,
+        row: 5,
+        triggerRect: { x: 80, y: 24, width: 8, height: 8 },
+        previewRect: { x: 80, y: 24, width: 8, height: 8 },
+      },
+    ];
+    expect(resolveSnapGuide(40, 16, sparse)).toBeNull();
+  });
+
+  test("snaps a pointer within 1px of a cell edge that still sits inside the overall grid", () => {
+    const guides: SnapGuide[] = [
+      {
+        position: "cell-1-1",
+        column: 0,
+        row: 0,
+        triggerRect: { x: 0, y: 0, width: 10, height: 10 },
+        previewRect: { x: 0, y: 0, width: 10, height: 10 },
+      },
+      {
+        position: "cell-2-1",
+        column: 1,
+        row: 0,
+        triggerRect: { x: 11, y: 0, width: 10, height: 10 },
+        previewRect: { x: 11, y: 0, width: 10, height: 10 },
+      },
+    ];
+    expect(resolveSnapGuide(10, 4, guides)).toMatchObject({ position: "cell-1-1" });
   });
 
   test("coarsens the grid safely when the content area is smaller than 6x6", () => {

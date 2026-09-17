@@ -36,7 +36,11 @@ interface UseCommandBarRootRuntimeOptions {
   buildLayoutItems(query: string, options?: { confirmDangerousActions?: boolean }): ResultItem[];
   buildPaneSettingItems(paneId: string | null, query: string): ResultItem[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
-  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
+  buildRecentArticleItem?: (
+    articleId: string,
+    label: string,
+    persistedArticle?: AppState["recentCommands"][number]["article"],
+  ) => ResultItem | null;
   buildTickerSearchResultItems(candidates: TickerSearchCandidate[], query: string): ResultItem[];
   buildWindowModeItems(arg: string): ResultItem[];
   createPaneTemplateItem(template: PaneTemplateDef, options?: {
@@ -78,6 +82,7 @@ interface UseCommandBarRootRuntimeOptions {
   rootModeKind: string;
   rootQuery: string;
   rootSelectionNavigatedRef: RefObject<boolean>;
+  rootSelectedItemIdRef: RefObject<string | null>;
   rootShortcutIntent: ShortcutIntent;
   runDirectCommand(command: Command, arg: string): void;
   runSecurityDescriptionShortcut(query?: string): void | Promise<void>;
@@ -131,6 +136,7 @@ export function useCommandBarRootRuntime({
   rootModeKind,
   rootQuery,
   rootSelectionNavigatedRef,
+  rootSelectedItemIdRef,
   rootShortcutIntent,
   runDirectCommand,
   runSecurityDescriptionShortcut,
@@ -300,6 +306,7 @@ export function useCommandBarRootRuntime({
     previousRootSelectionContextRef.current = { query: rootQuery, mode: rootModeKind };
     if (selectionContextChanged) {
       rootSelectionNavigatedRef.current = false;
+      rootSelectedItemIdRef.current = null;
     }
 
     setRootSelectedIdx((current) => {
@@ -307,7 +314,7 @@ export function useCommandBarRootRuntime({
         // The user picked this row. Async sections append below it, but an
         // exact symbol match still lands above, so the row is tracked by id
         // rather than by index.
-        const selectedId = previousResultIds[current];
+        const selectedId = rootSelectedItemIdRef.current ?? previousResultIds[current];
         const shiftedIdx = selectedId ? resultIds.indexOf(selectedId) : -1;
         if (shiftedIdx >= 0) return shiftedIdx;
         return clampSelectedIdx(current, resultIds.length);
@@ -333,16 +340,18 @@ export function useCommandBarRootRuntime({
     rootResultModel.items,
     rootShortcutIntent,
     rootSelectionNavigatedRef,
+    rootSelectedItemIdRef,
     setRootHoveredIdx,
     setRootSelectedIdx,
   ]);
 
   useEffect(() => {
     if (!activeRootProviderResultsKey) return;
+    if (rootSelectionNavigatedRef.current) return;
     setRootSelectedIdx(0);
     setRootHoveredIdx(null);
     nativeListScrollRef.current?.scrollTo(0);
-  }, [activeRootProviderResultsKey, nativeListScrollRef, setRootHoveredIdx, setRootSelectedIdx]);
+  }, [activeRootProviderResultsKey, nativeListScrollRef, rootSelectionNavigatedRef, setRootHoveredIdx, setRootSelectedIdx]);
 
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery
