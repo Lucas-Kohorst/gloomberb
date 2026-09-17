@@ -219,17 +219,39 @@ export function formatPredictionSeriesExpression(
 
 /** Same venue id the chart catalog uses for `KALSHI:` / `POLY:` overlays. */
 export function venueChartHitFromAdjacentMarket(
-  market: { platform?: string; slug?: string | null; id: string; title: string; subtitle?: string | null },
+  market: {
+    platform?: string;
+    slug?: string | null;
+    id?: string;
+    market_id?: string;
+    ticker?: string;
+    display_ticker?: string;
+    title?: string;
+    question?: string;
+    subtitle?: string | null;
+  },
 ): PredictionMarketSearchHit | null {
-  if (market.platform !== "kalshi" && market.platform !== "polymarket") return null;
-  const marketId = market.platform === "kalshi"
-    ? (market.slug?.trim() || market.id)
-    : market.id;
-  if (!marketId) return null;
+  const rawId = (market.id ?? market.market_id ?? "").trim();
+  const platformRaw = (market.platform ?? "").trim().toLowerCase()
+    || (/^kalshi:/i.test(rawId) ? "kalshi" : /^polymarket:/i.test(rawId) ? "polymarket" : "");
+  if (platformRaw !== "kalshi" && platformRaw !== "polymarket") return null;
+  const stripped = rawId.replace(/^(kalshi|polymarket):/i, "").trim();
+  const slug = (market.slug ?? "").trim();
+  const ticker = (market.ticker ?? "").trim();
+  const displayTicker = (market.display_ticker ?? "").trim();
+  let marketId: string;
+  if (platformRaw === "kalshi") {
+    marketId = ticker || displayTicker || slug || stripped;
+  } else {
+    const candidate = displayTicker || slug;
+    marketId = candidate && !/^0x[0-9a-f]+$/i.test(candidate) ? candidate : stripped;
+  }
+  const title = (market.title ?? market.question ?? marketId).trim();
+  if (!marketId || !title) return null;
   return {
-    venue: market.platform,
+    venue: platformRaw,
     marketId,
-    title: market.title,
+    title,
     ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
   };
 }

@@ -231,6 +231,18 @@ export function createChatTestControls(getSetup: () => ChatTestSetup) {
         await getSetup().renderOnce();
       });
     },
+    async waitForFrameToContain(text: string, attempts = 20, delayMs = 50): Promise<string> {
+      const renderer = getSetup();
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const frame = renderer.captureCharFrame();
+        if (frame.includes(text)) return frame;
+        await Bun.sleep(delayMs);
+        await act(async () => {
+          await renderer.renderOnce();
+        });
+      }
+      throw new Error(`Timed out waiting for frame to contain "${text}".`);
+    },
     async emitKeypress(event: {
       name?: string;
       sequence?: string;

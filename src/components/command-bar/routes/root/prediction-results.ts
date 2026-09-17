@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { ResultItem } from "../../list/model";
 import {
   predictionCollectionSymbol,
+  predictionTickerRecord,
 } from "../../../../plugins/prediction-markets/collection-watchlist";
 import { searchAdjacentCatalog } from "../../../../plugins/prediction-markets/services/adjacent-search";
 import type { PredictionMarketSummary } from "../../../../plugins/prediction-markets/types";
+import type { TickerRecord } from "../../../../types/ticker";
 import { useDebouncedAbortableEffect } from "./use-debounced-effect";
 
 const PREDICTION_SEARCH_LIMIT = 5;
@@ -14,7 +16,12 @@ export function looksLikePredictionInstrumentQuery(query: string): boolean {
   const trimmed = query.trim();
   if (trimmed.length < MIN_QUERY_LENGTH) return false;
   if (/^(KALSHI|POLY|PM)\s*:/i.test(trimmed)) return true;
-  if (/^[A-Z]{1,5}$/i.test(trimmed)) return false;
+  // Kalshi series tickers (KXFED, KXMI) are 4–5 letters and would otherwise
+  // look like equities.
+  if (/^KX[A-Z0-9]{2,}/i.test(trimmed)) return true;
+  // Equity tickers are 1–5 letters in all caps. Lowercase topic words
+  // ("trump", "fed", "oscar") are prediction searches, not AAPL.
+  if (/^[A-Z]{1,5}$/.test(trimmed)) return false;
   return /[a-z]{3,}/i.test(trimmed);
 }
 
@@ -95,6 +102,33 @@ export function usePredictionInstrumentSearch(query: string): {
   );
 
   return { markets };
+}
+
+/**
+ * Command-bar Instruments rows must float a ticker pane. `navigateTicker`
+ * docks a new inspector beside the focused layout pane; `pinTicker` is the
+ * same path DES / other Instruments hits use for a new window.
+ */
+export function openCommandBarPredictionInstrument(options: {
+  summary: PredictionMarketSummary;
+  tickers?: ReadonlyMap<string, TickerRecord>;
+  tickerRepository: { saveTicker: (ticker: TickerRecord) => unknown };
+  dispatch: (action: { type: "UPDATE_TICKER"; ticker: TickerRecord }) => void;
+  pluginRegistry: {
+    events: { emit: (name: "ticker:added", payload: { symbol: string; ticker: TickerRecord }) => void };
+    pinTicker: (symbol: string, options?: { floating?: boolean }) => void;
+  };
+}): void {
+  const existingTicker = options.tickers?.get(predictionCollectionSymbol(options.summary)) ?? null;
+  const ticker = predictionTickerRecord(options.summary, existingTicker);
+  void Promise.resolve(options.tickerRepository.saveTicker(ticker)).then(() => {
+    options.dispatch({ type: "UPDATE_TICKER", ticker });
+    options.pluginRegistry.events.emit("ticker:added", {
+      symbol: ticker.metadata.ticker,
+      ticker,
+    });
+    options.pluginRegistry.pinTicker(ticker.metadata.ticker, { floating: true });
+  });
 }
 
 export function buildPredictionMarketResultItems(options: {
