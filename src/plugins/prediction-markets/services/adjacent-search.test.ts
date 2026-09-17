@@ -118,6 +118,31 @@ describe("adjacent catalog search", () => {
     expect(requested.some((url) => url.includes("search=%2Fdiesel") || url.includes("search=/diesel"))).toBe(false);
   });
 
+  test("strips focused-search ? so pane ? diesel searches Adjacent for diesel", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    const requested: string[] = [];
+    setHttpFetchTransport(async (url) => {
+      requested.push(url);
+      return json({
+        data: [{
+          market_id: "kalshi:KXDIESELMON-26SEP30-T6.60",
+          ticker: "KXDIESELMON-26SEP30-T6.60",
+          platform: "kalshi",
+          question: "Will the U.S. EIA weekly average diesel price be above $6.60?",
+          link: "https://kalshi.com/markets/kxdieselmon/kxdieselmon-26sep30",
+          status: "active",
+          probability: 12,
+        }],
+        meta: { has_next: false },
+      });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "? diesel", venue: "kalshi" });
+    expect(markets[0]?.marketId).toBe("KXDIESELMON-26SEP30-T6.60");
+    expect(requested.some((url) => url.includes("search=diesel"))).toBe(true);
+    expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
+  });
+
   test("sends the Adjacent page cursor on load-more", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     const requested: string[] = [];

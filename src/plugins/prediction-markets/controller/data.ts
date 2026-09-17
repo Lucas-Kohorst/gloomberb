@@ -14,6 +14,7 @@ import {
   getDefaultPredictionSort,
   sortPredictionMarkets,
 } from "../metrics";
+import { normalizePredictionSearchQuery } from "../search";
 import { sortPredictionOutcomeMarkets } from "../outcome-order";
 import { isLivePredictionDetailTab } from "../navigation";
 import { resolveWatchlistMarkets } from "../collection-watchlist";
@@ -131,11 +132,17 @@ export function usePredictionMarketsDataState({
 
   const visibleRows = useMemo(() => {
     return measurePerf("prediction.rows.filter-sort", () => {
+      // Instant local filter while Adjacent is in flight. Once this session has
+      // written the search key, Adjacent is the list — do not AND the raw chrome
+      // (`? diesel`) against Kalshi tickers the command bar already found.
+      const committedRemoteSearch =
+        catalogSearchReady
+        && normalizePredictionSearchQuery(debouncedSearchQuery).length > 0;
       const filtered = filterPredictionMarkets(
         allRows,
         effectiveVenueScope,
         categoryId,
-        searchQuery,
+        committedRemoteSearch ? "" : searchQuery,
         watchlistSet,
       );
       const sorted = sortPredictionMarkets(
@@ -160,7 +167,9 @@ export function usePredictionMarketsDataState({
   }, [
     allRows,
     browseTab,
+    catalogSearchReady,
     categoryId,
+    debouncedSearchQuery,
     effectiveVenueScope,
     searchQuery,
     expandedGroupKeys,

@@ -480,6 +480,61 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("Will the Fed cut rates?");
   });
 
+  test("paints Kalshi diesel hits for a focused All-venues ? diesel query", async () => {
+    installPredictionMarketMocks();
+    const innerFetch = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("search=")) {
+        requested.push(url);
+        const parsed = new URL(url);
+        const search = parsed.searchParams.get("search");
+        const platform = parsed.searchParams.get("platform");
+        if (search === "diesel" && platform === "kalshi") {
+          return new Response(
+            JSON.stringify({
+              data: [{
+                market_id: "kalshi:KXDIESELW-26SEP21-T6.38",
+                ticker: "KXDIESELW-26SEP21-T6.38",
+                platform: "kalshi",
+                question: "Will the U.S. EIA weekly average diesel price be above $6.38?",
+                status: "active",
+                probability: 18,
+                event_title: "Weekly U.S. diesel price",
+              }],
+              meta: { has_next: false },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ data: [], meta: { has_next: false } }),
+          { status: 200 },
+        );
+      }
+      return innerFetch(input, init);
+    }) as typeof fetch;
+
+    // Desktop search holds the `input` yield reason with no timeout.
+    setUiYieldReason("input", true);
+    testSetup = await testRender(
+      <Harness initialSearchQuery="? diesel" initialVenueScope="all" />,
+      { width: 120, height: 34 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await flushFrames(testSetup, 8);
+
+    const frame = testSetup.captureCharFrame();
+    expect(requested.some((url) => url.includes("search=diesel") && url.includes("platform=kalshi"))).toBe(true);
+    expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
+    expect(frame).toContain("KXDIESELW");
+    expect(frame).not.toContain("No markets matched.");
+    expect(frame).not.toContain("Will the Fed cut rates?");
+  });
+
   test("moves selection through the list with keyboard navigation without opening detail", async () => {
     installPredictionMarketMocks();
 

@@ -11,12 +11,16 @@ describe("prediction pane search query", () => {
     expect(normalizePredictionSearchQuery("/ diesel")).toBe("diesel");
     expect(normalizePredictionSearchQuery("/// diesel")).toBe("diesel");
     expect(normalizePredictionSearchQuery("/")).toBe("");
+    expect(normalizePredictionSearchQuery("? diesel")).toBe("diesel");
+    expect(normalizePredictionSearchQuery("?diesel")).toBe("diesel");
+    expect(normalizePredictionSearchQuery("?")).toBe("");
     expect(normalizePredictionSearchQuery("fed decision")).toBe("fed decision");
   });
 
   test("tokenizes punctuation so a slash is not an AND term", () => {
     expect(predictionSearchTokens("/diesel")).toEqual(["diesel"]);
     expect(predictionSearchTokens("/ diesel")).toEqual(["diesel"]);
+    expect(predictionSearchTokens("? diesel")).toEqual(["diesel"]);
     expect(predictionSearchTokens("fed decision")).toEqual(["fed", "decision"]);
   });
 
@@ -29,6 +33,7 @@ describe("prediction pane search query", () => {
     expect(matchesPredictionSearchHaystack(haystack, "diesel")).toBe(true);
     expect(matchesPredictionSearchHaystack(haystack, "/diesel")).toBe(true);
     expect(matchesPredictionSearchHaystack(haystack, "/ diesel")).toBe(true);
+    expect(matchesPredictionSearchHaystack(haystack, "? diesel")).toBe(true);
     expect(matchesPredictionSearchHaystack("kxdieselmon-26sep30-t6.60", "diesel")).toBe(true);
   });
 });

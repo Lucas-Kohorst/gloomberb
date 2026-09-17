@@ -401,14 +401,31 @@ export function installPredictionMarketMocks() {
 
 export function Harness({
   initialFocusedPaneId = TEST_PANE_ID,
+  initialSearchQuery,
+  initialVenueScope,
 }: {
   initialFocusedPaneId?: string;
+  initialSearchQuery?: string;
+  initialVenueScope?: "all" | "kalshi" | "polymarket";
 } = {}) {
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
       const initial = createInitialState(createConfig({ initialFocusedPaneId }));
       initial.focusedPaneId = initialFocusedPaneId;
+      if (initialSearchQuery != null || initialVenueScope) {
+        initial.paneState[TEST_PANE_ID] = {
+          ...(initial.paneState[TEST_PANE_ID] ?? {}),
+          pluginState: {
+            ...(initial.paneState[TEST_PANE_ID]?.pluginState ?? {}),
+            "prediction-markets": {
+              ...(initial.paneState[TEST_PANE_ID]?.pluginState?.["prediction-markets"] ?? {}),
+              ...(initialSearchQuery != null ? { searchQuery: initialSearchQuery } : {}),
+              ...(initialVenueScope ? { venueScope: initialVenueScope } : {}),
+            },
+          },
+        };
+      }
       return initial;
     })(),
   );
