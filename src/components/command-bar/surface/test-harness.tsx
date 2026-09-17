@@ -61,7 +61,9 @@ export function createCommandBarTestControls(
     const renderer = getRenderer();
     const frame = renderer.captureCharFrame();
     const rows = frame.split("\n");
-    const row = rows.findIndex((line) => line.includes(text));
+    // The query prompt (`> …`) often repeats the selected command's label, so
+    // matching it would click the search box instead of the result row.
+    const row = rows.findIndex((line) => !/^\s*>/.test(line) && line.includes(text));
     const col = row >= 0 ? rows[row]!.indexOf(text) : -1;
 
     expect(row).toBeGreaterThanOrEqual(0);

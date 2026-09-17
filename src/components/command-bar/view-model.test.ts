@@ -45,8 +45,8 @@ describe("command bar view model helpers", () => {
       { id: "c", category: "Tickers" },
     ]);
 
-    expect(sections.map((section) => section.category)).toEqual(["Tickers", "Commands"]);
-    expect(sections[0]?.items.map((item) => item.id)).toEqual(["a", "c"]);
+    expect(sections.map((section) => section.category)).toEqual(["Commands", "Tickers"]);
+    expect(sections[1]?.items.map((item) => item.id)).toEqual(["a", "c"]);
   });
 
   test("moves danger and debug sections to the end", () => {
@@ -57,7 +57,7 @@ describe("command bar view model helpers", () => {
       { id: "d", category: "Config" },
     ]);
 
-    expect(sections.map((section) => section.category)).toEqual(["Config", "Tickers", "Danger", "Debug"]);
+    expect(sections.map((section) => section.category)).toEqual(["Tickers", "Danger", "Debug", "Config"]);
   });
 
   test("drops an offer-only section below real matches whatever its category priority", () => {
@@ -95,14 +95,32 @@ describe("command bar view model helpers", () => {
       expect(sections.map((section) => section.category)).toEqual([
         "Exact Match",
         "Ask AI",
-        "Panes",
         "Commands",
+        "Panes",
         "Application",
         "Portfolio",
         "Instruments",
         "Documents",
       ]);
     }
+  });
+
+  test("orders empty-bar browse Suggested, Assets, Data, Commands, then Config last", () => {
+    const sections = buildSections([
+      { id: "cfg", category: "Config" },
+      { id: "cmd", category: "Commands" },
+      { id: "data", category: "Data" },
+      { id: "assets", category: "Assets" },
+      { id: "suggested", category: "Suggested" },
+    ]);
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Suggested",
+      "Assets",
+      "Data",
+      "Commands",
+      "Config",
+    ]);
   });
 
   test("puts instrument matches above the data catalog offer", () => {

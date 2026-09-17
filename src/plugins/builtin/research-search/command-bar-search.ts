@@ -48,6 +48,7 @@ export function hitResultDef(
   return {
     id: hit.id,
     label: hit.title,
+    url: hit.url,
     detail: [leadIn, formatHitDate(hit.publishedAt)].filter(Boolean).join(" · "),
     // CALL or the filing form. Dropped in the News section, where every row is
     // the same kind and a badge would only repeat the heading.
@@ -72,6 +73,7 @@ export function pluginHitResultDef(
   return {
     id: `${providerId}:${hit.id}`,
     label: hit.title,
+    url: hit.url,
     detail: [hit.source, hit.documentType, formatHitDate(hit.publishedAt)].filter(Boolean).join(" · "),
     badge: hit.documentType?.toUpperCase().slice(0, 6) || "DOC",
     right: formatHitDateShort(hit.publishedAt, now),

@@ -161,11 +161,13 @@ export interface OnboardingProgress {
 /**
  * One recently executed command-bar entry. `id` is the registry key to
  * re-execute (a built-in command id, or `pane-template:<templateId>`); `label`
- * is the user-facing text shown in Recents. Persisted like `recentTickers`.
+ * is the user-facing text shown in Suggested. Persisted like `recentTickers`.
  */
 export interface RecentCommand {
   id: string;
   label: string;
+  arg?: string;
+  article?: { id: string; title: string; source: string; url: string };
 }
 
 export interface AppConfig {

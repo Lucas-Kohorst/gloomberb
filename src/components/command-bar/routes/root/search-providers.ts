@@ -29,6 +29,7 @@ export function toProviderResultItem(
   provider: CommandBarSearchProvider,
   result: CommandBarResultDef,
   onExecuted: () => void,
+  beforeExecute?: () => void,
 ): ResultItem {
   return {
     id: `search-provider:${provider.id}:${result.id}`,
@@ -43,10 +44,16 @@ export function toProviderResultItem(
     disabled: result.disabled,
     action: async () => {
       if (result.disabled) return;
+      beforeExecute?.();
       await result.execute();
       onExecuted();
     },
   };
+}
+
+function isNewsOrArticlesCategory(provider: CommandBarSearchProvider, result: CommandBarResultDef): boolean {
+  const category = (result.category ?? provider.category).trim().toLowerCase();
+  return category === "news" || category === "articles";
 }
 
 interface ProviderResults {
@@ -62,6 +69,7 @@ interface UseCommandBarSearchProvidersOptions {
   enabled: boolean;
   context: CommandBarSearchContext;
   onExecuted: () => void;
+  beforeExecute?: (result: CommandBarResultDef, provider: CommandBarSearchProvider) => void;
 }
 
 /**
@@ -76,6 +84,7 @@ export function useCommandBarSearchProviders({
   enabled,
   context,
   onExecuted,
+  beforeExecute,
 }: UseCommandBarSearchProvidersOptions): {
   providerResultItems: ResultItem[];
   providerSearching: boolean;
@@ -96,6 +105,8 @@ export function useCommandBarSearchProviders({
   contextRef.current = context;
   const onExecutedRef = useRef(onExecuted);
   onExecutedRef.current = onExecuted;
+  const beforeExecuteRef = useRef(beforeExecute);
+  beforeExecuteRef.current = beforeExecute;
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -125,6 +136,9 @@ export function useCommandBarSearchProviders({
             provider,
             result,
             () => onExecutedRef.current(),
+            isNewsOrArticlesCategory(provider, result)
+              ? () => beforeExecuteRef.current?.(result, provider)
+              : undefined,
           )),
         },
       }));

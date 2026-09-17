@@ -36,7 +36,11 @@ interface UseCommandBarRootRuntimeOptions {
   buildLayoutItems(query: string, options?: { confirmDangerousActions?: boolean }): ResultItem[];
   buildPaneSettingItems(paneId: string | null, query: string): ResultItem[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
-  buildRecentArticleItem?: (articleId: string, label: string) => ResultItem | null;
+  buildRecentArticleItem?: (
+    articleId: string,
+    label: string,
+    persistedArticle?: AppState["recentCommands"][number]["article"],
+  ) => ResultItem | null;
   buildTickerSearchResultItems(candidates: TickerSearchCandidate[], query: string): ResultItem[];
   buildWindowModeItems(arg: string): ResultItem[];
   createPaneTemplateItem(template: PaneTemplateDef, options?: {

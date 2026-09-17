@@ -458,7 +458,7 @@ describe("recents in the root result model", () => {
     recentCommands: [{ id: "theme", label: "Change Theme" }],
   } as unknown as RootResultModelOptions["state"];
 
-  test("lead the empty query as a Recent section and re-execute command rows by id", () => {
+  test("lead the empty query as a Suggested section and re-execute command rows by id", () => {
     const recentTicker: ResultItem = {
       id: "ticker:AAPL",
       label: "AAPL",
@@ -475,13 +475,28 @@ describe("recents in the root result model", () => {
       state: recentState,
     }));
 
-    const recentRows = items.filter((item) => item.category === "Recent");
+    const recentRows = items.filter((item) => item.category === "Suggested");
     expect(recentRows.map((item) => item.id)).toEqual(["ticker:AAPL", "recent:command:theme"]);
     expect(recentRows[0]).toMatchObject({ label: "AAPL", kind: "ticker" });
     expect(recentRows[1]).toMatchObject({ label: "Change Theme", kind: "command", shortcutQuery: "TH" });
-    // Recents come before the normal browse match for the command.
     recentRows[1]?.action();
     expect(executed).toEqual([{ id: "theme", arg: "" }]);
+  });
+
+  test("re-execute recent commands with the stored arg", () => {
+    const executed: Array<{ id: string; arg: string }> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [themeCommand],
+      runDirectCommand: (command, arg) => { executed.push({ id: command.id, arg }); },
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [{ id: "theme", label: "Change Theme", arg: "amber" }],
+      },
+    }));
+
+    items.find((item) => item.id === "recent:command:theme")?.action();
+    expect(executed).toEqual([{ id: "theme", arg: "amber" }]);
   });
 
   test("never leak into prefix-routed or typed queries", () => {
@@ -491,7 +506,7 @@ describe("recents in the root result model", () => {
         rootQuery: query,
         state: recentState,
       }));
-      expect(items.filter((item) => item.category === "Recent")).toEqual([]);
+      expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
     }
   });
 
@@ -514,9 +529,45 @@ describe("recents in the root result model", () => {
     }));
 
     const row = items.find((item) => item.id === "recent:article:story-1");
-    expect(row?.category).toBe("Recent");
+    expect(row?.category).toBe("Suggested");
     expect(row?.label).toBe("Fed decision");
     expect(row?.action).toBeTypeOf("function");
+  });
+
+  test("persisted article recents still produce a row from stored article payload", () => {
+    const persisted = {
+      id: "story-1",
+      title: "Fed decision",
+      source: "Reuters",
+      url: "https://example.com/fed",
+    };
+    const received: Array<{ articleId: string; label: string; article?: typeof persisted }> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      buildRecentArticleItem: (articleId, label, persistedArticle) => {
+        received.push({ articleId, label, article: persistedArticle });
+        return {
+          id: `article:${articleId}`,
+          label,
+          detail: persistedArticle?.source ?? "",
+          category: "Articles",
+          kind: "action",
+          action: () => {},
+        };
+      },
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [{ id: "article:story-1", label: "Fed decision", article: persisted }],
+      },
+    }));
+
+    expect(received).toEqual([{ articleId: "story-1", label: "Fed decision", article: persisted }]);
+    expect(items.find((item) => item.id === "recent:article:story-1")).toMatchObject({
+      category: "Suggested",
+      label: "Fed decision",
+      detail: "Reuters",
+    });
   });
 
   test("re-execute recorded pane templates through the template item builder", () => {
@@ -544,7 +595,7 @@ describe("recents in the root result model", () => {
     }));
 
     const row = items.find((item) => item.id === "recent:pane-template:chart-composer-pane");
-    expect(row?.category).toBe("Recent");
+    expect(row?.category).toBe("Suggested");
     expect(row?.label).toBe("Chart");
     expect(row?.action).toBeTypeOf("function");
   });
@@ -557,6 +608,6 @@ describe("recents in the root result model", () => {
         recentCommands: [{ id: "gone-command", label: "Gone" }],
       },
     }));
-    expect(items.filter((item) => item.category === "Recent")).toEqual([]);
+    expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
   });
 });

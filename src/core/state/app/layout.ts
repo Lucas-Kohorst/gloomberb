@@ -189,6 +189,17 @@ export function nextRecentTickers(current: string[], symbol: string | null): str
 /** Cap for the recently-executed command ring. */
 export const RECENT_COMMANDS_LIMIT = 10;
 
+function sameRecentCommandEntry(left: RecentCommand, right: RecentCommand | undefined): boolean {
+  return !!right
+    && left.id === right.id
+    && left.label === right.label
+    && left.arg === right.arg
+    && left.article?.id === right.article?.id
+    && left.article?.title === right.article?.title
+    && left.article?.source === right.article?.source
+    && left.article?.url === right.article?.url;
+}
+
 /**
  * MRU ring of recently executed command-bar entries, newest first. An entry
  * already in the ring is promoted instead of duplicated; re-running a recent
@@ -202,7 +213,7 @@ export function nextRecentCommands(
   const next = [entry, ...current.filter((existing) => existing.id !== entry.id)]
     .slice(0, RECENT_COMMANDS_LIMIT);
   if (next.length === current.length && next.every((candidate, index) => (
-    candidate.id === current[index]?.id && candidate.label === current[index]?.label
+    sameRecentCommandEntry(candidate, current[index])
   ))) {
     return [...current];
   }

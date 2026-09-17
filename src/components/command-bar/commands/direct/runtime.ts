@@ -112,7 +112,7 @@ export function useCommandBarDirectCommandRuntime({
   ]);
 
   const runDirectCommand = useCallback((command: Command, arg: string) => {
-    dispatch({ type: "RECORD_COMMAND", id: command.id, label: command.label });
+    dispatch({ type: "RECORD_COMMAND", id: command.id, label: command.label, arg: arg || undefined });
     runDirectCommandAction({
       activeCollectionId,
       activeTickerSymbol,
