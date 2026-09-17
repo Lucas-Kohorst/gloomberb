@@ -221,4 +221,22 @@ describe("toProviderResultItem", () => {
     expect(executed).toBe(0);
     expect(closed).toBe(0);
   });
+
+  test("runs beforeExecute before the hit so article recents can record a URL", async () => {
+    const order: string[] = [];
+    const item = toProviderResultItem(
+      { id: "news", category: "News", provide: async () => [] },
+      {
+        id: "story-1",
+        label: "Fed decision",
+        url: "https://example.com/fed",
+        execute: () => { order.push("execute"); },
+      },
+      () => { order.push("close"); },
+      () => { order.push("before"); },
+    );
+
+    await item.action();
+    expect(order).toEqual(["before", "execute", "close"]);
+  });
 });
