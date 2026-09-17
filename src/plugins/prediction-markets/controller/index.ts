@@ -411,7 +411,7 @@ export function usePredictionMarketsController({
     !== normalizePredictionSearchQuery(data.debouncedSearchQuery).toLowerCase();
   const searchLoading =
     normalizePredictionSearchQuery(searchQuery).length > 0
-    && (searchPending || data.catalogLoadCount > 0);
+    && (searchPending || !data.catalogSearchReady || data.catalogLoadCount > 0);
 
   return {
     paneSettings,

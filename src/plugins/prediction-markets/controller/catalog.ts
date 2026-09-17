@@ -1,4 +1,3 @@
-import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { shouldYieldToUi, whenUiQuiet } from "../../../utils/ui-yield";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
@@ -125,30 +124,6 @@ export function usePredictionCatalogData({
     () => buildPredictionCatalogResourceKey("kalshi", categoryId, "", browseTab),
     [browseTab, categoryId],
   );
-  const polymarketSearchResourceKey = useMemo(
-    () =>
-      normalizedSearchQuery
-        ? buildPredictionCatalogResourceKey(
-            "polymarket",
-            categoryId,
-            normalizedSearchQuery,
-            browseTab,
-          )
-        : null,
-    [browseTab, categoryId, normalizedSearchQuery],
-  );
-  const kalshiSearchResourceKey = useMemo(
-    () =>
-      normalizedSearchQuery
-        ? buildPredictionCatalogResourceKey(
-            "kalshi",
-            categoryId,
-            normalizedSearchQuery,
-            browseTab,
-          )
-        : null,
-    [browseTab, categoryId, normalizedSearchQuery],
-  );
   const polymarketCatalogKey = polymarketSearchKey ?? polymarketBrowseKey;
   const kalshiCatalogKey = kalshiSearchKey ?? kalshiBrowseKey;
 
@@ -170,26 +145,30 @@ export function usePredictionCatalogData({
   );
   const polymarketSearch = useMemo(
     () =>
-      polymarketSearchKey && polymarketSearchResourceKey
-        ? readCatalogSlice(
-            catalogCache,
-            polymarketSearchKey,
-            polymarketSearchResourceKey,
-          )
+      polymarketSearchKey
+        ? catalogCache[polymarketSearchKey] ?? EMPTY_CATALOG_SLICE
         : EMPTY_CATALOG_SLICE,
-    [
-      catalogCache,
-      polymarketSearchKey,
-      polymarketSearchResourceKey,
-    ],
+    [catalogCache, polymarketSearchKey],
   );
   const kalshiSearch = useMemo(
     () =>
-      kalshiSearchKey && kalshiSearchResourceKey
-        ? readCatalogSlice(catalogCache, kalshiSearchKey, kalshiSearchResourceKey)
+      kalshiSearchKey
+        ? catalogCache[kalshiSearchKey] ?? EMPTY_CATALOG_SLICE
         : EMPTY_CATALOG_SLICE,
-    [catalogCache, kalshiSearchKey, kalshiSearchResourceKey],
+    [catalogCache, kalshiSearchKey],
   );
+  // Search is force-fetched. Hydrating a previous empty persist slice looks
+  // like a finished query and paints "No markets matched" instead of Adjacent
+  // hits. Ready means this session has written the search key (including []).
+  const polymarketSearchReady =
+    !includePolymarket
+    || !polymarketSearchKey
+    || Object.hasOwn(catalogCache, polymarketSearchKey);
+  const kalshiSearchReady =
+    !includeKalshi
+    || !kalshiSearchKey
+    || Object.hasOwn(catalogCache, kalshiSearchKey);
+  const catalogSearchReady = polymarketSearchReady && kalshiSearchReady;
 
   activeCatalogRef.current = {
     [polymarketBrowseKey]: polymarketBrowse,
@@ -264,6 +243,16 @@ export function usePredictionCatalogData({
     [activeCatalogSources],
   );
   const allMarkets = useMemo(() => {
+    if (normalizedSearchQuery) {
+      const searched: PredictionMarketSummary[] = [];
+      if (includePolymarket) searched.push(...polymarketSearch);
+      if (includeKalshi) searched.push(...kalshiSearch);
+      // Adjacent is the search index. Do not keep filtering the volume-sorted
+      // browse catalog once those hits have landed — diesel never appears in
+      // the top browse page, which is why command-bar finds it and the pane
+      // used to show "No markets matched".
+      if (searched.length > 0) return searched;
+    }
     const merged: PredictionMarketSummary[] = [];
     if (includePolymarket) {
       merged.push(
@@ -279,6 +268,7 @@ export function usePredictionCatalogData({
     includePolymarket,
     kalshiBrowse,
     kalshiSearch,
+    normalizedSearchQuery,
     polymarketBrowse,
     polymarketSearch,
   ]);
@@ -290,9 +280,10 @@ export function usePredictionCatalogData({
       category: PredictionCategoryId,
       options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean },
     ) => {
+      const searching = normalizePredictionSearchQuery(search).length > 0;
       const showPending =
         options?.showPending ??
-        (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0;
+        (searching || (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0);
       if (showPending) {
         setCatalogPending((current) =>
           updatePredictionPendingCounts(current, cacheKey, 1),
@@ -300,19 +291,15 @@ export function usePredictionCatalogData({
       }
       try {
         const next = await loadPolymarketCatalog(search, category, browseTab, options);
-        if (shouldYieldToUi()) await whenUiQuiet();
+        // Browse polls can wait so typing stays smooth. Search results must
+        // paint even while the box is focused — input yield has no timeout.
+        if (!searching && shouldYieldToUi()) await whenUiQuiet();
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           const slice = options?.firstPageOnly
             ? mergePredictionCatalogPage(previous, next)
             : overlayLivePredictionQuotes(previous, next);
-          if (samePredictionCatalogSummaries(previous, slice)) {
-            return current;
-          }
-          return {
-            ...current,
-            [cacheKey]: slice,
-          };
+          return commitCatalogCache(current, cacheKey, previous, slice);
         });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
@@ -326,6 +313,9 @@ export function usePredictionCatalogData({
             formatPredictionLoadError("polymarket", "markets", error),
           ),
         );
+        if (searching) {
+          setCatalogCache((current) => seedEmptyCatalogCache(current, cacheKey));
+        }
       } finally {
         const loadedAt = Date.now();
         setPolymarketLoadedAt(loadedAt);
@@ -347,9 +337,10 @@ export function usePredictionCatalogData({
       category: PredictionCategoryId,
       options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean },
     ) => {
+      const searching = normalizePredictionSearchQuery(search).length > 0;
       const showPending =
         options?.showPending ??
-        (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0;
+        (searching || (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0);
       if (showPending) {
         setCatalogPending((current) =>
           updatePredictionPendingCounts(current, cacheKey, 1),
@@ -357,19 +348,13 @@ export function usePredictionCatalogData({
       }
       try {
         const next = await loadKalshiCatalog(search, category, browseTab, options);
-        if (shouldYieldToUi()) await whenUiQuiet();
+        if (!searching && shouldYieldToUi()) await whenUiQuiet();
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           const slice = options?.firstPageOnly
             ? mergePredictionCatalogPage(previous, next)
             : overlayLivePredictionQuotes(previous, next);
-          if (samePredictionCatalogSummaries(previous, slice)) {
-            return current;
-          }
-          return {
-            ...current,
-            [cacheKey]: slice,
-          };
+          return commitCatalogCache(current, cacheKey, previous, slice);
         });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
@@ -383,6 +368,9 @@ export function usePredictionCatalogData({
             formatPredictionLoadError("kalshi", "markets", error),
           ),
         );
+        if (searching) {
+          setCatalogCache((current) => seedEmptyCatalogCache(current, cacheKey));
+        }
       } finally {
         const loadedAt = Date.now();
         setKalshiLoadedAt(loadedAt);
@@ -424,6 +412,7 @@ export function usePredictionCatalogData({
     includePolymarket,
     loadPolymarket,
     normalizedSearchQuery,
+    polymarketCatalogKey,
     polymarketSearchKey,
   ]);
 
@@ -438,6 +427,7 @@ export function usePredictionCatalogData({
     categoryId,
     debouncedSearchQuery,
     includeKalshi,
+    kalshiCatalogKey,
     kalshiSearchKey,
     loadKalshi,
     normalizedSearchQuery,
@@ -553,11 +543,41 @@ export function usePredictionCatalogData({
     catalogLoadCount,
     catalogLoadingMore: loadingMore,
     catalogStatus,
+    catalogSearchReady,
     kalshiFeed,
     debouncedSearchQuery,
     refreshCatalog,
     loadMoreCatalog,
     setCatalogCache,
+  };
+}
+
+function commitCatalogCache(
+  current: PredictionCatalogCache,
+  cacheKey: string,
+  previous: PredictionMarketSummary[] | undefined,
+  slice: PredictionMarketSummary[],
+): PredictionCatalogCache {
+  if (
+    Object.hasOwn(current, cacheKey)
+    && samePredictionCatalogSummaries(previous, slice)
+  ) {
+    return current;
+  }
+  return {
+    ...current,
+    [cacheKey]: slice,
+  };
+}
+
+function seedEmptyCatalogCache(
+  current: PredictionCatalogCache,
+  cacheKey: string,
+): PredictionCatalogCache {
+  if (Object.hasOwn(current, cacheKey)) return current;
+  return {
+    ...current,
+    [cacheKey]: EMPTY_CATALOG_SLICE,
   };
 }
 
