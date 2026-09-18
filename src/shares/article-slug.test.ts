@@ -21,5 +21,9 @@ test("indexes slug records under the full public slug", async () => {
     shareId,
   });
   expect(parseArticleSlugRecord(serializeArticleSlugRecord(articleId))).toEqual({ articleId });
+  expect(parseArticleSlugRecord(serializeArticleSlugRecord(articleId, "Xk9mQ2nLp4Ab"))).toEqual({
+    articleId,
+    shareId: "Xk9mQ2nLp4Ab",
+  });
   expect(parseArticleSlugRecord({ articleId: "Xk9mQ2nLp4Ab", shareId: "short" })).toBeNull();
 });

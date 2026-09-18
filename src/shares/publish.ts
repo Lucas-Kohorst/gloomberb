@@ -17,6 +17,7 @@ import {
   hashArticleId,
   isCanonicalNewsId,
   isStoredShareId,
+  publicArticleSlugUrl,
   publicNewsUrl,
   publicShareUrl,
 } from "./routes";
@@ -50,7 +51,7 @@ const noopSlugIndex: ArticleSlugIndex = {
   register: async () => false,
 };
 
-type HostedShareCreator = (payload: SharePayload) => Promise<{ id: string } | null>;
+type HostedShareCreator = (payload: SharePayload) => Promise<{ id: string; slug?: string } | null>;
 
 const hostedShareCreator: HostedShareCreator = (payload) => createHostedShare(payload);
 const noopHostedShareCreator: HostedShareCreator = async () => null;
@@ -66,11 +67,11 @@ export async function publishShare(payload: SharePayload, create: ShareCreator =
 
 /**
  * Prefer a human-readable `/article/{title}--{hash}` page when the slug index
- * can be written. `/news/{articleId}` stays the reuse URL for stories already
- * indexed, and the fallback when slug registration fails.
+ * can be written (Cloud or unsigned hosted KV). `/news/{articleId}` stays the
+ * reuse URL for stories already indexed.
  *
- * Inline `/article?a=` is only the last resort when Cloud rejects or the payload
- * will not fit the stored envelope (huge Substack HTML).
+ * Inline `/article?a=` is only the last resort when Cloud and hosted KV both
+ * reject, or the payload will not fit the stored envelope.
  */
 export async function publishArticleShare(
   article: ArticleSharePayload,
@@ -115,7 +116,15 @@ export async function publishArticleShare(
     const envelope = parseSharePayload({ kind: "article", data });
     if (!envelope) continue;
     const hosted = await hostedCreate(envelope);
-    if (hosted) return publicUrlForShareId(hosted.id);
+    if (!hosted) continue;
+    if (hosted.slug) {
+      try {
+        return publicArticleSlugUrl(hosted.slug);
+      } catch {
+        // Hosted wrote a snapshot but an unusable slug; fall through to /s/{id}.
+      }
+    }
+    return publicUrlForShareId(hosted.id);
   }
   return inlineUrl();
 }

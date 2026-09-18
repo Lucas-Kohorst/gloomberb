@@ -4,6 +4,7 @@ import { ApiRequestError } from "../api-client/errors";
 import { parseSharePayload, type SharePayload } from "./payload";
 import {
   encodeNewsPathId,
+  isArticleShareSlug,
   isCanonicalNewsId,
   isStoredShareId,
   parseArticleSlugPath,
@@ -44,6 +45,7 @@ export type ShareRecord = SharePayload & {
 export interface CreatedShare {
   id: string;
   expiresAt: string;
+  slug?: string;
 }
 
 function validDate(value: unknown): value is string {
@@ -145,7 +147,12 @@ export async function createHostedShare(
     if (!body || typeof body !== "object") return null;
     const id = (body as { id?: unknown }).id;
     if (typeof id !== "string" || !isShareId(id)) return null;
-    return { id, expiresAt: new Date(Date.now() + HOSTED_SHARE_TTL_MS).toISOString() };
+    const slug = (body as { slug?: unknown }).slug;
+    return {
+      id,
+      expiresAt: new Date(Date.now() + HOSTED_SHARE_TTL_MS).toISOString(),
+      ...(typeof slug === "string" && isArticleShareSlug(slug) ? { slug } : {}),
+    };
   } catch {
     return null;
   }
@@ -263,7 +270,7 @@ export async function registerArticleSlug(
   fetchImpl: ShareFetch = fetch,
 ): Promise<boolean> {
   if (!parseArticleSlugPath(`/article/${fullSlug}`) || !isCanonicalNewsId(articleId)) return false;
-  if (shareId !== undefined && !isStoredShareId(shareId)) return false;
+  if (shareId !== undefined && !isShareId(shareId)) return false;
   try {
     const response = await fetchShare(fetchImpl, articleSlugIndexUrl(fullSlug), {
       method: "PUT",
