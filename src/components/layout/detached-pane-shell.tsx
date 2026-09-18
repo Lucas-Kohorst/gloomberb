@@ -14,7 +14,7 @@ import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
 import { NATIVE_PANE_HEADER_HEIGHT_PX, resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
-import { canRetargetPaneTicker } from "../../plugins/ticker-follow";
+import { buildReplacePaneTickerLaunch, canRetargetPaneTicker } from "../../plugins/ticker-follow";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 import {
@@ -284,7 +284,10 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                         type: "SET_COMMAND_BAR",
                         open: true,
                         query: "",
-                        launch: { kind: "ticker-search", query: "", replacePaneId: instance.instanceId },
+                        launch: buildReplacePaneTickerLaunch(
+                          instance.instanceId,
+                          resolveTickerForPane(titleState, instance.instanceId),
+                        ),
                       });
                     } : undefined}
                   >
