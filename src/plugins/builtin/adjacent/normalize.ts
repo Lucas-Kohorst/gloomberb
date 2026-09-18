@@ -6,6 +6,8 @@ import type {
   AdjacentIndexPricePoint,
   AdjacentIndexSleeve,
   AdjacentMarket,
+  AdjacentMarketRow,
+  AdjacentMarketSortColumnId,
   AdjacentMarketsResponse,
   AdjacentNewsArticle,
   AdjacentPlatform,
@@ -98,6 +100,50 @@ export function normalizeAdjacentRate(rate: AdjacentRate): AdjacentRateRow {
     change1d: rate.price_change_1d ?? null,
     category: undefined,
   };
+}
+
+export function adjacentMarketTicker(market: AdjacentMarket): string {
+  return market.display_ticker?.trim()
+    || market.ticker?.trim()
+    || market.slug?.trim()
+    || stripVenuePrefix(market.id)
+    || market.id;
+}
+
+export function normalizeAdjacentMarket(market: AdjacentMarket): AdjacentMarketRow {
+  return {
+    id: market.id,
+    ticker: adjacentMarketTicker(market),
+    title: market.title,
+    platform: market.platform,
+    status: market.status,
+    endsAt: market.ends_at ?? null,
+    url: market.url,
+    category: market.category,
+    subtitle: market.subtitle,
+    description: market.description,
+  };
+}
+
+export function adjacentMarketSortValue(
+  row: AdjacentMarketRow,
+  columnId: AdjacentMarketSortColumnId,
+): string | number | null {
+  switch (columnId) {
+    case "ticker":
+      return row.ticker;
+    case "title":
+      return row.title;
+    case "platform":
+      return row.platform;
+    case "status":
+      return row.status;
+    case "ends": {
+      if (!row.endsAt) return null;
+      const ts = new Date(row.endsAt).getTime();
+      return Number.isFinite(ts) ? ts : null;
+    }
+  }
 }
 
 export function normalizeAdjacentPriceHistory(

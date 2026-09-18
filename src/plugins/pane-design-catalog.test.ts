@@ -201,6 +201,29 @@ describe("pane design catalog — renderer env", () => {
   });
 });
 
+describe("pane design catalog — ADJ Adjacent search", () => {
+  afterEach(() => {
+    adjacentPlugin.dispose?.();
+  });
+
+  test("ADJ opens Adjacent catalogs instead of Prediction Markets", async () => {
+    const commands = await collectRegisteredCommands(adjacentPlugin.setup);
+    const adj = commands.find((command) => command.shortcut === "ADJ");
+    expect(adj, "adjacent plugin must register command-bar shortcut ADJ").toBeDefined();
+    expect(adj?.id).toBe("adjacent-markets-search");
+
+    const executeSource = Function.prototype.toString.call(adj?.execute);
+    expect(executeSource).not.toContain("prediction-markets");
+    expect(executeSource).not.toContain("focusPane");
+    expect(executeSource).toContain("openAdjacentCatalogSearch");
+
+    const inventory = `${adj?.description ?? ""} ${(adj?.keywords ?? []).join(" ")}`.toLowerCase();
+    expect(inventory).toContain("indices");
+    expect(inventory).toContain("rates");
+    expect(inventory).toContain("markets");
+  });
+});
+
 describe("pane design catalog — ART / written-text", () => {
   afterEach(() => {
     newsPlugin.dispose?.();

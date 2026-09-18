@@ -340,7 +340,13 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     && shortcutItem
   ) {
     const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
-    items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    const catalogItems = rootShortcutIntent.prefix === "ADJ"
+      ? providerResultItems.filter((item) => item.id.startsWith("search-provider:adjacent-catalog:"))
+      : [];
+    items.push(
+      ...catalogItems,
+      ...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]),
+    );
     if (!shortcutOwnsQuery) items.push(...collectFreeTextMatches());
   } else if (match && match.command.id === "layout") {
     items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
@@ -398,7 +404,9 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...(exactLocalLabel
       ? providerResultItems.filter((item) => !item.id.startsWith("twitter-search:"))
       : providerResultItems));
-  } else if (rootShortcutIntent.kind !== "none" && (rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR")) {
+  } else if (rootShortcutIntent.kind !== "none" && (
+    rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR"
+  )) {
     items.push(...providerResultItems.filter((item) => item.id.startsWith("chart-series:")));
   }
 
