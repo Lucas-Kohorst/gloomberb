@@ -80,7 +80,7 @@ import {
   resolveShellCursorOcclusionRects,
   useShellCursorOcclusionGuard,
 } from "./cursor-occlusion";
-import { canRetargetPaneTicker } from "../../../plugins/ticker-follow";
+import { buildReplacePaneTickerLaunch, canRetargetPaneTicker } from "../../../plugins/ticker-follow";
 import { createShare, openLiveShareUrl } from "../../../shares/api";
 import { buildPaneSharePayload } from "../../../shares/pane";
 import type { SharePayload } from "../../../shares/payload";
@@ -523,9 +523,9 @@ export function Shell({
       type: "SET_COMMAND_BAR",
       open: true,
       query: "",
-      launch: { kind: "ticker-search", query: "", replacePaneId: paneId },
+      launch: buildReplacePaneTickerLaunch(paneId, resolveTickerForPane(stateRef.current, paneId)),
     });
-  }, [dispatch, focusPane, paneMap]);
+  }, [dispatch, focusPane, paneMap, stateRef]);
   const handlePaneQuickSetting = useCallback((paneId: string, key: string, event: any) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();

@@ -46,16 +46,37 @@ export function resolveTickerWriteTarget(
   return { kind: "fixed", instanceId: instance.instanceId };
 }
 
+/** Ticker tokens include dots and hyphens (`BRK.B`, `BTC-USD`) but not spaces. */
+const TICKER_TITLE_BOUNDARY = "[^A-Za-z0-9.+-]";
+
+export function replaceTickerTokenInTitle(title: string, previous: string, next: string): string {
+  if (!previous || previous === next) return title;
+  const escaped = previous.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(^|${TICKER_TITLE_BOUNDARY})${escaped}(?=${TICKER_TITLE_BOUNDARY}|$)`, "g");
+  return title.replace(pattern, `$1${next}`);
+}
+
 export function retargetTickerPaneTitle(instance: PaneInstanceConfig, symbol: string): string | undefined {
   if (instance.paneId === TICKER_RESEARCH_PANE_ID) return symbol;
   const previous = instance.binding?.kind === "fixed" ? instance.binding.symbol : null;
   if (previous && instance.title) {
     if (instance.title === previous) return symbol;
-    if (instance.title.endsWith(` ${previous}`)) {
-      return `${instance.title.slice(0, -previous.length)}${symbol}`;
-    }
+    const replaced = replaceTickerTokenInTitle(instance.title, previous, symbol);
+    if (replaced !== instance.title) return replaced;
   }
   return instance.title ?? symbol;
+}
+
+export function buildReplacePaneTickerLaunch(paneId: string, symbol: string | null | undefined): {
+  kind: "ticker-search";
+  query: string;
+  replacePaneId: string;
+} {
+  return {
+    kind: "ticker-search",
+    query: symbol?.trim() || "",
+    replacePaneId: paneId,
+  };
 }
 
 export function applyTickerRetarget(

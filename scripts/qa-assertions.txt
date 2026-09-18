@@ -11,4 +11,7 @@ Duplicate plugin
 is not defined
 Maximum update depth
 Invalid hook
+MaxListeners
+memory leak detected
+trace-warnings
 \bundefined\b

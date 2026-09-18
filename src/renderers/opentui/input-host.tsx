@@ -6,7 +6,8 @@ import {
   useRegisteredShortcut,
   type InputHost,
 } from "../../react/input";
-import { toKeyEventLike, useKeyboard, useTerminalDimensions } from "./host";
+import { toKeyEventLike, useKeyboard } from "./host";
+import { useOpenTuiViewport } from "./viewport";
 
 export function OpenTuiInputHostProvider({ children }: { children: ReactNode }) {
   const renderer = useNativeRenderer();
@@ -23,10 +24,9 @@ export function OpenTuiInputHostProvider({ children }: { children: ReactNode }) 
       useRegisteredShortcut(shortcutRegistry, handler, options);
     },
     useViewport() {
-      const dimensions = useTerminalDimensions();
-      return { width: dimensions.width, height: dimensions.height };
+      return useOpenTuiViewport(renderer);
     },
-  }), [shortcutRegistry]);
+  }), [renderer, shortcutRegistry]);
 
   return (
     <InputHostProvider host={host}>
