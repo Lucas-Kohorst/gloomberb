@@ -2,11 +2,22 @@ import { describe, expect, test } from "bun:test";
 import {
   ACCOUNT_CHOICE_IDS,
   accountChoiceIds,
+  accountModeFromSearch,
   advanceAccountField,
   classifyAccountError,
   deriveUsernameFromEmail,
   isUsernameConflictError,
 } from "./auth-model";
+
+describe("accountModeFromSearch", () => {
+  test("opens log in only when auth=login", () => {
+    expect(accountModeFromSearch("")).toBe("signup");
+    expect(accountModeFromSearch("?auth=signup")).toBe("signup");
+    expect(accountModeFromSearch("auth=login")).toBe("login");
+    expect(accountModeFromSearch("?auth=login")).toBe("login");
+    expect(accountModeFromSearch("?next=/article/x&auth=login")).toBe("login");
+  });
+});
 
 describe("accountChoiceIds", () => {
   test("omits skip when an account is required", () => {
