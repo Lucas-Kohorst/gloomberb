@@ -13,6 +13,7 @@ import {
   parseArticleSlugPath,
   parseNewsArticleId,
   parseShortShareId,
+  publicArticleSlugUrl,
   publicNewsUrl,
 } from "./routes";
 
@@ -80,6 +81,7 @@ describe("human-readable article slugs", () => {
     const idHash = await hashArticleId(articleId);
     const fullSlug = articleShareSlug(titleSlug, idHash);
     expect(parseArticleSlugPath(new URL(buildArticleSlugUrl(titleSlug, idHash)).pathname)).toBe(fullSlug);
+    expect(parseArticleSlugPath(new URL(publicArticleSlugUrl(fullSlug)).pathname)).toBe(fullSlug);
     expect(fullSlug).toContain("--");
     expect(titleSlug.length).toBeLessThanOrEqual(60);
   });

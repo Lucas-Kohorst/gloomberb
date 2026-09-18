@@ -7,6 +7,7 @@
 
 import { parseSharePayload, type SharePayload } from "./payload";
 import { isCanonicalNewsId, isStoredShareId } from "./routes";
+import { isShareId } from "./short-id";
 
 export const NEWS_INDEX_KEY_PREFIX = "news:";
 export const NEWS_INDEX_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -66,7 +67,7 @@ export function parseArticleSlugRecord(value: unknown): ArticleSlugRecord | null
   if (typeof articleId !== "string" || !isCanonicalNewsId(articleId)) return null;
   const shareId = (value as { shareId?: unknown }).shareId;
   if (shareId === undefined || shareId === null) return { articleId };
-  if (typeof shareId !== "string" || !isStoredShareId(shareId)) return null;
+  if (typeof shareId !== "string" || !isShareId(shareId)) return null;
   return { articleId, shareId };
 }
 

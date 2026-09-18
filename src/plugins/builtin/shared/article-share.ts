@@ -250,9 +250,8 @@ function longerShareText(
 // ---------------------------------------------------------------------------
 
 /**
- * Prefer a canonical `/news/{articleId}` link when the story has a stable id.
- * Fall back to Cloud `/s/{32hex}`, then a hosted short id if Cloud is down,
- * then the inline `/article?a=…` form.
+ * Prefer `/news/{articleId}` when the story was already indexed, then a
+ * `/article/{title-slug}--{hash}` URL, then `/s/{id}`, then inline `/article?a=`.
  */
 export function useCopyShareLink(): (payload: ArticleSharePayload) => Promise<void> {
   const rendererHost = useRendererHost();

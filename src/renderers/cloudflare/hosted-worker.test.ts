@@ -456,6 +456,43 @@ describe("hosted share Worker endpoint", () => {
     expect(body.id).toHaveLength(12);
   });
 
+  test("accepts an Electrobun article share and returns a slug", async () => {
+    mockSessionUser = null;
+    const env = makeEnv();
+    const articleId = "x:2100984584380842280";
+    const title = "Opinion: Macklemore's political messaging";
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/share", {
+        origin: "views://mainview",
+        body: JSON.stringify({
+          kind: "article",
+          data: {
+            type: "news",
+            id: articleId,
+            title,
+            url: "https://x.com/FT/status/2100984584380842280",
+            source: "@FT",
+            summary: title,
+            text: title,
+          },
+        }),
+      }),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { id: string; slug: string };
+    expect(body.id).toHaveLength(12);
+    expect(body.slug).toContain("--");
+    expect(body.slug.startsWith("opinion-macklemore-s-political-messaging")).toBe(true);
+
+    const slugResponse = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/article-slug/${encodeURIComponent(body.slug)}`),
+      env,
+    );
+    expect(slugResponse?.status).toBe(200);
+    expect(await slugResponse?.json()).toEqual({ articleId, shareId: body.id });
+  });
+
   test("rejects anonymous chart share creation", async () => {
     mockSessionUser = null;
     installMockFetch();

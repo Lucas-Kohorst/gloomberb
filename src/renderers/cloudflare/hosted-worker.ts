@@ -1,6 +1,9 @@
 import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { handleHostedBackendRpc } from "./backend";
 import {
+  articleShareSlug,
+  hashArticleId,
+  isArticleShareSlug,
   isCanonicalNewsId,
   isShareDocumentPath,
   isShareScriptPath,
@@ -9,6 +12,7 @@ import {
   parseNewsArticleId,
   parseShareId,
 } from "../../shares/routes";
+import { slugifyArticleTitle } from "../../utils/slugify";
 import {
   NEWS_INDEX_TTL_SECONDS,
   newsIndexKey,
@@ -24,6 +28,7 @@ import {
   articleShareStoreData,
   decodeArticleSharePayload,
   parseSharePayload,
+  type ArticleShareData,
   type SharePayload,
 } from "../../shares/payload";
 import { injectShareDocumentMeta } from "../../shares/open-graph";
@@ -446,8 +451,14 @@ function leftoverShareResponse(body: unknown, status = 200): Response {
   });
 }
 
-function isNativeShareClient(request: Request): boolean {
-  return !request.headers.get("Origin") && !request.headers.get("Sec-Fetch-Site");
+async function hostedArticleSlug(
+  data: ArticleShareData,
+): Promise<{ articleId: string; slug: string } | undefined> {
+  const articleId = typeof data.id === "string" ? data.id.trim() : "";
+  const title = typeof data.title === "string" ? data.title : "";
+  if (!isCanonicalNewsId(articleId) || !title) return undefined;
+  const slug = articleShareSlug(slugifyArticleTitle(title), await hashArticleId(articleId));
+  return isArticleShareSlug(slug) ? { articleId, slug } : undefined;
 }
 
 async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
@@ -472,7 +483,10 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     }
     const { kind, data } = payload;
     const trustedOrigin = hasTrustedHostedOrigin(request, url);
-    if (!trustedOrigin && !(kind === "article" && isNativeShareClient(request))) {
+    // Article snapshots are public (news, tweets, changelog, Substack). Desktop
+    // Electrobun sends Origin `views://mainview`, which is not the hosted SPA,
+    // so do not CSRF-gate those writes. Charts/tables still need a trusted origin.
+    if (kind !== "article" && !trustedOrigin) {
       return leftoverShareResponse({ error: "Invalid origin" }, 403);
     }
     // Articles are the public-share case (changelog, news, Substack) and must
@@ -496,7 +510,13 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
       data,
       createdAt: new Date().toISOString(),
     }), { expirationTtl: SHARE_TTL_SECONDS });
-    return leftoverShareResponse({ id });
+    const indexed = payload.kind === "article" ? await hostedArticleSlug(payload.data) : undefined;
+    if (indexed) {
+      await env.SHARES.put(slugIndexKey(indexed.slug), serializeArticleSlugRecord(indexed.articleId, id), {
+        expirationTtl: SHARE_TTL_SECONDS,
+      });
+    }
+    return leftoverShareResponse(indexed ? { id, slug: indexed.slug } : { id });
   }
 
   if (request.method === "GET") {

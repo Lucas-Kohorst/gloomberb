@@ -3,7 +3,7 @@ import { createShare, getShare } from "./api";
 import { decodeArticleSharePayload, type SharePayload } from "./payload";
 import { publishArticleShare, publishShare, tableSnapshotSharePayload } from "./publish";
 import { buildTableSharePayload } from "./table-snapshot";
-import { parseArticleSlugPath, parseShareId } from "./routes";
+import { articleShareSlug, hashArticleId, parseArticleSlugPath, parseShareId } from "./routes";
 import { slugifyArticleTitle } from "../utils/slugify";
 
 const id = "0123456789abcdef0123456789abcdef";
@@ -166,6 +166,25 @@ test("falls back to a hosted short id when Cloud is unavailable", async () => {
     register: async () => false,
   }, async () => ({ id: shortId }));
   expect(new URL(url).pathname).toBe(`/s/${shortId}`);
+});
+
+test("uses the hosted slug URL when Cloud is unavailable and the worker indexed one", async () => {
+  const shortId = "Xk9mQ2nLp4Ab";
+  const articleId = "x:2100984584380842280";
+  const title = "Opinion: Macklemore's political messaging";
+  const slug = articleShareSlug(slugifyArticleTitle(title), await hashArticleId(articleId));
+  const url = await publishArticleShare({
+    type: "news",
+    id: articleId,
+    title,
+    source: "@FT",
+    url: "https://x.com/FT/status/2100984584380842280",
+    summary: title,
+  }, async () => { throw new Error("Sign in to Gloom Cloud to share."); }, {
+    lookup: async () => null,
+    register: async () => false,
+  }, async () => ({ id: shortId, slug }));
+  expect(new URL(url).pathname).toBe(`/article/${slug}`);
 });
 
 test("falls back inline when stored publishing fails", async () => {

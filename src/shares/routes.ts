@@ -46,7 +46,7 @@ export function buildShortShareUrl(shortId: string): string {
 }
 
 export function buildInlineArticleShareUrl(encodedPayload: string): string {
-  return `${SHARE_HOSTED_ORIGIN}/article?a=${encodedPayload}`;
+  return `${SHARE_HOSTED_ORIGIN}/article?a=${encodeURIComponent(encodedPayload)}`;
 }
 
 /**
@@ -162,7 +162,10 @@ export function parseArticleSlugPath(pathname: string): string | null {
 }
 
 export function buildArticleSlugUrl(titleSlug: string, idHash: string, origin = PUBLIC_SHARE_ORIGIN): string {
-  const fullSlug = articleShareSlug(titleSlug, idHash);
+  return publicArticleSlugUrl(articleShareSlug(titleSlug, idHash), origin);
+}
+
+export function publicArticleSlugUrl(fullSlug: string, origin = PUBLIC_SHARE_ORIGIN): string {
   if (!isArticleShareSlug(fullSlug)) throw new Error("Invalid article slug.");
   return new URL(`/article/${fullSlug}`, origin).toString();
 }
