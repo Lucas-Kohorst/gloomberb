@@ -1,11 +1,11 @@
 import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { padTo } from "../../../utils/format";
 import {
   formatPredictionMetric,
   formatPredictionPercent,
   getPredictionProbabilityColor,
+  isBlankPredictionMetric,
 } from "../metrics";
 import type { PredictionListRow } from "../types";
 import { sortPredictionOutcomeMarkets } from "../outcome-order";
@@ -26,50 +26,54 @@ export function PredictionMarketOutcomesView({
   if (selectedRow.kind !== "group") return null;
 
   const sortedOutcomes = sortPredictionOutcomeMarkets(selectedRow.markets);
-  const labelWidth = Math.max(detailWidth - 22, 12);
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={detailWidth}>
       <Box height={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           Outcomes
         </Text>
       </Box>
 
-      <Box flexDirection="row" height={1}>
-        <Box width={labelWidth + 1}>
-          <Text fg={colors.textDim}>{padTo("TARGET", labelWidth)}</Text>
+      <Box flexDirection="row" height={1} gap={1}>
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} minWidth={12}>
+          <Text fg={colors.textDim}>TARGET</Text>
         </Box>
-        <Box width={8}>
-          <Text fg={colors.textDim}>{padTo("ODDS", 7, "right")}</Text>
+        <Box width={7} justifyContent="flex-end" flexDirection="row">
+          <Text fg={colors.textDim}>ODDS</Text>
         </Box>
-        <Box width={13}>
-          <Text fg={colors.textDim}>{padTo("24H VOL", 12, "right")}</Text>
+        <Box width={10} justifyContent="flex-end" flexDirection="row">
+          <Text fg={colors.textDim}>24H VOL</Text>
         </Box>
       </Box>
 
       {sortedOutcomes.map((market) => {
         const selected = market.key === selectedMarketKey;
+        const volume = formatPredictionMetric(
+          market.volume24h,
+          market.volume24hUnit,
+        );
         return (
           <Box
             key={market.key}
             flexDirection="row"
             height={1}
+            gap={1}
             backgroundColor={selected ? colors.selected : undefined}
             onMouseDown={(event: OutcomePointerEvent) => {
               event.preventDefault();
               onSelectMarket(market.key);
             }}
           >
-            <Box width={labelWidth + 1}>
+            <Box flexGrow={1} flexShrink={1} flexBasis={0} minWidth={12} overflow="hidden">
               <Text
                 fg={selected ? colors.selectedText : colors.text}
                 attributes={selected ? TextAttributes.BOLD : 0}
               >
-                {padTo(market.marketLabel, labelWidth)}
+                {market.marketLabel}
               </Text>
             </Box>
-            <Box width={8}>
+            <Box width={7} justifyContent="flex-end" flexDirection="row">
               <Text
                 fg={
                   selected
@@ -78,19 +82,20 @@ export function PredictionMarketOutcomesView({
                       colors.text
                 }
               >
-                {padTo(formatPredictionPercent(market.yesPrice), 7, "right")}
+                {formatPredictionPercent(market.yesPrice)}
               </Text>
             </Box>
-            <Box width={13}>
-              <Text fg={selected ? colors.selectedText : colors.textDim}>
-                {padTo(
-                  formatPredictionMetric(
-                    market.volume24h,
-                    market.volume24hUnit,
-                  ),
-                  12,
-                  "right",
-                )}
+            <Box width={10} justifyContent="flex-end" flexDirection="row">
+              <Text
+                fg={
+                  selected
+                    ? colors.selectedText
+                    : isBlankPredictionMetric(volume)
+                      ? colors.textDim
+                      : colors.text
+                }
+              >
+                {volume}
               </Text>
             </Box>
           </Box>

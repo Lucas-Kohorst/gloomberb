@@ -140,6 +140,7 @@ export function usePredictionMarketsController({
     () => new Set(),
   );
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
   const appViewport = useViewport();
   useAppInputCapture(focused && searchFocused);
@@ -229,6 +230,7 @@ export function usePredictionMarketsController({
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
+    setSearchFocusToken((token) => token + 1);
   }, []);
 
   const blurSearch = useCallback(() => {
@@ -437,6 +439,7 @@ export function usePredictionMarketsController({
     lastRefreshAt: data.lastRefreshAt,
     scrollRef,
     searchFocused,
+    searchFocusToken,
     searchInputRef,
     searchLoading,
     searchQuery,
