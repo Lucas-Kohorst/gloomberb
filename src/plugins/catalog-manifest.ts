@@ -71,6 +71,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "notification-center": { categories: ["productivity", "alerts"] },
   "plugin-inspector": { categories: ["developer"] },
   portfolio: { categories: ["portfolio"] },
+  "prediction-markets": { categories: ["data"] },
   "research-search": { categories: ["research", "news"] },
   "ticker-research": { categories: ["research"] },
   yahoo: { categories: ["data"] },
