@@ -2,11 +2,8 @@ import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import {
-  attachDividendYieldHealth,
-  resetDividendYieldHealth,
-  YAHOO_DIVIDENDS_CONNECTION_ID,
-} from "./client";
+import { registerConnectionSource } from "../connections/register";
+import { YAHOO_DIVIDENDS_CONNECTION_ID } from "./client";
 import { dividendYieldHeadless } from "./headless";
 import { DividendYieldPane } from "./pane";
 
@@ -14,14 +11,13 @@ let disposeConnection: (() => void) | null = null;
 
 export const dividendYieldModule: PluginModule = {
   setup(ctx) {
-    attachDividendYieldHealth(ctx.connectionHealth);
-    disposeConnection = ctx.connectionHealth.registerSource({
+    // Folded onto the Yahoo origin; this call no-ops in the inventory.
+    disposeConnection = registerConnectionSource({
       id: YAHOO_DIVIDENDS_CONNECTION_ID,
       name: "Yahoo Finance Dividends",
       kind: "api",
-      ownerId: "ticker-research",
-      detail: "finance.yahoo.com",
-      priority: 300,
+      pluginId: "ticker-research",
+      authRequired: false,
     });
 
     ctx.registerTickerResearchTab({
@@ -36,7 +32,6 @@ export const dividendYieldModule: PluginModule = {
   dispose() {
     disposeConnection?.();
     disposeConnection = null;
-    resetDividendYieldHealth();
   },
 
   paneTemplates: [

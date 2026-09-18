@@ -1,6 +1,5 @@
 import { apiClient } from "../../../api-client";
 import type { CloudShortInterestPayload } from "../../../api-client/types";
-import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { withConnectionRequest } from "../connections/register";
 import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, yahooRawDate } from "../../../sources/yahoo-finance/mappers";
@@ -9,16 +8,6 @@ import type { ShortInterestRecord } from "./types";
 
 export const YAHOO_SHORT_INTEREST_CONNECTION_ID = "yahoo-short-interest";
 const yahoo = new YahooHttpClient();
-
-let connectionHealth: ConnectionHealthRegistry | null = null;
-
-export function attachShortInterestHealth(health?: ConnectionHealthRegistry): void {
-  connectionHealth = health ?? null;
-}
-
-export function resetShortInterestHealth(): void {
-  connectionHealth = null;
-}
 
 function rawDate(value: unknown): Date | null {
   const iso = yahooRawDate(value);
@@ -82,14 +71,11 @@ async function requestShortInterest(symbol: string): Promise<ShortInterestRecord
 }
 
 function fetchYahooShortInterest(symbol: string): Promise<ShortInterestRecord[]> {
-  const request = () => withConnectionRequest(
+  return withConnectionRequest(
     YAHOO_SHORT_INTEREST_CONNECTION_ID,
     "short-interest",
     () => requestShortInterest(symbol),
   );
-  return connectionHealth?.hasSource(YAHOO_SHORT_INTEREST_CONNECTION_ID)
-    ? connectionHealth.track(YAHOO_SHORT_INTEREST_CONNECTION_ID, "fetch", request)
-    : request();
 }
 
 function normalizeCloudRecords(payload: CloudShortInterestPayload): ShortInterestRecord[] {

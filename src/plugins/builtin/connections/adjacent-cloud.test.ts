@@ -56,8 +56,25 @@ describe("Adjacent Cloud connection folding", () => {
   });
 
   test("maps leftover Yahoo fragment ids onto the Yahoo origin", () => {
-    for (const id of ["yahoo-esg", "yahoo-screener", "yahoo-dividends", "yahoo-short-interest"]) {
+    for (const id of [
+      "yahoo-esg",
+      "yahoo-screener",
+      "yahoo-dividends",
+      "yahoo-short-interest",
+      "yahoo-fundamentals",
+    ]) {
       expect(resolveConnectionSourceId(id)).toBe("yahoo");
+    }
+  });
+
+  test("maps leftover gloom-cloud sync traffic onto gloom-cloud-http", () => {
+    expect(resolveConnectionSourceId("gloom-cloud")).toBe("gloom-cloud-http");
+    expect(resolveConnectionSourceId("gloom-cloud-http")).toBe("gloom-cloud-http");
+  });
+
+  test("does not fold Kalshi, Polymarket, YouTube, Yahoo, or RSS into Cloud", () => {
+    for (const id of ["kalshi", "polymarket", "youtube", "yahoo", "rss"]) {
+      expect(resolveConnectionSourceId(id)).toBe(id);
     }
   });
 });

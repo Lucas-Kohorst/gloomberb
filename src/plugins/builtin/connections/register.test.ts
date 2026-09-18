@@ -161,14 +161,58 @@ describe("connection source registry", () => {
     reportConnectionRequest("yahoo-screener", { success: true, durationMs: 6, operation: "screener" });
     reportConnectionRequest("yahoo-dividends", { success: true, durationMs: 7, operation: "dividends" });
     reportConnectionRequest("yahoo-short-interest", { success: true, durationMs: 5, operation: "short-interest" });
+    reportConnectionRequest("yahoo-fundamentals", { success: true, durationMs: 8, operation: "screener" });
 
     expect(reports).toEqual([
       { id: "yahoo", operation: "esg" },
       { id: "yahoo", operation: "screener" },
       { id: "yahoo", operation: "dividends" },
       { id: "yahoo", operation: "short-interest" },
+      { id: "yahoo", operation: "screener" },
     ]);
     expect(listConnectionSources().map((source) => source.id)).toEqual(["yahoo"]);
+  });
+
+  test("does not list Yahoo fragments or the gloom-cloud sync alias as their own sources", () => {
+    disposers.push(registerConnectionSource({
+      id: "yahoo",
+      name: "Yahoo Finance",
+      kind: "asset-data",
+      pluginId: "yahoo",
+    }));
+    disposers.push(registerConnectionSource({
+      id: "gloom-cloud-http",
+      name: "Gloom Cloud HTTP",
+      kind: "api",
+      pluginId: "gloomberb-cloud",
+    }));
+    for (const id of ["yahoo-short-interest", "yahoo-dividends", "gloom-cloud"]) {
+      disposers.push(registerConnectionSource({
+        id,
+        name: id,
+        kind: "api",
+        pluginId: "test",
+      }));
+    }
+
+    const ids = listConnectionSources().map((source) => source.id);
+    expect(ids).toEqual(["yahoo", "gloom-cloud-http"]);
+  });
+
+  test("reports leftover gloom-cloud sync traffic on gloom-cloud-http", () => {
+    disposers.push(registerConnectionSource({
+      id: "gloom-cloud-http",
+      name: "Gloom Cloud HTTP",
+      kind: "api",
+      pluginId: "gloomberb-cloud",
+    }));
+
+    const reports: Array<{ id: string; operation?: string }> = [];
+    setConnectionRequestReporter((id, report) => {
+      reports.push({ id, operation: report.operation });
+    });
+    reportConnectionRequest("gloom-cloud", { success: true, durationMs: 9, operation: "pullSnapshot" });
+    expect(reports).toEqual([{ id: "gloom-cloud-http", operation: "pullSnapshot" }]);
   });
 
   test("Adjacent Cloud plugin registers its own source without extracted plugins", async () => {
