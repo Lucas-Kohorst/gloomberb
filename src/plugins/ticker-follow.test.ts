@@ -10,7 +10,9 @@ import {
   applyTickerRetarget,
   canRetargetPaneTicker,
   currentFollowSourceValue,
+  replaceTickerTokenInTitle,
   resolveTickerWriteTarget,
+  retargetTickerPaneTitle,
   setPaneFollowSource,
   TICKER_FOLLOW_PINNED_VALUE,
   wouldCreateFollowCycle,
@@ -115,6 +117,21 @@ describe("applyTickerRetarget", () => {
       .toEqual({ kind: "follow", sourceInstanceId: "portfolio-list:main" });
   });
 
+  test("rewrites a chart-composer title that embeds the previous symbol", () => {
+    const layout = createLayout([
+      createPaneInstance("chart-composer", {
+        instanceId: "chart-composer:amd",
+        title: "G AMD Price",
+        binding: { kind: "fixed", symbol: "AMD" },
+      }),
+    ]);
+    const result = applyTickerRetarget(layout, "chart-composer:amd", "AAPL");
+    const pane = result.layout.instances.find((instance) => instance.instanceId === "chart-composer:amd");
+    expect(result.cursor).toBeNull();
+    expect(pane?.binding).toEqual({ kind: "fixed", symbol: "AAPL" });
+    expect(pane?.title).toBe("G AAPL Price");
+  });
+
   test("changing a fixed source updates panes that follow it", () => {
     const layout = createLayout([
       createPaneInstance("ticker-detail", {
@@ -133,6 +150,18 @@ describe("applyTickerRetarget", () => {
     const state = createInitialState(config);
     expect(resolveTickerForPane(state, "ticker-research:source")).toBe("MSFT");
     expect(resolveTickerForPane(state, "ticker-news:follow")).toBe("MSFT");
+  });
+});
+
+describe("retargetTickerPaneTitle", () => {
+  test("replaces an embedded ticker token without matching a prefix of a longer symbol", () => {
+    expect(replaceTickerTokenInTitle("G AMD Price", "AMD", "AAPL")).toBe("G AAPL Price");
+    expect(replaceTickerTokenInTitle("G AMD · MSFT Price", "AMD", "AAPL")).toBe("G AAPL · MSFT Price");
+    expect(replaceTickerTokenInTitle("G AMD Price", "AM", "AAPL")).toBe("G AMD Price");
+    expect(retargetTickerPaneTitle(
+      createPaneInstance("chart-composer", { title: "G AMD Price", binding: { kind: "fixed", symbol: "AMD" } }),
+      "NVDA",
+    )).toBe("G NVDA Price");
   });
 });
 
