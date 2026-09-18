@@ -8,6 +8,11 @@ describe("uiBuiltinPlugins", () => {
     const ids = uiBuiltinPlugins.map((plugin) => plugin.id);
     expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
     expect(ids).toContain("news");
+    expect(ids).toContain("congress-trades");
+    expect(ids).not.toContain("polls");
+    expect(ids).not.toContain("federal-register");
+    expect(ids).not.toContain("ofac-sanctions");
+    expect(ids).not.toContain("usaspending");
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -18,14 +23,20 @@ describe("uiBuiltinPlugins", () => {
     expect(getRendererPlugins().map((plugin) => plugin.id)).toContain("prediction-markets");
   });
 
-  test("ignores an extracted prediction-markets copy so desktop:build is the pane", () => {
-    const plugins = getRendererPlugins([{
-      plugin: { id: "prediction-markets", name: "Stale PM", version: "0.0.1" } as GloomPlugin,
-      path: "/tmp/stale-prediction-markets",
-    }]);
-    const matches = plugins.filter((plugin) => plugin.id === "prediction-markets");
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.name).toBe("Prediction Markets");
+  test("ignores an extracted congress-trades copy so the in-repo pane wins", () => {
+    const firstParty = [
+      { id: "prediction-markets", name: "Prediction Markets" },
+      { id: "congress-trades", name: "Congress Trades" },
+    ] as const;
+    const plugins = getRendererPlugins(firstParty.map((plugin) => ({
+      plugin: { id: plugin.id, name: `Stale ${plugin.id}`, version: "0.0.1" } as GloomPlugin,
+      path: `/tmp/stale-${plugin.id}`,
+    })));
+    for (const expected of firstParty) {
+      const matches = plugins.filter((plugin) => plugin.id === expected.id);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.name).toBe(expected.name);
+    }
   });
 
   test("does not register the same pane id on two plugins", () => {

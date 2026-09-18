@@ -14,6 +14,7 @@ import {
 import {
   NWS_CLI_CONNECTION_ID,
   NWS_OBSERVATIONS_CONNECTION_ID,
+  OPEN_METEO_CONNECTION_ID,
   WEATHER_CONNECTION_ID,
 } from "./types";
 
@@ -33,6 +34,7 @@ describe("weather source metadata", () => {
       NWS_CLI_CONNECTION_ID,
       NWS_OBSERVATIONS_CONNECTION_ID,
       HKO_RAINFALL_CONNECTION_ID,
+      OPEN_METEO_CONNECTION_ID,
       WEATHER_UNDERGROUND_CONNECTION_ID,
     ]);
     expect(WEATHER_SOURCE_DEFS.map((def) => def.priority)).toEqual(
@@ -52,6 +54,7 @@ describe("weather source metadata", () => {
     const after = listConnectionSources().map((def) => def.id);
     expect(after).toContain(HKO_RAINFALL_CONNECTION_ID);
     expect(after).toContain(WEATHER_UNDERGROUND_CONNECTION_ID);
+    expect(after).toContain(OPEN_METEO_CONNECTION_ID);
     // Adjacent Cloud children are not re-registered as their own rows.
     expect(after.filter((id) => id === WEATHER_CONNECTION_ID)).toHaveLength(
       before.filter((id) => id === WEATHER_CONNECTION_ID).length,

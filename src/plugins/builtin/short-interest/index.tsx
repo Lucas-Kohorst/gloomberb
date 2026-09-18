@@ -3,27 +3,14 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { registerConnectionSource } from "../connections/register";
-import {
-  attachShortInterestHealth,
-  resetShortInterestHealth,
-  YAHOO_SHORT_INTEREST_CONNECTION_ID,
-} from "./client";
+import { YAHOO_SHORT_INTEREST_CONNECTION_ID } from "./client";
 import { ShortInterestView } from "./pane";
 
 let disposeConnection: (() => void) | null = null;
-let disposeHealth: (() => void) | null = null;
 
 export const shortInterestModule: PluginModule = {
   setup(ctx) {
-    attachShortInterestHealth(ctx.connectionHealth);
-    disposeHealth = ctx.connectionHealth.registerSource({
-      id: YAHOO_SHORT_INTEREST_CONNECTION_ID,
-      name: "Yahoo Finance Short Interest",
-      kind: "api",
-      ownerId: "ticker-research",
-      detail: "finance.yahoo.com",
-      priority: 300,
-    });
+    // Folded onto the Yahoo origin; this call no-ops in the inventory.
     disposeConnection = registerConnectionSource({
       id: YAHOO_SHORT_INTEREST_CONNECTION_ID,
       name: "Yahoo Finance Short Interest",
@@ -44,9 +31,6 @@ export const shortInterestModule: PluginModule = {
   dispose() {
     disposeConnection?.();
     disposeConnection = null;
-    disposeHealth?.();
-    disposeHealth = null;
-    resetShortInterestHealth();
   },
 
   paneTemplates: [

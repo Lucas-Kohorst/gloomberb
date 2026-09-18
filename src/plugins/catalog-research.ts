@@ -4,6 +4,7 @@ import { crtShPlugin } from "./builtin/crt-sh";
 import { cfpbComplaintsPlugin } from "./builtin/cfpb-complaints";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
+import { congressTradesPlugin } from "./builtin/congress-trades";
 import { courtListenerPlugin } from "./builtin/courtlistener";
 import { eiaEnergyPlugin } from "./builtin/eia-energy";
 import { eulerpoolPlugin } from "./builtin/eulerpool";
@@ -28,6 +29,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   cfpbComplaintsPlugin,
   clinicalTrialsPlugin,
   commentLettersPlugin,
+  congressTradesPlugin,
   courtListenerPlugin,
   crtShPlugin,
   eiaEnergyPlugin,

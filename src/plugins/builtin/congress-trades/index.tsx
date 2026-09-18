@@ -41,6 +41,7 @@ export const congressTradesPlugin: GloomPlugin = {
       name: "Congress Trades (House PTR)",
       kind: "api",
       pluginId: CONGRESS_TRADES_PLUGIN_ID,
+      authRequired: false,
     });
   },
 

@@ -1,6 +1,7 @@
 import type { TimeRange } from "../../time-series/range";
 import {
   DEFAULT_CHART_RESOLUTION_SUPPORT,
+  getPresetResolution,
   isIntradayResolution,
   type ChartResolutionSupport,
   type ManualChartResolution,
@@ -12,16 +13,26 @@ import { normalizeSubUnitCurrency } from "./mappers";
 import { getYahooSymbolsToTry } from "./symbols";
 import type { ChartResult } from "./types";
 
-const RANGE_PARAMS: Record<TimeRange, { range: string; interval: ManualChartResolution }> = {
-  "1D": { range: "1d", interval: "1m" },
-  "1W": { range: "5d", interval: "5m" },
-  "1M": { range: "1mo", interval: "15m" },
-  "3M": { range: "3mo", interval: "1h" },
-  "6M": { range: "6mo", interval: "1d" },
-  "1Y": { range: "1y", interval: "1d" },
-  "5Y": { range: "5y", interval: "1d" },
-  "ALL": { range: "max", interval: "1wk" },
+const YAHOO_CHART_RANGE: Record<TimeRange, string> = {
+  "1D": "1d",
+  "1W": "5d",
+  "1M": "1mo",
+  "3M": "3mo",
+  "6M": "6mo",
+  "1Y": "1y",
+  "5Y": "5y",
+  "ALL": "max",
 };
+
+export function getYahooChartRangeParams(range: TimeRange): {
+  range: string;
+  interval: ManualChartResolution;
+} {
+  return {
+    range: YAHOO_CHART_RANGE[range],
+    interval: getPresetResolution(range),
+  };
+}
 
 const YAHOO_RESOLUTION_SUPPORT = DEFAULT_CHART_RESOLUTION_SUPPORT;
 
@@ -54,7 +65,7 @@ export async function loadYahooPriceHistory({
   range: TimeRange;
   fetchChart: YahooChartFetcher;
 }): Promise<PricePoint[]> {
-  const params = RANGE_PARAMS[range];
+  const params = getYahooChartRangeParams(range);
   return loadYahooPriceHistoryForResolution({
     ticker,
     exchange,
@@ -80,7 +91,7 @@ export async function loadYahooPriceHistoryForResolution({
   fetchChart: YahooChartFetcher;
 }): Promise<PricePoint[]> {
   const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
-  const effectiveChartRange = chartRange ?? RANGE_PARAMS[bufferRange ?? "1Y"].range;
+  const effectiveChartRange = chartRange ?? getYahooChartRangeParams(bufferRange ?? "1Y").range;
   const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
   let lastError: any;
 

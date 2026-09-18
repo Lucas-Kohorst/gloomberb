@@ -14,10 +14,10 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
-import { useConnectionHealth, usePluginTickerActions } from "../../runtime";
+import { usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
 import { usePaneStatusFooter } from "../shared/pane-footer";
-import { acquireMarketHaltsHealth, fetchMarketHalts } from "./client";
+import { fetchMarketHalts } from "./client";
 import {
   DEFAULT_HALT_SORT,
   HALT_FILTERS,
@@ -45,7 +45,6 @@ const STATUS_TICK_MS = 15_000;
 
 export function MarketHaltsPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const connectionHealth = useConnectionHealth();
   const [records, setRecords] = useState<HaltRecord[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +60,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     const generation = fetchGenRef.current;
     setStatus((current) => (current === "loaded" ? "loaded" : "loading"));
     setError(null);
-    fetchMarketHalts(connectionHealth)
+    fetchMarketHalts()
       .then((next) => {
         if (fetchGenRef.current !== generation) return;
         setRecords(next);
@@ -75,9 +74,8 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setStatus("error");
       });
-  }, [connectionHealth]);
+  }, []);
 
-  useEffect(() => acquireMarketHaltsHealth(connectionHealth), [connectionHealth]);
   useEffect(() => { load(); }, [load]);
   useAutoRefresh(fetchedAt, load);
 
