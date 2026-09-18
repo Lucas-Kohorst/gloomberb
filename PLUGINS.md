@@ -35,8 +35,10 @@ Plugins are installed to `~/.gloomberb/plugins/`.
 The extracted data, research, and broker plugins live in
 the companion [`gloomberb-plugins`](https://github.com/Lucas-Kohorst/gloomberb-plugins)
 monorepo. Install the monorepo once and the loader discovers each package under
-`plugins/`. Prediction Markets and Congress Trades (`CG`) are native in this
-app; do not keep a copy under `~/.gloomberb/plugins`.
+`plugins/`. Prediction Markets, Congress Trades (`CG`), and Adjacent Cloud
+modules (Polls, Federal Register, OFAC, USAspending) are native in this
+app; do not keep a copy under `~/.gloomberb/plugins`. `WX` opens Adjacent
+Cloud rather than restoring a first-party Weather pane.
 
 ```bash
 gloomberb install Lucas-Kohorst/gloomberb-plugins
@@ -45,9 +47,8 @@ gloomberb install Lucas-Kohorst/gloomberb-plugins
 The monorepo currently contains:
 
 - Data and research: DefiLlama, OpenSky, NASA FIRMS, USGS earthquakes, space
-  weather, Federal Register, OFAC sanctions, crt.sh, USAspending, traffic,
-  satellite imagery, and country economics.
-- Market data: polls and weather.
+  weather, crt.sh, traffic, satellite imagery, and country economics.
+- Market data: weather.
 - Broker adapters: Public, Robinhood, and SimpleFin.
 
 Each package exports one default `GloomPlugin` and declares `gloomberb` and

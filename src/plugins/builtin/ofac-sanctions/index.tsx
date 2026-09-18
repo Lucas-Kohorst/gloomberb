@@ -6,6 +6,7 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateContext,
 } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import {
   EmptyState,
   FeedDataTableStackView,
@@ -280,12 +281,7 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
 
 let disposeConnection: (() => void) | null = null;
 
-export const ofacSanctionsPlugin: GloomPlugin = {
-  id: OFAC_SANCTIONS_PLUGIN_ID,
-  name: "OFAC Sanctions",
-  version: "1.0.0",
-  description: "Search the US Consolidated Screening List. Screen people, companies, and entities against OFAC and other sanctions lists.",
-  toggleable: true,
+export const ofacSanctionsModule: PluginModule = {
   panes: [{
     id: "sanctions",
     name: "Sanctions",
@@ -327,6 +323,15 @@ export const ofacSanctionsPlugin: GloomPlugin = {
     disposeConnection?.();
     disposeConnection = null;
   },
+};
+
+export const ofacSanctionsPlugin: GloomPlugin = {
+  id: OFAC_SANCTIONS_PLUGIN_ID,
+  name: "OFAC Sanctions",
+  version: "1.0.0",
+  description: "Search the US Consolidated Screening List. Screen people, companies, and entities against OFAC and other sanctions lists.",
+  toggleable: true,
+  ...ofacSanctionsModule,
 };
 
 export default ofacSanctionsPlugin;

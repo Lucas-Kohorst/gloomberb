@@ -4,7 +4,7 @@
     {
       "id": "adjacent",
       "name": "Adjacent Cloud",
-      "description": "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, llm-stats benchmarks, and Our World in Data grapher prints.",
+      "description": "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, VoteHub polls, weather prints, llm-stats benchmarks, Our World in Data, Federal Register, OFAC, and USAspending.",
       "categories": [
         "data"
       ],
@@ -12,10 +12,16 @@
       "contributes": {
         "panes": [
           "adjacent",
+          "federal-register",
           "llm-stats",
-          "owid"
+          "owid",
+          "polls",
+          "sanctions",
+          "usaspending"
         ],
-        "capabilities": [],
+        "capabilities": [
+          "poll-trends"
+        ],
         "broker": false
       }
     },

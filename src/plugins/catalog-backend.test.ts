@@ -24,8 +24,9 @@ describe("desktop backend plugin catalog", () => {
     const adjacent = plugins.find((plugin) => plugin.id === "adjacent");
     const cloud = plugins.find((plugin) => plugin.id === "gloomberb-cloud");
 
-    // Congress Trades is first-party. Polls, FR, OFAC, USAspending, and weather
-    // stay extracted / in-tree ghosts.
+    // Congress Trades is first-party. Polls, FR, OFAC, and USAspending are
+    // Adjacent Cloud modules. WX maps to the Adjacent pane; weather stays a
+    // ghost rather than a composed pane.
     expect(plugins.some((plugin) => plugin.id === "congress-trades")).toBe(true);
     expect(plugins.some((plugin) => plugin.id === "polls")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "federal-register")).toBe(false);
@@ -37,8 +38,12 @@ describe("desktop backend plugin catalog", () => {
     expect(adjacent?.toggleable).toBe(true);
     expect(adjacent?.panes?.map((pane) => pane.id)).toEqual([
       "adjacent",
+      "polls",
       "llm-stats",
       "owid",
+      "federal-register",
+      "sanctions",
+      "usaspending",
     ]);
     expect(cloud?.panes?.some((pane) => pane.id.startsWith("adjacent-"))).toBe(false);
   });

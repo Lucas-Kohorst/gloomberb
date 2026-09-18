@@ -3,6 +3,10 @@ import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { llmStatsModule } from "../llm-stats";
 import { owidModule } from "../owid";
+import { pollsModule } from "../polls";
+import { federalRegisterModule } from "../federal-register";
+import { ofacSanctionsModule } from "../ofac-sanctions";
+import { usaspendingModule } from "../usaspending";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -181,6 +185,30 @@ const adjacentMarketsModule: PluginModule = {
         };
       },
     },
+    {
+      id: "weather-pane",
+      paneId: "adjacent",
+      label: "Weather",
+      description:
+        "Open Adjacent climate and weather markets. Chart TWC with G WX:LAX:high and NWS first-final CLI with G NWS:KNYC:high.",
+      keywords: [
+        "weather",
+        "climate",
+        "temperature",
+        "temp",
+        "kalshi",
+        "twc",
+        "settlement",
+        "high",
+        "nws",
+        "cli",
+        "icao",
+        "forecast",
+      ],
+      category: "Data",
+      shortcut: { prefix: "WX" },
+      createInstance: () => ({ placement: "floating", settings: { defaultTabId: "markets" } }),
+    },
   ],
 
   setup(ctx) {
@@ -255,9 +283,17 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, llm-stats benchmarks, and Our World in Data grapher prints.",
+    "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, VoteHub polls, weather prints, llm-stats benchmarks, Our World in Data, Federal Register, OFAC, and USAspending.",
   toggleable: true,
-  modules: [adjacentMarketsModule, llmStatsModule, owidModule],
+  modules: [
+    adjacentMarketsModule,
+    pollsModule,
+    llmStatsModule,
+    owidModule,
+    federalRegisterModule,
+    ofacSanctionsModule,
+    usaspendingModule,
+  ],
 });
 
 export default adjacentPlugin;

@@ -46,6 +46,11 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "world-indices": "market-overview",
   "llm-stats": "adjacent",
   "adjacent-dev": "adjacent",
+  polls: "adjacent",
+  weather: "adjacent",
+  "federal-register": "adjacent",
+  "ofac-sanctions": "adjacent",
+  usaspending: "adjacent",
 };
 
 const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
@@ -62,7 +67,7 @@ const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   "ticker-research": ["short-interest", "dividend-yield", "esg", "executives"],
   "market-overview": ["market-halts", "scanner", "commodities"],
   macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions"],
-  adjacent: ["llm-stats", "adjacent-dev"],
+  adjacent: ["llm-stats", "adjacent-dev", "polls", "weather", "federal-register", "ofac-sanctions", "usaspending"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {

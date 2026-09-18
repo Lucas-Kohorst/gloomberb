@@ -8,7 +8,7 @@ import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../../types/config";
 import { Box } from "../../../ui";
 import { PluginRenderProvider } from "../../runtime";
-import { ConnectionsPane } from "./pane";
+import { ConnectionsPane, connectionMatchesSearch } from "./pane";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -50,11 +50,39 @@ async function renderSettled() {
   });
 }
 
+describe("connectionMatchesSearch", () => {
+  const source = {
+    id: "gloom-cloud-http",
+    name: "Gloom Cloud HTTP",
+    kind: "api" as const,
+    ownerId: "gloomberb-cloud",
+    lastOperation: "GET /news",
+    status: "connected" as const,
+    lastRequestAt: 1,
+    lastLatencyMs: 12,
+    lastSuccess: null,
+    lastError: null,
+    recentRequests: [],
+    socketState: null,
+    lastTransitionAt: null,
+    currentDetail: null,
+  };
+
+  test("matches id, name, owner, and last operation", () => {
+    expect(connectionMatchesSearch(source, "")).toBe(true);
+    expect(connectionMatchesSearch(source, "cloud")).toBe(true);
+    expect(connectionMatchesSearch(source, "gloom-cloud-http")).toBe(true);
+    expect(connectionMatchesSearch(source, "news")).toBe(true);
+    expect(connectionMatchesSearch(source, "yahoo")).toBe(false);
+  });
+});
+
 describe("ConnectionsPane", () => {
   test("hides the clickable sort hint while detail blocks the sort key", async () => {
     testSetup = await testRender(harness(), { width: 80, height: 12 });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("[s]ort");
+    expect(testSetup.captureCharFrame()).toContain("[/] search");
 
     await act(async () => {
       testSetup!.renderer.keyInput.emit("keypress", {
@@ -75,5 +103,30 @@ describe("ConnectionsPane", () => {
 
     expect(testSetup.captureCharFrame()).toContain("← Back Quotes");
     expect(testSetup.captureCharFrame()).not.toContain("[s]ort");
+    expect(testSetup.captureCharFrame()).not.toContain("[/] search");
+  });
+
+  test("slash search filters the connection list", async () => {
+    testSetup = await testRender(harness(), { width: 80, height: 12 });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("Quotes");
+
+    await act(async () => {
+      testSetup!.renderer.keyInput.emit("keypress", {
+        name: "/",
+        sequence: "/",
+        ctrl: false,
+        meta: false,
+        option: false,
+        shift: false,
+        eventType: "press",
+        repeated: false,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as any);
+      await testSetup!.renderOnce();
+    });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toMatch(/name or source/i);
   });
 });
