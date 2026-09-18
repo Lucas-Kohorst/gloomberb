@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — First-party Congress Trades
+
+A clean fork install no longer drops House PTR congress trades. The pane still lived in-tree but was missing from `catalog-ui`, so it only appeared after extracting `gloomberb-plugins`. `CG` now loads with the first-party catalogs (hosted included). Polls, Federal Register, OFAC, and USAspending stay extracted / in-tree ghosts.
+
+- Prefix `CG`, Connections source in `setup()`, traffic on the real fetch. An extracted copy with the same plugin id is ignored.
+
 ## Unreleased — PEVT was invisible, then empty
 
 Portfolio Events could not be reached from the command bar, and read "No tickers in scope" when it was open.

@@ -37,6 +37,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "cfpb-complaints": { categories: ["research", "data"] },
   "clinical-trials": { categories: ["research", "data"] },
   "comment-letters": { categories: ["research", "data"] },
+  "congress-trades": { categories: ["research", "data"] },
   "courtlistener": { categories: ["research", "data"] },
   "eia-energy": { categories: ["research", "data"] },
   eulerpool: { categories: ["research", "data"] },

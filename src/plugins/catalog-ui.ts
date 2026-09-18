@@ -24,17 +24,17 @@ import { notificationCenterPlugin } from "./builtin/notification-center";
 import { predictionMarketsPlugin } from "./prediction-markets";
 
 /**
- * First-party plugins that ship inside the app.
+ * First-party plugins that ship inside the app (hosted web via
+ * {@link getRendererBuiltinPlugins}, plus TUI/Electrobun via
+ * {@link nativeUiPlugins}).
  *
- * Plugins that have been extracted to the `gloomberb-plugins` monorepo are
- * intentionally absent: they load as external plugins from
- * `~/.gloomberb/plugins/` when installed. The seed mechanism restores them on
- * first launch after the extraction.
+ * Congress Trades (`CG`) is first-party so a clean fork install loads House PTR
+ * without `gloomberb-plugins`. An extracted copy with the same id is ignored —
+ * first-party wins, same as Prediction Markets.
  *
- * Prediction Markets still lives in this repo and is wired into the command
- * bar from source. Keep it out of this hosted-web list (`web-main` uses
- * {@link getRendererBuiltinPlugins}); native TUI and Electrobun ship it via
- * {@link nativeUiPlugins} so `desktop:build` actually includes the pane.
+ * VoteHub polls, Federal Register, OFAC, USAspending, weather, and the rest of
+ * the long-tail pack stay in-tree ghosts / extracted. Prediction Markets is
+ * native TUI/Electrobun only: keep it out of this hosted-web list.
  */
 export const uiBuiltinPlugins: GloomPlugin[] = [
   ...researchDataPlugins,

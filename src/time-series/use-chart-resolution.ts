@@ -52,7 +52,7 @@ function hasRenderableData(result: ChartResolutionResult): boolean {
   return (result.bufferedSeries ?? result.series).some((series) => series.points.length > 0);
 }
 
-function collectSeedHistory(spec: ChartSpec): Map<string, PricePoint[]> {
+export function collectSeedHistory(spec: ChartSpec): Map<string, PricePoint[]> {
   const history = new Map<string, PricePoint[]>();
   const coordinator = getSharedMarketDataCoordinator();
   for (const series of spec.series) {
@@ -66,11 +66,20 @@ function collectSeedHistory(spec: ChartSpec): Map<string, PricePoint[]> {
     const presetResolution = spec.viewport.resolution === "auto"
       ? getPresetResolution(spec.viewport.range)
       : spec.viewport.resolution;
-    const remembered = readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, baseline.resolution))
-      ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, spec.viewport.range, presetResolution))
+    // Prefer history that already matches the pane interval. Weekly ALL is a
+    // coordinator warmup, not a 1m/5m seed — painting it makes AUTO look skipped.
+    const matching = readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, spec.viewport.range, presetResolution))
       ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, presetResolution));
-    if (remembered?.length) {
-      history.set(key, remembered);
+    if (matching?.length) {
+      history.set(key, matching);
+      continue;
+    }
+    if (presetResolution !== baseline.resolution) continue;
+    const rememberedBaseline = readParsedPriceHistory(
+      parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, baseline.resolution),
+    );
+    if (rememberedBaseline?.length) {
+      history.set(key, rememberedBaseline);
       continue;
     }
     if (!coordinator) continue;
