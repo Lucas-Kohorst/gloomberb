@@ -102,6 +102,45 @@ describe("adjacent catalog search", () => {
     expect(markets[0]?.endsAt).toBe("2026-09-26T18:00:00Z");
   });
 
+  test("fills Kalshi search stats from /markets/{ticker} when the event ticker is missing", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    setHttpFetchTransport(async (url) => {
+      if (url.includes("/trade-api/v2/markets/KXELONMARS-99")) {
+        return json({
+          market: {
+            ticker: "KXELONMARS-99",
+            title: "Will Elon Musk visit Mars in his lifetime?",
+            status: "active",
+            market_type: "binary",
+            last_price_dollars: "0.10",
+            yes_bid_dollars: "0.10",
+            yes_ask_dollars: "0.12",
+            volume_24h_fp: "1.00",
+            volume_fp: "118844.56",
+            open_interest_fp: "40063.58",
+          },
+        });
+      }
+      return json({
+        data: [{
+          market_id: "kalshi:KXELONMARS-99",
+          ticker: "KXELONMARS-99",
+          platform: "kalshi",
+          question: "Will Elon Musk visit Mars in his lifetime?",
+          link: "https://kalshi.com/markets/kxelonmars",
+          status: "active",
+        }],
+        meta: { has_next: false },
+      });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "mars", venue: "kalshi" });
+    expect(markets[0]?.marketId).toBe("KXELONMARS-99");
+    expect(markets[0]?.yesPrice).toBe(0.1);
+    expect(markets[0]?.volume24h).toBe(1);
+    expect(markets[0]?.spread).toBeCloseTo(0.02);
+  });
+
   test("fills Polymarket search stats from Gamma, not Adjacent", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     setHttpFetchTransport(async (url) => {

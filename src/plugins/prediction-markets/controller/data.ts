@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useWatchlistVenueHydration } from "../services/watchlist-hydrate";
 import { measurePerf } from "../../../utils/perf-marks";
 import { PREDICTION_CATALOG_PAINT_HEAD } from "../cache";
 import { usePredictionCatalogData } from "./catalog";
@@ -88,7 +89,7 @@ export function usePredictionMarketsDataState({
     searchQuery,
   });
 
-  const listMarkets = useMemo(() => {
+  const resolvedWatchlistMarkets = useMemo(() => {
     if (categoryId !== "watchlist") return allMarkets;
     const resolved = resolveWatchlistMarkets(
       allMarkets,
@@ -121,6 +122,11 @@ export function usePredictionMarketsDataState({
     }
     return extra.length === 0 ? resolved : [...resolved, ...extra];
   }, [allMarkets, categoryId, watchlistSet, watchlistSnapshots]);
+
+  const listMarkets = useWatchlistVenueHydration(
+    resolvedWatchlistMarkets,
+    categoryId === "watchlist",
+  );
 
   const allRows = useMemo(
     () =>
