@@ -7,8 +7,8 @@ import {
   usePaneFooter,
 } from "../../../../components";
 import type { NewsQuery, NewsArticle } from "../../../../news/types";
-import { newsOriginLabel } from "../../../../news/origins";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
+import { filterNewsArticles } from "./filter-articles";
 import type { PaneProps } from "../../../../types/plugin";
 import { useDebouncedPluginPaneState } from "../../../runtime";
 import { usePaneSettingValue } from "../../../../state/app/context";
@@ -36,36 +36,7 @@ export function takeFirehoseHead(articles: readonly NewsArticle[]): NewsArticle[
   return articles.slice(0, FIREHOSE_LIMIT);
 }
 
-/**
- * Filters the merged firehose stream by a free-text query. Matches against
- * title, source, summary, tickers, topics, and categories so a single search
- * box narrows across all provenance.
- */
-export function filterFirehoseArticles(
-  articles: readonly NewsArticle[],
-  query: string,
-): NewsArticle[] {
-  const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return articles as NewsArticle[];
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return articles as NewsArticle[];
-
-  return articles.filter((article) => {
-    const haystack = [
-      article.title,
-      article.source,
-      newsOriginLabel(article.origin),
-      article.summary ?? "",
-      ...article.tickers,
-      ...article.topics,
-      ...article.categories,
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    return tokens.every((token) => haystack.includes(token));
-  });
-}
+export const filterFirehoseArticles = filterNewsArticles;
 
 function FirehosePane({ focused, width, height }: PaneProps) {
   const newsState = useNewsArticles(FIREHOSE_QUERY);

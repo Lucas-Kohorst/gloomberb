@@ -227,12 +227,24 @@ const NOOP_HEADER_CLICK_RE =
   /\bonHeaderClick\s*=\s*\{\s*\(\s*\)\s*=>\s*(?:\{\s*\}|undefined)\s*\}/;
 
 /**
- * Calendar-like tables must wire clickable header sort, not a no-op.
+ * Catalog list tables must wire clickable header sort, not a no-op.
+ *
+ * `FeedDataTableStackView` owns sort internally (SEC / filings-style stacks).
+ * Statement layouts (cash flow, financials) opt out with `sortColumnId={null}`
+ * so GAAP section grouping is not flattened.
  */
 export function sourceHasClickableHeaderSort(source: string): boolean {
   if (!DATA_TABLE_COMPONENT_RE.test(source)) return false;
-  if (!/\bonHeaderClick\s*=/.test(source)) return false;
-  return !NOOP_HEADER_CLICK_RE.test(source);
+
+  const usesFeedTable = /<FeedDataTableStackView\b/.test(source);
+  const usesListTable = /<(?:DataTableView|DataTableStackView)\b/.test(source);
+
+  if (NOOP_HEADER_CLICK_RE.test(source)) {
+    return usesListTable && /sortColumnId=\{null\}/.test(source);
+  }
+
+  if (usesListTable) return /\bonHeaderClick\s*=/.test(source);
+  return usesFeedTable;
 }
 
 /**
@@ -413,6 +425,17 @@ export const WRITTEN_DATA_LIST_PANE_IDS = [
   "comment-letters",
   "companies",
   "adjacent",
+] as const;
+
+/** News lists that must expose bound in-pane `/` search (AGENTS.md written-text). */
+export const NEWS_IN_PANE_SEARCH_PANE_IDS = [
+  "news-top",
+  "news-feed",
+  "news-industry",
+  "news-breaking",
+  "news-firehose",
+  "news-rss",
+  "news-saved",
 ] as const;
 
 export type WrittenDataListPaneId = (typeof WRITTEN_DATA_LIST_PANE_IDS)[number];
