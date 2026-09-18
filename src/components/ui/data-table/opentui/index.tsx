@@ -596,8 +596,16 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
       >
         {items.length === 0 ? (
           emptyContent ?? (
-            <Box width="100%" paddingX={1} paddingY={1}>
-              <EmptyState title={emptyStateTitle} hint={emptyStateHint} />
+            <Box
+              width="100%"
+              height="100%"
+              flexGrow={1}
+              justifyContent="center"
+              alignItems="center"
+              paddingX={horizontalPadding}
+              paddingY={1}
+            >
+              <EmptyState fill={false} title={emptyStateTitle} hint={emptyStateHint} />
             </Box>
           )
         ) : (

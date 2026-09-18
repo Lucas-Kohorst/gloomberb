@@ -106,6 +106,21 @@ function ReorderingTickerListTableViewHarness() {
   );
 }
 
+function EmptyTickerListTableHarness() {
+  return (
+    <TickerTableTestProviders>
+      <TickerListTableView
+        columns={columns}
+        tickers={[]}
+        cursorSymbol={null}
+        setCursorSymbol={() => {}}
+        resolveCell={resolveCell}
+        financialsMap={financialsMap}
+      />
+    </TickerTableTestProviders>
+  );
+}
+
 afterEach(async () => {
   if (testSetup) {
     await act(async () => {
@@ -169,5 +184,23 @@ describe("TickerListTableView", () => {
     });
 
     expect(tableScrollRef?.scrollTop).toBe(20);
+  });
+
+  test("keeps the empty-collection command-bar hint readable", async () => {
+    testSetup = await testRender(
+      <EmptyTickerListTableHarness />,
+      { width: 45, height: 16 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Pctoradd");
+    expect(frame).toContain("No tickers.");
+    expect(frame).toMatch(/Press Ctrl\+P/);
+    expect(frame).toMatch(/to add one/);
   });
 });
