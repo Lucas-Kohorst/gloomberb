@@ -38,14 +38,9 @@ function getBasePaneDisplayTitle(
 
   if (instance.title) return instance.title;
 
-  if (instance.paneId === "portfolio-list") {
-    const collectionId = resolveCollectionForPane(state as AppState, instance.instanceId);
-    return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-      ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
-      ?? t(paneDef.name);
-  }
-
-  // A source pane owns the cursor symbol; echoing it in its own title would just repeat the row.
+  // Collection names live on the tab row (PaneListChrome). Echoing the active
+  // book here repeated the pane title in the body. tickerSource panes already
+  // keep a stable name so the selected row is not copied into the header.
   if (paneDef.tickerSource) return t(paneDef.name);
 
   const ticker = resolveTickerForPane(state as AppState, instance.instanceId);

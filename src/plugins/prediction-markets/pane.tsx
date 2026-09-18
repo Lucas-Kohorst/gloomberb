@@ -5,7 +5,7 @@ import { useNumberFlashMap } from "../../components/quote-flash";
 import {
   DataTableStackView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   Tabs,
   loadingText,
@@ -285,60 +285,50 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     () => VENUE_TABS.map((tab) => ({ label: tab.label, value: tab.value })),
     [],
   );
-  const venueTabs = !controller.paneSettings.hideTabs ? (
-    <Tabs
-      tabs={venueTabItems}
+  const searchWidth = Math.max(18, Math.floor(width * 0.28));
+  const browseControls = (
+    <PaneListChrome
+      width={width}
+      focused={focused && !controller.detailOpen}
+      tabs={controller.paneSettings.hideTabs ? undefined : venueTabItems}
       activeValue={controller.effectiveVenueScope}
       onSelect={controller.actions.setVenue}
-      compact
-      variant="bare"
-      scrollable={false}
-      focused={focused && !controller.searchFocused && !controller.detailOpen}
+      tabCompact
+      tabVariant="bare"
+      tabScrollable={false}
+      search={{
+        value: controller.searchQuery,
+        active: controller.searchFocused,
+        focusToken: controller.searchFocusToken,
+        inputRef: controller.searchInputRef,
+        placeholder: "search markets",
+        debounceMs: 0,
+        width: searchWidth,
+        onFocus: controller.actions.focusSearch,
+        onBlur: controller.actions.blurSearch,
+        onNavigateDown: controller.actions.blurSearch,
+        onQueryChange: controller.actions.setSearchQuery,
+      }}
+      trailing={(
+        <Tabs
+          tabs={PREDICTION_FILTER_TABS.map((tab) => ({
+            label: tab.label,
+            value: tab.id,
+          }))}
+          activeValue={resolvePredictionFilterId(
+            controller.categoryId,
+            controller.browseTab,
+          )}
+          onSelect={(value) =>
+            controller.actions.selectFilter(value as (typeof PREDICTION_FILTER_TABS)[number]["id"])
+          }
+          compact
+          variant="bare"
+          scrollable={false}
+          focused={focused && !controller.searchFocused && !controller.detailOpen}
+        />
+      )}
     />
-  ) : null;
-
-  const searchWidth = Math.max(18, Math.floor(width * 0.28));
-  const searchBrowseAndCategories = (
-    <Box flexDirection="row" height={1} paddingX={1} gap={2}>
-      <InputSearchBar
-        value={controller.searchQuery}
-        focused={focused && !controller.detailOpen}
-        active={controller.searchFocused}
-        width={searchWidth}
-        focusToken={controller.searchFocusToken}
-        inputRef={controller.searchInputRef}
-        placeholder="search markets"
-        debounceMs={0}
-        onFocus={controller.actions.focusSearch}
-        onBlur={controller.actions.blurSearch}
-        onNavigateDown={controller.actions.blurSearch}
-        onQueryChange={controller.actions.setSearchQuery}
-      />
-      <Tabs
-        tabs={PREDICTION_FILTER_TABS.map((tab) => ({
-          label: tab.label,
-          value: tab.id,
-        }))}
-        activeValue={resolvePredictionFilterId(
-          controller.categoryId,
-          controller.browseTab,
-        )}
-        onSelect={(value) =>
-          controller.actions.selectFilter(value as (typeof PREDICTION_FILTER_TABS)[number]["id"])
-        }
-        compact
-        variant="bare"
-        scrollable={false}
-        focused={focused && !controller.searchFocused && !controller.detailOpen}
-      />
-    </Box>
-  );
-
-  const browseControls = (
-    <>
-      {venueTabs}
-      {searchBrowseAndCategories}
-    </>
   );
 
   const renderCell = useCallback((

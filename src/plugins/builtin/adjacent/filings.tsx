@@ -8,7 +8,7 @@ import type { NewsArticle } from "../../../news/types";
 import {
   DataTableStackView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   nextStackSortPreference,
   sortStackItems,
@@ -586,23 +586,23 @@ export function AdjacentFilingsPane({
   }, [detailFiling, detailLoading, handleSummarize, openFiling, popOutSelected, scrollDetailBy]);
 
   const rootBefore = (
-    <>
-      <InputSearchBar
-        value={query}
-        focused={focused && !openItemId}
-        active={searchFocused}
-        width={width}
-        focusToken={searchFocusToken}
-        inputRef={searchInputRef}
-        placeholder="organization, product, or description"
-        debounceMs={SEARCH_DEBOUNCE_MS}
-        normalizeValue={trimSearchValue}
-        onFocus={focusSearch}
-        onBlur={blurSearch}
-        onNavigateDown={blurSearch}
-        onQueryChange={updateQuery}
-      />
-    </>
+    <PaneListChrome
+      width={width}
+      focused={focused && !openItemId}
+      search={{
+        value: query,
+        active: searchFocused,
+        focusToken: searchFocusToken,
+        inputRef: searchInputRef,
+        placeholder: "organization, product, or description",
+        debounceMs: SEARCH_DEBOUNCE_MS,
+        normalizeValue: trimSearchValue,
+        onFocus: focusSearch,
+        onBlur: blurSearch,
+        onNavigateDown: blurSearch,
+        onQueryChange: updateQuery,
+      }}
+    />
   );
 
   if (loading) {

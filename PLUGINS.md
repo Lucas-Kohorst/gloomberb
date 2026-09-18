@@ -1121,6 +1121,7 @@ import {
   FeedDataTableStackView,
   TickerListTable,
   TickerListTableView,
+  PaneListChrome,
   ToggleList,
   Button,
   MultiSelectDialogButton,
@@ -1169,6 +1170,7 @@ Available components:
 - `DataTable` — low-level table primitive when a plugin owns table state
 - `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
 - `DataTableStackView`, `FeedDataTableStackView` — stacked table views for dense list panes
+- `PaneListChrome` — shared list-pane chrome: optional tabs, then `/` search (`InputSearchBar`), then the body. Adjacent indices is the gold (clickable header sort on the table, bound `[/]search`). Do not repeat the pane title in this slice.
 - `TickerListTable`, `TickerListTableView` — ticker table primitives used by market list panes
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
 - `ToggleList` — checkbox list with selection
