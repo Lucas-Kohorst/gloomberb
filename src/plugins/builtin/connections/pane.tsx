@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  PaneListChrome,
   Spinner,
   type DataTableCell,
   type DataTableColumn,
@@ -9,6 +10,7 @@ import {
 } from "../../../components";
 import { useConnectionHealth } from "../../runtime";
 import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import type {
   ConnectionHealthState,
@@ -17,6 +19,7 @@ import type {
 import { colors } from "../../../theme/colors";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import { truncateToDisplayWidth } from "../../../utils/format";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
 
 export function setSharedConnectionTracker(_tracker: unknown): void {}
 
@@ -52,6 +55,19 @@ function statusColor(status: ConnectionHealthStatus): string {
 function formatLatency(latencyMs: number | null): string {
   if (latencyMs == null) return "-";
   return latencyMs < 1000 ? `${Math.round(latencyMs)}ms` : `${(latencyMs / 1000).toFixed(1)}s`;
+}
+
+export function connectionMatchesSearch(source: ConnectionHealthState, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    source.id,
+    source.name,
+    source.kind,
+    source.ownerId ?? "",
+    source.lastOperation ?? "",
+  ].join(" ").toLowerCase();
+  return haystack.includes(needle);
 }
 
 function buildConnectionColumns(): ConnectionColumn[] {
@@ -133,6 +149,10 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
     columnId: "status",
     direction: "asc",
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const [now, setNow] = useState(Date.now());
   // Sources register asynchronously at boot, so an empty first snapshot is a load,
   // not an answer.
@@ -167,17 +187,21 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
       || (left.priority ?? 1000) - (right.priority ?? 1000)
       || left.name.localeCompare(right.name);
   }), [snapshot, sort]);
-  const selected = sources.find((source) => source.id === selectedId) ?? sources[0] ?? null;
+  const visibleSources = useMemo(
+    () => sources.filter((source) => connectionMatchesSearch(source, searchQuery)),
+    [searchQuery, sources],
+  );
+  const selected = visibleSources.find((source) => source.id === selectedId) ?? visibleSources[0] ?? null;
   const issues = sources.filter((source) => source.status === "error" || source.status === "disconnected").length;
   const connecting = sources.filter((source) => source.status === "connecting").length;
 
   useEffect(() => {
-    if (!selectedId && sources[0]) setSelectedId(sources[0].id);
-    if (selectedId && !sources.some((source) => source.id === selectedId)) {
-      setSelectedId(sources[0]?.id ?? null);
+    if (!selectedId && visibleSources[0]) setSelectedId(visibleSources[0].id);
+    if (selectedId && !visibleSources.some((source) => source.id === selectedId)) {
+      setSelectedId(visibleSources[0]?.id ?? null);
       setDetailOpen(false);
     }
-  }, [selectedId, sources]);
+  }, [selectedId, visibleSources]);
 
   const cycleSort = useCallback(() => {
     setSort((current) => {
@@ -187,11 +211,26 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
         : { columnId: SORT_COLUMNS[(currentIndex + 1) % SORT_COLUMNS.length]!, direction: "asc" };
     });
   }, []);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
 
+  const listHints = useMemo(() => (
+    detailOpen
+      ? []
+      : [
+          { id: "sort", key: "s", label: "ort", onPress: cycleSort },
+          paneSearchHint(focusSearch),
+        ]
+  ), [cycleSort, detailOpen, focusSearch]);
+
+  usePaneFooterHintBindings(focused && !detailOpen && !searchFocused, listHints);
   useShortcut((event) => {
-    if (!focused || detailOpen || event.name !== "s") return;
+    if (!focused || detailOpen || searchFocused || !isPlainKey(event, "/")) return;
+    event.preventDefault?.();
     event.stopPropagation();
-    cycleSort();
+    focusSearch();
   });
 
   usePaneFooter("connections", () => ({
@@ -200,8 +239,8 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
       ...(issues > 0 ? [{ id: "issues", parts: [{ text: `${issues} issue${issues === 1 ? "" : "s"}`, tone: "warning" as const }] }] : []),
       ...(connecting > 0 ? [{ id: "connecting", parts: [{ text: `${connecting} connecting`, tone: "muted" as const }] }] : []),
     ],
-    hints: detailOpen ? [] : [{ id: "sort", key: "s", label: "ort", onPress: cycleSort }],
-  }), [connecting, cycleSort, detailOpen, issues, settled]);
+    hints: listHints,
+  }), [connecting, issues, listHints, settled]);
 
   const renderCell = useCallback((source: ConnectionHealthState, column: ConnectionColumn): DataTableCell => {
     if (column.id === "service") return { text: truncateToDisplayWidth(source.name, column.width), color: colors.text };
@@ -214,7 +253,7 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height} overflow="hidden">
       <DataTableStackView<ConnectionHealthState, ConnectionColumn>
-        focused={focused}
+        focused={focused && !searchFocused}
         detailOpen={detailOpen && !!selected}
         onBack={() => setDetailOpen(false)}
         detailTitle={selected?.name}
@@ -232,7 +271,25 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
           setDetailOpen(true);
         }}
         columns={buildConnectionColumns()}
-        items={sources}
+        items={visibleSources}
+        rootBefore={(
+          <PaneListChrome
+            width={width}
+            focused={focused}
+            search={{
+              value: searchQuery,
+              active: searchFocused,
+              focusToken: searchFocusToken,
+              inputRef: searchInputRef,
+              placeholder: "name or source",
+              debounceMs: 80,
+              onFocus: focusSearch,
+              onBlur: () => setSearchFocused(false),
+              onNavigateDown: () => setSearchFocused(false),
+              onQueryChange: setSearchQuery,
+            }}
+          />
+        )}
         sortColumnId={sort.columnId}
         sortDirection={sort.direction}
         onHeaderClick={(columnId) => {
@@ -247,8 +304,8 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
             <Spinner label="Waiting for services to register..." />
           </Box>
         )}
-        emptyStateTitle="No connection activity yet."
-        emptyStateHint="Sources appear when providers and services register."
+        emptyStateTitle={searchQuery.trim() ? "No matching connections." : "No connection activity yet."}
+        emptyStateHint={searchQuery.trim() ? "Clear search to see every source." : "Sources appear when providers and services register."}
       />
     </Box>
   );

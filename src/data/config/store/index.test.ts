@@ -1067,7 +1067,7 @@ describe("loadConfig", () => {
     expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT as unknown as Record<string, unknown>);
   });
 
-  test("keeps extracted plugin flags while folding llm-stats into Adjacent Cloud", async () => {
+  test("keeps extracted plugin flags while folding llm-stats and polls into Adjacent Cloud", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 20,
@@ -1075,7 +1075,7 @@ describe("loadConfig", () => {
     }));
 
     const config = await loadConfig(dataDir);
-    expect(config.disabledPlugins).toEqual(["polls", "adjacent"]);
+    expect(config.disabledPlugins).toEqual(["adjacent"]);
     expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
   });
 

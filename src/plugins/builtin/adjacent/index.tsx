@@ -3,6 +3,11 @@ import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { llmStatsModule } from "../llm-stats";
 import { owidModule } from "../owid";
+import { pollsModule } from "../polls";
+import { weatherModule } from "../weather";
+import { federalRegisterModule } from "../federal-register";
+import { ofacSanctionsModule } from "../ofac-sanctions";
+import { usaspendingModule } from "../usaspending";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -255,9 +260,18 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, llm-stats benchmarks, and Our World in Data grapher prints.",
+    "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, VoteHub polls, weather, llm-stats benchmarks, Our World in Data, Federal Register, OFAC, and USAspending.",
   toggleable: true,
-  modules: [adjacentMarketsModule, llmStatsModule, owidModule],
+  modules: [
+    adjacentMarketsModule,
+    pollsModule,
+    weatherModule,
+    llmStatsModule,
+    owidModule,
+    federalRegisterModule,
+    ofacSanctionsModule,
+    usaspendingModule,
+  ],
 });
 
 export default adjacentPlugin;

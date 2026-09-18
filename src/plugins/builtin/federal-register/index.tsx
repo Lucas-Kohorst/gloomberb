@@ -2,6 +2,7 @@ import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NewsArticle } from "../../../news/types";
 import type { GloomPlugin, PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import {
   FeedDataTableStackView,
   EmptyState,
@@ -208,9 +209,7 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
 }
 
 let disposeConnection: (() => void) | null = null;
-export const federalRegisterPlugin: GloomPlugin = {
-  id: FEDERAL_REGISTER_PLUGIN_ID, name: "Federal Register", version: "1.0.0",
-  description: "Search Federal Register documents: proposed rules, final rules, and agency notices.", toggleable: true,
+export const federalRegisterModule: PluginModule = {
   panes: [{ id: "federal-register", name: "Fed Register", icon: "R", component: FederalRegisterPane,
     defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 30 }, tableExport: true }],
   paneTemplates: [{
@@ -227,5 +226,10 @@ export const federalRegisterPlugin: GloomPlugin = {
   }],
   setup() { disposeConnection = registerConnectionSource({ id: FEDERAL_REGISTER_CONNECTION_ID, name: "Federal Register", kind: "api", pluginId: FEDERAL_REGISTER_PLUGIN_ID, priority: 650, authRequired: false }); },
   dispose() { disposeConnection?.(); disposeConnection = null; },
+};
+export const federalRegisterPlugin: GloomPlugin = {
+  id: FEDERAL_REGISTER_PLUGIN_ID, name: "Federal Register", version: "1.0.0",
+  description: "Search Federal Register documents: proposed rules, final rules, and agency notices.", toggleable: true,
+  ...federalRegisterModule,
 };
 export default federalRegisterPlugin;

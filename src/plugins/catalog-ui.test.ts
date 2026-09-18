@@ -13,6 +13,7 @@ describe("uiBuiltinPlugins", () => {
     expect(ids).not.toContain("federal-register");
     expect(ids).not.toContain("ofac-sanctions");
     expect(ids).not.toContain("usaspending");
+    expect(ids).not.toContain("weather");
     expect(new Set(ids).size).toBe(ids.length);
   });
 

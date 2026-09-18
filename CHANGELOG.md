@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Connections search and Assist POLL/FR/OFAC/USA/WX
+
+The Connections pane sorted ~65 rows from the header and `[s]ort` but had no way to filter them. Assist also dropped `POLL`, `FR`, `OFAC`, `USA`, and `WX` on a clean TUI catalog because those panes were in-tree ghosts, not the 150-prefix cap.
+
+- Connections lists now have `/` search (name, id, owner, last operation) like Adjacent Indices. Footer stays status plus `[s]ort` / `/` search; no `[r]`efresh.
+- Adjacent Cloud composes Polls, Weather, Federal Register, OFAC, and USAspending so those prefixes show up in Assist without restoring them as separate first-party plugin ids. Congress Trades (`CG`) stays the only extra first-party plugin. Extracted copies with those module ids are reserved.
+
 ## Unreleased — Assist KEYS vs BIND, inventory cap
 
 Assist taught `KEYS` as API keys while README called it keybindings, and the 150-prefix catalog dropped new panes silently.

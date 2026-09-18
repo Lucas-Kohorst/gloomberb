@@ -26,14 +26,16 @@ describe("normalizeBuiltinPluginStateMap", () => {
     });
   });
 
-  test("folds llm-stats and adjacent-dev config into Adjacent Cloud", () => {
+  test("folds llm-stats, polls, and adjacent-dev config into Adjacent Cloud", () => {
     expect(normalizeBuiltinPluginStateMap({
       "llm-stats": { sort: "tps" },
+      polls: { tab: "all" },
       "adjacent-dev": { adjacentDevApiKey: "old-dev" },
       adjacent: { adjacentApiKey: "adj-key" },
     })).toEqual({
       adjacent: {
         sort: "tps",
+        tab: "all",
         adjacentDevApiKey: "old-dev",
         adjacentApiKey: "adj-key",
       },

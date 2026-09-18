@@ -32,9 +32,11 @@ import { predictionMarketsPlugin } from "./prediction-markets";
  * without `gloomberb-plugins`. An extracted copy with the same id is ignored —
  * first-party wins, same as Prediction Markets.
  *
- * VoteHub polls, Federal Register, OFAC, USAspending, weather, and the rest of
- * the long-tail pack stay in-tree ghosts / extracted. Prediction Markets is
- * native TUI/Electrobun only: keep it out of this hosted-web list.
+ * VoteHub polls, weather, Federal Register, OFAC, and USAspending stay as
+ * Adjacent Cloud modules (POLL / WX / FR / OFAC / USA) rather than separate
+ * first-party plugin ids. Traffic, satellite, and the rest of the long-tail
+ * pack stay extracted. Prediction Markets is native TUI/Electrobun only: keep
+ * it out of this hosted-web list.
  */
 export const uiBuiltinPlugins: GloomPlugin[] = [
   ...researchDataPlugins,

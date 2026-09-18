@@ -255,13 +255,14 @@ describe("assist catalog coverage", () => {
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "CG")?.paneId).toBe(
       "congress-trades",
     );
-    // Plugins still in gloomberb-plugins / in-tree ghosts (traffic, satellite,
-    // weather, polls, FR, OFAC, USAspending, country-econ) are external.
-    expect(prefixes.has("POLL")).toBe(false);
-    expect(prefixes.has("FR")).toBe(false);
-    expect(prefixes.has("OFAC")).toBe(false);
-    expect(prefixes.has("USA")).toBe(false);
-    expect(prefixes.has("WX")).toBe(false);
+    // Adjacent Cloud modules — not separate first-party plugin ids.
+    expect(prefixes.has("POLL")).toBe(true);
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "POLL")?.paneId).toBe("polls");
+    expect(prefixes.has("WX")).toBe(true);
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "WX")?.paneId).toBe("weather");
+    expect(prefixes.has("FR")).toBe(true);
+    expect(prefixes.has("OFAC")).toBe(true);
+    expect(prefixes.has("USA")).toBe(true);
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {

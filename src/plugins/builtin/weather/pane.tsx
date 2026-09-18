@@ -588,10 +588,15 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     const climateDates = nextScope === "international"
       ? [utcYesterday, utcToday, utcTomorrow]
       : [utcYesterday, utcToday];
-    const climate = Promise.all(climateDates.map((date) => (
+    const climateFetches = climateDates.map((date) => (
       nextScope === "international" ? fetchInternationalClimate(date) : fetchPrimaryClimate(date)
-    )));
+    ));
+    // Attach a no-op catch so sibling climate/METAR rejects are not unhandled
+    // when Promise.all fails on the first date.
+    for (const request of climateFetches) void request.catch(() => undefined);
+    const climate = Promise.all(climateFetches);
     const metar = fetchMetarObservations(nextScope === "international" ? "international" : "primary");
+    void metar.catch(() => undefined);
     climate
       .then(async (snapshots) => {
         if (genRef.current !== gen) return;
