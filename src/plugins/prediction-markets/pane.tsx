@@ -4,6 +4,7 @@ import { useAppSelector } from "../../state/app/context";
 import { useNumberFlashMap } from "../../components/quote-flash";
 import {
   DataTableStackView,
+  EmptyState,
   InputSearchBar,
   Spinner,
   Tabs,
@@ -487,7 +488,11 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
               }
             />
           </Box>
-        ) : undefined
+        ) : (
+          <Box width="100%" paddingX={1} paddingY={1}>
+            <EmptyState fill={false} title={emptyCopy.title} hint={emptyCopy.hint} />
+          </Box>
+        )
       }
       emptyStateTitle={emptyCopy.title}
       emptyStateHint={emptyCopy.hint}
