@@ -70,7 +70,7 @@ import {
   type CompositeViewportRange,
 } from "./interactions";
 import { buildCompositeColumnLayout, type CompositeColumnLayout } from "./column-layout";
-import { renderCompositePanelBitmap } from "./rasterizer";
+import * as compositeRasterizer from "./rasterizer";
 import {
   buildChartToolVectors,
   CHART_DRAWING_COLORS,
@@ -176,7 +176,7 @@ function renderPanelBitmap(
   bitmapSize: StaticChartBitmapSize,
   colors: CompositeChartColors,
 ): NativeChartBitmap {
-  return renderCompositePanelBitmap(panel, {
+  return compositeRasterizer.renderCompositePanelBitmap(panel, {
     pixelWidth: bitmapSize.pixelWidth,
     pixelHeight: bitmapSize.pixelHeight,
     colors,
@@ -188,11 +188,13 @@ function useCompositePanelBitmap({
   bitmapSize,
   colors,
   isDesktopWeb,
+  enabled,
 }: {
   panel: CompositePanelScene;
   bitmapSize: StaticChartBitmapSize | null;
   colors: CompositeChartColors;
   isDesktopWeb: boolean;
+  enabled: boolean;
 }): NativeChartBitmap | null {
   const [desktopBitmap, setDesktopBitmap] = useState<NativeChartBitmap | null>(null);
   const desktopBitmapRef = useRef<NativeChartBitmap | null>(null);
@@ -209,16 +211,16 @@ function useCompositePanelBitmap({
   const pixelWidth = bitmapSize?.pixelWidth ?? null;
   const pixelHeight = bitmapSize?.pixelHeight ?? null;
 
-  desktopRenderInputRef.current = isDesktopWeb && pixelWidth !== null && pixelHeight !== null
+  desktopRenderInputRef.current = enabled && isDesktopWeb && pixelWidth !== null && pixelHeight !== null
     ? { panel, pixelWidth, pixelHeight, colors }
     : null;
 
   // The cursor is drawn as a separate overlay, so the plot raster stays cached
   // (and resident in the terminal) while the crosshair moves.
   const terminalBitmap = useMemo(() => {
-    if (isDesktopWeb || !bitmapSize) return null;
+    if (!enabled || isDesktopWeb || !bitmapSize) return null;
     return renderPanelBitmap(panel, bitmapSize, colors);
-  }, [bitmapSize, colors, isDesktopWeb, panel]);
+  }, [bitmapSize, colors, enabled, isDesktopWeb, panel]);
 
   useEffect(() => {
     const cancelRender = () => {
@@ -248,11 +250,15 @@ function useCompositePanelBitmap({
       }, delay);
     };
 
-    if (!isDesktopWeb) {
+    if (!enabled || !isDesktopWeb) {
       desktopActiveRef.current = false;
       cancelRender();
       desktopRequestedSizeRef.current = null;
       desktopRenderedSizeRef.current = null;
+      if (!enabled) {
+        desktopBitmapRef.current = null;
+        setDesktopBitmap((current) => current === null ? current : null);
+      }
       return;
     }
     if (pixelWidth === null || pixelHeight === null) {
@@ -285,7 +291,7 @@ function useCompositePanelBitmap({
 
     if (!requestedSizeChanged || desktopRenderTimerRef.current !== null) return;
     scheduleRender(DESKTOP_BITMAP_RESIZE_DEBOUNCE_MS);
-  }, [colors, isDesktopWeb, panel, pixelHeight, pixelWidth]);
+  }, [colors, enabled, isDesktopWeb, panel, pixelHeight, pixelWidth]);
 
   useEffect(() => () => {
     desktopActiveRef.current = false;
@@ -295,7 +301,7 @@ function useCompositePanelBitmap({
     }
   }, []);
 
-  if (!bitmapSize) return null;
+  if (!enabled || !bitmapSize) return null;
   return isDesktopWeb ? desktopBitmap : terminalBitmap;
 }
 
@@ -819,7 +825,15 @@ function CompositePanelSurface({
   const [toolDrag, setToolDrag] = useState<ChartToolDrag | null>(null);
   const plotAspect = (plotWidth * cellWidthPx) / Math.max(panel.height * cellHeightPx, 1);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, panel.height);
-  const bitmap = useCompositePanelBitmap({ panel, bitmapSize, colors, isDesktopWeb });
+  // Desktop mounts Lightweight Charts and throws this RGBA plot away. Keep the
+  // software raster for TUI and for any desktop path that still uses ChartSurface.
+  const bitmap = useCompositePanelBitmap({
+    panel,
+    bitmapSize,
+    colors,
+    isDesktopWeb,
+    enabled: !hasTradingViewChart,
+  });
   const columnLayout = useMemo(() => buildCompositeColumnLayout(panel), [panel]);
   // The level line follows the pointer only. A keyboard or shared cursor knows
   // its column, and the series markers and axis readout already say the value.

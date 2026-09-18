@@ -11,9 +11,16 @@ import { createIdleEntry } from "../market-data/result-types";
 import type { ChartResolveSources } from "./resolve";
 import { CHART_SPEC_VERSION, type ChartSpec } from "./types";
 import {
+  collectSeedHistory,
   useChartResolution,
   type UseChartResolutionResult,
 } from "./use-chart-resolution";
+import {
+  clearParsedPriceHistory,
+  parsedPriceHistoryKey,
+  rememberParsedPriceHistory,
+} from "./parsed-history-cache";
+import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 
 type AutoViewport = NonNullable<Parameters<typeof useChartResolution>[2]["autoViewport"]>;
 
@@ -163,6 +170,7 @@ afterEach(async () => {
   setChartSpec = null;
   latestResult = null;
   setSharedMarketDataCoordinator(null);
+  clearParsedPriceHistory();
 });
 
 describe("useChartResolution", () => {
@@ -454,6 +462,59 @@ describe("useChartResolution", () => {
       await testSetup!.renderOnce();
     });
     await waitFor(() => latestResult?.loading === false);
+  });
+
+  test("does not seed weekly ALL onto an intraday AUTO pane", () => {
+    const weekly = [{
+      date: new Date("2024-01-05T16:00:00.000Z"),
+      open: 10,
+      high: 12,
+      low: 9,
+      close: 11,
+      volume: 1_000,
+    }];
+    setSharedMarketDataCoordinator({
+      subscribe: () => () => {},
+      getVersion: () => 1,
+      getKeysVersion: () => 1,
+      getChartEntry: () => ({
+        ...createIdleEntry<typeof weekly>(),
+        phase: "ready",
+        data: weekly,
+        lastGoodData: weekly,
+        source: "test",
+        fetchedAt: Date.now(),
+      }),
+    } as never);
+
+    const seeded = collectSeedHistory({
+      ...SPEC,
+      viewport: { range: "1D", resolution: "auto" },
+    });
+    expect(seeded.size).toBe(0);
+  });
+
+  test("prefers matching-interval cache over weekly ALL warmup", () => {
+    const weekly = [{
+      date: new Date("2024-01-05T16:00:00.000Z"),
+      close: 11,
+    }];
+    const minutes = [{
+      date: new Date("2025-01-02T14:31:00.000Z"),
+      close: 102,
+    }];
+    rememberParsedPriceHistory(parsedPriceHistoryKey("TEST", "NASDAQ", "ALL", "1wk"), weekly);
+    rememberParsedPriceHistory(parsedPriceHistoryKey("TEST", "NASDAQ", "1D", "1m"), minutes);
+
+    const seeded = collectSeedHistory({
+      ...SPEC,
+      viewport: { range: "1D", resolution: "auto" },
+    });
+    expect(seeded.get(chartQuoteOverrideKeyForSource({
+      kind: "security",
+      instrument: { symbol: "TEST", exchange: "NASDAQ" },
+      fieldId: "market.ohlcv",
+    }))).toEqual(minutes);
   });
 
   test("reuses cached history when the spec object identity changes", async () => {

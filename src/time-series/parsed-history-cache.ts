@@ -33,3 +33,7 @@ export function rememberParsedPriceHistory(key: string, points: PricePoint[]): v
 export function readParsedPriceHistory(key: string): PricePoint[] | undefined {
   return parsedHistory.get(key);
 }
+
+export function clearParsedPriceHistory(): void {
+  parsedHistory.clear();
+}
