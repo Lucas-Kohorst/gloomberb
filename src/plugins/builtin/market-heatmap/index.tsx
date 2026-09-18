@@ -349,7 +349,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label="Loading market heatmap..." />
+          <Spinner label="Loading heatmap..." />
         </Box>
       </Box>
     );
@@ -360,13 +360,13 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Market heatmap unavailable." message={loadError} hint="Press r to retry." />
+          <EmptyState title="Heatmap unavailable." message={loadError} hint="Press r to retry." />
         </Box>
       </Box>
     );
   }
 
-  const emptyStateTitle = loadError ?? "No market heatmap data";
+  const emptyStateTitle = loadError ?? "No heatmap data";
 
   return (
     <Box flexDirection="column" width={width} height={height}>

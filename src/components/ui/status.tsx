@@ -127,18 +127,18 @@ export function EmptyState({ title, message, hint, fill = true, onRetry }: Empty
   const hitRetry = usePaneRetry();
   const retryAction = onRetry ?? (hint && RETRY_HINT_PATTERN.test(hint) ? hitRetry : undefined);
   const body = (
-    <Box flexDirection="column" alignItems="center">
-      <Box>
-        <Text fg={colors.textDim}>{t(title)}</Text>
+    <Box flexDirection="column" alignItems="center" width="100%">
+      <Box height={1} flexShrink={0}>
+        <Text fg={colors.textDim} wrapMode="none">{t(title)}</Text>
       </Box>
       {message && (
-        <Box>
-          <Text fg={colors.textMuted}>{t(message)}</Text>
+        <Box width="100%" flexShrink={0}>
+          <Text fg={colors.textMuted} wrapMode="word">{t(message)}</Text>
         </Box>
       )}
       {hint && (
-        <Box>
-          <Text fg={colors.textMuted}>{t(hint)}</Text>
+        <Box height={1} flexShrink={0}>
+          <Text fg={colors.textMuted} wrapMode="none">{t(hint)}</Text>
         </Box>
       )}
       {retryAction && (
@@ -153,9 +153,7 @@ export function EmptyState({ title, message, hint, fill = true, onRetry }: Empty
     <Box
       flexDirection="column"
       flexGrow={1}
-      flexBasis={0}
       width="100%"
-      height="100%"
       justifyContent="center"
       alignItems="center"
     >
