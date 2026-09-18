@@ -1,11 +1,13 @@
-import { Box, Input, Text, TextAttributes } from "../../ui";
+import { Box, TextAttributes } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import { useAppSelector } from "../../state/app/context";
 import { useNumberFlashMap } from "../../components/quote-flash";
 import {
   DataTableStackView,
+  InputSearchBar,
   Spinner,
   Tabs,
+  loadingText,
   usePaneFooter,
   useTableLoadMore,
   useUpdatedAgo,
@@ -30,7 +32,7 @@ import {
 } from "./rows";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
-import { paneDelayedStatus, paneLiveStatus, paneShareHint } from "../builtin/shared/pane-footer";
+import { paneDelayedStatus, paneLiveStatus, paneSearchHint, paneShareHint } from "../builtin/shared/pane-footer";
 import { useShareTable } from "../builtin/shared/use-share-table";
 import type {
   PredictionColumnDef,
@@ -68,6 +70,43 @@ function predictionCellVersion(
   ].join("|");
 }
 
+function predictionCatalogEmptyCopy(options: {
+  emptyWatchlist: boolean;
+  categoryId: string;
+  searchQuery: string;
+  catalogStatus: { tone: "warning" | "danger"; message: string } | null;
+}): { title: string; hint?: string } {
+  const query = options.searchQuery.trim();
+  if (options.emptyWatchlist) {
+    return {
+      title: "Nothing in your watchlist.",
+      hint: "Star a market with w from All.",
+    };
+  }
+  if (options.catalogStatus?.tone === "danger") {
+    return {
+      title: "Markets unavailable.",
+      hint: `${options.catalogStatus.message} Press r to retry.`,
+    };
+  }
+  if (options.categoryId === "watchlist") {
+    return {
+      title: "No starred markets matched.",
+      hint: "Star a market with w, or search from All.",
+    };
+  }
+  if (query) {
+    return {
+      title: "No markets matched.",
+      hint: "Change the venue, browse tab, or search query.",
+    };
+  }
+  return {
+    title: "No markets matched.",
+    hint: "Change the venue, browse tab, or search query.",
+  };
+}
+
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const controller = usePredictionMarketsController({ focused });
   const cellCacheRef = useRef(
@@ -99,13 +138,21 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       ? colors.negative
       : colors.borderFocused;
   const visibleColumns = useMemo(
-    () => createPredictionColumns(width, controller.paneSettings.columnIds),
-    [controller.paneSettings.columnIds, width],
+    () => createPredictionColumns(width, controller.paneSettings.columnIds, {
+      hideVenue: controller.effectiveVenueScope !== "all",
+    }),
+    [controller.effectiveVenueScope, controller.paneSettings.columnIds, width],
   );
   // An empty watchlist yields zero rows no matter what the catalog returns, so
   // a spinner here would never resolve.
   const emptyWatchlist =
     controller.categoryId === "watchlist" && controller.watchlistSet.size === 0;
+  const emptyCopy = predictionCatalogEmptyCopy({
+    emptyWatchlist,
+    categoryId: controller.categoryId,
+    searchQuery: controller.searchQuery,
+    catalogStatus: controller.catalogStatus,
+  });
   const rowsLoading =
     controller.visibleRows.length === 0 &&
     !emptyWatchlist &&
@@ -168,7 +215,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       graphSelected();
       return;
     }
-    if (!controller.detailOpen && (event.name === "s" || event.name === "y")) {
+    if (!controller.detailOpen && event.name === "s") {
       event.preventDefault?.();
       event.stopPropagation?.();
       shareVisibleRows();
@@ -182,7 +229,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   usePaneFooter("prediction-markets", () => {
     return {
       info: [
-        ...(controller.detailOpen ? [] : controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
         ...(controller.detailOpen ? [] : controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
         ...(controller.detailOpen ? [] : controller.catalogStatus ? [{
           id: "catalog",
@@ -196,7 +242,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       hints: [
         { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !graphExpression },
         ...(!controller.detailOpen ? [
-          { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
+          paneSearchHint(controller.actions.focusSearch),
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
@@ -244,50 +290,29 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       activeValue={controller.effectiveVenueScope}
       onSelect={controller.actions.setVenue}
       compact
+      variant="bare"
+      scrollable={false}
+      focused={focused && !controller.searchFocused && !controller.detailOpen}
     />
   ) : null;
 
-  // Search and one filter strip share a row. Ending/New sit with All/Watchlist
-  // and the topic chips so hosted does not render two competing tab bars.
+  const searchWidth = Math.max(18, Math.floor(width * 0.28));
   const searchBrowseAndCategories = (
     <Box flexDirection="row" height={1} paddingX={1} gap={2}>
-      <Box
-        flexDirection="row"
-        onMouseDown={controller.actions.focusSearch}
-        width={Math.max(14, Math.floor(width * 0.22))}
-      >
-        <Text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</Text>
-        <Box width={1} />
-        {controller.searchFocused ? (
-          <Input
-            ref={controller.searchInputRef}
-            value={controller.searchQuery}
-            focused={focused}
-            placeholder="search markets"
-            placeholderColor={colors.textDim}
-            textColor={colors.text}
-            backgroundColor={colors.panel}
-            flexGrow={1}
-            onInput={controller.actions.setSearchQuery}
-            onChange={controller.actions.setSearchQuery}
-            onSubmit={controller.actions.blurSearch}
-          />
-        ) : (
-          <Box flexGrow={1}>
-            <Text
-              fg={
-                controller.searchQuery.trim().length > 0
-                  ? colors.text
-                  : colors.textDim
-              }
-            >
-              {controller.searchQuery.trim().length > 0
-                ? controller.searchQuery
-                : "search markets"}
-            </Text>
-          </Box>
-        )}
-      </Box>
+      <InputSearchBar
+        value={controller.searchQuery}
+        focused={focused && !controller.detailOpen}
+        active={controller.searchFocused}
+        width={searchWidth}
+        focusToken={controller.searchFocusToken}
+        inputRef={controller.searchInputRef}
+        placeholder="search markets"
+        debounceMs={0}
+        onFocus={controller.actions.focusSearch}
+        onBlur={controller.actions.blurSearch}
+        onNavigateDown={controller.actions.blurSearch}
+        onQueryChange={controller.actions.setSearchQuery}
+      />
       <Tabs
         tabs={PREDICTION_FILTER_TABS.map((tab) => ({
           label: tab.label,
@@ -303,6 +328,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         compact
         variant="bare"
         scrollable={false}
+        focused={focused && !controller.searchFocused && !controller.detailOpen}
       />
     </Box>
   );
@@ -457,26 +483,14 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
               label={
                 controller.searchQuery.trim().length > 0
                   ? "Searching markets..."
-                  : "Loading markets..."
+                  : loadingText("markets")
               }
             />
           </Box>
         ) : undefined
       }
-      emptyStateTitle={
-        emptyWatchlist
-          ? "Nothing in your watchlist."
-          : controller.categoryId === "watchlist"
-            ? "No starred markets matched."
-            : "No markets matched."
-      }
-      emptyStateHint={
-        emptyWatchlist
-          ? "Press w on any market to add it."
-          : controller.categoryId === "watchlist"
-            ? "Star a market with w, or search from All."
-            : "Change the venue, browse tab, or search query."
-      }
+      emptyStateTitle={emptyCopy.title}
+      emptyStateHint={emptyCopy.hint}
     />
   );
 }

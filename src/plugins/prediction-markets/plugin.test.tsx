@@ -530,6 +530,10 @@ describe("prediction markets plugin registration and services", () => {
       "market",
       "yes",
     ]);
+    expect(
+      createPredictionColumns(120, DEFAULT_PREDICTION_COLUMN_IDS, { hideVenue: true })
+        .map((column) => column.id),
+    ).toEqual(DEFAULT_PREDICTION_COLUMN_IDS.filter((id) => id !== "venue"));
   });
 
   test("filters markets with token-AND fuzzy search on the live query", () => {

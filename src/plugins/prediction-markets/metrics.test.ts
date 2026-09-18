@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { colors } from "../../theme/colors";
-import { getPredictionProbabilityColor } from "./metrics";
+import {
+  formatPredictionOddsCell,
+  getPredictionProbabilityColor,
+  isBlankPredictionMetric,
+  isGenericPredictionOutcomeLabel,
+} from "./metrics";
 
 describe("getPredictionProbabilityColor", () => {
   test("keeps only the coin-flip band neutral", () => {
@@ -15,5 +20,17 @@ describe("getPredictionProbabilityColor", () => {
   test("colors a real lean green or red", () => {
     expect(getPredictionProbabilityColor(0.69)).toBe(colors.positive);
     expect(getPredictionProbabilityColor(0.21)).toBe(colors.negative);
+  });
+});
+
+describe("formatPredictionOddsCell", () => {
+  test("omits generic Yes/No labels and blank prices", () => {
+    expect(isGenericPredictionOutcomeLabel("Yes")).toBe(true);
+    expect(isGenericPredictionOutcomeLabel("No change")).toBe(false);
+    expect(formatPredictionOddsCell(0.48, "Yes")).toBe("48%");
+    expect(formatPredictionOddsCell(0.48, "Above 4.25%")).toBe("48% Above 4.25%");
+    expect(formatPredictionOddsCell(null, "Yes")).toBe("—");
+    expect(isBlankPredictionMetric("—")).toBe(true);
+    expect(isBlankPredictionMetric("48%")).toBe(false);
   });
 });

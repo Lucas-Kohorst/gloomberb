@@ -73,6 +73,7 @@ export function InputSearchBar({
   }, [active, focused, focusToken, inputRef]);
 
   useEffect(() => {
+    if (debounceMs <= 0) return;
     if (normalizeValue(draft) === normalizeValue(value)) return;
     const timer = setTimeout(() => {
       onQueryChange(draft);
@@ -84,6 +85,11 @@ export function InputSearchBar({
     onQueryChange(nextValue);
     onBlur();
   }, [onBlur, onQueryChange]);
+
+  const handleDraft = useCallback((nextValue: string) => {
+    setDraft(nextValue);
+    if (debounceMs <= 0) onQueryChange(nextValue);
+  }, [debounceMs, onQueryChange]);
 
   return (
     <Box
@@ -114,8 +120,8 @@ export function InputSearchBar({
         flexGrow={1}
         onFocus={onFocus}
         onBlur={onBlur}
-        onInput={setDraft}
-        onChange={setDraft}
+        onInput={handleDraft}
+        onChange={handleDraft}
         onSubmit={commitNow}
       />
     </Box>

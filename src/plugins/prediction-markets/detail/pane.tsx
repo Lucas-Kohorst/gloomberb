@@ -5,7 +5,6 @@ import { Tabs } from "../../../components";
 import { EmptyState } from "../../../components/ui/status";
 import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
-import { padTo } from "../../../utils/format";
 import { DETAIL_TABS } from "../navigation";
 import {
   isPredictionWeatherSettlement,
@@ -22,6 +21,7 @@ import {
   formatPredictionSpread,
   formatPredictionTicker,
   getPredictionProbabilityColor,
+  isBlankPredictionMetric,
 } from "../metrics";
 import type {
   PredictionDetailTab,
@@ -47,14 +47,18 @@ interface MetricCell {
 }
 
 /**
- * Drops trailing metrics that do not fit rather than letting the strip overflow
- * the detail pane. YES and NO always survive.
+ * YES and NO always survive. Blank venue stats (Adjacent discovery rows before
+ * Kalshi/Gamma hydrate) stay off the strip so it does not read as empty dashes.
  */
 function fitMetrics(metrics: MetricCell[], width: number): MetricCell[] {
+  const always = new Set(["YES", "NO"]);
+  const present = metrics.filter((metric) =>
+    always.has(metric.label) || !isBlankPredictionMetric(metric.value),
+  );
   const fitted: MetricCell[] = [];
   let used = 0;
-  for (const metric of metrics) {
-    const next = used + metric.width + (fitted.length > 0 ? 1 : 0);
+  for (const metric of present) {
+    const next = used + metric.width + (fitted.length > 0 ? 2 : 0);
     if (fitted.length >= 2 && next > width) break;
     fitted.push(metric);
     used = next;
@@ -62,34 +66,21 @@ function fitMetrics(metrics: MetricCell[], width: number): MetricCell[] {
   return fitted;
 }
 
-function MetricLabelRow({ metrics }: { metrics: MetricCell[] }) {
+function MetricStrip({ metrics }: { metrics: MetricCell[] }) {
   return (
-    <Box flexDirection="row" height={1}>
-      {metrics.map((metric, index) => (
-        <Box
-          key={metric.label}
-          width={metric.width + (index === metrics.length - 1 ? 0 : 1)}
-        >
-          <Text fg={colors.textDim}>{padTo(metric.label, metric.width)}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
-function MetricValueRow({ metrics }: { metrics: MetricCell[] }) {
-  return (
-    <Box flexDirection="row" height={1}>
-      {metrics.map((metric, index) => (
-        <Box
-          key={metric.label}
-          width={metric.width + (index === metrics.length - 1 ? 0 : 1)}
-        >
+    <Box flexDirection="row" height={2} gap={2}>
+      {metrics.map((metric) => (
+        <Box key={metric.label} flexDirection="column" minWidth={metric.width}>
+          <Text fg={colors.textDim}>{metric.label}</Text>
           <Text
-            fg={metric.color ?? colors.textBright}
+            fg={
+              isBlankPredictionMetric(metric.value)
+                ? colors.textDim
+                : metric.color ?? colors.textBright
+            }
             attributes={TextAttributes.BOLD}
           >
-            {padTo(metric.value, metric.width)}
+            {metric.value}
           </Text>
         </Box>
       ))}
@@ -278,8 +269,7 @@ export function PredictionMarketDetailPane({
       )}
 
       <Box flexDirection="column" height={3} paddingBottom={1}>
-        <MetricLabelRow metrics={visibleMetrics} />
-        <MetricValueRow metrics={visibleMetrics} />
+        <MetricStrip metrics={visibleMetrics} />
       </Box>
 
       {relatedSiblings.length > 0 && (
@@ -303,10 +293,11 @@ export function PredictionMarketDetailPane({
 
       <Box paddingBottom={1}>
         <Tabs
-          tabs={DETAIL_TABS.map((tab) => ({
-            label: tab.label,
-            value: tab.value,
-          }))}
+          tabs={DETAIL_TABS.map((tab) => (
+            tab.value === "data" && weatherSettlement
+              ? { label: "Settlement", value: "data" }
+              : { label: tab.label, value: tab.value }
+          ))}
           activeValue={detailTab}
           onSelect={(value) => onDetailTabChange(value as PredictionDetailTab)}
           compact
@@ -398,6 +389,49 @@ export function PredictionMarketDetailPane({
             focused={focused}
             trades={detail?.trades ?? []}
             width={detailWidth}
+          />
+        </Box>
+      )}
+
+      {detailTab === "data" && (
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} overflow="hidden">
+          {weatherSettlement ? (
+            <PredictionWeatherSettlementTab
+              summary={summaryMetrics}
+              width={detailWidth}
+            />
+          ) : (
+            <PredictionMarketDataTab
+              focused={focused}
+              summary={summaryMetrics}
+              width={detailWidth}
+            />
+          )}
+        </Box>
+      )}
+
+      {detailTab === "similar" && (
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} minHeight={0} overflow="hidden">
+          <PredictionSimilarTab
+            client={adjacentClient}
+            lookup={adjacentLookup}
+            onSelectAdjacentMarket={(market) => {
+              if (market.url) openUrl(market.url);
+              else onSelectMarket(market.id);
+            }}
+          />
+        </Box>
+      )}
+
+      {detailTab === "news" && (
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} minHeight={0} overflow="hidden">
+          <PredictionNewsTab
+            client={adjacentClient}
+            lookup={adjacentLookup}
+            summary={summaryMetrics}
+            focused={focused}
+            width={detailWidth}
+            height={detailBodyHeight}
           />
         </Box>
       )}

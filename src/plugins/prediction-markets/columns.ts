@@ -36,7 +36,7 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
     width: 20,
     align: "left",
     description:
-      "Implied probability, with the leading target shown inline for grouped events.",
+      "Implied probability. Grouped events show the leading target inline.",
   },
   {
     id: "spread",
@@ -157,8 +157,11 @@ function resolveRequestedPredictionColumns(
 export function createPredictionColumns(
   _width: number,
   columnIds: readonly string[] = DEFAULT_PREDICTION_COLUMN_IDS,
+  options?: { hideVenue?: boolean },
 ): PredictionColumnDef[] {
-  return resolveRequestedPredictionColumns(columnIds).map((column) =>
-    column.id === "market" ? { ...column, flexGrow: 1 } : column,
-  );
+  return resolveRequestedPredictionColumns(columnIds)
+    .filter((column) => !(options?.hideVenue && column.id === "venue"))
+    .map((column) =>
+      column.id === "market" ? { ...column, flexGrow: 1 } : column,
+    );
 }

@@ -89,6 +89,37 @@ export function formatPredictionPercent(
   return `${formatNumber(percent, 1)}%`;
 }
 
+const GENERIC_OUTCOME_LABELS = new Set(["yes", "no", "y", "n"]);
+
+export function isGenericPredictionOutcomeLabel(
+  label: string | null | undefined,
+): boolean {
+  return GENERIC_OUTCOME_LABELS.has((label ?? "").trim().toLowerCase());
+}
+
+/** Odds first. Binary Yes/No labels stay off the cell so TOP ODDS is a number. */
+export function formatPredictionOddsCell(
+  yesPrice: number | null | undefined,
+  label: string | null | undefined,
+): string {
+  const odds = formatPredictionPercent(yesPrice);
+  if (yesPrice == null || isGenericPredictionOutcomeLabel(label)) return odds;
+  const trimmed = label?.trim() ?? "";
+  return trimmed.length > 0 ? `${odds} ${trimmed}` : odds;
+}
+
+export function isBlankPredictionMetric(value: string): boolean {
+  return value === "—" || value.trim().length === 0;
+}
+
+function dimIfBlank(
+  text: string,
+  color?: string,
+): { text: string; color?: string } {
+  if (isBlankPredictionMetric(text)) return { text, color: colors.textDim };
+  return { text, color };
+}
+
 /** Coin-flip band: 40–60% stays uncolored so only a real lean reads green/red. */
 const PREDICTION_NEUTRAL_ODDS_BAND = 0.1;
 
@@ -322,37 +353,37 @@ export function getPredictionColumnValue(
     case "venue":
       return { text: market.venue === "polymarket" ? "Polymkt" : "Kalshi" };
     case "yes": {
-      // Always percentage then outcome label, so the cell never changes shape
-      // between grouped and single rows. Read the live member, not a copied
-      // focusYesPrice that can lag the expanded children.
+      // Read the live member, not a copied focusYesPrice that can lag children.
       const focusMarket = focusMarketForRow(market);
       const yesPrice = focusMarket?.yesPrice ?? market.focusYesPrice;
       const label = focusMarket?.marketLabel ?? market.focusMarketLabel;
-      return {
-        text: `${formatPredictionPercent(yesPrice)} ${label}`.trim(),
-        color: getPredictionProbabilityColor(yesPrice),
-      };
+      const includeOutcomeLabel = market.kind === "group";
+      return dimIfBlank(
+        includeOutcomeLabel
+          ? formatPredictionOddsCell(yesPrice, label)
+          : formatPredictionPercent(yesPrice),
+        getPredictionProbabilityColor(yesPrice),
+      );
     }
     case "spread":
-      return {
-        text:
-          market.kind === "group"
-            ? formatPredictionSpread(market.representative.spread)
-            : formatPredictionSpread(market.spread),
-      };
+      return dimIfBlank(
+        market.kind === "group"
+          ? formatPredictionSpread(market.representative.spread)
+          : formatPredictionSpread(market.spread),
+      );
     case "vol_24h":
-      return {
-        text: formatPredictionMetric(market.volume24h, market.volume24hUnit),
-      };
+      return dimIfBlank(
+        formatPredictionMetric(market.volume24h, market.volume24hUnit),
+      );
     case "open_interest":
-      return {
-        text: formatPredictionMetric(
+      return dimIfBlank(
+        formatPredictionMetric(
           market.openInterest,
           market.openInterestUnit,
         ),
-      };
+      );
     case "ends":
-      return { text: formatPredictionEndsAt(market.endsAt, market.status) };
+      return dimIfBlank(formatPredictionEndsAt(market.endsAt, market.status));
     case "status":
       return {
         text: market.status.toUpperCase(),
@@ -366,28 +397,28 @@ export function getPredictionColumnValue(
     case "event":
       return { text: market.eventLabel };
     case "category":
-      return { text: market.category ?? "—" };
+      return dimIfBlank(market.category ?? "—");
     case "vol_total":
-      return {
-        text: formatPredictionMetric(
+      return dimIfBlank(
+        formatPredictionMetric(
           market.totalVolume,
           market.totalVolumeUnit,
         ),
-      };
+      );
     case "liquidity":
-      return {
-        text: formatPredictionMetric(market.liquidity, market.liquidityUnit),
-      };
+      return dimIfBlank(
+        formatPredictionMetric(market.liquidity, market.liquidityUnit),
+      );
     case "updated":
-      return { text: formatPredictionUpdatedAt(market.updatedAt) };
+      return dimIfBlank(formatPredictionUpdatedAt(market.updatedAt));
     case "created":
-      return { text: formatPredictionUpdatedAt(market.createdAt) };
+      return dimIfBlank(formatPredictionUpdatedAt(market.createdAt));
     case "market_id":
       return {
         text: formatPredictionTicker(market),
         color: colors.textBright,
       };
     default:
-      return { text: "—" };
+      return dimIfBlank("—");
   }
 }

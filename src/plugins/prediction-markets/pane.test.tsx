@@ -697,7 +697,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     frame = testSetup.captureCharFrame();
-    expect(frame).toContain("? search markets");
+    expect(frame).toContain("/ search markets");
 
     await emitKeypress(testSetup, {
       name: "down",
