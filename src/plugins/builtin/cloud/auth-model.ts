@@ -14,6 +14,12 @@ export type AccountMode = "signup" | "login";
 
 export type AccountChoiceId = AccountMode | "qr" | "skip";
 
+/** Hosted `/?auth=login` opens log in; anything else stays on sign up. */
+export function accountModeFromSearch(search: string): AccountMode {
+  const query = search.startsWith("?") ? search.slice(1) : search;
+  return new URLSearchParams(query).get("auth") === "login" ? "login" : "signup";
+}
+
 /** Order matches the chooser list, so the selected index maps straight onto an id. */
 export const ACCOUNT_CHOICE_IDS: AccountChoiceId[] = ["qr", "signup", "login", "skip"];
 

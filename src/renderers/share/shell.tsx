@@ -8,7 +8,7 @@
  * the live workspace is where they should end up.
  */
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export function formatShareTimestamp(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -40,6 +40,26 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+function sessionHasUser(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  return (body as { user?: unknown }).user != null;
+}
+
+function useHostedSignedIn(): boolean {
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/auth/session", { credentials: "include", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        if (sessionHasUser(await response.json())) setSignedIn(true);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return signedIn;
+}
+
 export function ShareShell({
   layout = "document",
   title,
@@ -50,6 +70,7 @@ export function ShareShell({
   children,
 }: ShareShellProps) {
   const heading = title?.trim() || "Gloomberb";
+  const signedIn = useHostedSignedIn();
   const openLabel = openInTerminalHref === "/" ? "pen gloomberb" : "pen live";
   const openAria = openInTerminalHref === "/" ? "Open Gloomberb" : "Open live in terminal";
 
@@ -86,7 +107,14 @@ export function ShareShell({
           <span className="share-pane-grip" aria-hidden="true">:: </span>
           <h1 className="share-pane-title">{heading}</h1>
           <nav className="share-pane-actions">
-            <a className="share-pane-hint" href="/">« Back</a>
+            {signedIn ? (
+              <a className="share-pane-hint" href="/">« Back</a>
+            ) : (
+              <>
+                <a className="share-pane-hint" href="/?auth=signup">Sign up</a>
+                <a className="share-pane-hint" href="/?auth=login">Log in</a>
+              </>
+            )}
           </nav>
         </header>
         <div className="share-pane-body">{children}</div>

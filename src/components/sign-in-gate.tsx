@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { useAppLanguage } from "../i18n/react";
 import { AuthForm, authFormTitle } from "../plugins/builtin/cloud/auth-form";
-import type { AccountMode } from "../plugins/builtin/cloud/auth-model";
+import { accountModeFromSearch, type AccountMode } from "../plugins/builtin/cloud/auth-model";
 import {
   DeviceSignInController,
   type DeviceSignInSnapshot,
@@ -82,7 +82,9 @@ export function SignInGate() {
   const colors = useThemeColors();
   const viewport = useViewport();
   const [showQr, setShowQr] = useState(false);
-  const [mode, setMode] = useState<AccountMode>("signup");
+  const [mode, setMode] = useState<AccountMode>(() => (
+    typeof window === "undefined" ? "signup" : accountModeFromSearch(window.location.search)
+  ));
 
   const title = showQr ? t("Scan with the Gloom app") : authFormTitle(mode);
   const subtitle = showQr
@@ -125,7 +127,7 @@ export function SignInGate() {
               </>
             ) : (
               <AuthForm
-                initialMode="signup"
+                initialMode={mode}
                 shortcutScope={GATE_SCOPE}
                 onModeChange={setMode}
                 onSignedIn={() => {}}
