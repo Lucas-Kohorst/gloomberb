@@ -147,6 +147,7 @@ async function collectRegisteredCommands(
     registerCommand(command: CommandDef) {
       commands.push(command);
     },
+    getApiKey: () => null,
     registerTickerResearchTab() {},
     registerDocumentSearchProvider: () => () => {},
     registerChartSeriesCatalog: () => () => {},
