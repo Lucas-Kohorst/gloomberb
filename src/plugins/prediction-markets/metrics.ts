@@ -384,7 +384,7 @@ export function getPredictionColumnValue(
       return { text: formatPredictionUpdatedAt(market.createdAt) };
     case "market_id":
       return {
-        text: market.kind === "group" ? "-" : formatPredictionTicker(market),
+        text: formatPredictionTicker(market),
         color: colors.textBright,
       };
     default:

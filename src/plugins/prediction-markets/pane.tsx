@@ -464,12 +464,18 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         ) : undefined
       }
       emptyStateTitle={
-        emptyWatchlist ? "Nothing in your watchlist." : "No markets matched."
+        emptyWatchlist
+          ? "Nothing in your watchlist."
+          : controller.categoryId === "watchlist"
+            ? "No starred markets matched."
+            : "No markets matched."
       }
       emptyStateHint={
         emptyWatchlist
           ? "Press w on any market to add it."
-          : "Change the venue, browse tab, or search query."
+          : controller.categoryId === "watchlist"
+            ? "Star a market with w, or search from All."
+            : "Change the venue, browse tab, or search query."
       }
     />
   );

@@ -330,7 +330,9 @@ describe("prediction markets plugin registration and services", () => {
       align: "left" as const,
       description: "",
     };
-    expect(getPredictionColumnValue(tickerColumn, collapsed[0]!, false).text).toBe("-");
+    expect(getPredictionColumnValue(tickerColumn, collapsed[0]!, false).text).toBe(
+      "KXFED-27APR",
+    );
     expect(getPredictionColumnValue(tickerColumn, expanded[1]!, false).text).toBe(
       "KXFED-27APR-T4.25",
     );

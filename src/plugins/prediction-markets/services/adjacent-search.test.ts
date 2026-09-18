@@ -49,6 +49,69 @@ describe("adjacent catalog search", () => {
     delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
   });
 
+  test("keeps Kalshi volume, open interest, and close from Adjacent list rows", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    setHttpFetchTransport(async () => json({
+      data: [{
+        ...KALSHI_LIVE,
+        volume_24h: 1013,
+        volume: 1046,
+        open_interest: 1013,
+        end_date: "2026-09-18T05:59:00Z",
+      }],
+      meta: { has_next: false },
+    }));
+
+    const { markets } = await searchAdjacentCatalog({ query: "diesel", venue: "kalshi" });
+    expect(markets[0]).toMatchObject({
+      marketId: "KXFED-26SEP-T3.00",
+      volume24h: 1013,
+      totalVolume: 1046,
+      openInterest: 1013,
+      endsAt: "2026-09-18T05:59:00Z",
+    });
+  });
+
+  test("fills sparse Adjacent Polymarket stats from Gamma by event slug", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    setHttpFetchTransport(async (url) => {
+      if (url.includes("gamma-api.polymarket.com/events?slug=")) {
+        return json([{
+          id: "101936",
+          slug: "fed-decision-october-2026",
+          title: "October Fed decision",
+          openInterest: 1_600_000,
+          volume24hr: 88_000,
+          endDate: "2026-10-29T00:00:00Z",
+          markets: [{
+            id: "908713",
+            slug: "will-one-person-dissent-the-october-fed-decision-2026",
+            question: POLY_LIVE.question,
+            outcomes: ["Yes", "No"],
+            outcomePrices: ["0.22", "0.78"],
+            clobTokenIds: ["yes-token", "no-token"],
+            volume24hr: "88000.5",
+            volumeNum: 1_940_000,
+            bestBid: 0.21,
+            bestAsk: 0.23,
+            spread: 0.02,
+            conditionId: POLY_LIVE.ticker,
+            endDate: "2026-10-29T00:00:00Z",
+          }],
+        }]);
+      }
+      return json({ data: [POLY_LIVE], meta: { has_next: false } });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "fed", venue: "polymarket" });
+    expect(markets[0]?.volume24h).toBe(88000.5);
+    expect(markets[0]?.totalVolume).toBe(1_940_000);
+    expect(markets[0]?.openInterest).toBe(1_600_000);
+    expect(markets[0]?.spread).toBeCloseTo(0.02);
+    expect(markets[0]?.yesTokenId).toBe("yes-token");
+    expect(markets[0]?.endsAt).toBe("2026-10-29T00:00:00Z");
+  });
+
   test("maps a live Polymarket list row onto a Gamma-resolvable slug and event", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     setHttpFetchTransport(async () => json({ data: [POLY_LIVE], meta: { has_next: false } }));

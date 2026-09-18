@@ -15,6 +15,7 @@ import {
 import {
   predictionSearchTokens,
 } from "../search";
+import { overlayGammaStatsOnPolymarketSearch } from "./polymarket/search-hydrate";
 
 const ADJACENT_SEARCH_PER_PAGE = 50;
 const ADJACENT_SEARCH_STOP_WORDS = new Set([
@@ -286,9 +287,10 @@ export async function searchAdjacentCatalog(options: {
   const filtered = categoryId === "all"
     ? markets
     : markets.filter((market) => matchesPredictionCategory(market, categoryId));
+  const hydrated = await overlayGammaStatsOnPolymarketSearch(filtered, signal);
 
   return {
-    markets: filtered,
+    markets: hydrated,
     hasMore,
     nextCursor: response.next_cursor ?? (hasMore ? adjacentSearchPageCursor(page + 1) : null),
   };

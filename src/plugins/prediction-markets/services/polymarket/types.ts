@@ -7,8 +7,9 @@ export interface PolymarketEventRecord {
   startDate?: string;
   updatedAt?: string;
   resolutionSource?: string;
-  openInterest?: number;
-  volume24hr?: number;
+  openInterest?: number | string;
+  volume?: number | string;
+  volume24hr?: number | string;
   tags?: Array<{ label?: string; slug?: string }>;
   markets?: PolymarketMarketRecord[];
 }
@@ -23,13 +24,16 @@ export interface PolymarketMarketRecord {
   endDate?: string;
   updatedAt?: string;
   createdAt?: string;
-  volume24hr?: number;
-  volumeNum?: number;
-  liquidityNum?: number;
-  spread?: number;
-  bestBid?: number | null;
-  bestAsk?: number | null;
-  lastTradePrice?: number | null;
+  volume?: number | string;
+  volume24hr?: number | string;
+  volume24hrClob?: number | string;
+  volumeNum?: number | string;
+  openInterest?: number | string;
+  liquidityNum?: number | string;
+  spread?: number | string;
+  bestBid?: number | string | null;
+  bestAsk?: number | string | null;
+  lastTradePrice?: number | string | null;
   outcomes?: string | string[];
   outcomePrices?: string | string[];
   clobTokenIds?: string | string[];
