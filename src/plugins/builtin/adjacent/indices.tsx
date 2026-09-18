@@ -11,6 +11,7 @@ import {
   EmptyState,
   FeedDataTableStackView,
   InputSearchBar,
+  PaneListChrome,
   Spinner,
   Tabs,
   nextStackSortPreference,
@@ -827,7 +828,24 @@ export function AdjacentIndicesPane({
       rootHeight={height}
       columns={columns}
       items={visibleIndices}
-      rootBefore={<InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or name" debounceMs={80} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={{
+            value: searchQuery,
+            active: searchFocused,
+            focusToken: searchFocusToken,
+            inputRef: searchInputRef,
+            placeholder: "ticker or name",
+            debounceMs: 80,
+            onFocus: focusSearch,
+            onBlur: () => setSearchFocused(false),
+            onNavigateDown: () => setSearchFocused(false),
+            onQueryChange: setSearchQuery,
+          }}
+        />
+      )}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => {

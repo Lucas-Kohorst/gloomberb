@@ -1,11 +1,12 @@
 import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text } from "../../../ui";
+import { Box, Text, type InputRenderable } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
   DataTableView,
   EmptyState,
+  PaneListChrome,
   Spinner,
   Tabs,
   nextStackSortPreference,
@@ -32,6 +33,7 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { openUrl } from "../../../components/ui/external-link";
 import { graphFooterHint, useGraphChartPopOut } from "../shared/graph-pop-out";
+import { paneSearchHint } from "../shared/pane-footer";
 import type { AdjacentClient } from "./client";
 import type { AdjacentIndexPricePoint, AdjacentRateRow, AdjacentRateSource } from "./types";
 import {
@@ -384,6 +386,10 @@ export function AdjacentRatesPane({
   const detailGenRef = useRef(0);
   const paneInstance = usePaneInstance();
   const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
+  const [searchQuery, setSearchQuery] = useState(seedQuery);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const seededRef = useRef(false);
 
   const load = useCallback(() => {
@@ -413,18 +419,22 @@ export function AdjacentRatesPane({
   }, [load]);
 
   const columns = useMemo(() => createRateColumns(), []);
-  const sortedRates = useMemo(
-    () => applySortPreference(rates, sortPreference, adjacentRateSortValue),
-    [rates, sortPreference],
-  );
-  const selectedRate = sortedRates.find((r) => r.id === selectedId) ?? null;
+  const visibleRates = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return applySortPreference(
+      rates.filter((row) => !query || `${row.name} ${row.id}`.toLowerCase().includes(query)),
+      sortPreference,
+      adjacentRateSortValue,
+    );
+  }, [rates, searchQuery, sortPreference]);
+  const selectedRate = visibleRates.find((r) => r.id === selectedId) ?? null;
 
   useEffect(() => {
-    if (sortedRates.length === 0) return;
-    if (!selectedId || !sortedRates.some((row) => row.id === selectedId)) {
-      setSelectedId(sortedRates[0]!.id);
+    if (visibleRates.length === 0) return;
+    if (!selectedId || !visibleRates.some((row) => row.id === selectedId)) {
+      setSelectedId(visibleRates[0]!.id);
     }
-  }, [selectedId, sortedRates]);
+  }, [selectedId, visibleRates]);
 
   useEffect(() => {
     if (seededRef.current || !seedQuery || rates.length === 0) return;
@@ -435,6 +445,7 @@ export function AdjacentRatesPane({
     if (!match) return;
     seededRef.current = true;
     setSelectedId(match.id);
+    setSearchQuery(match.name);
     setDetailOpen(true);
   }, [rates, seedQuery]);
 
@@ -485,6 +496,10 @@ export function AdjacentRatesPane({
   const reloadDetail = useCallback(() => {
     setDetailRetryNonce((value) => value + 1);
   }, []);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
   const handleRefresh = useCallback(() => {
     load();
     if (detailOpen) reloadDetail();
@@ -496,6 +511,12 @@ export function AdjacentRatesPane({
       event.preventDefault?.();
       event.stopPropagation?.();
       graphSelected();
+      return;
+    }
+    if (isPlainKey(event, "/") && !detailOpen) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
       return;
     }
     if (isPlainKey(event, "r")) {
@@ -518,12 +539,18 @@ export function AdjacentRatesPane({
       graphSelected();
       return true;
     }
+    if (isPlainKey(event, "/") && !detailOpen) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+      return true;
+    }
     if (!isPlainKey(event, "r")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     handleRefresh();
     return true;
-  }, [graphSelected, handleRefresh, selectedRate]);
+  }, [detailOpen, focusSearch, graphSelected, handleRefresh, selectedRate]);
 
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const poll = useFeedPollInterval();
@@ -538,9 +565,10 @@ export function AdjacentRatesPane({
     trailingInfo: [poll.segment],
     hints: [
       graphFooterHint(graphSelected, !!selectedRate),
+      paneSearchHint(focusSearch),
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
     ],
-  }), [detailOpen, error, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (
@@ -580,7 +608,7 @@ export function AdjacentRatesPane({
 
   return (
     <DataTableStackView<AdjacentRateRow, RateColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={detailOpen && !!selectedRate}
       onBack={() => setDetailOpen(false)}
       detailContent={detailContent}
@@ -596,7 +624,25 @@ export function AdjacentRatesPane({
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={sortedRates}
+      items={visibleRates}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={{
+            value: searchQuery,
+            active: searchFocused,
+            focusToken: searchFocusToken,
+            inputRef: searchInputRef,
+            placeholder: "rate or name",
+            debounceMs: 80,
+            onFocus: focusSearch,
+            onBlur: () => setSearchFocused(false),
+            onNavigateDown: () => setSearchFocused(false),
+            onQueryChange: setSearchQuery,
+          }}
+        />
+      )}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => {

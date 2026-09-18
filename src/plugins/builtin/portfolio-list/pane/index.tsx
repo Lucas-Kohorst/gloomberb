@@ -1,8 +1,8 @@
 import { Box, type InputRenderable } from "../../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Tabs,
-  InputSearchBar,
+  PaneListChrome,
+  paneListChromeRows,
   usePaneFooter,
   type DataTableKeyEvent,
   type TickerListVisibleRange,
@@ -235,9 +235,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ? (cashDrawerExpanded ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length)) : 1)
     : 0;
   const showCollectionTabs = visibleCollections.length > 1;
-  const headerHeight = showCollectionTabs ? 1 : 0;
+  const chromeRows = paneListChromeRows({ tabs: showCollectionTabs, search: true });
   const drawerHeight = showCashDrawer
-    ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
+    ? Math.min(requestedDrawerHeight, Math.max(1, height - (chromeRows + 1)))
     : 0;
 
   const handleVisibleRangeChange = useCallback(({ start, end }: TickerListVisibleRange) => {
@@ -578,7 +578,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   const showQuickAdd = canMutateCollection;
   const quickAddHeight = showQuickAdd ? 1 : 0;
-  const contentHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight - 1);
+  const contentHeight = Math.max(1, height - chromeRows - drawerHeight - quickAddHeight);
   const quickAddRow = activeCollectionId && activeCollectionEntry && quickAddCollectionKind ? (
     <QuickAddTickerInput
       ref={quickAddRef}
@@ -594,22 +594,28 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <InputSearchBar value={searchQuery} focused={focused && !quickAddFocused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or name" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />
-      {showCollectionTabs && (
-        <Box flexDirection="column" height={headerHeight}>
-          <Box flexDirection="row" height={1}>
-            <Box flexShrink={1} overflow="hidden">
-              <Tabs
-                tabs={visibleCollections.map((collection) => ({ label: collection.name, value: collection.id }))}
-                activeValue={activeCollectionId}
-                onSelect={handleCollectionSelect}
-                compact
-                focused={focused && !quickAddFocused}
-              />
-            </Box>
-          </Box>
-        </Box>
-      )}
+      <PaneListChrome
+        width={width}
+        focused={focused && !quickAddFocused}
+        tabs={showCollectionTabs
+          ? visibleCollections.map((collection) => ({ label: collection.name, value: collection.id }))
+          : undefined}
+        activeValue={activeCollectionId}
+        onSelect={handleCollectionSelect}
+        tabCompact
+        search={{
+          value: searchQuery,
+          active: searchFocused,
+          focusToken: searchFocusToken,
+          inputRef: searchInputRef,
+          placeholder: "ticker or name",
+          debounceMs: 80,
+          onFocus: () => setSearchFocused(true),
+          onBlur: () => setSearchFocused(false),
+          onNavigateDown: () => setSearchFocused(false),
+          onQueryChange: setSearchQuery,
+        }}
+      />
 
       {viewMode === "table" ? (
         <PortfolioTickerTable
