@@ -226,9 +226,14 @@ describe("assist catalog coverage", () => {
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "PM")?.paneId).toBe(
       "prediction-markets",
     );
-    // Plugins moved to the gloomberb-plugins monorepo (traffic, satellite,
-    // weather, polls, country-econ) are external and may or may not be
-    // installed; do not assert their prefixes here.
+    expect(prefixes.has("POLL")).toBe(true);
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "POLL")?.paneId).toBe("polls");
+    expect(prefixes.has("CG")).toBe(true);
+    expect(prefixes.has("FR")).toBe(true);
+    expect(prefixes.has("OFAC")).toBe(true);
+    expect(prefixes.has("USA")).toBe(true);
+    // Weather and other long-tail packs stay in gloomberb-plugins.
+    expect(prefixes.has("WX")).toBe(false);
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {

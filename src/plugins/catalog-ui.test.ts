@@ -8,6 +8,11 @@ describe("uiBuiltinPlugins", () => {
     const ids = uiBuiltinPlugins.map((plugin) => plugin.id);
     expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
     expect(ids).toContain("news");
+    expect(ids).toContain("polls");
+    expect(ids).toContain("congress-trades");
+    expect(ids).toContain("federal-register");
+    expect(ids).toContain("ofac-sanctions");
+    expect(ids).toContain("usaspending");
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -18,14 +23,24 @@ describe("uiBuiltinPlugins", () => {
     expect(getRendererPlugins().map((plugin) => plugin.id)).toContain("prediction-markets");
   });
 
-  test("ignores an extracted prediction-markets copy so desktop:build is the pane", () => {
-    const plugins = getRendererPlugins([{
-      plugin: { id: "prediction-markets", name: "Stale PM", version: "0.0.1" } as GloomPlugin,
-      path: "/tmp/stale-prediction-markets",
-    }]);
-    const matches = plugins.filter((plugin) => plugin.id === "prediction-markets");
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.name).toBe("Prediction Markets");
+  test("ignores extracted copies of first-party datasets so the in-repo pane wins", () => {
+    const firstParty = [
+      { id: "prediction-markets", name: "Prediction Markets" },
+      { id: "polls", name: "Polls" },
+      { id: "congress-trades", name: "Congress Trades" },
+      { id: "federal-register", name: "Federal Register" },
+      { id: "ofac-sanctions", name: "OFAC Sanctions" },
+      { id: "usaspending", name: "USAspending" },
+    ] as const;
+    const plugins = getRendererPlugins(firstParty.map((plugin) => ({
+      plugin: { id: plugin.id, name: `Stale ${plugin.id}`, version: "0.0.1" } as GloomPlugin,
+      path: `/tmp/stale-${plugin.id}`,
+    })));
+    for (const expected of firstParty) {
+      const matches = plugins.filter((plugin) => plugin.id === expected.id);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.name).toBe(expected.name);
+    }
   });
 
   test("does not register the same pane id on two plugins", () => {

@@ -24,8 +24,12 @@ describe("desktop backend plugin catalog", () => {
     const adjacent = plugins.find((plugin) => plugin.id === "adjacent");
     const cloud = plugins.find((plugin) => plugin.id === "gloomberb-cloud");
 
-    // Polls and weather have been extracted to the gloomberb-plugins monorepo.
-    expect(plugins.some((plugin) => plugin.id === "polls")).toBe(false);
+    // Polls is first-party (VoteHub). Weather stays in gloomberb-plugins.
+    expect(plugins.some((plugin) => plugin.id === "polls")).toBe(true);
+    expect(plugins.some((plugin) => plugin.id === "congress-trades")).toBe(true);
+    expect(plugins.some((plugin) => plugin.id === "federal-register")).toBe(true);
+    expect(plugins.some((plugin) => plugin.id === "ofac-sanctions")).toBe(true);
+    expect(plugins.some((plugin) => plugin.id === "usaspending")).toBe(true);
     expect(plugins.some((plugin) => plugin.id === "llm-stats")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "weather")).toBe(false);
     expect(adjacent?.name).toBe("Adjacent Cloud");

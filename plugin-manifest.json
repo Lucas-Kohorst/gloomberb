@@ -166,6 +166,23 @@
       }
     },
     {
+      "id": "congress-trades",
+      "name": "Congress Trades",
+      "description": "House periodic transaction report disclosures and member trade history.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "congress-trades"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "courtlistener",
       "name": "CourtListener",
       "description": "Federal PACER dockets and opinions via CourtListener. Empty search is the last week of new cases; LAW Kalshi searches that party.",
@@ -276,6 +293,23 @@
       "contributes": {
         "panes": [
           "fdic-bank"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "federal-register",
+      "name": "Federal Register",
+      "description": "Search Federal Register documents: proposed rules, final rules, and agency notices.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "federal-register"
         ],
         "capabilities": [],
         "broker": false
@@ -521,6 +555,23 @@
       }
     },
     {
+      "id": "ofac-sanctions",
+      "name": "OFAC Sanctions",
+      "description": "Search the US Consolidated Screening List. Screen people, companies, and entities against OFAC and other sanctions lists.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "sanctions"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "open-corporates",
       "name": "OpenCorporates",
       "description": "Look up companies and officers by name via the free OpenCorporates API. No API key required.",
@@ -584,6 +635,24 @@
           "plugin-inspector"
         ],
         "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "polls",
+      "name": "Polls",
+      "description": "Political polls from VoteHub (CC BY 4.0)",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "polls"
+        ],
+        "capabilities": [
+          "poll-trends"
+        ],
         "broker": false
       }
     },
@@ -712,6 +781,23 @@
           "sec",
           "thirteenf-funds",
           "ticker-research"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "usaspending",
+      "name": "USAspending",
+      "description": "Search federal contract awards by recipient, agency, or keyword.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "usaspending"
         ],
         "capabilities": [],
         "broker": false

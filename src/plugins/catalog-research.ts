@@ -4,16 +4,19 @@ import { crtShPlugin } from "./builtin/crt-sh";
 import { cfpbComplaintsPlugin } from "./builtin/cfpb-complaints";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
+import { congressTradesPlugin } from "./builtin/congress-trades";
 import { courtListenerPlugin } from "./builtin/courtlistener";
 import { eiaEnergyPlugin } from "./builtin/eia-energy";
 import { eulerpoolPlugin } from "./builtin/eulerpool";
 import { fdicBankPlugin } from "./builtin/fdic-bank";
+import { federalRegisterPlugin } from "./builtin/federal-register";
 import { filingDiffPlugin } from "./builtin/filing-diff";
 import { foiaLogsPlugin } from "./builtin/foia-logs";
 import { googleBooksPlugin } from "./builtin/google-books";
 import { iborrowDeskPlugin } from "./builtin/iborrowdesk";
 import { levelsFyiPlugin } from "./builtin/levels-fyi";
 import { nasaFirmsPlugin } from "./builtin/nasa-firms";
+import { ofacSanctionsPlugin } from "./builtin/ofac-sanctions";
 import { openCorporatesPlugin } from "./builtin/open-corporates";
 import { openPaymentsPlugin } from "./builtin/open-payments";
 import { openFdaPlugin } from "./builtin/openfda";
@@ -21,6 +24,7 @@ import { sec8KAlertsPlugin } from "./builtin/sec-8k-alerts";
 import { secFtsPlugin } from "./builtin/sec-fts";
 import { shortCampaignsPlugin } from "./builtin/short-campaigns";
 import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
+import { usaspendingPlugin } from "./builtin/usaspending";
 import { workplaceSignalsPlugin } from "./builtin/workplace-signals";
 
 export const researchDataPlugins: readonly GloomPlugin[] = [
@@ -28,17 +32,20 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   cfpbComplaintsPlugin,
   clinicalTrialsPlugin,
   commentLettersPlugin,
+  congressTradesPlugin,
   courtListenerPlugin,
   crtShPlugin,
   eiaEnergyPlugin,
   eulerpoolPlugin,
   fdicBankPlugin,
+  federalRegisterPlugin,
   filingDiffPlugin,
   foiaLogsPlugin,
   googleBooksPlugin,
   iborrowDeskPlugin,
   levelsFyiPlugin,
   nasaFirmsPlugin,
+  ofacSanctionsPlugin,
   openCorporatesPlugin,
   openPaymentsPlugin,
   openFdaPlugin,
@@ -46,5 +53,6 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   secFtsPlugin,
   shortCampaignsPlugin,
   usgsEarthquakesPlugin,
+  usaspendingPlugin,
   workplaceSignalsPlugin,
 ];

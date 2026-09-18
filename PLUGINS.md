@@ -32,22 +32,23 @@ Plugins are installed to `~/.gloomberb/plugins/`.
 
 ### External plugin monorepo
 
-The extracted data, research, and broker plugins live in
+The extracted long-tail data, research, and broker plugins live in
 the companion [`gloomberb-plugins`](https://github.com/Lucas-Kohorst/gloomberb-plugins)
 monorepo. Install the monorepo once and the loader discovers each package under
-`plugins/`. Prediction Markets is native in this app (TUI + Electrobun); do
-not keep a copy under `~/.gloomberb/plugins`.
+`plugins/`. First-party datasets (VoteHub polls, congress trades, Federal
+Register, OFAC, USAspending, NASA FIRMS, USGS, crt.sh, Prediction Markets)
+ship in the app catalogs — do not keep a copy under `~/.gloomberb/plugins`.
 
 ```bash
 gloomberb install Lucas-Kohorst/gloomberb-plugins
 ```
 
-The monorepo currently contains:
+A clean fork install already loads those first-party plugins. The monorepo is
+the remaining long tail:
 
-- Data and research: DefiLlama, OpenSky, NASA FIRMS, USGS earthquakes, space
-  weather, Federal Register, OFAC sanctions, crt.sh, USAspending, traffic,
-  satellite imagery, country economics, and congressional trades.
-- Market data: polls and weather.
+- Data and research: DefiLlama, OpenSky, space weather, traffic, satellite
+  imagery, and country economics.
+- Market data: weather.
 - Broker adapters: Public, Robinhood, and SimpleFin.
 
 Each package exports one default `GloomPlugin` and declares `gloomberb` and
@@ -175,6 +176,19 @@ const data = await withConnectionRequest("my-api", "fetch", async () => {
   return fetch("https://api.example.com/data").then((r) => r.json());
 });
 ```
+
+### Data pane checklist
+
+Every first-party dataset plugin (new or restored) must:
+
+1. Register a pane template with a command-bar **prefix** and a **description** Assist can inventory. Empty prefixes fall out of `/assist`.
+2. Call `registerConnectionSource()` (or `createDataPane` / `createConnection`) in `setup()`. Do not rely on `plugin.capabilities` alone — hosted/web disables capability invoke, so a source listed only there is invisible in Connections.
+3. Wrap the real fetch path with `withConnectionRequest(sameId, …)` / `reportConnectionRequest(sameId, …)`.
+4. Use `DataTableView` / `DataTableStackView` with clickable header sort and `/` search when the list is long enough to filter.
+5. Written-text panes (news, filings, documents) join the ART corpus, open the shared article reader, and bind `[o]pen` / `[p]op out`.
+6. User settings on hosted go through `writeHostedUserConfig` (and Gloom Cloud sync when the session is verified). BYOK keys stay local.
+
+Builtins may still declare `panes` / `paneTemplates` statically; scaffolds teach the `createDataPane` `setup()` form. Either is fine as long as Connections traffic and the Assist prefix are real.
 
 ### Alert conditions
 

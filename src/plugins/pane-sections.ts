@@ -14,6 +14,7 @@ const PLUGIN_PANE_SECTIONS: Record<string, PaneSection> = {
   yahoo: PANE_SECTION.assets,
 
   adjacent: PANE_SECTION.data,
+  polls: PANE_SECTION.data,
   macro: PANE_SECTION.data,
   "prediction-markets": PANE_SECTION.data,
   news: PANE_SECTION.data,

@@ -1,6 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
+import { isHostedWebClient, keyedDataUrl } from "../connections/adjacent-cloud";
 import type { VoteHubPoll } from "./types";
 
 const BASE_URL = "https://api.votehub.com";
@@ -15,7 +16,10 @@ const VOTEHUB_FETCH = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-polls",
   },
-  transport: httpFetch,
+  transport: (url, init) => {
+    if (url.startsWith("/")) return globalThis.fetch(url, init);
+    return httpFetch(url, init);
+  },
 });
 
 export function parseVoteHubPollsPayload(body: unknown): VoteHubPoll[] {
@@ -53,11 +57,26 @@ export function voteHubPollQuery(params?: {
   };
 }
 
+export function voteHubPollsUrl(params?: {
+  pollType?: string;
+  subject?: string;
+}): string {
+  const query = voteHubPollQuery(params);
+  if (isHostedWebClient()) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value) search.set(key, value);
+    }
+    return keyedDataUrl("votehub", "polls", search.toString());
+  }
+  return buildUrl("/polls", query);
+}
+
 export async function fetchVoteHubPolls(params?: {
   pollType?: string;
   subject?: string;
 }): Promise<VoteHubPoll[]> {
-  const url = buildUrl("/polls", voteHubPollQuery(params));
+  const url = voteHubPollsUrl(params);
   return withConnectionRequest("votehub", "polls", async () => {
     const response = await VOTEHUB_FETCH.fetch(url);
     if (!response.ok) {

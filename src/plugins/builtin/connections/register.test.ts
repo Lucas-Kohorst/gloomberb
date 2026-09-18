@@ -190,8 +190,8 @@ describe("connection source registry", () => {
     disposers.push(() => adjacentPlugin.dispose?.());
 
     const ids = listConnectionSources().map((source) => source.id);
-    // VoteHub, weather, and other extracted sources register from their
-    // external plugins instead of being bundled into Adjacent Cloud.
+    // VoteHub traffic folds onto Adjacent Cloud. The polls plugin still calls
+    // registerConnectionSource("votehub"), which is a no-op for that child id.
     expect(ids).toEqual([
       ADJACENT_CLOUD_CONNECTION_ID,
     ]);

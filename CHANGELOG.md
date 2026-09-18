@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — First-party polls, congress, FR, OFAC, spending
+
+A clean fork install no longer drops VoteHub polls, House PTR congress trades, Federal Register, OFAC sanctions, or USAspending. Those plugins still lived in-tree but were missing from `catalog-ui`, so they only appeared after extracting `gloomberb-plugins`. They now load with the first-party catalogs (hosted included). Weather and the rest of the long-tail pack stay external.
+
+- Pane prefixes: `POLL`, `CG`, `FR`, `OFAC`, `USA`. Each registers a Connections source in `setup()` and reports traffic on the real fetch. VoteHub still folds onto the Adjacent Cloud row.
+- Hosted VoteHub calls `/api/data/votehub/polls` instead of the VoteHub origin (CORS). An extracted copy with the same plugin id is ignored.
+
 ## Unreleased — PEVT was invisible, then empty
 
 Portfolio Events could not be reached from the command bar, and read "No tickers in scope" when it was open.
