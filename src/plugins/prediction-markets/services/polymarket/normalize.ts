@@ -50,6 +50,14 @@ export function extractPolymarketSlug(url: string): string | null {
   return match?.[1] ?? null;
 }
 
+function polymarketNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = parseFloatSafe(value);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
 export function normalizePolymarketBookLevel(level: {
   price: string;
   size: string;
@@ -108,6 +116,10 @@ export function normalizePolymarketMarket(
     prices[fallbackNoIndex] ??
     (yesPrice != null ? Math.max(0, 1 - yesPrice) : null);
   const marketLabel = record.groupItemTitle?.trim() || record.question;
+  const yesBid = polymarketNumber(record.bestBid);
+  const yesAsk = polymarketNumber(record.bestAsk);
+  const eventSlug = event?.slug?.trim();
+  const marketSlug = record.slug?.trim();
 
   return {
     key: options?.keyOverride ?? `polymarket:${marketId}`,
@@ -121,9 +133,11 @@ export function normalizePolymarketMarket(
     tags: eventTags,
     status:
       record.closed ? "closed" : record.active === false ? "pending" : "open",
-    url: record.slug
-      ? `https://polymarket.com/event/${record.slug}`
-      : "https://polymarket.com",
+    url: eventSlug
+      ? `https://polymarket.com/event/${eventSlug}`
+      : marketSlug
+        ? `https://polymarket.com/event/${marketSlug}`
+        : "https://polymarket.com",
     description: options?.catalog
       ? ""
       : record.description ?? event?.description ?? "",
@@ -137,29 +151,31 @@ export function normalizePolymarketMarket(
     createdAt: record.createdAt ?? event?.startDate ?? null,
     yesPrice,
     noPrice,
-    yesBid: record.bestBid ?? null,
-    yesAsk: record.bestAsk ?? null,
+    yesBid,
+    yesAsk,
     noBid:
-      record.bestBid != null
-        ? Math.max(0, 1 - (record.bestAsk ?? record.bestBid))
+      yesBid != null
+        ? Math.max(0, 1 - (yesAsk ?? yesBid))
         : null,
     noAsk:
-      record.bestAsk != null
-        ? Math.max(0, 1 - (record.bestBid ?? record.bestAsk))
+      yesAsk != null
+        ? Math.max(0, 1 - (yesBid ?? yesAsk))
         : null,
     spread:
-      record.spread ??
-      (record.bestAsk != null && record.bestBid != null
-        ? record.bestAsk - record.bestBid
-        : null),
-    lastTradePrice: record.lastTradePrice ?? null,
-    volume24h: record.volume24hr ?? event?.volume24hr ?? null,
+      polymarketNumber(record.spread)
+      ?? (yesAsk != null && yesBid != null ? yesAsk - yesBid : null),
+    lastTradePrice: polymarketNumber(record.lastTradePrice),
+    volume24h: polymarketNumber(
+      record.volume24hr,
+      record.volume24hrClob,
+      event?.volume24hr,
+    ),
     volume24hUnit: "usd",
-    totalVolume: record.volumeNum ?? null,
+    totalVolume: polymarketNumber(record.volumeNum, record.volume, event?.volume),
     totalVolumeUnit: "usd",
-    openInterest: event?.openInterest ?? null,
+    openInterest: polymarketNumber(record.openInterest, event?.openInterest),
     openInterestUnit: "usd",
-    liquidity: record.liquidityNum ?? null,
+    liquidity: polymarketNumber(record.liquidityNum),
     liquidityUnit: "usd",
     resolutionSource: record.resolutionSource ?? event?.resolutionSource ?? "",
     yesTokenId: tokenIds[fallbackYesIndex],
@@ -180,7 +196,7 @@ function flattenPolymarketEvents(
     const rawMarkets = takeTopByMetric(
       event.markets ?? [],
       PREDICTION_CATALOG_MAX_EVENT_MARKETS,
-      (market) => market.volume24hr ?? 0,
+      (market) => polymarketNumber(market.volume24hr, market.volume24hrClob) ?? 0,
     );
     for (const market of rawMarkets) {
       const normalized = normalizePolymarketMarket(

@@ -49,6 +49,109 @@ describe("adjacent catalog search", () => {
     delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
   });
 
+  test("ignores Adjacent Kalshi volume and fills SPR/vol/OI/ends from Kalshi", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    setHttpFetchTransport(async (url) => {
+      if (url.includes("/trade-api/v2/events/KXFED-26SEP")) {
+        return json({
+          event: {
+            title: "Fed funds rate after September 2026 meeting?",
+            category: "Economics",
+            event_ticker: "KXFED-26SEP",
+            series_ticker: "KXFED",
+          },
+          markets: [{
+            ticker: "KXFED-26SEP-T3.00",
+            title: "Fed funds rate after September 2026 meeting?",
+            yes_sub_title: "T3.00",
+            event_ticker: "KXFED-26SEP",
+            status: "active",
+            market_type: "binary",
+            yes_bid_dollars: "0.40",
+            yes_ask_dollars: "0.42",
+            no_bid_dollars: "0.58",
+            no_ask_dollars: "0.60",
+            last_price_dollars: "0.41",
+            volume_24h_fp: "15000",
+            volume_fp: "90000",
+            open_interest_fp: "45000",
+            close_time: "2026-09-26T18:00:00Z",
+          }],
+        });
+      }
+      return json({
+        data: [{
+          ...KALSHI_LIVE,
+          volume_24h: 99999,
+          volume: 88888,
+          open_interest: 77777,
+          end_date: "2099-01-01T00:00:00Z",
+          probability: 99,
+        }],
+        meta: { has_next: false },
+      });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "diesel", venue: "kalshi" });
+    expect(markets[0]?.marketId).toBe("KXFED-26SEP-T3.00");
+    expect(markets[0]?.volume24h).toBe(15000);
+    expect(markets[0]?.totalVolume).toBe(90000);
+    expect(markets[0]?.openInterest).toBe(45000);
+    expect(markets[0]?.spread).toBeCloseTo(0.02);
+    expect(markets[0]?.yesPrice).toBe(0.41);
+    expect(markets[0]?.endsAt).toBe("2026-09-26T18:00:00Z");
+  });
+
+  test("fills Polymarket search stats from Gamma, not Adjacent", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    setHttpFetchTransport(async (url) => {
+      if (url.includes("gamma-api.polymarket.com/events?slug=")) {
+        return json([{
+          id: "101936",
+          slug: "fed-decision-october-2026",
+          title: "October Fed decision",
+          openInterest: 1_600_000,
+          volume24hr: 88_000,
+          endDate: "2026-10-29T00:00:00Z",
+          markets: [{
+            id: "908713",
+            slug: "will-one-person-dissent-the-october-fed-decision-2026",
+            question: POLY_LIVE.question,
+            outcomes: ["Yes", "No"],
+            outcomePrices: ["0.22", "0.78"],
+            clobTokenIds: ["yes-token", "no-token"],
+            volume24hr: "88000.5",
+            volumeNum: 1_940_000,
+            bestBid: 0.21,
+            bestAsk: 0.23,
+            spread: 0.02,
+            conditionId: POLY_LIVE.ticker,
+            endDate: "2026-10-29T00:00:00Z",
+          }],
+        }]);
+      }
+      return json({
+        data: [{
+          ...POLY_LIVE,
+          volume_24h: 1,
+          volume: 2,
+          open_interest: 3,
+          probability: 99,
+        }],
+        meta: { has_next: false },
+      });
+    });
+
+    const { markets } = await searchAdjacentCatalog({ query: "fed", venue: "polymarket" });
+    expect(markets[0]?.volume24h).toBe(88000.5);
+    expect(markets[0]?.totalVolume).toBe(1_940_000);
+    expect(markets[0]?.openInterest).toBe(1_600_000);
+    expect(markets[0]?.spread).toBeCloseTo(0.02);
+    expect(markets[0]?.yesPrice).toBe(0.22);
+    expect(markets[0]?.yesTokenId).toBe("yes-token");
+    expect(markets[0]?.endsAt).toBe("2026-10-29T00:00:00Z");
+  });
+
   test("maps a live Polymarket list row onto a Gamma-resolvable slug and event", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     setHttpFetchTransport(async () => json({ data: [POLY_LIVE], meta: { has_next: false } }));
