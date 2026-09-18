@@ -144,7 +144,7 @@ async function resolvePolymarketSummary(
         description: current.description || event.description || "",
         resolutionSource:
           current.resolutionSource || event.resolutionSource || "",
-        openInterest: event.openInterest ?? current.openInterest,
+        openInterest: parseFloatSafe(event.openInterest) ?? current.openInterest,
       },
     };
   }
@@ -413,7 +413,7 @@ export async function loadPolymarketDetail(
             resolvedSummary.description || event?.description || "",
           resolutionSource:
             resolvedSummary.resolutionSource || event?.resolutionSource || "",
-          openInterest: event?.openInterest ?? resolvedSummary.openInterest,
+          openInterest: parseFloatSafe(event?.openInterest) ?? resolvedSummary.openInterest,
           tags:
             resolvedSummary.tags ?? resolvePolymarketEventTags(event),
         },

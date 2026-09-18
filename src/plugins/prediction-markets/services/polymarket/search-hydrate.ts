@@ -7,20 +7,10 @@ import {
 } from "./normalize";
 import type { PolymarketEventRecord, PolymarketMarketRecord } from "./types";
 
-const MAX_POLYMARKET_SEARCH_HYDRATE = 8;
+const MAX_POLYMARKET_SEARCH_HYDRATE = 20;
 
 function isHexId(value: string | undefined): boolean {
   return !!value && /^0x[0-9a-f]+$/i.test(value);
-}
-
-function needsGammaStats(market: PredictionMarketSummary): boolean {
-  return market.venue === "polymarket" && (
-    market.volume24h == null
-    || market.totalVolume == null
-    || market.openInterest == null
-    || market.spread == null
-    || !market.yesTokenId
-  );
 }
 
 export function polymarketEventSlugForSummary(
@@ -52,26 +42,39 @@ function matchGammaMarket(
   return markets.length === 1 ? markets[0]! : null;
 }
 
-function fillMissingPolymarketStats(
-  target: PredictionMarketSummary,
-  source: PredictionMarketSummary,
+function applyPolymarketVenueStats(
+  identity: PredictionMarketSummary,
+  venue: PredictionMarketSummary,
 ): PredictionMarketSummary {
   return {
-    ...target,
-    spread: target.spread ?? source.spread,
-    yesBid: target.yesBid ?? source.yesBid,
-    yesAsk: target.yesAsk ?? source.yesAsk,
-    noBid: target.noBid ?? source.noBid,
-    noAsk: target.noAsk ?? source.noAsk,
-    lastTradePrice: target.lastTradePrice ?? source.lastTradePrice,
-    volume24h: target.volume24h ?? source.volume24h,
-    totalVolume: target.totalVolume ?? source.totalVolume,
-    openInterest: target.openInterest ?? source.openInterest,
-    liquidity: target.liquidity ?? source.liquidity,
-    endsAt: target.endsAt ?? source.endsAt,
-    yesTokenId: target.yesTokenId ?? source.yesTokenId,
-    noTokenId: target.noTokenId ?? source.noTokenId,
-    conditionId: target.conditionId ?? source.conditionId,
+    ...identity,
+    marketLabel: venue.marketLabel || identity.marketLabel,
+    eventLabel: venue.eventLabel || identity.eventLabel,
+    eventId: venue.eventId ?? identity.eventId,
+    status: venue.status || identity.status,
+    url: venue.url || identity.url,
+    endsAt: venue.endsAt,
+    updatedAt: venue.updatedAt,
+    createdAt: venue.createdAt,
+    yesPrice: venue.yesPrice,
+    noPrice: venue.noPrice,
+    yesBid: venue.yesBid,
+    yesAsk: venue.yesAsk,
+    noBid: venue.noBid,
+    noAsk: venue.noAsk,
+    spread: venue.spread,
+    lastTradePrice: venue.lastTradePrice,
+    volume24h: venue.volume24h,
+    volume24hUnit: venue.volume24hUnit,
+    totalVolume: venue.totalVolume,
+    totalVolumeUnit: venue.totalVolumeUnit,
+    openInterest: venue.openInterest,
+    openInterestUnit: venue.openInterestUnit,
+    liquidity: venue.liquidity,
+    liquidityUnit: venue.liquidityUnit,
+    yesTokenId: venue.yesTokenId ?? identity.yesTokenId,
+    noTokenId: venue.noTokenId ?? identity.noTokenId,
+    conditionId: identity.conditionId ?? venue.conditionId,
   };
 }
 
@@ -100,8 +103,8 @@ async function loadGammaEventBySlug(
 }
 
 /**
- * Adjacent's public market list often omits Polymarket volume, OI, and BBO.
- * Fill those from Gamma by event slug so search rows match the browse catalog.
+ * Adjacent search is identity only. Polymarket volume, OI, BBO, and close
+ * come from Gamma by event slug, not Adjacent's public market list.
  */
 export async function overlayGammaStatsOnPolymarketSearch(
   markets: PredictionMarketSummary[],
@@ -111,7 +114,7 @@ export async function overlayGammaStatsOnPolymarketSearch(
   const slugs: string[] = [];
   const seen = new Set<string>();
   for (const market of markets) {
-    if (!needsGammaStats(market)) continue;
+    if (market.venue !== "polymarket") continue;
     const slug = polymarketEventSlugForSummary(market);
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);
@@ -134,17 +137,17 @@ export async function overlayGammaStatsOnPolymarketSearch(
   if (eventsBySlug.size === 0) return markets;
 
   return markets.map((market) => {
-    if (!needsGammaStats(market)) return market;
+    if (market.venue !== "polymarket") return market;
     const slug = polymarketEventSlugForSummary(market);
     const event = (slug ? eventsBySlug.get(slug) : undefined)
       ?? (market.eventId ? eventsBySlug.get(market.eventId) : undefined);
     if (!event) return market;
     const gammaMarket = matchGammaMarket(event, market);
     if (!gammaMarket) return market;
-    const normalized = normalizePolymarketMarket(
+    const venue = normalizePolymarketMarket(
       hydratePolymarketMarket(gammaMarket, event),
       { catalog: true, keyOverride: market.key },
     );
-    return normalized ? fillMissingPolymarketStats(market, normalized) : market;
+    return venue ? applyPolymarketVenueStats(market, venue) : market;
   });
 }

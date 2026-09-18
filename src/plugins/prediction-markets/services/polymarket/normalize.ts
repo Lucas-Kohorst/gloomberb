@@ -196,7 +196,7 @@ function flattenPolymarketEvents(
     const rawMarkets = takeTopByMetric(
       event.markets ?? [],
       PREDICTION_CATALOG_MAX_EVENT_MARKETS,
-      (market) => market.volume24hr ?? 0,
+      (market) => polymarketNumber(market.volume24hr, market.volume24hrClob) ?? 0,
     );
     for (const market of rawMarkets) {
       const normalized = normalizePolymarketMarket(

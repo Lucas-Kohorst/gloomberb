@@ -16,6 +16,7 @@ import {
   predictionSearchTokens,
 } from "../search";
 import { overlayGammaStatsOnPolymarketSearch } from "./polymarket/search-hydrate";
+import { overlayKalshiVenueStatsOnSearch } from "./kalshi/search-hydrate";
 
 const ADJACENT_SEARCH_PER_PAGE = 50;
 const ADJACENT_SEARCH_STOP_WORDS = new Set([
@@ -86,13 +87,6 @@ function mapAdjacentSearchMarket(
   }
   if (!marketId) return null;
 
-  const yesPrice = row.probability != null ? row.probability / 100 : null;
-  const yesBid = row.yes_bid != null ? row.yes_bid / 100 : null;
-  const yesAsk = row.yes_ask != null ? row.yes_ask / 100 : null;
-  const noBid = row.no_bid != null ? row.no_bid / 100 : null;
-  const noAsk = row.no_ask != null ? row.no_ask / 100 : null;
-  const lastTradePrice = row.last_trade_price != null ? row.last_trade_price / 100 : yesPrice;
-  const noPrice = yesPrice != null ? Math.max(0, 1 - yesPrice) : null;
   const eventTicker = platform === "kalshi"
     ? kalshiEventTickerFromAdjacent(row, marketId)
     : undefined;
@@ -127,22 +121,24 @@ function mapAdjacentSearchMarket(
         ? `https://kalshi.com/markets/${marketId}`
         : `https://polymarket.com/event/${marketId}`),
     description: "",
-    endsAt: row.end_date ?? row.ends_at ?? null,
-    updatedAt: row.updated_at ?? null,
-    createdAt: row.created_at ?? null,
-    yesPrice,
-    noPrice,
-    yesBid,
-    yesAsk,
-    noBid,
-    noAsk,
-    spread: yesBid != null && yesAsk != null ? yesAsk - yesBid : null,
-    lastTradePrice,
-    volume24h: row.volume_24h ?? null,
+    // Adjacent is discovery. Odds, BBO, volume, OI, and close come from
+    // Kalshi / Gamma after search.
+    endsAt: null,
+    updatedAt: null,
+    createdAt: null,
+    yesPrice: null,
+    noPrice: null,
+    yesBid: null,
+    yesAsk: null,
+    noBid: null,
+    noAsk: null,
+    spread: null,
+    lastTradePrice: null,
+    volume24h: null,
     volume24hUnit: "usd",
-    totalVolume: row.volume ?? null,
+    totalVolume: null,
     totalVolumeUnit: "usd",
-    openInterest: row.open_interest ?? null,
+    openInterest: null,
     openInterestUnit: "usd",
     liquidity: null,
     liquidityUnit: "usd",
@@ -172,16 +168,16 @@ function adjacentMarketToCatalogRow(market: AdjacentMarket): AdjacentKalshiCatal
     probability: (raw.probability as number) ?? market.yes_price,
     yes_price: (raw.probability as number) ?? market.yes_price,
     latest_price: (raw.probability as number) ?? market.yes_price,
-    yes_bid: (raw.yes_bid as number) ?? market.yes_bid,
-    yes_ask: (raw.yes_ask as number) ?? market.yes_ask,
-    no_bid: (raw.no_bid as number) ?? market.no_bid,
-    no_ask: (raw.no_ask as number) ?? market.no_ask,
-    last_trade_price: (raw.last_trade_price as number) ?? market.last_trade_price,
-    volume_24h: (raw.volume_24h as number) ?? market.volume_24h,
-    volume: (raw.volume as number) ?? market.total_volume,
-    open_interest: (raw.open_interest as number) ?? market.open_interest,
-    end_date: (raw.end_date as string) ?? market.ends_at,
-    ends_at: market.ends_at,
+    yes_bid: undefined,
+    yes_ask: undefined,
+    no_bid: undefined,
+    no_ask: undefined,
+    last_trade_price: undefined,
+    volume_24h: undefined,
+    volume: undefined,
+    open_interest: undefined,
+    end_date: undefined,
+    ends_at: undefined,
     link: (raw.link as string) ?? market.url,
     url: market.url,
     event_id: (raw.event_id as string) ?? market.event_id,
@@ -287,7 +283,8 @@ export async function searchAdjacentCatalog(options: {
   const filtered = categoryId === "all"
     ? markets
     : markets.filter((market) => matchesPredictionCategory(market, categoryId));
-  const hydrated = await overlayGammaStatsOnPolymarketSearch(filtered, signal);
+  const withPolymarket = await overlayGammaStatsOnPolymarketSearch(filtered, signal);
+  const hydrated = await overlayKalshiVenueStatsOnSearch(withPolymarket, signal);
 
   return {
     markets: hydrated,
