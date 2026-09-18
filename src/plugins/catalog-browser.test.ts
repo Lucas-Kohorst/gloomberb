@@ -25,12 +25,10 @@ describe("browser plugin catalog", () => {
     ]) {
       expect(ids).not.toContain(forbidden);
     }
-    expect(ids).toEqual(expect.arrayContaining([
-      "congress-trades",
-      "federal-register",
-      "ofac-sanctions",
-      "usaspending",
-    ]));
+    expect(ids).toContain("congress-trades");
+    expect(ids).not.toContain("federal-register");
+    expect(ids).not.toContain("ofac-sanctions");
+    expect(ids).not.toContain("usaspending");
   });
 
   test("keeps every public pane handoff restorable in the hosted browser", () => {

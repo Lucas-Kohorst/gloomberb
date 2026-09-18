@@ -32,23 +32,22 @@ Plugins are installed to `~/.gloomberb/plugins/`.
 
 ### External plugin monorepo
 
-The extracted long-tail data, research, and broker plugins live in
+The extracted data, research, and broker plugins live in
 the companion [`gloomberb-plugins`](https://github.com/Lucas-Kohorst/gloomberb-plugins)
 monorepo. Install the monorepo once and the loader discovers each package under
-`plugins/`. First-party datasets (VoteHub polls, congress trades, Federal
-Register, OFAC, USAspending, NASA FIRMS, USGS, crt.sh, Prediction Markets)
-ship in the app catalogs — do not keep a copy under `~/.gloomberb/plugins`.
+`plugins/`. Prediction Markets and Congress Trades (`CG`) are native in this
+app; do not keep a copy under `~/.gloomberb/plugins`.
 
 ```bash
 gloomberb install Lucas-Kohorst/gloomberb-plugins
 ```
 
-A clean fork install already loads those first-party plugins. The monorepo is
-the remaining long tail:
+The monorepo currently contains:
 
-- Data and research: DefiLlama, OpenSky, space weather, traffic, satellite
-  imagery, and country economics.
-- Market data: weather.
+- Data and research: DefiLlama, OpenSky, NASA FIRMS, USGS earthquakes, space
+  weather, Federal Register, OFAC sanctions, crt.sh, USAspending, traffic,
+  satellite imagery, and country economics.
+- Market data: polls and weather.
 - Broker adapters: Public, Robinhood, and SimpleFin.
 
 Each package exports one default `GloomPlugin` and declares `gloomberb` and

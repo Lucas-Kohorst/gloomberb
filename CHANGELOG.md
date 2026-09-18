@@ -1,11 +1,10 @@
 # Changelog
 
-## Unreleased — First-party polls, congress, FR, OFAC, spending
+## Unreleased — First-party Congress Trades
 
-A clean fork install no longer drops VoteHub polls, House PTR congress trades, Federal Register, OFAC sanctions, or USAspending. Those plugins still lived in-tree but were missing from `catalog-ui`, so they only appeared after extracting `gloomberb-plugins`. They now load with the first-party catalogs (hosted included). Weather and the rest of the long-tail pack stay external.
+A clean fork install no longer drops House PTR congress trades. The pane still lived in-tree but was missing from `catalog-ui`, so it only appeared after extracting `gloomberb-plugins`. `CG` now loads with the first-party catalogs (hosted included). Polls, Federal Register, OFAC, and USAspending stay extracted / in-tree ghosts.
 
-- Pane prefixes: `POLL`, `CG`, `FR`, `OFAC`, `USA`. Each registers a Connections source in `setup()` and reports traffic on the real fetch. VoteHub still folds onto the Adjacent Cloud row.
-- Hosted VoteHub calls `/api/data/votehub/polls` instead of the VoteHub origin (CORS). An extracted copy with the same plugin id is ignored.
+- Prefix `CG`, Connections source in `setup()`, traffic on the real fetch. An extracted copy with the same plugin id is ignored.
 
 ## Unreleased — PEVT was invisible, then empty
 

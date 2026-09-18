@@ -8,11 +8,11 @@ describe("uiBuiltinPlugins", () => {
     const ids = uiBuiltinPlugins.map((plugin) => plugin.id);
     expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
     expect(ids).toContain("news");
-    expect(ids).toContain("polls");
     expect(ids).toContain("congress-trades");
-    expect(ids).toContain("federal-register");
-    expect(ids).toContain("ofac-sanctions");
-    expect(ids).toContain("usaspending");
+    expect(ids).not.toContain("polls");
+    expect(ids).not.toContain("federal-register");
+    expect(ids).not.toContain("ofac-sanctions");
+    expect(ids).not.toContain("usaspending");
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -23,14 +23,10 @@ describe("uiBuiltinPlugins", () => {
     expect(getRendererPlugins().map((plugin) => plugin.id)).toContain("prediction-markets");
   });
 
-  test("ignores extracted copies of first-party datasets so the in-repo pane wins", () => {
+  test("ignores an extracted congress-trades copy so the in-repo pane wins", () => {
     const firstParty = [
       { id: "prediction-markets", name: "Prediction Markets" },
-      { id: "polls", name: "Polls" },
       { id: "congress-trades", name: "Congress Trades" },
-      { id: "federal-register", name: "Federal Register" },
-      { id: "ofac-sanctions", name: "OFAC Sanctions" },
-      { id: "usaspending", name: "USAspending" },
     ] as const;
     const plugins = getRendererPlugins(firstParty.map((plugin) => ({
       plugin: { id: plugin.id, name: `Stale ${plugin.id}`, version: "0.0.1" } as GloomPlugin,

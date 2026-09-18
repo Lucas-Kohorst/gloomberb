@@ -21,7 +21,6 @@ import { adjacentPlugin } from "./builtin/adjacent";
 import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 import { notificationCenterPlugin } from "./builtin/notification-center";
-import { pollsPlugin } from "./builtin/polls";
 import { predictionMarketsPlugin } from "./prediction-markets";
 
 /**
@@ -29,14 +28,13 @@ import { predictionMarketsPlugin } from "./prediction-markets";
  * {@link getRendererBuiltinPlugins}, plus TUI/Electrobun via
  * {@link nativeUiPlugins}).
  *
- * Public/keyless datasets named in AGENTS.md (VoteHub polls, congress trades,
- * Federal Register, OFAC, USAspending) live here so a clean fork install
- * loads them without `gloomberb-plugins`. An extracted copy with the same id
- * is ignored — first-party wins, same as Prediction Markets.
+ * Congress Trades (`CG`) is first-party so a clean fork install loads House PTR
+ * without `gloomberb-plugins`. An extracted copy with the same id is ignored —
+ * first-party wins, same as Prediction Markets.
  *
- * Remaining long-tail packs (weather, World Bank, OpenSky, traffic, satellite,
- * space weather) stay external. Prediction Markets is native TUI/Electrobun
- * only: keep it out of this hosted-web list.
+ * VoteHub polls, Federal Register, OFAC, USAspending, weather, and the rest of
+ * the long-tail pack stay in-tree ghosts / extracted. Prediction Markets is
+ * native TUI/Electrobun only: keep it out of this hosted-web list.
  */
 export const uiBuiltinPlugins: GloomPlugin[] = [
   ...researchDataPlugins,
@@ -51,7 +49,6 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   applicationPlugin,
   newsPlugin,
   adjacentPlugin,
-  pollsPlugin,
   notesPlugin,
   aiPlugin,
   marketOverviewPlugin,

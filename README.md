@@ -37,7 +37,7 @@ The desktop app and TUI share the full command language and plugin system. The b
 
 [term.gloom.sh](https://term.gloom.sh) requires a free Gloom Cloud account. The workspace loads behind a sign-in panel that cannot be dismissed, and a session opens it; configuration, tickers, layouts, session state, and plugin state are stored in the browser. Free accounts receive rate-limited, 15-minute-delayed Gloom Cloud market data and read-only chat until the email is verified; Pro accounts receive realtime market data. Public share pages stay open to everyone with no account. Cloud REST and WebSocket traffic uses the same-origin `/api` path, which the Worker forwards only to `https://api.gloom.sh`; it is not an arbitrary network proxy.
 
-The browser build intentionally omits brokers and native integrations, filesystem notes, local AI, external plugins, updater/debug tools, application menus, native window controls, pop-out native windows, and native context menus. Modules that still depend on desktop-only or CORS-blocked feeds are also absent for now: RSS/Substack, prediction markets, market halts/heatmap/movers, dividend/ownership/SEC panes, earnings/IPO, and TV. Public/keyless datasets (VoteHub polls, congress trades, Federal Register, OFAC, USAspending) ship in the hosted catalog. Public shares open under `/s/:id` in a separate slim bundle. Share creation and owner deletion use the signed-in Gloom Cloud session through the same fixed API path; public reads require no account.
+The browser build intentionally omits brokers and native integrations, filesystem notes, local AI, external plugins, updater/debug tools, application menus, native window controls, pop-out native windows, and native context menus. Modules that still depend on desktop-only or CORS-blocked feeds are also absent for now: RSS/Substack, prediction markets and polls, market halts/heatmap/movers, dividend/ownership/SEC panes, earnings/IPO, and TV. Public shares open under `/s/:id` in a separate slim bundle. Share creation and owner deletion use the signed-in Gloom Cloud session through the same fixed API path; public reads require no account.
 
 Local browser development:
 
@@ -302,10 +302,6 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `HILO` | Session new highs and new lows with 30s/1m/5m momentum |
 | `FLOW` | Unusual options activity: sweeps, blocks, and large premium |
 | `PM <query>` | Polymarket and Kalshi prediction data |
-| `POLL` | VoteHub political polls |
-| `FR` | Federal Register documents |
-| `OFAC` | OFAC / Consolidated Screening List |
-| `USA` | USAspending federal contract awards |
 | `N` | News feed |
 | `CN <ticker>` | Ticker news |
 | `NI` | Sector news |
@@ -370,7 +366,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `TH <theme>` | Change color theme |
 | `FONT+` / `FONT-` | Increase or decrease desktop font size |
 | `CONN` | Connection health |
-| `POLL` | VoteHub political polls |
+| `POLL` | Prediction-market polls |
 | `UPGRADE` | Account upgrade |
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |

@@ -24,12 +24,13 @@ describe("desktop backend plugin catalog", () => {
     const adjacent = plugins.find((plugin) => plugin.id === "adjacent");
     const cloud = plugins.find((plugin) => plugin.id === "gloomberb-cloud");
 
-    // Polls is first-party (VoteHub). Weather stays in gloomberb-plugins.
-    expect(plugins.some((plugin) => plugin.id === "polls")).toBe(true);
+    // Congress Trades is first-party. Polls, FR, OFAC, USAspending, and weather
+    // stay extracted / in-tree ghosts.
     expect(plugins.some((plugin) => plugin.id === "congress-trades")).toBe(true);
-    expect(plugins.some((plugin) => plugin.id === "federal-register")).toBe(true);
-    expect(plugins.some((plugin) => plugin.id === "ofac-sanctions")).toBe(true);
-    expect(plugins.some((plugin) => plugin.id === "usaspending")).toBe(true);
+    expect(plugins.some((plugin) => plugin.id === "polls")).toBe(false);
+    expect(plugins.some((plugin) => plugin.id === "federal-register")).toBe(false);
+    expect(plugins.some((plugin) => plugin.id === "ofac-sanctions")).toBe(false);
+    expect(plugins.some((plugin) => plugin.id === "usaspending")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "llm-stats")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "weather")).toBe(false);
     expect(adjacent?.name).toBe("Adjacent Cloud");
