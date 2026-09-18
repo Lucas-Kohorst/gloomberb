@@ -148,7 +148,8 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 | `PF` | Portfolios and watchlists |
 | `KELLY AAPL` | Position sizing |
 | `HELP` | Full in-app shortcut list |
-| `KEYS` | Browse and rebind global and plugin shortcuts |
+| `KEYS` | Manage BYOK API keys |
+| `BIND` / `KB` | Browse and rebind global and plugin shortcuts |
 
 ## What It Does
 
@@ -345,6 +346,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `AI <prompt>` | AI screener |
 | `AGENT` | Local AI research workspace |
 | `CHAT [channel]` | Gloom Cloud chat |
+| `TEAM [team \| new \| invite \| members \| channels \| settings]` | Teams: members, invites, channels, settings |
 | `DM @user [@user...]` | Open or start a direct or group chat |
 | `ACM` | Gloom Cloud account settings |
 | `NOTE` | Notes |
@@ -352,7 +354,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `BR` | Broker connections |
 | `CHG` | Changelog |
 | `HELP` | Open shortcut and layout help |
-| `KEYS` | Browse and rebind global and plugin keyboard shortcuts |
+| `KEYS` | Manage BYOK API keys |
+| `BIND` / `KB` | Browse and rebind global and plugin keyboard shortcuts |
 | `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |
 | `IMP` | Paste ticker symbols or `symbol, shares, average cost` portfolio rows into the active collection |
 | `RW` / `RP <ticker>` | Remove a ticker from the active watchlist or portfolio |

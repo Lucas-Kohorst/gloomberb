@@ -40,7 +40,12 @@ test("LLAMA identities survive saved chart specs and distinguish protocol TVL fr
 
 test("hosted charts load public data and report Connection traffic without capability invocation", async () => {
   const health = new ConnectionHealthRegistry();
-  await connectionsModule.setup?.({ connectionHealth: health, registerCapability: () => {} } as never);
+  await connectionsModule.setup?.({
+    connectionHealth: health,
+    registerCapability: () => {},
+    registerCommandBarSearchProvider: () => {},
+    createPaneFromTemplate: () => {},
+  } as never);
   await defillamaModule.setup?.({
     pluginId: "ticker-research",
     registerCapability: () => {},

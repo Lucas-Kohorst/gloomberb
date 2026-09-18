@@ -3,6 +3,7 @@ import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import type { PluginModule } from "../plugin-module";
 import { ConnectionsPane } from "./pane";
 import { bridgeRegisteredConnectionSources } from "./health-bridge";
+import { createConnectionSourceSearchProvider } from "./command-bar-search";
 
 export const CONNECTION_HEALTH_CAPABILITY_ID = "application.connection-health";
 
@@ -57,6 +58,7 @@ export const connectionsModule: PluginModule = {
     disposeHealthBridge?.();
     disposeHealthBridge = bridgeRegisteredConnectionSources(ctx.connectionHealth);
     ctx.registerCapability(connectionHealthCapability(ctx.connectionHealth));
+    ctx.registerCommandBarSearchProvider(createConnectionSourceSearchProvider(ctx));
   },
   dispose() {
     disposeHealthBridge?.();

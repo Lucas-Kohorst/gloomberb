@@ -1,4 +1,8 @@
-import type { AssistCommandDescriptor } from "../../../api-client";
+import {
+  ASSIST_COMMAND_INVENTORY_LIMIT,
+  ASSIST_COMMAND_REQUEST_LIMIT,
+  type AssistCommandDescriptor,
+} from "../../../api-client/types";
 import type { CommandDef, PaneTemplateDef } from "../../../types/plugin";
 import type { Command } from "../commands/registry";
 import { getPaneTemplateDisplayLabel } from "../pane-templates/items";
@@ -9,8 +13,7 @@ import {
   type RootShortcutArgKind,
 } from "../routes/root/shortcuts";
 
-/** Server cap on `/assist/command` inventories. */
-const ASSIST_INVENTORY_LIMIT = 150;
+export { ASSIST_COMMAND_INVENTORY_LIMIT, ASSIST_COMMAND_REQUEST_LIMIT };
 
 interface AssistInventorySource {
   commands: readonly Command[];
@@ -65,7 +68,7 @@ export function buildAssistCommandInventory({
   pluginCommands,
   paneTemplates,
   getPluginNameForCommand,
-  limit = ASSIST_INVENTORY_LIMIT,
+  limit = ASSIST_COMMAND_INVENTORY_LIMIT,
 }: AssistInventorySource): AssistCommandDescriptor[] {
   const descriptors: Array<AssistCommandDescriptor | null> = [
     ...commands.map((command) => describe(
@@ -102,6 +105,60 @@ export function buildAssistCommandInventory({
     if (inventory.length >= limit) break;
   }
   return inventory;
+}
+
+function assistDescriptorHaystack(descriptor: AssistCommandDescriptor): string {
+  return `${descriptor.prefix} ${descriptor.name} ${descriptor.description ?? ""}`.toLowerCase();
+}
+
+function scoreAssistDescriptor(descriptor: AssistCommandDescriptor, query: string): number {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return 0;
+  const prefix = descriptor.prefix.toLowerCase();
+  const haystack = assistDescriptorHaystack(descriptor);
+  let score = 0;
+  if (prefix === normalized) score += 1000;
+  else if (normalized.startsWith(prefix) || prefix.startsWith(normalized.split(/\s+/)[0] ?? "")) score += 200;
+  for (const token of normalized.split(/[^a-z0-9]+/).filter((part) => part.length >= 2)) {
+    if (prefix === token) score += 80;
+    else if (prefix.includes(token)) score += 40;
+    if (haystack.includes(token)) score += 12 + token.length;
+  }
+  return score;
+}
+
+/**
+ * Pages the in-memory Assist catalog down to the `/assist/command` payload
+ * cap. Matching prefixes stay even when they were registered last; unmatched
+ * descriptors fill the remainder in catalog order.
+ */
+export function selectAssistInventoryForQuery(
+  inventory: readonly AssistCommandDescriptor[],
+  query: string,
+  limit = ASSIST_COMMAND_REQUEST_LIMIT,
+): AssistCommandDescriptor[] {
+  if (inventory.length <= limit) return [...inventory];
+  const scored = inventory.map((descriptor, index) => ({
+    descriptor,
+    index,
+    score: scoreAssistDescriptor(descriptor, query),
+  }));
+  const matched = scored
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const selected = new Set<string>();
+  const paged: AssistCommandDescriptor[] = [];
+  for (const entry of matched) {
+    if (paged.length >= limit) break;
+    selected.add(entry.descriptor.prefix);
+    paged.push(entry.descriptor);
+  }
+  for (const descriptor of inventory) {
+    if (paged.length >= limit) break;
+    if (selected.has(descriptor.prefix)) continue;
+    paged.push(descriptor);
+  }
+  return paged;
 }
 
 const NEWS_FEED_PREFIXES = new Set(["ART", "RSS"]);

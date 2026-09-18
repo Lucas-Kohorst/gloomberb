@@ -195,6 +195,18 @@ export interface CloudPricing {
   yearly: CloudPricingTier;
 }
 
+/**
+ * Local Assist catalog cap. Fail CI when unique prefixes exceed this rather
+ * than silently dropping new panes. Deep rows belong in search providers, not
+ * this list.
+ */
+export const ASSIST_COMMAND_INVENTORY_LIMIT = 256;
+/**
+ * `/assist/command` payload cap. The client pages the in-memory inventory down
+ * to this size by query so a 422 is never sent.
+ */
+export const ASSIST_COMMAND_REQUEST_LIMIT = 150;
+
 /** One command-bar prefix described for `/assist/command`. */
 export interface AssistCommandDescriptor {
   prefix: string;

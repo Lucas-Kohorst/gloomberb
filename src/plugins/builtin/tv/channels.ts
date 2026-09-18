@@ -75,3 +75,32 @@ export function getTvChannelStreams(tabId: TvChannelId): TvChannel[] {
   const streams = TV_CHANNELS.filter((channel) => channelParentId(channel) === resolvedTabId);
   return streams.length > 0 ? [tab, ...streams] : [tab];
 }
+
+const CHANNEL_ALIASES: Record<string, readonly string[]> = {
+  kramer: ["cramer", "mad money", "jim cramer"],
+  cnbc: ["cnbc tv"],
+  "yahoo-finance": ["yahoo"],
+  threadguy: ["notthreadguy"],
+};
+
+function channelHaystack(channel: TvChannel): string {
+  const aliases = CHANNEL_ALIASES[channel.id] ?? [];
+  return [channel.id, channel.name, ...aliases].join(" ").toLowerCase();
+}
+
+/** Command-bar / TV prefix matches against channel id, name, and aliases. */
+export function matchTvChannels(query: string): TvChannel[] {
+  const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 2);
+  if (tokens.length === 0) return [];
+  return TV_CHANNELS.filter((channel) => {
+    const haystack = channelHaystack(channel);
+    return tokens.every((token) => haystack.includes(token));
+  });
+}
+
+export function findTvChannel(query: string): TvChannel | undefined {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return undefined;
+  return TV_CHANNELS.find((channel) => channel.id === needle || channel.name.toLowerCase() === needle)
+    ?? matchTvChannels(needle)[0];
+}

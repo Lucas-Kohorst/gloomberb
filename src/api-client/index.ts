@@ -25,6 +25,7 @@ import type {
   CloudTweetSearchParams,
 } from "./paths";
 import { withDeadline } from "../utils/async-deadline";
+import { ASSIST_COMMAND_REQUEST_LIMIT } from "./types";
 import type {
   AssistCommandDescriptor,
   AssistCommandResponse,
@@ -115,11 +116,10 @@ export { emptyChatPresence, mergeChatPresence, normalizeChatPresence } from "./n
 export { NoteConflictError } from "./notes";
 export { TeamRevisionConflictError } from "./views";
 export { LayoutRevisionConflictError } from "../layout-marketplace/cloud";
-export { TEAM_ACCENT_COLORS } from "./types";
+export { TEAM_ACCENT_COLORS, ASSIST_COMMAND_INVENTORY_LIMIT, ASSIST_COMMAND_REQUEST_LIMIT } from "./types";
 
 /** Server-side caps for `/assist/command`; enforced here so a 422 is never sent. */
 const ASSIST_QUERY_MAX_LENGTH = 200;
-const ASSIST_COMMAND_LIMIT = 150;
 const ASSIST_REQUEST_TIMEOUT_MS = 6_000;
 
 class GloomApiClient {
@@ -636,7 +636,7 @@ class GloomApiClient {
         method: "POST",
         body: JSON.stringify({
           query: query.trim().slice(0, ASSIST_QUERY_MAX_LENGTH),
-          commands: commands.slice(0, ASSIST_COMMAND_LIMIT),
+          commands: commands.slice(0, ASSIST_COMMAND_REQUEST_LIMIT),
         }),
         signal: controller.signal,
       });

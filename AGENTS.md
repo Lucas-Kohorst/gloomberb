@@ -41,6 +41,7 @@ Hosted / logged-in persist:
 
 Command-bar AI:
 - Assist only maps to prefixes. New panes need shortcuts or they fall out of the inventory. Article/headline queries must also run a local news/Adjacent lookup and offer an Open-article row.
+- `KEYS` is BYOK API keys; `BIND` / `KB` is keybindings. Deep pane/tab rows use `registerCommandBarSearchProvider` / `registerDocumentSearchProvider`, not extra Assist prefixes.
 
 Pane footers:
 - Status that can change (loading, error, live/delayed, stale, auth) plus action hints only. No fixed labels, row counts, or generic keyboard hints.

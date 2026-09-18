@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import type { CommandDef, PaneTemplateDef } from "../../../types/plugin";
+import type { CommandDef, GloomPluginContext, PaneTemplateDef } from "../../../types/plugin";
 import type { Command } from "../commands/registry";
+import { commands as builtinCommands } from "../commands/registry";
 import { getLoadablePlugins } from "../../../plugins/catalog";
-import { applyChartSeriesContextToAssistInventory, applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "./inventory";
+import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../../../plugins/builtin/cloud-tweets/registration";
+import {
+  ASSIST_COMMAND_INVENTORY_LIMIT,
+  ASSIST_COMMAND_REQUEST_LIMIT,
+  applyChartSeriesContextToAssistInventory,
+  applyNewsFeedContextToAssistInventory,
+  buildAssistCommandInventory,
+  selectAssistInventoryForQuery,
+} from "./inventory";
 
 function command(overrides: Partial<Command> & { prefix: string }): Command {
   return {
@@ -80,7 +89,7 @@ describe("buildAssistCommandInventory", () => {
     ]);
   });
 
-  test("caps the inventory at the server limit", () => {
+  test("caps the in-memory inventory at the catalog limit", () => {
     const inventory = buildAssistCommandInventory({
       commands: Array.from({ length: 40 }, (_, index) => command({ prefix: `C${index}` })),
       pluginCommands: [],
@@ -90,6 +99,22 @@ describe("buildAssistCommandInventory", () => {
 
     expect(inventory).toHaveLength(25);
     expect(inventory.at(-1)?.prefix).toBe("C24");
+  });
+
+  test("pages a late-registered prefix into the server payload when unique prefixes exceed the request cap", () => {
+    const inventory = Array.from({ length: ASSIST_COMMAND_REQUEST_LIMIT + 40 }, (_, index) => ({
+      prefix: `X${index}`,
+      name: `Pane ${index}`,
+    }));
+    inventory[inventory.length - 1] = {
+      prefix: "BIND",
+      name: "Key Bindings",
+      description: "Browse and rebind global and plugin keyboard shortcuts.",
+    };
+    const paged = selectAssistInventoryForQuery(inventory, "key bindings");
+    expect(paged).toHaveLength(ASSIST_COMMAND_REQUEST_LIMIT);
+    expect(paged.some((entry) => entry.prefix === "BIND")).toBe(true);
+    expect(paged.some((entry) => entry.prefix === "X0")).toBe(true);
   });
 
   test("appends enabled feed names onto article and RSS descriptors", () => {
@@ -242,6 +267,76 @@ describe("assist catalog coverage", () => {
     for (const template of prefixless) {
       expect(template.canCreate).toBeTypeOf("function");
     }
+  });
+
+  test("splits KEYS (BYOK) from BIND/KB (keybindings) and prefixes Team and X Feed", () => {
+    const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
+    const byok = paneTemplates.find((template) => template.id === "byok-settings-new");
+    const keybindings = paneTemplates.find((template) => template.id === "keybindings-pane");
+    const team = paneTemplates.find((template) => template.id === "team-pane");
+    expect(byok?.shortcut?.prefix).toBe("KEYS");
+    expect(byok?.shortcut?.aliases).toContain("BYOK");
+    expect(byok?.description.toLowerCase()).toContain("api");
+    expect(keybindings?.shortcut?.prefix).toBe("BIND");
+    expect(keybindings?.shortcut?.aliases).toContain("KB");
+    expect(keybindings?.description.toLowerCase()).toContain("shortcut");
+    expect(team?.shortcut?.prefix).toBe("TEAM");
+    expect(team?.description.trim().length).toBeGreaterThan(0);
+
+    const twitterTemplates: PaneTemplateDef[] = [];
+    try {
+      registerTwitterFeedFeature({
+        registerTickerResearchTab() {},
+        registerPane() {},
+        registerCommand() {},
+        registerCapability() {},
+        registerPaneTemplate(template: PaneTemplateDef) {
+          twitterTemplates.push(template);
+        },
+      } as unknown as GloomPluginContext);
+      const feed = twitterTemplates.find((template) => template.id === "twitter-feed-pane");
+      expect(feed?.shortcut?.prefix).toBe("TWIT");
+      expect(feed?.description.trim().length).toBeGreaterThan(0);
+    } finally {
+      disposeTwitterFeedFeature();
+    }
+
+    const inventory = buildAssistCommandInventory({
+      commands: [],
+      pluginCommands: [{
+        id: "byok-manage-keys",
+        label: "Manage API Keys",
+        description: "Open BYOK settings to add, edit, or test API keys.",
+        keywords: ["byok", "api"],
+        category: "config",
+        shortcut: "KEYS",
+        execute: () => {},
+      }],
+      paneTemplates,
+    });
+    expect(inventory.find((entry) => entry.prefix === "KEYS")?.name).toBe("Manage API Keys");
+    expect(inventory.find((entry) => entry.prefix === "BIND")?.name).toBe("Key Bindings");
+    expect(inventory.find((entry) => entry.prefix === "TEAM")?.name).toBe("Team");
+  });
+
+  test("fails when unique catalog prefixes exceed the Assist inventory cap", () => {
+    const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
+    const unique = buildAssistCommandInventory({
+      commands: builtinCommands,
+      pluginCommands: [],
+      paneTemplates,
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    const capped = buildAssistCommandInventory({
+      commands: builtinCommands,
+      pluginCommands: [],
+      paneTemplates,
+    });
+    expect(
+      unique.length,
+      `Assist unique prefixes (${unique.length}) exceed ASSIST_COMMAND_INVENTORY_LIMIT (${ASSIST_COMMAND_INVENTORY_LIMIT}). Raise the cap or keep deep rows in search providers.`,
+    ).toBeLessThanOrEqual(ASSIST_COMMAND_INVENTORY_LIMIT);
+    expect(capped.map((entry) => entry.prefix)).toEqual(unique.map((entry) => entry.prefix));
   });
 
   test("keeps both options calculators in the assist inventory with distinct prefixes", () => {

@@ -187,7 +187,7 @@ export const keybindingsModule: PluginModule = {
     paneId: "keybindings",
     label: t("Key Bindings"),
     description: t("Browse and rebind global and plugin keyboard shortcuts."),
-    keywords: ["keys", "shortcuts", "keyboard", "rebind"],
-    shortcut: { prefix: "KEYS" },
+    keywords: ["bind", "keybindings", "shortcuts", "keyboard", "rebind", "hotkeys"],
+    shortcut: { prefix: "BIND", aliases: ["KB"] },
   }],
 };

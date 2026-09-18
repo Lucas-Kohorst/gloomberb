@@ -13,7 +13,7 @@ export function createByokManageCommand(showPane: (paneId: string) => void): Com
     keywords: ["api", "key", "byok", "keys", "secret", "credential", "settings"],
     shortcut: "KEYS",
     category: "config",
-    description: "Open the BYOK settings pane to add, edit, or test API keys.",
+    description: "Open BYOK settings to add, edit, or test API keys.",
     execute() {
       showPane(BYOK_PANE_ID);
     },

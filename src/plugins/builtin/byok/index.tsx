@@ -26,9 +26,9 @@ const byokPaneTemplate: PaneTemplateDef = {
   id: BYOK_PANE_TEMPLATE_ID,
   paneId: BYOK_PANE_ID,
   label: "API Keys",
-  description: "Open the BYOK settings pane to manage API keys",
+  description: "Open BYOK settings to add, edit, or test API keys.",
   keywords: ["byok", "api", "key", "keys", "secret", "credential", "settings"],
-  shortcut: { prefix: "KEYS" },
+  shortcut: { prefix: "KEYS", aliases: ["BYOK"] },
   createInstance: () => ({
     placement: "floating",
     title: "API Keys",

@@ -79,6 +79,14 @@ describe("pane design conformance", () => {
         `${template.id}: pane template needs a command-bar shortcut prefix`,
       ).toBe(true);
     }
+    const team = templates.find((template) => template.id === "team-pane");
+    expect(team?.shortcut?.prefix).toBe("TEAM");
+    const keybindings = templates.find((template) => template.id === "keybindings-pane");
+    expect(keybindings?.shortcut?.prefix).toBe("BIND");
+    expect(keybindings?.shortcut?.aliases).toContain("KB");
+    const byok = templates.find((template) => template.id === "byok-settings-new");
+    expect(byok?.shortcut?.prefix).toBe("KEYS");
+    expect(byok?.shortcut?.aliases).toContain("BYOK");
   });
 
   test("gates every builtin pane in the catalog", () => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Assist KEYS vs BIND, inventory cap
+
+Assist taught `KEYS` as API keys while README called it keybindings, and the 150-prefix catalog dropped new panes silently.
+
+- `KEYS` / `BYOK` open BYOK API key settings. `BIND` / `KB` open Key Bindings.
+- Team and X Feed pane templates now ship `TEAM` and `TWIT` prefixes so Assist can see them.
+- Assist inventory cap is 256 unique prefixes; CI fails when the catalog exceeds it. The `/assist/command` payload still pages to 150 by query so late-registered prefixes are not dropped by registration order.
+- TV channels and Connections sources are command-bar search providers, not extra Assist prefixes. `ART` stays headlines plus Open-article.
+
 ## Unreleased — First-party Congress Trades
 
 A clean fork install no longer drops House PTR congress trades. The pane still lived in-tree but was missing from `catalog-ui`, so it only appeared after extracting `gloomberb-plugins`. `CG` now loads with the first-party catalogs (hosted included). Polls, Federal Register, OFAC, and USAspending stay extracted / in-tree ghosts.

@@ -4,10 +4,10 @@ import {
   DataTableView,
   EmptyState,
   Spinner,
-  usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
+import { usePaneStatusFooter } from "../shared/pane-footer";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
@@ -79,12 +79,12 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
     }
   }, { enabled: focused });
 
-  usePaneFooter("byok-api-viewer", () => ({
-    info: [
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-  }), [error, status]);
+  usePaneStatusFooter({
+    registrationId: "byok-api-viewer",
+    loading: status === "loading",
+    error,
+    focused,
+  });
 
   if (!entry && status !== "loading") {
     return (

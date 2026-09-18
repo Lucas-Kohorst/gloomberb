@@ -64,6 +64,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     label: "X Feed",
     description: "Open an X advanced-search feed.",
     keywords: ["twitter", "x", "tweet", "tweets", "feed", "social"],
+    shortcut: { prefix: "TWIT", argPlaceholder: "query", argKind: "text", argOptional: true },
     createInstance: (_context, options) => {
       const shared = record(options?.shareData) ? options.shareData : null;
       const query = typeof shared?.query === "string"

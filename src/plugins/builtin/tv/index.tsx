@@ -1,6 +1,7 @@
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
-import { YOUTUBE_CONNECTION_ID } from "./channels";
+import { YOUTUBE_CONNECTION_ID, findTvChannel } from "./channels";
+import { createTvChannelSearchProvider } from "./command-bar-search";
 import { TvPane } from "./pane";
 
 let disposeTvConnection: (() => void) | null = null;
@@ -51,9 +52,18 @@ export const tvModule: PluginModule = {
       "notthreadguy",
       "macro",
     ],
-    shortcut: { prefix: "TV" },
+    shortcut: { prefix: "TV", argPlaceholder: "channel", argKind: "text", argOptional: true },
+    createInstance: (_context, options) => {
+      const channel = findTvChannel(options?.arg ?? "");
+      if (!channel) return { placement: "floating", title: "TV" };
+      return {
+        placement: "floating",
+        title: `TV: ${channel.name}`,
+        settings: { channelId: channel.id },
+      };
+    },
   }],
-  setup() {
+  setup(ctx) {
     disposeTvConnection = registerConnectionSource({
       id: YOUTUBE_CONNECTION_ID,
       name: "YouTube TV",
@@ -61,6 +71,7 @@ export const tvModule: PluginModule = {
       pluginId: "macro",
       priority: 500,
     });
+    ctx.registerCommandBarSearchProvider(createTvChannelSearchProvider(ctx));
   },
   dispose() {
     disposeTvConnection?.();
