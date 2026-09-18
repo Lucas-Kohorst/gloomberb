@@ -82,7 +82,10 @@ export function usePredictionCatalogData({
   const [loadingMore, setLoadingMore] = useState(false);
   const [kalshiFeed, setKalshiFeed] = useState<"live" | "delayed">("live");
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
+  const searchGenerationRef = useRef(0);
 
+  const liveSearchQuery = normalizePredictionSearchQuery(searchQuery);
+  const searching = liveSearchQuery.length > 0;
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
   const polymarketBrowseKey = useMemo(
     () => buildPredictionCatalogCacheKey("polymarket", categoryId, "", browseTab),
@@ -244,29 +247,27 @@ export function usePredictionCatalogData({
     [activeCatalogSources],
   );
   const allMarkets = useMemo(() => {
-    if (normalizedSearchQuery) {
+    // Adjacent `markets?search=` is the list as soon as the box has a query,
+    // including during debounce. Falling back to volume-sorted browse is how
+    // `die` painted Die With A Smile / San Diego and `diesel` went empty.
+    if (searching) {
       const searched: PredictionMarketSummary[] = [];
       if (includePolymarket) searched.push(...polymarketSearch);
       if (includeKalshi) searched.push(...kalshiSearch);
-      // Adjacent is the search index. Once this session has written the search
-      // key — hits or [] — do not fall back to the volume-sorted browse page.
-      // Diesel is missing there, which is why command-bar finds it and the pane
-      // used to show "No markets matched".
-      if (searched.length > 0 || catalogSearchReady) return searched;
+      return searched;
     }
     const merged: PredictionMarketSummary[] = [];
     if (includePolymarket) merged.push(...polymarketBrowse);
     if (includeKalshi) merged.push(...kalshiBrowse);
     return merged;
   }, [
-    catalogSearchReady,
     includeKalshi,
     includePolymarket,
     kalshiBrowse,
     kalshiSearch,
-    normalizedSearchQuery,
     polymarketBrowse,
     polymarketSearch,
+    searching,
   ]);
 
   const loadPolymarket = useCallback(
@@ -397,126 +398,153 @@ export function usePredictionCatalogData({
   // hardcoded intervals nobody can change.
   useEffect(() => {
     if (!includePolymarket) return;
-    if (normalizedSearchQuery) return;
+    if (searching) return;
     void loadPolymarket(polymarketBrowseKey, "", categoryId);
   }, [
     categoryId,
     includePolymarket,
     loadPolymarket,
-    normalizedSearchQuery,
     polymarketBrowseKey,
+    searching,
   ]);
 
-  useAutoRefresh(includePolymarket && !normalizedSearchQuery ? polymarketLoadedAt : null, useCallback(() => {
+  useAutoRefresh(includePolymarket && !searching ? polymarketLoadedAt : null, useCallback(() => {
     void loadPolymarket(polymarketBrowseKey, "", categoryId);
   }, [categoryId, loadPolymarket, polymarketBrowseKey]), pollIntervalMs / 60_000);
 
   useEffect(() => {
     if (!includeKalshi) return;
-    if (normalizedSearchQuery) return;
+    if (searching) return;
     void loadKalshi(kalshiBrowseKey, "", categoryId);
   }, [
     categoryId,
     includeKalshi,
     kalshiBrowseKey,
     loadKalshi,
-    normalizedSearchQuery,
+    searching,
   ]);
 
   const loadAdjacentSearch = useCallback(
     async (
-      venue: PredictionVenue,
-      cacheKey: string,
+      targets: Array<{ venue: PredictionVenue; cacheKey: string }>,
       query: string,
-      signal?: AbortSignal,
+      options?: { generation?: number },
     ) => {
-      setCatalogPending((current) =>
-        updatePredictionPendingCounts(current, cacheKey, 1),
-      );
+      if (targets.length === 0) return;
+      const generation = options?.generation;
+      // All venues: one GET like adjacent.markets?search=diesel (no platform).
+      // A single venue keeps the platform filter.
+      const platformVenue = targets.length === 1 ? targets[0]!.venue : undefined;
+      for (const { cacheKey } of targets) {
+        setCatalogPending((current) =>
+          updatePredictionPendingCounts(current, cacheKey, 1),
+        );
+      }
       try {
         const result = await searchAdjacentCatalog({
           query,
-          venue,
+          venue: platformVenue,
           categoryId,
           page: 1,
-          signal,
         });
-        if (signal?.aborted) return;
-        setCatalogCache((current) =>
-          commitCatalogCache(current, cacheKey, current[cacheKey], result.markets),
-        );
-        setCatalogErrors((current) =>
-          updatePredictionErrorState(current, cacheKey, null),
-        );
-        if (venue === "kalshi") {
+        if (generation != null && generation !== searchGenerationRef.current) return;
+        setCatalogCache((current) => {
+          let next = current;
+          for (const { venue, cacheKey } of targets) {
+            const slice = platformVenue
+              ? result.markets
+              : result.markets.filter((market) => market.venue === venue);
+            next = commitCatalogCache(next, cacheKey, next[cacheKey], slice);
+          }
+          return next;
+        });
+        setCatalogErrors((current) => {
+          let next = current;
+          for (const { cacheKey } of targets) {
+            next = updatePredictionErrorState(next, cacheKey, null);
+          }
+          return next;
+        });
+        if (targets.some((target) => target.venue === "kalshi")) {
           setKalshiNextCursor(result.nextCursor);
         }
-        if (venue === "polymarket") {
+        if (targets.some((target) => target.venue === "polymarket")) {
           setPolymarketNextOffset(null);
         }
       } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
-          return;
-        }
-        setCatalogErrors((current) =>
-          updatePredictionErrorState(
-            current,
-            cacheKey,
-            formatPredictionLoadError(venue, "markets", error),
-          ),
-        );
-        setCatalogCache((current) => seedEmptyCatalogCache(current, cacheKey));
+        if (generation != null && generation !== searchGenerationRef.current) return;
+        setCatalogErrors((current) => {
+          let next = current;
+          for (const { venue, cacheKey } of targets) {
+            next = updatePredictionErrorState(
+              next,
+              cacheKey,
+              formatPredictionLoadError(venue, "markets", error),
+            );
+          }
+          return next;
+        });
+        setCatalogCache((current) => {
+          let next = current;
+          for (const { cacheKey } of targets) {
+            next = seedEmptyCatalogCache(next, cacheKey);
+          }
+          return next;
+        });
       } finally {
-        setCatalogPending((current) =>
-          updatePredictionPendingCounts(current, cacheKey, -1),
-        );
-        if (signal?.aborted) return;
+        for (const { cacheKey } of targets) {
+          setCatalogPending((current) =>
+            updatePredictionPendingCounts(current, cacheKey, -1),
+          );
+        }
+        if (generation != null && generation !== searchGenerationRef.current) return;
         const loadedAt = Date.now();
-        if (venue === "kalshi") setKalshiLoadedAt(loadedAt);
-        if (venue === "polymarket") setPolymarketLoadedAt(loadedAt);
+        if (targets.some((target) => target.venue === "kalshi")) {
+          setKalshiLoadedAt(loadedAt);
+        }
+        if (targets.some((target) => target.venue === "polymarket")) {
+          setPolymarketLoadedAt(loadedAt);
+        }
         setCatalogLastRefreshAt(loadedAt);
       }
     },
     [categoryId],
   );
 
-  useEffect(() => {
-    if (!normalizedSearchQuery) return;
-    const kalshiKey = includeKalshi ? kalshiSearchKey : null;
-    const polymarketKey = includePolymarket ? polymarketSearchKey : null;
-    if (!kalshiKey && !polymarketKey) return;
-    const controller = new AbortController();
-    if (kalshiKey) {
-      void loadAdjacentSearch("kalshi", kalshiKey, normalizedSearchQuery, controller.signal);
+  const adjacentSearchTargets = useCallback(() => {
+    const targets: Array<{ venue: PredictionVenue; cacheKey: string }> = [];
+    if (includeKalshi && kalshiSearchKey) {
+      targets.push({ venue: "kalshi", cacheKey: kalshiSearchKey });
     }
-    if (polymarketKey) {
-      void loadAdjacentSearch(
-        "polymarket",
-        polymarketKey,
-        normalizedSearchQuery,
-        controller.signal,
-      );
+    if (includePolymarket && polymarketSearchKey) {
+      targets.push({ venue: "polymarket", cacheKey: polymarketSearchKey });
     }
-    return () => {
-      controller.abort();
-    };
+    return targets;
   }, [
     includeKalshi,
     includePolymarket,
     kalshiSearchKey,
+    polymarketSearchKey,
+  ]);
+
+  useEffect(() => {
+    if (!normalizedSearchQuery) return;
+    const targets = adjacentSearchTargets();
+    if (targets.length === 0) return;
+    // Do not AbortController the Adjacent GET. Electrobun dedupes in-flight
+    // GETs; aborting poisons the shared promise so command-bar `diesel` hits
+    // never land in the pane, and `finally` skips lastRefreshAt (`updated ~8m`).
+    const generation = ++searchGenerationRef.current;
+    void loadAdjacentSearch(targets, normalizedSearchQuery, { generation });
+  }, [
+    adjacentSearchTargets,
     loadAdjacentSearch,
     normalizedSearchQuery,
-    polymarketSearchKey,
   ]);
 
   const refreshCatalog = useCallback(() => {
     if (normalizedSearchQuery) {
-      if (includePolymarket && polymarketSearchKey) {
-        void loadAdjacentSearch("polymarket", polymarketSearchKey, normalizedSearchQuery);
-      }
-      if (includeKalshi && kalshiSearchKey) {
-        void loadAdjacentSearch("kalshi", kalshiSearchKey, normalizedSearchQuery);
-      }
+      void loadAdjacentSearch(adjacentSearchTargets(), normalizedSearchQuery);
       return;
     }
     if (includePolymarket) {
@@ -537,20 +565,19 @@ export function usePredictionCatalogData({
       })();
     }
   }, [
+    adjacentSearchTargets,
     categoryId,
     includeKalshi,
     includePolymarket,
     kalshiBrowseKey,
-    kalshiSearchKey,
     loadAdjacentSearch,
     loadKalshi,
     loadPolymarket,
     normalizedSearchQuery,
     polymarketBrowseKey,
-    polymarketSearchKey,
   ]);
 
-  useAutoRefresh(includeKalshi && !normalizedSearchQuery ? kalshiLoadedAt : null, useCallback(() => {
+  useAutoRefresh(includeKalshi && !searching ? kalshiLoadedAt : null, useCallback(() => {
     void loadKalshi(kalshiBrowseKey, "", categoryId);
   }, [categoryId, kalshiBrowseKey, loadKalshi]), pollIntervalMs / 60_000);
 

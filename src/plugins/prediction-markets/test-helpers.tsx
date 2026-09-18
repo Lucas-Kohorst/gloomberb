@@ -176,8 +176,10 @@ export function installPredictionMarketMocks() {
     const url = String(input);
     fetchUrls.push(url);
     if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
-      const isPolymarket = url.includes("platform=polymarket") || url.includes("platform=kalshi,polymarket");
-      const isKalshi = url.includes("platform=kalshi") && !url.includes("platform=kalshi,polymarket");
+      const parsed = new URL(url);
+      const platform = parsed.searchParams.get("platform") ?? "";
+      const isPolymarket = !platform || platform.includes("polymarket");
+      const isKalshi = !platform || /(^|,)kalshi(,|$)/.test(platform);
       const data = [];
       if (isPolymarket) {
         data.push({
