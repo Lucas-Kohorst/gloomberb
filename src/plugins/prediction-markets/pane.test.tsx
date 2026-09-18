@@ -25,6 +25,74 @@ import { normalizePolymarketMarket } from "./services/polymarket/adapter";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
+function kalshiBrowseJunkEvent(ticker: string, title: string) {
+  return {
+    title,
+    category: "Entertainment",
+    event_ticker: ticker,
+    series_ticker: ticker.split("-")[0],
+    markets: [{
+      ticker,
+      title,
+      yes_sub_title: "Yes",
+      event_ticker: ticker,
+      close_time: "2026-05-02T12:00:00Z",
+      open_time: "2026-03-01T12:00:00Z",
+      updated_time: "2026-04-01T00:00:00Z",
+      status: "open",
+      market_type: "binary",
+      yes_bid_dollars: "0.40",
+      yes_ask_dollars: "0.42",
+      last_price_dollars: "0.41",
+      volume_24h_fp: "1000",
+      volume_fp: "2000",
+      open_interest_fp: "500",
+      liquidity_dollars: "10000",
+    }],
+  };
+}
+
+function withBrowseSubstringJunk(innerFetch: typeof fetch): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/trade-api/v2/events?")) {
+      const response = await innerFetch(input, init);
+      const body = await response.json() as { events: unknown[] };
+      body.events.push(
+        kalshiBrowseJunkEvent("KXSMILE-1", "Die With A Smile"),
+        kalshiBrowseJunkEvent("KXSD-1", "San Diego mayor"),
+      );
+      return new Response(JSON.stringify(body), { status: 200 });
+    }
+    return innerFetch(input, init);
+  }) as typeof fetch;
+}
+
+function dieselAdjacentResponse(ticker: string, question: string, eventTitle: string) {
+  return new Response(
+    JSON.stringify({
+      data: [{
+        market_id: `kalshi:${ticker}`,
+        ticker,
+        platform: "kalshi",
+        question,
+        status: "active",
+        probability: 18,
+        event_title: eventTitle,
+      }],
+      meta: { has_next: false },
+    }),
+    { status: 200 },
+  );
+}
+
+function isWebsiteStyleDieselSearch(url: string): boolean {
+  const parsed = new URL(url);
+  return parsed.searchParams.get("search") === "diesel"
+    && parsed.searchParams.get("scope") === "all"
+    && !parsed.searchParams.get("platform");
+}
+
 afterEach(async () => {
   resetUiYieldForTests();
   await cleanupPredictionTest(testSetup);
@@ -384,71 +452,82 @@ describe("prediction markets pane interactions", () => {
     expect(pluginState()?.categoryId).toBe("all");
   });
 
-  test("filters the loaded catalog immediately while remote search is still pending", async () => {
+  test("does not paint browse Die With A Smile hits while Adjacent search is pending", async () => {
     installPredictionMarketMocks();
+    globalThis.fetch = withBrowseSubstringJunk(globalThis.fetch);
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
     await flushFrames(testSetup);
+    expect(testSetup.captureCharFrame()).toContain("Die With A Smile");
 
     await emitKeypress(testSetup, { name: "/", sequence: "/" });
     await flushFrames(testSetup, 1);
-    await emitKeypress(testSetup, {
-      name: "f",
-      sequence: "f",
-      targetEditable: true,
-    });
-    await emitKeypress(testSetup, {
-      name: "e",
-      sequence: "e",
-      targetEditable: true,
-    });
-    await emitKeypress(testSetup, {
-      name: "d",
-      sequence: "d",
-      targetEditable: true,
-    });
+    for (const letter of "die") {
+      await emitKeypress(testSetup, {
+        name: letter,
+        sequence: letter,
+        targetEditable: true,
+      });
+    }
     await flushFrames(testSetup, 1);
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Will the Fed cut rates?");
-    expect(frame).not.toContain("Will inflation fall?");
-    expect(frame).not.toContain("Searching markets...");
+    expect(frame).toContain("Searching markets...");
+    expect(frame).not.toContain("Die With A Smile");
+    expect(frame).not.toContain("San Diego mayor");
+    expect(frame).not.toContain("No markets matched.");
+  });
+
+  test("does not fall back to browse Die With A Smile when Adjacent search is empty", async () => {
+    installPredictionMarketMocks();
+    const innerFetch = withBrowseSubstringJunk(globalThis.fetch);
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("search=")) {
+        return new Response(
+          JSON.stringify({ data: [], meta: { has_next: false } }),
+          { status: 200 },
+        );
+      }
+      return innerFetch(input, init);
+    }) as typeof fetch;
+
+    testSetup = await testRender(
+      <Harness initialSearchQuery="die" initialVenueScope="all" />,
+      { width: 120, height: 34 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await flushFrames(testSetup, 8);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Die With A Smile");
+    expect(frame).not.toContain("San Diego mayor");
+    expect(frame).not.toContain("Will the Fed cut rates?");
+    expect(frame).toContain("Change the venue");
   });
 
   test("shows Adjacent Kalshi diesel hits that are missing from the browse catalog", async () => {
     installPredictionMarketMocks();
-    const innerFetch = globalThis.fetch;
+    const innerFetch = withBrowseSubstringJunk(globalThis.fetch);
+    const requested: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("api.adjacent.markets") && url.includes("search=")) {
+        requested.push(url);
         const parsed = new URL(url);
-        if (
-          parsed.searchParams.get("search") === "diesel"
-          && parsed.searchParams.get("platform") === "kalshi"
-        ) {
-          return new Response(
-            JSON.stringify({
-              data: [{
-                market_id: "kalshi:KXDIESELMON-26SEP30-T6.60",
-                ticker: "KXDIESELMON-26SEP30-T6.60",
-                platform: "kalshi",
-                question: "Will the U.S. EIA weekly average diesel price be above $6.60?",
-                link: "https://kalshi.com/markets/kxdieselmon/kxdieselmon-26sep30",
-                status: "active",
-                probability: 12,
-                event_title: "Monthly U.S. diesel price",
-              }],
-              meta: { has_next: false },
-            }),
-            { status: 200 },
-          );
-        }
         if (parsed.searchParams.get("search") === "diesel") {
-          return new Response(
-            JSON.stringify({ data: [], meta: { has_next: false } }),
-            { status: 200 },
+          return dieselAdjacentResponse(
+            "KXDIESELMON-26SEP30-T6.60",
+            "Will the U.S. EIA weekly average diesel price be above $6.60?",
+            "Monthly U.S. diesel price",
           );
         }
+        return new Response(
+          JSON.stringify({ data: [], meta: { has_next: false } }),
+          { status: 200 },
+        );
       }
       return innerFetch(input, init);
     }) as typeof fetch;
@@ -475,7 +554,9 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup, 8);
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("diesel");
+    expect(requested.some((url) => isWebsiteStyleDieselSearch(url))).toBe(true);
+    expect(frame).toContain("KXDIESELMON");
+    expect(frame).not.toContain("Die With A Smile");
     expect(frame).not.toContain("No markets matched.");
     expect(frame).not.toContain("Will the Fed cut rates?");
   });
@@ -489,23 +570,11 @@ describe("prediction markets pane interactions", () => {
       if (url.includes("api.adjacent.markets") && url.includes("search=")) {
         requested.push(url);
         const parsed = new URL(url);
-        const search = parsed.searchParams.get("search");
-        const platform = parsed.searchParams.get("platform");
-        if (search === "diesel" && platform === "kalshi") {
-          return new Response(
-            JSON.stringify({
-              data: [{
-                market_id: "kalshi:KXDIESELW-26SEP21-T6.38",
-                ticker: "KXDIESELW-26SEP21-T6.38",
-                platform: "kalshi",
-                question: "Will the U.S. EIA weekly average diesel price be above $6.38?",
-                status: "active",
-                probability: 18,
-                event_title: "Weekly U.S. diesel price",
-              }],
-              meta: { has_next: false },
-            }),
-            { status: 200 },
+        if (parsed.searchParams.get("search") === "diesel") {
+          return dieselAdjacentResponse(
+            "KXDIESELW-26SEP21-T6.38",
+            "Will the U.S. EIA weekly average diesel price be above $6.38?",
+            "Weekly U.S. diesel price",
           );
         }
         return new Response(
@@ -528,9 +597,10 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup, 8);
 
     const frame = testSetup.captureCharFrame();
-    expect(requested.some((url) => url.includes("search=diesel") && url.includes("platform=kalshi"))).toBe(true);
+    expect(requested.some((url) => isWebsiteStyleDieselSearch(url))).toBe(true);
     expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
     expect(frame).toContain("KXDIESELW");
+    expect(frame).not.toContain("Die With A Smile");
     expect(frame).not.toContain("No markets matched.");
     expect(frame).not.toContain("Will the Fed cut rates?");
   });

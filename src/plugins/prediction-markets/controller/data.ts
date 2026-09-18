@@ -132,17 +132,16 @@ export function usePredictionMarketsDataState({
 
   const visibleRows = useMemo(() => {
     return measurePerf("prediction.rows.filter-sort", () => {
-      // Instant local filter while Adjacent is in flight. Once this session has
-      // written the search key, Adjacent is the list — do not AND the raw chrome
-      // (`? diesel`) against Kalshi tickers the command bar already found.
-      const committedRemoteSearch =
-        catalogSearchReady
-        && normalizePredictionSearchQuery(debouncedSearchQuery).length > 0;
+      // Adjacent is the search index. Haystack-filtering the browse page with
+      // the live box (`die`) is how Die With A Smile / San Diego painted.
+      const remoteSearch =
+        normalizePredictionSearchQuery(searchQuery).length > 0
+        || normalizePredictionSearchQuery(debouncedSearchQuery).length > 0;
       const filtered = filterPredictionMarkets(
         allRows,
         effectiveVenueScope,
         categoryId,
-        committedRemoteSearch ? "" : searchQuery,
+        remoteSearch ? "" : searchQuery,
         watchlistSet,
       );
       const sorted = sortPredictionMarkets(
@@ -167,7 +166,6 @@ export function usePredictionMarketsDataState({
   }, [
     allRows,
     browseTab,
-    catalogSearchReady,
     categoryId,
     debouncedSearchQuery,
     effectiveVenueScope,
