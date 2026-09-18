@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import {
+  clearPendingConnectionReports,
+  setConnectionRequestReporter,
+} from "../connections/register";
+import {
   NASDAQ_HALTS_CONNECTION_ID,
-  acquireMarketHaltsHealth,
   fetchMarketHalts,
   parseHaltFeed,
 } from "./client";
@@ -65,6 +67,8 @@ function feed(...items: string[]): string {
 
 afterEach(() => {
   setHttpFetchTransport(null);
+  setConnectionRequestReporter(null);
+  clearPendingConnectionReports();
 });
 
 describe("parseHaltFeed", () => {
@@ -100,15 +104,15 @@ describe("parseHaltFeed", () => {
 });
 
 describe("fetchMarketHalts", () => {
-  test("tracks parse failures as connection errors", async () => {
-    const health = new ConnectionHealthRegistry();
-    const release = acquireMarketHaltsHealth(health);
+  test("reports parse failures through the connection inventory", async () => {
+    const reports: Array<{ id: string; ok: boolean }> = [];
+    setConnectionRequestReporter((id, report) => {
+      reports.push({ id, ok: report.success });
+    });
     setHttpFetchTransport(async () => new Response(feed("<item><x/></item>")));
 
-    await expect(fetchMarketHalts(health)).rejects.toThrow(/format/i);
-    expect(health.getSnapshot().sources.find((source) => source.id === NASDAQ_HALTS_CONNECTION_ID)?.status)
-      .toBe("error");
-    release();
+    await expect(fetchMarketHalts()).rejects.toThrow(/format/i);
+    expect(reports).toEqual([{ id: NASDAQ_HALTS_CONNECTION_ID, ok: false }]);
   });
 
   test("rejects a successful HTML response instead of reporting a quiet day", async () => {

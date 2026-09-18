@@ -1,48 +1,12 @@
-import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { decodeHtmlEntities } from "../../../utils/html-entities";
 import { httpFetch } from "../../../utils/http-transport";
+import { withConnectionRequest } from "../connections/register";
 import { describeHaltReason, parseEtDateTime, type HaltRecord } from "./model";
 
 export const NASDAQ_HALTS_CONNECTION_ID = "nasdaq-trade-halts";
 
 const HALTS_FEED_URL = "https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts";
 const FETCH_TIMEOUT_MS = 15_000;
-
-const healthRegistrations = new WeakMap<
-  ConnectionHealthRegistry,
-  { references: number; dispose: () => void }
->();
-
-export function acquireMarketHaltsHealth(health: ConnectionHealthRegistry): () => void {
-  const current = healthRegistrations.get(health);
-  if (current) {
-    current.references += 1;
-  } else {
-    healthRegistrations.set(health, {
-      references: 1,
-      dispose: health.registerSource({
-        id: NASDAQ_HALTS_CONNECTION_ID,
-        name: "Nasdaq Trader",
-        kind: "api",
-        ownerId: "market-overview",
-        detail: "nasdaqtrader.com",
-        priority: 300,
-      }),
-    });
-  }
-
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    const registration = healthRegistrations.get(health);
-    if (!registration) return;
-    registration.references -= 1;
-    if (registration.references > 0) return;
-    registration.dispose();
-    healthRegistrations.delete(health);
-  };
-}
 
 function fieldValue(item: string, tag: string): string {
   const match = item.match(new RegExp(`<ndaq:${tag}[^>]*>([\\s\\S]*?)</ndaq:${tag}>`, "i"));
@@ -107,8 +71,6 @@ async function loadHaltFeed(): Promise<HaltRecord[]> {
   return records;
 }
 
-export async function fetchMarketHalts(health?: ConnectionHealthRegistry): Promise<HaltRecord[]> {
-  return health?.hasSource(NASDAQ_HALTS_CONNECTION_ID)
-    ? health.track(NASDAQ_HALTS_CONNECTION_ID, "fetchTradeHalts", loadHaltFeed)
-    : loadHaltFeed();
+export async function fetchMarketHalts(): Promise<HaltRecord[]> {
+  return withConnectionRequest(NASDAQ_HALTS_CONNECTION_ID, "fetchTradeHalts", loadHaltFeed);
 }

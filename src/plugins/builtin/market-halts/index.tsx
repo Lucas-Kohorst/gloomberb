@@ -1,8 +1,28 @@
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
+import { NASDAQ_HALTS_CONNECTION_ID } from "./client";
 import { MARKET_HALTS_PANE_ID } from "./model";
 import { MarketHaltsPane } from "./pane";
 
+let disposeConnection: (() => void) | null = null;
+
 export const marketHaltsModule: PluginModule = {
+  setup() {
+    disposeConnection = registerConnectionSource({
+      id: NASDAQ_HALTS_CONNECTION_ID,
+      name: "Nasdaq Trader",
+      kind: "api",
+      pluginId: "market-overview",
+      priority: 300,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+
   panes: [
     {
       id: MARKET_HALTS_PANE_ID,

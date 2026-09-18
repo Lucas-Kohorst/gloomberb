@@ -1,5 +1,5 @@
-import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { httpFetch } from "../../../utils/http-transport";
+import { withConnectionRequest } from "../connections/register";
 import type { IPORecord, IPOStatus } from "./types";
 
 export const STOCKANALYSIS_IPO_CONNECTION_ID = "stockanalysis-ipo";
@@ -10,16 +10,6 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 const SA_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
-let connectionHealth: ConnectionHealthRegistry | null = null;
-
-export function attachIpoCalendarHealth(health?: ConnectionHealthRegistry): void {
-  connectionHealth = health ?? null;
-}
-
-export function resetIpoCalendarHealth(): void {
-  connectionHealth = null;
-}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -208,13 +198,12 @@ function fetchJson(url: string, headers: Record<string, string>): Promise<unknow
 }
 
 function fetchStockAnalysis(url: string, operation: string): Promise<unknown> {
-  const request = () => fetchJson(url, {
-    "User-Agent": SA_USER_AGENT,
-    Accept: "application/json",
-  });
-  return connectionHealth?.hasSource(STOCKANALYSIS_IPO_CONNECTION_ID)
-    ? connectionHealth.track(STOCKANALYSIS_IPO_CONNECTION_ID, operation, request)
-    : request();
+  return withConnectionRequest(STOCKANALYSIS_IPO_CONNECTION_ID, operation, () =>
+    fetchJson(url, {
+      "User-Agent": SA_USER_AGENT,
+      Accept: "application/json",
+    }),
+  );
 }
 
 async function fetchRecentIpos(): Promise<IPORecord[]> {
