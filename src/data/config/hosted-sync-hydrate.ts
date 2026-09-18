@@ -33,6 +33,7 @@ import {
   initHostedByokCrypto,
   writeHostedByokKeys,
 } from "../../plugins/builtin/byok/hosted-persist";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
 import { isRecord } from "../../utils/is-record";
 import type { NotesSyncPayload } from "../../plugins/builtin/notes/files";
 
@@ -77,6 +78,11 @@ export function isHostedWorkspaceHydrationCurrent(
     === hydration.localRevision;
 }
 
+function hostedByokHasLocalKeys(config: AppConfig): boolean {
+  const stored = config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY];
+  return isRecord(stored) && Array.isArray(stored.keys) && stored.keys.length > 0;
+}
+
 export function persistHostedWorkspaceHydration(
   hydration: HostedWorkspaceHydration,
 ): boolean {
@@ -85,7 +91,10 @@ export function persistHostedWorkspaceHydration(
   writeHostedUserConfig(hydration.config, userId);
   writeHostedTickers(hydration.tickers, userId);
   writeHostedNotes(hydration.notes, userId);
-  writeHostedByokKeys(hydration.config, userId);
+  // Empty overlay keys must not wipe hosted-local BYOK.
+  if (hostedByokHasLocalKeys(hydration.config)) {
+    writeHostedByokKeys(hydration.config, userId);
+  }
   return true;
 }
 

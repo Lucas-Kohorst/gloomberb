@@ -77,7 +77,6 @@ function whenStartupPaintReady(): Promise<void> {
  * Resolves immediately unless `enableStartupNetworkDeferral()` ran and first
  * paint has not been marked yet. After paint, also waits while the user is
  * typing, using Command-K, or dragging so those frames stay free.
- * Tests and the TUI never enable deferral.
  */
 export function whenStartupBackground(): Promise<void> {
   const afterPaint = whenStartupPaintReady();
@@ -85,18 +84,24 @@ export function whenStartupBackground(): Promise<void> {
   return afterPaint.then(() => whenUiQuiet());
 }
 
-/** Double-rAF so the first App commit paints before RSS/PM/Adjacent stampede. */
+/**
+ * Release background work after the first App commit. Browser hosts use
+ * double-rAF; OpenTUI / Node yield one macrotask so `render()` can paint
+ * instead of marking interactive synchronously.
+ */
 export function armStartupInteractiveAfterFirstPaint(): void {
   const raf = globalThis.requestAnimationFrame;
-  if (typeof raf !== "function") {
-    markStartupInteractive();
+  if (typeof raf === "function") {
+    raf(() => {
+      raf(() => {
+        markStartupInteractive();
+      });
+    });
     return;
   }
-  raf(() => {
-    raf(() => {
-      markStartupInteractive();
-    });
-  });
+  setTimeout(() => {
+    markStartupInteractive();
+  }, 0);
 }
 
 export function runAfterStartupBackground(task: () => void): () => void {

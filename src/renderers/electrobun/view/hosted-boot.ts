@@ -8,6 +8,10 @@ import type { ElectrobunBackendInit } from "../shared/protocol";
  * without a ceiling a slow upstream is indistinguishable from a dead app: the
  * loading placeholder stays on screen with no error and no way forward.
  *
+ * Cloud config/sync overlay is *not* a first-paint gate. Boot paints a shell
+ * from hosted-local config (BYOK stays local); `overlayHostedWorkspaceAfterPaint`
+ * applies Worker + Gloom Cloud snapshots with `persist: false`.
+ *
  * Every await here is therefore bounded and has a local fallback. Booting
  * degraded — signed-out banner, config restored from local storage — is always
  * better than not booting.

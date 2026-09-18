@@ -71,6 +71,7 @@ export function installElectrobunAiHost(): void {
     void installAiRunHost(createBrowserAiRunHost(), {
       catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
       timeoutMessage: "In-app AI provider discovery timed out during hosted startup",
+      afterStartupBackground: true,
       onCatalogError(error) {
         aiHostLog.warn("Hosted browser AI discovery could not finish during startup", {
           error: error instanceof Error ? error.message : String(error),
@@ -208,6 +209,7 @@ export function installElectrobunAiHost(): void {
   void installAiRunHost(host, {
     catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
     timeoutMessage: "In-app AI provider discovery timed out during desktop startup",
+    afterStartupBackground: true,
     onCatalogError(error) {
       aiHostLog.warn("In-app AI provider discovery could not finish during desktop startup", {
         error: error instanceof Error ? error.message : String(error),

@@ -9,7 +9,12 @@ import {
   writeHostedUserConfig,
 } from "../data/config/hosted-user-persist";
 import { createDefaultConfig } from "../types/config";
-import { applyHostedCloudOverlay } from "./react";
+import { applyHostedCloudOverlay, overlayHostedWorkspaceAfterPaint } from "./react";
+import {
+  enableStartupNetworkDeferral,
+  markStartupInteractive,
+  resetStartupInteractionForTests,
+} from "../utils/startup-interaction";
 
 function installMemoryStorage(): void {
   const values = new Map<string, string>();
@@ -52,6 +57,7 @@ describe("hosted cloud overlay acceptance", () => {
   afterEach(() => {
     setHostedConfigUserId(null);
     rememberHostedUserId(null);
+    resetStartupInteractionForTests();
     globalThis.localStorage.clear();
   });
 
@@ -186,5 +192,41 @@ describe("hosted cloud overlay acceptance", () => {
     expect(await applying).toBe(false);
     expect(readHostedTickers("user-a").map((ticker) => ticker.metadata.ticker)).toEqual(["LOCAL"]);
     expect(readHostedNotes("user-a").tickerNotes).toEqual({ LOCAL: "local" });
+  });
+
+  test("post-paint overlay does not pull until first paint is marked", async () => {
+    enableStartupNetworkDeferral();
+    setHostedConfigUserId("user-a");
+    const config = createDefaultConfig("cloud://users/user-a");
+    writeHostedUserConfig(config, "user-a");
+    let pulled = 0;
+
+    const applying = overlayHostedWorkspaceAfterPaint({
+      capturedConfig: config,
+      getState: () => ({ config } as AppState),
+      dispatch: () => {},
+      tickerRepository: {
+        loadAllTickers: async () => [],
+        loadTicker: async () => null,
+        saveTicker: async () => {},
+        createTicker: async (metadata) => ({ metadata }),
+        deleteTicker: async () => {},
+      },
+      pullConfig: async () => {
+        pulled += 1;
+        return { config: null, updatedAt: null };
+      },
+      pullSync: async () => {
+        pulled += 1;
+        return { snapshot: null };
+      },
+    });
+
+    await Bun.sleep(20);
+    expect(pulled).toBe(0);
+
+    markStartupInteractive();
+    expect(await applying).toBe(true);
+    expect(pulled).toBe(2);
   });
 });
