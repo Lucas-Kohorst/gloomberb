@@ -92,6 +92,26 @@ describe("PluginRegistry reload", () => {
     expect(registry.allPlugins.get("my-plugin")?.version).toBe("2.0.0");
   });
 
+  test("does not replace a shipped first-party plugin with an extracted copy", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-builtin-"));
+    setPluginsDirForTests(tempDir);
+    const pluginDir = join(tempDir, "prediction-markets");
+    writePluginFile(pluginDir, "prediction-markets", "Stale PM", "0.0.1");
+
+    const registry = createRegistry();
+    await registry.register({
+      id: "prediction-markets",
+      name: "Prediction Markets",
+      version: "1.0.0",
+    });
+
+    const result = await registry.reloadExternalPlugin("prediction-markets");
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("reserved by a built-in module");
+    expect(registry.allPlugins.get("prediction-markets")?.name).toBe("Prediction Markets");
+    expect(registry.allPlugins.get("prediction-markets")?.version).toBe("1.0.0");
+  });
+
   test("reloadExternalPlugins reloads all tracked external plugins", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-test"));
     setPluginsDirForTests(tempDir);

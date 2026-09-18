@@ -93,6 +93,13 @@ function isWebsiteStyleDieselSearch(url: string): boolean {
     && !parsed.searchParams.get("platform");
 }
 
+function isKalshiDieselSearch(url: string): boolean {
+  const parsed = new URL(url);
+  return parsed.searchParams.get("search") === "diesel"
+    && parsed.searchParams.get("scope") === "all"
+    && parsed.searchParams.get("platform") === "kalshi";
+}
+
 afterEach(async () => {
   resetUiYieldForTests();
   await cleanupPredictionTest(testSetup);
@@ -600,6 +607,49 @@ describe("prediction markets pane interactions", () => {
     expect(requested.some((url) => isWebsiteStyleDieselSearch(url))).toBe(true);
     expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
     expect(frame).toContain("KXDIESELW");
+    expect(frame).not.toContain("Die With A Smile");
+    expect(frame).not.toContain("No markets matched.");
+    expect(frame).not.toContain("Will the Fed cut rates?");
+  });
+
+  test("paints Kalshi diesel hits on the Kalshi venue tab", async () => {
+    installPredictionMarketMocks();
+    const innerFetch = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("search=")) {
+        requested.push(url);
+        const parsed = new URL(url);
+        if (parsed.searchParams.get("search") === "diesel") {
+          return dieselAdjacentResponse(
+            "KXDIESELD-26SEP18-B5.5",
+            "Will Diesel Price on September 18, 2026 be above 5.5?",
+            "Will Diesel Price on September 18, 2026 be above 5.5?",
+          );
+        }
+        return new Response(
+          JSON.stringify({ data: [], meta: { has_next: false } }),
+          { status: 200 },
+        );
+      }
+      return innerFetch(input, init);
+    }) as typeof fetch;
+
+    setUiYieldReason("input", true);
+    testSetup = await testRender(
+      <Harness initialSearchQuery="? diesel" initialVenueScope="kalshi" />,
+      { width: 120, height: 34 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await flushFrames(testSetup, 8);
+
+    const frame = testSetup.captureCharFrame();
+    expect(requested.some((url) => isKalshiDieselSearch(url))).toBe(true);
+    expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
+    expect(frame).toContain("KXDIESELD");
     expect(frame).not.toContain("Die With A Smile");
     expect(frame).not.toContain("No markets matched.");
     expect(frame).not.toContain("Will the Fed cut rates?");

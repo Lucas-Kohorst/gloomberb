@@ -222,9 +222,13 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("FUT")).toBe(true);
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "FUT")?.paneId).toBe("futures");
     expect(prefixes.has("10K")).toBe(true);
+    expect(prefixes.has("PM")).toBe(true);
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "PM")?.paneId).toBe(
+      "prediction-markets",
+    );
     // Plugins moved to the gloomberb-plugins monorepo (traffic, satellite,
-    // weather, polls, country-econ, prediction-markets) are external and may
-    // or may not be installed; do not assert their prefixes here.
+    // weather, polls, country-econ) are external and may or may not be
+    // installed; do not assert their prefixes here.
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {

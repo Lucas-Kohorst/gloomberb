@@ -762,6 +762,16 @@ export class PluginRegistry implements PluginRuntimeAccess {
         return { success: false, message: `Invalid plugin export from ${entryFile}` };
       }
 
+      // A first-party plugin with this id already ships in the app. Replacing
+      // it with ~/.gloomberb/plugins/<id> is how desktop/TUI kept a stale
+      // Prediction Markets pane after `desktop:build`.
+      if (this.plugins.has(plugin.id) && !this.externalPluginEntryFiles.has(plugin.id)) {
+        return {
+          success: false,
+          message: `Plugin id is reserved by a built-in module: ${plugin.id}`,
+        };
+      }
+
       // Unregister the old plugin if it is currently registered (by actual ID).
       if (this.plugins.has(plugin.id)) {
         try {
