@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
-import { hydrateHostedWorkspaceFromCloud } from "./hosted-sync-hydrate";
+import { hydrateHostedWorkspaceFromCloud, persistHostedWorkspaceHydration } from "./hosted-sync-hydrate";
 import { readHostedTickers, writeHostedTickers, parseIncomingTickerRecords } from "./hosted-ticker-persist";
 import { readHostedNotes, writeHostedNotes } from "./hosted-notes-persist";
 import { setHostedConfigUserId, writeHostedUserConfig, peekHostedUserConfigStamp, hostedUserConfigStorageKey } from "./hosted-user-persist";
 import type { SyncSnapshot } from "../../sync/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "../../plugins/builtin/byok/types";
+import { readHostedByokKeys, writeHostedByokKeys } from "../../plugins/builtin/byok/hosted-persist";
 
 function installMemoryStorage(): void {
   const values = new Map<string, string>();
@@ -185,5 +187,43 @@ describe("hosted workspace hydrate", () => {
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["LOCAL"]);
     expect(readHostedNotes().tickerNotes).toEqual({ LOCAL: "Latest note" });
     expect(config.theme).toBe("white");
+  });
+
+  test("persist: false overlay restores local BYOK instead of empty cloud keys", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    const byokKeys: ByokStoredConfig = {
+      keys: [{
+        id: "byok-1",
+        serviceId: "adjacent",
+        name: "Adjacent",
+        apiKey: "sk-local-secret",
+        createdAt: 1,
+        lastValidationStatus: "untested",
+      }],
+    };
+    config.pluginConfig = {
+      [BYOK_PLUGIN_ID]: { [BYOK_API_KEYS_CONFIG_KEY]: byokKeys },
+    };
+    writeHostedUserConfig(config);
+    writeHostedByokKeys(config);
+
+    const result = await hydrateHostedWorkspaceFromCloud(config, {
+      persist: false,
+      pullConfig: async () => ({
+        config: {
+          theme: "amber",
+          pluginConfig: {
+            [BYOK_PLUGIN_ID]: { [BYOK_API_KEYS_CONFIG_KEY]: { keys: [] } },
+          },
+        } as Record<string, unknown>,
+        updatedAt: "2099-01-01T00:00:00.000Z",
+      }),
+      pullSync: async () => ({ snapshot: snapshot({ theme: "amber" }) }),
+    });
+
+    expect(result.config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY]).toEqual(byokKeys);
+    expect(persistHostedWorkspaceHydration(result)).toBe(true);
+    expect(readHostedByokKeys()?.keys[0]?.apiKey).toBe("sk-local-secret");
   });
 });

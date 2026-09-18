@@ -36,6 +36,10 @@ import { getRendererPlugins } from "../../../plugins/catalog-ui";
 import { loadDesktopExternalPlugins } from "./external-plugins";
 import { setPluginInstaller, setPluginRemover } from "../../../plugins/builtin/plugin-marketplace/store";
 import { enableUiYield } from "../../../utils/ui-yield";
+import {
+  armStartupInteractiveAfterFirstPaint,
+  enableStartupNetworkDeferral,
+} from "../../../utils/startup-interaction";
 import { setCustomThemes } from "../../../theme/themes";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
@@ -104,7 +108,6 @@ async function boot() {
   installElectrobunCloudApiFetchTransport();
   installElectrobunUpdateHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
-  installElectrobunAiHost();
   installFocusScopeRelease();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
     ? prepareDetachedSnapshot(init.desktopSnapshot, init.paneId)
@@ -143,6 +146,8 @@ async function boot() {
     ? { registerHandler: setElectrobunRemoteRequestHandler }
     : undefined;
   enableUiYield();
+  enableStartupNetworkDeferral();
+  installElectrobunAiHost();
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <ElectrobunErrorBoundary>
@@ -171,6 +176,7 @@ async function boot() {
     );
     appMounted = true;
   });
+  armStartupInteractiveAfterFirstPaint();
   requestStartupFocus();
   bootLog.info("root render scheduled", {
     layoutPanes: config.layout.instances.length,

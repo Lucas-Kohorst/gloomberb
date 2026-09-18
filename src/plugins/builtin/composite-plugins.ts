@@ -1,7 +1,6 @@
-import {
-  attachFredSeriesPersistence,
-  resetFredSeriesPersistence,
-} from "../../data/fred-series";
+import { attachFredSeriesPersistence, resetFredSeriesPersistence } from "../../data/fred-series";
+import { FRED_PUBLIC_CONNECTION_ID } from "../../data/fred-public";
+import { registerConnectionSource } from "./connections/register";
 import { portfolioAnalyticsModule } from "./analytics";
 import { bondSearchModule } from "./bond-search";
 import { brokerManagerModule } from "./broker-manager";
@@ -44,12 +43,24 @@ import {
   resetValuationPersistence,
 } from "./market-valuation/cache";
 
+let disposeFredPublicConnection: (() => void) | null = null;
+
 const macroSharedResourcesModule = {
   setup(ctx) {
     attachFredSeriesPersistence(ctx.persistence);
     attachValuationPersistence(ctx.persistence);
+    disposeFredPublicConnection = registerConnectionSource({
+      id: FRED_PUBLIC_CONNECTION_ID,
+      name: "FRED (public)",
+      kind: "api",
+      pluginId: "macro",
+      priority: 250,
+      authRequired: false,
+    });
   },
   dispose() {
+    disposeFredPublicConnection?.();
+    disposeFredPublicConnection = null;
     resetFredSeriesPersistence();
     resetValuationPersistence();
   },

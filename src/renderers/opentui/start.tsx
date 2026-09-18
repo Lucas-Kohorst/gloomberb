@@ -23,13 +23,15 @@ import { ToastHostProvider } from "../../ui/toast";
 import { colors } from "../../theme/colors";
 import { startMainThreadMonitor } from "../../utils/main-thread-monitor";
 import { measurePerfAsync } from "../../utils/perf-marks";
+import {
+  enableStartupNetworkDeferral,
+  markStartupInteractive,
+} from "../../utils/startup-interaction";
 import type { CliLaunchRequest } from "../../types/plugin";
 import type { RemoteControlAdapter } from "../../remote/app-host";
 import { startRemoteControlServer, type RemoteControlServer } from "../../remote/server";
 import { createPiAiHost } from "../../plugins/builtin/ai/pi";
-import {
-  installAiRunHost,
-} from "../../plugins/builtin/ai/runner";
+import { installAiRunHost } from "../../plugins/builtin/ai/runner";
 import { createAppServices } from "../../core/app-services";
 import { flushPendingPersistence } from "../../state/persist-scheduler";
 import { DEFAULT_THEME } from "../../theme/themes";
@@ -160,30 +162,34 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
       startupThemeNotice = startupThemeNotice
         ?? tf("{count} custom theme file(s) were rejected.", { count: themeLoad.errors.length });
     }
-    try {
-      const aiHost = createPiAiHost({
-        appKind: "tui",
-        dataDir: config.dataDir,
-      });
-      await measurePerfAsync(
-        "startup.opentui.ai-catalog",
-        () => installAiRunHost(aiHost, {
-          catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
-          timeoutMessage: "In-app AI provider discovery timed out during startup",
-          onCatalogError(error) {
-            appLog.warn("In-app AI provider discovery could not finish during startup", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
-        }),
-      );
-    } catch (error) {
+    const aiHost = createPiAiHost({
+      appKind: "tui",
+      dataDir: config.dataDir,
+    });
+    host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
+    host.renderer.once("destroy", finishProcessExit);
+
+    // Quote/news polls for off-screen panes wait for first paint. Docked
+    // (visible) warmup stays eager via the bootstrap priority-0 plan.
+    enableStartupNetworkDeferral();
+    host.renderer.once("frame", markStartupInteractive);
+    void measurePerfAsync(
+      "startup.opentui.ai-catalog",
+      () => installAiRunHost(aiHost, {
+        catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
+        timeoutMessage: "In-app AI provider discovery timed out during startup",
+        afterStartupBackground: true,
+        onCatalogError(error) {
+          appLog.warn("In-app AI provider discovery could not finish during startup", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      }),
+    ).catch((error) => {
       appLog.warn("In-app AI providers could not be initialized", {
         error: error instanceof Error ? error.message : String(error),
       });
-    }
-    host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
-    host.renderer.once("destroy", finishProcessExit);
+    });
 
     host.render(
       <UiHostProvider ui={openTuiUiHost} renderer={host.rendererHost} nativeRenderer={host.nativeRenderer}>

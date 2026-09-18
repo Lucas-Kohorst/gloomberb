@@ -249,7 +249,8 @@ export function useQuoteUpdates(
         inFlight = false;
       }
     };
-    if (isStartupNetworkDeferred() || shouldYieldToUi()) {
+    const visibleOnScreen = normalizedTargets.some((target) => target.visible === true);
+    if ((!visibleOnScreen && isStartupNetworkDeferred()) || shouldYieldToUi()) {
       void whenStartupBackground().then(() => {
         if (cancelled) return;
         void refresh();

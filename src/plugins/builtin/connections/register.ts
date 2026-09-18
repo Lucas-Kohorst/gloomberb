@@ -1,5 +1,5 @@
 import {
-  isAdjacentCloudChildSourceId,
+  isFoldedConnectionSourceId,
   resolveConnectionSourceId,
 } from "./adjacent-cloud";
 import type { ConnectionKind } from "./types";
@@ -32,9 +32,9 @@ const pendingReports: Array<{ id: string; report: ConnectionRequestReport }> = [
 const MAX_PENDING_REPORTS = 200;
 
 export function registerConnectionSource(source: ConnectionSourceDef): () => void {
-  // Adjacent Cloud children share one inventory row. Callers may still report
-  // traffic with the upstream id; `reportConnectionRequest` remaps it.
-  if (isAdjacentCloudChildSourceId(source.id)) {
+  // Folded ids share another inventory row. Callers may still report traffic
+  // with the upstream id; `reportConnectionRequest` remaps it.
+  if (isFoldedConnectionSourceId(source.id)) {
     return () => {};
   }
   sources.set(source.id, source);

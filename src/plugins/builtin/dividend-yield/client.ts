@@ -1,9 +1,9 @@
-import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, mapYahooDividends } from "../../../sources/yahoo-finance/mappers";
 import { fetchYahooChart } from "../../../sources/yahoo-finance/requests";
 import { getYahooSymbolsToTry } from "../../../sources/yahoo-finance/symbols";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
+import { withConnectionRequest } from "../connections/register";
 import { buildDividendMetrics } from "./model";
 import type { DividendMetrics, DividendPayment } from "./types";
 import type { PricePoint } from "../../../types/financials";
@@ -11,20 +11,8 @@ import type { PricePoint } from "../../../types/financials";
 export const YAHOO_DIVIDENDS_CONNECTION_ID = "yahoo-dividends";
 const yahoo = new YahooHttpClient();
 
-let connectionHealth: ConnectionHealthRegistry | null = null;
-
-export function attachDividendYieldHealth(health?: ConnectionHealthRegistry): void {
-  connectionHealth = health ?? null;
-}
-
-export function resetDividendYieldHealth(): void {
-  connectionHealth = null;
-}
-
 function trackRequest<T>(operation: string, request: () => Promise<T>): Promise<T> {
-  return connectionHealth?.hasSource(YAHOO_DIVIDENDS_CONNECTION_ID)
-    ? connectionHealth.track(YAHOO_DIVIDENDS_CONNECTION_ID, operation, request)
-    : request();
+  return withConnectionRequest(YAHOO_DIVIDENDS_CONNECTION_ID, operation, request);
 }
 
 interface QuoteSummaryDividendFields {

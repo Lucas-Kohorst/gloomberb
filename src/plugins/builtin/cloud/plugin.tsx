@@ -21,8 +21,10 @@ import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
 import { teamChannelId } from "./team/model";
 import { teamStore } from "./team/store";
+import { GLOOM_CLOUD_HTTP_CONNECTION_ID } from "../../../core/connection-health";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import { SHARE_CONNECTION_ID } from "../../../shares/connection";
+import { registerGloomCloudInventorySources } from "./connections";
 import type { SyncTransport } from "../../../sync/types";
 import { appendNotificationLog } from "../../../notifications/notification-log";
 import { formatChannelToast } from "../chat/controller/utils";
@@ -37,10 +39,12 @@ function createCloudDataModule(): PluginModule {
   let disposeConfigConnection: (() => void) | null = null;
   let disposeSharingConnection: (() => void) | null = null;
   let disposeOllamaConnection: (() => void) | null = null;
+  let disposeGloomCloudInventory: (() => void) | null = null;
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
     setup(ctx) {
       ctx.registerSyncTransport(createGloomberbCloudSyncTransport());
+      disposeGloomCloudInventory = registerGloomCloudInventorySources();
       disposeConfigConnection = registerConnectionSource({
         id: "hosted-config",
         name: "Hosted Config Sync",
@@ -65,7 +69,10 @@ function createCloudDataModule(): PluginModule {
       });
     },
     dispose() {
+      disposeGloomCloudInventory?.();
+      disposeGloomCloudInventory = null;
       disposeConfigConnection?.();
+      disposeConfigConnection = null;
       disposeSharingConnection?.();
       disposeSharingConnection = null;
       disposeOllamaConnection?.();
@@ -81,9 +88,13 @@ export function createGloomberbCloudSyncTransport(
   return {
     id: "gloomberb-cloud",
     isAvailable,
-    pullSnapshot: () => withConnectionRequest("gloom-cloud", "pullSnapshot", () => apiClient.getSyncSnapshot()),
+    pullSnapshot: () => withConnectionRequest(
+      GLOOM_CLOUD_HTTP_CONNECTION_ID,
+      "pullSnapshot",
+      () => apiClient.getSyncSnapshot(),
+    ),
     pushSnapshot: (snapshot, options) => withConnectionRequest(
-      "gloom-cloud",
+      GLOOM_CLOUD_HTTP_CONNECTION_ID,
       "pushSnapshot",
       () => apiClient.putSyncSnapshot(snapshot, options),
     ),

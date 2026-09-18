@@ -1,9 +1,6 @@
 import type { PluginModule } from "../plugin-module";
-import {
-  attachIpoCalendarHealth,
-  resetIpoCalendarHealth,
-  STOCKANALYSIS_IPO_CONNECTION_ID,
-} from "./client";
+import { registerConnectionSource } from "../connections/register";
+import { STOCKANALYSIS_IPO_CONNECTION_ID } from "./client";
 import { attachIpoCalendarPersistence, resetIpoCalendarPersistence } from "./cache";
 import { IPOCalendarPane } from "./pane";
 import { IPO_CALENDAR_PANE_ID } from "./types";
@@ -12,22 +9,20 @@ let disposeConnection: (() => void) | null = null;
 
 export const ipoCalendarModule: PluginModule = {
   setup(ctx) {
-    attachIpoCalendarHealth(ctx.connectionHealth);
     attachIpoCalendarPersistence(ctx.persistence);
-    disposeConnection = ctx.connectionHealth.registerSource({
+    disposeConnection = registerConnectionSource({
       id: STOCKANALYSIS_IPO_CONNECTION_ID,
       name: "Stock Analysis",
       kind: "api",
-      ownerId: "macro",
-      detail: "stockanalysis.com",
+      pluginId: "macro",
       priority: 300,
+      authRequired: false,
     });
   },
 
   dispose() {
     disposeConnection?.();
     disposeConnection = null;
-    resetIpoCalendarHealth();
     resetIpoCalendarPersistence();
   },
 

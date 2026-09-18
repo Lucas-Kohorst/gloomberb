@@ -5,6 +5,7 @@ import {
 import {
   NWS_CLI_CONNECTION_ID,
   NWS_OBSERVATIONS_CONNECTION_ID,
+  OPEN_METEO_CONNECTION_ID,
   WEATHER_CONNECTION_ID,
   WEATHER_PLUGIN_ID,
 } from "./types";
@@ -55,6 +56,14 @@ export const WEATHER_SOURCE_DEFS: readonly ConnectionSourceDef[] = [
     authRequired: false,
   },
   {
+    id: OPEN_METEO_CONNECTION_ID,
+    name: "Open-Meteo",
+    kind: "data",
+    pluginId: WEATHER_PLUGIN_ID,
+    priority: 530,
+    authRequired: false,
+  },
+  {
     id: WEATHER_UNDERGROUND_CONNECTION_ID,
     name: "Weather Underground",
     kind: "data",
@@ -68,6 +77,7 @@ export const WEATHER_SOURCE_DEFS: readonly ConnectionSourceDef[] = [
 const OWNED_SOURCE_IDS = new Set<string>([
   NWS_OBSERVATIONS_CONNECTION_ID,
   HKO_RAINFALL_CONNECTION_ID,
+  OPEN_METEO_CONNECTION_ID,
   WEATHER_UNDERGROUND_CONNECTION_ID,
 ]);
 

@@ -36,6 +36,7 @@ import {
   settleFrames,
   sourceHasBoundTableFooterHints,
   sourceHasClickableHeaderSort,
+  NEWS_IN_PANE_SEARCH_PANE_IDS,
   type AuditedPaneRender,
 } from "../test-support/pane-design";
 import { MemoryPluginPersistence } from "../test-support/plugin-persistence";
@@ -231,6 +232,11 @@ describe("pane design conformance", () => {
       )).toThrow();
       expect(sourceHasClickableHeaderSort("<DataTableView onHeaderClick={handleHeaderClick} />")).toBe(true);
       expect(sourceHasClickableHeaderSort("<DataTableStackView onHeaderClick={() => {}} />")).toBe(false);
+      expect(sourceHasClickableHeaderSort("<FeedDataTableStackView items={items} />")).toBe(true);
+      expect(sourceHasClickableHeaderSort("<DataTableView items={rows} />")).toBe(false);
+      expect(sourceHasClickableHeaderSort(
+        "<DataTableView onHeaderClick={() => {}} sortColumnId={null} />",
+      )).toBe(true);
       expect(sourceHasBoundTableFooterHints("paneSearchHint(focusSearch)")).toBe(true);
       expect(sourceHasBoundTableFooterHints("hints: [{ id: \"open\", onPress: open }]")).toBe(false);
     });
@@ -603,6 +609,53 @@ describe("pane design conformance", () => {
       assertFooterHintsBound(rendered.footer, "plugin-marketplace");
       assertFooterHasNoResultCounts(rendered.footer, "plugin-marketplace");
     });
+  });
+
+  describe("news list search", () => {
+    const newsSearchEntries = builtinPaneEntries().filter(({ pane }) => (
+      (NEWS_IN_PANE_SEARCH_PANE_IDS as readonly string[]).includes(pane.id)
+    ));
+
+    let rendered: AuditedPaneRender | undefined;
+    afterEach(async () => {
+      await rendered?.destroy();
+      rendered = undefined;
+      setHttpFetchTransport(null);
+      setCloudApiFetchTransport(null as never);
+    });
+
+    test("catalog still ships the news lists that need in-pane search", () => {
+      expect(newsSearchEntries.map(({ pane }) => pane.id).sort()).toEqual(
+        [...NEWS_IN_PANE_SEARCH_PANE_IDS].sort(),
+      );
+    });
+
+    for (const { pluginId, pane } of newsSearchEntries) {
+      test(`${pane.id}: bound footer hints include search`, async () => {
+        setHttpFetchTransport(async () => {
+          throw new Error("design-gate: no network");
+        });
+        setCloudApiFetchTransport(async () => {
+          throw new Error("design-gate: no network");
+        });
+        rendered = await renderAuditedPane({
+          paneId: pane.id,
+          pluginId,
+          node: createElement(pane.component, {
+            paneId: `${pane.id}:design`,
+            paneType: pane.id,
+            focused: true,
+            width: 100,
+            height: 30,
+          }),
+        });
+        await settleFrames(rendered, 3);
+        assertFooterHasBoundActionHints(rendered.footer, pane.id);
+        assertHasSearchFooterHint(rendered.footer, pane.id);
+        assertNoPerPaneRefreshHint(rendered.footer, pane.id);
+        assertUniversalPaneDesignGates(rendered.frame, rendered.footer, pane.id, pane.name);
+      });
+    }
   });
 
   describe("calendar tables", () => {

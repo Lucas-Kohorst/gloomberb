@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { loadYahooPriceHistoryForResolution } from "./history";
+import { TIME_RANGES } from "../../time-series/range";
+import { getPresetResolution } from "../../time-series/resolution";
+import {
+  getYahooChartRangeParams,
+  loadYahooPriceHistory,
+  loadYahooPriceHistoryForResolution,
+} from "./history";
 
 describe("Yahoo chart history", () => {
   test("derives four-hour bars from hourly history", async () => {
@@ -70,5 +76,30 @@ describe("Yahoo chart history", () => {
       low: 99,
       close: 100.5,
     });
+  });
+
+  test("AUTO range history uses the same intervals as RANGE_PRESET_RESOLUTION", async () => {
+    for (const range of TIME_RANGES) {
+      expect(getYahooChartRangeParams(range).interval).toBe(getPresetResolution(range));
+    }
+    expect(getYahooChartRangeParams("5Y")).toEqual({ range: "5y", interval: "1wk" });
+    expect(getYahooChartRangeParams("ALL")).toEqual({ range: "max", interval: "1mo" });
+  });
+
+  test("5Y history requests weekly bars, not a daily dump", async () => {
+    let requested: { range: string; interval: string } | null = null;
+    await loadYahooPriceHistory({
+      ticker: "AMD",
+      exchange: "NASDAQ",
+      range: "5Y",
+      fetchChart: async (_symbol, range, interval) => {
+        requested = { range, interval };
+        return {
+          meta: { currency: "USD" },
+          history: [{ date: new Date("2026-01-01T00:00:00.000Z"), close: 100 }],
+        };
+      },
+    });
+    expect(requested).toEqual({ range: "5y", interval: "1wk" });
   });
 });

@@ -16,6 +16,10 @@ import {
   looksLikeArticleQuery,
 } from "./builtin/news/wire/article-search";
 import { NEWS_ARTICLE_READER_PANE_ID } from "./builtin/shared/article-pop-out";
+import {
+  DATA_TABLE_COMPONENT_RE,
+  sourceHasClickableHeaderSort,
+} from "../test-support/pane-design";
 
 const PLUGINS_ROOT = import.meta.dir;
 const BUILTIN_ROOT = join(PLUGINS_ROOT, "builtin");
@@ -164,6 +168,25 @@ async function collectRegisteredCommands(
   await setup?.(ctx);
   return commands;
 }
+
+describe("pane design catalog — DataTable header sort", () => {
+  test("catalog DataTables wire real onHeaderClick", () => {
+    const failures: string[] = [];
+    for (const file of walkSourceFiles(BUILTIN_ROOT)) {
+      const rel = relative(BUILTIN_ROOT, file);
+      if (TEST_FILE.test(rel)) continue;
+      const source = readFileSync(file, "utf8");
+      if (!DATA_TABLE_COMPONENT_RE.test(source)) continue;
+      if (!sourceHasClickableHeaderSort(source)) {
+        failures.push(rel);
+      }
+    }
+    expect(
+      failures,
+      failures.map((path) => `${path} mounts a DataTable without clickable header sort`).join("\n"),
+    ).toEqual([]);
+  });
+});
 
 describe("pane design catalog — connections", () => {
   test("plugins that fetch on the real path also register a connection source", () => {
