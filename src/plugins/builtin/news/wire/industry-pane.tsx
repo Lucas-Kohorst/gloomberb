@@ -5,7 +5,7 @@ import type { MarketNewsItem } from "../../../../types/news-source";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
 import { usePaneSettingValue } from "../../../../state/app/context";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
-import { Tabs } from "../../../../components";
+import { PaneListChrome } from "../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import {
   NewsArticleStackView,
@@ -13,6 +13,7 @@ import {
   type NewsSortPreference,
 } from "./news/table";
 import { useNewsArticleFooter } from "./news/footer";
+import { newsListSearchEmptyCopy, useNewsListSearch } from "./news/list-search";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useNewsReadState } from "./read-state";
@@ -64,14 +65,24 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("industry:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
   const { articles, allArticles, loading, error, newsState } = useIndustryArticles(category);
+  const {
+    searchQuery,
+    searchFocused,
+    filteredArticles,
+    search,
+    handleRootKeyDown,
+  } = useNewsListSearch(articles, {
+    registrationId: "news-wire:industry",
+    focused,
+  });
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(NEWS_QUERY_PRESETS.sectorAll, newsState);
   const loadNewsStory = useLoadNewsStory();
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(filteredArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
-  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const selectedArticle = filteredArticles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
@@ -105,7 +116,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
 
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
-    focused,
+    focused: focused && !searchFocused,
     article: readableArticle,
     loading: loading && allArticles.length > 0,
     error,
@@ -118,23 +129,15 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     updatedAt: newsState.updatedAt,
   });
 
-  const rootBefore = (
-    <Box height={1} flexShrink={0} overflow="hidden">
-      <Tabs
-        tabs={tabs}
-        activeValue={category}
-        onSelect={(value) => setCategory(value as SectorNewsSelection)}
-        compact
-        variant="bare"
-        focused={focused}
-      />
-    </Box>
-  );
+  const emptyCopy = newsListSearchEmptyCopy(searchQuery, {
+    title: "No news in this category",
+    hint: "Try another category or wait for the next feed refresh.",
+  });
 
   const detailContent = detailArticle ? (
     <NewsDetailView
       item={detailArticle}
-      focused={focused}
+      focused={focused && !searchFocused}
       width={width}
       showTitle={false}
     />
@@ -144,8 +147,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
 
   return (
     <NewsArticleStackView
-      articles={articles}
-      focused={focused}
+      articles={filteredArticles}
+      focused={focused && !searchFocused}
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
@@ -161,17 +164,28 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       onBack={closeDetail}
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
-      rootBefore={rootBefore}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          tabs={tabs}
+          activeValue={category}
+          onSelect={(value) => setCategory(value as SectorNewsSelection)}
+          tabVariant="bare"
+          search={search}
+        />
+      )}
+      onRootKeyDown={handleRootKeyDown}
       columns={["time", "source", "title", "tickers", "categories", "sentiment"]}
       emptyContent={newsTableStatusContent({
         loading,
         error,
         subject: "Sector news",
-        emptyTitle: "No news in this category",
-        emptyMessage: "Try another category or wait for the next feed refresh.",
+        emptyTitle: emptyCopy.title,
+        emptyMessage: emptyCopy.hint,
       })}
-      emptyStateTitle="No news in this category"
-      emptyStateHint="Try another category or wait for the next feed refresh."
+      emptyStateTitle={emptyCopy.title}
+      emptyStateHint={emptyCopy.hint}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
       onPopOut={() => popOutArticle(readableArticle)}

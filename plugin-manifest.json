@@ -166,6 +166,23 @@
       }
     },
     {
+      "id": "congress-trades",
+      "name": "Congress Trades",
+      "description": "House periodic transaction report disclosures and member trade history.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "congress-trades"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "courtlistener",
       "name": "CourtListener",
       "description": "Federal PACER dockets and opinions via CourtListener. Empty search is the last week of new cases; LAW Kalshi searches that party.",

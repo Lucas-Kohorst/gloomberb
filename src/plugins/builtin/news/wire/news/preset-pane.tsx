@@ -4,6 +4,7 @@ import type { NewsQuery } from "../../../../../news/types";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useDebouncedPluginPaneState } from "../../../../runtime";
+import { PaneListChrome } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./detail-view";
 import {
   NewsArticleStackView,
@@ -12,6 +13,7 @@ import {
   type NewsSortPreference,
 } from "./table";
 import { useNewsArticleFooter } from "./footer";
+import { newsListSearchEmptyCopy, useNewsListSearch } from "./list-search";
 import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { useNewsSavedState } from "../saved-state";
@@ -43,7 +45,17 @@ export function NewsPresetPane({
 }) {
   const newsState = useNewsArticles(query);
   const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
-  const visibleArticles = articles;
+  const {
+    searchQuery,
+    searchFocused,
+    filteredArticles,
+    search,
+    handleRootKeyDown,
+  } = useNewsListSearch(articles, {
+    registrationId: `news-wire:${paneKey}`,
+    focused,
+  });
+  const visibleArticles = filteredArticles;
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(query, newsState);
   // The aggregator opens a query in "loading", so the first paint is a loading
   // body rather than a definitive empty wire.
@@ -81,7 +93,7 @@ export function NewsPresetPane({
 
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
-    focused,
+    focused: focused && !searchFocused,
     article: readableArticle,
     loading: loading && articles.length > 0,
     error,
@@ -97,7 +109,7 @@ export function NewsPresetPane({
   const detailContent = detailArticle ? (
     <NewsDetailView
       item={detailArticle}
-      focused={focused}
+      focused={focused && !searchFocused}
       width={width}
       showTitle={false}
     />
@@ -105,10 +117,15 @@ export function NewsPresetPane({
     <Box flexGrow={1} />
   );
 
+  const emptyCopy = newsListSearchEmptyCopy(searchQuery, {
+    title: emptyStateTitle,
+    hint: emptyStateHint,
+  });
+
   return (
     <NewsArticleStackView
       articles={visibleArticles}
-      focused={focused}
+      focused={focused && !searchFocused}
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
@@ -125,15 +142,23 @@ export function NewsPresetPane({
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       columns={columns}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={search}
+        />
+      )}
+      onRootKeyDown={handleRootKeyDown}
       emptyContent={newsTableStatusContent({
         loading,
         error,
         subject: title,
-        emptyTitle: emptyStateTitle,
-        emptyMessage: emptyStateHint,
+        emptyTitle: emptyCopy.title,
+        emptyMessage: emptyCopy.hint,
       })}
-      emptyStateTitle={emptyStateTitle}
-      emptyStateHint={emptyStateHint}
+      emptyStateTitle={emptyCopy.title}
+      emptyStateHint={emptyCopy.hint}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
       onPopOut={() => popOutArticle(readableArticle)}

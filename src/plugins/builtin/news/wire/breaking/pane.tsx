@@ -3,6 +3,7 @@ import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
+import { PaneListChrome } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
 import {
   NewsArticleStackView,
@@ -10,6 +11,7 @@ import {
   type NewsSortPreference,
 } from "../news/table";
 import { useNewsArticleFooter } from "../news/footer";
+import { newsListSearchEmptyCopy, useNewsListSearch } from "../news/list-search";
 import { usePopOutNewsArticle } from "../news/pop-out";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { NEWS_QUERY_PRESETS } from "../news/query-presets";
@@ -22,6 +24,16 @@ const DEFAULT_SORT: NewsSortPreference = { columnId: "importance", direction: "d
 export function BreakingPane({ focused, width, height }: PaneProps) {
   const breakingState = useNewsArticles(NEWS_QUERY_PRESETS.breaking);
   const articles = usePersistedNewsArticles("breaking:articles", breakingState.articles);
+  const {
+    searchQuery,
+    searchFocused,
+    filteredArticles,
+    search,
+    handleRootKeyDown,
+  } = useNewsListSearch(articles, {
+    registrationId: "news-wire:breaking",
+    focused,
+  });
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(NEWS_QUERY_PRESETS.breaking, breakingState);
   const loading = breakingState.phase === "loading"
     || (breakingState.phase === "refreshing" && articles.length === 0);
@@ -29,12 +41,12 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
   const loadNewsStory = useLoadNewsStory();
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(filteredArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
-  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const selectedArticle = filteredArticles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
@@ -47,7 +59,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
 
   useNewsArticleFooter({
     registrationId: "news-wire:breaking",
-    focused,
+    focused: focused && !searchFocused,
     article: readableArticle,
     loading: loading && articles.length > 0,
     error,
@@ -60,10 +72,15 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     updatedAt: breakingState.updatedAt,
   });
 
+  const emptyCopy = newsListSearchEmptyCopy(searchQuery, {
+    title: "No breaking news",
+    hint: "Breaking stories appear when high-priority headlines arrive.",
+  });
+
   const detailContent = detailArticle ? (
     <NewsDetailView
       item={detailArticle}
-      focused={focused}
+      focused={focused && !searchFocused}
       width={width}
       showTitle={false}
     />
@@ -73,8 +90,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
 
   return (
     <NewsArticleStackView
-      articles={articles}
-      focused={focused}
+      articles={filteredArticles}
+      focused={focused && !searchFocused}
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
@@ -91,15 +108,23 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       columns={["time", "source", "title", "tickers", "categories", "importance"]}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={search}
+        />
+      )}
+      onRootKeyDown={handleRootKeyDown}
       emptyContent={newsTableStatusContent({
         loading,
         error,
         subject: "Breaking news",
-        emptyTitle: "No breaking news",
-        emptyMessage: "Breaking stories appear when high-priority headlines arrive.",
+        emptyTitle: emptyCopy.title,
+        emptyMessage: emptyCopy.hint,
       })}
-      emptyStateTitle="No breaking news"
-      emptyStateHint="Breaking stories appear when high-priority headlines arrive."
+      emptyStateTitle={emptyCopy.title}
+      emptyStateHint={emptyCopy.hint}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
       onPopOut={() => popOutArticle(readableArticle)}
