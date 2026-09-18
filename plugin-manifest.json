@@ -57,6 +57,8 @@
       "toggleable": false,
       "contributes": {
         "panes": [
+          "byok-api-viewer",
+          "byok-settings",
           "changelog",
           "connections",
           "help",

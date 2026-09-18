@@ -19,7 +19,7 @@ import {
 } from "../../../utils/sort-values";
 import { parseByokPayload, type ParsedByokPayload } from "./format";
 import { fetchByokEndpoint } from "./request";
-import { readByokKeysFromConfig } from "./store";
+import { selectByokKeys } from "./store";
 import { useAppSelector } from "../../../state/app/context";
 
 export const BYOK_VIEWER_PANE_ID = "byok-api-viewer";
@@ -29,7 +29,7 @@ type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
   const [keyId] = usePaneSettingValue("keyId", "");
-  const keys = useAppSelector((state) => readByokKeysFromConfig(state.config));
+  const keys = useAppSelector(selectByokKeys);
   const entry = keys.find((key) => key.id === keyId) ?? null;
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
