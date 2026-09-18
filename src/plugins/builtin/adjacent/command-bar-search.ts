@@ -144,6 +144,13 @@ function sameToken(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
+function marketsFromSearch(response: {
+  markets?: readonly AdjacentMarket[] | null;
+  data?: readonly AdjacentMarket[] | null;
+}): AdjacentMarket[] {
+  return [...(response.markets ?? response.data ?? [])];
+}
+
 export function pickAdjacentCatalogOpen(
   query: string,
   catalogs: {
@@ -203,7 +210,7 @@ export async function openAdjacentCatalogSearch(
   const target = pickAdjacentCatalogOpen(trimmed, {
     indices: indices.data ?? [],
     rates: rates.data ?? [],
-    markets: marketResponse.markets ?? marketResponse.data ?? [],
+    markets: marketsFromSearch(marketResponse),
   });
   ctx.createPaneFromTemplate(target.templateId, target.arg ? { arg: target.arg } : undefined);
 }
@@ -228,7 +235,7 @@ export function createAdjacentCatalogSearchProvider(
 
       const indexHits = matchAdjacentIndices(query, indices.data ?? []);
       const rateHits = matchAdjacentRates(query, rates.data ?? []);
-      const markets = (marketResponse.markets ?? marketResponse.data ?? []).slice(0, RESULT_LIMIT);
+      const markets = marketsFromSearch(marketResponse).slice(0, RESULT_LIMIT);
       const results: CommandBarResultDef[] = [];
 
       for (const market of markets) {
