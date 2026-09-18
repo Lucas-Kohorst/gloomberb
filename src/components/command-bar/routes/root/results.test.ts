@@ -232,6 +232,52 @@ describe("provider rows in the root result model", () => {
     expect(ids).not.toContain(prefix === "ART" ? chartRow.id : documentRow.id);
     expect(ids).not.toContain("search-provider:unrelated:example");
   });
+
+  test("ADJ shows Adjacent catalog rows instead of unrelated providers", () => {
+    const catalogRow = {
+      ...documentRow,
+      id: "search-provider:adjacent-catalog:market:kalshi:kxpres",
+      label: "KXPRES",
+      detail: "Who will win the election?",
+      right: "ADJ",
+    };
+    const adjCommand = {
+      id: "adjacent-markets-search",
+      label: "Search Adjacent",
+      keywords: ["adjacent"],
+      shortcut: "ADJ",
+      category: "data" as const,
+      execute: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "ADJ election",
+      providerResultItems: [catalogRow, documentRow],
+      createPluginCommandItem: () => ({
+        id: "adjacent-markets-search",
+        label: "Search Adjacent",
+        detail: "election",
+        category: "Data",
+        kind: "command",
+        right: "ADJ",
+        action: () => {},
+      }),
+      rootShortcutIntent: {
+        kind: "complete",
+        source: "plugin-command",
+        prefix: "ADJ",
+        label: "Search Adjacent",
+        description: "Search Adjacent catalogs",
+        argKind: "text",
+        argText: "election",
+        completionQuery: null,
+        command: adjCommand,
+      },
+    }));
+    const ids = items.map((item) => item.id);
+    expect(ids[0]).toBe(catalogRow.id);
+    expect(ids).toContain("adjacent-markets-search");
+    expect(ids).not.toContain(documentRow.id);
+  });
 });
 
 describe("assist rows in the root result model", () => {

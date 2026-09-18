@@ -565,12 +565,15 @@ export function CommandBar({
   ]);
 
   const corpusPrefixQuery = /^\s*(ART|LAW|ETF)\b/i.test(rootQuery);
+  const adjacentPrefixQuery = /^\s*ADJ\b/i.test(rootQuery);
   const searchProviders = useMemo(
     () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins)
-      .filter((provider) => corpusPrefixQuery
-        ? provider.id.startsWith("research-search:")
-        : !shortcutOwnsQuery),
-    [pluginRegistry, shortcutOwnsQuery, corpusPrefixQuery, state.config.disabledPlugins],
+      .filter((provider) => {
+        if (adjacentPrefixQuery) return provider.id === "adjacent-catalog";
+        if (corpusPrefixQuery) return provider.id.startsWith("research-search:");
+        return !shortcutOwnsQuery;
+      }),
+    [pluginRegistry, shortcutOwnsQuery, corpusPrefixQuery, adjacentPrefixQuery, state.config.disabledPlugins],
   );
   const searchProviderContext = useMemo(() => ({
     activeTicker: activeTickerSymbol,
@@ -600,8 +603,15 @@ export function CommandBar({
   }, [dispatch]);
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
-    query: rootQuery.replace(/^\s*(ART|LAW|ETF)\s+/i, ""),
-    enabled: !currentRoute && (!shortcutOwnsQuery || looksLikeArticleQuery(rootQuery) || corpusPrefixQuery),
+    query: adjacentPrefixQuery
+      ? rootQuery.replace(/^\s*ADJ\b\s*/i, "")
+      : rootQuery.replace(/^\s*(ART|LAW|ETF)\s+/i, ""),
+    enabled: !currentRoute && (
+      !shortcutOwnsQuery
+      || looksLikeArticleQuery(rootQuery)
+      || corpusPrefixQuery
+      || adjacentPrefixQuery
+    ),
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
     beforeExecute: recordSearchProviderArticle,

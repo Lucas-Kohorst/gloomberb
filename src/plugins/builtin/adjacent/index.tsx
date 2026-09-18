@@ -15,7 +15,7 @@ import { useAppSelector } from "../../../state/app/context";
 import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { AdjacentPane } from "./pane";
 import { createAdjacentNewsCapability } from "./news";
-import { createAdjacentCatalogSearchProvider } from "./command-bar-search";
+import { createAdjacentCatalogSearchProvider, openAdjacentCatalogSearch } from "./command-bar-search";
 import { createCftcDocumentSearchProvider } from "./document-search";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
@@ -129,6 +129,25 @@ const adjacentMarketsModule: PluginModule = {
       },
     },
     {
+      id: "adjacent-markets-pane",
+      paneId: "adjacent",
+      label: "Adjacent Markets",
+      description:
+        "Search Adjacent prediction-market catalogs as a list (ticker, title, venue, status). Pricing and venue stats stay on PM.",
+      keywords: ["adjacent", "markets", "catalog", "kalshi", "polymarket", "search", "list"],
+      category: "Data",
+      canCreate: () => true,
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        const query = (options?.arg ?? "").trim();
+        return {
+          placement: "floating",
+          ...(query
+            ? { params: { query }, settings: { defaultTabId: "markets", query }, title: query }
+            : { settings: { defaultTabId: "markets" } }),
+        };
+      },
+    },
+    {
       id: "cftc-filings-pane",
       paneId: "adjacent",
       label: "CFTC Filings",
@@ -205,9 +224,10 @@ const adjacentMarketsModule: PluginModule = {
 
     ctx.registerCommand({
       id: "adjacent-markets-search",
-      label: "Search Adjacent Markets",
-      description: "Search normalized prediction markets via Adjacent.",
-      keywords: ["adjacent", "search", "markets", "prediction", "kalshi", "polymarket"],
+      label: "Search Adjacent",
+      description:
+        "Search Adjacent catalogs (markets, indices, rates) and open an Adjacent list. Venue pricing stays on PM.",
+      keywords: ["adjacent", "search", "markets", "indices", "rates", "catalog", "kalshi", "polymarket"],
       category: "data",
       shortcut: "ADJ",
       shortcutArg: {
@@ -215,25 +235,9 @@ const adjacentMarketsModule: PluginModule = {
         kind: "text",
         parse: (arg) => ({ query: arg.trim() }),
       },
-      wizard: [
-        {
-          key: "query",
-          label: "Search query",
-          placeholder: "e.g. election, fed rate, bitcoin",
-          type: "text",
-          required: true,
-        },
-      ],
       execute: async (values) => {
-        const query = values?.query?.trim();
-        if (!query) {
-          ctx.notify({ body: "Enter a search query.", type: "error" });
-          return;
-        }
-        ctx.resume.setPaneState("prediction-markets:main", "searchQuery", query);
-        ctx.resume.setPaneState("prediction-markets:main", "venueScope", "all");
-        ctx.resume.setPaneState("prediction-markets:main", "selectedMarketKey", null);
-        ctx.focusPane("prediction-markets");
+        const query = (values?.query ?? values?.shortcut ?? "").trim();
+        await openAdjacentCatalogSearch(ctx, query);
       },
     });
   },

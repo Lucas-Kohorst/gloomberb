@@ -295,6 +295,22 @@ export interface AdjacentRateRow {
   category?: string;
 }
 
+/** Catalog identity for Adjacent market lists. No YES/NO/vol/OI — that chrome lives on PM. */
+export interface AdjacentMarketRow {
+  id: string;
+  ticker: string;
+  title: string;
+  platform: AdjacentPlatform;
+  status: string;
+  endsAt: string | null;
+  url?: string;
+  category?: string;
+  subtitle?: string;
+  description?: string;
+}
+
+export type AdjacentMarketSortColumnId = "ticker" | "title" | "platform" | "status" | "ends";
+
 export interface AdjacentPriceHistoryPoint {
   date: Date;
   close: number;
