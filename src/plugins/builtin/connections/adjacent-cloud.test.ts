@@ -30,11 +30,14 @@ describe("Adjacent Cloud connection folding", () => {
   test("provider set covers settlement and reference prints, not research origins", () => {
     expect([...ADJACENT_CLOUD_PROVIDER_IDS].sort()).toEqual([
       "adjacent",
+      "federal-register",
       "llm-stats",
       "nws-cli",
+      "ofac-sanctions",
       "owid",
       "twc-kalshi",
       "us-listings",
+      "usaspending",
       "votehub",
     ]);
     for (const id of ["world-bank", "opensky", "nasa-firms", "digitraffic-ais", "nasa-gibs"]) {

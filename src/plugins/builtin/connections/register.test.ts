@@ -118,7 +118,7 @@ describe("connection source registry", () => {
     }
   });
 
-  test("reports VoteHub / OWID / llm-stats traffic on Adjacent Cloud", () => {
+  test("reports VoteHub / OWID / llm-stats / FR / OFAC / USA traffic on Adjacent Cloud", () => {
     disposers.push(registerConnectionSource({
       id: ADJACENT_CLOUD_CONNECTION_ID,
       name: "Adjacent Cloud",
@@ -134,6 +134,9 @@ describe("connection source registry", () => {
     reportConnectionRequest("owid", { success: true, durationMs: 22, operation: "chart" });
     reportConnectionRequest("llm-stats", { success: true, durationMs: 8, operation: "stats" });
     reportConnectionRequest("twc-kalshi", { success: true, durationMs: 9, operation: "climate-primary" });
+    reportConnectionRequest("federal-register", { success: true, durationMs: 7, operation: "fetch" });
+    reportConnectionRequest("ofac-sanctions", { success: true, durationMs: 6, operation: "fetch" });
+    reportConnectionRequest("usaspending", { success: true, durationMs: 5, operation: "fetch" });
     reportConnectionRequest("yahoo", { success: true, durationMs: 5, operation: "fetch" });
 
     expect(reports).toEqual([
@@ -141,6 +144,9 @@ describe("connection source registry", () => {
       { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "chart" },
       { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "stats" },
       { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "climate-primary" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "fetch" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "fetch" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "fetch" },
       { id: "yahoo", operation: "fetch" },
     ]);
   });
@@ -234,8 +240,9 @@ describe("connection source registry", () => {
     disposers.push(() => adjacentPlugin.dispose?.());
 
     const ids = listConnectionSources().map((source) => source.id);
-    // VoteHub, weather, and other extracted sources register from their
-    // external plugins instead of being bundled into Adjacent Cloud.
+    // VoteHub, FR, OFAC, and USAspending fold onto Adjacent Cloud. Weather is
+    // a WX shortcut on the Adjacent pane, not a composed plugin with its own
+    // Connections source ids.
     expect(ids).toEqual([
       ADJACENT_CLOUD_CONNECTION_ID,
     ]);

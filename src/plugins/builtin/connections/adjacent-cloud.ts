@@ -7,8 +7,9 @@ import {
 
 /**
  * Single Connections-pane row for Adjacent Cloud children (VoteHub, OWID,
- * weather, listings, llm-stats, Adjacent). Research keyed-data origins
- * (World Bank, OpenSky, NASA, Digitraffic) keep their own rows.
+ * weather prints, listings, llm-stats, Adjacent, Federal Register, OFAC,
+ * USAspending). Research keyed-data origins (World Bank, OpenSky, NASA,
+ * Digitraffic) keep their own rows.
  */
 export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
 
@@ -25,6 +26,9 @@ export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "votehub",
   "us-listings",
   "owid",
+  "federal-register",
+  "ofac-sanctions",
+  "usaspending",
 ] as const;
 
 const ADJACENT_CLOUD_PROVIDER_ID_SET = new Set<string>(ADJACENT_CLOUD_PROVIDER_IDS);

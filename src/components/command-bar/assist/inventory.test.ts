@@ -259,7 +259,7 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("POLL")).toBe(true);
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "POLL")?.paneId).toBe("polls");
     expect(prefixes.has("WX")).toBe(true);
-    expect(paneTemplates.find((template) => template.shortcut?.prefix === "WX")?.paneId).toBe("weather");
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "WX")?.paneId).toBe("adjacent");
     expect(prefixes.has("FR")).toBe(true);
     expect(prefixes.has("OFAC")).toBe(true);
     expect(prefixes.has("USA")).toBe(true);
