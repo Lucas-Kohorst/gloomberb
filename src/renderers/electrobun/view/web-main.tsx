@@ -43,7 +43,7 @@ import {
   resolveHostedInit,
   resolveHostedSession,
 } from "./hosted-boot";
-import { hydrateHostedWorkspaceFromCloud, restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
+import { restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
 import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
 import {
   armStartupInteractiveAfterFirstPaint,
@@ -153,11 +153,8 @@ async function boot(): Promise<void> {
     if (!publicShare) {
       hydrateHostedUserConfig(init.config);
       restoreHostedLocalWorkspaceExtras();
-      if (hostedSession?.user) {
-        await hydrateHostedWorkspaceFromCloud(init.config, {
-          pullSync: () => apiClient.getSyncSnapshot(),
-        });
-      }
+      // Cloud overlay is persist:false after first paint (useCloudSyncRuntime).
+      // Session identity and hosted-local config/BYOK stay pre-paint.
       getHostedConfigSnapshotPusher().schedule(init.config);
     }
   }

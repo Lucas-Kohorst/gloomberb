@@ -110,6 +110,21 @@ describe("startup interaction gate", () => {
     }
   });
 
+  test("armStartupInteractiveAfterFirstPaint yields one tick when rAF is missing", async () => {
+    enableStartupNetworkDeferral();
+    const previousRaf = globalThis.requestAnimationFrame;
+    delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+
+    try {
+      armStartupInteractiveAfterFirstPaint();
+      expect(isStartupNetworkDeferred()).toBe(true);
+      await Bun.sleep(20);
+      expect(isStartupNetworkDeferred()).toBe(false);
+    } finally {
+      if (previousRaf) globalThis.requestAnimationFrame = previousRaf;
+    }
+  });
+
   test("holds background work after first paint while the user is interacting", async () => {
     enableStartupNetworkDeferral();
     setUiYieldReason("input", true);

@@ -11,6 +11,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { AiAgentHistoryMessage } from "./agent-history";
 import { browserAiProviderStatus, refreshBrowserAiState } from "./browser";
 import { withDeadline } from "../../../utils/async-deadline";
+import { whenStartupBackground } from "../../../utils/startup-interaction";
 import { withConnectionRequest } from "../connections/register";
 
 export class AiRunCancelledError extends Error {
@@ -246,9 +247,15 @@ export async function installAiRunHost(
     catalogTimeoutMs: number;
     timeoutMessage: string;
     onCatalogError?: (error: unknown) => void;
+    /**
+     * Probe providers after first paint (same timeout). The run host is still
+     * installed immediately so in-app AI is callable with an empty catalog.
+     */
+    afterStartupBackground?: boolean;
   },
 ): Promise<AiRuntimeCatalog> {
   setAiRunHost(host);
+  if (options.afterStartupBackground) await whenStartupBackground();
   const emptyCatalog: AiRuntimeCatalog = { providers: [], accounts: [], models: [] };
   const catalog = await withDeadline(
     Promise.resolve().then(() => host.getCatalog?.() ?? emptyCatalog),

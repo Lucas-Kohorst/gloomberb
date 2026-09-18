@@ -64,6 +64,14 @@ export async function applyHostedCloudOverlay(args: {
   return true;
 }
 
+/** Post-paint hosted overlay so the first App commit is not gated on Gloom Cloud. */
+export async function overlayHostedWorkspaceAfterPaint(
+  args: Parameters<typeof applyHostedCloudOverlay>[0],
+): Promise<boolean> {
+  await whenStartupBackground();
+  return applyHostedCloudOverlay(args);
+}
+
 async function configForHostedAccount(current: AppConfig, userId: string): Promise<AppConfig> {
   if (!current.dataDir.startsWith("cloud:") && !current.dataDir.startsWith("browser:")) {
     return current;
@@ -155,6 +163,25 @@ export function useCloudSyncRuntime({
     if (!initialized) return;
     cloudSyncController.schedulePush("state-change");
   }, [initialized, state.config, state.tickers]);
+
+  useEffect(() => {
+    if (!initialized || !isHostedWebClient() || isPublicShareLocation()) return;
+    if (!apiClient.getCurrentUser()) return;
+    const capturedConfig = getState().config;
+    let cancelled = false;
+    void overlayHostedWorkspaceAfterPaint({
+      capturedConfig,
+      getState,
+      dispatch,
+      tickerRepository,
+      beforeApply: Promise.resolve().then(() => {
+        if (cancelled) throw new Error("hosted overlay cancelled");
+      }),
+    }).catch(() => false);
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized, dispatch, getState, tickerRepository]);
 
   useEffect(() => {
     let lastUserId: string | null = apiClient.getCurrentUser()?.id ?? null;

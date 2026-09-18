@@ -16,6 +16,11 @@ import {
   type AiRunHost,
   type AiRuntimeCatalog,
 } from "./runner";
+import {
+  enableStartupNetworkDeferral,
+  markStartupInteractive,
+  resetStartupInteractionForTests,
+} from "../../../utils/startup-interaction";
 
 function catalog(connectionState: "connected" | "not_connected"): AiRuntimeCatalog {
   const connected = connectionState === "connected";
@@ -57,6 +62,7 @@ afterEach(() => {
   resetQueuedAgentHarnessesForTests();
   setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
   setDetectedProviders(null);
+  resetStartupInteractionForTests();
   (globalThis as { LanguageModel?: unknown }).LanguageModel = originalLanguageModel;
   delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
 });
@@ -157,6 +163,35 @@ describe("AI runner", () => {
     await expect(installation).resolves.toEqual({ providers: [], accounts: [], models: [] });
     expect(catalogErrors).toHaveLength(1);
     expect(catalogErrors[0]).toMatchObject({ message: "AI discovery timed out" });
+  });
+
+  test("defers catalog probing until first paint when afterStartupBackground is set", async () => {
+    enableStartupNetworkDeferral();
+    let catalogCalls = 0;
+    const installation = installAiRunHost({
+      run: () => ({ done: Promise.resolve("available"), cancel() {} }),
+      getCatalog: async () => {
+        catalogCalls += 1;
+        return catalog("connected");
+      },
+    }, {
+      catalogTimeoutMs: 50,
+      timeoutMessage: "AI discovery timed out",
+      afterStartupBackground: true,
+    });
+
+    await expect(runAiPrompt({
+      providerId: "anthropic",
+      prompt: "hello",
+    }).done).resolves.toBe("available");
+    await Bun.sleep(20);
+    expect(catalogCalls).toBe(0);
+
+    markStartupInteractive();
+    await expect(installation).resolves.toMatchObject({
+      providers: [{ providerId: "openai-codex" }],
+    });
+    expect(catalogCalls).toBe(1);
   });
 
   test("does not publish an empty catalog after discovery failure", async () => {
