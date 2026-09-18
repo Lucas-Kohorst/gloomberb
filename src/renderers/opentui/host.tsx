@@ -9,6 +9,7 @@ import { safeExternalUrl, openUrlCommand } from "../../utils/external-url";
 import { createTerminalMediaReaper, terminalMediaStateFile } from "./terminal-media";
 import { saveTextFileToDownloads } from "../../utils/save-text-file";
 import { installInteractionPerformanceRecorder } from "./interaction-performance";
+import { installCliRendererListenerHub } from "./listener-hub";
 
 export { useKeyboard, useTerminalDimensions };
 
@@ -96,6 +97,7 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     backgroundColor: colors.bg,
     enableMouseMovement: true,
   });
+  installCliRendererListenerHub(renderer);
   const root = createRoot(renderer);
   installResolutionEventBridge(renderer);
   const stopInteractionPerformanceRecorder = installInteractionPerformanceRecorder(renderer);
