@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { EventEmitter } from "events";
+import { createTestRenderer } from "@opentui/core/testing";
 import { installCliRendererListenerHub } from "./listener-hub";
 import {
   getOpenTuiViewportSnapshot,
@@ -18,6 +19,13 @@ function createFakeRenderer(width = 80, height = 24) {
 }
 
 describe("installCliRendererListenerHub", () => {
+  let testRenderer: Awaited<ReturnType<typeof createTestRenderer>>["renderer"] | undefined;
+
+  afterEach(() => {
+    testRenderer?.destroy();
+    testRenderer = undefined;
+  });
+
   test("keeps one real selection listener while many ScrollBox-style consumers attach", () => {
     const emitter = new EventEmitter();
     installCliRendererListenerHub(emitter);
@@ -63,6 +71,27 @@ describe("installCliRendererListenerHub", () => {
     emitter.off("resize", onResizeA);
     emitter.removeListener("resize", onResizeB);
     expect(emitter.listenerCount("resize")).toBe(0);
+  });
+
+  test("hubs selection on a real CliRenderer without MaxListeners warnings", async () => {
+    const warnings: string[] = [];
+    const onWarning = (warning: Error) => {
+      warnings.push(`${warning.name}: ${warning.message}`);
+    };
+    process.on("warning", onWarning);
+    try {
+      const setup = await createTestRenderer({ width: 40, height: 12 });
+      testRenderer = setup.renderer;
+      installCliRendererListenerHub(setup.renderer);
+      const before = setup.renderer.listenerCount("selection");
+      for (let index = 0; index < 15; index += 1) {
+        setup.renderer.on("selection", () => {});
+      }
+      expect(setup.renderer.listenerCount("selection")).toBe(before + 1);
+      expect(warnings.some((warning) => warning.includes("MaxListeners"))).toBe(false);
+    } finally {
+      process.off("warning", onWarning);
+    }
   });
 
   test("once removes the hubbed handler after the first emit", () => {
