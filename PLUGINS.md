@@ -504,6 +504,8 @@ Available context kinds are `pane`, `ticker`, `link`, `editable-text`, `selected
 
 Commands registered with `ctx.registerCommand({ shortcut, shortcutArg })` and pane templates registered with `shortcut` are picked up by the in-app Help pane automatically. Use those fields for user-facing command-bar prefixes instead of adding separate Help text. When a built-in command or pane shortcut is added or renamed, also update the README command tables so the public docs match the live registry.
 
+Assist maps natural language onto those prefixes (`KEYS` = BYOK API keys, `BIND`/`KB` = keybindings). Every catalog pane template needs a `shortcut.prefix` and `description`. Deep rows (TV channels, connection sources, filings, notes) belong in `registerCommandBarSearchProvider` / `registerDocumentSearchProvider` — do not add one Assist prefix per row.
+
 ### Command-bar search providers
 
 `registerCommand` covers actions the user can name. A search provider covers everything else the user might type: it is asked for rows whenever free text stays in the command bar, and answers over the network.

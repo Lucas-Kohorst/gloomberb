@@ -9,13 +9,29 @@ import {
 import { readProcessEnv } from "../../../utils/process-env";
 import { getByokKnownService, getByokKnownServices } from "./services";
 
+const EMPTY_BYOK_KEYS: ByokApiKeyEntry[] = [];
+
 /** Reads BYOK key entries from a raw AppConfig.pluginConfig map. */
 export function readByokKeysFromConfig(config: AppConfig): ByokApiKeyEntry[] {
   const stored = config.pluginConfig["application"]?.[BYOK_API_KEYS_CONFIG_KEY] as
     | Partial<ByokStoredConfig>
     | undefined;
-  if (!stored?.keys || !Array.isArray(stored.keys)) return [];
-  return stored.keys.filter(isApiKeyEntry);
+  if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
+  const keys = stored.keys.filter(isApiKeyEntry);
+  return keys.length === 0 ? EMPTY_BYOK_KEYS : keys;
+}
+
+/**
+ * Selector for `useAppSelector`. The empty result is a stable instance — a
+ * fresh `[]` each call makes useSyncExternalStore treat the store as changed
+ * and hit React error #185 (maximum update depth).
+ */
+export function selectByokKeys(state: { config: AppConfig }): ByokApiKeyEntry[] {
+  const stored = state.config.pluginConfig["application"]?.[BYOK_API_KEYS_CONFIG_KEY] as
+    | Partial<ByokStoredConfig>
+    | undefined;
+  if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
+  return stored.keys;
 }
 
 /** Custom keys become command-bar entries after a successful test. */

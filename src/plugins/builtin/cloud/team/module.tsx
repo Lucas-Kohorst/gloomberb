@@ -43,7 +43,12 @@ export const teamModule: PluginModule = {
     label: "Team",
     description: "Members, invites, channels, and settings for your teams",
     keywords: ["team", "teams", "members", "invite", "collaborate"],
-    canCreate: () => true,
+    shortcut: {
+      prefix: "TEAM",
+      argPlaceholder: "[team | new | invite [@user|link] | members | channels | settings | leave | focus]",
+      argKind: "text",
+      argOptional: true,
+    },
     createInstance: () => ({ placement: "floating", instanceId: "team" }),
   }],
   slots: {

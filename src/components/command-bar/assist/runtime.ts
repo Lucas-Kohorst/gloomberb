@@ -6,6 +6,7 @@ import {
 } from "../../../api-client";
 import { ApiRequestError } from "../../../api-client/errors";
 import { runBrowserAssistCommand } from "../../../plugins/builtin/ai/assist-local";
+import { selectAssistInventoryForQuery } from "./inventory";
 import type { AssistErrorKind, AssistRequestSource, AssistRequestState } from "./model";
 
 /** Quiet period after the last keystroke before the query is sent. */
@@ -107,7 +108,7 @@ export function useCommandBarAssist({
 
     void (async () => {
       try {
-        const inventory = getInventoryRef.current();
+        const inventory = selectAssistInventoryForQuery(getInventoryRef.current(), trimmed);
         let response: { candidates?: AssistCommandCandidate[] } | null = null;
         try {
           response = await apiClient.assistCommand(trimmed, inventory, {

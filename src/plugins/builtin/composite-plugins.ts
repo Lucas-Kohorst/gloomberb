@@ -71,7 +71,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, marketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
+  modules: [layoutManagerModule, marketplaceModule, helpModule, byokModule, keybindingsModule, changelogModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

@@ -4,10 +4,10 @@ import {
   DataTableView,
   EmptyState,
   Spinner,
-  usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
+import { usePaneStatusFooter } from "../shared/pane-footer";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
@@ -19,7 +19,7 @@ import {
 } from "../../../utils/sort-values";
 import { parseByokPayload, type ParsedByokPayload } from "./format";
 import { fetchByokEndpoint } from "./request";
-import { readByokKeysFromConfig } from "./store";
+import { selectByokKeys } from "./store";
 import { useAppSelector } from "../../../state/app/context";
 
 export const BYOK_VIEWER_PANE_ID = "byok-api-viewer";
@@ -29,7 +29,7 @@ type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
   const [keyId] = usePaneSettingValue("keyId", "");
-  const keys = useAppSelector((state) => readByokKeysFromConfig(state.config));
+  const keys = useAppSelector(selectByokKeys);
   const entry = keys.find((key) => key.id === keyId) ?? null;
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -79,12 +79,12 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
     }
   }, { enabled: focused });
 
-  usePaneFooter("byok-api-viewer", () => ({
-    info: [
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-  }), [error, status]);
+  usePaneStatusFooter({
+    registrationId: "byok-api-viewer",
+    loading: status === "loading",
+    error,
+    focused,
+  });
 
   if (!entry && status !== "loading") {
     return (
