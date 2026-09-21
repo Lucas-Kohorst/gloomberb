@@ -4,7 +4,7 @@ import { testRender } from "../../../../renderers/opentui/test-utils";
 import type { Quote } from "../../../../types/financials";
 import type { QueryEntry } from "../../../../market-data/result-types";
 import { createIdleEntry } from "../../../../market-data/result-types";
-import { QuoteMonitorCard } from "./card";
+import { QuoteMonitorCard, resolveQuoteStatus } from "./card";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -41,6 +41,26 @@ async function renderCard(quoteEntry: QueryEntry<Quote> | null): Promise<string>
   });
   return testSetup!.captureCharFrame();
 }
+
+describe("resolveQuoteStatus", () => {
+  test("a finite price is not a failed feed when a later refresh errors", () => {
+    const quote: Quote = {
+      symbol: "MSFT",
+      price: 400,
+      currency: "USD",
+      change: 1,
+      changePercent: 0.25,
+      lastUpdated: 1,
+    };
+    expect(resolveQuoteStatus({
+      ...createIdleEntry<Quote>(),
+      phase: "ready",
+      data: quote,
+      lastGoodData: quote,
+      error: { reasonCode: "UPSTREAM_ERROR", message: "Provider is down" },
+    }, "MSFT")).toEqual({ failed: false, text: "" });
+  });
+});
 
 describe("QuoteMonitorCard without a quote", () => {
   test("separates loading, unknown symbol and provider failure", async () => {

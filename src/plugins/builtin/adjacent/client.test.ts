@@ -230,6 +230,75 @@ describe("AdjacentClient paths", () => {
     expect(requested[1]?.authorization).toBe("Bearer ak_test");
   });
 
+  test("blank and literal undefined keys stay on the public tier", async () => {
+    setHosted(false);
+    mockFetch({ data: [] });
+    await new AdjacentClient({ apiKey: "  " }).getIndices();
+    await new AdjacentClient({ apiKey: "undefined" }).listFilings({ perPage: 1 });
+    expect(requested[0]?.url).toBe("https://api.adjacent.markets/api/v1/public/indices");
+    expect(requested[0]?.authorization).toBeNull();
+    expect(requested[1]?.url).toStartWith("https://api.adjacent.markets/api/v1/public/filings?");
+    expect(requested[1]?.authorization).toBeNull();
+  });
+
+  test("a 401 on auth indices and filings retries the public twin", async () => {
+    setHosted(false);
+    requested = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      requested.push({
+        url,
+        authorization: headerValue(init?.headers, "Authorization"),
+      });
+      const status = url.includes("/public/") ? 200 : 401;
+      return new Response(JSON.stringify({ data: [{ id: "spx", name: "S&P" }] }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new AdjacentClient({ apiKey: "dead-clerk-key" });
+    const indices = await client.getIndices();
+    const filings = await client.listFilings({ perPage: 1 });
+    expect(indices).toEqual({ data: [{ id: "spx", name: "S&P" }] });
+    expect(filings.filings).toEqual([]);
+    expect(requested.map((entry) => entry.url)).toEqual([
+      "https://api.adjacent.markets/api/v1/indices",
+      "https://api.adjacent.markets/api/v1/public/indices",
+      expect.stringContaining("https://api.adjacent.markets/api/v1/filings?"),
+      expect.stringContaining("https://api.adjacent.markets/api/v1/public/filings?"),
+    ]);
+    expect(requested[0]?.authorization).toBe("Bearer dead-clerk-key");
+    expect(requested[1]?.authorization).toBeNull();
+    expect(requested[3]?.authorization).toBeNull();
+  });
+
+  test("a 401 on news is still unauthorized because news has no public twin", async () => {
+    setHosted(false);
+    requested = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      requested.push({
+        url,
+        authorization: headerValue(init?.headers, "Authorization"),
+      });
+      return new Response("{}", { status: 401, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    await expect(new AdjacentClient({ apiKey: "dead-clerk-key" }).getLatestNews(5))
+      .rejects.toThrow("Adjacent request unauthorized.");
+    expect(requested).toHaveLength(1);
+    expect(requested[0]?.url).toBe("https://api.adjacent.markets/api/v1/news/latest?per_page=5");
+  });
+
   test("maps snake_case filing fields and skips rows with no id or title", async () => {
     setHosted(false);
     mockFetch({

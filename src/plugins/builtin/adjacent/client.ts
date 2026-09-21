@@ -42,6 +42,50 @@ import { withConnectionRequest } from "../connections/register";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
 const DEFAULT_SOURCE_KEY = "adjacent";
+const ADJACENT_PUBLIC_HEADS = new Set(["markets", "indices", "rates", "events", "filings"]);
+
+/** Blank, literal "undefined", and "null" are not keys. They must not force auth paths. */
+export function normalizeAdjacentApiKey(apiKey: string | null | undefined): string | null {
+  const trimmed = typeof apiKey === "string" ? apiKey.trim() : "";
+  if (!trimmed || trimmed === "undefined" || trimmed === "null") return null;
+  return trimmed;
+}
+
+/**
+ * Auth list paths have a delayed public twin. News and similar do not.
+ * A 401 on the auth URL can retry this twin; a 401 here is a real rejection.
+ */
+export function adjacentPublicTwinUrl(url: string): string | null {
+  if (url.startsWith("/")) {
+    const queryAt = url.indexOf("?");
+    const path = queryAt >= 0 ? url.slice(0, queryAt) : url;
+    const search = queryAt >= 0 ? url.slice(queryAt) : "";
+    const marker = "/api/data/adjacent/";
+    const at = path.indexOf(marker);
+    if (at < 0) return null;
+    const rest = path.slice(at + marker.length);
+    if (!rest || rest.startsWith("public/")) return null;
+    const head = rest.split("/")[0] ?? "";
+    if (!ADJACENT_PUBLIC_HEADS.has(head)) return null;
+    return `${path.slice(0, at)}${marker}public/${rest}${search}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== "api.adjacent.markets") return null;
+  const prefix = "/api/v1/";
+  if (!parsed.pathname.startsWith(prefix)) return null;
+  const rest = parsed.pathname.slice(prefix.length);
+  if (!rest || rest.startsWith("public/")) return null;
+  const head = rest.split("/")[0] ?? "";
+  if (!ADJACENT_PUBLIC_HEADS.has(head)) return null;
+  parsed.pathname = `${prefix}public/${rest}`;
+  return parsed.toString();
+}
 
 function adjacentTransport(url: string, init?: RequestInit): Promise<Response> {
   if (url.startsWith("/")) return globalThis.fetch(url, init);
@@ -199,8 +243,9 @@ function buildUrl(path: string, params?: Record<string, string | number | undefi
 }
 
 function authHeaders(apiKey: string | null | undefined): Record<string, string> {
-  if (!apiKey) return {};
-  return { Authorization: `Bearer ${apiKey}` };
+  const key = normalizeAdjacentApiKey(apiKey);
+  if (!key) return {};
+  return { Authorization: `Bearer ${key}` };
 }
 
 /** Hosted injects ADJACENT_API_KEY on the worker; the browser has no BYOK key. */
@@ -210,7 +255,7 @@ function usesWorkerAdjacentKey(): boolean {
 
 function isPublicMode(apiKey: string | null | undefined): boolean {
   if (usesWorkerAdjacentKey()) return false;
-  return !apiKey;
+  return !normalizeAdjacentApiKey(apiKey);
 }
 
 function adjacentPriceInterval(interval: string): string {
@@ -224,7 +269,16 @@ async function adjacentFetchJson<T>(
 ): Promise<T> {
   return withConnectionRequest("adjacent", "fetch", async () => {
     const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
-    const response = await ADJACENT_FETCH.fetch(url, { headers, signal });
+    let response = await ADJACENT_FETCH.fetch(url, { headers, signal });
+    // A stale or rejected key 401s the auth path. Indices, filings, markets,
+    // rates, and events still have a public twin that ignores that key.
+    // News and similar have no twin, so their 401 stays a real rejection.
+    if (response.status === 401) {
+      const fallback = adjacentPublicTwinUrl(url);
+      if (fallback) {
+        response = await ADJACENT_FETCH.fetch(fallback, { signal });
+      }
+    }
     if (!response.ok) {
       if (response.status === 401) {
         throw new Error("Adjacent request unauthorized.");
@@ -297,11 +351,11 @@ export class AdjacentClient {
   constructor(private options: AdjacentClientOptions = {}) {}
 
   get apiKey(): string | null | undefined {
-    return this.options.apiKey ?? null;
+    return normalizeAdjacentApiKey(this.options.apiKey);
   }
 
   get isPublic(): boolean {
-    return isPublicMode(this.options.apiKey);
+    return isPublicMode(this.apiKey);
   }
 
   private marketsPath(): string {
@@ -733,7 +787,7 @@ export function setSharedAdjacentApiKeyResolver(resolver: () => string | null): 
 }
 
 export function resolveAdjacentApiKey(): string | null {
-  return resolveSharedApiKey()?.trim() || readProcessEnv("ADJACENT_API_KEY") || null;
+  return normalizeAdjacentApiKey(resolveSharedApiKey()) ?? normalizeAdjacentApiKey(readProcessEnv("ADJACENT_API_KEY"));
 }
 
 /** Returns an Adjacent client using the effective shared API key, if any. */
