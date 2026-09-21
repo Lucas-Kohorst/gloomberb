@@ -55,6 +55,14 @@ describe("desktop chrome clip", () => {
     expect(tvChart).toContain("touch-action: none");
     expect(tvChart).toContain("overscroll-behavior: none");
 
+    const footerRuleStart = css.indexOf("position: relative;\n  z-index: 13;");
+    expect(footerRuleStart).toBeGreaterThanOrEqual(0);
+    const footerRule = css.slice(footerRuleStart, css.indexOf("}", footerRuleStart));
+    expect(footerRule).toContain("pointer-events: none");
+    const hintRuleStart = css.indexOf('[data-gloom-role="pane-footer"] [data-gloom-interactive="true"]');
+    expect(hintRuleStart).toBeGreaterThanOrEqual(0);
+    expect(css.slice(hintRuleStart, hintRuleStart + 220)).toContain("pointer-events: auto");
+
     const statusBar = cssRule(css, '[data-gloom-role="status-bar"]');
     expect(statusBar).toContain("calc(var(--cell-h) + 15px)");
     expect(statusBar).toContain("padding-bottom: 10px");
