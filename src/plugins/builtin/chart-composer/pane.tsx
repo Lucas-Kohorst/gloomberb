@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useUiCapabilities, useUiHost } from "../../../ui";
+import { Box, Text, TradingViewChart, useUiCapabilities, useUiHost } from "../../../ui";
 import {
   ChoiceDialog,
   Tabs,
+  useExternalLinkFooter,
   usePaneFooter,
   usePaneNoticeFooter,
   type PaneFooterPressEvent,
@@ -89,7 +90,13 @@ import {
   type ChartRangeSyncUpdate,
   type ChartRangeSyncWindow,
 } from "./range-sync";
+import { EmptyState } from "../../../components/ui/status";
 import { ChartSeriesQuickAdd } from "./quick-add";
+import {
+  resolveTradingViewPlot,
+  tradingViewPublicChartUrl,
+  type TradingViewWidgetPlot,
+} from "./tradingview-plot";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { usePublicShare } from "../shared/public-share";
 import { buildChartShareData } from "../../../shares/chart-snapshot";
@@ -155,7 +162,107 @@ function isPriceStudyTarget(spec: ChartSpec): boolean {
   ));
 }
 
+function TuiChartUnavailable({
+  width,
+  height,
+  footerId,
+}: {
+  width: number;
+  height: number;
+  footerId: string;
+}) {
+  usePaneFooter(footerId, () => ({ info: [], hints: [] }), []);
+  return (
+    <Box flexDirection="column" width={width} height={height} backgroundColor={colors.panel}>
+      <EmptyState
+        title="Charts run on desktop and hosted web."
+        message="Listed symbols use TradingView there. Custom series use Lightweight Charts. Open Gloom in the desktop app or the hosted client to plot this ticker."
+      />
+    </Box>
+  );
+}
+
+function DesktopTradingViewComposer({
+  plot,
+  focused,
+  width,
+  height,
+  footerId,
+}: {
+  plot: TradingViewWidgetPlot;
+  focused: boolean;
+  width: number;
+  height: number;
+  footerId: string;
+}) {
+  const openUrl = tradingViewPublicChartUrl(plot.symbol);
+  useExternalLinkFooter({
+    registrationId: footerId,
+    focused,
+    url: openUrl,
+  });
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      backgroundColor={colors.panel}
+      data-gloom-role="tradingview-composer"
+    >
+      <TradingViewChart
+        flexGrow={1}
+        minHeight={4}
+        symbol={plot.symbol}
+        interval={plot.interval}
+        timezone={plot.timezone}
+        compareSymbols={plot.compareSymbols}
+        backgroundColor={colors.panel}
+      />
+    </Box>
+  );
+}
+
 function ChartComposerSurface({
+  spec,
+  setSpec,
+  focused,
+  width,
+  height,
+  footerId,
+  onCapture,
+  liveWhenUnfocused = true,
+}: ChartComposerSurfaceProps) {
+  const ui = useUiHost();
+  const plot = useMemo(() => resolveTradingViewPlot(spec), [spec]);
+  if (ui.kind !== "desktop-web") {
+    return <TuiChartUnavailable width={width} height={height} footerId={footerId} />;
+  }
+  if (plot.kind === "widget") {
+    return (
+      <DesktopTradingViewComposer
+        plot={plot}
+        focused={focused}
+        width={width}
+        height={height}
+        footerId={footerId}
+      />
+    );
+  }
+  return (
+    <GloomCanvasComposer
+      spec={spec}
+      setSpec={setSpec}
+      focused={focused}
+      width={width}
+      height={height}
+      footerId={footerId}
+      onCapture={onCapture}
+      liveWhenUnfocused={liveWhenUnfocused}
+    />
+  );
+}
+
+function GloomCanvasComposer({
   spec,
   setSpec,
   focused,
@@ -774,7 +881,13 @@ function ChartComposerSurface({
       : resolution.errors[0] ?? "No observations in this range";
 
   return (
-    <Box flexDirection="column" width={width} height={height} backgroundColor={colors.panel}>
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      backgroundColor={colors.panel}
+      data-gloom-role="lightweight-composer"
+    >
       <Box flexDirection="row" height={1} paddingX={1} gap={0} overflow="hidden">
         <Box
           flexShrink={0}

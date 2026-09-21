@@ -367,9 +367,11 @@ function parseCorrelationInstrumentPair(
 }
 
 function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | null {
-  if (!query.includes(":")) return null;
   const expression = parseSeriesExpression(query);
   if (!expression) return null;
+  // Bare tickers stay ordinary G/GP securities unless the parser already
+  // claimed them as Adjacent / FRED / other non-Yahoo series (`ARINTI`).
+  if (!query.includes(":") && expression.kind === "security") return null;
   switch (expression.kind) {
     case "economic":
       return {

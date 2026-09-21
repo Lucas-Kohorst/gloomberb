@@ -9,6 +9,8 @@ import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
+import { registerConnectionSource } from "../connections/register";
+import { TRADINGVIEW_CONNECTION_ID } from "./tradingview-plot";
 import {
   CHART_COMPOSER_TEMPLATE_ID,
   DATA_CATALOG_PANE_ID,
@@ -315,6 +317,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
   }),
 ];
 
+let disposeTradingViewConnection: (() => void) | null = null;
+
 export const chartComposerModule: PluginModule = {
   panes: [{
     id: CHART_COMPOSER_PANE_ID,
@@ -323,7 +327,7 @@ export const chartComposerModule: PluginModule = {
     component: ChartComposerPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 100, height: 32 },
+    defaultFloatingSize: { width: 140, height: 42 },
     quickSettings: [LIVE_STREAMING_QUICK_SETTING],
     settings: (context) => withLiveStreamingSetting(
       buildChartComposerPaneSettingsDef(
@@ -351,8 +355,18 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
-    // CAT is not on default layouts. Live catalog sources load when the pane
-    // mounts so first-load pointer frames are not blocked by Kalshi/VoteHub/OWID.
+    disposeTradingViewConnection = registerConnectionSource({
+      id: TRADINGVIEW_CONNECTION_ID,
+      name: "TradingView",
+      kind: "asset-data",
+      pluginId: "ticker-research",
+      authRequired: false,
+      priority: 200,
+    });
+  },
+  dispose() {
+    disposeTradingViewConnection?.();
+    disposeTradingViewConnection = null;
   },
 };
 

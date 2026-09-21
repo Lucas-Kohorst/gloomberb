@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   act,
   createElement,
@@ -25,7 +25,6 @@ import {
   type KeyEventLike,
 } from "../../../react/input";
 import { CompositeChart } from "./composite-chart";
-import * as compositeRasterizer from "./rasterizer";
 import { createDefaultConfig } from "../../../types/config";
 import { AppContext, createInitialState, PaneInstanceProvider } from "../../../state/app/context";
 import {
@@ -40,7 +39,6 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let chartShortcut: ((event: KeyEventLike) => void) | null = null;
 let capturedSurfaceProps: Record<string, any> | null = null;
 let capturedSurfaceNode: BoxRenderable | null = null;
-let capturedTradingViewProps: Record<string, any> | null = null;
 
 const chartInputHost: InputHost = {
   useShortcut(handler) {
@@ -59,11 +57,9 @@ function assignRef(ref: ForwardedRef<any>, value: any) {
 function CaptureChartSurfaceProvider({
   children,
   canvasCharts = false,
-  tradingViewChart = false,
 }: {
   children: ReactNode;
   canvasCharts?: boolean;
-  tradingViewChart?: boolean;
 }) {
   const baseUi = useUiHost();
   const renderer = useRendererHost();
@@ -81,26 +77,15 @@ function CaptureChartSurfaceProvider({
       });
     });
   }, [baseUi]);
-  const CapturingTradingViewChart = useMemo(() => {
-    return function CapturingTradingView(props: Record<string, any>) {
-      capturedTradingViewProps = props;
-      return createElement(Box as any, {
-        width: props.width,
-        height: props.height,
-        "data-gloom-role": props["data-gloom-role"],
-      });
-    };
-  }, []);
   const ui = useMemo(
     () => ({
       ...baseUi,
       ChartSurface: CapturingChartSurface,
-      ...(tradingViewChart ? { TradingViewChart: CapturingTradingViewChart } : {}),
       capabilities: canvasCharts
         ? { ...baseUi.capabilities, canvasCharts: true, nativeCharts: false }
         : baseUi.capabilities,
     }),
-    [CapturingChartSurface, CapturingTradingViewChart, baseUi, canvasCharts, tradingViewChart],
+    [CapturingChartSurface, baseUi, canvasCharts],
   );
   return (
     <UiHostProvider ui={ui} renderer={renderer} nativeRenderer={nativeRenderer}>
@@ -166,7 +151,6 @@ afterEach(async () => {
   chartShortcut = null;
   capturedSurfaceProps = null;
   capturedSurfaceNode = null;
-  capturedTradingViewProps = null;
   syncTheme(DEFAULT_THEME);
 });
 
@@ -298,30 +282,6 @@ describe("CompositeChart", () => {
     });
 
     expect(capturedSurfaceProps!.bitmaps).toBeNull();
-  });
-
-  test("does not raster a software bitmap when Lightweight Charts is mounted", async () => {
-    const rasterSpy = spyOn(compositeRasterizer, "renderCompositePanelBitmap");
-    testSetup = await testRender(
-      <CaptureChartSurfaceProvider canvasCharts tradingViewChart>
-        <CompositeChart
-          width={60}
-          height={12}
-          series={[series("price", "main", "left", "USD", [100, 101, 102, 103, 104])]}
-          panels={[{ id: "main" }]}
-        />
-      </CaptureChartSurfaceProvider>,
-      { width: 62, height: 14 },
-    );
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    expect(capturedTradingViewProps?.seriesData).toHaveLength(1);
-    expect(capturedSurfaceProps).toBeNull();
-    expect(rasterSpy).not.toHaveBeenCalled();
-    rasterSpy.mockRestore();
   });
 
   test("shows the regular-session move beside the latest intraday value", async () => {

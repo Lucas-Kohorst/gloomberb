@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   parseSeriesExpression,
   parseChartExpression,
@@ -24,9 +24,16 @@ import {
   findTreasuryCatalogEntry,
   findBenchmarkMetric,
   findVolCatalogEntry,
+  rememberAdjacentIndexTickers,
+  resetAdjacentIndexTickers,
+  resolveAdjacentIndexId,
 } from "./universal-series";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
+
+afterEach(() => {
+  resetAdjacentIndexTickers();
+});
 
 describe("universal series expression parsing", () => {
   test("parses ADJ:indexId", () => {
@@ -188,6 +195,37 @@ describe("universal series expression parsing", () => {
     ]);
     const spec = buildCustomChartPreset("adjacent red index");
     expect(formatSeriesExpression(spec.series[0]!)).toBe("ADJ:red");
+  });
+
+  test("maps G ARINTI onto Adjacent ari_nti instead of a Yahoo security", () => {
+    expect(parseSeriesExpression("ARINTI")).toEqual({
+      kind: "adjacent-index",
+      indexId: "ari_nti",
+    });
+    expect(parseSeriesExpression("ADJ:ARINTI")).toEqual({
+      kind: "adjacent-index",
+      indexId: "ari_nti",
+    });
+    expect(parseSeriesExpression("ari_nti")).toEqual({
+      kind: "adjacent-index",
+      indexId: "ari_nti",
+    });
+    const spec = buildCustomChartPreset("ARINTI");
+    expect(spec.series[0]?.source).toEqual({ kind: "adjacent-index", indexId: "ari_nti" });
+    expect(formatSeriesExpression(spec.series[0]!)).toBe("ADJ:ari_nti");
+  });
+
+  test("remaps live Adjacent tickers onto their index ids", () => {
+    rememberAdjacentIndexTickers([{ indexId: "xyz_nti", ticker: "XYZNTI" }]);
+    expect(resolveAdjacentIndexId("XYZNTI")).toBe("xyz_nti");
+    expect(parseSeriesExpression("XYZNTI")).toEqual({
+      kind: "adjacent-index",
+      indexId: "xyz_nti",
+    });
+    expect(parseSeriesExpression("ADJ:XYZNTI")).toEqual({
+      kind: "adjacent-index",
+      indexId: "xyz_nti",
+    });
   });
 
   test("parseChartExpression handles mixed universal and security series", () => {
@@ -458,6 +496,9 @@ describe("universal series catalog suggestions", () => {
     });
     expect(buildSeriesCatalogSuggestions("ADJ:my-index", AAPL)[0]).toMatchObject({
       expression: { kind: "adjacent-index", indexId: "my-index" },
+    });
+    expect(buildSeriesCatalogSuggestions("ARINTI", AAPL)[0]).toMatchObject({
+      expression: { kind: "adjacent-index", indexId: "ari_nti" },
     });
     expect(buildSeriesCatalogSuggestions("KALSHI:KXPRESPERSON", AAPL)[0]).toMatchObject({
       expression: { kind: "prediction-market", venue: "kalshi", marketId: "KXPRESPERSON" },

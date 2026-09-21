@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   ChartSurface,
+  LightweightChart,
   ScrollBox,
   Text,
-  TradingViewChart,
   useNativeRenderer,
   useUiCapabilities,
   useUiHost,
@@ -727,7 +727,6 @@ const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
 
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
-  /** Unwindowed series for TradingViewChart (see TradingViewChartProps.seriesData). */
   panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
@@ -798,7 +797,7 @@ function CompositePanelSurface({
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const hasTradingViewChart = !!ui.TradingViewChart;
+  const hasLightweightChart = !!ui.LightweightChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -825,14 +824,14 @@ function CompositePanelSurface({
   const [toolDrag, setToolDrag] = useState<ChartToolDrag | null>(null);
   const plotAspect = (plotWidth * cellWidthPx) / Math.max(panel.height * cellHeightPx, 1);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, panel.height);
-  // Desktop mounts Lightweight Charts and throws this RGBA plot away. Keep the
-  // software raster for TUI and for any desktop path that still uses ChartSurface.
+  // Desktop mounts Lightweight Charts for custom OHLCV. Keep the software
+  // raster for TUI and for any desktop path that still uses ChartSurface.
   const bitmap = useCompositePanelBitmap({
     panel,
     bitmapSize,
     colors,
     isDesktopWeb,
-    enabled: !hasTradingViewChart,
+    enabled: !hasLightweightChart,
   });
   const columnLayout = useMemo(() => buildCompositeColumnLayout(panel), [panel]);
   // The level line follows the pointer only. A keyboard or shared cursor knows
@@ -1309,8 +1308,8 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      {hasTradingViewChart ? (
-        <TradingViewChart
+      {hasLightweightChart ? (
+        <LightweightChart
           width={plotWidth}
           height={panel.height}
           panel={panel}
@@ -1695,7 +1694,7 @@ export function CompositeChart({
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const nativeTvChrome = !!ui.TradingViewChart;
+  const nativeLwcChrome = !!ui.LightweightChart;
   const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
@@ -1908,9 +1907,9 @@ export function CompositeChart({
   const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
     ? 1
     : 0;
-  const timeAxisRows = nativeTvChrome ? 0 : (showTimeAxis ? 1 : 0);
+  const timeAxisRows = nativeLwcChrome ? 0 : (showTimeAxis ? 1 : 0);
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
-  const xMarkerRows = nativeTvChrome ? 0 : (xMarkers.some((marker) => marker.label) ? 1 : 0);
+  const xMarkerRows = nativeLwcChrome ? 0 : (xMarkers.some((marker) => marker.label) ? 1 : 0);
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
   const lastTickKey = visibleSeries.map((entry) => {
     const last = entry.points.at(-1);
@@ -1959,9 +1958,9 @@ export function CompositeChart({
       ]),
     ),
   ), [formatAxisValue, maximumAxisWidth, projectedScene]);
-  const leftAxisWidth = nativeTvChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
-  const rightAxisWidth = nativeTvChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
-  const axisGap = nativeTvChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
+  const leftAxisWidth = nativeLwcChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
+  const rightAxisWidth = nativeLwcChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
+  const axisGap = nativeLwcChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
@@ -2165,10 +2164,10 @@ export function CompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis && !nativeTvChrome
+  const timeAxisLayout = scene && showTimeAxis && !nativeLwcChrome
     ? buildCompositeTimeAxisLayout(scene, plotWidth)
     : null;
-  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeTvChrome && effectiveViewport
+  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeLwcChrome && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
 

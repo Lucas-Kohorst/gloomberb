@@ -270,18 +270,53 @@ export const ADJACENT_INDEX_CATALOG: readonly AdjacentIndexCatalogEntry[] = [
     name: "RED Total Return",
     aliases: ["red-tr", "redtr", "red total return", "adjacent red-tr"],
   },
+  {
+    indexId: "ari_nti",
+    ticker: "ARINTI",
+    name: "NFL Team Index: Arizona",
+    aliases: ["arinti", "ari_nti", "arizona nti", "cardinals nti"],
+  },
 ];
+
+function compactAdjacentToken(token: string): string {
+  return token.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+const liveAdjacentIndexIds = new Map<string, string>();
+
+export function rememberAdjacentIndexTickers(
+  entries: ReadonlyArray<{ indexId: string; ticker?: string | null }>,
+): void {
+  for (const entry of entries) {
+    const indexId = entry.indexId.trim();
+    if (!indexId) continue;
+    liveAdjacentIndexIds.set(compactAdjacentToken(indexId), indexId);
+    const ticker = entry.ticker?.trim();
+    if (ticker) liveAdjacentIndexIds.set(compactAdjacentToken(ticker), indexId);
+  }
+}
+
+export function resetAdjacentIndexTickers(): void {
+  liveAdjacentIndexIds.clear();
+}
 
 export function findAdjacentIndexCatalogEntry(
   token: string,
 ): AdjacentIndexCatalogEntry | undefined {
-  const compact = token.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const compact = compactAdjacentToken(token);
   if (!compact) return undefined;
   return ADJACENT_INDEX_CATALOG.find((entry) => {
-    if (entry.indexId.replace(/[^a-z0-9]+/g, "") === compact) return true;
-    if (entry.ticker.toLowerCase().replace(/[^a-z0-9]+/g, "") === compact) return true;
-    return entry.aliases.some((alias) => alias.replace(/[^a-z0-9]+/g, "") === compact);
+    if (compactAdjacentToken(entry.indexId) === compact) return true;
+    if (compactAdjacentToken(entry.ticker) === compact) return true;
+    return entry.aliases.some((alias) => compactAdjacentToken(alias) === compact);
   });
+}
+
+export function resolveAdjacentIndexId(token: string): string | undefined {
+  const catalog = findAdjacentIndexCatalogEntry(token);
+  if (catalog) return catalog.indexId;
+  const compact = compactAdjacentToken(token);
+  return compact ? liveAdjacentIndexIds.get(compact) : undefined;
 }
 
 // ---------------------------------------------------------------------------

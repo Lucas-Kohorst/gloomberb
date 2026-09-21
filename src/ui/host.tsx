@@ -237,6 +237,17 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
+  /** TradingView symbol, such as NASDAQ:AAPL or FRED:CPIAUCSL. */
+  symbol: string;
+  /** TradingView interval token. Default D. */
+  interval?: string;
+  /** IANA zone for the widget. Default America/New_York. */
+  timezone?: string;
+  compareSymbols?: readonly string[];
+  backgroundColor?: string;
+}
+
+export interface LightweightChartProps extends BoxProps {
   panel: CompositePanelScene;
   /**
    * Unclipped panel series. The scene projection windows points to the viewport;
@@ -251,16 +262,14 @@ export interface TradingViewChartProps extends BoxProps {
     range: { start: Date; end: Date },
     interaction?: TrackpadGestureKind,
   ) => void;
-  /** Drawings and tool drags to overlay, in plot ratios. */
   vectors?: readonly ChartVectorShape[] | null;
-  /** Keyboard-armed tool; the chart owns interaction for armed tools. */
   armedTool?: ChartToolKind | null;
-  /** IANA zone for axis tick labels. Omit for UTC. */
   timeZone?: string;
 }
 
 /** The trackpad gesture that produced a viewport change. */
 export type TrackpadGestureKind = "pan" | "zoom";
+
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;
@@ -395,6 +404,7 @@ export interface UiHost {
   Textarea: ComponentType<TextareaProps>;
   ChartSurface: ComponentType<ChartSurfaceProps>;
   TradingViewChart?: ComponentType<TradingViewChartProps>;
+  LightweightChart?: ComponentType<LightweightChartProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   MediaSurface: ComponentType<MediaSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;

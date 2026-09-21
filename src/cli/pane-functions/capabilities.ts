@@ -351,7 +351,7 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
     id: "price-chart",
     botSafe: true,
     tickerCardinality: "one",
-    aliases: ["price chart", "stock chart", "historical chart", "tradingview", "tv chart", "candlestick chart", "lightweight charts"],
+    aliases: ["price chart", "stock chart", "historical chart", "tradingview", "tv chart", "candlestick chart"],
     intents: ["chart a security price over time", "open a tradingview style price chart"],
     outputKind: "price-history",
     reportReadiness: "ready",

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { TradingViewChartProps, UiHost } from "../../../ui/host";
+import type { TradingViewChartProps, LightweightChartProps, UiHost } from "../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { WebDataTable } from "./data-table";
 import {
@@ -25,9 +25,15 @@ import { WebTabs } from "./host/tabs";
 
 const TradingViewChart = lazy(() => import("./host/tradingview-chart")
   .then((module) => ({ default: module.WebTradingViewChart })));
+const LightweightChart = lazy(() => import("./host/lightweight-chart")
+  .then((module) => ({ default: module.WebLightweightChart })));
 
 function WebTradingViewChart(props: TradingViewChartProps) {
   return <Suspense fallback={null}><TradingViewChart {...props} /></Suspense>;
+}
+
+function WebLightweightChart(props: LightweightChartProps) {
+  return <Suspense fallback={null}><LightweightChart {...props} /></Suspense>;
 }
 
 function currentDesktopPlatform(): string {
@@ -103,6 +109,7 @@ export function createDomUiHost(
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
     TradingViewChart: WebTradingViewChart,
+    LightweightChart: WebLightweightChart,
     ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
       const imageSrc = typeof src === "string" ? src.trim() : "";
       const [failed, setFailed] = useState(false);

@@ -41,6 +41,7 @@ export type {
   BoxRenderable,
   ChartSurfaceProps,
   TradingViewChartProps,
+  LightweightChartProps,
   HostCheckboxProps,
   HostPopoverProps,
   Highlight,
@@ -300,6 +301,23 @@ export function TradingViewChart(props: ComponentProps<NonNullable<UiHost["Tradi
   } : null);
   if (!HostTradingViewChart) return null;
   return createElement(HostTradingViewChart as any, { ...props, "data-gloom-remote-node-id": remoteNodeId ?? undefined });
+}
+
+export function LightweightChart(props: ComponentProps<NonNullable<UiHost["LightweightChart"]>>) {
+  const { LightweightChart: HostLightweightChart } = useUiHost();
+  const rawProps = props as Record<string, unknown>;
+  const remoteNodeId = useRemoteUiNode(HostLightweightChart ? {
+    role: remotePropRole(rawProps, "lightweight-chart"),
+    label: remotePropLabel(rawProps) ?? "Lightweight chart",
+    metadata: {
+      ...remoteMetadataFromProps(rawProps),
+      width: rawProps.width,
+      height: rawProps.height,
+      interactive: rawProps.interactive === true,
+    },
+  } : null);
+  if (!HostLightweightChart) return null;
+  return createElement(HostLightweightChart as any, { ...props, "data-gloom-remote-node-id": remoteNodeId ?? undefined });
 }
 
 export const ImageSurface = forwardRef<any, ComponentProps<UiHost["ImageSurface"]>>((props, ref) => {
