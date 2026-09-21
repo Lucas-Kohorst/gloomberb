@@ -16,7 +16,16 @@ import {
 import { colors } from "../../../theme/colors";
 import { wrapTextLines } from "../../../utils/text-wrap";
 import type { PaneProps } from "../../../types/plugin";
-import { usePaneInstance } from "../../../state/app/context";
+import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../state/app/context";
+import { scheduleConfigSave } from "../../../state/config-save-scheduler";
+import { getSharedRegistry } from "../../registry";
+import { usePluginAppActions } from "../../runtime";
+import { ensureDefaultWatchlist } from "../../prediction-markets/collection-watchlist";
+import {
+  adjacentMarketTickerRecord,
+  dispatchEnsuredWatchlistConfig,
+  persistWatchlistMembership,
+} from "../portfolio-list/register-watchlist-asset";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
@@ -29,6 +38,7 @@ import {
   normalizeAdjacentMarket,
 } from "./normalize";
 import { applySortPreference } from "../../../utils/sort-values";
+import { filterAdjacentRows } from "./search";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -186,10 +196,12 @@ export function AdjacentMarketsPane({
   }, []);
 
   const columns = useMemo(() => createMarketColumns(), []);
-  const visibleMarkets = useMemo(
-    () => applySortPreference(markets, sortPreference, adjacentMarketSortValue),
-    [markets, sortPreference],
-  );
+  const visibleMarkets = useMemo(() => {
+    const rows = filterAdjacentRows(markets, searchQuery, (row) =>
+      [row.ticker, row.title, row.platform, row.id].filter(Boolean).join(" "),
+    );
+    return applySortPreference(rows, sortPreference, adjacentMarketSortValue);
+  }, [markets, searchQuery, sortPreference]);
   const selectedMarket = visibleMarkets.find((row) => row.id === selectedId) ?? null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const poll = useFeedPollInterval();
@@ -259,6 +271,47 @@ export function AdjacentMarketsPane({
     setSearchFocusToken((value) => value + 1);
   }, []);
   const marketUrl = selectedMarket?.url ?? detailRow?.url ?? null;
+  const { notify } = usePluginAppActions();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const tickers = useAppSelector((state) => state.tickers);
+  const registerSelected = useCallback(() => {
+    if (!selectedMarket || detailOpen) return;
+    const registry = getSharedRegistry();
+    if (!registry) {
+      notify({ type: "error", body: "Ticker lookup unavailable." });
+      return;
+    }
+    const ensured = ensureDefaultWatchlist(config);
+    dispatchEnsuredWatchlistConfig(config, ensured.config, dispatch, scheduleConfigSave);
+    const symbol = (selectedMarket.ticker || selectedMarket.id).toUpperCase();
+    const ticker = adjacentMarketTickerRecord({
+      id: selectedMarket.id,
+      ticker: selectedMarket.ticker,
+      title: selectedMarket.title,
+      platform: selectedMarket.platform,
+    }, tickers.get(symbol) ?? null);
+    void persistWatchlistMembership({
+      ticker,
+      watchlistId: ensured.watchlistId,
+      tickerRepository: registry.tickerRepository,
+      dispatch,
+    }).then((result) => {
+      notify({
+        type: result.changed ? "success" : "info",
+        body: result.changed
+          ? `${result.ticker.metadata.ticker} added to Watchlist.`
+          : `${result.ticker.metadata.ticker} is already on Watchlist.`,
+      });
+    });
+  }, [config, detailOpen, dispatch, notify, selectedMarket, tickers]);
+  const watchlistId = ensureDefaultWatchlist(config).watchlistId;
+  const selectedSymbol = selectedMarket
+    ? (selectedMarket.ticker || selectedMarket.id).toUpperCase()
+    : "";
+  const selectedAlreadyOnWatchlist = selectedSymbol
+    ? (tickers.get(selectedSymbol)?.metadata.watchlists.includes(watchlistId) ?? false)
+    : false;
 
   usePaneStatusLinkFooter({
     registrationId: "adjacent-markets",
@@ -272,7 +325,12 @@ export function AdjacentMarketsPane({
       : [],
     trailingInfo: [poll.segment],
     showOpenHint: !!marketUrl,
-    hints: [paneSearchHint(focusSearch)],
+    hints: [
+      paneSearchHint(focusSearch),
+      ...(!detailOpen
+        ? [{ id: "add", key: "a", label: "dd", onPress: registerSelected, disabled: !selectedMarket || selectedAlreadyOnWatchlist }]
+        : []),
+    ],
   });
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {

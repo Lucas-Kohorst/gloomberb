@@ -86,7 +86,9 @@ describe("PaneListChrome", () => {
     const bodyRow = rows.findIndex((line) => line.includes("table body"));
 
     expect(tabsRow).toBeGreaterThanOrEqual(0);
+    expect(rows[tabsRow]).toContain("Indices");
     expect(searchRow).toBeGreaterThan(tabsRow);
+    expect(rows[searchRow]).toMatch(/ticker or name/);
     expect(bodyRow).toBeGreaterThan(searchRow);
     expect(rows.slice(0, bodyRow).join("\n")).not.toMatch(/\bAdjacent\b/);
     expect(rows[tabsRow]).not.toContain("ticker or name");

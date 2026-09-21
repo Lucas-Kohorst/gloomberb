@@ -11,6 +11,7 @@ import {
 } from "./filings-format";
 import type { CftcFiling, CftcFilingDetail } from "./types";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
+import { filterAdjacentRows } from "./search";
 
 /** Matches the research-search pane page so CFTC actually fills SRCH, not a command-bar teaser. */
 const RESULT_LIMIT = 40;
@@ -118,7 +119,14 @@ export function createCftcDocumentSearchProvider(): DocumentSearchProvider {
         sortDir: "desc",
       });
       if (signal.aborted) return [];
-      return page.filings.slice(0, RESULT_LIMIT).map(cftcFilingToDocumentHit);
+      const hits = page.filings.slice(0, RESULT_LIMIT).map(cftcFilingToDocumentHit);
+      return filterAdjacentRows(hits, query, (hit) => [
+        hit.title,
+        hit.snippet,
+        ...(hit.keywords ?? []),
+        String(hit.metadata?.orgCode ?? ""),
+        String(hit.metadata?.feedLabel ?? ""),
+      ].join(" "));
     },
     async load(id, signal): Promise<SearchDocument> {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");

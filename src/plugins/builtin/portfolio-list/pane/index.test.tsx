@@ -662,7 +662,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       await testSetup!.renderOnce();
     });
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 360));
+      await new Promise((resolve) => setTimeout(resolve, 900));
     });
     await flushFrame();
 

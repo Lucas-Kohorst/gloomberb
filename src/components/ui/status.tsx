@@ -2,6 +2,7 @@ import { useCallback, useContext, type ReactNode } from "react";
 import { Box, Text, TextAttributes, UiHostContext } from "../../ui";
 import { colors } from "../../theme/colors";
 import { t, tf } from "../../i18n";
+import { PaneBodyPad } from "../pane-body-pad";
 
 export interface EmptyStateProps {
   title: string;
@@ -150,15 +151,11 @@ export function EmptyState({ title, message, hint, fill = true, onRetry }: Empty
   );
   if (!fill) return body;
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      width="100%"
-      justifyContent="center"
-      alignItems="center"
-    >
-      {body}
-    </Box>
+    <PaneBodyPad>
+      <Box flexDirection="column" flexGrow={1} width="100%" justifyContent="center" alignItems="center">
+        {body}
+      </Box>
+    </PaneBodyPad>
   );
 }
 
