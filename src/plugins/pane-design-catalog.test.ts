@@ -9,6 +9,7 @@ import type { CommandDef, GloomPluginContext } from "../types/plugin";
 import { shouldSearchWrittenCorpus } from "../components/command-bar/routes/root/article-results";
 import { adjacentPlugin } from "./builtin/adjacent";
 import { newsPlugin } from "./builtin/news";
+import { substackPlugin } from "./builtin/substack";
 import { DEFAULT_FEEDS } from "./builtin/news/wire/default-feeds";
 import { newsWireModule } from "./builtin/news/wire";
 import {
@@ -290,8 +291,12 @@ describe("pane design catalog — ART / written-text", () => {
     // Adjacent news has no list pane of its own; ART execute still searches it.
     expect((adjacentPlugin.panes ?? []).some((pane) => pane.id.includes("news"))).toBe(false);
 
-    // Substack list panes live in the extracted plugin; first-party coverage is
-    // the firehose latest pool that ART scores.
+    // Substack's first-party list pane is searchable in-pane; ART still scores
+    // the firehose latest pool that includes Substack headlines.
+    expect((substackPlugin.panes ?? []).some((pane) => pane.id === "substack")).toBe(true);
+    expect(
+      (substackPlugin.paneTemplates ?? []).some((template) => template.shortcut?.prefix === "SUB"),
+    ).toBe(true);
     const firehose = (newsPlugin.paneTemplates ?? []).find((template) => template.paneId === "news-firehose");
     const firehoseText = [
       firehose?.description ?? "",
