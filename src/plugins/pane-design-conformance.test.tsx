@@ -53,6 +53,7 @@ import type {
 } from "../api-client";
 import { PluginMarketplacePane } from "./builtin/plugin-marketplace/pane";
 import { resetRegistryFeedCacheForTests } from "./builtin/plugin-marketplace/feed";
+import { resetFearGreedPersistence } from "./builtin/fear-greed/cache";
 import { summarizeSearchFailures } from "./builtin/research-search/data";
 import { ResearchSearchPane } from "./builtin/research-search/pane";
 import { setSharedRegistryForTests } from "./registry/shared";
@@ -106,11 +107,13 @@ describe("pane design conformance", () => {
       setHttpFetchTransport(null);
       setCloudApiFetchTransport(null as never);
       resetRegistryFeedCacheForTests();
+      resetFearGreedPersistence();
     });
 
     for (const { pluginId, pane } of entries) {
       test(`${pane.id}: no banned bullets, footer hints bound, no result tallies`, async () => {
         resetRegistryFeedCacheForTests();
+        resetFearGreedPersistence();
         // Hermetic: panes render their empty/error states, never the network.
         setHttpFetchTransport(async () => {
           throw new Error("design-gate: no network");

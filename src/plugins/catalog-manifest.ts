@@ -68,6 +68,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   macro: { categories: ["macro"] },
   "market-overview": { categories: ["markets"] },
   news: { categories: ["news"] },
+  substack: { categories: ["news"] },
   notes: { categories: ["productivity"] },
   "notification-center": { categories: ["productivity", "alerts"] },
   "plugin-inspector": { categories: ["developer"] },

@@ -2,6 +2,7 @@ import { researchDataPlugins } from "./catalog-research";
 import type { GloomPlugin } from "../types/plugin";
 import type { LoadedExternalPlugin } from "./loader";
 import { newsPlugin } from "./builtin/news";
+import { substackPlugin } from "./builtin/substack";
 import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
@@ -28,9 +29,9 @@ import { predictionMarketsPlugin } from "./prediction-markets";
  * {@link getRendererBuiltinPlugins}, plus TUI/Electrobun via
  * {@link nativeUiPlugins}).
  *
- * Congress Trades (`CG`) is first-party so a clean fork install loads House PTR
- * without `gloomberb-plugins`. An extracted copy with the same id is ignored —
- * first-party wins, same as Prediction Markets.
+ * Congress Trades (`CG`) and Substack (`SUB`) are first-party so a clean fork
+ * install loads those panes without `gloomberb-plugins`. An extracted copy with
+ * the same id is ignored — first-party wins, same as Prediction Markets.
  *
  * VoteHub polls, Federal Register, OFAC, and USAspending stay as Adjacent
  * Cloud modules (POLL / FR / OFAC / USA). WX is an Adjacent pane shortcut,
@@ -50,6 +51,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   brokerPlugin,
   applicationPlugin,
   newsPlugin,
+  substackPlugin,
   adjacentPlugin,
   notesPlugin,
   aiPlugin,

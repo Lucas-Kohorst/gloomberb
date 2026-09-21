@@ -8,6 +8,7 @@ describe("uiBuiltinPlugins", () => {
     const ids = uiBuiltinPlugins.map((plugin) => plugin.id);
     expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
     expect(ids).toContain("news");
+    expect(ids).toContain("substack");
     expect(ids).toContain("congress-trades");
     expect(ids).not.toContain("polls");
     expect(ids).not.toContain("federal-register");
@@ -28,6 +29,7 @@ describe("uiBuiltinPlugins", () => {
     const firstParty = [
       { id: "prediction-markets", name: "Prediction Markets" },
       { id: "congress-trades", name: "Congress Trades" },
+      { id: "substack", name: "Substack" },
     ] as const;
     const plugins = getRendererPlugins(firstParty.map((plugin) => ({
       plugin: { id: plugin.id, name: `Stale ${plugin.id}`, version: "0.0.1" } as GloomPlugin,

@@ -1,5 +1,23 @@
-import { describe, expect, test } from "bun:test";
-import { normalizeFearGreedData, type CnnFearGreedGraphData } from "./data";
+import { afterEach, describe, expect, test } from "bun:test";
+import { setHttpFetchTransport } from "../../../utils/http-transport";
+import { fetchFearGreedData, normalizeFearGreedData, type CnnFearGreedGraphData } from "./data";
+
+afterEach(() => {
+  setHttpFetchTransport(null);
+});
+
+describe("fear-greed data fetch", () => {
+  test("routes CNN graphdata through httpFetch so design-gate transports can block the network", async () => {
+    const urls: string[] = [];
+    setHttpFetchTransport(async (url) => {
+      urls.push(String(url));
+      throw new Error("design-gate: no network");
+    });
+
+    await expect(fetchFearGreedData()).rejects.toThrow("design-gate: no network");
+    expect(urls.some((url) => url.includes("fearandgreed/graphdata"))).toBe(true);
+  });
+});
 
 describe("fear-greed data normalization", () => {
   test("combines latest score with chart history and aligned overlay series", () => {
