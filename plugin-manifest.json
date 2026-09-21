@@ -714,6 +714,22 @@
       }
     },
     {
+      "id": "substack",
+      "name": "Substack",
+      "description": "Authenticated Substack reader feed and subscriptions",
+      "categories": [
+        "news"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "substack"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "ticker-research",
       "name": "Ticker Research",
       "description": "Company research workspace: overview, charts, financials, filings, ownership, options, analyst research, and events.",
