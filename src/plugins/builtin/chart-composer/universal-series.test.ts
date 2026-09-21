@@ -497,6 +497,9 @@ describe("universal series catalog suggestions", () => {
     expect(buildSeriesCatalogSuggestions("ADJ:my-index", AAPL)[0]).toMatchObject({
       expression: { kind: "adjacent-index", indexId: "my-index" },
     });
+    expect(buildSeriesCatalogSuggestions("ARINTI", AAPL)[0]).toMatchObject({
+      expression: { kind: "adjacent-index", indexId: "ari_nti" },
+    });
     expect(buildSeriesCatalogSuggestions("KALSHI:KXPRESPERSON", AAPL)[0]).toMatchObject({
       expression: { kind: "prediction-market", venue: "kalshi", marketId: "KXPRESPERSON" },
     });

@@ -1483,7 +1483,7 @@ export function buildCustomChartPreset(expression: string, fallbackSymbol?: stri
     return { ...spec, series: spec.series.map((series) => ({ ...series, visible: false })) };
   }
   const parsed = parseChartExpression(expression);
-  if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
+  if (parsed.length === 0) return fallbackSymbol ? buildBoundChartPreset(fallbackSymbol) : buildEmptyChartPreset();
   const owidOnly = parsed.every((entry) => entry.kind === "owid");
   return chartSpec(buildCustomSeries(parsed), owidOnly ? { range: "ALL" } : {});
 }
@@ -1532,6 +1532,10 @@ export function buildStudySpec(
 }
 
 export function buildPriceChartPreset(symbol: string): ChartSpec {
+  const adjacentIndexId = resolveAdjacentIndexId(symbol);
+  if (adjacentIndexId) {
+    return chartSpec(buildCustomSeries([{ kind: "adjacent-index", indexId: adjacentIndexId }]));
+  }
   const normalized = normalizeInstrument(symbol, true);
   if (!normalized) return buildEmptyChartPreset();
   return setBuiltinStudies(

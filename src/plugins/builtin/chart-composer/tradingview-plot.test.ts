@@ -83,6 +83,11 @@ describe("resolveTradingViewPlot", () => {
     expect(spec.series.every((series) => series.visible === false)).toBe(true);
     expect(resolveTradingViewPlot(spec)).toEqual({ kind: "unmapped" });
   });
+
+  test("keeps a followed ARINTI ticker off the TradingView widget", () => {
+    expect(resolveTradingViewPlot(buildCustomChartPreset("", "ARINTI"))).toEqual({ kind: "unmapped" });
+    expect(resolveTradingViewPlot(buildPriceChartPreset("ARINTI"))).toEqual({ kind: "unmapped" });
+  });
 });
 
 describe("tradingViewIntervalForSpec", () => {
