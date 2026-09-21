@@ -45,6 +45,7 @@ import {
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
   findVolCatalogEntry,
+  resolveAdjacentIndexId,
 } from "./universal-series";
 import {
   canonicalWeatherStationId,
@@ -231,8 +232,9 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
 
   // --- Universal series prefixes -----------------------------------------
   if (prefix === SERIES_PREFIX.adjacentIndex) {
-    const indexId = parts.slice(1).join(":").trim().toLowerCase();
-    return indexId ? { kind: "adjacent-index", indexId } : null;
+    const raw = parts.slice(1).join(":").trim();
+    if (!raw) return null;
+    return { kind: "adjacent-index", indexId: resolveAdjacentIndexId(raw) ?? raw.toLowerCase() };
   }
 
   if (prefix === SERIES_PREFIX.future) {
@@ -261,6 +263,10 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     const vol = findVolCatalogEntry(trimmed);
     if (vol) {
       return { kind: "economic", provider: "fred", seriesId: vol.seriesId, label: vol.label };
+    }
+    const adjacentIndexId = resolveAdjacentIndexId(trimmed);
+    if (adjacentIndexId) {
+      return { kind: "adjacent-index", indexId: adjacentIndexId };
     }
   }
 

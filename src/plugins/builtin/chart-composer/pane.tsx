@@ -176,7 +176,7 @@ function TuiChartUnavailable({
     <Box flexDirection="column" width={width} height={height} backgroundColor={colors.panel}>
       <EmptyState
         title="Charts run on desktop and hosted web."
-        message="TradingView fills the pane there. Open Gloom in the desktop app or the hosted client to plot this ticker."
+        message="Listed symbols use TradingView there. Custom series use Lightweight Charts. Open Gloom in the desktop app or the hosted client to plot this ticker."
       />
     </Box>
   );
@@ -881,7 +881,13 @@ function GloomCanvasComposer({
       : resolution.errors[0] ?? "No observations in this range";
 
   return (
-    <Box flexDirection="column" width={width} height={height} backgroundColor={colors.panel}>
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      backgroundColor={colors.panel}
+      data-gloom-role="lightweight-composer"
+    >
       <Box flexDirection="row" height={1} paddingX={1} gap={0} overflow="hidden">
         <Box
           flexShrink={0}

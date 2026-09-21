@@ -26,6 +26,7 @@ import { registerConnectionSource } from "../connections/register";
 import { registerPluginAgentHarness } from "../../agent-harness";
 import { usePluginConfigState } from "../../runtime";
 import { ADJACENT_API_KEY_CONFIG, ADJACENT_PLUGIN_ID } from "./types";
+import { rememberAdjacentIndexTickers } from "../chart-composer/universal-series";
 
 export { ADJACENT_PLUGIN_ID, ADJACENT_API_KEY_CONFIG };
 
@@ -228,6 +229,14 @@ const adjacentMarketsModule: PluginModule = {
       ?? null
     ));
     adjacentClient = getSharedAdjacentClient();
+    void adjacentClient.getIndices().then((payload) => {
+      rememberAdjacentIndexTickers(
+        (payload.data ?? []).map((row) => ({
+          indexId: row.index_id,
+          ticker: row.ticker,
+        })),
+      );
+    }).catch(() => undefined);
 
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
     ctx.registerCommandBarSearchProvider(createAdjacentCatalogSearchProvider(ctx));

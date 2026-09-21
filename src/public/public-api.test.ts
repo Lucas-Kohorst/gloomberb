@@ -26,6 +26,7 @@ const PUBLIC_API: Record<string, readonly string[]> = {
     "ContextMenuProvider",
     "ImageSurface",
     "Input",
+    "LightweightChart",
     "MediaSurface",
     "RGBA",
     "ScrollBox",

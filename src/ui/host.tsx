@@ -4,6 +4,9 @@ import type { AppNotificationRequest } from "../types/plugin";
 import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
 import { formatCommandBarShortcut, getShortcutDisplayMode } from "../utils/shortcut-labels";
 import type { AsciiFontName } from "./ascii-font";
+import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
+import type { ChartToolKind } from "../components/chart/composite/tools";
+import type { ResolvedSeries } from "../time-series/types";
 
 export const TextAttributes = {
   NONE: 0,
@@ -244,6 +247,29 @@ export interface TradingViewChartProps extends BoxProps {
   backgroundColor?: string;
 }
 
+export interface LightweightChartProps extends BoxProps {
+  panel: CompositePanelScene;
+  /**
+   * Unclipped panel series. The scene projection windows points to the viewport;
+   * this renderer owns its time scale, so it must not consume that windowed data
+   * or every pan frame forces a full re-set and fights the drag.
+   */
+  seriesData: readonly ResolvedSeries[];
+  colors: CompositeChartColors;
+  viewport?: { start: Date; end: Date } | null;
+  interactive?: boolean;
+  onViewportChange?: (
+    range: { start: Date; end: Date },
+    interaction?: TrackpadGestureKind,
+  ) => void;
+  vectors?: readonly ChartVectorShape[] | null;
+  armedTool?: ChartToolKind | null;
+  timeZone?: string;
+}
+
+/** The trackpad gesture that produced a viewport change. */
+export type TrackpadGestureKind = "pan" | "zoom";
+
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;
@@ -378,6 +404,7 @@ export interface UiHost {
   Textarea: ComponentType<TextareaProps>;
   ChartSurface: ComponentType<ChartSurfaceProps>;
   TradingViewChart?: ComponentType<TradingViewChartProps>;
+  LightweightChart?: ComponentType<LightweightChartProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   MediaSurface: ComponentType<MediaSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;

@@ -71,6 +71,18 @@ describe("resolveTradingViewPlot", () => {
   test("does not map an empty spec", () => {
     expect(resolveTradingViewPlot(buildCustomChartPreset(""))).toEqual({ kind: "unmapped" });
   });
+
+  test("keeps G ARINTI off the TradingView widget", () => {
+    const spec = buildCustomChartPreset("ARINTI");
+    expect(spec.series[0]?.source).toEqual({ kind: "adjacent-index", indexId: "ari_nti" });
+    expect(resolveTradingViewPlot(spec)).toEqual({ kind: "unmapped" });
+  });
+
+  test("keeps a derived STRC discount-to-par spread off the TradingView widget", () => {
+    const spec = buildCustomChartPreset("100 - STRC:price");
+    expect(spec.series.every((series) => series.visible === false)).toBe(true);
+    expect(resolveTradingViewPlot(spec)).toEqual({ kind: "unmapped" });
+  });
 });
 
 describe("tradingViewIntervalForSpec", () => {
