@@ -63,7 +63,7 @@ function notificationSortValue(entry: NotificationLogEntry, column: Notification
   return `${entry.title ?? ""} ${entry.body}`;
 }
 
-function NotificationCenterPane({ focused, width, height }: PaneProps) {
+export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const { showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
@@ -78,9 +78,6 @@ function NotificationCenterPane({ focused, width, height }: PaneProps) {
   });
 
   useEffect(() => subscribeNotificationLog(() => setEntries(getNotificationLog())), []);
-  useEffect(() => {
-    markNotificationLogRead();
-  }, [entries]);
 
   const rows = useMemo<NotificationRow[]>(() => {
     const lowerQuery = query.trim().toLowerCase();
