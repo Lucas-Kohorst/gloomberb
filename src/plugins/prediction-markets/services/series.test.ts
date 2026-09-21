@@ -207,6 +207,62 @@ describe("venue-direct prediction market series", () => {
     expect(requested.some((url) => url.includes("slug=will-the-republicans"))).toBe(true);
   });
 
+  test("charts a Polymarket event slug through Gamma events?slug=", async () => {
+    const requested = mockTransport([
+      [
+        "prices-history",
+        { history: [{ t: 1_760_000_000, p: 0.41 }, { t: 1_760_086_400, p: 0.44 }] },
+      ],
+      [
+        "gamma-api.polymarket.com/markets?slug=how-many-fed-rate-cuts-in-2026",
+        [],
+      ],
+      [
+        "gamma-api.polymarket.com/events?slug=how-many-fed-rate-cuts-in-2026",
+        [
+          {
+            id: "51456",
+            title: "How many Fed rate cuts in 2026?",
+            slug: "how-many-fed-rate-cuts-in-2026",
+            markets: [
+              {
+                id: "616902",
+                question: "Will 0 Fed rate cuts happen in 2026?",
+                slug: "will-0-fed-rate-cuts-happen-in-2026",
+                groupItemTitle: "0",
+                outcomes: '["Yes","No"]',
+                outcomePrices: '["0.12","0.88"]',
+                clobTokenIds: '["quiet-yes","quiet-no"]',
+                volume24hr: 100,
+              },
+              {
+                id: "616903",
+                question: "Will 1 Fed rate cut happen in 2026?",
+                slug: "will-1-fed-rate-cut-happen-in-2026",
+                groupItemTitle: "1 (25 bps)",
+                outcomes: '["Yes","No"]',
+                outcomePrices: '["0.44","0.56"]',
+                clobTokenIds: '["busy-yes","busy-no"]',
+                volume24hr: 16897,
+              },
+            ],
+          },
+        ],
+      ],
+    ]);
+
+    const series = await loadVenuePredictionMarketSeries(
+      "polymarket",
+      "how-many-fed-rate-cuts-in-2026",
+    );
+
+    expect(series?.marketId).toBe("616903");
+    expect(series?.label).toContain("1 (25 bps)");
+    expect(series?.points.map((point) => point.close)).toEqual([0.41, 0.44]);
+    expect(requested.some((url) => url.includes("events?slug=how-many-fed-rate-cuts-in-2026"))).toBe(true);
+    expect(requested.some((url) => url.includes("markets?slug=how-many-fed-rate-cuts-in-2026"))).toBe(true);
+  });
+
   test("returns null when the venue does not know the identifier", async () => {
     mockTransport([]);
 

@@ -207,7 +207,9 @@ function DesktopTradingViewComposer({
       width={width}
       height={height}
       backgroundColor={colors.panel}
+      overflow="clip"
       data-gloom-role="tradingview-composer"
+      style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
       <TradingViewChart
         flexGrow={1}

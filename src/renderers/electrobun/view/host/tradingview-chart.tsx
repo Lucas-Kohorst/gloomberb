@@ -64,7 +64,9 @@ export function WebTradingViewChart({
         height: "100%",
         minWidth: 0,
         minHeight: 0,
-        overflow: "hidden",
+        overflow: "clip",
+        touchAction: "none",
+        overscrollBehavior: "none",
         flex: 1,
         boxSizing: "border-box",
         backgroundColor: String(backgroundColor),
@@ -96,10 +98,14 @@ export function WebTradingViewChart({
         }}
         style={{
           border: 0,
+          display: "block",
           width: "100%",
           height: "100%",
           flex: 1,
           minHeight: 0,
+          touchAction: "none",
+          overscrollBehavior: "none",
+          pointerEvents: "auto",
           backgroundColor: String(backgroundColor),
         }}
       />

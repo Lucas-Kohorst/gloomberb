@@ -21,6 +21,10 @@ function predictionMarketPoints(
   }));
 }
 
+function adjacentMarketActivity(market: AdjacentMarket): number {
+  return (market.volume_24h ?? 0) * 1_000_000 + (market.total_volume ?? 0);
+}
+
 function matchingPredictionMarket(
   markets: readonly AdjacentMarket[],
   venue: "kalshi" | "polymarket",
@@ -28,12 +32,22 @@ function matchingPredictionMarket(
 ): AdjacentMarket | undefined {
   const needle = marketId.trim().toLowerCase();
   const venueMarkets = markets.filter((market) => market.platform === venue);
-  const pool = venueMarkets;
-  return pool.find((market) => {
+  const exact = venueMarkets.find((market) => {
     const id = market.id.trim().toLowerCase();
     const slug = market.slug?.trim().toLowerCase();
     return id === needle || slug === needle;
   });
+  if (exact) return exact;
+
+  // DES `POLY:` tickers store the Polymarket event slug from /event/<slug>.
+  const eventMatches = venueMarkets.filter((market) => {
+    const url = market.url?.trim().toLowerCase() ?? "";
+    return url.includes(`/event/${needle}`);
+  });
+  if (eventMatches.length === 0) return undefined;
+  return eventMatches.reduce((best, market) => (
+    adjacentMarketActivity(market) > adjacentMarketActivity(best) ? market : best
+  ));
 }
 
 export async function loadPredictionMarketSeries(

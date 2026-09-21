@@ -298,7 +298,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
               flexGrow={1}
               flexBasis={0}
               height={contentHeight}
-              overflow="hidden"
+              overflow={tab.id === "chart" ? "clip" : "hidden"}
             >
               <PaneFooterScope active={isActive}>
                 <TickerResearchTab

@@ -601,6 +601,21 @@ body.gloom-dragging {
 [data-gloom-role="tradingview-chart"] {
   padding-bottom: 12px;
   box-sizing: border-box;
+  overflow: clip;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+[data-gloom-role="tradingview-chart-frame"] {
+  display: block;
+  touch-action: none;
+  overscroll-behavior: none;
+  pointer-events: auto;
+}
+/* Divider / float-resize drags use document mousemove. An iframe swallows
+   those once the pointer enters it, so disable iframe hit-testing for the
+   drag. WebBox sets body.gloom-dragging on the same mousedown. */
+body.gloom-dragging iframe {
+  pointer-events: none !important;
 }
 [data-gloom-role="chart-surface"] {
   cursor: crosshair;

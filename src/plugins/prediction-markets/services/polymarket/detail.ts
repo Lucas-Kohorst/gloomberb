@@ -171,10 +171,64 @@ async function fetchPolymarketMarketRecord(
   }
 }
 
+function parsePolymarketEventPayload(raw: unknown): PolymarketEventRecord | null {
+  const event = Array.isArray(raw) ? raw[0] : raw;
+  if (!event || typeof event !== "object" || Array.isArray(event)) return null;
+  const record = event as PolymarketEventRecord;
+  if (!record.id && !record.slug) return null;
+  return record;
+}
+
+async function loadPolymarketEventBySlug(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<PolymarketEventRecord | null> {
+  try {
+    const raw = await fetchJson<unknown>(
+      `${POLYMARKET_GAMMA_BASE}/events?slug=${encodeURIComponent(slug)}`,
+      signal,
+    );
+    return parsePolymarketEventPayload(raw);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
+    return null;
+  }
+}
+
+function marketChartActivity(summary: PredictionMarketSummary): number {
+  return (summary.volume24h ?? 0) * 1_000_000 + (summary.totalVolume ?? 0);
+}
+
+function busiestChartableMarketFromEvent(
+  event: PolymarketEventRecord,
+): PredictionMarketSummary | null {
+  let best: PredictionMarketSummary | null = null;
+  let bestScore = -1;
+  for (const eventMarket of event.markets ?? []) {
+    const summary = normalizePolymarketMarket(
+      hydratePolymarketMarket(eventMarket, event),
+    );
+    if (!summary) continue;
+    const score = marketChartActivity(summary);
+    const preferred = !!summary.yesTokenId;
+    const bestPreferred = !!best?.yesTokenId;
+    if (
+      !best
+      || (preferred && !bestPreferred)
+      || (preferred === bestPreferred && score > bestScore)
+    ) {
+      best = summary;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /**
  * Resolves a venue-native Polymarket identifier onto a chartable market.
- * Accepts a Gamma market id, a market slug, an event id (which settles on
- * the event's busiest market), or the synthetic "<eventId>:<slug>" id that
+ * Accepts a Gamma market id, a market slug, an event slug (DES `POLY:` tickers
+ * store the event path), an event id (which settles on the event's busiest
+ * market), or the synthetic "<eventId>:<slug>" id that
  * normalizePolymarketMarket mints for Gamma records without an id.
  */
 export async function resolvePolymarketMarketById(
@@ -208,17 +262,14 @@ export async function resolvePolymarketMarketById(
     ));
   if (record) return normalizePolymarketMarket(record);
 
+  const byEventSlug = await loadPolymarketEventBySlug(trimmed);
+  if (byEventSlug?.markets?.length) {
+    return busiestChartableMarketFromEvent(byEventSlug);
+  }
+
   const event = await loadPolymarketEvent(trimmed);
   if (!event?.markets?.length) return null;
-  let best: PredictionMarketSummary | null = null;
-  for (const eventMarket of event.markets) {
-    const summary = normalizePolymarketMarket(
-      hydratePolymarketMarket(eventMarket, event),
-    );
-    if (!summary) continue;
-    if (!best || (summary.volume24h ?? 0) > (best.volume24h ?? 0)) best = summary;
-  }
-  return best;
+  return busiestChartableMarketFromEvent(event);
 }
 
 export async function loadPolymarketHistory(
