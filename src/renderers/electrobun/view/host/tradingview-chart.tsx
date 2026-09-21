@@ -73,6 +73,7 @@ export function WebTradingViewChart({
         ...(style as CSSProperties | undefined),
       }}
       data-gloom-role="tradingview-chart"
+      onWheel={(event) => event.stopPropagation()}
     >
       <iframe
         key={src}
