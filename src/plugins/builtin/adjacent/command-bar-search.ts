@@ -6,6 +6,7 @@ import type {
 import { getSharedAdjacentClient } from "./client";
 import { normalizeAdjacentIndex, normalizeAdjacentMarket, normalizeAdjacentRate } from "./normalize";
 import type { AdjacentIndex, AdjacentMarket, AdjacentRate } from "./types";
+import { filterAdjacentRows, scoreAdjacentAndMatch } from "./search";
 
 const RESULT_LIMIT = 6;
 
@@ -43,14 +44,6 @@ const INDEX_NICKNAMES: Record<string, readonly string[]> = {
   washington: ["commanders"],
 };
 
-function compact(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-function tokensOf(query: string): string[] {
-  return query.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 3);
-}
-
 function nicknameHaystack(name: string): string {
   const lower = name.toLowerCase();
   const extra: string[] = [];
@@ -68,23 +61,9 @@ export function adjacentCatalogHaystack(row: {
   return [row.ticker, row.name, row.id, nicknameHaystack(row.name)].filter(Boolean).join(" ");
 }
 
-/** Any distinctive token can hit; matching every token ranks higher. */
+/** Every query token must hit. Partial token matches do not rank. */
 export function scoreAdjacentCatalogMatch(query: string, haystack: string): number {
-  const tokens = tokensOf(query);
-  if (tokens.length === 0) return -1;
-  const hay = haystack.toLowerCase();
-  const hayCompact = compact(haystack);
-  let matched = 0;
-  let score = 0;
-  for (const token of tokens) {
-    if (hay.includes(token) || hayCompact.includes(compact(token))) {
-      matched += 1;
-      score += 20 + token.length;
-    }
-  }
-  if (matched === 0) return -1;
-  if (matched === tokens.length) score += 250;
-  return score;
+  return scoreAdjacentAndMatch(query, haystack);
 }
 
 function rankRows<T>(
@@ -173,11 +152,8 @@ export function pickAdjacentCatalogOpen(
   const indexHits = matchAdjacentIndices(trimmed, catalogs.indices);
   const tokens = trimmed.split(/\s+/).filter(Boolean);
   if (tokens.length >= 2 && indexHits[0]) {
-    const haystack = adjacentCatalogHaystack(normalizeAdjacentIndex(indexHits[0]));
-    if (scoreAdjacentCatalogMatch(trimmed, haystack) >= 250) {
-      const ticker = indexHits[0].ticker?.trim() || indexHits[0].index_id.toUpperCase();
-      return { templateId: "adjacent-indices-pane", arg: ticker };
-    }
+    const ticker = indexHits[0].ticker?.trim() || indexHits[0].index_id.toUpperCase();
+    return { templateId: "adjacent-indices-pane", arg: ticker };
   }
 
   if (catalogs.markets.length > 0) {
@@ -235,7 +211,14 @@ export function createAdjacentCatalogSearchProvider(
 
       const indexHits = matchAdjacentIndices(query, indices.data ?? []);
       const rateHits = matchAdjacentRates(query, rates.data ?? []);
-      const markets = marketsFromSearch(marketResponse).slice(0, RESULT_LIMIT);
+      const markets = filterAdjacentRows(
+        marketsFromSearch(marketResponse),
+        query,
+        (market) => {
+          const row = normalizeAdjacentMarket(market);
+          return [row.ticker, row.title, row.platform, market.id].filter(Boolean).join(" ");
+        },
+      ).slice(0, RESULT_LIMIT);
       const results: CommandBarResultDef[] = [];
 
       for (const market of markets) {

@@ -865,4 +865,30 @@ describe("TickerResearchPane", () => {
     expect(frame).not.toContain("Trade");
   });
 
+  test("ticker research tab strip is a single compact row", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n").map((line) => line.trim()).filter(Boolean);
+    const contentLines = lines.filter((line) => !line.startsWith("active:"));
+    const tabLine = contentLines.find((line) => line.includes("Overview"));
+    expect(tabLine).toBeTruthy();
+    expect(tabLine).toContain("Overview");
+    expect(tabLine).toContain("Chart");
+    expect(contentLines[0]).toContain("Overview");
+  });
+
 });

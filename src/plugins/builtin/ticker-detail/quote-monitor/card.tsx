@@ -31,8 +31,13 @@ interface QuoteStatus {
   text: string;
 }
 
-function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string): QuoteStatus {
+export function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string): QuoteStatus {
+  const quote = resolveEntryData(entry);
+  const hasPrice = quote != null && Number.isFinite(quote.price);
   const error = entry?.error;
+  // A price on screen means the quote feed delivered. Stale-bookkeeping and a
+  // failed secondary refresh must not paint an error over that price.
+  if (hasPrice) return { failed: false, text: "" };
   if (error) {
     return UNKNOWN_SYMBOL_REASONS.has(error.reasonCode)
       ? { failed: true, text: `${symbol} not recognized` }

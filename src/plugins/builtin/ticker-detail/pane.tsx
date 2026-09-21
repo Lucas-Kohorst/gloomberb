@@ -14,11 +14,18 @@ import {
 import { useQuoteUpdates } from "../../../state/hooks/quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
-import { EmptyState, PaneFooterScope, Tabs, TickerEmptyState, usePaneFooter } from "../../../components";
+import { EmptyState, PaneBodyPad, PaneFooterScope, PaneTabHeader, TickerEmptyState, usePaneFooter } from "../../../components";
+import { scheduleConfigSave } from "../../../state/config-save-scheduler";
+import { ensureDefaultWatchlist, isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
+import { getCollectionTypeFromConfig } from "../portfolio-list/pane/data";
+import {
+  dispatchEnsuredWatchlistConfig,
+  persistWatchlistMembership,
+} from "../portfolio-list/register-watchlist-asset";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import { useThrottledCommitValue } from "../../../react/use-throttled-commit-value";
 import { resolveOptionsTarget } from "../../../utils/options";
-import { isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
-import { useMarketData, usePluginPaneActions } from "../../runtime";
+import { useMarketData, usePluginAppActions, usePluginPaneActions } from "../../runtime";
 import { useShortcut } from "../../../react/input";
 import {
   buildVisibleTickerResearchTabs,
@@ -76,6 +83,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const paneInstance = usePaneInstance();
   const { symbol, ticker, financials } = usePaneTicker();
   const { selectTicker } = usePluginPaneActions();
+  const { notify } = usePluginAppActions();
   const liveStreaming = useLiveStreamingSetting();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   const streamingTargets = useMemo(() => (
@@ -254,38 +262,87 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     });
   }, [resolvedTabId, visibleTabIds]);
 
+  const watchlistTarget = useMemo(() => {
+    const collectionType = collectionId ? getCollectionTypeFromConfig(config, collectionId) : null;
+    if (collectionType === "watchlist" && collectionId) {
+      return { config, watchlistId: collectionId };
+    }
+    return ensureDefaultWatchlist(config);
+  }, [collectionId, config]);
+  const alreadyOnWatchlist = !!ticker && ticker.metadata.watchlists.includes(watchlistTarget.watchlistId);
+  const addTickerToDefaultWatchlist = useCallback(() => {
+    if (!ticker || alreadyOnWatchlist) return;
+    const registry = getSharedRegistry();
+    if (!registry) {
+      notify({ type: "error", body: t("Ticker lookup unavailable.") });
+      return;
+    }
+    dispatchEnsuredWatchlistConfig(config, watchlistTarget.config, dispatch, scheduleConfigSave);
+    void persistWatchlistMembership({
+      ticker,
+      watchlistId: watchlistTarget.watchlistId,
+      tickerRepository: registry.tickerRepository,
+      dispatch,
+    }).then((result) => {
+      if (!result.changed) return;
+      notify({
+        type: "success",
+        body: tf("{symbol} added to Watchlist.", { symbol: result.ticker.metadata.ticker }),
+      });
+    });
+  }, [alreadyOnWatchlist, config, dispatch, notify, ticker, watchlistTarget]);
+  const watchlistAddHints = useMemo(() => (
+    ticker
+      ? [{
+        id: "add",
+        key: "a",
+        label: "dd",
+        onPress: addTickerToDefaultWatchlist,
+        disabled: alreadyOnWatchlist,
+      }]
+      : []
+  ), [addTickerToDefaultWatchlist, alreadyOnWatchlist, ticker]);
+  usePaneFooter(
+    "ticker-research-watchlist",
+    () => (watchlistAddHints.length > 0 ? { hints: watchlistAddHints, order: 0 } : null),
+    [watchlistAddHints],
+  );
+  usePaneFooterHintBindings(focused && !pluginCaptured, watchlistAddHints);
+
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
     if (isEmptyFollowCollection) {
       return (
-        <Box flexDirection="column" flexGrow={1} paddingX={1}>
+        <PaneBodyPad>
           <EmptyState
             title="No tickers in this collection"
             message={tf("No tickers in {name}.", { name: collectionName || t("this collection") })}
           />
-        </Box>
+        </PaneBodyPad>
       );
     }
 
     return (
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
+      <PaneBodyPad>
         <TickerEmptyState kind="overview" symbol={null} detail="overview" />
-      </Box>
+      </PaneBodyPad>
     );
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
+    <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="clip">
       {!paneSettings.hideTabs && (
-        <Tabs
+        <PaneTabHeader
+          width={width}
+          focused={focused && !pluginCaptured}
           tabs={allTabs.map((tab) => ({ label: t(tab.name), value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}
-          focused={focused && !pluginCaptured}
+          scrollable={allTabs.length > 8}
         />
       )}
 
-      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="clip">
         {tickerResearchTabs.map((tab) => {
           if (!renderedTabIds.has(tab.id) || !visibleTabIds.has(tab.id)) return null;
           const TickerResearchTab = tab.component;
@@ -298,7 +355,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
               flexGrow={1}
               flexBasis={0}
               height={contentHeight}
-              overflow="hidden"
+              overflow={tab.id === "chart" ? "clip" : "hidden"}
             >
               <PaneFooterScope active={isActive}>
                 <TickerResearchTab

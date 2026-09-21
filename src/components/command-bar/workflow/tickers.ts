@@ -6,6 +6,8 @@ import { isManualPortfolio } from "../../../plugins/builtin/portfolio-list/mutat
 import type { DataProvider } from "../../../types/data-provider";
 import type { Portfolio, TickerRecord, Watchlist } from "../../../types/ticker";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "../../../tickers/search";
+import { lookupAdjacentIndex } from "../../../plugins/builtin/portfolio-list/quick-add/resolution";
+import { adjacentIndexTickerRecord } from "../../../plugins/builtin/portfolio-list/register-watchlist-asset";
 import { parseTickerListInput } from "../../../tickers/list";
 import {
   isCorrelationPredictionSeries,
@@ -50,7 +52,7 @@ async function materializeResolvedTicker(
   resolvedTicker: NonNullable<Awaited<ReturnType<typeof resolveTickerSearch>>>,
   deps: SharedWorkflowDeps,
 ): Promise<ResolvedTickerInput> {
-  if (resolvedTicker.kind === "local") {
+  if (resolvedTicker.kind === "local" || resolvedTicker.kind === "adjacent") {
     return {
       symbol: resolvedTicker.ticker.metadata.ticker,
       ticker: resolvedTicker.ticker,
@@ -151,8 +153,29 @@ export async function resolveTickerInput(
     dataProvider: deps.dataProvider,
     searchContext: getTickerSearchContext(state, collectionId),
   });
-  if (!resolvedTicker) return null;
-  return materializeResolvedTicker(resolvedTicker, deps);
+  if (resolvedTicker) return materializeResolvedTicker(resolvedTicker, deps);
+
+  const query = rawInput?.trim() ?? "";
+  if (!query) return null;
+  const index = await lookupAdjacentIndex(query);
+  if (!index || index === "multiple") return null;
+  const symbol = (index.ticker?.trim() || index.index_id).toUpperCase();
+  const existing = state.tickers.get(symbol) ?? null;
+  const ticker = adjacentIndexTickerRecord(index, existing);
+  if (!existing) {
+    await deps.tickerRepository.saveTicker(ticker);
+    deps.dispatch({ type: "UPDATE_TICKER", ticker });
+    deps.pluginRegistry.events.emit("ticker:added", {
+      symbol: ticker.metadata.ticker,
+      ticker,
+    });
+  }
+  return {
+    symbol: ticker.metadata.ticker,
+    ticker,
+    created: !existing,
+    source: "local",
+  };
 }
 
 export async function resolveTickerInputOrThrow(

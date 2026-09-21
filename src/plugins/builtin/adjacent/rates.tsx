@@ -6,6 +6,7 @@ import {
   DataTableStackView,
   DataTableView,
   EmptyState,
+  PaneBodyPad,
   PaneListChrome,
   Spinner,
   Tabs,
@@ -35,6 +36,8 @@ import { openUrl } from "../../../components/ui/external-link";
 import { graphFooterHint, useGraphChartPopOut } from "../shared/graph-pop-out";
 import { paneSearchHint } from "../shared/pane-footer";
 import type { AdjacentClient } from "./client";
+import { adjacentCatalogHaystack } from "./command-bar-search";
+import { filterAdjacentRows } from "./search";
 import type { AdjacentIndexPricePoint, AdjacentRateRow, AdjacentRateSource } from "./types";
 import {
   adjacentIndexPricesToPricePoints,
@@ -291,9 +294,9 @@ function RateDetail({
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <Box padding={1}>
+        <PaneBodyPad>
           <EmptyState title="Rate detail unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        </PaneBodyPad>
       </Box>
     );
   }
@@ -419,14 +422,17 @@ export function AdjacentRatesPane({
   }, [load]);
 
   const columns = useMemo(() => createRateColumns(), []);
-  const visibleRates = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return applySortPreference(
-      rates.filter((row) => !query || `${row.name} ${row.id}`.toLowerCase().includes(query)),
+  const visibleRates = useMemo(() => (
+    applySortPreference(
+      filterAdjacentRows(rates, searchQuery, (row) => adjacentCatalogHaystack({
+        ticker: row.id,
+        name: row.name,
+        id: row.id,
+      })),
       sortPreference,
       adjacentRateSortValue,
-    );
-  }, [rates, searchQuery, sortPreference]);
+    )
+  ), [rates, searchQuery, sortPreference]);
   const selectedRate = visibleRates.find((r) => r.id === selectedId) ?? null;
 
   useEffect(() => {
@@ -583,9 +589,9 @@ export function AdjacentRatesPane({
   if (error && rates.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <Box padding={1}>
+        <PaneBodyPad>
           <EmptyState title="Adjacent rates unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        </PaneBodyPad>
       </Box>
     );
   }

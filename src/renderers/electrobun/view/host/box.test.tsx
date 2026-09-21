@@ -73,10 +73,12 @@ test("reports a drag as a drag, never as a move, and keeps its modifiers", async
     mouse("mousemove", testWindow.document as never, 80);
     await settle();
   });
+  expect(testWindow.document.body.classList.contains("gloom-dragging")).toBe(true);
   await act(async () => mouse("mouseup", testWindow.document as never, 80));
 
   expect(seen).toEqual(["move", "down", "drag", "up"]);
   expect(modifiers.every((entry) => entry.shift)).toBe(true);
+  expect(testWindow.document.body.classList.contains("gloom-dragging")).toBe(false);
 });
 
 test("chart surfaces consume browser pan and zoom gestures", async () => {

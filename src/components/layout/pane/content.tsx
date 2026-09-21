@@ -63,7 +63,7 @@ export const PaneContent = memo(function PaneContent({
         flexBasis={0}
         minWidth={0}
         minHeight={0}
-        overflow="hidden"
+        overflow="clip"
         data-gloom-role="pane-content"
       >
         <PaneRenderErrorBoundary paneType={paneType}>

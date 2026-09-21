@@ -22,11 +22,13 @@ describe("desktop chrome clip", () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 
     const tiledWindow = cssRule(css, '[data-gloom-role="pane-window"][data-floating="false"]');
-    expect(tiledWindow).toContain("overflow: hidden");
+    expect(tiledWindow).toContain("overflow: clip");
+    expect(tiledWindow).toContain("overscroll-behavior: none");
 
     const floatingWindow = cssRule(css, '[data-gloom-role="pane-window"][data-floating="true"]');
     expect(floatingWindow).toContain("border-radius: 6px");
-    expect(floatingWindow).toContain("overflow: hidden");
+    expect(floatingWindow).toContain("overflow: clip");
+    expect(floatingWindow).toContain("overscroll-behavior: none");
 
     const floatingFooter = cssRule(
       css,
@@ -36,7 +38,22 @@ describe("desktop chrome clip", () => {
     expect(floatingFooter).toContain("min-height: calc(var(--cell-h) + 15px)");
 
     const paneBody = cssRule(css, '[data-gloom-role="pane-body"]');
-    expect(paneBody).toContain("overflow: hidden");
+    expect(paneBody).toContain("overflow: clip");
+
+    const paneContent = cssRule(css, '[data-gloom-role="pane-content"]');
+    expect(paneContent).toContain("overflow: clip");
+
+    const draggingIframe = cssRule(css, "body.gloom-dragging iframe");
+    expect(draggingIframe).toContain("pointer-events: none");
+
+    const draggingOverlay = cssRule(css, "body.gloom-dragging::after");
+    expect(draggingOverlay).toContain("position: fixed");
+    expect(draggingOverlay).toContain("inset: 0");
+
+    const tvChart = cssRule(css, '[data-gloom-role="tradingview-chart"]');
+    expect(tvChart).toContain("overflow: clip");
+    expect(tvChart).toContain("touch-action: none");
+    expect(tvChart).toContain("overscroll-behavior: none");
 
     const statusBar = cssRule(css, '[data-gloom-role="status-bar"]');
     expect(statusBar).toContain("calc(var(--cell-h) + 15px)");

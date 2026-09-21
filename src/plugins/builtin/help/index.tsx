@@ -1,7 +1,7 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useState } from "react";
-import { Button, Tabs } from "../../../components";
+import { Button, PaneBodyPad, PaneTabHeader } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -402,20 +402,17 @@ function HelpPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box width={width} height={1} flexShrink={0}>
-        <Tabs
-          tabs={[...HELP_TABS]}
-          activeValue={activeTabId}
-          onSelect={(value) => setActiveTabId(value as HelpTabId)}
-          focused={focused}
-          compact
-          scrollable={false}
-        />
-      </Box>
+      <PaneTabHeader
+        width={width}
+        focused={focused}
+        tabs={HELP_TABS}
+        activeValue={activeTabId}
+        onSelect={(value) => setActiveTabId(value as HelpTabId)}
+      />
       <ScrollBox key={activeTabId} width={width} height={contentHeight} scrollY>
-        <Box flexDirection="column" padding={1}>
+        <PaneBodyPad>
           {renderContent()}
-        </Box>
+        </PaneBodyPad>
       </ScrollBox>
     </Box>
   );
