@@ -263,6 +263,60 @@ describe("venue-direct prediction market series", () => {
     expect(requested.some((url) => url.includes("markets?slug=how-many-fed-rate-cuts-in-2026"))).toBe(true);
   });
 
+  test("event-slug charts ignore event-level volume leaking onto child summaries", async () => {
+    const requested = mockTransport([
+      [
+        "prices-history",
+        { history: [{ t: 1_760_000_000, p: 0.41 }] },
+      ],
+      [
+        "gamma-api.polymarket.com/markets?slug=how-many-fed-rate-cuts-in-2026",
+        [],
+      ],
+      [
+        "gamma-api.polymarket.com/events?slug=how-many-fed-rate-cuts-in-2026",
+        [
+          {
+            id: "51456",
+            title: "How many Fed rate cuts in 2026?",
+            slug: "how-many-fed-rate-cuts-in-2026",
+            volume24hr: 999_999,
+            markets: [
+              {
+                id: "616913",
+                question: "Will 11 Fed rate cuts happen in 2026?",
+                slug: "will-11-fed-rate-cuts-happen-in-2026",
+                groupItemTitle: "11",
+                outcomes: '["Yes","No"]',
+                outcomePrices: '["0.05","0.95"]',
+                clobTokenIds: '["quiet-yes","quiet-no"]',
+                volumeNum: 12,
+              },
+              {
+                id: "616903",
+                question: "Will 1 Fed rate cut happen in 2026?",
+                slug: "will-1-fed-rate-cut-happen-in-2026",
+                groupItemTitle: "1 (25 bps)",
+                outcomes: '["Yes","No"]',
+                outcomePrices: '["0.44","0.56"]',
+                clobTokenIds: '["busy-yes","busy-no"]',
+                volumeNum: 84_000,
+              },
+            ],
+          },
+        ],
+      ],
+    ]);
+
+    const series = await loadVenuePredictionMarketSeries(
+      "polymarket",
+      "HOW-MANY-FED-RATE-CUTS-IN-2026",
+    );
+
+    expect(series?.marketId).toBe("616903");
+    expect(requested.some((url) => url.includes("events?slug=how-many-fed-rate-cuts-in-2026"))).toBe(true);
+  });
+
   test("returns null when the venue does not know the identifier", async () => {
     mockTransport([]);
 

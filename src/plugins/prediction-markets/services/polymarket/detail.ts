@@ -251,13 +251,14 @@ export async function resolvePolymarketMarketById(
 
   const composite = /^(\d+):(.+)$/.exec(trimmed);
   if (composite?.[1] && composite[2]) {
-    const [, eventId, slug] = composite;
+    const [, eventId, slugRaw] = composite;
+    const slug = slugRaw.toLowerCase();
     const bySlug = await fetchPolymarketMarketRecord(
       `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`,
     );
     if (bySlug) return normalizePolymarketMarket(bySlug);
     const event = await loadPolymarketEvent(eventId);
-    const match = event?.markets?.find((market) => market.slug === slug);
+    const match = event?.markets?.find((market) => market.slug?.toLowerCase() === slug);
     if (match && event) {
       return normalizePolymarketMarket(hydratePolymarketMarket(match, event));
     }
@@ -267,14 +268,15 @@ export async function resolvePolymarketMarketById(
   const byId = /^\d+$/.test(trimmed)
     ? await fetchPolymarketMarketRecord(`${POLYMARKET_GAMMA_BASE}/markets/${trimmed}`)
     : null;
+  const slug = trimmed.toLowerCase();
   const record =
     byId ??
     (await fetchPolymarketMarketRecord(
-      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(trimmed)}&limit=1`,
+      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`,
     ));
   if (record) return normalizePolymarketMarket(record);
 
-  const byEventSlug = await loadPolymarketEventBySlug(trimmed);
+  const byEventSlug = await loadPolymarketEventBySlug(slug);
   if (byEventSlug?.markets?.length) {
     return busiestChartableMarketFromEvent(byEventSlug);
   }
