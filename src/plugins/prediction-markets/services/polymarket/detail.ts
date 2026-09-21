@@ -195,8 +195,19 @@ async function loadPolymarketEventBySlug(
   }
 }
 
-function marketChartActivity(summary: PredictionMarketSummary): number {
-  return (summary.volume24h ?? 0) * 1_000_000 + (summary.totalVolume ?? 0);
+function parsePolymarketNumber(...values: unknown[]): number {
+  for (const value of values) {
+    const parsed = parseFloatSafe(value);
+    if (parsed != null) return parsed;
+  }
+  return 0;
+}
+
+function marketOwnActivity(record: PolymarketMarketRecord): number {
+  // Do not fall back to event-level volume: Gamma copies that onto every
+  // child, which makes unused tail outcomes look busier than the live tape.
+  return parsePolymarketNumber(record.volume24hr, record.volume24hrClob) * 1_000_000
+    + parsePolymarketNumber(record.volumeNum, record.volume);
 }
 
 function busiestChartableMarketFromEvent(
@@ -204,21 +215,22 @@ function busiestChartableMarketFromEvent(
 ): PredictionMarketSummary | null {
   let best: PredictionMarketSummary | null = null;
   let bestScore = -1;
+  let bestHasToken = false;
   for (const eventMarket of event.markets ?? []) {
     const summary = normalizePolymarketMarket(
       hydratePolymarketMarket(eventMarket, event),
     );
     if (!summary) continue;
-    const score = marketChartActivity(summary);
-    const preferred = !!summary.yesTokenId;
-    const bestPreferred = !!best?.yesTokenId;
+    const score = marketOwnActivity(eventMarket);
+    const hasToken = !!summary.yesTokenId;
     if (
       !best
-      || (preferred && !bestPreferred)
-      || (preferred === bestPreferred && score > bestScore)
+      || (hasToken && !bestHasToken)
+      || (hasToken === bestHasToken && score > bestScore)
     ) {
       best = summary;
       bestScore = score;
+      bestHasToken = hasToken;
     }
   }
   return best;
