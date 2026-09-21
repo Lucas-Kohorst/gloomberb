@@ -61,6 +61,7 @@ import {
   resolveVisibleWarmupRequirements,
   sortTickers,
 } from "./data";
+import { resolveWatchlistRowOpen } from "./open-target";
 import { usePortfolioPaneStreaming } from "./streaming";
 import { usePredictionWatchlistQuotes } from "../../../prediction-markets/watchlist-quotes";
 import { usePortfolioSupplementalData } from "./supplemental";
@@ -288,8 +289,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   const handleRowActivate = useCallback((ticker: TickerRecord) => {
     flushCursorSymbol(ticker.metadata.ticker);
-    openTickerFloating(ticker.metadata.ticker);
-  }, [flushCursorSymbol, openTickerFloating]);
+    const target = resolveWatchlistRowOpen(ticker);
+    if (target.templateId) {
+      createPaneFromTemplate(target.templateId, { arg: target.arg });
+      return;
+    }
+    openTickerFloating(target.symbol);
+  }, [createPaneFromTemplate, flushCursorSymbol, openTickerFloating]);
   const handleTickerAdded = useCallback((symbol: string) => {
     setCursorSymbol(symbol, { immediate: true });
   }, [setCursorSymbol]);

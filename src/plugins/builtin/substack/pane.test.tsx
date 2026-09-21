@@ -122,7 +122,7 @@ afterEach(async () => {
 });
 
 describe("SubstackPane refresh", () => {
-  test("clicking Refresh force-refetches the home feed", async () => {
+  test("clicking footer [r]efresh force-refetches the home feed", async () => {
     const urls: string[] = [];
     setSubstackFetchTransportForTests(async (url) => {
       urls.push(url);
@@ -151,11 +151,11 @@ describe("SubstackPane refresh", () => {
     });
 
     expect(testSetup!.captureCharFrame()).toContain("Cached Substack post");
-    expect(testSetup!.captureCharFrame()).toContain("Refresh");
-    expect(testSetup!.captureCharFrame()).not.toContain("[r]efresh");
+    expect(testSetup!.captureCharFrame()).toContain("[r]efresh");
+    expect(testSetup!.captureCharFrame()).not.toContain("Refresh");
     expect(urls).toEqual([]);
 
-    const refresh = findText(testSetup!.captureCharFrame(), "Refresh");
+    const refresh = findText(testSetup!.captureCharFrame(), "[r]efresh");
     expect(refresh).not.toBeNull();
 
     await act(async () => {

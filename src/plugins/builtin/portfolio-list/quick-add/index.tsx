@@ -13,9 +13,10 @@ import { formatMarketPrice } from "../../../../market-data/market/format";
 import { upsertTickerFromSearchResult } from "../../../../tickers/search";
 import type { TickerRecord } from "../../../../types/ticker";
 import { addTickerToPortfolio, addTickerToWatchlist } from "../mutations";
+import { persistWatchlistMembership } from "../register-watchlist-asset";
 import {
   IDLE_VALIDATION,
-  isPlausibleTickerQuery,
+  isPlausibleAssetQuery,
   normalizeQuickAddQuery,
   resolveQuickAddValidation,
   tickerNameFromValidation,
@@ -159,7 +160,7 @@ export const QuickAddTickerInput = forwardRef<QuickAddTickerInputHandle, {
       return;
     }
 
-    if (!isPlausibleTickerQuery(query)) {
+    if (!isPlausibleAssetQuery(query)) {
       setValidation({ status: "missing", query, message: "Use a ticker symbol" });
       return;
     }
@@ -184,7 +185,8 @@ export const QuickAddTickerInput = forwardRef<QuickAddTickerInputHandle, {
     try {
       const currentValidation = (
         validation.query === query
-        && (validation.status === "ready" || validation.status === "duplicate")
+        && validation.status !== "idle"
+        && validation.status !== "checking"
       )
         ? validation
         : await validateQuery(query);
@@ -213,6 +215,42 @@ export const QuickAddTickerInput = forwardRef<QuickAddTickerInputHandle, {
       const registry = getSharedRegistry();
       if (!registry) {
         notify({ type: "error", body: t("Ticker lookup unavailable.") });
+        return;
+      }
+
+      if (currentValidation.resolved.kind === "adjacent") {
+        const membership = await persistWatchlistMembership({
+          ticker: currentValidation.resolved.ticker,
+          watchlistId: collectionId,
+          tickerRepository: registry.tickerRepository,
+          dispatch,
+        });
+        if (!membership.changed) {
+          notify({
+            type: "info",
+            body: tf("{symbol} is already in {collection}.", {
+              symbol: membership.ticker.metadata.ticker,
+              collection: collectionName,
+            }),
+          });
+          return;
+        }
+        if (!tickers.has(membership.ticker.metadata.ticker)) {
+          registry.events.emit("ticker:added", {
+            symbol: membership.ticker.metadata.ticker,
+            ticker: membership.ticker,
+          });
+        }
+        onAdded(membership.ticker.metadata.ticker);
+        notify({
+          type: "success",
+          body: tf("Added {symbol} to {collection}.", {
+            symbol: membership.ticker.metadata.ticker,
+            collection: collectionName,
+          }),
+        });
+        resetInput();
+        queueMicrotask(() => inputRef.current?.focus?.());
         return;
       }
 
@@ -276,6 +314,7 @@ export const QuickAddTickerInput = forwardRef<QuickAddTickerInputHandle, {
     onAdded,
     resetInput,
     submitting,
+    tickers,
     validateQuery,
     validation,
   ]);

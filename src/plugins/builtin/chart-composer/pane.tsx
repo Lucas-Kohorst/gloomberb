@@ -90,7 +90,6 @@ import {
   type ChartRangeSyncUpdate,
   type ChartRangeSyncWindow,
 } from "./range-sync";
-import { EmptyState } from "../../../components/ui/status";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import {
   resolveTradingViewPlot,
@@ -162,26 +161,6 @@ function isPriceStudyTarget(spec: ChartSpec): boolean {
   ));
 }
 
-function TuiChartUnavailable({
-  width,
-  height,
-  footerId,
-}: {
-  width: number;
-  height: number;
-  footerId: string;
-}) {
-  usePaneFooter(footerId, () => ({ info: [], hints: [] }), []);
-  return (
-    <Box flexDirection="column" width={width} height={height} backgroundColor={colors.panel}>
-      <EmptyState
-        title="Charts run on desktop and hosted web."
-        message="Listed symbols use TradingView there. Custom series use Lightweight Charts. Open Gloom in the desktop app or the hosted client to plot this ticker."
-      />
-    </Box>
-  );
-}
-
 function DesktopTradingViewComposer({
   plot,
   focused,
@@ -236,10 +215,7 @@ function ChartComposerSurface({
 }: ChartComposerSurfaceProps) {
   const ui = useUiHost();
   const plot = useMemo(() => resolveTradingViewPlot(spec), [spec]);
-  if (ui.kind !== "desktop-web") {
-    return <TuiChartUnavailable width={width} height={height} footerId={footerId} />;
-  }
-  if (plot.kind === "widget") {
+  if (ui.kind === "desktop-web" && plot.kind === "widget") {
     return (
       <DesktopTradingViewComposer
         plot={plot}

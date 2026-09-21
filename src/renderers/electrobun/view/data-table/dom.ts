@@ -10,8 +10,9 @@ import {
 import { TextAttributes, type ScrollBoxRenderable } from "../../../../ui/host";
 import type { DataTableColumn } from "../../../../components/ui/data-table";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
+import { PANE_TABLE_PAD_PX } from "../../../../theme/spacing";
 
-export const TABLE_INLINE_PADDING_PX = 8;
+export const TABLE_INLINE_PADDING_PX = PANE_TABLE_PAD_PX;
 export const CSS_BG = "var(--gloom-bg)";
 export const CSS_PANEL = "var(--gloom-panel)";
 export const CSS_TEXT = "var(--gloom-text)";

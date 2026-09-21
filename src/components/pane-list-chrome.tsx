@@ -1,6 +1,7 @@
 import { type ReactNode, type RefObject } from "react";
 import { Box, type InputRenderable } from "../ui";
 import { InputSearchBar } from "./input-search-bar";
+import { PaneTabHeader } from "./pane-tab-header";
 import { Tabs, type TabsProps } from "./ui/tabs";
 
 export interface PaneListChromeTab {
@@ -129,17 +130,28 @@ function PaneListChromeHeader({
   searchActive: boolean;
 }) {
   const tabRow = tabs && onSelect ? (
-    <Box height={1} width={width}>
-      <Tabs
-        tabs={[...tabs]}
+    tabVariant !== "underline" ? (
+      <Box height={1} width={width}>
+        <Tabs
+          tabs={[...tabs]}
+          activeValue={activeValue ?? null}
+          onSelect={onSelect}
+          compact={tabCompact}
+          variant={tabVariant}
+          scrollable={tabScrollable}
+          focused={focused && !searchActive}
+        />
+      </Box>
+    ) : (
+      <PaneTabHeader
+        width={width}
+        focused={focused && !searchActive}
+        tabs={tabs}
         activeValue={activeValue ?? null}
         onSelect={onSelect}
-        compact={tabCompact}
-        variant={tabVariant}
-        scrollable={tabScrollable}
-        focused={focused && !searchActive}
+        scrollable={tabScrollable ?? false}
       />
-    </Box>
+    )
   ) : null;
   const searchRow = search ? (
     <PaneListSearchRow

@@ -160,7 +160,7 @@ export function useInlineTickers(
               return;
             }
 
-            if (resolved.kind === "local") return;
+            if (resolved.kind === "local" || resolved.kind === "adjacent") return;
 
             const { ticker, created } = await upsertTickerFromSearchResult(activeRegistry.tickerRepository, resolved.result);
             current.dispatch({ type: "UPDATE_TICKER", ticker });

@@ -54,7 +54,7 @@ export const substackPlugin: GloomPlugin = {
       id: "substack-pane",
       paneId: SUBSTACK_PANE_ID,
       label: "Substack",
-      description: "Read subscribed Substack newsletters. Search headlines with [/] or ART. Refresh from the pane control.",
+      description: "Read subscribed Substack newsletters. Search headlines with [/] or ART. Refresh the feed with [r].",
       keywords: ["substack", "newsletter", "feed", "reader", "subscription", "article"],
       shortcut: { prefix: "SUB" },
     },

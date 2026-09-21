@@ -1,4 +1,4 @@
-import { Box, Text, useUiHost } from "../../ui";
+import { Box, Text } from "../../ui";
 import { useMemo } from "react";
 import { Tabs } from "../../components";
 import {
@@ -71,7 +71,6 @@ export function PredictionMarketChart({
   onRangeSelect: (range: PredictionHistoryRange) => void;
 }) {
   const pricePoints = useMemo(() => toPricePoints(history), [history]);
-  const desktopWeb = useUiHost().kind === "desktop-web";
 
   if (pricePoints.length === 0) {
     return (
@@ -134,23 +133,16 @@ export function PredictionMarketChart({
         </Text>
       </Box>
 
-      {desktopWeb ? (
-        <CompositeChart
-          width={width}
-          height={chartHeight}
-          focused={focused}
-          interactive
-          series={[priceSeries]}
-          panels={[{ id: "price" }]}
-          axisWidth={8}
-          showLegend={false}
-        />
-      ) : (
-        <EmptyState
-          title="Charts run on desktop and hosted web."
-          message="This market is not on TradingView. Open the desktop app or hosted client to plot venue history."
-        />
-      )}
+      <CompositeChart
+        width={width}
+        height={chartHeight}
+        focused={focused}
+        interactive
+        series={[priceSeries]}
+        panels={[{ id: "price" }]}
+        axisWidth={8}
+        showLegend={false}
+      />
     </Box>
   );
 }
