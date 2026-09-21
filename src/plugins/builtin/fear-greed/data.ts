@@ -1,5 +1,5 @@
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
-import { httpFetch } from "../../../utils/http-transport";
+import { httpFetch, type HttpFetchTransport } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 
 const CNN_FEAR_GREED_GRAPH_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata";
@@ -327,7 +327,7 @@ function cnnFetchHeaders(): HeadersInit {
   return headers;
 }
 
-async function fetchCnnGraphData(url: string, fetcher: typeof fetch): Promise<CnnFearGreedGraphData> {
+async function fetchCnnGraphData(url: string, fetcher: HttpFetchTransport): Promise<CnnFearGreedGraphData> {
   const response = await fetcher(url, { headers: cnnFetchHeaders() });
   const body = await response.text();
   if (!response.ok) {
@@ -350,7 +350,7 @@ async function fetchCnnGraphData(url: string, fetcher: typeof fetch): Promise<Cn
 
 export async function fetchFearGreedData(options: {
   date?: Date;
-  fetcher?: typeof fetch;
+  fetcher?: HttpFetchTransport;
 } = {}): Promise<FearGreedData> {
   const fetcher = options.fetcher ?? httpFetch;
   const date = options.date ?? new Date();
