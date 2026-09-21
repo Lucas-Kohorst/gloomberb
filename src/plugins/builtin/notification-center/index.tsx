@@ -20,6 +20,11 @@ import {
   subscribeNotificationLog,
   type NotificationLogEntry,
 } from "../../../notifications/notification-log";
+import {
+  notificationIdsThatAppearUnread,
+  type NotificationChatUnread,
+} from "../../../notifications/unread-appearance";
+import { chatController } from "../chat/controller";
 import { nextSortPreference, applySortPreference, type SortPreference } from "../../../utils/sort-values";
 import { usePaneFooterHintBindings } from "../shared/pane-footer";
 
@@ -50,6 +55,13 @@ function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function readChatUnread(): NotificationChatUnread {
+  return {
+    unreadCount: chatController.totalUnreadCount(),
+    unreadMessageIds: chatController.unreadMessageIds(),
+  };
+}
+
 function sourceDestination(source: string): "alerts" | "chat" | null {
   if (source === "alerts") return "alerts";
   if (source === "gloomberb-cloud" || source === "chat") return "chat";
@@ -67,6 +79,7 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const { showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
+  const [chatUnread, setChatUnread] = useState<NotificationChatUnread>(readChatUnread);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -78,6 +91,11 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   });
 
   useEffect(() => subscribeNotificationLog(() => setEntries(getNotificationLog())), []);
+  useEffect(() => chatController.subscribe(() => setChatUnread(readChatUnread())), []);
+  const unreadIds = useMemo(
+    () => notificationIdsThatAppearUnread(entries, chatUnread),
+    [chatUnread, entries],
+  );
 
   const rows = useMemo<NotificationRow[]>(() => {
     const lowerQuery = query.trim().toLowerCase();
@@ -115,7 +133,10 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
     const destination = selected && sourceDestination(selected.source);
     if (destination) showPane?.(destination);
   }, [selected, showPane]);
-  const markAllRead = useCallback(() => markNotificationLogRead(), []);
+  const markAllRead = useCallback(() => {
+    markNotificationLogRead();
+    chatController.markAllChannelsRead();
+  }, []);
   const requestClear = useCallback(async () => {
     const confirmed = await dialog.prompt<boolean>({
       closeOnClickOutside: true,
@@ -157,12 +178,13 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
         : { text: "" };
     }
     if (column.id === "state") {
-      return { text: entry.read ? t("Read") : t("New"), color: selectedColor ?? (entry.read ? colors.textDim : colors.textBright) };
+      const unread = unreadIds.has(entry.id);
+      return { text: unread ? t("New") : t("Read"), color: selectedColor ?? (unread ? colors.textBright : colors.textDim) };
     }
     if (column.id === "date") return { text: `${formatDate(entry.at)} ${formatTime(entry.at)}`, color: selectedColor ?? colors.textDim };
     if (column.id === "source") return { text: entry.source, color: selectedColor ?? colors.textDim };
     return { text: entry.title ? `${entry.title}: ${entry.body}` : entry.body, color: selectedColor ?? colors.text };
-  }, []);
+  }, [unreadIds]);
 
   return (
     <DataTableView<NotificationRow, NotificationColumn>

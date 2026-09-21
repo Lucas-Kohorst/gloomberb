@@ -434,6 +434,11 @@ body.gloom-dragging {
 [data-gloom-role="pane-footer"] {
   /* 8px padding-block + 1px top border. Border-box without that extra 1px
      leaves a 17px content box that shears 18px line boxes. */
+  position: relative;
+  z-index: 13;
+  /* The bottom resize handle sits on this edge. Let it take clicks in the
+     padding, but keep hint glyphs above it so [m]ark all read is the target. */
+  pointer-events: none;
   flex: 0 0 auto !important;
   height: auto !important;
   min-height: calc(var(--cell-h) + 9px) !important;
@@ -468,8 +473,14 @@ body.gloom-dragging {
   min-width: 0 !important;
   width: auto !important;
 }
-[data-gloom-role="pane-hint"] {
+[data-gloom-role="pane-hint"],
+[data-gloom-role="pane-footer"] [data-gloom-interactive="true"] {
   cursor: pointer;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+[data-gloom-role="pane-hint"] {
   width: auto !important;
   min-width: 0 !important;
 }

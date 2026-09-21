@@ -16,9 +16,11 @@ import {
   configureNotificationLog,
   flushNotificationLog,
   getNotificationLog,
+  markNotificationLogRead,
   resetNotificationLogForTest,
   type NotificationLogEntry,
 } from "../../../notifications/notification-log";
+import { chatController } from "../chat/controller";
 import { NotificationCenterPane } from "./index";
 
 const WIDTH = 96;
@@ -59,7 +61,15 @@ async function renderSettled(): Promise<void> {
   });
 }
 
+function resetChatChannels(): void {
+  const states = (chatController as unknown as {
+    storage: { channelStates: Map<string, unknown> };
+  }).storage.channelStates;
+  states.clear();
+}
+
 afterEach(async () => {
+  resetChatChannels();
   resetNotificationLogForTest();
   if (!testSetup) return;
   await act(async () => {
@@ -144,5 +154,69 @@ describe("NotificationCenterPane mark all read", () => {
     expect(frame).toContain("Read");
     expect(getNotificationLog()).toHaveLength(2);
     expect(getNotificationLog().every((entry) => entry.read)).toBe(true);
+  });
+
+  test("clicking mark all read clears chat unread that the badge still counts", async () => {
+    configureNotificationLog({ get: () => [], set: () => {} });
+    appendNotificationLog({
+      title: "#everyone",
+      body: "@bob: hey",
+      refId: "m-unread",
+    }, "chat", Date.now());
+    markNotificationLogRead();
+    const channel = (chatController as unknown as {
+      ensureChannelState: (channelId: string) => {
+        unreadCount: number;
+        lastViewedMessageId: string | null;
+        messages: Array<{
+          id: string;
+          channelId: string;
+          content: string;
+          replyToId: null;
+          createdAt: string;
+          user: { id: string; username: string; displayName: string };
+        }>;
+      };
+    }).ensureChannelState("everyone");
+    channel.unreadCount = 1;
+    channel.lastViewedMessageId = null;
+    channel.messages = [{
+      id: "m-unread",
+      channelId: "everyone",
+      content: "hey",
+      replyToId: null,
+      createdAt: new Date().toISOString(),
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    }];
+
+    testSetup = await testRender(<Harness />, { width: WIDTH, height: HEIGHT });
+    await renderSettled();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("New");
+    expect(frame).not.toContain("Read");
+    expect(chatController.totalUnreadCount()).toBe(1);
+    expect(getNotificationLog().every((entry) => entry.read)).toBe(true);
+
+    const rows = frame.split("\n");
+    const row = rows.findIndex((line) => line.includes("[m]ark all read"));
+    const col = row >= 0 ? rows[row]!.indexOf("[m]") : -1;
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      await testSetup!.mockMouse.pressDown(col + 1, row);
+      await testSetup!.mockMouse.release(col + 1, row);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushNotificationLog();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Read");
+    expect(frame).not.toContain("New");
+    expect(chatController.totalUnreadCount()).toBe(0);
   });
 });
