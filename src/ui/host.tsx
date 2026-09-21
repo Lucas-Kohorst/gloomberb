@@ -234,11 +234,8 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
-  /** TradingView symbol, such as NASDAQ:AAPL or FRED:CPIAUCSL. */
   symbol: string;
-  /** TradingView interval token. Default D. */
   interval?: string;
-  /** IANA zone for the widget. Default America/New_York. */
   timezone?: string;
   compareSymbols?: readonly string[];
   backgroundColor?: string;

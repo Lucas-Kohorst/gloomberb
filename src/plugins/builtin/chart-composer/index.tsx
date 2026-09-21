@@ -327,7 +327,7 @@ export const chartComposerModule: PluginModule = {
     component: ChartComposerPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 100, height: 32 },
+    defaultFloatingSize: { width: 140, height: 42 },
     quickSettings: [LIVE_STREAMING_QUICK_SETTING],
     settings: (context) => withLiveStreamingSetting(
       buildChartComposerPaneSettingsDef(

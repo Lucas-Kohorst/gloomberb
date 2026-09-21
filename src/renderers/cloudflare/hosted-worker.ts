@@ -804,7 +804,7 @@ const APP_CSP = [
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
-  "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tradingview.com https://s3.tradingview.com",
+  "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tradingview.com https://s3.tradingview.com https://www.tradingview-widget.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

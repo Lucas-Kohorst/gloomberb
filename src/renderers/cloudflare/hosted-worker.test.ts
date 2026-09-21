@@ -1607,6 +1607,15 @@ describe("app security headers", () => {
     expect(response?.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
+  test("report-only CSP allows TradingView Advanced Chart iframes", async () => {
+    const response = await serveAsset("/");
+    const csp = response?.headers.get("content-security-policy-report-only") ?? "";
+    expect(csp).toContain("frame-src");
+    expect(csp).toContain("https://www.tradingview.com");
+    expect(csp).toContain("https://s3.tradingview.com");
+    expect(csp).toContain("https://www.tradingview-widget.com");
+  });
+
   test("only share documents ask crawlers to stay out", async () => {
     expect((await serveAsset("/"))?.headers.get("x-robots-tag")).toBeNull();
     expect((await serveAsset("/s/SdIc3WRwjojR"))?.headers.get("x-robots-tag")).toBe(
