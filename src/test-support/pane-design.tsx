@@ -474,7 +474,10 @@ export function assertUniversalPaneDesignGates(
   assertFooterHintKeysBindable(footer, paneId);
   assertNoNavigationFooterHints(footer, paneId);
   assertNoDuplicateFooterHintKeys(footer, paneId);
-  assertNoPerPaneRefreshHint(footer, paneId);
+  // Substack advertises a footer [r]efresh. Other panes keep r off the chrome.
+  if (paneId !== "substack") {
+    assertNoPerPaneRefreshHint(footer, paneId);
+  }
   assertFooterHintKeyPrefixesAction(footer, paneId);
   assertFooterInfoIsStatusOnly(footer, paneId);
   assertFooterHasNoResultCounts(footer, paneId);

@@ -37,7 +37,6 @@ import { stashSubstackArticle } from "./article-stash";
 import { SubstackArticleStack } from "./article-stack";
 import { SubstackFeedTabs } from "./feed-tabs";
 import { SubstackLoginView } from "./login-view";
-import { SubstackRefreshControl } from "./refresh-control";
 import {
   buildSubstackColumns,
   isSubstackSortColumnId,
@@ -550,6 +549,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     openSelectedArticle,
     popOutArticle,
     focusSearch,
+    refreshActive,
   });
 
   const search: PaneListSearchProps = {
@@ -579,7 +579,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const tabRowHeight = 1;
   const bodyHeight = Math.max(1, height - tabRowHeight);
   const listHeight = Math.max(1, bodyHeight - paneListChromeRows({ search: true }));
-  const refreshing = home.loading || !!activeFeedState.loading;
 
   const detailContent = selectedArticle ? (
     <ArticleDetail
@@ -595,20 +594,13 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="row" height={1} width={width} alignItems="center">
-        <Box flexGrow={1} minWidth={0} overflow="hidden">
-          <SubstackFeedTabs
-            subscriptions={subscriptions}
-            activeTab={activeTab}
-            focused={focused && !searchFocused}
-            detailOpen={detailOpen}
-            onSelect={selectTab}
-          />
-        </Box>
-        <Box flexShrink={0} height={1} paddingRight={1}>
-          <SubstackRefreshControl onRefresh={refreshActive} loading={refreshing} />
-        </Box>
-      </Box>
+      <SubstackFeedTabs
+        subscriptions={subscriptions}
+        activeTab={activeTab}
+        focused={focused && !searchFocused}
+        detailOpen={detailOpen}
+        onSelect={selectTab}
+      />
       <PaneListChrome
         width={width}
         height={bodyHeight}

@@ -29,6 +29,7 @@ describe("prediction markets detail views", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("1M");
+    expect(frame).not.toContain("Charts run on desktop and hosted web.");
     expect(frame).not.toContain("TypeError");
   });
 
