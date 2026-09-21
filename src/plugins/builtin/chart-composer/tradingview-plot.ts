@@ -33,39 +33,15 @@ export type TradingViewPlot = TradingViewWidgetPlot | { kind: "unmapped" };
 
 const PRICE_FIELD_IDS = new Set(["market.ohlcv", "market.close"]);
 
-/** Gloom canonical exchange → TradingView prefix. Missing keys use the canonical name. */
 const TV_EXCHANGE_PREFIX: Record<string, string> = {
-  NASDAQ: "NASDAQ",
-  NYSE: "NYSE",
-  AMEX: "AMEX",
   ARCA: "AMEX",
-  BATS: "BATS",
-  LSE: "LSE",
-  TSX: "TSX",
-  TSXV: "TSXV",
-  CSE: "CSE",
-  HKEX: "HKEX",
   JPX: "TSE",
   XETRA: "XETR",
   FWB2: "FWB",
   EPA: "EURONEXT",
   AMS: "EURONEXT",
-  ASX: "ASX",
-  SGX: "SGX",
-  KRX: "KRX",
-  KOSDAQ: "KOSDAQ",
-  NSE: "NSE",
-  BSE: "BSE",
   SWX: "SIX",
-  SSE: "SSE",
-  SZSE: "SZSE",
-  TWSE: "TWSE",
-  TPEX: "TPEX",
-  NZX: "NZX",
-  BMV: "BMV",
   B3: "BMFBOVESPA",
-  TASE: "TASE",
-  JSE: "JSE",
 };
 
 const INTERVAL_FROM_RESOLUTION: Record<Exclude<ChartResolution, "auto">, TradingViewInterval> = {

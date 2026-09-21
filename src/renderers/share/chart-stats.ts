@@ -1,11 +1,3 @@
-/**
- * Snapshot-side stats for a shared chart.
- *
- * The share page has no resolver, so every number here is derived from the
- * frozen points. Keep this module free of React so the formatters stay
- * unit-testable.
- */
-
 import type { ChartSharePayload, ChartSharePoint, ChartShareSeries } from "../../shares/payload";
 
 const HOUR_MS = 60 * 60 * 1_000;

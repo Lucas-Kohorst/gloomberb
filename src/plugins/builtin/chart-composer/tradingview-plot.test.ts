@@ -13,6 +13,10 @@ describe("tradingViewSymbolForSecurity", () => {
     expect(tradingViewSymbolForSecurity({ symbol: "AAPL", exchange: "NASDAQ" })).toBe("NASDAQ:AAPL");
   });
 
+  test("remaps JPX onto TSE", () => {
+    expect(tradingViewSymbolForSecurity({ symbol: "7203", exchange: "JPX" })).toBe("TSE:7203");
+  });
+
   test("leaves a listing without an exchange for TradingView to resolve", () => {
     expect(tradingViewSymbolForSecurity({ symbol: "AAPL" })).toBe("AAPL");
   });

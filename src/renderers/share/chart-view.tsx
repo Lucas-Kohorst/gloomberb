@@ -1,15 +1,4 @@
 /** @jsxImportSource react */
-/**
- * Shared chart view.
- *
- * Security and FRED snapshots embed TradingView. Custom mixes that TradingView
- * cannot plot are drawn from the frozen points as SVG. There is no resolution
- * pipeline here: the share page has no providers.
- *
- * The pane header already names the chart. The strip above the plot is last,
- * change, range, and window — not the title again.
- */
-
 import { useMemo } from "react";
 import { formatChartLegendValue } from "../../components/chart/composite/format";
 import {
