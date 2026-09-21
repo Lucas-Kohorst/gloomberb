@@ -330,7 +330,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
+    <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="clip">
       {!paneSettings.hideTabs && (
         <PaneTabHeader
           width={width}
@@ -342,7 +342,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
         />
       )}
 
-      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="clip">
         {tickerResearchTabs.map((tab) => {
           if (!renderedTabIds.has(tab.id) || !visibleTabIds.has(tab.id)) return null;
           const TickerResearchTab = tab.component;
@@ -355,7 +355,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
               flexGrow={1}
               flexBasis={0}
               height={contentHeight}
-              overflow="hidden"
+              overflow={tab.id === "chart" ? "clip" : "hidden"}
             >
               <PaneFooterScope active={isActive}>
                 <TickerResearchTab

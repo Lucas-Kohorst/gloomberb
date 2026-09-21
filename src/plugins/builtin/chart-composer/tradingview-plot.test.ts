@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildComparisonChartPreset, buildCustomChartPreset, buildFundamentalChartPreset, buildIntradayPriceChartPreset, buildPriceChartPreset } from "./presets";
+import { buildBoundChartPreset, buildComparisonChartPreset, buildCustomChartPreset, buildFundamentalChartPreset, buildIntradayPriceChartPreset, buildPriceChartPreset } from "./presets";
 import {
   resolveTradingViewPlot,
   tradingViewEmbedSrc,
@@ -87,6 +87,16 @@ describe("resolveTradingViewPlot", () => {
   test("keeps a followed ARINTI ticker off the TradingView widget", () => {
     expect(resolveTradingViewPlot(buildCustomChartPreset("", "ARINTI"))).toEqual({ kind: "unmapped" });
     expect(resolveTradingViewPlot(buildPriceChartPreset("ARINTI"))).toEqual({ kind: "unmapped" });
+  });
+
+  test("keeps a bound POLY DES chart on Lightweight Charts", () => {
+    const spec = buildBoundChartPreset("POLY:how-many-fed-rate-cuts-in-2026");
+    expect(spec.series[0]?.source).toMatchObject({
+      kind: "prediction-market",
+      venue: "polymarket",
+      marketId: "how-many-fed-rate-cuts-in-2026",
+    });
+    expect(resolveTradingViewPlot(spec)).toEqual({ kind: "unmapped" });
   });
 });
 

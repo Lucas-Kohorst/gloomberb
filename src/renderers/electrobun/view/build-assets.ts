@@ -1,4 +1,4 @@
-import { copyFile, readFile, rename, writeFile } from "fs/promises";
+import { copyFile, readdir, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 import { toRootAbsoluteAssetUrl } from "./asset-urls";
@@ -63,6 +63,13 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const hashedEntryPath = await hashJsEntrypoint(
     join(options.outdir, entrySrc.replace(/^\.\//, "")),
     "web-main",
+  );
+  // Split chunks still `import from "./web-main.js"`. Hashing the entry
+  // would 404 those dynamic imports (DES Chart, LWC, youtubei).
+  await rewriteSplitChunkEntryImports(
+    options.outdir,
+    entrySrc.replace(/^\.\//, ""),
+    relative(options.outdir, hashedEntryPath).replaceAll("\\", "/"),
   );
   const robinhoodBrowserSrc = await writeRobinhoodBrowserBundle(options.outdir);
   const htmlPath = join(options.outdir, "index.html");
@@ -167,6 +174,31 @@ export async function writeSharePage(options: {
  * picks up the new URL. After a deploy the unhashed name 404s instead of
  * serving SPA HTML for a missing module.
  */
+export function rewriteChunkEntryImportSource(
+  source: string,
+  fromFile: string,
+  toFile: string,
+): string {
+  if (fromFile === toFile) return source;
+  return source.replaceAll(`from"./${fromFile}"`, `from"./${toFile}"`)
+    .replaceAll(`from "./${fromFile}"`, `from"./${toFile}"`);
+}
+
+async function rewriteSplitChunkEntryImports(
+  outdir: string,
+  fromFile: string,
+  toFile: string,
+): Promise<void> {
+  if (fromFile === toFile) return;
+  for (const file of await readdir(outdir)) {
+    if (!file.startsWith("chunk-") || !file.endsWith(".js")) continue;
+    const path = join(outdir, file);
+    const source = await readFile(path, "utf8");
+    const next = rewriteChunkEntryImportSource(source, fromFile, toFile);
+    if (next !== source) await writeFile(path, next);
+  }
+}
+
 async function hashJsEntrypoint(entryPath: string, basename: string): Promise<string> {
   const bytes = await Bun.file(entryPath).arrayBuffer();
   const hash = Bun.hash(new Uint8Array(bytes)).toString(16).padStart(16, "0").slice(0, 10);
