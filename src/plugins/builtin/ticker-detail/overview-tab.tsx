@@ -14,7 +14,7 @@ import {
   marketStateLabel,
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { EmptyState, TickerEmptyState } from "../../../components";
+import { EmptyState, PaneBodyPad, TickerEmptyState } from "../../../components";
 import { CompanyLogo } from "../../../components/company-logo";
 import {
   CompositeChart,
@@ -51,7 +51,7 @@ export function OverviewTab({
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useViewport();
-  const { fractionalViewport = false, nativePaneChrome } = useUiCapabilities();
+  const { fractionalViewport = false } = useUiCapabilities();
 
   if (!ticker) return <TickerEmptyState kind="overview" symbol={null} detail="overview" />;
 
@@ -150,7 +150,7 @@ export function OverviewTab({
 
   return (
     <ScrollBox flexGrow={1} flexBasis={0} scrollY focusable={false}>
-      <Box flexDirection="column" paddingX={1} paddingTop={nativePaneChrome ? 1 : 0} paddingBottom={1} gap={1}>
+      <PaneBodyPad>
         <Box flexDirection={quoteBookInline ? "row" : "column"} gap={quoteBookInline ? 2 : 0} width={contentWidth}>
           <Box flexDirection="row" width={quoteSummaryWidth}>
             <CompanyLogo
@@ -323,7 +323,7 @@ export function OverviewTab({
             <Text fg={colors.text} width={contentWidth} wrapMode="word" wrapText>{description}</Text>
           </Box>
         )}
-      </Box>
+      </PaneBodyPad>
     </ScrollBox>
   );
 }

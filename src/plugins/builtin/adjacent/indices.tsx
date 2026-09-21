@@ -10,10 +10,11 @@ import {
   DataTableView,
   EmptyState,
   FeedDataTableStackView,
+  PaneBodyPad,
   InputSearchBar,
   PaneListChrome,
+  PaneTabHeader,
   Spinner,
-  Tabs,
   nextStackSortPreference,
   usePaneFooter,
   useUpdatedAgo,
@@ -27,8 +28,17 @@ import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/forma
 import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
 import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
 import { searchRelatedNews } from "../news/wire/article-search";
+import { adjacentCatalogHaystack } from "./command-bar-search";
+import { filterAdjacentRows } from "./search";
 import type { NewsArticle } from "../../../news/types";
-import { useAppDispatch, usePaneInstance } from "../../../state/app/context";
+import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../state/app/context";
+import { scheduleConfigSave } from "../../../state/config-save-scheduler";
+import { ensureDefaultWatchlist } from "../../prediction-markets/collection-watchlist";
+import {
+  adjacentIndexTickerRecord,
+  dispatchEnsuredWatchlistConfig,
+  persistWatchlistMembership,
+} from "../portfolio-list/register-watchlist-asset";
 import { getSharedRegistry } from "../../registry";
 import { predictionTickerRecord } from "../../prediction-markets/collection-watchlist";
 import { openUrl } from "../../../components/ui/external-link";
@@ -257,11 +267,10 @@ function IndexDetail({
     () => applySortPreference(constituents, constituentSort, constituentSortValue),
     [constituents, constituentSort],
   );
-  const visibleNews = useMemo(() => {
-    const query = newsQuery.trim().toLowerCase();
-    if (!query) return news;
-    return news.filter((article) => `${article.title} ${article.source}`.toLowerCase().includes(query));
-  }, [news, newsQuery]);
+  const visibleNews = useMemo(
+    () => filterAdjacentRows(news, newsQuery, (article) => `${article.title} ${article.source}`),
+    [news, newsQuery],
+  );
   const newsItems = useMemo(() => toIndexNewsItems(visibleNews), [visibleNews]);
   const selectedConstituent = sortedConstituents.find((row) => row.market_id === selectedConstituentId) ?? null;
   const popOutChart = useGraphChartPopOut();
@@ -375,18 +384,17 @@ function IndexDetail({
   }, [selectedConstituentId, sortedConstituents]);
 
   const tabs = (
-    <Box paddingBottom={1}>
-      <Tabs
-        tabs={[
-          { label: "Overview", value: "overview" },
-          { label: "Chart", value: "chart" },
-          { label: "News", value: "news" },
-        ]}
-        activeValue={detailTab}
-        onSelect={(v) => onDetailTabChange(v as IndexDetailTab)}
-        compact
-      />
-    </Box>
+    <PaneTabHeader
+      width={width}
+      focused={focused}
+      tabs={[
+        { label: "Overview", value: "overview" },
+        { label: "Chart", value: "chart" },
+        { label: "News", value: "news" },
+      ]}
+      activeValue={detailTab}
+      onSelect={(v) => onDetailTabChange(v as IndexDetailTab)}
+    />
   );
 
   if (loading && constituents.length === 0 && prices.length === 0 && news.length === 0) {
@@ -404,14 +412,14 @@ function IndexDetail({
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <Box padding={1}>
+        <PaneBodyPad>
           <EmptyState title="Error loading index data." message={error} hint="Press r to retry." />
-        </Box>
+        </PaneBodyPad>
       </Box>
     );
   }
 
-  const contentHeight = Math.max(4, height - 2);
+  const contentHeight = Math.max(4, height - 1);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -630,7 +638,10 @@ export function AdjacentIndicesPane({
     direction: "desc",
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const { createPaneFromTemplate } = usePluginAppActions();
+  const { createPaneFromTemplate, notify } = usePluginAppActions();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const tickers = useAppSelector((state) => state.tickers);
   const paneInstance = usePaneInstance();
   const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
   const [searchQuery, setSearchQuery] = useState(seedQuery);
@@ -668,10 +679,13 @@ export function AdjacentIndicesPane({
   }, [load]);
 
   const columns = useMemo(() => createIndexColumns(), []);
-  const visibleIndices = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return applySortPreference(indices.filter((row) => !query || `${row.ticker} ${row.name}`.toLowerCase().includes(query)), sortPreference, adjacentIndexSortValue);
-  }, [indices, searchQuery, sortPreference]);
+  const visibleIndices = useMemo(() => (
+    applySortPreference(
+      filterAdjacentRows(indices, searchQuery, (row) => adjacentCatalogHaystack(row)),
+      sortPreference,
+      adjacentIndexSortValue,
+    )
+  ), [indices, searchQuery, sortPreference]);
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -721,6 +735,42 @@ export function AdjacentIndicesPane({
     setSearchFocused(true);
     setSearchFocusToken((value) => value + 1);
   }, []);
+  const registerSelected = useCallback(() => {
+    if (!selectedIndexRow) return;
+    const registry = getSharedRegistry();
+    if (!registry) {
+      notify({ type: "error", body: "Ticker lookup unavailable." });
+      return;
+    }
+    const ensured = ensureDefaultWatchlist(config);
+    dispatchEnsuredWatchlistConfig(config, ensured.config, dispatch, scheduleConfigSave);
+    const symbol = (selectedIndexRow.ticker || selectedIndexRow.id).toUpperCase();
+    const ticker = adjacentIndexTickerRecord({
+      index_id: selectedIndexRow.id,
+      ticker: selectedIndexRow.ticker,
+      name: selectedIndexRow.name,
+    }, tickers.get(symbol) ?? null);
+    void persistWatchlistMembership({
+      ticker,
+      watchlistId: ensured.watchlistId,
+      tickerRepository: registry.tickerRepository,
+      dispatch,
+    }).then((result) => {
+      notify({
+        type: result.changed ? "success" : "info",
+        body: result.changed
+          ? `${result.ticker.metadata.ticker} added to Watchlist.`
+          : `${result.ticker.metadata.ticker} is already on Watchlist.`,
+      });
+    });
+  }, [config, dispatch, notify, selectedIndexRow, tickers]);
+  const watchlistId = ensureDefaultWatchlist(config).watchlistId;
+  const selectedSymbol = selectedIndexRow
+    ? (selectedIndexRow.ticker || selectedIndexRow.id).toUpperCase()
+    : "";
+  const selectedAlreadyOnWatchlist = selectedSymbol
+    ? (tickers.get(selectedSymbol)?.metadata.watchlists.includes(watchlistId) ?? false)
+    : false;
   const shareIndices = useCallback(() => {
     void shareTable({
       title: "Adjacent Indices",
@@ -753,6 +803,12 @@ export function AdjacentIndicesPane({
       event.preventDefault?.();
       event.stopPropagation?.();
       shareIndices();
+      return;
+    }
+    if (isPlainKey(event, "a") && !event.targetEditable && selectedIndexRow && !selectedAlreadyOnWatchlist) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      registerSelected();
     }
   }, { enabled: focused && !detailOpen });
 
@@ -765,12 +821,15 @@ export function AdjacentIndicesPane({
     trailingInfo: [poll.segment],
     hints: [
       ...(!detailOpen
-        ? [{ id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow }]
+        ? [
+          { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow },
+          { id: "add", key: "a", label: "dd", onPress: registerSelected, disabled: !selectedIndexRow || selectedAlreadyOnWatchlist },
+        ]
         : []),
       { id: "share", key: "s", label: "hare", onPress: shareIndices },
       paneSearchHint(focusSearch),
     ],
-  }), [detailOpen, error, focusSearch, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
+  }), [detailOpen, error, focusSearch, graphSelected, load, poll.segment, registerSelected, selectedAlreadyOnWatchlist, selectedIndexRow, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
@@ -785,9 +844,9 @@ export function AdjacentIndicesPane({
   if (error && indices.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <Box padding={1}>
+        <PaneBodyPad>
           <EmptyState title="Adjacent indices unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        </PaneBodyPad>
       </Box>
     );
   }

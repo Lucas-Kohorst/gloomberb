@@ -29,6 +29,7 @@ import {
   resolveDataTableScrollTop,
   resolveDataTableVisibleWindow,
 } from "./model";
+import { PANE_TABLE_PAD_CELLS } from "../../../../theme/spacing";
 
 interface DataTableRowPointerTarget<T> {
   item: T;
@@ -226,7 +227,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   virtualize = true,
   overscan = 3,
   columnGap = 1,
-  horizontalPadding = 1,
+  horizontalPadding = PANE_TABLE_PAD_CELLS,
   fillAvailableWidth = true,
   showHorizontalScrollbar = true,
   scrollToIndex,

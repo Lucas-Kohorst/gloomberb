@@ -30,7 +30,7 @@ export async function resolveTickerForCli(
     throw new Error(`No ticker match found for "${normalized}".`);
   }
 
-  if (resolved.kind === "local") {
+  if (resolved.kind === "local" || resolved.kind === "adjacent") {
     return resolved.ticker;
   }
 

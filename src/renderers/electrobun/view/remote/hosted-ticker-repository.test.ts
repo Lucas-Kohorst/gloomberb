@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { HostedTickerRepository } from "./hosted-ticker-repository";
 import type { TickerRecord } from "../../../../types/ticker";
 import { setHostedConfigUserId } from "../../../../data/config/hosted-user-persist";
+import { adjacentIndexTickerRecord } from "../../../../plugins/builtin/portfolio-list/register-watchlist-asset";
 
 function record(symbol: string): TickerRecord {
   return {
@@ -89,5 +90,24 @@ describe("HostedTickerRepository", () => {
     expect(loaded.map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
     const next = new HostedTickerRepository();
     expect((await next.loadAllTickers()).map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
+  });
+
+  test("saveTicker then loadTicker preserves Adjacent index identity", async () => {
+    installMemoryStorage();
+    setHostedConfigUserId("user-1");
+    const repo = new HostedTickerRepository([]);
+    const ticker = adjacentIndexTickerRecord({
+      index_id: "ari_nti",
+      ticker: "ARINTI",
+      name: "NFL Team Index: Arizona",
+    });
+    await repo.saveTicker({
+      ...ticker,
+      metadata: { ...ticker.metadata, watchlists: ["watchlist"] },
+    });
+    const loaded = await repo.loadTicker("ARINTI");
+    expect(loaded?.metadata.assetCategory).toBe("ADJACENT_INDEX");
+    expect(loaded?.metadata.custom.adjacentIndexId).toBe("ari_nti");
+    expect(loaded?.metadata.watchlists).toEqual(["watchlist"]);
   });
 });

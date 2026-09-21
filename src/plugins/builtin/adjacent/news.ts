@@ -2,6 +2,7 @@ import { newsProvider, type NewsCapability } from "../../../capabilities";
 import type { NewsArticle, NewsQuery } from "../../../types/news-source";
 import { getSharedAdjacentClient, type AdjacentClient } from "./client";
 import { normalizeAdjacentNewsArticle } from "./normalize";
+import { filterAdjacentRows } from "./search";
 
 const RELATED_MARKET_LIMIT = 4;
 
@@ -10,7 +11,14 @@ export async function searchAdjacentRelatedArticles(query: string): Promise<News
   if (!trimmed) return [];
   const client = getSharedAdjacentClient();
   try {
-    const marketIds = await client.searchMarketsByText(trimmed, RELATED_MARKET_LIMIT);
+    const response = await client.searchMarkets(trimmed, RELATED_MARKET_LIMIT * 3);
+    const rows = response.markets?.length ? response.markets : (response.data ?? []);
+    const matched = filterAdjacentRows(
+      rows,
+      trimmed,
+      (market) => [market.ticker, market.title, market.platform, market.id].filter(Boolean).join(" "),
+    );
+    const marketIds = matched.slice(0, RELATED_MARKET_LIMIT).map((market) => market.id);
     if (marketIds.length === 0) return [];
     const pages = await Promise.all(
       marketIds.map((marketId) => client.getMarketNews(marketId).catch(() => ({ news: [] }))),

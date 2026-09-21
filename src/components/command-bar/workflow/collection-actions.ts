@@ -298,8 +298,11 @@ export function createCommandBarCollectionWorkflowActions(options: {
         try {
           let ticker = result.value.ticker;
           if (!ticker) {
-            if (result.value.resolved.kind === "local") ticker = result.value.resolved.ticker;
-            else ticker = (await upsertTickerFromSearchResult(tickerRepository, result.value.resolved.result)).ticker;
+            if (result.value.resolved.kind === "local" || result.value.resolved.kind === "adjacent") {
+              ticker = result.value.resolved.ticker;
+            } else {
+              ticker = (await upsertTickerFromSearchResult(tickerRepository, result.value.resolved.result)).ticker;
+            }
           }
           const nextTicker = result.entry.shares != null && result.entry.avgCost != null
             ? setManualPortfolioPosition(ticker, activeCollectionId, {

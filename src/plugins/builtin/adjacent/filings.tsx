@@ -21,6 +21,7 @@ import {
   type StackSortPreference,
 } from "../../../components";
 import { MarkdownText } from "../../../components/markdown-text";
+import { filterAdjacentRows } from "./search";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -276,10 +277,16 @@ export function AdjacentFilingsPane({
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const columns = useMemo(() => createFilingColumns(), []);
-  const sortedFilings = useMemo(
-    () => sortStackItems(filings, sortPreference, compareFilings, (left, right) => left.id - right.id),
-    [filings, sortPreference],
-  );
+  const sortedFilings = useMemo(() => {
+    const sorted = sortStackItems(filings, sortPreference, compareFilings, (left, right) => left.id - right.id);
+    return filterAdjacentRows(sorted, query, (filing) => [
+      filing.orgCode,
+      filing.productName,
+      filing.productsAffected,
+      feedLabel(filing),
+      filing.title,
+    ].filter(Boolean).join(" "));
+  }, [filings, query, sortPreference]);
 
   const load = useCallback((nextQuery: string) => {
     abortRef.current?.abort();
