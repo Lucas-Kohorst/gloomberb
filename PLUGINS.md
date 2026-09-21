@@ -1187,6 +1187,8 @@ Available components:
 - `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
 - `DataTableStackView`, `FeedDataTableStackView` — stacked table views for dense list panes
 - `PaneListChrome` — shared list-pane chrome: optional tabs, then `/` search (`InputSearchBar`), then the body. Adjacent indices is the gold (clickable header sort on the table, bound `[/]search`). Do not repeat the pane title in this slice.
+- `PaneTabHeader` — compact one-row in-pane tabs (HELP is the standard: underline, compact, height 1, no body title). Use this for section tabs. List panes still compose `PaneListChrome` (tabs then `/` search then table). Do not put the pane name in this row.
+- `PaneBodyPad` — inset pane copy (HELP-scale). TUI 1 cell, desktop 12px. Do not wrap tab headers or TradingView/LWC chart hosts.
 - `TickerListTable`, `TickerListTableView` — ticker table primitives used by market list panes
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
 - `ToggleList` — checkbox list with selection

@@ -16,8 +16,11 @@ export type { TickerListVisibleRange } from "./ticker/list-table-view";
 export { TickerBadgeList } from "./ticker/badge/list";
 export { TickerBadgeText } from "./ticker/badge/text";
 export { InputSearchBar } from "./input-search-bar";
+export { PaneBodyPad } from "./pane-body-pad";
 export { PaneListChrome, paneListChromeRows } from "./pane-list-chrome";
 export type { PaneListChromeTab, PaneListSearchProps } from "./pane-list-chrome";
+export { PaneTabHeader } from "./pane-tab-header";
+export type { PaneTabHeaderTab } from "./pane-tab-header";
 export { isTableScrollNearEnd, useTableLoadMore } from "./table-view-shared";
 export { DataTableView } from "./data-table/view";
 export type {

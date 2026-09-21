@@ -54,12 +54,20 @@ describe("adjacent command-bar catalog search", () => {
     expect(hits.map((row) => row.ticker)).toEqual(["BUFNTI"]);
   });
 
-  test("does not require every query token when one distinctive city matches", () => {
+  test("single token houston still matches Houston", () => {
     const hits = matchAdjacentIndices("houston", [
       index({ index_id: "hou_nti", ticker: "HOUNTI", name: "NFL Team Index: Houston" }),
       index({ index_id: "buf_nti", ticker: "BUFNTI", name: "NFL Team Index: Buffalo" }),
     ]);
     expect(hits.map((row) => row.ticker)).toEqual(["HOUNTI"]);
+  });
+
+  test("AND search drops indices that miss a token", () => {
+    const hits = matchAdjacentIndices("houston bills", [
+      index({ index_id: "hou_nti", ticker: "HOUNTI", name: "NFL Team Index: Houston" }),
+      index({ index_id: "buf_nti", ticker: "BUFNTI", name: "NFL Team Index: Buffalo" }),
+    ]);
+    expect(hits).toEqual([]);
   });
 });
 
