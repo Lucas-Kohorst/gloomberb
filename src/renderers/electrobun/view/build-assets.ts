@@ -50,7 +50,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    // youtubei.js / hls.js / lightweight-charts are dynamic imports. Without
+    // youtubei.js / hls.js are dynamic imports. Without
     // splitting Bun inlines them into web-main.js and Portfolio pays for TV.
     splitting: true,
     extraAliasRules: [

@@ -4,7 +4,6 @@ import {
   ChartSurface,
   ScrollBox,
   Text,
-  TradingViewChart,
   useNativeRenderer,
   useUiCapabilities,
   useUiHost,
@@ -727,7 +726,6 @@ const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
 
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
-  /** Unwindowed series for TradingViewChart (see TradingViewChartProps.seriesData). */
   panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
@@ -798,7 +796,6 @@ function CompositePanelSurface({
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const hasTradingViewChart = !!ui.TradingViewChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -825,14 +822,12 @@ function CompositePanelSurface({
   const [toolDrag, setToolDrag] = useState<ChartToolDrag | null>(null);
   const plotAspect = (plotWidth * cellWidthPx) / Math.max(panel.height * cellHeightPx, 1);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, panel.height);
-  // Desktop mounts Lightweight Charts and throws this RGBA plot away. Keep the
-  // software raster for TUI and for any desktop path that still uses ChartSurface.
   const bitmap = useCompositePanelBitmap({
     panel,
     bitmapSize,
     colors,
     isDesktopWeb,
-    enabled: !hasTradingViewChart,
+    enabled: true,
   });
   const columnLayout = useMemo(() => buildCompositeColumnLayout(panel), [panel]);
   // The level line follows the pointer only. A keyboard or shared cursor knows
@@ -1309,49 +1304,29 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      {hasTradingViewChart ? (
-        <TradingViewChart
-          width={plotWidth}
-          height={panel.height}
-          panel={panel}
-          seriesData={panelSeries}
-          colors={colors}
-          viewport={viewport}
-          interactive={interactive}
-          vectors={vectors}
-          armedTool={armedTool}
-          timeZone={timeZone}
-          onViewportChange={onSetViewport}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        />
-      ) : (
-        <ChartSurface
-          ref={plotRef}
-          width={plotWidth}
-          height={panel.height}
-          flexDirection="column"
-          bitmaps={bitmapLayers}
-          crosshair={crosshair}
-          vectors={vectors}
-          onMouseMove={interactive ? handleMouseMove : undefined}
-          onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
-          onMouseDrag={interactive && navigable ? dragViewport : undefined}
-          onMouseUp={interactive && navigable ? resetDrag : undefined}
-          onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
-          onMouseScroll={interactive && navigable ? panFromWheel : undefined}
-          onMouseOut={interactive ? clearCursor : undefined}
-          cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        >
-          {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
-        </ChartSurface>
-      )}
+      <ChartSurface
+        ref={plotRef}
+        width={plotWidth}
+        height={panel.height}
+        flexDirection="column"
+        bitmaps={bitmapLayers}
+        crosshair={crosshair}
+        vectors={vectors}
+        onMouseMove={interactive ? handleMouseMove : undefined}
+        onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
+        onMouseDrag={interactive && navigable ? dragViewport : undefined}
+        onMouseUp={interactive && navigable ? resetDrag : undefined}
+        onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
+        onMouseScroll={interactive && navigable ? panFromWheel : undefined}
+        onMouseOut={interactive ? clearCursor : undefined}
+        cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
+        data-gloom-interactive={interactive ? "true" : undefined}
+        data-gloom-role={COMPOSITE_PANEL_ROLE}
+        data-gloom-remote-kind={remoteKind}
+        data-gloom-label={panel.label ?? panel.id}
+      >
+        {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
+      </ChartSurface>
       {rightAxisWidth > 0 ? (
         <>
           <Box width={axisGap} />
@@ -1695,7 +1670,6 @@ export function CompositeChart({
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const nativeTvChrome = !!ui.TradingViewChart;
   const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
@@ -1908,9 +1882,9 @@ export function CompositeChart({
   const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
     ? 1
     : 0;
-  const timeAxisRows = nativeTvChrome ? 0 : (showTimeAxis ? 1 : 0);
+  const timeAxisRows = showTimeAxis ? 1 : 0;
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
-  const xMarkerRows = nativeTvChrome ? 0 : (xMarkers.some((marker) => marker.label) ? 1 : 0);
+  const xMarkerRows = xMarkers.some((marker) => marker.label) ? 1 : 0;
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
   const lastTickKey = visibleSeries.map((entry) => {
     const last = entry.points.at(-1);
@@ -1959,9 +1933,9 @@ export function CompositeChart({
       ]),
     ),
   ), [formatAxisValue, maximumAxisWidth, projectedScene]);
-  const leftAxisWidth = nativeTvChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
-  const rightAxisWidth = nativeTvChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
-  const axisGap = nativeTvChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
+  const leftAxisWidth = hasLeftAxis ? resolvedAxisWidth : 0;
+  const rightAxisWidth = hasRightAxis ? resolvedAxisWidth : 0;
+  const axisGap = resolvedAxisWidth > 0 ? 1 : 0;
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
@@ -2165,10 +2139,10 @@ export function CompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis && !nativeTvChrome
+  const timeAxisLayout = scene && showTimeAxis
     ? buildCompositeTimeAxisLayout(scene, plotWidth)
     : null;
-  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeTvChrome && effectiveViewport
+  const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
 

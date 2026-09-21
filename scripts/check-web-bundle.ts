@@ -22,7 +22,6 @@ const HASHED_SCRIPT_SRC = /^\/[\w/.-]*[.-][\w-]{8,}\.js$/;
 const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/youtubei.js/",
   "node_modules/hls.js/",
-  "node_modules/lightweight-charts/",
   "node_modules/jimp/",
   "node_modules/@opentui/",
 ] as const;

@@ -4,9 +4,6 @@ import type { AppNotificationRequest } from "../types/plugin";
 import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
 import { formatCommandBarShortcut, getShortcutDisplayMode } from "../utils/shortcut-labels";
 import type { AsciiFontName } from "./ascii-font";
-import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
-import type { ChartToolKind } from "../components/chart/composite/tools";
-import type { ResolvedSeries } from "../time-series/types";
 
 export const TextAttributes = {
   NONE: 0,
@@ -237,30 +234,16 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
-  panel: CompositePanelScene;
-  /**
-   * Unclipped panel series. The scene projection windows points to the viewport;
-   * this renderer owns its time scale, so it must not consume that windowed data
-   * or every pan frame forces a full re-set and fights the drag.
-   */
-  seriesData: readonly ResolvedSeries[];
-  colors: CompositeChartColors;
-  viewport?: { start: Date; end: Date } | null;
-  interactive?: boolean;
-  onViewportChange?: (
-    range: { start: Date; end: Date },
-    interaction?: TrackpadGestureKind,
-  ) => void;
-  /** Drawings and tool drags to overlay, in plot ratios. */
-  vectors?: readonly ChartVectorShape[] | null;
-  /** Keyboard-armed tool; the chart owns interaction for armed tools. */
-  armedTool?: ChartToolKind | null;
-  /** IANA zone for axis tick labels. Omit for UTC. */
-  timeZone?: string;
+  /** TradingView symbol, such as NASDAQ:AAPL or FRED:CPIAUCSL. */
+  symbol: string;
+  /** TradingView interval token. Default D. */
+  interval?: string;
+  /** IANA zone for the widget. Default America/New_York. */
+  timezone?: string;
+  compareSymbols?: readonly string[];
+  backgroundColor?: string;
 }
 
-/** The trackpad gesture that produced a viewport change. */
-export type TrackpadGestureKind = "pan" | "zoom";
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;

@@ -241,11 +241,9 @@ describe("Ticker detail chart tab switching", () => {
 
     await flushFrames();
     const chartTabFrame = testSetup.captureCharFrame();
-    expect(chartTabFrame).toContain("AAPL:XNAS Price");
-    expect(chartTabFrame).toContain("5Y");
-    expect(chartTabFrame).toContain("AUTO");
+    expect(chartTabFrame).toContain("Charts run on desktop and hosted web.");
     expect(chartTabFrame).not.toContain("AAPL -");
-    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
+    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(false);
 
     act(() => {
       harnessDispatch!({
@@ -301,7 +299,7 @@ describe("Ticker detail chart tab switching", () => {
     });
 
     await flushFrames();
-    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
+    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(false);
 
     act(() => {
       harnessDispatch!({

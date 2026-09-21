@@ -794,7 +794,8 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
  *
  * `script-src` allows inline because the app's bootstrap script carries the
  * session token inline; moving to a nonce is the follow-up that lets
- * 'unsafe-inline' drop. `frame-src` allows YouTube because TV embeds it.
+ * 'unsafe-inline' drop. `frame-src` allows YouTube because TV embeds it, and
+ * TradingView because price charts embed the Advanced Chart widget.
  */
 const APP_CSP = [
   "default-src 'self'",
@@ -803,7 +804,7 @@ const APP_CSP = [
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
-  "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+  "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tradingview.com https://s3.tradingview.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -6,6 +6,8 @@ import {
 } from "../../../core/connection-health";
 import { registerGloomCloudInventorySources } from "../cloud/connections";
 import { dividendYieldModule } from "../dividend-yield";
+import { chartComposerModule } from "../chart-composer";
+import { TRADINGVIEW_CONNECTION_ID } from "../chart-composer/tradingview-plot";
 import { YAHOO_DIVIDENDS_CONNECTION_ID } from "../dividend-yield/client";
 import { ipoCalendarModule } from "../ipo-calendar";
 import { STOCKANALYSIS_IPO_CONNECTION_ID } from "../ipo-calendar/client";
@@ -36,6 +38,7 @@ describe("Connections inventory wiring", () => {
     marketHaltsModule.dispose?.();
     shortInterestModule.dispose?.();
     dividendYieldModule.dispose?.();
+    chartComposerModule.dispose?.();
     setConnectionRequestReporter(null);
     clearPendingConnectionReports();
   });
@@ -65,5 +68,17 @@ describe("Connections inventory wiring", () => {
     const ids = listConnectionSources().map((source) => source.id);
     expect(ids).not.toContain(YAHOO_SHORT_INTEREST_CONNECTION_ID);
     expect(ids).not.toContain(YAHOO_DIVIDENDS_CONNECTION_ID);
+  });
+
+  test("TradingView registers as a Connections source from chart composer setup", () => {
+    chartComposerModule.setup?.(stubCtx());
+    const source = listConnectionSources().find((entry) => entry.id === TRADINGVIEW_CONNECTION_ID);
+    expect(source).toMatchObject({
+      id: TRADINGVIEW_CONNECTION_ID,
+      name: "TradingView",
+      kind: "asset-data",
+      pluginId: "ticker-research",
+      authRequired: false,
+    });
   });
 });
