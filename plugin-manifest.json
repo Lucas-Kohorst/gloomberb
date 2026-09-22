@@ -597,6 +597,22 @@
       }
     },
     {
+      "id": "opticodds",
+      "name": "OpticOdds",
+      "description": "Sportsbook moneylines from OpticOdds. Opens on the NFL and searches by sport, league, team, or fixture.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "opticodds"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "plugin-inspector",
       "name": "Plugin Inspector",
       "description": "Inspect all loaded plugins — source, status, registered panes, commands, capabilities, and shortcuts.",

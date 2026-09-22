@@ -18,6 +18,7 @@ import { nasaFirmsPlugin } from "./builtin/nasa-firms";
 import { openCorporatesPlugin } from "./builtin/open-corporates";
 import { openPaymentsPlugin } from "./builtin/open-payments";
 import { openFdaPlugin } from "./builtin/openfda";
+import { opticOddsPlugin } from "./builtin/opticodds";
 import { sec8KAlertsPlugin } from "./builtin/sec-8k-alerts";
 import { secFtsPlugin } from "./builtin/sec-fts";
 import { shortCampaignsPlugin } from "./builtin/short-campaigns";
@@ -44,6 +45,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   openCorporatesPlugin,
   openPaymentsPlugin,
   openFdaPlugin,
+  opticOddsPlugin,
   sec8KAlertsPlugin,
   secFtsPlugin,
   shortCampaignsPlugin,
