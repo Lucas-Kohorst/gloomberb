@@ -127,10 +127,13 @@ body.gloom-col-resizing * {
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
   background-color: var(--gloom-hover-bg) !important;
 }
+[data-gloom-role="data-table-header-cell"]:hover {
+  background-color: var(--gloom-hover-bg) !important;
+}
 [data-gloom-role="data-table-row"][data-selected="true"] {
   z-index: 1;
   outline: none;
-  box-shadow: none;
+  box-shadow: inset 2px 0 0 var(--gloom-border-focused, #ffffff);
 }
 [data-gloom-role="data-table-row"][data-selected="true"],
 [data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"] {
@@ -368,6 +371,10 @@ body.gloom-dragging {
   flex-shrink: 0;
   align-items: center;
   white-space: nowrap;
+  border-radius: 4px;
+}
+[data-gloom-role="pane-suggestion"]:hover {
+  background-color: var(--gloom-hover-bg);
 }
 [data-gloom-role="pane-body"] {
   overflow: clip;
@@ -483,6 +490,10 @@ body.gloom-dragging {
 [data-gloom-role="pane-hint"] {
   width: auto !important;
   min-width: 0 !important;
+  border-radius: 4px;
+}
+[data-gloom-role="pane-hint"]:hover {
+  background-color: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
 }
 [data-gloom-role="pane-float-toggle"],
 [data-gloom-role="pane-action"],
@@ -490,6 +501,13 @@ body.gloom-dragging {
   border-radius: 4px;
   padding-inline: 4px;
   min-width: 28px;
+}
+[data-gloom-role="pane-hint"]:focus-visible,
+[data-gloom-role="pane-float-toggle"]:focus-visible,
+[data-gloom-role="pane-action"]:focus-visible,
+[data-gloom-role="pane-close"]:focus-visible {
+  outline: 1px solid var(--gloom-border-focused, #ffffff);
+  outline-offset: -1px;
 }
 [data-gloom-role="resize-handle"] {
   color: var(--pane-border-color, var(--gloom-border));
@@ -689,6 +707,8 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
 }
+[data-gloom-scrollbar-x]:hover,
+[data-gloom-scrollbar-y]:hover,
 [data-gloom-scrollbar-active="true"] {
   scrollbar-color: color-mix(in srgb, var(--gloom-text) 26%, transparent) transparent;
 }
@@ -711,11 +731,10 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
   background: transparent;
   background-clip: content-box;
 }
+[data-gloom-scrollbar-x]:hover::-webkit-scrollbar-thumb,
+[data-gloom-scrollbar-y]:hover::-webkit-scrollbar-thumb,
 [data-gloom-scrollbar-x]::-webkit-scrollbar-thumb:hover,
-[data-gloom-scrollbar-y]::-webkit-scrollbar-thumb:hover {
-  background: transparent;
-  background-clip: content-box;
-}
+[data-gloom-scrollbar-y]::-webkit-scrollbar-thumb:hover,
 [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb,
 [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--gloom-text) 24%, transparent);

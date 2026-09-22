@@ -75,4 +75,20 @@ describe("desktop chrome clip", () => {
     expect(composer).toContain("flex-shrink: 0 !important");
     expect(composer).toContain("overflow: visible");
   });
+
+  test("desktop OpenTUI mapping uses pointer hover, focus rings, and overlay scrollbars", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+
+    const selectedRow = cssRule(css, '[data-gloom-role="data-table-row"][data-selected="true"]');
+    expect(selectedRow).toContain("inset 2px 0 0");
+
+    const suggestionHover = cssRule(css, '[data-gloom-role="pane-suggestion"]:hover');
+    expect(suggestionHover).toContain("background-color: var(--gloom-hover-bg)");
+
+    const hintHover = cssRule(css, '[data-gloom-role="pane-hint"]:hover');
+    expect(hintHover).toContain("background-color:");
+
+    expect(css).toContain("[data-gloom-scrollbar-x]:hover");
+    expect(css).toContain("[data-gloom-role=\"pane-close\"]:focus-visible");
+  });
 });
