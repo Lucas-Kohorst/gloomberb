@@ -51,6 +51,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "open-corporates": { categories: ["research", "data"] },
   "open-payments": { categories: ["research", "data"] },
   "openfda": { categories: ["research", "data"] },
+  opticodds: { categories: ["data"] },
   "sec-8k-alerts": { categories: ["research", "data"] },
   "sec-fts": { categories: ["research", "data"] },
   "short-campaigns": { categories: ["research", "data"] },
