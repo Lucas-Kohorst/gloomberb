@@ -775,6 +775,23 @@
       }
     },
     {
+      "id": "uma-disputes",
+      "name": "UMA Disputes",
+      "description": "Polymarket UMA Optimistic Oracle disputes from the Bravado UMA API: open challenges and recently settled disputed markets.",
+      "categories": [
+        "research",
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "uma-disputes"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "usgs-earthquakes",
       "name": "USGS Earthquakes",
       "description": "Real-time global earthquake data from USGS. Filter by magnitude and search by location.",

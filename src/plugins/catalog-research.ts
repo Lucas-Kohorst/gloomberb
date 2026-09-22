@@ -22,6 +22,7 @@ import { opticOddsPlugin } from "./builtin/opticodds";
 import { sec8KAlertsPlugin } from "./builtin/sec-8k-alerts";
 import { secFtsPlugin } from "./builtin/sec-fts";
 import { shortCampaignsPlugin } from "./builtin/short-campaigns";
+import { umaDisputesPlugin } from "./builtin/uma-disputes";
 import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
 import { workplaceSignalsPlugin } from "./builtin/workplace-signals";
 
@@ -49,6 +50,7 @@ export const researchDataPlugins: readonly GloomPlugin[] = [
   sec8KAlertsPlugin,
   secFtsPlugin,
   shortCampaignsPlugin,
+  umaDisputesPlugin,
   usgsEarthquakesPlugin,
   workplaceSignalsPlugin,
 ];

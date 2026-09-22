@@ -55,6 +55,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "sec-8k-alerts": { categories: ["research", "data"] },
   "sec-fts": { categories: ["research", "data"] },
   "short-campaigns": { categories: ["research", "data"] },
+  "uma-disputes": { categories: ["research", "data"] },
   "usgs-earthquakes": { categories: ["research", "data"] },
   "workplace-signals": { categories: ["research", "data"] },
 
