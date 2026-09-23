@@ -67,7 +67,7 @@ export const opticOddsPlugin: GloomPlugin = {
       authType: "header",
       authKey: "X-Api-Key",
       envVar: "OPTICODDS_API_KEY",
-      description: "Sportsbook odds. The key stays in KEYS and is not synced.",
+      description: "Sportsbook odds. Add the key in Account Management on the Keys tab. It stays on this device.",
     });
     setOpticOddsApiKeyResolver(() => ctx.getApiKey(OPTICODDS_BYOK_SERVICE_ID));
     disposeConnection = registerConnectionSource({

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
 import type { ByokApiKeyEntry } from "./types";
-import { collapseByokServiceKeys, readByokKeysFromConfig, selectByokKeys, selectRawByokKeys } from "./store";
+import { registerByokKnownService } from "./services";
+import { collapseByokServiceKeys, readByokKeysFromConfig, resolveApiKey, selectByokKeys, selectRawByokKeys } from "./store";
 
 describe("BYOK key selectors", () => {
   test("empty snapshots reuse one array so useAppSelector cannot loop", () => {
@@ -51,5 +52,44 @@ describe("BYOK key selectors", () => {
     expect(visible.map((entry) => entry.id)).toEqual(["optic-new", "custom-a"]);
     expect(selectRawByokKeys(state)).toHaveLength(3);
     expect(readByokKeysFromConfig(config).map((entry) => entry.apiKey)).toEqual(["696f-new", "custom-key"]);
+  });
+
+  test("a saved OpticOdds key fills the catalog id without dropping the secret", () => {
+    const dispose = registerByokKnownService({
+      id: "opticodds",
+      name: "OpticOdds",
+      description: "Sportsbook odds",
+      apiUrl: "https://api.opticodds.com/api/v3",
+      authType: "header",
+    });
+    const alias: ByokApiKeyEntry = {
+      id: "optic-alias",
+      serviceId: "optic-odds",
+      name: "OpticOdds",
+      apiKey: "local-optic-key",
+      createdAt: 4,
+    };
+    const customNamed: ByokApiKeyEntry = {
+      id: "optic-custom",
+      serviceId: "custom",
+      name: "OpticOdds",
+      apiKey: "",
+      apiUrl: "https://api.opticodds.com/api/v3",
+      createdAt: 9,
+    };
+    const collapsed = collapseByokServiceKeys([alias, customNamed]);
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]).toMatchObject({
+      id: "optic-alias",
+      serviceId: "opticodds",
+      apiKey: "local-optic-key",
+    });
+
+    const config = createDefaultConfig("/tmp/gloom-byok-optic-alias");
+    config.pluginConfig.application = {
+      byokApiKeys: { keys: [alias, customNamed] },
+    };
+    expect(resolveApiKey(config, "opticodds")).toBe("local-optic-key");
+    dispose();
   });
 });

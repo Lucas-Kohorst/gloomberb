@@ -7,20 +7,68 @@ import {
   type ByokStoredConfig,
 } from "./types";
 import { readProcessEnv } from "../../../utils/process-env";
-import { getByokKnownService, getByokKnownServices } from "./services";
+import { getByokKnownService, getByokKnownServices, getByokKnownServicesVersion } from "./services";
 
 const EMPTY_BYOK_KEYS: ByokApiKeyEntry[] = [];
-const collapsedByokKeys = new WeakMap<ByokApiKeyEntry[], ByokApiKeyEntry[]>();
+const collapsedByokKeys = new WeakMap<ByokApiKeyEntry[], { version: number; keys: ByokApiKeyEntry[] }>();
 
-function canonicalByokServiceId(serviceId: string): string {
+/** Compare service ids and labels without case, spaces, or punctuation. */
+export function normalizeByokServiceKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function knownServiceForLabel(label: string): ReturnType<typeof getByokKnownService> {
+  const normalized = normalizeByokServiceKey(label);
+  if (!normalized || normalized === "custom" || normalized === "customapi") return null;
+  const matches = getByokKnownServices().filter((service) => (
+    normalizeByokServiceKey(service.id) === normalized
+    || normalizeByokServiceKey(service.name) === normalized
+  ));
+  return matches.find((service) => service.id === normalized)
+    ?? matches.find((service) => normalizeByokServiceKey(service.id) === normalized)
+    ?? matches[0]
+    ?? null;
+}
+
+function hostsMatch(left: string | undefined, right: string | undefined): boolean {
+  const a = left?.trim();
+  const b = right?.trim();
+  if (!a || !b) return false;
+  try {
+    return new URL(a).host === new URL(b).host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Catalog id for a stored key. "OpticOdds", "optic-odds", and a custom row
+ * named OpticOdds all land on the registered `opticodds` service once it exists.
+ */
+export function canonicalByokServiceId(serviceId: string, name?: string, apiUrl?: string): string {
   const trimmed = serviceId.trim();
+  if (trimmed && trimmed !== BYOK_CUSTOM_SERVICE_ID) {
+    // Prefer the catalog id (`opticodds`) over an alias registration (`optic-odds`)
+    // so a saved key and the empty slot collapse to one service.
+    const fromId = knownServiceForLabel(trimmed);
+    if (fromId) return fromId.id;
+  }
+  if (name) {
+    const fromName = knownServiceForLabel(name);
+    if (fromName) return fromName.id;
+  }
+  if (apiUrl) {
+    const fromUrl = getByokKnownServices().find((service) => hostsMatch(service.apiUrl, apiUrl));
+    if (fromUrl) return fromUrl.id;
+  }
   if (!trimmed || trimmed === BYOK_CUSTOM_SERVICE_ID) return trimmed;
-  if (getByokKnownService(trimmed)) return trimmed;
-  const folded = trimmed.toLowerCase();
-  return getByokKnownServices().find((service) => service.id.toLowerCase() === folded)?.id ?? folded;
+  return trimmed.toLowerCase();
 }
 
 function preferByokServiceKey(current: ByokApiKeyEntry, incoming: ByokApiKeyEntry): ByokApiKeyEntry {
+  const currentHas = current.apiKey.trim().length > 0;
+  const incomingHas = incoming.apiKey.trim().length > 0;
+  if (currentHas !== incomingHas) return incomingHas ? incoming : current;
   if (incoming.createdAt !== current.createdAt) {
     return incoming.createdAt > current.createdAt ? incoming : current;
   }
@@ -32,9 +80,14 @@ function preferByokServiceKey(current: ByokApiKeyEntry, incoming: ByokApiKeyEntr
   return incoming;
 }
 
+function stampServiceId(entry: ByokApiKeyEntry, serviceId: string): ByokApiKeyEntry {
+  return entry.serviceId === serviceId ? entry : { ...entry, serviceId };
+}
+
 /**
- * One stored row per known service. Custom APIs stay as separate records.
- * Two OpticOdds saves for the same service are one row, keeping the newer key.
+ * One stored row per known service. A custom API stays separate unless its
+ * name or URL is that service. Two OpticOdds saves collapse to the row that
+ * still has the key, retargeted at the catalog id.
  */
 export function collapseByokServiceKeys(keys: readonly ByokApiKeyEntry[]): ByokApiKeyEntry[] {
   const next: ByokApiKeyEntry[] = [];
@@ -45,12 +98,12 @@ export function collapseByokServiceKeys(keys: readonly ByokApiKeyEntry[]): ByokA
       changed = true;
       continue;
     }
-    if (entry.serviceId === BYOK_CUSTOM_SERVICE_ID) {
+    const serviceId = canonicalByokServiceId(entry.serviceId, entry.name, entry.apiUrl);
+    if (serviceId === BYOK_CUSTOM_SERVICE_ID || !serviceId) {
       next.push(entry);
       continue;
     }
-    const serviceId = canonicalByokServiceId(entry.serviceId);
-    const normalized = serviceId === entry.serviceId ? entry : { ...entry, serviceId };
+    const normalized = stampServiceId(entry, serviceId);
     if (normalized !== entry) changed = true;
     const existingIndex = indexByService.get(serviceId);
     if (existingIndex == null) {
@@ -59,16 +112,20 @@ export function collapseByokServiceKeys(keys: readonly ByokApiKeyEntry[]): ByokA
       continue;
     }
     changed = true;
-    next[existingIndex] = preferByokServiceKey(next[existingIndex]!, normalized);
+    next[existingIndex] = stampServiceId(
+      preferByokServiceKey(next[existingIndex]!, normalized),
+      serviceId,
+    );
   }
   return changed ? next : keys as ByokApiKeyEntry[];
 }
 
 function collapseStoredByokKeys(keys: ByokApiKeyEntry[]): ByokApiKeyEntry[] {
+  const version = getByokKnownServicesVersion();
   const cached = collapsedByokKeys.get(keys);
-  if (cached) return cached;
+  if (cached?.version === version) return cached.keys;
   const collapsed = collapseByokServiceKeys(keys);
-  collapsedByokKeys.set(keys, collapsed);
+  collapsedByokKeys.set(keys, { version, keys: collapsed });
   return collapsed;
 }
 
@@ -179,10 +236,16 @@ export async function deleteByokKey(ctx: GloomPluginContext, id: string): Promis
  */
 export function resolveApiKey(config: AppConfig, serviceId: string): string | undefined {
   const keys = readByokKeysFromConfig(config);
-  const entry = keys.find((k) => k.serviceId === serviceId);
-  if (entry?.apiKey) return entry.apiKey;
+  const wanted = canonicalByokServiceId(serviceId);
+  const entry = keys.find((key) => key.serviceId === wanted && key.apiKey.trim())
+    ?? keys.find((key) => key.apiKey.trim() && (
+      canonicalByokServiceId(key.serviceId, key.name, key.apiUrl) === wanted
+      || normalizeByokServiceKey(key.serviceId) === normalizeByokServiceKey(wanted)
+      || normalizeByokServiceKey(key.name) === normalizeByokServiceKey(wanted)
+    ));
+  if (entry?.apiKey.trim()) return entry.apiKey;
 
-  const service = getByokKnownService(serviceId);
+  const service = getByokKnownService(wanted) ?? getByokKnownService(serviceId);
   if (service?.envVar) {
     const envValue = readProcessEnv(service.envVar);
     if (envValue) return envValue;
