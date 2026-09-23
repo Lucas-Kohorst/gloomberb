@@ -56,6 +56,7 @@ import { AiProvidersTab } from "./ai-providers-tab";
 import { AccountByokTab } from "./byok-tab";
 import { DisplayTab, cycleDisplayFieldValue } from "./display-tab";
 import { TeamsAccountTab } from "../cloud/team/acm-tab";
+import { ByokSettingsPane } from "../byok/pane";
 import { isHostedWebClient } from "../ai/providers";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
@@ -87,6 +88,7 @@ const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = 
   { label: "Emails", value: "emails" },
   { label: "AI", value: "ai" },
   { label: "BYOK", value: "byok" },
+  { label: "Keys", value: "keys" },
   { label: "Teams", value: "teams" },
   { label: "Pro", value: "pro" },
   { label: "Advanced", value: "advanced" },
@@ -114,6 +116,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
   ],
   ai: ["aiProvidersAction"],
   byok: ["byokKeysAction"],
+  keys: ["keysAction"],
   teams: [],
   pro: ["upgradeAction"],
   advanced: ["passwordAction", "deleteAccountAction"],
@@ -857,7 +860,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     turnOffEmailAlerts,
   });
 
-  if (!hasSession && !apiClient.isSignedIn() && activeTab !== "byok") {
+  if (!hasSession && !apiClient.isSignedIn() && activeTab !== "byok" && activeTab !== "keys") {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
         <Tabs
@@ -893,6 +896,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         />
       ) : activeTab === "byok" ? (
         <AccountByokTab
+          focused={focused}
+          width={Math.max(1, width - 2)}
+          height={Math.max(3, height - 2)}
+        />
+      ) : activeTab === "keys" ? (
+        <ByokSettingsPane
+          paneId="account-management"
+          paneType="account-management"
           focused={focused}
           width={Math.max(1, width - 2)}
           height={Math.max(3, height - 2)}

@@ -1,4 +1,4 @@
-export type AccountManagementTab = "profile" | "display" | "emails" | "ai" | "byok" | "teams" | "pro" | "advanced";
+export type AccountManagementTab = "profile" | "display" | "emails" | "ai" | "byok" | "keys" | "teams" | "pro" | "advanced";
 
 let pendingTab: AccountManagementTab | null = null;
 const listeners = new Set<(tab: AccountManagementTab) => void>();

@@ -272,12 +272,10 @@ describe("assist catalog coverage", () => {
 
   test("splits KEYS (BYOK) from BIND/KB (keybindings) and prefixes Team and X Feed", () => {
     const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
-    const byok = paneTemplates.find((template) => template.id === "byok-settings-new");
     const keybindings = paneTemplates.find((template) => template.id === "keybindings-pane");
     const team = paneTemplates.find((template) => template.id === "team-pane");
-    expect(byok?.shortcut?.prefix).toBe("KEYS");
-    expect(byok?.shortcut?.aliases).toContain("BYOK");
-    expect(byok?.description.toLowerCase()).toContain("api");
+    expect(paneTemplates.find((template) => template.id === "byok-settings-new")).toBeUndefined();
+    expect(paneTemplates.find((template) => template.paneId === "byok-settings")).toBeUndefined();
     expect(keybindings?.shortcut?.prefix).toBe("BIND");
     expect(keybindings?.shortcut?.aliases).toContain("KB");
     expect(keybindings?.description.toLowerCase()).toContain("shortcut");

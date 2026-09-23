@@ -11,8 +11,9 @@ import type { BrowserAiState } from "../ai/browser";
 import { getByokKnownService } from "../byok/services";
 import {
   readByokKeysFromConfig,
+  selectByokKeys,
 } from "../byok/store";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokApiKeyEntry } from "../byok/types";
+import type { ByokApiKeyEntry } from "../byok/types";
 import { withConnectionRequest } from "../connections/register";
 
 /**
@@ -329,8 +330,6 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
   };
 }
 
-const EMPTY_BYOK_KEYS: ByokApiKeyEntry[] = [];
-
 /** Reads BYOK key entries from an AppConfig, for components without a plugin context. */
 export function readAiByokKeys(config: AppConfig): ByokApiKeyEntry[] {
   return readByokKeysFromConfig(config);
@@ -340,13 +339,10 @@ export function readAiByokKeys(config: AppConfig): ByokApiKeyEntry[] {
  * Returns the config path where BYOK keys are stored, for useAppSelector.
  * The empty result is a stable instance — a fresh `[]` each call makes
  * useSyncExternalStore treat the store as changed and hit React error #185.
+ * Duplicate records for one known service collapse to a single row.
  */
 export function byokKeysConfigSelector(state: { config: AppConfig }): ByokApiKeyEntry[] {
-  const stored = state.config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY] as
-    | { keys?: ByokApiKeyEntry[] }
-    | undefined;
-  if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
-  return stored.keys;
+  return selectByokKeys(state);
 }
 
 /** Human-readable label for a provider's terminal status. */
