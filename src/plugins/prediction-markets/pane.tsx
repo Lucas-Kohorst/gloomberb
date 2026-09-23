@@ -1,10 +1,11 @@
-import { Box, TextAttributes } from "../../ui";
+import { Box, TextAttributes, useUiHost } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import { useAppSelector } from "../../state/app/context";
 import { useNumberFlashMap } from "../../components/quote-flash";
 import {
   DataTableStackView,
   EmptyState,
+  InputSearchBar,
   PaneListChrome,
   Spinner,
   Tabs,
@@ -21,6 +22,7 @@ import { useGraphChartPopOut } from "../builtin/shared/graph-pop-out";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
+import { PANE_SECTION_GAP_PX } from "../../theme/spacing";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
@@ -281,53 +283,92 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.visibleRows.length,
   ]);
 
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const venueTabItems = useMemo(
     () => VENUE_TABS.map((tab) => ({ label: tab.label, value: tab.value })),
     [],
   );
+  const filterTabItems = useMemo(
+    () => PREDICTION_FILTER_TABS.map((tab) => ({ label: tab.label, value: tab.id })),
+    [],
+  );
+  const activeFilterId = resolvePredictionFilterId(
+    controller.categoryId,
+    controller.browseTab,
+  );
+  const chromeFocused = focused && !controller.detailOpen;
+  const filterTabsFocused = chromeFocused && !controller.searchFocused;
   const searchWidth = Math.max(18, Math.floor(width * 0.28));
-  const browseControls = (
+  const searchProps = {
+    value: controller.searchQuery,
+    active: controller.searchFocused,
+    focusToken: controller.searchFocusToken,
+    inputRef: controller.searchInputRef,
+    placeholder: "search markets",
+    debounceMs: 0,
+    width: searchWidth,
+    onFocus: controller.actions.focusSearch,
+    onBlur: controller.actions.blurSearch,
+    onNavigateDown: controller.actions.blurSearch,
+    onQueryChange: controller.actions.setSearchQuery,
+  };
+  const filterTabs = (
+    <Tabs
+      tabs={filterTabItems}
+      activeValue={activeFilterId}
+      onSelect={(value) =>
+        controller.actions.selectFilter(value as (typeof PREDICTION_FILTER_TABS)[number]["id"])
+      }
+      compact
+      variant="bare"
+      scrollable={isDesktopWeb}
+      focused={filterTabsFocused}
+    />
+  );
+  const browseControls = isDesktopWeb ? (
+    <Box
+      flexDirection="column"
+      width={width}
+      flexShrink={0}
+      style={{ gap: `${PANE_SECTION_GAP_PX}px`, boxSizing: "border-box" }}
+      data-gloom-role="prediction-markets-chrome"
+    >
+      {!controller.paneSettings.hideTabs ? (
+        <Box height={1} width={width}>
+          <Tabs
+            tabs={venueTabItems}
+            activeValue={controller.effectiveVenueScope}
+            onSelect={controller.actions.setVenue}
+            compact
+            variant="bare"
+            scrollable={false}
+            focused={filterTabsFocused}
+          />
+        </Box>
+      ) : null}
+      <Box height={1} width={width} paddingX={1}>
+        {filterTabs}
+      </Box>
+      <Box height={1} width={width} paddingX={1}>
+        <InputSearchBar
+          {...searchProps}
+          focused={chromeFocused}
+          width={Math.max(18, width - 2)}
+        />
+      </Box>
+    </Box>
+  ) : (
     <PaneListChrome
       width={width}
-      focused={focused && !controller.detailOpen}
+      focused={chromeFocused}
       tabs={controller.paneSettings.hideTabs ? undefined : venueTabItems}
       activeValue={controller.effectiveVenueScope}
       onSelect={controller.actions.setVenue}
       tabCompact
       tabVariant="bare"
       tabScrollable={false}
-      search={{
-        value: controller.searchQuery,
-        active: controller.searchFocused,
-        focusToken: controller.searchFocusToken,
-        inputRef: controller.searchInputRef,
-        placeholder: "search markets",
-        debounceMs: 0,
-        width: searchWidth,
-        onFocus: controller.actions.focusSearch,
-        onBlur: controller.actions.blurSearch,
-        onNavigateDown: controller.actions.blurSearch,
-        onQueryChange: controller.actions.setSearchQuery,
-      }}
-      trailing={(
-        <Tabs
-          tabs={PREDICTION_FILTER_TABS.map((tab) => ({
-            label: tab.label,
-            value: tab.id,
-          }))}
-          activeValue={resolvePredictionFilterId(
-            controller.categoryId,
-            controller.browseTab,
-          )}
-          onSelect={(value) =>
-            controller.actions.selectFilter(value as (typeof PREDICTION_FILTER_TABS)[number]["id"])
-          }
-          compact
-          variant="bare"
-          scrollable={false}
-          focused={focused && !controller.searchFocused && !controller.detailOpen}
-        />
-      )}
+      search={searchProps}
+      trailing={filterTabs}
     />
   );
 
