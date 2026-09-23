@@ -59,4 +59,38 @@ describe("ACM plugin BYOK inventory", () => {
     delete process.env.BYOK_INVENTORY_TEST_KEY;
     dispose();
   });
+
+  test("an attached OpticOdds key fills the catalog slot instead of a second Needs key row", () => {
+    const disposeCatalog = registerByokKnownService({
+      id: "opticodds",
+      name: "OpticOdds",
+      description: "Catalog slot",
+      authType: "header",
+      pluginId: "opticodds",
+    });
+    const disposeAlias = registerByokKnownService({
+      id: "optic-odds",
+      name: "OpticOdds",
+      description: "Saved alias",
+      authType: "header",
+      pluginId: "opticodds",
+    });
+    const rows = resolvePluginByokInventory([{
+      id: "saved-optic",
+      serviceId: "optic-odds",
+      name: "OpticOdds",
+      apiKey: "local-optic-key",
+      createdAt: 2,
+    }]);
+    const optic = rows.filter((row) => row.name === "OpticOdds");
+    expect(optic).toHaveLength(1);
+    expect(optic[0]).toMatchObject({
+      id: "opticodds",
+      status: "attached",
+      source: "stored",
+      hasKey: true,
+    });
+    disposeCatalog();
+    disposeAlias();
+  });
 });

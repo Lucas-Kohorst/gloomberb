@@ -148,13 +148,18 @@ async function boot(): Promise<void> {
   }
   if (isHosted) {
     const publicShare = isPublicShareLocation();
-    await initHostedByokCrypto();
-    hydrateHostedByokConfig(init.config);
+    // User config is saved with BYOK keys stripped. Apply it first, then overlay
+    // the local key store so that blob cannot wipe an attached key.
     if (!publicShare) {
       hydrateHostedUserConfig(init.config);
       restoreHostedLocalWorkspaceExtras();
+    }
+    await initHostedByokCrypto();
+    hydrateHostedByokConfig(init.config);
+    if (!publicShare) {
       // Cloud overlay is persist:false after first paint (useCloudSyncRuntime).
       // Session identity and hosted-local config/BYOK stay pre-paint.
+      // schedule() strips raw API keys before the snapshot leaves the device.
       getHostedConfigSnapshotPusher().schedule(init.config);
     }
   }

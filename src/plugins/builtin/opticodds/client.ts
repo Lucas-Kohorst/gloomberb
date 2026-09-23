@@ -140,7 +140,7 @@ function parseOdds(payload: unknown): OddsRow[] {
 export async function loadOpticOdds(query: string, signal?: AbortSignal): Promise<OddsRow[]> {
   const key = resolveOpticOddsApiKey();
   if (!key) {
-    throw new Error("OpticOdds API key missing. Add it with KEYS.");
+    throw new Error("OpticOdds API key missing. Add it in Account Management on the Keys tab.");
   }
   const scope = resolveOddsScope(query);
   return withConnectionRequest(OPTICODDS_CONNECTION_ID, "odds", async () => {
