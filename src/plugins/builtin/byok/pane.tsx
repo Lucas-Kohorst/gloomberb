@@ -15,14 +15,18 @@ import {
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { useShortcut } from "../../../react/input";
-import { usePluginConfigState, usePluginAppActions } from "../../runtime";
+import { useAppSelector } from "../../../state/app/context";
+import { usePluginAppActions } from "../../runtime";
+import { usePluginRenderContext } from "../../runtime/context";
 import {
   BYOK_API_KEYS_CONFIG_KEY,
   BYOK_CUSTOM_SERVICE_ID,
+  BYOK_PLUGIN_ID,
   type ByokApiKeyEntry,
   type ByokDataFormat,
   type ByokStoredConfig,
 } from "./types";
+import { collapseByokServiceKeys, selectByokKeys, selectRawByokKeys } from "./store";
 import {
   CUSTOM_SERVICE_OPTION,
   getByokKnownService,
@@ -162,12 +166,10 @@ function describeByokHttpFailure(status: number, contentType: string): string {
 }
 
 export function ByokSettingsPane({ focused, width, height }: PaneProps) {
-  const [stored, setStored] = usePluginConfigState<ByokStoredConfig>(BYOK_API_KEYS_CONFIG_KEY, { keys: [] });
+  const { runtime } = usePluginRenderContext();
   const { notify, createPaneFromTemplate } = usePluginAppActions();
-  const storedKeys = useMemo(() => {
-    if (!stored?.keys || !Array.isArray(stored.keys)) return [] as ByokApiKeyEntry[];
-    return stored.keys as ByokApiKeyEntry[];
-  }, [stored]);
+  const rawKeys = useAppSelector(selectRawByokKeys);
+  const storedKeys = useAppSelector(selectByokKeys);
   const [sortPreference, setSortPreference] = useState<StackSortPreference<ByokColumnId>>({
     columnId: "name",
     direction: "asc",
@@ -182,6 +184,18 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
   const [draft, setDraft] = useState<FormDraft>(emptyDraft());
   const [activeField, setActiveField] = useState<FormFieldKey>("serviceId");
   const [testing, setTesting] = useState(false);
+
+  const persistKeys = useCallback((next: ByokApiKeyEntry[]) => {
+    void runtime.setConfigState(BYOK_PLUGIN_ID, BYOK_API_KEYS_CONFIG_KEY, {
+      keys: collapseByokServiceKeys(next),
+    } satisfies ByokStoredConfig);
+  }, [runtime]);
+
+  useEffect(() => {
+    if (formMode !== "idle") return;
+    if (storedKeys === rawKeys) return;
+    persistKeys(storedKeys);
+  }, [formMode, persistKeys, rawKeys, storedKeys]);
 
   // AI provider read-only display
   const aiCatalog = useSyncExternalStore(subscribeAiRuntimeCatalog, getAiRuntimeCatalogSnapshot, getAiRuntimeCatalogSnapshot);
@@ -208,10 +222,6 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
       setActiveField(formFields[0] ?? "serviceId");
     }
   }, [formFields, activeField]);
-
-  const persistKeys = useCallback((next: ByokApiKeyEntry[]) => {
-    setStored({ keys: next });
-  }, [setStored]);
 
   const handleSave = useCallback(() => {
     const name = draft.name.trim();

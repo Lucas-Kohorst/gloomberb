@@ -551,6 +551,8 @@ export interface CommandDef {
   label: string;
   keywords: string[];
   shortcut?: string;
+  /** Extra prefixes that run this command. Assist teaches `shortcut` only. */
+  shortcutAliases?: string[];
   shortcutArg?: CommandShortcutArgDef;
   buildResults?: (arg: string) => CommandResultDef[];
   execute: (values?: Record<string, string>) => void | Promise<void>;

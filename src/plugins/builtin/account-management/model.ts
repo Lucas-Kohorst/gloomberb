@@ -23,6 +23,7 @@ export type AccountFieldKey =
   | "emailAlertsOffAction"
   | "aiProvidersAction"
   | "byokKeysAction"
+  | "keysAction"
   | "upgradeAction"
   | "passwordAction"
   | "deleteAccountAction"
