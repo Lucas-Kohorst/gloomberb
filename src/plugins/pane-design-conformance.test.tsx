@@ -85,9 +85,8 @@ describe("pane design conformance", () => {
     const keybindings = templates.find((template) => template.id === "keybindings-pane");
     expect(keybindings?.shortcut?.prefix).toBe("BIND");
     expect(keybindings?.shortcut?.aliases).toContain("KB");
-    const byok = templates.find((template) => template.id === "byok-settings-new");
-    expect(byok?.shortcut?.prefix).toBe("KEYS");
-    expect(byok?.shortcut?.aliases).toContain("BYOK");
+    expect(templates.find((template) => template.id === "byok-settings-new")).toBeUndefined();
+    expect(templates.some((template) => template.paneId === "byok-settings")).toBe(false);
   });
 
   test("gates every builtin pane in the catalog", () => {

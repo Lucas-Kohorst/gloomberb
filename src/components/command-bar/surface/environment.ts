@@ -95,8 +95,8 @@ export function useCommandBarEnvironment(pluginRegistry: PluginRegistry) {
   const availableCommands = useMemo(() => {
     const reservedPrefixes = [
       ...[...pluginRegistry.commands.values()]
-        .map((command) => command.shortcut)
-        .filter((shortcut): shortcut is string => Boolean(shortcut)),
+        .flatMap((command) => [command.shortcut, ...(command.shortcutAliases ?? [])])
+        .filter((shortcut): shortcut is string => Boolean(shortcut?.trim())),
       ...[...pluginRegistry.paneTemplates.values()].flatMap(getPaneShortcutPrefixes),
     ];
     const configuredCommands = applyTickerSearchShortcutConfig(

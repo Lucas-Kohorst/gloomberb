@@ -97,16 +97,18 @@ function buildShortcutCandidates(
         command,
       }))),
     ...pluginCommands
-      .filter((command) => command.shortcut?.trim().length)
-      .map((command) => ({
-        prefix: normalizeShortcutPrefix(command.shortcut!),
-        label: command.label,
-        description: command.description ?? "",
-        argKind: getPluginCommandShortcutArgKind(command),
-        argPlaceholder: command.shortcutArg?.placeholder,
-        source: "plugin-command" as const,
-        pluginCommand: command,
-      })),
+      .flatMap((command) => [command.shortcut, ...(command.shortcutAliases ?? [])]
+        .map((prefix) => prefix?.trim() ?? "")
+        .filter((prefix) => prefix.length > 0)
+        .map((prefix) => ({
+          prefix: normalizeShortcutPrefix(prefix),
+          label: command.label,
+          description: command.description ?? "",
+          argKind: getPluginCommandShortcutArgKind(command),
+          argPlaceholder: command.shortcutArg?.placeholder,
+          source: "plugin-command" as const,
+          pluginCommand: command,
+        }))),
     ...paneTemplates
       .filter((template) => template.shortcut?.prefix)
       .flatMap((template) => getPaneShortcutPrefixes(template).map((prefix) => ({

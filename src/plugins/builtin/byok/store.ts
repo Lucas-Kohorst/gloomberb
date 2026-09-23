@@ -10,6 +10,67 @@ import { readProcessEnv } from "../../../utils/process-env";
 import { getByokKnownService, getByokKnownServices } from "./services";
 
 const EMPTY_BYOK_KEYS: ByokApiKeyEntry[] = [];
+const collapsedByokKeys = new WeakMap<ByokApiKeyEntry[], ByokApiKeyEntry[]>();
+
+function canonicalByokServiceId(serviceId: string): string {
+  const trimmed = serviceId.trim();
+  if (!trimmed || trimmed === BYOK_CUSTOM_SERVICE_ID) return trimmed;
+  if (getByokKnownService(trimmed)) return trimmed;
+  const folded = trimmed.toLowerCase();
+  return getByokKnownServices().find((service) => service.id.toLowerCase() === folded)?.id ?? folded;
+}
+
+function preferByokServiceKey(current: ByokApiKeyEntry, incoming: ByokApiKeyEntry): ByokApiKeyEntry {
+  if (incoming.createdAt !== current.createdAt) {
+    return incoming.createdAt > current.createdAt ? incoming : current;
+  }
+  const incomingValidated = incoming.lastValidated ?? 0;
+  const currentValidated = current.lastValidated ?? 0;
+  if (incomingValidated !== currentValidated) {
+    return incomingValidated > currentValidated ? incoming : current;
+  }
+  return incoming;
+}
+
+/**
+ * One stored row per known service. Custom APIs stay as separate records.
+ * Two OpticOdds saves for the same service are one row, keeping the newer key.
+ */
+export function collapseByokServiceKeys(keys: readonly ByokApiKeyEntry[]): ByokApiKeyEntry[] {
+  const next: ByokApiKeyEntry[] = [];
+  const indexByService = new Map<string, number>();
+  let changed = false;
+  for (const entry of keys) {
+    if (!isApiKeyEntry(entry)) {
+      changed = true;
+      continue;
+    }
+    if (entry.serviceId === BYOK_CUSTOM_SERVICE_ID) {
+      next.push(entry);
+      continue;
+    }
+    const serviceId = canonicalByokServiceId(entry.serviceId);
+    const normalized = serviceId === entry.serviceId ? entry : { ...entry, serviceId };
+    if (normalized !== entry) changed = true;
+    const existingIndex = indexByService.get(serviceId);
+    if (existingIndex == null) {
+      indexByService.set(serviceId, next.length);
+      next.push(normalized);
+      continue;
+    }
+    changed = true;
+    next[existingIndex] = preferByokServiceKey(next[existingIndex]!, normalized);
+  }
+  return changed ? next : keys as ByokApiKeyEntry[];
+}
+
+function collapseStoredByokKeys(keys: ByokApiKeyEntry[]): ByokApiKeyEntry[] {
+  const cached = collapsedByokKeys.get(keys);
+  if (cached) return cached;
+  const collapsed = collapseByokServiceKeys(keys);
+  collapsedByokKeys.set(keys, collapsed);
+  return collapsed;
+}
 
 /** Reads BYOK key entries from a raw AppConfig.pluginConfig map. */
 export function readByokKeysFromConfig(config: AppConfig): ByokApiKeyEntry[] {
@@ -18,7 +79,8 @@ export function readByokKeysFromConfig(config: AppConfig): ByokApiKeyEntry[] {
     | undefined;
   if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
   const keys = stored.keys.filter(isApiKeyEntry);
-  return keys.length === 0 ? EMPTY_BYOK_KEYS : keys;
+  if (keys.length === 0) return EMPTY_BYOK_KEYS;
+  return collapseByokServiceKeys(keys);
 }
 
 /**
@@ -26,12 +88,19 @@ export function readByokKeysFromConfig(config: AppConfig): ByokApiKeyEntry[] {
  * fresh `[]` each call makes useSyncExternalStore treat the store as changed
  * and hit React error #185 (maximum update depth).
  */
-export function selectByokKeys(state: { config: AppConfig }): ByokApiKeyEntry[] {
+/** Raw stored rows, including duplicate service records not yet collapsed. */
+export function selectRawByokKeys(state: { config: AppConfig }): ByokApiKeyEntry[] {
   const stored = state.config.pluginConfig["application"]?.[BYOK_API_KEYS_CONFIG_KEY] as
     | Partial<ByokStoredConfig>
     | undefined;
   if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
   return stored.keys;
+}
+
+export function selectByokKeys(state: { config: AppConfig }): ByokApiKeyEntry[] {
+  const keys = selectRawByokKeys(state);
+  if (keys === EMPTY_BYOK_KEYS) return keys;
+  return collapseStoredByokKeys(keys);
 }
 
 /** Custom keys become command-bar entries after a successful test. */

@@ -16,6 +16,8 @@ describe("uiBuiltinPlugins", () => {
     expect(ids).not.toContain("usaspending");
     expect(ids).not.toContain("weather");
     expect(new Set(ids).size).toBe(ids.length);
+    expect(uiBuiltinPlugins.filter((plugin) => plugin.name === "OpticOdds")).toHaveLength(1);
+    expect(nativeUiPlugins.filter((plugin) => plugin.name === "OpticOdds")).toHaveLength(1);
   });
 
   test("ships Prediction Markets in native Electrobun/TUI, not hosted web builtins", () => {

@@ -90,6 +90,7 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
         id: `plugin-command:${command.id}`,
         badges: [
           command.shortcut!.toUpperCase(),
+          ...(command.shortcutAliases ?? []).map((alias) => alias.trim().toUpperCase()).filter(Boolean),
           formatPlaceholder(command.shortcutArg?.placeholder),
         ].filter((value): value is string => !!value),
         description: formatShortcutDescription(command.label),

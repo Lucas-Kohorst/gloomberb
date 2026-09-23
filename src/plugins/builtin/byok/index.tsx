@@ -1,7 +1,5 @@
 import type { PluginModule } from "../plugin-module";
 import type { CommandDef, PaneDef, PaneTemplateDef } from "../../../types/plugin";
-import { ByokSettingsPane } from "./pane";
-import { createByokManageCommand, BYOK_PANE_ID, BYOK_PANE_TEMPLATE_ID } from "./commands";
 import {
   ByokApiViewerPane,
   BYOK_VIEWER_PANE_ID,
@@ -11,29 +9,6 @@ import { isOpenableCustomKey, readByokKeysFromConfig } from "./store";
 import type { ByokApiKeyEntry } from "./types";
 import { articleReaderInstanceId } from "../shared/article-pop-out";
 import type { AppConfig } from "../../../types/config";
-
-const byokPane: PaneDef = {
-  id: BYOK_PANE_ID,
-  name: "API Keys",
-  icon: "K",
-  component: ByokSettingsPane,
-  defaultPosition: "right",
-  defaultMode: "floating",
-  defaultFloatingSize: { width: 110, height: 30 },
-};
-
-const byokPaneTemplate: PaneTemplateDef = {
-  id: BYOK_PANE_TEMPLATE_ID,
-  paneId: BYOK_PANE_ID,
-  label: "API Keys",
-  description: "Open BYOK settings to add, edit, or test API keys.",
-  keywords: ["byok", "api", "key", "keys", "secret", "credential", "settings"],
-  shortcut: { prefix: "KEYS", aliases: ["BYOK"] },
-  createInstance: () => ({
-    placement: "floating",
-    title: "API Keys",
-  }),
-};
 
 const byokViewerPane: PaneDef = {
   id: BYOK_VIEWER_PANE_ID,
@@ -66,12 +41,10 @@ const byokViewerTemplate: PaneTemplateDef = {
 };
 
 export const byokModule: PluginModule = {
-  panes: [byokPane, byokViewerPane],
-  paneTemplates: [byokPaneTemplate, byokViewerTemplate],
+  panes: [byokViewerPane],
+  paneTemplates: [byokViewerTemplate],
 
   setup(ctx) {
-    ctx.registerCommand(createByokManageCommand((paneId) => ctx.showPane(paneId)));
-
     const liveCommands = new Map<string, CommandDef>();
     const visibleCommandIds = new Set<string>();
 

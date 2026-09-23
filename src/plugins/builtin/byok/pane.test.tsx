@@ -67,7 +67,7 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
 }
 
 function storedKeys(runtime: ReturnType<typeof createStatefulTestPluginRuntime>): ByokApiKeyEntry[] {
-  const stored = runtime.getConfigState("byok", BYOK_API_KEYS_CONFIG_KEY) as { keys: ByokApiKeyEntry[] } | null;
+  const stored = runtime.getConfigState("application", BYOK_API_KEYS_CONFIG_KEY) as { keys: ByokApiKeyEntry[] } | null;
   return stored?.keys ?? [];
 }
 
