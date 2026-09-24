@@ -769,11 +769,45 @@ describe("canonical news share index", () => {
       env,
     );
     expect(response?.status).toBe(200);
-    expect(response?.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+    expect(response?.headers.get("x-robots-tag")).toBeNull();
     const html = await response?.text();
     expect(html).toContain("<title>BRIEF</title>");
     expect(html).toContain('property="og:title"');
     expect(html).toContain("BRIEF");
+  });
+
+  test("GET /article/{slug} cards the hosted snapshot, not a missing Cloud share", async () => {
+    const env = makeEnv();
+    const slug = "grayscale-zcash-etf--75aTfq4Y";
+    const shareId = "sjtztj7w83tj";
+    SNAPSHOTS.set(`slug:${slug}`, JSON.stringify({ articleId: "1dc76859", shareId }));
+    SNAPSHOTS.set(shareId, JSON.stringify({
+      kind: "article",
+      data: {
+        type: "news",
+        id: "1dc76859",
+        title: "Grayscale Zcash ETF surpasses $915M",
+        text: "The first US-listed spot Zcash ETF.",
+        summary: "The first US-listed spot Zcash ETF has attracted over $270 million.",
+      },
+    }));
+    env.ASSETS = {
+      fetch: async () => new Response("<!doctype html><html><head><title>Gloomberb</title><meta name=\"robots\" content=\"noindex\" /></head><body></body></html>", {
+        headers: { "content-type": "text/html" },
+      }),
+    } as unknown as Fetcher;
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `/article/${slug}`),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-robots-tag")).toBeNull();
+    const html = await response?.text();
+    expect(html).toContain("<title>Grayscale Zcash ETF surpasses $915M</title>");
+    expect(html).toContain('property="og:title"');
+    expect(html).toContain("The first US-listed spot Zcash ETF");
+    expect(html).toContain('name="twitter:card"');
+    expect(html).not.toContain('content="noindex"');
   });
 });
 
@@ -1621,9 +1655,8 @@ describe("app security headers", () => {
     expect((await serveAsset("/s/SdIc3WRwjojR"))?.headers.get("x-robots-tag")).toBe(
       "noindex, nofollow, noarchive",
     );
-    expect((await serveAsset("/news/reuters-urn:nFWN4530A2"))?.headers.get("x-robots-tag")).toBe(
-      "noindex, nofollow, noarchive",
-    );
+    expect((await serveAsset("/news/reuters-urn:nFWN4530A2"))?.headers.get("x-robots-tag")).toBeNull();
+    expect((await serveAsset("/article/grayscale-zcash-etf--75aTfq4Y"))?.headers.get("x-robots-tag")).toBeNull();
   });
 });
 
