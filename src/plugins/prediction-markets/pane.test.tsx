@@ -25,43 +25,60 @@ import { normalizePolymarketMarket } from "./services/polymarket/adapter";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
-function kalshiBrowseJunkEvent(ticker: string, title: string) {
-  return {
-    title,
-    category: "Entertainment",
-    event_ticker: ticker,
-    series_ticker: ticker.split("-")[0],
-    markets: [{
-      ticker,
-      title,
-      yes_sub_title: "Yes",
-      event_ticker: ticker,
-      close_time: "2026-05-02T12:00:00Z",
-      open_time: "2026-03-01T12:00:00Z",
-      updated_time: "2026-04-01T00:00:00Z",
-      status: "open",
-      market_type: "binary",
-      yes_bid_dollars: "0.40",
-      yes_ask_dollars: "0.42",
-      last_price_dollars: "0.41",
-      volume_24h_fp: "1000",
-      volume_fp: "2000",
-      open_interest_fp: "500",
-      liquidity_dollars: "10000",
-    }],
-  };
+function fedFundsAdjacentList(): Response {
+  return new Response(JSON.stringify({
+    data: [
+      {
+        market_id: "kalshi:KXFED-27APR-T4.25",
+        ticker: "KXFED-27APR-T4.25",
+        platform: "kalshi",
+        question: "Will the upper bound of the federal funds target rate be above 4.25%?",
+        event_title: "Federal funds target rate after April 2026 FOMC",
+        event_id: "kalshi:FED-1",
+        status: "active",
+      },
+      {
+        market_id: "kalshi:KXFED-27APR-T4.50",
+        ticker: "KXFED-27APR-T4.50",
+        platform: "kalshi",
+        question: "Will the upper bound of the federal funds target rate be above 4.50%?",
+        event_title: "Federal funds target rate after April 2026 FOMC",
+        event_id: "kalshi:FED-1",
+        status: "active",
+      },
+    ],
+    meta: { has_next: false },
+  }), { status: 200 });
 }
 
 function withBrowseSubstringJunk(innerFetch: typeof fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes("/trade-api/v2/events?")) {
+    if (url.includes("api.adjacent.markets") && url.includes("/markets") && !url.includes("search=")) {
       const response = await innerFetch(input, init);
-      const body = await response.json() as { events: unknown[] };
-      body.events.push(
-        kalshiBrowseJunkEvent("KXSMILE-1", "Die With A Smile"),
-        kalshiBrowseJunkEvent("KXSD-1", "San Diego mayor"),
-      );
+      const body = await response.json() as { data?: unknown[] };
+      const platform = new URL(url).searchParams.get("platform");
+      if (!platform || platform === "kalshi") {
+        body.data = [
+          ...(body.data ?? []),
+          {
+            market_id: "kalshi:KXSMILE-1",
+            ticker: "KXSMILE-1",
+            platform: "kalshi",
+            question: "Die With A Smile",
+            event_title: "Die With A Smile",
+            status: "active",
+          },
+          {
+            market_id: "kalshi:KXSD-1",
+            ticker: "KXSD-1",
+            platform: "kalshi",
+            question: "San Diego mayor",
+            event_title: "San Diego mayor",
+            status: "active",
+          },
+        ];
+      }
       return new Response(JSON.stringify(body), { status: 200 });
     }
     return innerFetch(input, init);
@@ -91,13 +108,6 @@ function isWebsiteStyleDieselSearch(url: string): boolean {
   return parsed.searchParams.get("search") === "diesel"
     && parsed.searchParams.get("scope") === "all"
     && !parsed.searchParams.get("platform");
-}
-
-function isKalshiDieselSearch(url: string): boolean {
-  const parsed = new URL(url);
-  return parsed.searchParams.get("search") === "diesel"
-    && parsed.searchParams.get("scope") === "all"
-    && parsed.searchParams.get("platform") === "kalshi";
 }
 
 afterEach(async () => {
@@ -227,8 +237,22 @@ describe("prediction markets pane interactions", () => {
 
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("gamma-api.polymarket.com")) {
+      if (url.includes("platform=polymarket") || url.includes("gamma-api.polymarket.com")) {
         throw new Error("Unable to connect. Was there a typo in the url or port?");
+      }
+      if (url.includes("api.adjacent.markets") && url.includes("platform=kalshi")) {
+        return new Response(JSON.stringify({
+          data: [{
+            market_id: "kalshi:KAL-1",
+            ticker: "KAL-1",
+            platform: "kalshi",
+            question: "Will the Fed cut rates?",
+            event_title: "Fed series",
+            event_id: "kalshi:FED-1",
+            status: "active",
+          }],
+          meta: { has_next: false },
+        }), { status: 200 });
       }
       if (url.includes("/trade-api/v2/events?")) {
         return new Response(
@@ -303,7 +327,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("All venues");
+    expect(frame).toContain("Watchlist");
     expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
@@ -425,7 +449,8 @@ describe("prediction markets pane interactions", () => {
       url.includes("/trade-api/v2/series/FED/markets/KAL-1/candlesticks"),
     );
 
-    expect(eventFetches).toHaveLength(1);
+    // The list asks Kalshi for the row price, then detail loads the same event once.
+    expect(eventFetches).toHaveLength(2);
     expect(orderbookFetches).toHaveLength(1);
     expect(tradeFetches).toHaveLength(1);
     expect(historyFetches).toHaveLength(1);
@@ -638,7 +663,11 @@ describe("prediction markets pane interactions", () => {
 
     setUiYieldReason("input", true);
     testSetup = await testRender(
-      <Harness initialSearchQuery="? diesel" initialVenueScope="kalshi" />,
+      <Harness
+        initialSearchQuery="? diesel"
+        initialVenueScope="kalshi"
+        paneSettings={{ hideTabs: false }}
+      />,
       { width: 120, height: 34 },
     );
     await act(async () => {
@@ -647,7 +676,13 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup, 8);
 
     const frame = testSetup.captureCharFrame();
-    expect(requested.some((url) => isKalshiDieselSearch(url))).toBe(true);
+    expect(frame).toContain("KXDIESELD");
+    expect(requested.some((url) => {
+      const parsed = new URL(url);
+      return parsed.searchParams.get("search") === "diesel"
+        && parsed.searchParams.get("scope") === "all"
+        && parsed.searchParams.get("platform") === "kalshi";
+    })).toBe(true);
     expect(requested.some((url) => url.includes("search=%3F") || url.includes("search=?"))).toBe(false);
     expect(frame).toContain("KXDIESELD");
     expect(frame).not.toContain("Die With A Smile");
@@ -792,6 +827,9 @@ describe("prediction markets pane interactions", () => {
 
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets") && !url.includes("search=")) {
+        return fedFundsAdjacentList();
+      }
       if (url.includes("gamma-api.polymarket.com/events?")) {
         return new Response(JSON.stringify([]), { status: 200 });
       }
@@ -901,7 +939,10 @@ describe("prediction markets pane interactions", () => {
     }) as unknown as typeof fetch;
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
-    await flushFrames(testSetup);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await flushFrames(testSetup, 8);
 
     await emitKeypress(testSetup, { name: "j", sequence: "j" });
     await flushFrames(testSetup);
@@ -953,10 +994,49 @@ describe("prediction markets pane interactions", () => {
   });
 
   test("expands a grouped event from the watchlist with Enter", async () => {
-    attachPredictionMarketsPersistence(new MemoryPersistence());
+    const persistence = new MemoryPersistence();
+    attachPredictionMarketsPersistence(persistence);
+    const fedEvent = {
+      title: "Federal funds target rate after April 2026 FOMC",
+      sub_title: "Upper bound",
+      category: "Economics",
+      event_ticker: "FED-1",
+      series_ticker: "FED",
+    };
+    const fedMarkets = [
+      normalizeKalshiMarket({
+        ticker: "KXFED-27APR-T4.25",
+        title: "Will the upper bound of the federal funds target rate be above 4.25%?",
+        yes_sub_title: "Above 4.25%",
+        event_ticker: "FED-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.48",
+        volume_24h_fp: "15000",
+      } as any, fedEvent),
+      normalizeKalshiMarket({
+        ticker: "KXFED-27APR-T4.50",
+        title: "Will the upper bound of the federal funds target rate be above 4.50%?",
+        yes_sub_title: "Above 4.50%",
+        event_ticker: "FED-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.31",
+        volume_24h_fp: "12000",
+      } as any, fedEvent),
+    ].filter((market) => market != null);
+    for (const key of ["kalshi:watchlist:all", "kalshi:watchlist:all:full"]) {
+      persistence.setResource("catalog", key, fedMarkets, {
+        cachePolicy: PREDICTION_CACHE_POLICIES.catalog,
+        sourceKey: "remote",
+      });
+    }
 
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets") && !url.includes("search=")) {
+        return fedFundsAdjacentList();
+      }
       if (url.includes("gamma-api.polymarket.com/events?")) {
         return new Response(JSON.stringify([]), { status: 200 });
       }

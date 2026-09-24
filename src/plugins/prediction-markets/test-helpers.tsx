@@ -56,6 +56,7 @@ attachPredictionMarketsPersistence(new MemoryPluginPersistence());
 
 function createConfig(options?: {
   initialFocusedPaneId?: string;
+  paneSettings?: Record<string, unknown>;
 }): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-prediction-markets");
   const initialFocusedPaneId = options?.initialFocusedPaneId ?? TEST_PANE_ID;
@@ -74,7 +75,7 @@ function createConfig(options?: {
         instanceId: TEST_PANE_ID,
         paneId: "prediction-markets",
         binding: { kind: "none" as const },
-        settings: {},
+        settings: options?.paneSettings ?? {},
       },
     ],
     floating: [],
@@ -175,7 +176,7 @@ export function installPredictionMarketMocks() {
   globalThis.fetch = (async (input: Request | string | URL) => {
     const url = String(input);
     fetchUrls.push(url);
-    if (url.includes("api.adjacent.markets/api/v1/") && url.includes("search=")) {
+    if (url.includes("api.adjacent.markets/api/v1/markets") || url.includes("api.adjacent.markets/api/v1/public/markets")) {
       const parsed = new URL(url);
       const platform = parsed.searchParams.get("platform") ?? "";
       const isPolymarket = !platform || platform.includes("polymarket");
@@ -405,15 +406,17 @@ export function Harness({
   initialFocusedPaneId = TEST_PANE_ID,
   initialSearchQuery,
   initialVenueScope,
+  paneSettings,
 }: {
   initialFocusedPaneId?: string;
   initialSearchQuery?: string;
   initialVenueScope?: "all" | "kalshi" | "polymarket";
+  paneSettings?: Record<string, unknown>;
 } = {}) {
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
-      const initial = createInitialState(createConfig({ initialFocusedPaneId }));
+      const initial = createInitialState(createConfig({ initialFocusedPaneId, paneSettings }));
       initial.focusedPaneId = initialFocusedPaneId;
       if (initialSearchQuery != null || initialVenueScope) {
         initial.paneState[TEST_PANE_ID] = {

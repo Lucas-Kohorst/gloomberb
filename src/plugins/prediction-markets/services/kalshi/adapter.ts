@@ -30,10 +30,7 @@ import {
 } from "../fetch";
 import { revivePredictionHistoryPoints } from "../history";
 import {
-  fetchHostedAdjacentKalshiCatalogPage,
-  parseHostedAdjacentKalshiPageCursor,
-} from "./adjacent-catalog";
-import {
+  listAdjacentCatalog,
   searchAdjacentCatalog,
   parseAdjacentSearchPageCursor,
 } from "../adjacent-search";
@@ -219,10 +216,6 @@ export async function loadKalshiCatalog(
   );
   const normalizedQuery = normalizePredictionSearchQuery(searchQuery).toLowerCase();
   const requestedLimit = Math.max(1, Math.min(KALSHI_EVENT_PAGE_LIMIT, options.limit ?? KALSHI_EVENT_PAGE_LIMIT));
-  const pageLimit = Math.max(20, requestedLimit);
-  const maxPages = options.firstPageOnly || options.limit || normalizedQuery
-    ? 1
-    : DEFAULT_KALSHI_EVENT_MAX_PAGES;
   const resourceKey = buildPredictionCatalogLoadResourceKey(
     "kalshi",
     categoryId,
@@ -247,35 +240,15 @@ export async function loadKalshiCatalog(
         return searchResult.markets.slice(0, requestedLimit);
       }
 
-      let page: { events: KalshiEventRecord[]; nextCursor: string | null };
-      try {
-        page = categoryId === "all"
-          ? await fetchKalshiCatalogEvents(maxPages, pageLimit, options.signal)
-          : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages, pageLimit, options.signal);
-      } catch (error) {
-        if (!isHostedWebClient() || !isHostedOriginFailureError(error)) throw error;
-        const fallback = await fetchHostedAdjacentKalshiCatalogPage({
-          searchQuery: normalizedQuery,
-          categoryId,
-          browseTab,
-          page: 1,
-        });
-        kalshiCatalogFeed = "delayed";
-        page = {
-          events: [],
-          nextCursor: fallback.nextCursor,
-        };
-        rememberKalshiCursor(normalizedQuery, categoryId, fallback.nextCursor);
-        return fallback.markets.slice(0, requestedLimit);
-      }
-      if (consumeKalshiProxyAdjacent()) kalshiCatalogFeed = "delayed";
-      rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
-      return normalizeKalshiCatalog(
-        page.events,
-        normalizedQuery,
+      const listed = await listAdjacentCatalog({
+        venue: "kalshi",
         categoryId,
         browseTab,
-      ).slice(0, requestedLimit);
+        page: 1,
+        signal: options.signal,
+      });
+      rememberKalshiCursor(normalizedQuery, categoryId, listed.nextCursor);
+      return listed.markets.slice(0, requestedLimit);
     },
     PREDICTION_CACHE_POLICIES.catalog,
     {
@@ -303,23 +276,14 @@ export async function loadMoreKalshiCatalog(
       signal,
     });
   }
-  if (isHostedWebClient() && kalshiCatalogFeed === "delayed") {
-    return await fetchHostedAdjacentKalshiCatalogPage({
-      searchQuery,
-      categoryId,
-      page: parseHostedAdjacentKalshiPageCursor(cursor),
-    });
-  }
-  const page = categoryId === "all"
-    ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
-    : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);
-  if (consumeKalshiProxyAdjacent()) kalshiCatalogFeed = "delayed";
-  rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
-  return {
-    markets: normalizeKalshiCatalog(page.events, normalizedQuery, categoryId),
-    nextCursor: page.nextCursor,
-    hasMore: !!page.nextCursor,
-  };
+  const listed = await listAdjacentCatalog({
+    venue: "kalshi",
+    categoryId,
+    page: parseAdjacentSearchPageCursor(cursor),
+    signal,
+  });
+  rememberKalshiCursor(normalizedQuery, categoryId, listed.nextCursor);
+  return listed;
 }
 
 async function loadKalshiEvent(
