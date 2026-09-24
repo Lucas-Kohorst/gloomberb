@@ -22,7 +22,7 @@ function safeUrl(raw: string | null | undefined): string | null {
 // Markdown
 // ---------------------------------------------------------------------------
 
-const INLINE_PATTERN = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*]+\*)|(_[^_]+_)/g;
+const INLINE_PATTERN = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))|(\*[^*]+\*)|(_[^_]+_)/g;
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -41,10 +41,13 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     } else if (token.startsWith("[")) {
       const split = token.indexOf("](");
       const label = token.slice(1, split);
-      const href = safeUrl(token.slice(split + 2, -1));
-      nodes.push(href
+      const href = safeUrl(token.slice(split + 2, -1).trim().split(/\s+/)[0]);
+      const linked = href
         ? <a key={key} href={href} target="_blank" rel="noreferrer noopener">{label}</a>
-        : label);
+        : label;
+      const previous = nodes.at(-1);
+      if (typeof previous !== "string" && previous != null) nodes.push(" ");
+      nodes.push(linked);
     } else {
       nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
     }

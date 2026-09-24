@@ -5,6 +5,27 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ShareShell } from "./shell";
+import { TableShareView } from "./table-view";
+
+test("a shared list is a handoff into Gloom, not a full-viewport table", () => {
+  const html = renderToStaticMarkup(
+    <TableShareView
+      payload={{
+        title: "Prediction Markets",
+        capturedAt: "2026-09-24T12:00:00Z",
+        columns: [{ id: "market", label: "Market" }],
+        rows: [{ cells: [{ text: "Fed Decision" }] }, { cells: [{ text: "Senate" }] }],
+      }}
+      openInTerminalHref="https://terminal.kohor.st/?gloomberb=share"
+    />,
+  );
+  expect(html).toContain("Prediction Markets");
+  expect(html).toContain("2 rows.");
+  expect(html).toContain("Open in Gloom");
+  expect(html).toContain("Sign up");
+  expect(html).toContain('href="https://terminal.kohor.st/?gloomberb=share"');
+  expect(html).not.toContain("<table");
+});
 
 test("unauthenticated share chrome offers sign up and log in instead of back", () => {
   const html = renderToStaticMarkup(

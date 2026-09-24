@@ -610,6 +610,327 @@ textarea::-webkit-strong-password-auto-fill-button {
   }
 }
 
+/* --- Public page (article, filing, chart) and list handoff ---------------- */
+
+.share-public,
+.share-handoff {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0c0c0c;
+  color: #a3a3a3;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.share-public-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 64px;
+  padding: 12px 28px;
+  background: #0c0c0c;
+  border-bottom: 1px solid #222222;
+}
+
+.share-wordmark {
+  color: #fafafa;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.share-public-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.share-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #a3a3a3;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.share-login:hover {
+  border-color: var(--gloom-text-dim);
+  color: var(--gloom-text-bright);
+  text-decoration: none;
+}
+
+.share-signup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.share-signup:hover {
+  color: #111111;
+  background: #ffffff;
+  text-decoration: none;
+}
+
+.share-public-main {
+  width: min(760px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 40px 0 64px;
+}
+
+.share-public[data-layout="wide"] {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.share-public[data-layout="wide"] .share-public-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 16px;
+}
+
+.share-public-title {
+  margin: 0 0 16px;
+  color: #fafafa;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.share-tickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.share-tickers li {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--gloom-border);
+  border-radius: 4px;
+  color: var(--gloom-text-bright);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.share-public .share-meta {
+  align-items: center;
+  gap: 0 10px;
+  margin: 0 0 22px;
+  padding-bottom: 16px;
+  font-size: 13.5px;
+}
+
+.share-meta-sep {
+  color: var(--gloom-text-muted);
+}
+
+.share-public[data-layout="document"] .share-body {
+  max-width: 68ch;
+  font-size: 16.5px;
+  line-height: 1.75;
+  color: #b4b4b4;
+}
+
+.share-public[data-layout="document"] .share-body p {
+  margin: 0 0 18px;
+}
+
+.share-public[data-layout="document"] .share-body h1,
+.share-public[data-layout="document"] .share-body h2,
+.share-public[data-layout="document"] .share-body h3,
+.share-public[data-layout="document"] .share-body h4 {
+  margin: 32px 0 10px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.share-public[data-layout="document"] .share-body a {
+  color: #f4f4f4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.share-public[data-layout="document"] .share-body a + a {
+  margin-left: 0.4em;
+}
+
+.share-doc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gloom-border);
+  color: var(--gloom-text-dim);
+  font-size: 14px;
+}
+
+.share-doc-status {
+  min-width: 0;
+}
+
+.share-doc-status a,
+.share-doc-actions a,
+.share-doc-actions button {
+  color: var(--gloom-text-dim);
+}
+
+.share-doc-status a:hover,
+.share-doc-actions a:hover,
+.share-doc-actions button:hover {
+  color: var(--gloom-text-bright);
+}
+
+.share-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 620px) {
+  .share-public-bar { padding-inline: 14px; }
+  .share-public-main {
+    width: min(760px, calc(100% - 28px));
+    padding-top: 28px;
+  }
+  .share-public-title { font-size: 30px; }
+  .share-public[data-layout="document"] .share-body { font-size: 16px; }
+  .share-public[data-layout="wide"] .share-public-title { font-size: 14px; }
+}
+
+.share-public[data-layout="wide"] .share-public-title {
+  margin: 0;
+  padding: 12px 16px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.share-public[data-layout="wide"] .share-cta {
+  margin: 12px 16px 0;
+}
+
+.share-handoff {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+.share-handoff .share-public-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.share-handoff .share-public-main {
+  width: min(520px, 100%);
+  padding: 72px 0 0;
+}
+
+.share-handoff .share-public-title {
+  font-size: 28px;
+}
+
+.share-handoff-count {
+  margin: 0 0 8px;
+  color: var(--gloom-text-dim);
+  font-size: 15px;
+}
+
+.share-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gloom-border);
+}
+
+.share-cta p {
+  flex: 1 1 200px;
+  margin: 0;
+  color: var(--gloom-text-dim);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.share-cta-extra,
+.share-cta-extra a {
+  color: var(--gloom-text-dim);
+  font-size: 14px;
+}
+
+.share-text-button {
+  border: 0;
+  background: none;
+  color: var(--gloom-text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.owner-actions {
+  position: fixed;
+  z-index: 3;
+  bottom: 12px;
+  left: 16px;
+}
+
+.owner-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--gloom-text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.owner-actions button:hover {
+  color: var(--gloom-text);
+}
+
+.owner-actions [role="alert"] {
+  margin-left: 8px;
+  color: var(--gloom-negative);
+}
+
 /* --- Legacy share pages (view.tsx, layout-view.tsx) -----------------------
  * These predate the snapshot renderer and use their own markup. Tag rules
  * are scoped under `main`, which the snapshot pages never use, so neither

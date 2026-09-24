@@ -45,6 +45,19 @@ describe("shared article markdown", () => {
     expect(unsafe).toContain("click");
   });
 
+  test("renders a titled link and separates links that were glued together", () => {
+    const output = markdown(
+      '[Accessibility help](https://www.ft.com/accessibility)[Skip to navigation](https://www.ft.com/content/x#site-navigation)',
+    );
+    expect(output).toContain('href="https://www.ft.com/accessibility"');
+    expect(output).toContain(">Accessibility help</a> <a");
+    expect(output).not.toContain("](");
+    const titled = markdown('[Open menu](https://www.ft.com/content/x#drawer "Open side navigation menu")');
+    expect(titled).toContain('href="https://www.ft.com/content/x#drawer"');
+    expect(titled).toContain(">Open menu</a>");
+    expect(titled).not.toContain("Open side navigation menu");
+  });
+
   test("renders markdown images with http sources", () => {
     expect(markdown("![House odds](https://kalshi.com/chart.png)"))
       .toContain('src="https://kalshi.com/chart.png"');

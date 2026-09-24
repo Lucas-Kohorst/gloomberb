@@ -115,6 +115,16 @@ function ContentShareApp({ id, origin }: { id: string; origin: string }) {
       .catch(() => { if (!controller.signal.aborted) setState({ error: "This share could not be loaded." }); });
     return () => controller.abort();
   }, [id]);
+  const handoffHref = state.share
+    && !state.share.ownedByViewer
+    && state.share.kind !== "article"
+    && state.share.kind !== "chart"
+    ? buildTerminalShareUrl(id, origin)
+    : null;
+  useEffect(() => {
+    if (!handoffHref) return;
+    window.location.replace(handoffHref);
+  }, [handoffHref]);
   const remove = async () => {
     if (!state.share?.ownedByViewer || state.deleting) return;
     setState((current) => ({ ...current, deleting: true, error: undefined }));

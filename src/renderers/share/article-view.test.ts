@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { articleShareBodySource, ArticleShareView, articleShareNeedsReader, preferredArticleBody } from "./article-view";
+import {
+  articleShareBodySource,
+  ArticleShareView,
+  articleShareNeedsReader,
+  cftcFilingIdFromShare,
+  cftcFilingMarkdownUrls,
+  filingShareNeedsText,
+  preferredArticleBody,
+} from "./article-view";
 
 describe("preferredArticleBody", () => {
   test("uses the extracted article when it adds text", () => {
@@ -39,14 +47,46 @@ describe("ArticleShareView", () => {
         url: "https://www.reuters.com/article",
         source: "Reuters News",
         publishedAt: "2026-09-11T13:37:11.000Z",
+        tickers: ["dln", "DLN", "msft"],
         summary: "Sept 11 (Reuters) - SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET",
       },
     }));
+    expect(html).toContain("share-public-title");
     expect(html).toContain("Source: Reuters News");
     expect(html).toContain("Publication Date:");
+    expect(html).toContain("share-meta-sep");
     expect(html).toContain("SITUATIONAL AWARENESS ACTIVE IN OPTIONS MARKET");
     expect(html).toContain("view original");
+    expect(html).toContain(">DLN<");
+    expect(html).not.toContain("share-pane-grip");
     expect(html).not.toContain(" · ");
+  });
+
+  test("drops a glued site menu stored in the snapshot", () => {
+    const html = renderToStaticMarkup(createElement(ArticleShareView, {
+      payload: {
+        type: "news",
+        id: "crypto-briefing-zec",
+        title: "Grayscale's Zcash ETF surpasses $915M in assets",
+        url: "https://cryptobriefing.com/grayscale-zcash-etf",
+        source: "Crypto Briefing",
+        summary: [
+          "FinancePrediction MarketsMacroAITechMarketsNewsletterAds",
+          "",
+          "Sections",
+          "",
+          "BitcoinDeFiEthereumNFTsAI AgentsRegulationWeb3BusinessEcosystem",
+          "",
+          "Searching...",
+          "",
+          "The first US-listed spot Zcash ETF has attracted over $270 million in net inflows and now holds roughly 3.5% of ZEC's total supply.",
+        ].join("\n"),
+      },
+    }));
+    expect(html).toContain("The first US-listed spot Zcash ETF");
+    expect(html).not.toContain("FinancePrediction");
+    expect(html).not.toContain("BitcoinDeFi");
+    expect(html).not.toContain("Searching");
   });
 });
 
@@ -79,6 +119,28 @@ describe("articleShareBodySource", () => {
       bodyHtml,
       subtitle: "Prediction markets news roundup: Kalshi embraces institutional trading.",
     })).toEqual({ kind: "markdown", text: bodyHtml });
+  });
+});
+
+describe("CFTC filing shares", () => {
+  test("loads the filing letter when the snapshot is only the list line", () => {
+    expect(cftcFilingIdFromShare("cftc:4821")).toBe(4821);
+    expect(cftcFilingIdFromShare("reuters:abc")).toBeNull();
+    expect(filingShareNeedsText("cftc:4821", "KEX · Certified · DCM Products".length)).toBe(true);
+    expect(filingShareNeedsText("cftc:4821", 800)).toBe(false);
+    expect(cftcFilingMarkdownUrls(4821, "https://terminal.kohor.st")).toEqual([
+      "https://terminal.kohor.st/api/data/adjacent/public/filings/4821/markdown",
+      "https://api.adjacent.markets/api/v1/public/filings/4821/markdown",
+    ]);
+    const letter = "Dear Sir or Madam:\n\nKalshiEX LLC hereby requests confidential treatment.";
+    expect(articleShareBodySource({
+      type: "news",
+      id: "cftc:4821",
+      title: "Will Stephen Curry sign a contract extension",
+      url: "",
+      source: "CFTC",
+      summary: "KEX · Certified · DCM Products",
+    }, letter)).toEqual({ kind: "markdown", text: letter });
   });
 });
 

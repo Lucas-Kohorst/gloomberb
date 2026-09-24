@@ -25,7 +25,15 @@ export function formatShareTimestamp(iso: string | null | undefined): string | n
 
 export interface ShareShellProps {
   layout?: "document" | "wide";
+  /**
+   * `pane` is the terminal frame. `public` is the page a stranger should see
+   * for an article, filing, or chart. `handoff` is a short card that sends a
+   * whole list into the live terminal.
+   */
+  tone?: "pane" | "public" | "handoff";
   title?: string;
+  /** One sentence under a public page, not a keyboard hint. */
+  pitch?: string;
   footer?: ReactNode;
   /** Destination that opens this view live in the terminal. */
   openInTerminalHref?: string | null;
@@ -62,21 +70,23 @@ function useHostedSignedIn(): boolean {
 
 export function ShareShell({
   layout = "document",
+  tone = "pane",
   title,
+  pitch,
   footer,
   openInTerminalHref,
   onArchive,
   archiveEnabled = false,
   children,
 }: ShareShellProps) {
-  const heading = title?.trim() || "Gloomberb";
+  const heading = title?.trim() || "Gloom";
   const signedIn = useHostedSignedIn();
   const openLabel = openInTerminalHref === "/" ? "pen gloomberb" : "pen live";
   const openAria = openInTerminalHref === "/" ? "Open Gloomberb" : "Open live in terminal";
 
   useEffect(() => {
     const previous = document.title;
-    document.title = title?.trim() ? `${title.trim()} · Gloomberb` : previous;
+    document.title = title?.trim() ? `${title.trim()} · Gloom` : previous;
     return () => { document.title = previous; };
   }, [title]);
 
@@ -99,6 +109,58 @@ export function ShareShell({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [archiveEnabled, onArchive, openInTerminalHref]);
+
+  if (tone !== "pane") {
+    return (
+      <div className={tone === "handoff" ? "share-handoff" : "share-public"} data-layout={layout}>
+        <header className="share-public-bar">
+          <a className="share-wordmark" href="/">Gloomberb</a>
+          <nav className="share-public-nav">
+            {signedIn ? (
+              <a className="share-login" href="/">Back</a>
+            ) : (
+              <>
+                <a className="share-login" href="/?auth=login">Log in</a>
+                <a className="share-signup" href="/?auth=signup">Sign up</a>
+              </>
+            )}
+          </nav>
+        </header>
+        <div className="share-public-main">
+          {title?.trim() ? <h1 className="share-public-title">{heading}</h1> : null}
+          {children}
+          {tone === "public" && layout !== "wide" ? (
+            <footer className="share-doc-foot">
+              <div className="share-doc-status">{footer}</div>
+              <nav className="share-doc-actions">
+                {onArchive && archiveEnabled ? (
+                  <button type="button" className="share-text-button" onClick={onArchive}>Archive</button>
+                ) : null}
+                {openInTerminalHref ? (
+                  <a href={openInTerminalHref}>Open live</a>
+                ) : null}
+              </nav>
+            </footer>
+          ) : (
+            <div className="share-cta">
+              {pitch ? <p>{pitch}</p> : null}
+              {openInTerminalHref ? (
+                <a className="share-signup" href={openInTerminalHref}>Open in Gloom</a>
+              ) : signedIn ? (
+                <a className="share-signup" href="/">Back</a>
+              ) : (
+                <a className="share-signup" href="/?auth=signup">Sign up</a>
+              )}
+              {footer ? <span className="share-cta-extra">{footer}</span> : null}
+              {onArchive && archiveEnabled ? (
+                <button type="button" className="share-text-button" onClick={onArchive}>Archive</button>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="share-workspace">
