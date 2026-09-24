@@ -16,6 +16,7 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { FoiaLogsClient } from "./client";
 import {
   FOIA_LOGS_PLUGIN_ID,
@@ -218,10 +219,10 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
   const loading = status === "loading" && entries.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const items = useMemo(() => toFeedItems(entries), [entries]);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
-    refresh,
-    REFRESH_INTERVAL_MINUTES,
+    refresh, poll.intervalMinutes,
   );
 
   usePaneStatusLinkFooter({
@@ -235,6 +236,7 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!detailEntry?.url,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

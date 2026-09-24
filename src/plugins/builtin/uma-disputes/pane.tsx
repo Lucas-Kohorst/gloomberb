@@ -20,6 +20,7 @@ import { useAppSelector, usePaneSettingValue } from "../../../state/app/context"
 import { selectByokKeys } from "../byok/store";
 import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { currentBravadoCredentials, fetchUmaDisputes, UmaCredentialsError } from "./client";
 import { disputeStage } from "./parse";
 import {
@@ -148,7 +149,8 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
     load();
   }, [load]);
 
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, refresh);
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes" });
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, refresh, poll.intervalMinutes);
 
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
@@ -177,6 +179,7 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
       ...(missingKey ? [{ id: "error", parts: [{ text: "key required", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     showOpenHint: !missingKey && !!selectedUrl,
     hints: [paneSearchHint(focusSearch)],
   });
@@ -279,8 +282,8 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
       }}
       getItemKey={(question) => question.questionId}
       renderCell={renderCell}
-      emptyStateTitle={query.trim() ? "No disputes match." : "No recent UMA disputes."}
-      emptyStateHint="Press / to search."
+      emptyStateTitle={query.trim() ? "No markets match." : "No recent UMA activity."}
+      emptyStateHint="Bravado only keeps the newest 500 updates."
     />
   );
 }

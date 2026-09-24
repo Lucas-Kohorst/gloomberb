@@ -17,6 +17,7 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { CourtListenerClient } from "./client";
 import {
   COURTLISTENER_PLUGIN_ID,
@@ -210,10 +211,10 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   const loading = status === "loading";
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const items = useMemo(() => toFeedItems(lawsuits), [lawsuits]);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
-    () => load(query),
-    REFRESH_INTERVAL_MINUTES,
+    () => load(query), poll.intervalMinutes,
   );
 
   usePaneStatusLinkFooter({
@@ -230,6 +231,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !!activeLawsuit?.url,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

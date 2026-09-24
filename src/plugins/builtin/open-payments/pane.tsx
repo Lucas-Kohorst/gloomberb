@@ -16,6 +16,7 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { OpenPaymentsClient } from "./client";
 import {
   OPEN_PAYMENTS_PLUGIN_ID,
@@ -145,7 +146,8 @@ export function OpenPaymentsPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && payments.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), REFRESH_INTERVAL_MINUTES);
+const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(payments), [payments]);
 
   const focusSearch = useCallback(() => {
@@ -189,6 +191,7 @@ export function OpenPaymentsPane({ width, height, focused }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: false,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

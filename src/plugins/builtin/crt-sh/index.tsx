@@ -22,6 +22,7 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { CrtShClient } from "./client";
 import { CRT_SH_CONNECTION_ID, CRT_SH_PLUGIN_ID, type CertificateRecord } from "./types";
 
@@ -142,10 +143,10 @@ function CrtShPane({ width, height, focused }: PaneProps) {
   const activeRecord = openRecord ?? selected;
   const loading = status === "loading";
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" && query ? lastUpdated : null,
-    () => load(query),
-    REFRESH_INTERVAL_MINUTES,
+    () => load(query), poll.intervalMinutes,
   );
   const items = useMemo(() => toFeedItems(records), [records]);
 
@@ -167,6 +168,7 @@ function CrtShPane({ width, height, focused }: PaneProps) {
       ...(loading ? [{ id: "slow", parts: [{ text: "crt.sh may take 10+ seconds", tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !!activeRecord,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
