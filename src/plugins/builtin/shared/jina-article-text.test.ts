@@ -216,6 +216,46 @@ describe("cleanJinaArticle", () => {
     ].join("\n"));
   });
 
+  test("keeps the press release that follows a search box and a link menu", () => {
+    const raw = [
+      "Title: Investor alert",
+      "",
+      "URL Source: https://www.prnewswire.com/news-releases/example.html",
+      "",
+      "Markdown Content:",
+      "",
+      "[Accessibility Statement](https://www.cision.com/about/accessibility/)[Skip Navigation](https://www.prnewswire.com/x#main)",
+      "",
+      "When typing in this field, a list of search results will appear and be automatically updated as you type.",
+      "",
+      "Searching for your content...",
+      "",
+      "**No results found. Please change your search terms and try again.**",
+      "",
+      [
+        "* [News](https://www.prnewswire.com/news-releases/)",
+        "* [Products](https://www.prnewswire.com/amplify-platform/)",
+        "* [Aerospace & Defense](https://www.prnewswire.com/a)",
+        "* [Agriculture](https://www.prnewswire.com/b)",
+        "* [Chemical](https://www.prnewswire.com/c)",
+      ].join("\n"),
+      "",
+      "NEW YORK, Sept. 24, 2026 /PRNewswire/ -- Pomerantz LLP announces that a class action lawsuit has been filed against Alarum Technologies Ltd.",
+      "",
+      "The class action concerns whether Alarum and certain of its officers have engaged in securities fraud.",
+      "",
+      "## Also from this source",
+      "",
+      "Another investor alert that should not be included.",
+    ].join("\n");
+    const cleaned = cleanJinaArticle(raw);
+    expect(cleaned).toContain("Pomerantz LLP announces");
+    expect(cleaned).toContain("securities fraud");
+    expect(cleaned).not.toContain("Searching for your content");
+    expect(cleaned).not.toContain("Aerospace");
+    expect(cleaned).not.toContain("Another investor alert");
+  });
+
   test("treats a site search box as chrome so it cannot replace a real summary", () => {
     const dump = [
       "When typing in this field, a list of search results will appear and be automatically updated as you type.",

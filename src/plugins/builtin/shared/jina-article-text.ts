@@ -107,7 +107,7 @@ const ACCOUNT_CHROME_RE = (
 
 const FOOTER_CHROME_RE = /^(?:©|\(c\)|copyright\b|terms of (?:use|service)|privacy policy|all rights reserved|cookie (?:policy|settings|preferences))$/i;
 
-const UI_CHROME_RE = /^(?:sections|search|searching\.{0,3}|share|menu|try vera)$/i;
+const UI_CHROME_RE = /^(?:sections|search|searching\.{0,3}|share|menu|try vera|share this article|share to \w+)$/i;
 
 const NAV_HEADINGS = new Set([
   "stock analysis",
@@ -163,7 +163,7 @@ export function cleanJinaArticle(raw: string): string {
   if (blocks.length === 0) return "";
 
   const kinds = blocks.map(classifyBlock);
-  const start = kinds.findIndex((kind) => kind === "content");
+  const start = articleStart(blocks, kinds, stripped);
   if (start === -1) return "";
 
   const kept: string[] = [];
@@ -369,6 +369,22 @@ export function readerFallbackNotice(kind: ReaderFailureKind | null | undefined,
 
 type BlockKind = "chrome" | "nav-label" | "content";
 
+/** Search-widget pages hide the article under the menu. Start at the paragraph. */
+function articleStart(blocks: string[], kinds: BlockKind[], text: string): number {
+  const start = kinds.findIndex((kind) => kind === "content");
+  if (!READER_CHROME_RE.test(text.slice(0, 4000))) return start;
+  const prose = kinds.findIndex((kind, index) => {
+    if (kind !== "content") return false;
+    const visible = blockVisibleText(blocks[index]!);
+    return visible.length >= 100 && isProseLine(visible) && !READER_CHROME_RE.test(blocks[index]!);
+  });
+  return prose === -1 ? start : prose;
+}
+
+function blockVisibleText(block: string): string {
+  return block.split("\n").map(visibleLineText).filter(Boolean).join(" ");
+}
+
 function classifyBlock(block: string): BlockKind {
   if (BOT_WALL_RE.test(block)) return "chrome";
 
@@ -379,6 +395,7 @@ function classifyBlock(block: string): BlockKind {
   if (visible.length === 0) return "chrome";
 
   if (lines.every((line) => isChromeLine(line)) || visible.every((line) => isChromeLine(line))) return "chrome";
+  if (isLinkMenu(lines)) return "chrome";
   if (visible.length >= 2) return isNavMenu(visible) ? "chrome" : "content";
 
   // Single-line blocks are how readers emit one nav link per paragraph.
@@ -427,10 +444,20 @@ function isNavMenu(lines: string[]): boolean {
   return chromeish.length / lines.length >= 0.7;
 }
 
+function isLinkMenu(lines: string[]): boolean {
+  let links = 0;
+  for (const line of lines) {
+    links += line.match(/\[[^\]]*\]\([^)]*\)/g)?.length ?? 0;
+  }
+  if (links < 4) return false;
+  return lines.every((line) => !isProseLine(line));
+}
+
 function isChromeLine(line: string): boolean {
   if (isLinkRunLine(line)) return true;
   const text = visibleLineText(line);
   if (!text) return true;
+  if (READER_CHROME_RE.test(text)) return true;
   if (SKIP_CHROME_RE.test(text)) return true;
   if (ACCOUNT_CHROME_RE.test(text)) return true;
   if (FOOTER_CHROME_RE.test(text)) return true;
