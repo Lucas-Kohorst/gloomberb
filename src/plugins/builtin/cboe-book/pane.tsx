@@ -15,6 +15,7 @@ import { usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { CboeBookClient } from "./client";
 import {
   CBOE_BOOK_PANE_ID,
@@ -228,10 +229,10 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
 
   const loading = status === "loading" && !book;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
-    refresh,
-    REFRESH_INTERVAL_MINUTES,
+    refresh, poll.intervalMinutes,
   );
 
   const bestBid = book && book.bids.length > 0 ? book.bids[0]!.price : null;
@@ -256,6 +257,7 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
+    trailingInfo: [...pollFooterTrailingInfo(true, poll.segment)],
     showOpenHint: !!pageUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

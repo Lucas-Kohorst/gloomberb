@@ -28,6 +28,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { registerConnectionSource } from "../connections/register";
@@ -633,7 +634,8 @@ function SecPane({ width, height, focused }: PaneProps) {
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
   const loading = status === "loading" && visibleFilings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes" });
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
 
   const summary = useFilingSummary({
     filings: visibleFilings,
@@ -725,6 +727,7 @@ function SecPane({ width, height, focused }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : undefined,
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!openFiling?.filingUrl,
     onOpen: () => {
       if (openFiling) markArticleRead(openFiling.accessionNumber);

@@ -16,6 +16,7 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { FdicBankClient } from "./client";
 import {
   FDIC_BANK_PLUGIN_ID,
@@ -156,7 +157,8 @@ export function FdicBankPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && banks.length === 0 && failures.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), REFRESH_INTERVAL_MINUTES);
+const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(banks, failures), [banks, failures]);
 
   const focusSearch = useCallback(() => {
@@ -221,6 +223,7 @@ export function FdicBankPane({ width, height, focused }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !!detailUrl && !error,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

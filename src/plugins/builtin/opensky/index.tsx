@@ -22,6 +22,7 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { mergeAircraft, OpenSkyClient } from "./client";
 import {
   OPENSKY_CONNECTION_ID,
@@ -236,7 +237,8 @@ function AircraftPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && aircraft.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), REFRESH_INTERVAL_MINUTES);
+const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(aircraft), [aircraft]);
 
   const detailUrl = aircraftUrl(detailAircraft);
@@ -255,6 +257,7 @@ function AircraftPane({ width, height, focused }: PaneProps) {
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!detailUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

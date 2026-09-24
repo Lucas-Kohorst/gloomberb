@@ -20,6 +20,7 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { SpaceWeatherClient } from "./client";
 import {
   SPACE_WEATHER_CONNECTION_ID,
@@ -367,10 +368,10 @@ function SpaceWeatherPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && rows.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
-    load,
-    REFRESH_INTERVAL_MINUTES,
+    load, poll.intervalMinutes,
   );
 
   usePaneStatusLinkFooter({
@@ -392,6 +393,7 @@ function SpaceWeatherPane({ width, height, focused }: PaneProps) {
           ]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error,
   });
 

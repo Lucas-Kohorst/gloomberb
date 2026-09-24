@@ -22,6 +22,7 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { EarthquakesClient } from "./client";
 import {
   USGS_EARTHQUAKES_CONNECTION_ID,
@@ -250,10 +251,10 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
   const loading = status === "loading" && earthquakes.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const items = useMemo(() => toFeedItems(earthquakes), [earthquakes]);
-  useAutoRefresh(
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+    useAutoRefresh(
     status === "loaded" ? lastUpdated : null,
-    () => load(query, minMagnitude),
-    REFRESH_INTERVAL_MINUTES,
+    () => load(query, minMagnitude), poll.intervalMinutes,
   );
 
   const detailUrl = detailEarthquake?.url || null;
@@ -272,6 +273,7 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!detailUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

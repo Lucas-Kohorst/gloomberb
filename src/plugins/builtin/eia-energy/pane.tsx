@@ -17,6 +17,7 @@ import { useAppSelector, usePaneSettingValue } from "../../../state/app/context"
 import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { EiaEnergyClient, formatEiaValue, resolveEiaApiKey, type EiaDataPoint, type EiaSeriesSummary } from "./client";
 import {
   DEFAULT_EIA_SERIES_ID,
@@ -203,7 +204,8 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
   const loading = status === "loading" && points.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const items = useMemo(() => toFeedItems(def, points), [def, points]);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(seriesId));
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes" });
+    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(seriesId), poll.intervalMinutes);
 
   const selectedPoint = points[selectedIdx] ?? null;
   const openPoint = openItemId
@@ -224,6 +226,7 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
