@@ -72,6 +72,24 @@ function isMappablePriceSource(source: ChartSeriesSource): boolean {
   return source.kind === "security" && PRICE_FIELD_IDS.has(source.fieldId);
 }
 
+const CRYPTO_QUOTE_CURRENCIES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "BTC", "ETH"];
+
+/** `ZEC/USD` and `ZECUSD` on CCC are a spot pair, not a stock ticker. */
+function splitCryptoPair(symbol: string, exchange: string): { base: string; quote: string } | null {
+  const normalized = symbol.replace(/\//g, "-");
+  const dashed = normalized.match(/^([A-Z0-9]{2,12})-([A-Z]{3,5})$/);
+  const pair = dashed
+    ? { base: dashed[1]!, quote: dashed[2]! }
+    : (() => {
+      if (exchange !== "CCC" && exchange !== "CRYPTO") return null;
+      const quote = CRYPTO_QUOTE_CURRENCIES.find((currency) => normalized.endsWith(currency) && normalized.length > currency.length + 1);
+      if (!quote) return null;
+      return { base: normalized.slice(0, -quote.length), quote };
+    })();
+  if (!pair || !CRYPTO_QUOTE_CURRENCIES.includes(pair.quote)) return null;
+  return pair;
+}
+
 export function tradingViewSymbolForSecurity(instrument: {
   symbol: string;
   exchange?: string;
@@ -79,7 +97,13 @@ export function tradingViewSymbolForSecurity(instrument: {
   const symbol = normalizeSymbol(instrument.symbol);
   const exchange = canonicalExchange(instrument.exchange);
   if (!symbol) return "";
-  if (exchange === "CCC") return symbol.replace(/[^A-Z0-9]/g, "");
+  const crypto = splitCryptoPair(symbol, exchange);
+  if (crypto) {
+    // A bare ZECUSD symbol resolves to CRYPTOCAP, which is market cap, not price.
+    const quote = crypto.quote === "USD" || crypto.quote === "USDC" ? "USDT" : crypto.quote;
+    return `BINANCE:${crypto.base}${quote}`;
+  }
+  if (exchange === "CCC" || exchange === "CRYPTO") return `BINANCE:${symbol.replace(/[^A-Z0-9]/g, "")}USDT`;
   const prefix = TV_EXCHANGE_PREFIX[exchange]
     ?? (exchange && /^[A-Z0-9]{2,8}$/.test(exchange) ? exchange : "");
   return prefix ? `${prefix}:${symbol}` : symbol;
@@ -148,7 +172,7 @@ export function tradingViewEmbedSrc(
     hide_side_toolbar: false,
     save_image: true,
     calendar: false,
-    hide_volume: false,
+    hide_volume: true,
     withdateranges: true,
     details: false,
     hotlist: false,

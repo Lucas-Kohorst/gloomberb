@@ -265,7 +265,16 @@ export function PaneHeader({
             </Span>
           )}
         </Box>
-        <Box flexGrow={1} minWidth={0} overflow="hidden" flexDirection="row" alignItems="center">
+        <Box
+          data-gloom-role="pane-title-slot"
+          flexGrow={1}
+          flexShrink={1}
+          minWidth={0}
+          overflow="hidden"
+          flexDirection="row"
+          alignItems="center"
+          style={{ flex: "1 1 auto", maxWidth: "none" }}
+        >
           <Text
             fg={textColor}
             selectable={false}
@@ -315,6 +324,7 @@ export function PaneHeader({
           gap={0}
           height="100%"
           flexShrink={0}
+          marginLeft="auto"
           position="relative"
           zIndex={2}
         >
