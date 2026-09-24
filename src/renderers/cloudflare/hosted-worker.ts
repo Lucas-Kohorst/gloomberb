@@ -1,3 +1,4 @@
+import { isPrivateHostname } from "./http-target";
 import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { handleHostedBackendRpc } from "./backend";
 import {
@@ -24,14 +25,13 @@ import {
 } from "../../shares/news-index";
 import {
   MAX_SHARE_BYTES,
-  articleShareFromStored,
   articleShareStoreData,
   decodeArticleSharePayload,
   parseSharePayload,
   type ArticleShareData,
   type SharePayload,
 } from "../../shares/payload";
-import { injectShareDocumentMeta } from "../../shares/open-graph";
+import { injectShareDocumentMeta, shareEmbedFromPayload } from "../../shares/open-graph";
 import { generateShareId, isShareId } from "../../shares/short-id";
 import { handleKeyedDataRequest } from "./data-providers/handle";
 import {
@@ -192,6 +192,19 @@ function newsIndexResponse(body: unknown, status = 200): Response {
       "cache-control": "private, no-store",
     },
   });
+}
+
+async function readHostedShare(env: Env, shareId: string): Promise<SharePayload | null> {
+  const raw = await env.SHARES.get(shareId);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const record = parsed as { kind?: unknown; data?: unknown };
+    return parseSharePayload({ kind: record.kind, data: record.data });
+  } catch {
+    return null;
+  }
 }
 
 async function readCloudShare(
@@ -379,38 +392,38 @@ async function handleArticleSlugIndex(request: Request, env: Env, url: URL): Pro
 async function resolveSharePageMeta(
   request: Request,
   env: Env,
-): Promise<{ title: string; description?: string } | null> {
+): Promise<ReturnType<typeof shareEmbedFromPayload> | null> {
   const url = new URL(request.url);
+  const pageUrl = url.toString();
   if (url.pathname === "/article") {
     const encoded = url.searchParams.get("a");
     const article = encoded ? decodeArticleSharePayload(encoded) : null;
     if (!article) return null;
-    return {
-      title: article.title,
-      description: typeof article.summary === "string" ? article.summary
-        : typeof article.previewText === "string" ? article.previewText : undefined,
-    };
+    return shareEmbedFromPayload({
+      kind: "article",
+      data: {
+        title: article.title,
+        text: article.summary ?? article.previewText ?? "",
+        sourceUrl: article.url,
+        summary: article.summary,
+        previewText: article.previewText,
+        subtitle: article.subtitle,
+        imageUrls: article.imageUrls,
+      },
+    }, pageUrl);
   }
   const articleSlug = parseArticleSlugPath(url.pathname);
   if (articleSlug) {
     const record = parseArticleSlugRecord(await env.SHARES.get(slugIndexKey(articleSlug)));
     if (!record) return null;
-    const indexed = await loadIndexedNewsShare(env, record.articleId);
-    if (indexed) {
-      if (indexed.payload.kind === "article") {
-        const article = articleShareFromStored(indexed.payload.data);
-        return { title: article.title, description: article.summary };
-      }
-      return { title: indexed.payload.data.title };
-    }
+    const indexed = await loadIndexedNewsShare(env, record.articleId).catch(() => null);
+    if (indexed) return shareEmbedFromPayload(indexed.payload, pageUrl);
     if (record.shareId) {
-      const live = await readCloudShare(env, record.shareId);
+      const hosted = await readHostedShare(env, record.shareId);
+      if (hosted) return shareEmbedFromPayload(hosted, pageUrl);
+      const live = await readCloudShare(env, record.shareId).catch(() => null);
       if (!live) return null;
-      if (live.payload.kind === "article") {
-        const article = articleShareFromStored(live.payload.data);
-        return { title: article.title, description: article.summary };
-      }
-      return { title: live.payload.data.title };
+      return shareEmbedFromPayload(live.payload, pageUrl);
     }
     return null;
   }
@@ -418,21 +431,13 @@ async function resolveSharePageMeta(
   if (newsId) {
     const indexed = await loadIndexedNewsShare(env, newsId);
     if (!indexed) return null;
-    if (indexed.payload.kind === "article") {
-      const article = articleShareFromStored(indexed.payload.data);
-      return { title: article.title, description: article.summary };
-    }
-    return { title: indexed.payload.data.title };
+    return shareEmbedFromPayload(indexed.payload, pageUrl);
   }
   const id = parseShareId(url.pathname);
   if (!id) return null;
   const live = await readCloudShare(env, id);
   if (!live) return null;
-  if (live.payload.kind === "article") {
-    const article = articleShareFromStored(live.payload.data);
-    return { title: article.title, description: article.summary };
-  }
-  return { title: live.payload.data.title };
+  return shareEmbedFromPayload(live.payload, pageUrl);
 }
 
 const LEFTOVER_SHARE_CORS = {
@@ -767,7 +772,8 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
     // as 401. Mutating requests and authenticated RPC methods continue through
     // the verified-session gate. The hosted backend still enforces a token for
     // requests to api.gloom.sh.
-    const httpMethod = requestPayload?.payload?.init?.method?.toUpperCase() ?? "GET";
+    const rawMethod = requestPayload?.payload?.init?.method;
+    const httpMethod = typeof rawMethod === "string" ? rawMethod.trim().toUpperCase() || "GET" : "GET";
     const isPublicHttpFetch = requestPayload?.method === "http.fetch"
       && (httpMethod === "GET" || httpMethod === "HEAD");
     const user = isPublicHttpFetch ? null : await fetchSessionUser(request, env);
@@ -843,9 +849,12 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     return new Response("Not found", { status: 404, headers });
   }
   if (shareHtml) {
-    // Shares are unlisted links rather than public pages, so keep crawlers out.
+    const requestPath = new URL(request.url).pathname;
+    const previewableArticle = requestPath === "/article"
+      || parseArticleSlugPath(requestPath) !== null
+      || parseNewsArticleId(requestPath) !== null;
     headers.set("cache-control", "private, no-store");
-    headers.set("x-robots-tag", "noindex, nofollow, noarchive");
+    if (!previewableArticle) headers.set("x-robots-tag", "noindex, nofollow, noarchive");
     // A 304 here would reuse the browser's cached body for `/s/{id}`. Logged-in
     // profiles still hold index.html from when this path was the SPA, so a
     // share.html ETag match (or a leftover index ETag) boots the workspace
@@ -857,10 +866,7 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     if (meta) {
       const html = await response.text();
       headers.set("content-type", "text/html; charset=utf-8");
-      return new Response(injectShareDocumentMeta(html, {
-        title: meta.title,
-        description: typeof meta.description === "string" ? meta.description : undefined,
-      }), { status, headers });
+      return new Response(injectShareDocumentMeta(html, meta, { allowPreview: previewableArticle }), { status, headers });
     }
     return new Response(response.body, { status, headers });
   }
@@ -969,29 +975,6 @@ const BYOK_BLOCKED_RESPONSE_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
-
-/**
- * Blocks loopback, RFC1918, CGNAT, and link-local targets. 169.254.0.0/16 in
- * particular covers the cloud instance metadata endpoint.
- */
-function isPrivateHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) return true;
-  if (host === "::1" || host === "::") return true;
-  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
-  if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!v4) return false;
-  const a = Number(v4[1]);
-  const b = Number(v4[2]);
-  if (a === 0 || a === 127 || a === 10) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
-}
 
 type ByokTarget = { url: URL } | { error: string; errorType: string };
 
