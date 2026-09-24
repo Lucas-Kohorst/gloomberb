@@ -21,8 +21,11 @@ describe("tradingViewSymbolForSecurity", () => {
     expect(tradingViewSymbolForSecurity({ symbol: "AAPL" })).toBe("AAPL");
   });
 
-  test("strips crypto hyphens", () => {
-    expect(tradingViewSymbolForSecurity({ symbol: "BTC-USD", exchange: "CCC" })).toBe("BTCUSD");
+  test("charts a crypto pair as a Binance spot price, not market cap", () => {
+    expect(tradingViewSymbolForSecurity({ symbol: "BTC-USD", exchange: "CCC" })).toBe("BINANCE:BTCUSDT");
+    expect(tradingViewSymbolForSecurity({ symbol: "ZEC/USD" })).toBe("BINANCE:ZECUSDT");
+    expect(tradingViewSymbolForSecurity({ symbol: "ZECUSD", exchange: "CCC" })).toBe("BINANCE:ZECUSDT");
+    expect(tradingViewSymbolForSecurity({ symbol: "ETH-EUR", exchange: "CCC" })).toBe("BINANCE:ETHEUR");
   });
 });
 
@@ -121,7 +124,7 @@ describe("tradingViewEmbedSrc", () => {
     expect(config.symbol).toBe("NASDAQ:AAPL");
     expect(config.interval).toBe("D");
     expect(config.hide_side_toolbar).toBe(false);
-    expect(config.hide_volume).toBe(false);
+    expect(config.hide_volume).toBe(true);
     expect(config.hide_top_toolbar).toBe(false);
   });
 });

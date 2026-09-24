@@ -37,6 +37,12 @@ body {
 * { box-sizing: border-box; }
 #root > * { height: 100%; min-height: 100%; }
 input, textarea, button { font: inherit; }
+[data-gloom-role="desktop-button"]:focus-visible,
+[data-gloom-role="data-table-header-cell"] > button:focus-visible,
+[data-gloom-role="data-table-row"]:focus-visible {
+  outline: 2px solid var(--gloom-border-focused, currentColor);
+  outline-offset: -2px;
+}
 input, textarea { cursor: text; user-select: text; }
 /* Long-form readers opt back into native selection. The body is unselectable so
    that dragging pans and resizes panes instead of highlighting cells, which
@@ -283,6 +289,25 @@ body.gloom-col-resizing * {
   -webkit-user-select: none;
   user-select: none;
 }
+/* A hosted tab strip leaves its old row. Collapse that row instead of keeping a blank band. */
+[data-gloom-tab-row="hosted"] {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  flex: 0 0 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  gap: 0 !important;
+  border: 0 !important;
+}
+/* Title-bar tabs open into the pane body, so a focus ring would draw a line under the active label. */
+[data-gloom-role="pane-header-tabs"] [data-gloom-role="tab-button"]:focus-visible {
+  outline: none;
+}
+[data-gloom-role="pane-header-tabs"] [data-gloom-role="tab-button"]:not([data-active="true"]):focus-visible {
+  background: var(--pane-tab-hover-bg) !important;
+}
 [data-gloom-role="pane-header"] * {
   cursor: inherit;
 }
@@ -309,9 +334,94 @@ body.gloom-dragging [data-gloom-role="pane-header"] {
 body.gloom-dragging {
   cursor: grabbing;
 }
+[data-gloom-role="pane-title-slot"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Tabs own the free space. A short title must not stretch across them. */
+[data-gloom-role="pane-header"]:has([data-gloom-role="pane-header-tabs"]) [data-gloom-role="pane-title-slot"] {
+  flex: 0 1 auto;
+  max-width: 18ch;
+}
+[data-gloom-role="pane-header-tabs"] {
+  min-width: 0;
+  overflow: hidden;
+}
+[data-gloom-role="pane-header"]:not(:has([data-gloom-role="pane-header-tabs"])) [data-gloom-role="pane-header-actions"] {
+  margin-left: auto;
+}
+[data-gloom-role="field-grid-cell"] {
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+[data-gloom-role="field-grid-label"] {
+  flex: 0 0 auto;
+}
+[data-gloom-role="field-grid-value"] {
+  min-width: 0;
+  flex: 1 1 auto;
+}
 [data-gloom-role="pane-title"] {
+  white-space: nowrap;
+}
+/* Detail toolbar: chevron, Back, a hairline, then the headline. Not a pill. */
+.gloom-stack-bar {
+  --qb-hairline: color-mix(in srgb, var(--gloom-text) 14%, transparent);
+  --qb-fill: color-mix(in srgb, var(--gloom-text-bright) 6%, transparent);
+  display: flex;
+  align-items: center;
+  height: 28px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--gloom-text-bright) 3.5%, transparent);
+  box-shadow: inset 0 -1px 0 var(--qb-hairline);
+  font-size: 12px;
+}
+.gloom-stack-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  background: transparent;
+  color: var(--gloom-text);
+  box-shadow: inset -1px 0 0 var(--qb-hairline);
+  cursor: pointer;
+}
+.gloom-stack-back:hover {
+  background: var(--qb-fill);
+  color: var(--gloom-text-bright);
+}
+.gloom-stack-back svg {
+  width: 11px;
+  height: 11px;
+  color: var(--gloom-text-muted);
+}
+.gloom-stack-back:hover svg {
+  color: var(--gloom-text-bright);
+}
+.gloom-stack-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  line-height: 28px;
+  font-weight: 700;
+  color: var(--gloom-text-bright);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gloom-stack-hint {
+  flex: none;
+  align-self: center;
+  padding: 0 10px;
+  color: var(--gloom-text-muted);
+  white-space: nowrap;
 }
 [data-gloom-role="chat-message"]:hover [data-gloom-role="chat-message-row"][data-selected="false"] {
   background-color: var(--chat-hover-bg);
@@ -619,18 +729,27 @@ body.gloom-dragging {
   overscroll-behavior: none;
 }
 [data-gloom-role="tradingview-composer"] {
+  position: relative;
   overflow: clip;
   touch-action: none;
 }
 [data-gloom-role="tradingview-chart"] {
-  padding-bottom: 12px;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   box-sizing: border-box;
   overflow: clip;
   touch-action: none;
   overscroll-behavior: none;
 }
 [data-gloom-role="tradingview-chart-frame"] {
+  position: absolute;
+  inset: 0;
   display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
   touch-action: none;
   overscroll-behavior: none;
   pointer-events: auto;
