@@ -190,7 +190,19 @@ export function cleanJinaArticle(raw: string): string {
  * labels, section names, and menu links with no informative lines. Callers use
  * this to keep a clean summary instead of publishing scraped boilerplate.
  */
+const READER_CHROME_RE = /searching for your content|no results found\.\s*please change your search|when typing in this field, a list of search results|please change your search terms/i;
+
+/** A reader hit the site's search or menu, not the article. */
+export function isReaderChrome(text: string): boolean {
+  if (READER_CHROME_RE.test(text)) return true;
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 4) return false;
+  const navish = lines.filter((line) => isLinkRunLine(line) || isChromeLine(line) || /^#{1,6}\s+/.test(line)).length;
+  return navish / lines.length >= 0.5;
+}
+
 export function isBoilerplateArticleBody(text: string): boolean {
+  if (isReaderChrome(text)) return true;
   const lines = text
     .split("\n")
     .map(visibleLineText)

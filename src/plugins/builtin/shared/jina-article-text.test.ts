@@ -7,6 +7,7 @@ import {
   htmlToPlainText,
   isBoilerplateArticleBody,
   isPaywallStub,
+  isReaderChrome,
   looksLikeHtmlDocument,
   preferredArticleBody,
   readableArticleText,
@@ -213,6 +214,23 @@ describe("cleanJinaArticle", () => {
       "",
       "Learn more at the IANA site.",
     ].join("\n"));
+  });
+
+  test("treats a site search box as chrome so it cannot replace a real summary", () => {
+    const dump = [
+      "When typing in this field, a list of search results will appear and be automatically updated as you type.",
+      "",
+      "Searching for your content...",
+      "",
+      "No results found. Please change your search terms and try again.",
+      "",
+      "## View All Financial Services & Investing",
+    ].join("\n");
+    expect(isReaderChrome(dump)).toBe(true);
+    expect(preferredArticleBody(
+      "NEW YORK, Sept. 24, 2026 /PRNewswire/ -- Pomerantz LLP announces that a class action lawsuit has been filed.",
+      dump,
+    )).toContain("Pomerantz LLP announces");
   });
 
   test("drops a run of skip links with no space between them", () => {

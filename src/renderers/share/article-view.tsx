@@ -15,6 +15,7 @@ import {
   classifyReaderHttpFailure,
   classifyReaderThrow,
   htmlMarkupPresent,
+  isReaderChrome,
   looksLikeHtmlDocument,
   preferredArticleBody,
   readableArticleText,
@@ -209,12 +210,15 @@ function useFullArticleText(url: string, enabled: boolean) {
         }
         return raw;
       })
-      .then((raw) => setState({
-        text: cleanJinaArticle(raw),
-        loading: false,
-        failureKind: null,
-        failureMessage: null,
-      }))
+      .then((raw) => {
+        const text = cleanJinaArticle(raw);
+        setState({
+          text: text && !isReaderChrome(text) ? text : null,
+          loading: false,
+          failureKind: null,
+          failureMessage: null,
+        });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         const failure = classifyReaderThrow(error);
