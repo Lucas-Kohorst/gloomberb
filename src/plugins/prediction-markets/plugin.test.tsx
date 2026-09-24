@@ -841,46 +841,39 @@ describe("prediction markets plugin registration and services", () => {
     expect(resolvePredictionFilterId("politics", "new")).toBe("politics");
   });
 
-  test("filters closed Polymarket child markets from the catalog", async () => {
+  test("drops closed Adjacent rows and does not price the list from Adjacent odds", async () => {
+    const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("gamma-api.polymarket.com/events?")) {
+      fetchUrls.push(url);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets")) {
         return new Response(
-          JSON.stringify([
-            {
-              id: "event-iran",
-              title: "US forces enter Iran by..?",
-              tags: [{ label: "Geopolitics", slug: "geopolitics" }],
-              markets: [
-                {
-                  id: "open-market",
-                  question: "US forces enter Iran by April 30?",
-                  groupItemTitle: "April 30",
-                  conditionId: "cond-open",
-                  outcomes: '["Yes","No"]',
-                  outcomePrices: '["0.55","0.45"]',
-                  clobTokenIds: '["yes-open","no-open"]',
-                  volume24hr: 2500000,
-                  spread: 0.01,
-                  active: true,
-                  closed: false,
-                },
-                {
-                  id: "closed-market",
-                  question: "US forces enter Iran by March 15?",
-                  groupItemTitle: "March 15",
-                  conditionId: "cond-closed",
-                  outcomes: '["Yes","No"]',
-                  outcomePrices: '["0.01","0.99"]',
-                  clobTokenIds: '["yes-closed","no-closed"]',
-                  volume24hr: 9999999,
-                  spread: 0.01,
-                  active: false,
-                  closed: true,
-                },
-              ],
-            },
-          ]),
+          JSON.stringify({
+            data: [
+              {
+                market_id: "polymarket:april-30",
+                ticker: "april-30",
+                platform: "polymarket",
+                question: "US forces enter Iran by April 30?",
+                subtitle: "April 30",
+                status: "active",
+                probability: 55,
+                link: "https://polymarket.com/event/us-forces-enter-iran",
+                event_title: "US forces enter Iran by..?",
+              },
+              {
+                market_id: "polymarket:march-15",
+                ticker: "march-15",
+                platform: "polymarket",
+                question: "US forces enter Iran by March 15?",
+                subtitle: "March 15",
+                status: "closed",
+                probability: 1,
+                link: "https://polymarket.com/event/us-forces-enter-iran",
+              },
+            ],
+            meta: { has_next: false },
+          }),
           { status: 200 },
         );
       }
@@ -890,44 +883,34 @@ describe("prediction markets plugin registration and services", () => {
     const markets = await loadPolymarketCatalog("", "all");
     expect(markets).toHaveLength(1);
     expect(markets[0]?.marketLabel).toBe("April 30");
+    expect(markets[0]?.yesPrice).toBeNull();
+    expect(fetchUrls.some((url) => url.includes("api.adjacent.markets") && url.includes("/markets"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("gamma-api.polymarket.com/events?") && url.includes("offset="))).toBe(false);
   });
 
-  test("keeps Polymarket catalog results when one page connection resets", async () => {
-    let resetFetchCount = 0;
-
+  test("keeps the Adjacent Polymarket row when Gamma has no price", async () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("gamma-api.polymarket.com/events?")) {
-        if (url.includes("offset=200")) {
-          resetFetchCount += 1;
-          throw Object.assign(
-            new Error("The socket connection was closed unexpectedly."),
-            { code: "ECONNRESET" },
-          );
-        }
+      if (url.includes("api.adjacent.markets") && url.includes("/markets")) {
         return new Response(
-          JSON.stringify([
-            {
-              id: "event-stable",
-              title: "Stable catalog page",
-              tags: [{ label: "Macro", slug: "economy" }],
-              markets: [
-                {
-                  id: "pm-stable",
-                  question: "Will the stable page load?",
-                  conditionId: "cond-stable",
-                  outcomes: '["Yes","No"]',
-                  outcomePrices: '["0.57","0.43"]',
-                  clobTokenIds: '["yes-stable","no-stable"]',
-                  volume24hr: 125000,
-                  active: true,
-                  closed: false,
-                },
-              ],
-            },
-          ]),
+          JSON.stringify({
+            data: [{
+              market_id: "polymarket:pm-stable",
+              ticker: "pm-stable",
+              platform: "polymarket",
+              question: "Will the stable page load?",
+              status: "active",
+              probability: 80,
+              link: "https://polymarket.com/event/stable-page",
+              event_title: "Stable catalog page",
+            }],
+            meta: { has_next: false },
+          }),
           { status: 200 },
         );
+      }
+      if (url.includes("gamma-api.polymarket.com")) {
+        return new Response(JSON.stringify([]), { status: 200 });
       }
       return new Response(JSON.stringify({}), { status: 200 });
     }) as unknown as typeof fetch;
@@ -936,7 +919,7 @@ describe("prediction markets plugin registration and services", () => {
 
     expect(markets).toHaveLength(1);
     expect(markets[0]?.marketId).toBe("pm-stable");
-    expect(resetFetchCount).toBe(3);
+    expect(markets[0]?.yesPrice).toBeNull();
   });
 
   test("poll catalog merge updates page 0 without dropping extra rows", () => {
@@ -1049,7 +1032,7 @@ describe("prediction markets plugin registration and services", () => {
     expect(Math.min(...capped.map((market) => market.volume24h ?? 0))).toBe(8);
   });
 
-  test("interval poll fetches only Polymarket offset 0 without rewriting cached extras into the page", async () => {
+  test("interval poll refreshes the Polymarket list from Adjacent and the price from Gamma", async () => {
     const persistence = new MemoryPersistence();
     attachPredictionMarketsPersistence(persistence);
     const extra = normalizePolymarketMarket({
@@ -1083,11 +1066,30 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets")) {
+        return new Response(
+          JSON.stringify({
+            data: [{
+              market_id: "polymarket:pm-front",
+              ticker: "pm-front",
+              platform: "polymarket",
+              question: "Front row",
+              status: "active",
+              probability: 10,
+              link: "https://polymarket.com/event/front-row",
+              event_title: "Front row",
+            }],
+            meta: { has_next: false },
+          }),
+          { status: 200 },
+        );
+      }
       if (url.includes("gamma-api.polymarket.com/events?")) {
         return new Response(
           JSON.stringify([
             {
               id: "event-front",
+              slug: "front-row",
               title: "Front row",
               tags: [{ label: "Macro", slug: "economy" }],
               markets: [
@@ -1116,9 +1118,9 @@ describe("prediction markets plugin registration and services", () => {
       force: true,
     });
 
-    expect(fetchUrls.some((url) => url.includes("offset=0"))).toBe(true);
-    expect(fetchUrls.some((url) => url.includes("offset=200"))).toBe(false);
-    expect(fetchUrls.some((url) => url.includes("offset=400"))).toBe(false);
+    expect(fetchUrls.some((url) => url.includes("api.adjacent.markets") && url.includes("platform=polymarket"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("gamma-api.polymarket.com/events?slug=front-row"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("offset="))).toBe(false);
     expect(markets.map((market) => market.marketId)).toEqual(["pm-front"]);
     expect(markets[0]?.yesPrice).toBe(0.55);
     expect(markets[0]?.description).toBe("");
@@ -1131,45 +1133,61 @@ describe("prediction markets plugin registration and services", () => {
     ).toEqual(["pm-front", "pm-extra"]);
   });
 
-  test("interval poll fetches one Kalshi event page and skips open-market paging", async () => {
+  test("interval poll lists Kalshi from Adjacent and prices the event from the trade API", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
-    let eventPages = 0;
-    let marketPages = 0;
+    let eventListPages = 0;
+    let marketListPages = 0;
+    const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("/trade-api/v2/events?")) {
-        eventPages += 1;
+      fetchUrls.push(url);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets")) {
         return new Response(
           JSON.stringify({
-            events: [
-              {
-                title: "Fed cut",
-                category: "Economics",
-                event_ticker: "FED-1",
-                series_ticker: "FED",
-                markets: [
-                  {
-                    ticker: "KAL-FED",
-                    title: "Will the Fed cut rates?",
-                    yes_sub_title: "Yes",
-                    event_ticker: "FED-1",
-                    status: "open",
-                    market_type: "binary",
-                    last_price_dollars: "0.48",
-                    volume_24h_fp: "15000",
-                  },
-                ],
-              },
-            ],
-            cursor: `page-${eventPages}`,
+            data: [{
+              market_id: "kalshi:KAL-FED",
+              ticker: "KAL-FED",
+              platform: "kalshi",
+              question: "Will the Fed cut rates?",
+              status: "active",
+              probability: 10,
+              category: "Economics",
+              event_id: "kalshi:FED-1",
+              event_title: "Fed cut",
+            }],
+            meta: { has_next: false },
           }),
           { status: 200 },
         );
       }
+      if (url.includes("/trade-api/v2/events?")) {
+        eventListPages += 1;
+        return new Response(JSON.stringify({ events: [], cursor: "page" }), { status: 200 });
+      }
       if (url.includes("/trade-api/v2/markets?")) {
-        marketPages += 1;
+        marketListPages += 1;
+        return new Response(JSON.stringify({ markets: [], cursor: "m" }), { status: 200 });
+      }
+      if (url.includes("/trade-api/v2/events/FED-1")) {
         return new Response(
-          JSON.stringify({ markets: [], cursor: `m-${marketPages}` }),
+          JSON.stringify({
+            event: {
+              title: "Fed cut",
+              category: "Economics",
+              event_ticker: "FED-1",
+              series_ticker: "FED",
+            },
+            markets: [{
+              ticker: "KAL-FED",
+              title: "Will the Fed cut rates?",
+              yes_sub_title: "Yes",
+              event_ticker: "FED-1",
+              status: "open",
+              market_type: "binary",
+              last_price_dollars: "0.48",
+              volume_24h_fp: "15000",
+            }],
+          }),
           { status: 200 },
         );
       }
@@ -1181,9 +1199,11 @@ describe("prediction markets plugin registration and services", () => {
       force: true,
     });
 
-    expect(eventPages).toBe(1);
-    expect(marketPages).toBe(0);
-    expect(markets.some((market) => market.marketId === "KAL-FED")).toBe(true);
+    expect(eventListPages).toBe(0);
+    expect(marketListPages).toBe(0);
+    expect(fetchUrls.some((url) => url.includes("api.adjacent.markets") && url.includes("platform=kalshi"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("/trade-api/v2/events/FED-1"))).toBe(true);
+    expect(markets.find((market) => market.marketId === "KAL-FED")?.yesPrice).toBe(0.48);
   });
 
   test("uses remote catalog endpoints for search and category changes", async () => {
@@ -1202,66 +1222,83 @@ describe("prediction markets plugin registration and services", () => {
     expect(
       fetchUrls.some(
         (url) =>
-          url.includes("/trade-api/v2/events?") &&
-          url.includes("category=Economics"),
+          url.includes("api.adjacent.markets/api/v1/") &&
+          url.includes("platform=kalshi") &&
+          url.includes("category=Economics") &&
+          !url.includes("search="),
       ),
     ).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("/trade-api/v2/events?"))).toBe(false);
   });
 
-  test("loads hosted Kalshi catalogs from the CORS proxy, not Adjacent", async () => {
+  test("loads hosted Kalshi lists from Adjacent and prices from the CORS proxy", async () => {
     (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
+    const nbaRow = {
+      category: "Sports",
+      display_ticker: "KXNBA-26-SAS",
+      market_id: "kalshi:KXNBA-26-SAS",
+      platform: "kalshi",
+      probability: 65,
+      question: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+      status: "active",
+      ticker: "KXNBA-26-SAS",
+    };
     const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes(`${KALSHI_PROXY_PATH}/events`)) {
-        return new Response(
-          JSON.stringify({
-            events: [{
-              title: "Will the San Antonio win the 2026 Pro Basketball Finals?",
-              category: "Sports",
-              event_ticker: "KXNBA-26",
-              series_ticker: "KXNBA",
-              markets: [{
-                ticker: "KXNBA-26-SAS",
-                title: "Will the San Antonio win the 2026 Pro Basketball Finals?",
-                yes_sub_title: "SAS",
-                event_ticker: "KXNBA-26",
-                status: "open",
-                market_type: "binary",
-                last_price_dollars: "0.72",
-                volume_24h_fp: "15000",
-              }],
-            }],
-          }),
-          { status: 200, headers: { "x-gloom-kalshi-source": "kalshi" } },
-        );
+      if (url.includes("/api/feed/mkt/markets") || url.includes("api.adjacent.markets")) {
+        return new Response(JSON.stringify({
+          data: [nbaRow],
+          meta: { has_next: false },
+        }), { status: 200 });
       }
-      if (url.includes(`${KALSHI_PROXY_PATH}/markets`)) {
-        return new Response(JSON.stringify({ markets: [] }), {
+      if (
+        url.includes(`${KALSHI_PROXY_PATH}/events/KXNBA-26`)
+        || url.includes(`${KALSHI_PROXY_PATH}/markets/KXNBA-26-SAS`)
+      ) {
+        return new Response(JSON.stringify({
+          event: {
+            title: nbaRow.question,
+            event_ticker: "KXNBA-26",
+            series_ticker: "KXNBA",
+          },
+          market: {
+            ticker: "KXNBA-26-SAS",
+            title: nbaRow.question,
+            yes_sub_title: "SAS",
+            event_ticker: "KXNBA-26",
+            status: "open",
+            market_type: "binary",
+            last_price_dollars: "0.72",
+            volume_24h_fp: "15000",
+          },
+          markets: [{
+            ticker: "KXNBA-26-SAS",
+            title: nbaRow.question,
+            yes_sub_title: "SAS",
+            event_ticker: "KXNBA-26",
+            status: "open",
+            market_type: "binary",
+            last_price_dollars: "0.72",
+            volume_24h_fp: "15000",
+          }],
+        }), {
           status: 200,
           headers: { "x-gloom-kalshi-source": "kalshi" },
         });
-      }
-      if (
-        url.includes("api.adjacent.markets/api/v1/markets")
-        || url.includes("/api/data/adjacent/markets")
-        || (url.includes("/api/feed/mkt/markets") && url.includes("search="))
-      ) {
-        return new Response(JSON.stringify({ data: [], meta: { has_next: false } }), { status: 200 });
       }
       throw new Error(`Unexpected hosted catalog URL: ${url}`);
     }) as unknown as typeof fetch;
 
     try {
       const markets = await loadKalshiCatalog("", "all", "top", { force: true });
-      expect(markets.some((market) => market.marketId === "KXNBA-26-SAS")).toBe(true);
       expect(markets.find((market) => market.marketId === "KXNBA-26-SAS")?.yesPrice).toBe(0.72);
-      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events`))).toBe(true);
-      expect(fetchUrls.some((url) => url.includes("/api/feed/mkt"))).toBe(false);
-      expect(fetchUrls.some((url) => url.includes("api.adjacent.markets"))).toBe(false);
+      expect(fetchUrls.some((url) => url.includes("/api/feed/mkt/markets") && url.includes("platform=kalshi"))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events/KXNBA-26`) || url.includes(`${KALSHI_PROXY_PATH}/markets/KXNBA-26-SAS`))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events?`))).toBe(false);
       expect(fetchUrls.some((url) => url.includes("external-api.kalshi.com"))).toBe(false);
 
       fetchUrls.length = 0;
@@ -1626,53 +1663,35 @@ describe("prediction markets plugin registration and services", () => {
     expect(eventPages).toBe(0);
   });
 
-  test("filters Kalshi markets locally when venue category responses bleed across buckets", async () => {
+  test("filters Kalshi markets locally when Adjacent category responses bleed across buckets", async () => {
+    const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
-      if (url.includes("/trade-api/v2/events?")) {
+      fetchUrls.push(url);
+      if (url.includes("api.adjacent.markets") && url.includes("/markets")) {
         return new Response(
           JSON.stringify({
-            events: [
+            data: [
               {
-                title: "Fed series",
-                sub_title: "Upper bound",
+                market_id: "kalshi:KAL-MACRO",
+                ticker: "KAL-MACRO",
+                platform: "kalshi",
+                question: "Will the upper bound of the federal funds target rate be above 4.25%?",
                 category: "Economics",
-                event_ticker: "FED-1",
-                series_ticker: "FED",
-                markets: [
-                  {
-                    ticker: "KAL-MACRO",
-                    title:
-                      "Will the upper bound of the federal funds target rate be above 4.25%?",
-                    yes_sub_title: "Above 4.25%",
-                    event_ticker: "FED-1",
-                    status: "open",
-                    market_type: "binary",
-                    last_price_dollars: "0.48",
-                    volume_24h_fp: "15000",
-                    strike_type: "greater",
-                    floor_strike: "4.25",
-                  },
-                ],
+                status: "active",
+                event_title: "Fed series",
               },
               {
-                title: "NBA Finals winner",
+                market_id: "kalshi:KAL-SPORTS",
+                ticker: "KAL-SPORTS",
+                platform: "kalshi",
+                question: "Will the Knicks win the title?",
                 category: "Sports",
-                event_ticker: "NBA-1",
-                series_ticker: "NBA",
-                markets: [
-                  {
-                    ticker: "KAL-SPORTS",
-                    title: "Will the Knicks win the title?",
-                    event_ticker: "NBA-1",
-                    status: "open",
-                    market_type: "binary",
-                    last_price_dollars: "0.35",
-                    volume_24h_fp: "12000",
-                  },
-                ],
+                status: "active",
+                event_title: "NBA Finals winner",
               },
             ],
+            meta: { has_next: false },
           }),
           { status: 200 },
         );
@@ -1684,5 +1703,7 @@ describe("prediction markets plugin registration and services", () => {
     expect(macroMarkets.map((market) => market.marketId)).toEqual([
       "KAL-MACRO",
     ]);
+    expect(fetchUrls.some((url) => url.includes("category=Economics"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("/trade-api/v2/events?"))).toBe(false);
   });
 });

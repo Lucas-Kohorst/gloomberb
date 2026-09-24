@@ -60,40 +60,44 @@ describe("Kalshi catalog ranking", () => {
     });
   });
 
-  test("reranks past the first events page instead of reusing the first-paint cache", async () => {
+  test("loads the browse list from Adjacent sorted by volume, not Kalshi event pages", async () => {
     attachPredictionMarketsPersistence(new MemoryPluginPersistence());
-    const pagesFetched: string[] = [];
+    const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = new URL(String(input));
-      if (url.pathname.endsWith("/events")) {
-        const cursor = url.searchParams.get("cursor");
-        pagesFetched.push(cursor ?? "page1");
-        // Kalshi returns events in no volume order, so the leader sits on page 2.
-        if (!cursor) {
-          return new Response(
-            JSON.stringify({ events: [{ title: "Quiet", markets: [market("SMALL", "500")] }], cursor: "page2" }),
-            { status: 200 },
-          );
-        }
-        return new Response(
-          JSON.stringify({ events: [{ title: "Busy", markets: [market("WHALE", "199586")] }] }),
-          { status: 200 },
-        );
+      fetchUrls.push(url.toString());
+      if (url.hostname === "api.adjacent.markets" && url.pathname.includes("/markets")) {
+        return new Response(JSON.stringify({
+          data: [
+            {
+              market_id: "kalshi:WHALE",
+              ticker: "WHALE",
+              platform: "kalshi",
+              question: "Will WHALE happen?",
+              status: "active",
+            },
+            {
+              market_id: "kalshi:SMALL",
+              ticker: "SMALL",
+              platform: "kalshi",
+              question: "Will SMALL happen?",
+              status: "active",
+            },
+          ],
+          meta: { has_next: false },
+        }), { status: 200 });
       }
-      if (url.pathname.endsWith("/markets")) {
-        return new Response(JSON.stringify({ markets: [] }), { status: 200 });
+      if (url.pathname.endsWith("/markets/WHALE") || url.pathname.endsWith("/markets/SMALL")) {
+        const ticker = url.pathname.split("/").pop()!;
+        return new Response(JSON.stringify({ market: market(ticker, ticker === "WHALE" ? "199586" : "500") }), { status: 200 });
       }
       throw new Error(`Unexpected catalog URL: ${url}`);
     }) as unknown as typeof fetch;
 
-    const firstPaint = await loadKalshiCatalog("", "all", "top", { firstPageOnly: true });
-    expect(firstPaint.map((entry) => entry.marketId)).toEqual(["SMALL"]);
-    expect(pagesFetched).toEqual(["page1"]);
+    const markets = await loadKalshiCatalog("", "all", "top", { force: true });
 
-    const deep = await loadKalshiCatalog("", "all", "top");
-
-    expect(pagesFetched).toContain("page2");
-    expect(deep[0]?.marketId).toBe("WHALE");
-    expect(deep.map((entry) => entry.marketId)).toEqual(["WHALE", "SMALL"]);
+    expect(markets.map((entry) => entry.marketId)).toEqual(["WHALE", "SMALL"]);
+    expect(fetchUrls.some((url) => url.includes("api.adjacent.markets") && url.includes("sort=volume"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("/events?"))).toBe(false);
   });
 });

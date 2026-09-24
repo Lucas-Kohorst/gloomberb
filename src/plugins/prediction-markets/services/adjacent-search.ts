@@ -1,9 +1,10 @@
 import type {
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
   PredictionVenue,
 } from "../types";
-import { matchesPredictionCategory } from "../categories";
+import { getKalshiCategoryNames, matchesPredictionCategory } from "../categories";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import type { AdjacentMarket } from "../../builtin/adjacent/types";
 import { isHostedWebClient } from "../../../shared/hosted-api";
@@ -214,6 +215,131 @@ export function parseAdjacentSearchPageCursor(
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function adjacentListSort(
+  browseTab: PredictionBrowseTab,
+): { sort?: string; sortDir?: string } {
+  if (browseTab === "ending") return { sort: "expiration", sortDir: "asc" };
+  if (browseTab === "new") return {};
+  return { sort: "volume", sortDir: "desc" };
+}
+
+async function fetchAdjacentMarketPage(options: {
+  query?: string;
+  venue?: PredictionVenue;
+  category?: string;
+  browseTab?: PredictionBrowseTab;
+  page: number;
+  signal?: AbortSignal;
+}): Promise<{
+  rawMarkets: AdjacentMarket[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}> {
+  const query = options.query?.trim() ?? "";
+  const page = options.page;
+  const signal = options.signal;
+  const platform = adjacentPlatformParam(options.venue);
+  const { sort, sortDir } = query ? {} : adjacentListSort(options.browseTab ?? "top");
+  let response: {
+    data?: AdjacentMarket[];
+    markets?: AdjacentMarket[];
+    next_cursor?: string | null;
+    meta?: { has_next?: boolean };
+  };
+
+  if (isHostedWebClient()) {
+    response = await fetchHostedAdjacentJson<typeof response>("markets", {
+      search: query || undefined,
+      per_page: ADJACENT_SEARCH_PER_PAGE,
+      page,
+      platform,
+      scope: "all",
+      category: options.category,
+      sort,
+      sort_dir: sortDir,
+    }, signal);
+  } else {
+    const client = getSharedAdjacentClient();
+    response = query
+      ? await client.searchMarkets(query, ADJACENT_SEARCH_PER_PAGE, platform, { page, signal })
+      : await client.listMarkets({
+        platform,
+        category: options.category,
+        sort,
+        sortDir,
+        limit: ADJACENT_SEARCH_PER_PAGE,
+        page,
+        signal,
+      });
+  }
+
+  const { rawMarkets, hasMore } = marketsFromAdjacentResponse(response);
+  return {
+    rawMarkets,
+    hasMore,
+    nextCursor: response.next_cursor ?? (hasMore ? adjacentSearchPageCursor(page + 1) : null),
+  };
+}
+
+const CLOSED_CATALOG_STATUSES = new Set([
+  "closed",
+  "resolved",
+  "settled",
+  "finalized",
+  "determined",
+  "inactive",
+]);
+
+function mapAdjacentPage(
+  rawMarkets: AdjacentMarket[],
+  categoryId: PredictionCategoryId,
+): PredictionMarketSummary[] {
+  const markets = rawMarkets
+    .map(adjacentMarketToCatalogRow)
+    .map(mapAdjacentSearchMarket)
+    .filter((market): market is PredictionMarketSummary => market != null)
+    .filter((market) => !CLOSED_CATALOG_STATUSES.has(market.status));
+  return categoryId === "all"
+    ? markets
+    : markets.filter((market) => matchesPredictionCategory(market, categoryId));
+}
+
+/**
+ * Browse list. Identity comes from Adjacent. Prices are filled from Gamma
+ * or Kalshi afterwards.
+ */
+export async function listAdjacentCatalog(options: {
+  venue?: PredictionVenue;
+  categoryId?: PredictionCategoryId;
+  browseTab?: PredictionBrowseTab;
+  page?: number;
+  signal?: AbortSignal;
+}): Promise<AdjacentSearchResult> {
+  const categoryId = options.categoryId ?? "all";
+  const page = options.page ?? 1;
+  const signal = options.signal;
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  const category = options.venue === "kalshi"
+    ? getKalshiCategoryNames(categoryId)[0]
+    : undefined;
+  const fetched = await fetchAdjacentMarketPage({
+    venue: options.venue,
+    category,
+    browseTab: options.browseTab,
+    page,
+    signal,
+  });
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  const filtered = mapAdjacentPage(fetched.rawMarkets, categoryId);
+  const withPolymarket = await overlayGammaStatsOnPolymarketSearch(filtered, signal);
+  const markets = await overlayKalshiVenueStatsOnSearch(withPolymarket, signal);
+  return {
+    markets,
+    hasMore: fetched.hasMore,
+    nextCursor: fetched.nextCursor,
+  };
+}
+
 export async function searchAdjacentCatalog(options: {
   query: string;
   venue?: PredictionVenue;
@@ -230,35 +356,15 @@ export async function searchAdjacentCatalog(options: {
   }
   if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 
-  const platform = adjacentPlatformParam(options.venue);
-  let response: {
-    data?: AdjacentMarket[];
-    markets?: AdjacentMarket[];
-    next_cursor?: string | null;
-    meta?: { has_next?: boolean };
-  };
-
-  if (isHostedWebClient()) {
-    const search: Record<string, string | number | undefined> = {
-      search: query,
-      per_page: ADJACENT_SEARCH_PER_PAGE,
-      page,
-      platform,
-      scope: "all",
-    };
-    response = await fetchHostedAdjacentJson<typeof response>("markets", search, signal);
-  } else {
-    const client = getSharedAdjacentClient();
-    response = await client.searchMarkets(query, ADJACENT_SEARCH_PER_PAGE, platform, {
-      page,
-      signal,
-    });
-  }
-
+  const fetched = await fetchAdjacentMarketPage({
+    query,
+    venue: options.venue,
+    page,
+    signal,
+  });
   if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 
-  const { rawMarkets, hasMore } = marketsFromAdjacentResponse(response);
-  const markets = rawMarkets
+  const markets = fetched.rawMarkets
     .map(adjacentMarketToCatalogRow)
     .map(mapAdjacentSearchMarket)
     .filter((market): market is PredictionMarketSummary => market != null);
@@ -288,7 +394,7 @@ export async function searchAdjacentCatalog(options: {
 
   return {
     markets: hydrated,
-    hasMore,
-    nextCursor: response.next_cursor ?? (hasMore ? adjacentSearchPageCursor(page + 1) : null),
+    hasMore: fetched.hasMore,
+    nextCursor: fetched.nextCursor,
   };
 }

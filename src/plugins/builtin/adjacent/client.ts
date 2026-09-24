@@ -390,16 +390,20 @@ export class AdjacentClient {
     platform?: string;
     category?: string;
     sort?: string;
+    sortDir?: string;
     limit?: number;
     page?: number;
+    /** Auth lists default to index constituents. `all` is the tradable universe. */
+    scope?: string;
   }): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(this.marketsPath(), {
       platform: params?.platform,
       category: params?.category,
       sort: params?.sort,
+      sort_dir: params?.sortDir,
       per_page: params?.limit,
       page: params?.page,
-      scope: this.isPublic ? "all" : undefined,
+      scope: params?.scope ?? (this.isPublic ? "all" : undefined),
     });
     return loadCached(
       "adjacent-markets",
@@ -407,6 +411,28 @@ export class AdjacentClient {
       () => adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.markets,
     );
+  }
+
+  async listMarkets(params?: {
+    platform?: string;
+    category?: string;
+    sort?: string;
+    sortDir?: string;
+    limit?: number;
+    page?: number;
+    signal?: AbortSignal;
+  }): Promise<AdjacentMarketsResponse> {
+    const url = buildUrl(this.marketsPath(), {
+      platform: params?.platform,
+      category: params?.category,
+      sort: params?.sort,
+      sort_dir: params?.sortDir,
+      per_page: params?.limit,
+      page: params?.page,
+      scope: "all",
+    });
+    const raw = await adjacentFetchJson<unknown>(url, this.apiKey, params?.signal);
+    return unwrapAdjacentMarketsResponse(raw);
   }
 
   async searchMarkets(
