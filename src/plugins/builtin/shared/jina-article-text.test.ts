@@ -215,6 +215,57 @@ describe("cleanJinaArticle", () => {
     ].join("\n"));
   });
 
+  test("drops a run of skip links with no space between them", () => {
+    const raw = [
+      "[Accessibility help](https://www.ft.com/accessibility)[Skip to navigation](https://www.ft.com/content/x#site-navigation)[Skip to main content](https://www.ft.com/content/x#site-content)",
+      "",
+      "Barry Diller has abandoned an $18bn bid for MGM Resorts after the board refused to engage.",
+    ].join("\n");
+    const cleaned = cleanJinaArticle(raw);
+    expect(cleaned).toContain("abandoned an $18bn bid");
+    expect(cleaned).not.toContain("Accessibility help");
+    expect(cleaned).not.toContain("Skip to navigation");
+  });
+
+  test("drops glued site menus and keeps the Crypto Briefing article", () => {
+    const raw = [
+      "FinancePrediction MarketsMacroAITechMarketsNewsletterAds",
+      "",
+      "Sections",
+      "",
+      "BitcoinDeFiEthereumNFTsAI AgentsRegulationWeb3BusinessEcosystem",
+      "",
+      "Crypto",
+      "",
+      "FinancePrediction MarketsMacroAITechMarketsNewsletterAdsTry Vera",
+      "",
+      "SEARCH",
+      "",
+      "Searching...",
+      "",
+      "Grayscale's Zcash ETF surpasses $915M in assets as ZEC price nearly doubles since launch",
+      "",
+      "The first US-listed spot Zcash ETF has attracted over $270 million in net inflows and now holds roughly 3.5% of ZEC's total supply.",
+      "",
+      "Share",
+      "",
+      "by Kaye Quema",
+      "",
+      "Sep. 24, 2026",
+      "",
+      "Less than a month after launching on NYSE Arca, Grayscale's spot Zcash ETF has crossed $914 million in net assets.",
+    ].join("\n");
+    const cleaned = cleanJinaArticle(raw);
+    expect(cleaned).toContain("The first US-listed spot Zcash ETF");
+    expect(cleaned).toContain("by Kaye Quema");
+    expect(cleaned).toContain("$914 million in net assets");
+    expect(cleaned).not.toContain("FinancePrediction");
+    expect(cleaned).not.toContain("BitcoinDeFi");
+    expect(cleaned).not.toContain("Searching");
+    expect(cleaned).not.toContain("Try Vera");
+    expect(cleaned).not.toMatch(/^Share$/m);
+  });
+
   test("drops CNBC top-navigation dumps down to nothing", () => {
     // Regression: opening a CNBC article showed scraped site chrome
     // (Livestream, Business, Tech, Politics & Policy, Video, Watchlist,

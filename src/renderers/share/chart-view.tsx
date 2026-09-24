@@ -173,9 +173,11 @@ export function ChartShareView({
 
   return (
     <ShareShell
+      tone="public"
       layout="wide"
       title={payload.title}
-      footer={footer}
+      pitch="This chart stays live in Gloom."
+      footer={footer ? <span>{footer}</span> : null}
       openInTerminalHref={openInTerminalHref}
     >
       <div className="share-chart-frame">

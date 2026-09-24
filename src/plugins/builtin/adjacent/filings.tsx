@@ -48,7 +48,6 @@ import {
   filingRelativeTimeRevision,
   filingSeenAt,
   formatFilingDay,
-  stripLeadingHeading,
 } from "./filings-format";
 import {
   renderCftcSummary,
@@ -84,7 +83,7 @@ function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null
     isDeveloping: false,
     importance: 0,
     origin: "cftc",
-    body: detail ? stripLeadingHeading(detail.markdown) || undefined : undefined,
+    body: detail ? buildDetailBody(filing, detail, false) : undefined,
   };
 }
 
@@ -436,8 +435,19 @@ export function AdjacentFilingsPane({
   }, [detail, detailFiling, markFilingRead, popOutArticle]);
   const shareSelected = useCallback(() => {
     if (!detailFiling) return;
-    void copyShareLink(newsArticleSharePayload(cftcFilingToArticle(detailFiling, detail)));
-  }, [copyShareLink, detail, detailFiling]);
+    const filing = detailFiling;
+    void (async () => {
+      let loaded = detail?.filing.id === filing.id ? detail : null;
+      if (!loaded?.markdown.trim()) {
+        try {
+          loaded = await client.getFilingDetail(filing.id);
+        } catch {
+          loaded = null;
+        }
+      }
+      await copyShareLink(newsArticleSharePayload(cftcFilingToArticle(filing, loaded)));
+    })();
+  }, [client, copyShareLink, detail, detailFiling]);
   const handleSummarize = useCallback(() => {
     if (!openFiling || detailLoading) return;
     void filingSummary.summarize(openFiling, buildDetailBody(openFiling, detail, false));

@@ -107,6 +107,8 @@ const ACCOUNT_CHROME_RE = (
 
 const FOOTER_CHROME_RE = /^(?:©|\(c\)|copyright\b|terms of (?:use|service)|privacy policy|all rights reserved|cookie (?:policy|settings|preferences))$/i;
 
+const UI_CHROME_RE = /^(?:sections|search|searching\.{0,3}|share|menu|try vera)$/i;
+
 const NAV_HEADINGS = new Set([
   "stock analysis",
   "market news",
@@ -364,7 +366,7 @@ function classifyBlock(block: string): BlockKind {
   const visible = lines.map(visibleLineText).filter(Boolean);
   if (visible.length === 0) return "chrome";
 
-  if (visible.every((line) => isChromeLine(line))) return "chrome";
+  if (lines.every((line) => isChromeLine(line)) || visible.every((line) => isChromeLine(line))) return "chrome";
   if (visible.length >= 2) return isNavMenu(visible) ? "chrome" : "content";
 
   // Single-line blocks are how readers emit one nav link per paragraph.
@@ -387,6 +389,13 @@ function isLinkOnlyLine(line: string): boolean {
   return !isProseLine(bare);
 }
 
+/** Several markdown links jammed together, with no sentence between them. */
+function isLinkRunLine(line: string): boolean {
+  if (!line.includes("](")) return false;
+  const leftover = line.replace(/\[[^\]]*\]\([^)]*\)/g, "").replace(/\s+/g, "");
+  return leftover.length === 0;
+}
+
 function isNavLabel(line: string): boolean {
   if (isProseLine(line) || isTimestampOrByline(line) || isRelatedHeading(line)) return false;
   return isShortNavLabel(line);
@@ -407,19 +416,38 @@ function isNavMenu(lines: string[]): boolean {
 }
 
 function isChromeLine(line: string): boolean {
+  if (isLinkRunLine(line)) return true;
   const text = visibleLineText(line);
   if (!text) return true;
   if (SKIP_CHROME_RE.test(text)) return true;
   if (ACCOUNT_CHROME_RE.test(text)) return true;
   if (FOOTER_CHROME_RE.test(text)) return true;
+  if (UI_CHROME_RE.test(text)) return true;
   if (NAV_HEADINGS.has(text.toLowerCase())) return true;
+  if (isGluedNavLine(text)) return true;
+  if (isLinkRunLine(text)) return true;
   return false;
+}
+
+/**
+ * Site menus come back as one token per link with no space between them:
+ * "BitcoinDeFiEthereumNFTs". A sentence has spaces; a menu has internal caps.
+ */
+function isGluedNavLine(line: string): boolean {
+  const text = visibleLineText(line);
+  if (text.length < 24 || /[.!?]/.test(text)) return false;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 6) return false;
+  const internalCaps = text.match(/[a-z\d][A-Z]/g)?.length ?? 0;
+  return internalCaps >= 3;
 }
 
 function isShortNavLabel(line: string): boolean {
   const text = visibleLineText(line);
   if (!text) return true;
   if (isProseLine(text) || isTimestampOrByline(text)) return false;
+  // "Dear Sir or Madam:" is a salutation, not a menu item.
+  if (/:\s*$/.test(text) && text.split(/\s+/).length >= 3) return false;
   return text.length <= 32 && !/[.!?]/.test(text);
 }
 
