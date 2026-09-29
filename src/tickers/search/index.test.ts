@@ -92,6 +92,53 @@ describe("ticker-search utilities", () => {
     });
   });
 
+  test("resolves hype-usd onto Yahoo's Hyperliquid listing", async () => {
+    const resolved = await resolveTickerSearch({
+      query: "hype-usd",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("HYPE32196-USD", "Hyperliquid USD", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("QQQ39623-USD", "Invesco QQQ Trust Tokenized ETF (Hyperliquid) USD", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("PURR", "Hyperliquid Strategies Inc", { exchange: "NCM", type: "EQUITY" }),
+      ]),
+    });
+
+    expect(resolved).toMatchObject({
+      kind: "provider",
+      symbol: "HYPE32196-USD",
+      result: { name: "Hyperliquid USD", exchange: "CCC", type: "CRYPTO" },
+    });
+  });
+
+  test("keeps an exact Yahoo crypto pair ahead of a numeric listing", async () => {
+    const resolved = await resolveTickerSearch({
+      query: "eth-usd",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("ETH-USD", "Ethereum USD", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("ETH99999-USD", "Other ETH USD", { exchange: "CCC", type: "CRYPTO" }),
+      ]),
+    });
+
+    expect(resolved).toMatchObject({ kind: "provider", symbol: "ETH-USD" });
+  });
+
+  test("does not map a crypto pair onto a later or differently prefixed Yahoo coin", async () => {
+    const resolved = await resolveTickerSearch({
+      query: "trump-usd",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("DJT31891-USD", "TrumpCoin USD", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("TRUMP35336-USD", "OFFICIAL TRUMP USD", { exchange: "CCC", type: "CRYPTO" }),
+      ]),
+    });
+
+    expect(resolved).toBeNull();
+  });
+
   test("resolves COIN to Coinbase, not a CoinGecko name hit or IDX listing", async () => {
     const resolved = await resolveTickerSearch({
       query: "COIN",
