@@ -1,3 +1,4 @@
+import { isCryptoSearchType, parseCryptoPair } from "../../sources/coingecko/ids";
 import { searchUsListedUniverse } from "../../sources/us-listings/client";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
@@ -228,19 +229,60 @@ export async function resolveTickerSearch({
     return { kind: "local", symbol: local.metadata.ticker, ticker: local };
   }
 
+  const providerResults = await searchProviderResults(dataProvider, symbol, searchContext);
   const providerItems = createProviderTickerSearchCandidates(
-    await searchProviderResults(dataProvider, symbol, searchContext),
+    providerResults,
     tickers,
     { isinQuery: resolveIsinQuery(symbol) },
   );
   const exactMatch = findExactTickerSearchMatch(rankTickerSearchItems(providerItems, symbol), symbol);
-  if (!exactMatch?.result) return null;
+  if (exactMatch?.result) {
+    return {
+      kind: "provider",
+      symbol: exactMatch.symbol,
+      result: exactMatch.result,
+    };
+  }
 
+  // Yahoo's clean pair (ETH-USD) exact-matches. Newer coins are listed as
+  // BASE<digits>-QUOTE (HYPE32196-USD) and the chart symbol HYPE-USD 404s.
+  // Take that primary listing instead of reporting no ticker.
+  const numericPair = findPrimaryNumericCryptoPair(providerResults, symbol);
+  if (!numericPair) return null;
   return {
     kind: "provider",
-    symbol: exactMatch.symbol,
-    result: exactMatch.result,
+    symbol: getSearchResultSymbol(numericPair),
+    result: numericPair,
   };
+}
+
+/**
+ * Yahoo's primary coin for a pair query is the first cryptocurrency hit, and
+ * newer listings use `BASE<digits>-QUOTE` (HYPE32196-USD) instead of BASE-QUOTE.
+ * Only that first hit counts. A later same-prefix coin (TRUMP35336-USD under
+ * a DJT result, PEPE24549-USD under Pepe) is a different market.
+ */
+function findPrimaryNumericCryptoPair(
+  results: InstrumentSearchResult[],
+  query: string,
+): InstrumentSearchResult | null {
+  const parsed = parseCryptoPair(query);
+  if (!parsed) return null;
+  const firstCrypto = results.find((result) => isCryptoSearchResult(result));
+  if (!firstCrypto) return null;
+  const symbol = getSearchResultSymbol(firstCrypto);
+  const pattern = new RegExp(`^${escapeRegex(parsed.base)}\\d+-${escapeRegex(parsed.quote)}$`);
+  return pattern.test(symbol) ? firstCrypto : null;
+}
+
+function isCryptoSearchResult(result: InstrumentSearchResult): boolean {
+  return isCryptoSearchType(result.type)
+    || isCryptoSearchType(result.brokerContract?.secType)
+    || result.exchange.trim().toUpperCase() === "CCC";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildProviderHints(
