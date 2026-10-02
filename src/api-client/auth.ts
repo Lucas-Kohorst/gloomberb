@@ -124,7 +124,15 @@ export class CloudAuthApi {
       });
       if (credentialChanged()) return this.getSession();
       const user = result?.user ?? null;
-      this.options.setCurrentUser(user);
+      if (user) {
+        this.options.setCurrentUser(user);
+      } else if (!this.options.hasSessionCredential()) {
+        // No cookie/token on this client — treat an empty answer as signed out.
+        this.options.setCurrentUser(null);
+      }
+      // When a credential exists but the server returned no user, the cookie may
+      // not have reached the server (desktop webview). Keep the cached identity
+      // so verified surfaces such as Teams do not flicker empty on every refresh.
       return user;
     } catch (error) {
       if (credentialChanged()) return this.getSession();

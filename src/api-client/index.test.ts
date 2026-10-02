@@ -361,6 +361,22 @@ describe("apiClient auth cookies", () => {
     expect(handoff.url).not.toContain("desktop-session-token");
   });
 
+  test("keeps cached identity when get-session returns no user but session credential remains", async () => {
+    apiClient.setSessionToken("persisted-token.value");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    globalThis.fetch = mockFetch(async () => createResponse({ user: null }));
+
+    await expect(apiClient.getSession()).resolves.toBeNull();
+    expect(apiClient.getSessionToken()).toBe("persisted-token.value");
+    expect(apiClient.getCurrentUser()).toMatchObject({
+      id: verifiedUser.id,
+      username: verifiedUser.username,
+      emailVerified: true,
+    });
+    expect(apiClient.isVerified()).toBe(true);
+  });
+
   test("keeps cached identity when session refresh is rejected without a hard account-missing response", async () => {
     apiClient.setSessionToken("persisted-token.value");
     apiClient.restoreCachedUser(verifiedUser);
@@ -762,6 +778,25 @@ describe("apiClient quote socket", () => {
 
     expect(socket.closeCalls).toBe(0);
     expect(seenPrices).toEqual([123]);
+
+    unsubscribe();
+  });
+
+  test("a socket auth rejection does not downgrade a verified session or reconnect-loop", () => {
+    const sockets = installTestWebSocket();
+    apiClient.setSessionToken("persisted-token.value");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    const unsubscribe = apiClient.subscribeTeamNotifications(() => {});
+    const socket = sockets[0]!;
+    socket.open();
+    socket.receive({ type: "auth.unverified" });
+
+    expect(apiClient.isVerified()).toBe(true);
+    expect(socket.closeCalls).toBe(1);
+
+    apiClient.restoreCachedUser(verifiedUser);
+    expect(sockets).toHaveLength(1);
 
     unsubscribe();
   });

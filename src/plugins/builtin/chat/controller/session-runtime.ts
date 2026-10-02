@@ -135,10 +135,9 @@ export async function refreshChatControllerSession({
       session.sessionToken = persistedToken;
       session.user = session.user ?? normalizeSessionUser(apiClient.getCurrentUser());
       apiClient.setSessionToken(persistedToken);
-      // get-session clears apiClient.currentUser when the cookie did not reach
-      // the server, but chat keeps session.user. Verified-only surfaces such as
-      // Teams read isVerified(), so restore the shared client from the session
-      // the controller already trusts.
+      // Older builds cleared apiClient.currentUser on an empty get-session even
+      // when a native token was still present. Restore the shared client from
+      // the session the controller already trusts.
       if (session.user) {
         apiClient.restoreCachedUser(persistedAuthUserFromChatSession(session.user));
       }

@@ -159,11 +159,10 @@ class GloomApiClient {
       isCookieAuthenticated: () => this.transport.isHostedSocket(),
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
-      markCurrentUserUnverified: () => {
-        if (this.currentUser) {
-          this.currentUser = { ...this.currentUser, emailVerified: false };
-        }
-      },
+      // A socket rejection only means the handshake carried no usable credential
+      // (desktop webview sockets cannot send the session cookie). get-session is
+      // the authority on verification; downgrading here bounced Teams to sign-in.
+      markCurrentUserUnverified: () => this.traceAuth("socket:auth.unverified"),
       updateCurrentUserFromSocket: (user) => {
         this.updateCurrentUser((currentUser) => ({
           ...currentUser,
