@@ -25,8 +25,8 @@ describe("desktop backend plugin catalog", () => {
     const cloud = plugins.find((plugin) => plugin.id === "gloomberb-cloud");
 
     // Congress Trades is first-party. Polls, FR, OFAC, and USAspending are
-    // Adjacent Cloud modules. WX maps to the Adjacent pane; weather stays a
-    // ghost rather than a composed pane.
+    // Adjacent Cloud modules. WX maps to the Adjacent pane; there is no
+    // standalone weather plugin.
     expect(plugins.some((plugin) => plugin.id === "congress-trades")).toBe(true);
     expect(plugins.some((plugin) => plugin.id === "polls")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "federal-register")).toBe(false);

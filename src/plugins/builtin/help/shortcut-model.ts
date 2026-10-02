@@ -1,13 +1,124 @@
-import type { CommandDef, KeyboardShortcut } from "../../../types/plugin";
+import type { CommandDef, KeyboardShortcut, PaneTemplateDef } from "../../../types/plugin";
 import type { AppConfig } from "../../../types/config";
 import { getPluginCommandCategory } from "../../../components/command-bar/commands/plugin/items";
-import { commands as coreCommands } from "../../../components/command-bar/commands/registry";
+import { commands as coreCommands, getCommandPrefixes } from "../../../components/command-bar/commands/registry";
+import { getPaneShortcutPrefixes, getPaneTemplateDisplayLabel } from "../../../components/command-bar/pane-templates/items";
 import { resolvePaneTemplateSection } from "../../pane-sections";
 import { getSharedRegistry } from "../../registry";
 import type { HelpShortcutEntry } from "./components";
 import { formatKeybinding, resolveKeybindings } from "../../../app/keybindings";
 
 type SharedRegistry = ReturnType<typeof getSharedRegistry>;
+
+/** The slice of the plugin registry the essentials list reads. */
+export interface EssentialCommandRegistry {
+  commands?: ReadonlyMap<string, CommandDef>;
+  paneTemplates?: ReadonlyMap<string, PaneTemplateDef>;
+  getCommandPluginId?(commandId: string): string | undefined;
+  getPaneTemplatePluginId?(templateId: string): string | undefined;
+  getConfigFn?(): Pick<AppConfig, "disabledPlugins">;
+}
+
+/**
+ * The commands a new user needs first, in teaching order. Labels and
+ * descriptions come from whatever the command bar would run for each prefix,
+ * so renaming a pane or command updates Help without editing this list.
+ */
+export const ESSENTIAL_COMMAND_PREFIXES = [
+  "DES",
+  "G",
+  "CAT",
+  "QQ",
+  "TOP",
+  "N",
+  "ART",
+  "PF",
+  "SA",
+  "ALRT",
+  "PM",
+  "POLL",
+  "CHAT",
+  "TEAM",
+  "NOTE",
+  "NOT",
+  "LAY",
+  "KEYS",
+  "BIND",
+  "HELP",
+] as const;
+
+export interface EssentialCommandEntry {
+  id: string;
+  prefixes: string[];
+  label: string;
+  description: string;
+  /** What to put in the command bar: the prefix, plus a space when it takes an argument. */
+  query: string;
+}
+
+function essentialEntry(
+  id: string,
+  prefixes: string[],
+  label: string,
+  description: string | undefined,
+  takesArg: boolean,
+): EssentialCommandEntry {
+  const primary = prefixes[0]!;
+  return {
+    id,
+    prefixes,
+    label: label.trim(),
+    description: description?.trim() || label.trim(),
+    query: takesArg ? `${primary} ` : primary,
+  };
+}
+
+/** Same precedence as the command bar: core commands, then plugin commands, then pane templates. */
+function resolveEssentialCommand(registry: EssentialCommandRegistry | null | undefined, prefix: string, disabledPlugins: Set<string>): EssentialCommandEntry | null {
+  const core = coreCommands.find((command) => getCommandPrefixes(command).includes(prefix));
+  if (core) {
+    return essentialEntry(`core:${core.id}`, getCommandPrefixes(core), core.label, core.description, !!core.hasArg);
+  }
+  if (!registry) return null;
+
+  const pluginCommand = [...(registry.commands?.values() ?? [])].find((command) => (
+    [command.shortcut ?? "", ...(command.shortcutAliases ?? [])].some((value) => value.trim().toUpperCase() === prefix)
+  ));
+  if (pluginCommand) {
+    const pluginId = registry.getCommandPluginId?.(pluginCommand.id);
+    if ((pluginId && disabledPlugins.has(pluginId)) || pluginCommand.hidden?.()) return null;
+    const prefixes = [pluginCommand.shortcut ?? "", ...(pluginCommand.shortcutAliases ?? [])]
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
+    return essentialEntry(
+      `plugin-command:${pluginCommand.id}`,
+      prefixes,
+      pluginCommand.label,
+      pluginCommand.description,
+      !!pluginCommand.shortcutArg,
+    );
+  }
+
+  const template = [...(registry.paneTemplates?.values() ?? [])].find((entry) => getPaneShortcutPrefixes(entry).includes(prefix));
+  if (!template) return null;
+  const pluginId = registry.getPaneTemplatePluginId?.(template.id);
+  if (pluginId && disabledPlugins.has(pluginId)) return null;
+  return essentialEntry(
+    `pane-template:${template.id}`,
+    getPaneShortcutPrefixes(template),
+    getPaneTemplateDisplayLabel(template),
+    template.description,
+    !!template.shortcut?.argKind || !!template.shortcut?.argPlaceholder,
+  );
+}
+
+export function resolveEssentialCommands(registry: EssentialCommandRegistry | null | undefined): EssentialCommandEntry[] {
+  const disabledPlugins = resolveDisabledPlugins(registry);
+  return ESSENTIAL_COMMAND_PREFIXES.flatMap((prefix) => {
+    const entry = resolveEssentialCommand(registry, prefix, disabledPlugins);
+    return entry ? [entry] : [];
+  });
+}
 
 export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEntry[] {
   if (!registry || !registry.paneTemplates) return [];
@@ -40,7 +151,7 @@ export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEn
     .sort(sortShortcutEntries);
 }
 
-function resolveDisabledPlugins(registry: SharedRegistry): Set<string> {
+function resolveDisabledPlugins(registry: Pick<EssentialCommandRegistry, "getConfigFn"> | null | undefined): Set<string> {
   try {
     return new Set(registry?.getConfigFn?.().disabledPlugins ?? []);
   } catch {

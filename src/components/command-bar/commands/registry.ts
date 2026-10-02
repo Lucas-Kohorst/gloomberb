@@ -307,9 +307,8 @@ export function tickerSearchShortcutConflictsWith(
   const claimed = new Set<string>();
   for (const prefix of reservedPrefixes) {
     const normalized = prefix.trim().toUpperCase();
-    // T is also used by the built-in ticker-detail pane template, but it is
-    // owned by ticker search in the command bar. Do not let that existing
-    // overlap block a longer custom ticker-search prefix such as "TS".
+    // DES and T belong to ticker search itself, so a reserved copy of either
+    // must not block a longer custom ticker-search prefix such as "TS".
     if (normalized && !isDefaultTickerSearchShortcut(normalized)) claimed.add(normalized);
   }
   for (const command of commandList) {

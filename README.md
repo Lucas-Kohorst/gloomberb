@@ -245,13 +245,14 @@ Desktop builds also accept `Cmd/Ctrl+K` for the command bar, the matching `Cmd` 
 
 In terminal tables, double-click a column resize handle to restore its width. `Alt+0` restores the sorted column (or the first column when unsorted) in the focused pane.
 
-Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar prefixes are listed here for quick scanning.
+Use `HELP` inside Gloomberb for the live shortcut list; its Essentials tab lists the core commands and opens each one in the command bar. The common command-bar prefixes are listed here for quick scanning.
 
 ### Company Research
 
 | Shortcut | Function |
 |----------|----------|
 | `DES <ticker>` / `T <ticker>` | Security details for a ticker |
+| `TR <ticker>` | Open another Ticker Research pane pinned to a ticker |
 | `FA <ticker>` | Financial statement view |
 | `G <series>` | Custom chart composer |
 | `CAT [query]` | Browse and search chartable series |
@@ -353,7 +354,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `IBKR` | IBKR trading pane |
 | `BR` | Broker connections |
 | `CHG` | Changelog |
-| `HELP` | Open shortcut and layout help |
+| `HELP` | Open essential commands, shortcut, and layout help |
 | `KEYS` | Manage BYOK API keys |
 | `BIND` / `KB` | Browse and rebind global and plugin keyboard shortcuts |
 | `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |

@@ -3,6 +3,9 @@ import { TextAttributes } from "../../../ui";
 import { useState } from "react";
 import { Button, PaneBodyPad, PaneTabHeader } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
+import { ListView, type ListRowState, type ListViewItem } from "../../../components/ui/list-view";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -18,12 +21,15 @@ import {
 import {
   groupShortcutEntries,
   resolveCommandShortcuts,
+  resolveEssentialCommands,
   resolveGlobalShortcuts,
   resolvePluginShortcuts,
   resolveWindowTemplates,
+  type EssentialCommandEntry,
 } from "./shortcut-model";
 
 const HELP_TABS = [
+  { label: "Essentials", value: "essentials" },
   { label: "Basics", value: "basics" },
   { label: "Functions", value: "functions" },
   { label: "Shortcuts", value: "shortcuts" },
@@ -32,11 +38,98 @@ const HELP_TABS = [
 
 type HelpTabId = typeof HELP_TABS[number]["value"];
 const GLOOMBERB_ISSUES_URL = "https://github.com/gloom-sh/gloomberb/issues";
+const ESSENTIAL_PREFIX_WIDTH = 11;
+const ESSENTIAL_LABEL_WIDTH = 20;
+
+function essentialPrefixLabel(entry: EssentialCommandEntry): string {
+  return entry.prefixes.slice(0, 2).join("/");
+}
+
+function EssentialCommandRow({ entry, state }: { entry: EssentialCommandEntry; state: ListRowState }) {
+  const active = state.selected;
+  return (
+    <Box flexDirection="row" width="100%" overflow="hidden">
+      <Box width={ESSENTIAL_PREFIX_WIDTH} flexShrink={0}>
+        <Text fg={active ? colors.selectedText : colors.textBright} attributes={TextAttributes.BOLD}>
+          {essentialPrefixLabel(entry)}
+        </Text>
+      </Box>
+      <Box width={ESSENTIAL_LABEL_WIDTH} flexShrink={0} overflow="hidden">
+        <Text fg={active ? colors.selectedText : colors.text}>{t(entry.label)}</Text>
+      </Box>
+      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+        <Text fg={active ? colors.selectedText : colors.textDim}>{t(entry.description)}</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function EssentialCommandList({
+  entries,
+  focused,
+  onRun,
+}: {
+  entries: EssentialCommandEntry[];
+  focused: boolean;
+  onRun: (entry: EssentialCommandEntry) => void;
+}) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const activeIdx = Math.min(selectedIdx, Math.max(0, entries.length - 1));
+  const items: ListViewItem[] = entries.map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    detail: entry.description,
+    right: essentialPrefixLabel(entry),
+  }));
+
+  useShortcut((event) => {
+    if (event.targetEditable) return;
+    let next: number | null = null;
+    if (isPlainKey(event, "down", "j")) next = Math.min(entries.length - 1, activeIdx + 1);
+    else if (isPlainKey(event, "up", "k")) next = Math.max(0, activeIdx - 1);
+    else if (isPlainKey(event, "home")) next = 0;
+    else if (isPlainKey(event, "end")) next = entries.length - 1;
+    else if (isPlainKey(event, "enter", "return")) {
+      const entry = entries[activeIdx];
+      if (!entry) return;
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onRun(entry);
+      return;
+    }
+    if (next === null) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    setSelectedIdx(next);
+  }, { enabled: focused && entries.length > 0 });
+
+  return (
+    <ListView
+      items={items}
+      selectedIndex={activeIdx}
+      flexGrow={1}
+      scrollable
+      emptyMessage="No commands are registered."
+      remoteLabel="Essential commands"
+      remoteScope="help:essentials"
+      remoteItemKind="command"
+      onSelect={setSelectedIdx}
+      onActivate={(_item, index) => {
+        const entry = entries[index];
+        if (entry) onRun(entry);
+      }}
+      renderRow={(_item, state, index) => {
+        const entry = entries[index];
+        return entry ? <EssentialCommandRow entry={entry} state={state} /> : null;
+      }}
+    />
+  );
+}
 
 function HelpPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showPane } = usePluginAppActions();
-  const [activeTabId, setActiveTabId] = useState<HelpTabId>("basics");
+  const [activeTabId, setActiveTabId] = useState<HelpTabId>("essentials");
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
   const globalShortcuts = resolveGlobalShortcuts(registry);
@@ -67,6 +160,10 @@ function HelpPane({ focused, width, height }: PaneProps) {
 
   const openPluginManager = () => {
     openCommandBar("PL ");
+  };
+
+  const runEssentialCommand = (entry: EssentialCommandEntry) => {
+    openCommandBar(entry.query);
   };
 
   const renderContent = () => {
@@ -409,11 +506,23 @@ function HelpPane({ focused, width, height }: PaneProps) {
         activeValue={activeTabId}
         onSelect={(value) => setActiveTabId(value as HelpTabId)}
       />
-      <ScrollBox key={activeTabId} width={width} height={contentHeight} scrollY>
-        <PaneBodyPad>
-          {renderContent()}
-        </PaneBodyPad>
-      </ScrollBox>
+      {activeTabId === "essentials" ? (
+        <Box width={width} height={contentHeight} flexDirection="column">
+          <PaneBodyPad>
+            <EssentialCommandList
+              entries={resolveEssentialCommands(registry)}
+              focused={focused}
+              onRun={runEssentialCommand}
+            />
+          </PaneBodyPad>
+        </Box>
+      ) : (
+        <ScrollBox key={activeTabId} width={width} height={contentHeight} scrollY>
+          <PaneBodyPad>
+            {renderContent()}
+          </PaneBodyPad>
+        </ScrollBox>
+      )}
     </Box>
   );
 }
@@ -436,7 +545,7 @@ export const helpModule: PluginModule = {
       id: "help-pane",
       paneId: "help",
       label: "Help",
-      description: "How to use Gloomberb: command bar prefixes, shortcuts, layouts, and troubleshooting.",
+      description: "How to use Gloomberb: essential commands, command bar prefixes, shortcuts, layouts, and troubleshooting.",
       keywords: ["help", "shortcuts", "commands", "guide", "howto", "issues", "support"],
       shortcut: { prefix: "HELP" },
     },
