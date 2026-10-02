@@ -23,6 +23,7 @@ import {
   panelBorder,
   panelFill,
 } from "./control-styles";
+import { commonStyle } from "../host/style";
 
 export { WebListView } from "./list-view";
 
@@ -38,21 +39,37 @@ export function WebButton({
 }: ButtonProps) {
   const colors = useThemeColors();
   const palette = buttonPalette({ variant, active, disabled }, colors);
+  const press = () => {
+    if (!disabled) onPress?.();
+  };
 
+  // A real button for focus, naming, and Enter/Space. The pointer still
+  // presses on mousedown like every other desktop control; keyboard activation
+  // arrives as a click with no pointer detail. `aria-disabled` rather than
+  // `disabled` so a disabled button still lets the press reach its pane.
   return (
-    <Box
-      width={width}
-      height={height ?? 1}
-      flexDirection="row"
-      alignItems="center"
-      justifyContent="center"
-      backgroundColor={palette.bg}
-      onMouseDown={() => {
-        if (!disabled) onPress?.();
+    <button
+      type="button"
+      className="gloom-button"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onMouseDown={(event) => {
+        if (event.button === 0) press();
+      }}
+      onClick={(event) => {
+        if (event.detail === 0) press();
       }}
       data-gloom-role="desktop-button"
       data-gloom-interactive={disabled ? undefined : "true"}
       style={{
+        ...commonStyle({
+          width,
+          height: height ?? 1,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: palette.bg,
+        }),
         border: `1px solid ${palette.border}`,
         borderRadius: CONTROL_RADIUS,
         paddingLeft: 8,
@@ -78,7 +95,7 @@ export function WebButton({
           {shortcut}
         </Text>
       )}
-    </Box>
+    </button>
   );
 }
 

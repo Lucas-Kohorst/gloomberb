@@ -5,10 +5,19 @@ import {
   useImperativeHandle,
   useRef,
   type CSSProperties,
+  type FocusEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
   type Ref,
 } from "react";
+import {
+  activateWithPointerEvents,
+  installFocusModalityTracking,
+  isActivationKey,
+  isKeyboardActivatableBox,
+  lastInteractionWasPointer,
+} from "./keyboard-activation";
 import {
   type CellMouseEvent,
   type MouseLikeEvent,
@@ -155,9 +164,36 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
       callMouseHandler(propsRef.current.onMouseOut, event, "out");
     };
 
+    const keyboardActivatable = isKeyboardActivatableBox(props);
+    const pointerFocusedRef = useRef(false);
+    useEffect(() => {
+      const element = elementRef.current;
+      if (keyboardActivatable && element) installFocusModalityTracking(element.ownerDocument);
+    }, [keyboardActivatable]);
+
+    const handleActivatableFocus = (event: FocusEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) pointerFocusedRef.current = lastInteractionWasPointer();
+      (propsRef.current.onFocus as ((event: FocusEvent<HTMLDivElement>) => void) | undefined)?.(event);
+    };
+
+    const handleActivatableKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+      (propsRef.current.onKeyDown as ((event: KeyboardEvent<HTMLDivElement>) => void) | undefined)?.(event);
+      if (event.defaultPrevented || event.target !== event.currentTarget) return;
+      if (pointerFocusedRef.current || !isActivationKey(event.nativeEvent)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activateWithPointerEvents(event.currentTarget);
+    };
+
     return (
       <div
         {...cleanDomProps(props)}
+        {...(keyboardActivatable ? {
+          role: "button",
+          tabIndex: typeof props.tabIndex === "number" ? props.tabIndex : 0,
+          onFocus: handleActivatableFocus,
+          onKeyDown: handleActivatableKeyDown,
+        } : undefined)}
         data-gloom-hover-bg={hoverBackgroundColor ? "true" : undefined}
         ref={elementRef}
         onMouseDownCapture={typeof props.onMouseDownCapture === "function" ? handleMouseDownCapture : undefined}

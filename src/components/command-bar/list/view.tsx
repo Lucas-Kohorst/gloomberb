@@ -5,6 +5,7 @@ import {
   SpinnerMark,
   Text,
   TextAttributes,
+  useUiHost,
   type ScrollBoxRenderable,
 } from "../../../ui";
 import { t } from "../../../i18n";
@@ -37,6 +38,24 @@ export type CommandBarListScrollEvent = {
 /** Columns every row gives up to the badge column, badge or not. */
 const BADGE_INDENT = BADGE_COLUMN_WIDTH + BADGE_GAP;
 
+/** The bar is a singleton, so the header combobox can point at fixed ids. */
+export const COMMAND_BAR_LISTBOX_ID = "gloom-command-bar-listbox";
+
+export function commandBarOptionId(globalIdx: number): string {
+  return `gloom-command-bar-option-${globalIdx}`;
+}
+
+/** The highlighted row's option id, or null when that row is not rendered. */
+export function resolveCommandBarActiveOptionId(
+  rows: readonly CommandBarListRow[],
+  selectedIdx: number,
+): string | null {
+  if (selectedIdx < 0) return null;
+  return rows.some((row) => row.kind === "item" && row.globalIdx === selectedIdx)
+    ? commandBarOptionId(selectedIdx)
+    : null;
+}
+
 interface CommandBarListItemRowProps {
   item: ResultItem;
   globalIdx: number;
@@ -49,6 +68,7 @@ interface CommandBarListItemRowProps {
   labelWidth: number;
   trailingWidth: number;
   nativePaneChrome: boolean;
+  domSemantics: boolean;
   paletteAccentText: string;
   paletteBg: string;
   paletteHeadingText: string;
@@ -76,6 +96,7 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
   labelWidth,
   trailingWidth,
   nativePaneChrome,
+  domSemantics,
   paletteAccentText,
   paletteBg,
   paletteHeadingText,
@@ -165,6 +186,12 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
       onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}
       data-gloom-interactive={item.disabled === true ? undefined : "true"}
       data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
+      {...(domSemantics ? {
+        id: commandBarOptionId(globalIdx),
+        role: "option",
+        "aria-selected": isSelected ? "true" : "false",
+        "aria-disabled": item.disabled === true ? "true" : undefined,
+      } : {})}
       style={{
         ...(nativePaneChrome ? { borderRadius: 6 } : null),
         cursor: item.disabled === true ? "default" : "pointer",
@@ -308,6 +335,7 @@ export const CommandBarListBody = memo(function CommandBarListBody({
   onListScroll,
   onRowMouseDown,
 }: CommandBarListBodyProps) {
+  const domSemantics = useUiHost().kind === "desktop-web";
   // Headings and messages sit on the label edge: the badge column is a gutter
   // for the rows, not an indent for everything else. The spinner mark lives in
   // that gutter so "Searching…" lines up with result titles.
@@ -404,6 +432,7 @@ export const CommandBarListBody = memo(function CommandBarListBody({
             labelWidth={labelWidth}
             trailingWidth={trailingWidth}
             nativePaneChrome={nativePaneChrome}
+            domSemantics={domSemantics}
             paletteAccentText={paletteAccentText}
             paletteBg={paletteBg}
             paletteHeadingText={paletteHeadingText}
@@ -431,6 +460,11 @@ export const CommandBarListBody = memo(function CommandBarListBody({
       scrollY
       focusable={false}
       {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
+      {...(domSemantics ? {
+        id: COMMAND_BAR_LISTBOX_ID,
+        role: "listbox",
+        "aria-label": t("Command results"),
+      } : {})}
     >
       {renderedRows}
     </ScrollBox>

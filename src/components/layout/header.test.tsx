@@ -63,6 +63,8 @@ test("hosts the command bar input while a list screen is published", async () =>
       placeholder: "Command or plain English…",
       ghostSuffix: " AAPL",
       onQueryChange: (query) => typed.push(query),
+      listboxId: null,
+      activeOptionId: null,
     });
     await testSetup!.renderOnce();
   });
