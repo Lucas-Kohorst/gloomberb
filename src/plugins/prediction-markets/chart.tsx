@@ -1,13 +1,13 @@
 import { Box, Text } from "../../ui";
 import { useMemo } from "react";
-import { Tabs } from "../../components";
+import { ChartRangeTabs } from "../../components/chart/range-tabs";
 import {
   CompositeChart,
   pricePointsToResolvedSeries,
 } from "../../components/chart/composite";
 import { EmptyState } from "../../components/ui/status";
 import { colors } from "../../theme/colors";
-import { formatNumber, formatPercentRaw } from "../../utils/format";
+import { displayWidth, formatNumber, formatPercentRaw } from "../../utils/format";
 import type { PricePoint } from "../../types/financials";
 import { coercePredictionPointDate } from "./services/history";
 import type { PredictionHistoryPoint, PredictionHistoryRange } from "./types";
@@ -29,29 +29,7 @@ function toPricePoints(points: PredictionHistoryPoint[]): PricePoint[] {
   });
 }
 
-const RANGE_TABS = RANGES.map((entry) => ({ label: entry, value: entry }));
-
-/** Shared Tabs so the range picker keeps keyboard navigation, not just clicks. */
-function PredictionRangeTabs({
-  activeRange,
-  focused,
-  onRangeSelect,
-}: {
-  activeRange: PredictionHistoryRange;
-  focused: boolean;
-  onRangeSelect: (range: PredictionHistoryRange) => void;
-}) {
-  return (
-    <Tabs
-      tabs={RANGE_TABS}
-      activeValue={activeRange}
-      onSelect={(value) => onRangeSelect(value as PredictionHistoryRange)}
-      compact
-      variant="bare"
-      focused={focused}
-    />
-  );
-}
+const RANGE_CHOICES = RANGES.map((value) => ({ value }));
 
 export function PredictionMarketChart({
   history,
@@ -75,11 +53,12 @@ export function PredictionMarketChart({
   if (pricePoints.length === 0) {
     return (
       <Box flexDirection="column" height={height}>
-        <Box flexDirection="row" height={1}>
-          <PredictionRangeTabs
-            activeRange={range}
+        <Box flexDirection="row" height={1} width={width}>
+          <ChartRangeTabs
+            choices={RANGE_CHOICES}
+            value={range}
             focused={focused}
-            onRangeSelect={onRangeSelect}
+            onSelect={onRangeSelect}
           />
         </Box>
         <Box flexGrow={1} justifyContent="center">
@@ -100,7 +79,11 @@ export function PredictionMarketChart({
   const last = pricePoints[pricePoints.length - 1] ?? null;
   const delta = first && last ? last.close - first.close : 0;
   const deltaPct = first?.close ? (delta / first.close) * 100 : 0;
-  const chartHeight = Math.max(height - 1, 2);
+  const summary = `${formatNumber(last?.close ?? 0, 3)}  ${formatPercentRaw(deltaPct)}`;
+  const rangeWidth = RANGES.reduce((total, entry) => total + displayWidth(entry) + 3, 0);
+  const stackedHeader = width < rangeWidth + displayWidth(summary) + 1;
+  const headerHeight = stackedHeader ? 2 : 1;
+  const chartHeight = Math.max(height - headerHeight, 2);
   const priceSeries = pricePointsToResolvedSeries(pricePoints, {
     id: "prediction-price",
     label: "YES price",
@@ -113,13 +96,16 @@ export function PredictionMarketChart({
 
   return (
     <Box flexDirection="column" height={height}>
-      <Box flexDirection="row" height={1}>
-        <PredictionRangeTabs
-          activeRange={range}
-          focused={focused}
-          onRangeSelect={onRangeSelect}
-        />
-        <Box flexGrow={1} />
+      <Box flexDirection={stackedHeader ? "column" : "row"} height={headerHeight} width={width}>
+        <Box height={1} width={stackedHeader ? width : width - displayWidth(summary) - 1} minWidth={0}>
+          <ChartRangeTabs
+            choices={RANGE_CHOICES}
+            value={range}
+            focused={focused}
+            onSelect={onRangeSelect}
+          />
+        </Box>
+        {!stackedHeader ? <Box width={1} /> : null}
         <Text
           fg={
             delta > 0
@@ -129,7 +115,7 @@ export function PredictionMarketChart({
                 : colors.text
           }
         >
-          {`${formatNumber(last?.close ?? 0, 3)}  ${formatPercentRaw(deltaPct)}`}
+          {summary}
         </Text>
       </Box>
 

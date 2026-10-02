@@ -61,6 +61,7 @@ export {
 
 // Keyboard handling for plugin panes; the renderer decides how events arrive.
 export { useShortcut } from "../react/input";
+export { useAsyncResource } from "../react/async-resource";
 
 // Auto-refresh hook: re-pulls pane data on the global refresh cadence.
 // Plugins that show network-backed data should use this instead of a

@@ -7,6 +7,7 @@ import {
   PaneListChrome,
   Spinner,
   nextStackSortPreference,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
@@ -148,9 +149,15 @@ export function AdjacentMarketsPane({
   const paneInstance = usePaneInstance();
   const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
   const [searchQuery, setSearchQuery] = useState(seedQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<import("../../../ui").InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    enabled: !detailOpen,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "market, ticker, or question",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+  });
+  const { searchFocused, focusSearch } = listSearch;
   const abortRef = useRef<AbortController | null>(null);
   const seededRef = useRef(false);
   const initialLoadRef = useRef(true);
@@ -266,10 +273,6 @@ export function AdjacentMarketsPane({
     (row: AdjacentMarketRow) => `${row.id}:${row.status}:${row.endsAt ?? ""}`,
     [],
   );
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((value) => value + 1);
-  }, []);
   const marketUrl = selectedMarket?.url ?? detailRow?.url ?? null;
   const { notify } = usePluginAppActions();
   const dispatch = useAppDispatch();
@@ -324,22 +327,17 @@ export function AdjacentMarketsPane({
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [poll.segment],
-    showOpenHint: !!marketUrl,
+    showOpenHint: !!marketUrl && !searchFocused,
     hints: [
-      paneSearchHint(focusSearch),
+      paneSearchHint(focusSearch, { disabled: detailOpen || searchFocused }),
       ...(!detailOpen
-        ? [{ id: "add", key: "a", label: "dd", onPress: registerSelected, disabled: !selectedMarket || selectedAlreadyOnWatchlist }]
+        ? [{ id: "add", key: "a", label: "dd", onPress: registerSelected, disabled: !selectedMarket || selectedAlreadyOnWatchlist || searchFocused }]
         : []),
     ],
   });
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -347,16 +345,10 @@ export function AdjacentMarketsPane({
       return true;
     }
     return false;
-  }, [focusSearch, reload]);
+  }, [listSearch.handleSearchKey, reload]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return;
-    }
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -370,18 +362,7 @@ export function AdjacentMarketsPane({
         <PaneListChrome
           width={width}
           focused={focused}
-          search={{
-            value: searchQuery,
-            active: searchFocused,
-            focusToken: searchFocusToken,
-            inputRef: searchInputRef,
-            placeholder: "market, ticker, or question",
-            debounceMs: SEARCH_DEBOUNCE_MS,
-            onFocus: focusSearch,
-            onBlur: () => setSearchFocused(false),
-            onNavigateDown: () => setSearchFocused(false),
-            onQueryChange: setSearchQuery,
-          }}
+          search={listSearch.search}
         />
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Spinner label={searchQuery.trim() ? `Searching Adjacent for ${searchQuery.trim()}...` : "Loading Adjacent markets..."} />
@@ -432,18 +413,7 @@ export function AdjacentMarketsPane({
         <PaneListChrome
           width={width}
           focused={focused}
-          search={{
-            value: searchQuery,
-            active: searchFocused,
-            focusToken: searchFocusToken,
-            inputRef: searchInputRef,
-            placeholder: "market, ticker, or question",
-            debounceMs: SEARCH_DEBOUNCE_MS,
-            onFocus: focusSearch,
-            onBlur: () => setSearchFocused(false),
-            onNavigateDown: () => setSearchFocused(false),
-            onQueryChange: setSearchQuery,
-          }}
+          search={listSearch.search}
         />
       )}
       sortColumnId={sortPreference.columnId}

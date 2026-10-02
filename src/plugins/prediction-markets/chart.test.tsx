@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
-import { act, useEffect, useReducer, useRef } from "react";
+import { act, useEffect, useReducer, useRef, useState } from "react";
 import {
   AppContext,
   PaneInstanceProvider,
@@ -12,6 +12,7 @@ import {
 import { createDefaultConfig } from "../../types/config";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface/manager";
 import { PredictionMarketChart } from "./chart";
+import type { PredictionHistoryRange } from "./types";
 
 const TEST_PANE_ID = "prediction-scroll:test";
 
@@ -92,6 +93,56 @@ afterEach(() => {
 });
 
 describe("PredictionMarketChart kitty scrolling", () => {
+  test("range shortcuts and pointer tabs do not consume crosshair arrow keys", async () => {
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    const ranges: PredictionHistoryRange[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chart-keys"));
+    let setWidth!: (width: number) => void;
+    function Harness() {
+      const [width, updateWidth] = useState(60);
+      setWidth = updateWidth;
+      const [range, setRange] = useState<PredictionHistoryRange>("1M");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PredictionMarketChart
+            history={[
+              { date: new Date("2026-04-01T00:00:00Z"), close: 0.45 },
+              { date: new Date("2026-04-02T00:00:00Z"), close: 0.48 },
+              { date: new Date("2026-04-03T00:00:00Z"), close: 0.51 },
+            ]}
+            width={width}
+            height={12}
+            focused
+            range={range}
+            onRangeSelect={(value) => { ranges.push(value); setRange(value); }}
+          />
+        </AppContext>
+      );
+    }
+    testSetup = await createTestRenderer({ width: 60, height: 12 });
+    root = createRoot(testSetup.renderer);
+    act(() => { root!.render(<Harness />); });
+    await flushFrames();
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("left");
+      testSetup!.mockInput.pressArrow("right");
+    });
+    await flushFrames();
+    expect(ranges).toEqual([]);
+    await act(async () => { testSetup!.mockInput.pressKey("1"); });
+    await flushFrames();
+    expect(ranges).toEqual(["1D"]);
+    await act(async () => { setWidth(24); testSetup!.resize(24, 12); });
+    await flushFrames();
+    expect(testSetup.captureCharFrame().split("\n")[1]).toContain("0.510");
+    const row = testSetup.captureCharFrame().split("\n")[0]!;
+    const all = row.indexOf("4:ALL");
+    expect(all).toBeGreaterThanOrEqual(0);
+    await act(async () => { await testSetup!.mockMouse.click(all + 1, 0); });
+    await flushFrames();
+    expect(ranges).toEqual(["1D", "ALL"]);
+  });
+
   test("creates a native chart surface when scrolled into view", async () => {
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 100, height: 24 });
