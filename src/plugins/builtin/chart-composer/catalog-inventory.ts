@@ -134,10 +134,11 @@ export interface ParsedCatalogQuery {
 export function parseCatalogQuery(query: string): ParsedCatalogQuery {
   const trimmed = query.trim();
   const match = /^([A-Za-z0-9.^/_-]{1,32}):([A-Za-z]+)$/.exec(trimmed);
-  if (!match) return { text: trimmed, filter: null };
-  const filter = CATALOG_QUERY_FILTERS[match[2].toLowerCase()] ?? null;
+  const [, symbol, suffix] = match ?? [];
+  if (!symbol || !suffix) return { text: trimmed, filter: null };
+  const filter = CATALOG_QUERY_FILTERS[suffix.toLowerCase()] ?? null;
   if (!filter) return { text: trimmed, filter: null };
-  return { text: match[1], filter };
+  return { text: symbol, filter };
 }
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
