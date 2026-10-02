@@ -7,6 +7,7 @@ import { HistoricalPricesPane } from "./data-panes/historical-prices";
 import { TickerResearchPane } from "./pane";
 import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
 import { QuoteMonitorPane } from "./quote-monitor";
+import { tickerResearchTabPopOutTemplate } from "./tab-pop-out";
 import {
   buildQuoteMonitorSettingsDef,
   buildQuoteMonitorPaneTitle,
@@ -98,6 +99,7 @@ export const tickerDetailModule: PluginModule = {
           : null,
       },
     },
+    tickerResearchTabPopOutTemplate,
     {
       id: "quote-monitor-pane",
       paneId: "quote-monitor",
