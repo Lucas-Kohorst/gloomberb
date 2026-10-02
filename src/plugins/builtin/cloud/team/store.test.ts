@@ -225,6 +225,40 @@ describe("TeamStore", () => {
     store.dispose();
   });
 
+  test("a read card stays read across restarts when the server resends it after a failed ack", async () => {
+    resetNotificationLogForTest();
+    const persistence = new MemoryPluginPersistence();
+    persistence.setState("team-notifications", [notification("n1", "team-joined")]);
+    const offline = new TeamStore(fakeClient({
+      markChatNotificationsDelivered: async () => { throw new Error("offline"); },
+    }).client);
+    offline.attach(persistence);
+    await offline.dismissNotifications(["n1"]);
+    offline.dispose();
+    // The history was cleared, so the log no longer remembers the read state.
+    resetNotificationLogForTest();
+
+    const fake = fakeClient({ getTeamNotifications: async () => [notification("n1", "team-joined")] });
+    const store = new TeamStore(fake.client);
+    store.attach(persistence);
+    const toasts: string[] = [];
+    store.setNotifier((request) => {
+      toasts.push(request.body);
+      return { toastVisible: true, desktopRequested: false };
+    });
+    store.start();
+    await flush();
+
+    expect(store.getSnapshot().notifications).toEqual([]);
+    expect(fake.delivered).toEqual([["n1"]]);
+
+    fake.push(notification("n1", "team-joined"));
+    await flush();
+    expect(store.getSnapshot().notifications).toEqual([]);
+    expect(toasts).toEqual([]);
+    store.dispose();
+  });
+
   test("team.updated refreshes, tells listeners, and folded channel sections persist", async () => {
     const fake = fakeClient();
     const store = new TeamStore(fake.client);

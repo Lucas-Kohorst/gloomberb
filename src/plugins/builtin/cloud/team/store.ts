@@ -39,6 +39,8 @@ type Notifier = (request: AppNotificationRequest) => AppNotificationDelivery | v
 const FOCUS_STATE_KEY = "team-focus";
 const NOTIFICATION_STATE_KEY = "team-notifications";
 const COLLAPSED_STATE_KEY = "team-collapsed-channels";
+const DISMISSED_STATE_KEY = "team-dismissed-notifications";
+const DISMISSED_LIMIT = 500;
 
 interface TeamNotificationActions {
   openTeamChannel?: (teamId: string) => void;
@@ -89,6 +91,11 @@ export class TeamStore {
   private disposers: Array<() => void> = [];
   private refreshPromise: Promise<void> | null = null;
   private started = false;
+  /**
+   * Cards this device already read. The server keeps resending a card until
+   * the delivery ack lands, so without this a failed ack revives it as unread.
+   */
+  private dismissed = new Set<string>();
 
   getSnapshot(): TeamStoreSnapshot {
     return this.snapshot;
@@ -106,9 +113,12 @@ export class TeamStore {
     const focus = persistence.getState<TeamStoreSnapshot["focus"]>(FOCUS_STATE_KEY);
     const notifications = persistence.getState<TeamNotification[]>(NOTIFICATION_STATE_KEY);
     const collapsed = persistence.getState<string[]>(COLLAPSED_STATE_KEY);
+    const dismissed = persistence.getState<string[]>(DISMISSED_STATE_KEY);
+    this.dismissed = new Set(Array.isArray(dismissed) ? dismissed.filter((id) => typeof id === "string") : []);
     this.update({
       focus: focus ?? "all",
-      notifications: Array.isArray(notifications) ? notifications : [],
+      notifications: (Array.isArray(notifications) ? notifications : [])
+        .filter((entry) => !this.dismissed.has(entry.id)),
       collapsedTeams: new Set(Array.isArray(collapsed) ? collapsed : []),
     });
   }
@@ -246,7 +256,10 @@ export class TeamStore {
           error: null,
         });
         this.persistNotifications();
-        if (notifications) this.rememberInNotificationCenter(this.snapshot.notifications);
+        if (notifications) {
+          this.rememberInNotificationCenter(this.snapshot.notifications);
+          this.retryDeliveryAcks(notifications);
+        }
       } catch (error) {
         this.update({
           loading: false,
@@ -267,6 +280,7 @@ export class TeamStore {
     const remaining = this.snapshot.notifications.filter((entry) => !ids.includes(entry.id));
     this.update({ notifications: remaining });
     this.persistNotifications();
+    this.rememberDismissed(ids);
     // Pending cards are the unread badge. Marking one read removes it from
     // that list, but the notification log keeps the same card as history.
     this.rememberInNotificationCenter(dismissed);
@@ -286,6 +300,10 @@ export class TeamStore {
   }
 
   private receive(notification: TeamNotification): void {
+    if (this.dismissed.has(notification.id)) {
+      this.retryDeliveryAcks([notification]);
+      return;
+    }
     this.update({ notifications: this.mergeNotifications([notification]) });
     this.persistNotifications();
     if (notification.type === "team-joined" || notification.type === "team-invite") {
@@ -334,9 +352,28 @@ export class TeamStore {
     }
   }
 
+  private rememberDismissed(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.dismissed.delete(id);
+      this.dismissed.add(id);
+    }
+    const kept = [...this.dismissed].slice(-DISMISSED_LIMIT);
+    this.dismissed = new Set(kept);
+    this.persistence?.setState(DISMISSED_STATE_KEY, kept);
+  }
+
+  private retryDeliveryAcks(incoming: readonly TeamNotification[]): void {
+    const stale = incoming.filter((entry) => this.dismissed.has(entry.id)).map((entry) => entry.id);
+    if (stale.length === 0) return;
+    markNotificationLogReadByRef(stale.map(teamNotificationRefId));
+    void this.client.markChatNotificationsDelivered(stale).catch(() => {});
+  }
+
   private mergeNotifications(incoming: readonly TeamNotification[]): TeamNotification[] {
     const byId = new Map(this.snapshot.notifications.map((entry) => [entry.id, entry]));
-    for (const entry of incoming) byId.set(entry.id, entry);
+    for (const entry of incoming) {
+      if (!this.dismissed.has(entry.id)) byId.set(entry.id, entry);
+    }
     return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-100);
   }
 
