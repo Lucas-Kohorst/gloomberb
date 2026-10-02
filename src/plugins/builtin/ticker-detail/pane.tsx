@@ -34,8 +34,7 @@ import {
 } from "./settings";
 import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
-import { useCloudAccessFooter } from "../shared/cloud-upgrade";
-import { CLOUD_QUOTE_DELAY_MINUTES } from "../shared/plan-access";
+import { useDelayedQuotesFooter } from "../shared/cloud-upgrade";
 import {
   EMPTY_TICKER_HISTORY,
   moveTickerHistory,
@@ -135,18 +134,12 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
   // Cloud quotes are delayed on the free tier; a broker feed can still be live.
-  const cloudAccess = useCloudAccessFooter({
-    delayLabel: tf("{count}m", { count: CLOUD_QUOTE_DELAY_MINUTES }),
-    degraded: financials?.quote?.dataSource === "delayed",
+  useDelayedQuotesFooter({
+    registrationId: "ticker-research-access",
+    delayed: financials?.quote?.dataSource === "delayed",
     focused,
-    segmentId: "ticker-research-access",
     shortcutScope: "ticker-research:upgrade",
   });
-  usePaneFooter(
-    "ticker-research-access",
-    () => cloudAccess.segment ? { info: [cloudAccess.segment], order: -1 } : null,
-    [cloudAccess.segment],
-  );
 
   const disabledPlugins = config.disabledPlugins;
   const registry = getSharedRegistry();

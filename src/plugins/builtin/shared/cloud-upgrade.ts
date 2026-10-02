@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { apiClient } from "../../../api-client";
-import type { PaneFooterSegment } from "../../../components";
+import { usePaneFooter, type PaneFooterSegment } from "../../../components";
 import { tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { useShortcut } from "../../../react/input";
@@ -8,7 +8,14 @@ import { useRendererHost } from "../../../ui";
 import type { RendererHost } from "../../../ui";
 import { getSharedRegistry } from "../../registry";
 import { requestAccountManagementTab } from "../account-management/navigation";
-import { resolvePlanAccess, usePlanAccess, type PlanAccess } from "./plan-access";
+import type { Quote } from "../../../types/financials";
+import { paneDelayedStatus } from "./pane-footer";
+import {
+  CLOUD_QUOTE_DELAY_MINUTES,
+  resolvePlanAccess,
+  usePlanAccess,
+  type PlanAccess,
+} from "./plan-access";
 
 export const CLOUD_UPGRADE_URL = "https://gloom.sh/cloud?upgrade=pro";
 
@@ -143,4 +150,45 @@ export function useCloudAccessFooter({
   ]);
 
   return { access, openUpgrade, segment };
+}
+
+export function hasDelayedQuote(
+  quotes: Iterable<Pick<Quote, "dataSource"> | null | undefined>,
+): boolean {
+  for (const quote of quotes) {
+    if (quote?.dataSource === "delayed") return true;
+  }
+  return false;
+}
+
+/**
+ * Footer status for panes that headline quotes. Free cloud accounts get the
+ * upgrade chip; everyone else (signed out, Pro on a delayed fallback) still
+ * sees a plain `delayed` so a delayed print never reads as live.
+ */
+export function useDelayedQuotesFooter({
+  registrationId,
+  delayed,
+  focused,
+  shortcutScope,
+}: {
+  registrationId: string;
+  delayed: boolean;
+  focused: boolean;
+  shortcutScope?: string;
+}): void {
+  const cloudAccess = useCloudAccessFooter({
+    delayLabel: tf("{count}m", { count: CLOUD_QUOTE_DELAY_MINUTES }),
+    degraded: delayed,
+    focused,
+    segmentId: registrationId,
+    shortcutScope,
+  });
+  const delayedStatus = useMemo(() => (delayed ? paneDelayedStatus() : null), [delayed]);
+  const segment = cloudAccess.segment ?? delayedStatus;
+  usePaneFooter(
+    registrationId,
+    () => segment ? { info: [segment], order: -1 } : null,
+    [segment],
+  );
 }
