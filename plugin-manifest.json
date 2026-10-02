@@ -272,23 +272,6 @@
       }
     },
     {
-      "id": "eulerpool",
-      "name": "Eulerpool",
-      "description": "Company profile plus annual income and cash-flow statements from Eulerpool. Quotes stay on Yahoo.",
-      "categories": [
-        "research",
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "eulerpool"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
       "id": "fdic-bank",
       "name": "FDIC Bank Risk",
       "description": "FDIC bank risk: search insured banks by name, certificate, or state, with failure and assistance records from the free BankFind API.",
