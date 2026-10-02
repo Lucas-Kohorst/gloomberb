@@ -103,13 +103,39 @@ export function PaneFooterProvider({
 export function PaneFooterScope({
   active,
   children,
+  onHintsChange,
 }: {
   active: boolean;
   children: ReactNode;
+  /** Reports the scope's enabled hints so a parent can avoid binding the same keys. */
+  onHintsChange?: (hints: readonly PaneHint[]) => void;
 }) {
-  const context = useContext(PaneFooterContext);
+  const parentContext = useContext(PaneFooterContext);
+  const context = active ? parentContext : null;
+  const onHintsChangeRef = useRef(onHintsChange);
+  onHintsChangeRef.current = onHintsChange;
+  const observed = !!onHintsChange;
+  const value = useMemo<PaneFooterContextValue | null>(() => {
+    if (!context || !observed) return context;
+    const hintsById = new Map<string, PaneHint[]>();
+    const emit = () => {
+      onHintsChangeRef.current?.([...hintsById.values()].flat().filter((hint) => !hint.disabled));
+    };
+    return {
+      register(registrationId, registration) {
+        context.register(registrationId, registration);
+        if (registration?.hints?.length) hintsById.set(registrationId, registration.hints);
+        else hintsById.delete(registrationId);
+        emit();
+      },
+      unregister(registrationId) {
+        context.unregister(registrationId);
+        if (hintsById.delete(registrationId)) emit();
+      },
+    };
+  }, [context, observed]);
   return (
-    <PaneFooterContext.Provider value={active ? context : null}>
+    <PaneFooterContext.Provider value={value}>
       {children}
     </PaneFooterContext.Provider>
   );
