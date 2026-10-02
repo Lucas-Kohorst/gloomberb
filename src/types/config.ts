@@ -142,6 +142,8 @@ export type OnboardingStage =
   | "welcome"
   | "portfolio"
   | "add-ticker"
+  | "desks"
+  | "companies"
   | "account"
   | "upgrade"
   | "ready";
@@ -156,6 +158,8 @@ export interface OnboardingProgress {
   positionsImported?: number;
   accountStatus?: "signed-in" | "skipped";
   checkoutOpenedAt?: string;
+  /** Desks picked at "What do you trade?", in the order picked; empty when skipped. */
+  desks?: string[];
 }
 
 /**

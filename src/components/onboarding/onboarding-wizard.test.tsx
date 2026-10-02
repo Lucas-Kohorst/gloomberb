@@ -174,6 +174,17 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
   });
 }
 
+async function continuePastDesksAndCompanies() {
+  await waitForFrame("What do you trade?");
+  await emitKeypress({ name: "s", sequence: "s" });
+  await waitForFrame("Which companies do you follow?");
+  await emitKeypress({ name: "right" });
+  await emitKeypress({ name: "space", sequence: " " });
+  await emitKeypress({ name: "right" });
+  await emitKeypress({ name: "space", sequence: " " });
+  await emitKeypress({ name: "return", sequence: "\r" });
+}
+
 async function waitForFrame(text: string, timeoutMs = 2_000): Promise<string> {
   const deadline = performance.now() + timeoutMs;
   let frame = testSetup!.captureCharFrame();
@@ -301,6 +312,7 @@ describe("OnboardingWizard", () => {
       await Bun.sleep(0);
       await testSetup!.renderOnce();
     });
+    await continuePastDesksAndCompanies();
     const frame = await waitForFrame("Sign up free");
     expect(frame).toContain("Sign up free");
     expect(capturedConfig?.onboardingProgress?.stage).toBe("account");
@@ -348,6 +360,7 @@ describe("OnboardingWizard", () => {
     await emitKeypress({ name: "return", sequence: "\r" });
     await waitForFrame("Connect Demo Broker");
     await emitKeypress({ name: "return", sequence: "\r" });
+    await continuePastDesksAndCompanies();
 
     const frame = await waitForFrame("Sign up free");
     expect(frame).toContain("Sign up free");
@@ -512,8 +525,11 @@ describe("OnboardingWizard", () => {
       await testSetup!.renderOnce();
     });
 
+    await continuePastDesksAndCompanies();
     await waitForFrame("Sign up free");
-    expect((await tickerRepository.loadAllTickers()).map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
+    const committedSymbols = (await tickerRepository.loadAllTickers()).map((ticker) => ticker.metadata.ticker);
+    expect(committedSymbols).toContain("AAPL");
+    expect(committedSymbols).toContain("MSFT");
     expect(capturedConfig?.onboardingProgress?.stage).toBe("account");
   });
 
@@ -591,6 +607,7 @@ describe("OnboardingWizard", () => {
       await testSetup!.renderOnce();
     });
 
+    await continuePastDesksAndCompanies();
     await waitForFrame("Sign up free");
     expect(completionCount).toBe(0);
     expect(capturedConfig?.onboardingProgress?.stage).toBe("account");

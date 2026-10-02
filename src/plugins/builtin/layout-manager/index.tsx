@@ -1,7 +1,18 @@
 import { findPaneInstance, type LayoutConfig } from "../../../types/config";
-import type { AppNotificationRequest, GloomPluginContext } from "../../../types/plugin";
+import type { AppNotificationRequest, CommandResultDef, GloomPluginContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { AppAction } from "../../../state/app/context";
+import { apiClient } from "../../../api-client";
+import { resolvePlanAccess } from "../shared/plan-access";
+import { getSharedRegistry } from "../../registry/shared";
+import {
+  buildDesk,
+  deskFunctions,
+  isDeskStock,
+  matchDesks,
+  pickDeskCompany,
+  type Desk,
+} from "../../../layout/desks";
 import { notifyGridlockComplete } from "../../gridlock-notification";
 import {
   dockFloatingPaneAtCurrentRect,
@@ -41,11 +52,70 @@ function getFocusedPane(layout: LayoutConfig, focusedPaneId: string | null) {
   return focusedPaneId ? findPaneInstance(layout, focusedPaneId) ?? null : null;
 }
 
+/**
+ * Opens the desk as a new tab. Its company is the focused pane's stock, else
+ * the most recent stock the user looked at.
+ */
+async function addDesk(ctx: GloomPluginContext, desk: Desk): Promise<void> {
+  const registry = getSharedRegistry();
+  if (!registry || !dispatchRef) return;
+  const config = ctx.getConfig();
+  const state = getStateRef?.();
+  const focused = state ? getFocusedPane(state.layout, state.focusedPaneId) : null;
+  const company = pickDeskCompany(
+    [
+      focused?.binding?.kind === "fixed" ? focused.binding.symbol : null,
+      ...config.recentTickers,
+    ],
+    (symbol) => isDeskStock(ctx.getTicker(symbol), ctx.getData(symbol)),
+  );
+  const saved = await buildDesk(desk, {
+    catalog: registry,
+    config,
+    company,
+    pro: resolvePlanAccess(apiClient.getCurrentUser()).hasProAccess,
+  });
+  if (!saved) return;
+  dispatchRef({
+    type: "INSTALL_LAYOUT_COPY",
+    name: saved.name,
+    layout: saved.layout,
+    paneState: saved.paneState,
+  });
+}
+
+function deskResults(ctx: GloomPluginContext, query: string): CommandResultDef[] {
+  return matchDesks(query).map((desk) => ({
+    id: desk.key,
+    label: desk.label,
+    detail: deskFunctions(desk).join(" · "),
+    execute: () => addDesk(ctx, desk),
+  }));
+}
+
 export const layoutManagerModule: PluginModule = {
   setup(ctx) {
     const notify = (body: string, options?: Omit<AppNotificationRequest, "body">) => {
       ctx.notify({ body, ...options });
     };
+
+    ctx.registerCommand({
+      id: "add-desk",
+      label: "Add a Desk",
+      description: "Add a ready-made desk for one kind of trading as a new layout tab",
+      keywords: ["desk", "desks", "workspace", "starter", "equities", "stocks", "options", "volatility", "futures",
+        "commodities", "rates", "credit", "fx", "macro", "active trading", "day trading"],
+      category: "config",
+      shortcut: "DESK",
+      shortcutArg: { placeholder: "desk", kind: "text", parse: (arg) => ({ query: arg.trim() }) },
+      buildResults: (arg) => deskResults(ctx, arg),
+      execute: async (values) => {
+        const query = values?.query ?? "";
+        const [desk] = query.trim() ? matchDesks(query) : [];
+        if (desk) await addDesk(ctx, desk);
+        else ctx.openCommandBar("DESK ");
+      },
+    });
 
     ctx.registerCommand({
       id: "float-pane",

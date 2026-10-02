@@ -56,6 +56,7 @@ import { AiProvidersTab } from "./ai-providers-tab";
 import { AccountByokTab } from "./byok-tab";
 import { DisplayTab, cycleDisplayFieldValue } from "./display-tab";
 import { TeamsAccountTab } from "../cloud/team/acm-tab";
+import { CalendarAccountTab } from "./calendar-tab";
 import { ByokSettingsPane } from "../byok/pane";
 import { isHostedWebClient } from "../ai/providers";
 import { useAccountManagementFooter } from "./footer";
@@ -86,6 +87,7 @@ const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = 
   { label: "Profile", value: "profile" },
   { label: "Display", value: "display" },
   { label: "Emails", value: "emails" },
+  { label: "Calendar", value: "calendar" },
   { label: "AI", value: "ai" },
   { label: "BYOK", value: "byok" },
   { label: "Keys", value: "keys" },
@@ -114,6 +116,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
     "positionAlertsEnabled",
     "emailAlertsOffAction",
   ],
+  calendar: [],
   ai: ["aiProvidersAction"],
   byok: ["byokKeysAction"],
   keys: ["keysAction"],
@@ -851,7 +854,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     cyclePortfolio,
     deleteAccount,
     draftRef,
-    focused,
+    focused: focused && activeTab !== "calendar",
     openPasswordDialog,
     openPortfolioDialog: openPortfolioPicker,
     openUpgrade,
@@ -910,6 +913,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         />
       ) : activeTab === "teams" ? (
         <TeamsAccountTab focused={focused} width={Math.max(1, width - 2)} />
+      ) : activeTab === "calendar" ? (
+        <CalendarAccountTab width={contentWidth} sessionMarker={sessionMarker} />
       ) : (
         <ScrollBox height={Math.max(3, bodyHeight - 2)} scrollY focusable={false}>
           <Box flexDirection="column" width={contentWidth} gap={1}>

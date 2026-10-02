@@ -30,7 +30,17 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { chatController } from "../../plugins/builtin/chat/controller";
 import { formatCloudMonthlyPrice } from "../../plugins/builtin/account-management/model";
 import { useCloudUpgradeAction } from "../../plugins/builtin/shared/cloud-upgrade";
-import { usePlanAccess } from "../../plugins/builtin/shared/plan-access";
+import { resolvePlanAccess, usePlanAccess } from "../../plugins/builtin/shared/plan-access";
+import { applyCompanyPicks, CompanyPicker, type CompanyPick } from "../../plugins/builtin/cloud/company-picker";
+import {
+  buildDesk,
+  DESKS,
+  getDesk,
+  isDeskStock,
+  pickDeskCompany,
+  type DeskKey,
+} from "../../layout/desks";
+import { DesksStep, toggleDeskChoice } from "./desks-step";
 import type { ListViewItem } from "../ui";
 import { AccountStep, PortfolioStep, type PortfolioSub } from "./onboarding-steps";
 import {
@@ -86,6 +96,10 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
   const inputRef = useRef<InputRenderable>(null);
   const progressSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const finishingRef = useRef(false);
+  const [chosenDesks, setChosenDesks] = useState<DeskKey[]>([]);
+  const [deskCursor, setDeskCursor] = useState(0);
+  const [buildingDesks, setBuildingDesks] = useState(false);
+  const buildingDesksRef = useRef(false);
 
   const brokerOptions = useMemo(
     (): BrokerOption[] => getConnectableBrokerOptions(pluginRegistry.brokers),
@@ -165,7 +179,7 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
       ?? result.updatedTickers[0]?.metadata.ticker;
     const brokerName = brokerOptions.find((option) => option.id === selectedBrokerId)?.name;
     const nextConfig = withOnboardingProgress(syncedConfig, {
-      stage: tickerSymbol ? "account" : "add-ticker",
+      stage: tickerSymbol ? "desks" : "add-ticker",
       path: "broker",
       portfolioId: tickerSymbol ? (result.portfolioIds[0] ?? "main") : "main",
       tickerSymbol,
@@ -250,7 +264,7 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
       const current = getOnboardingProgress(stateRef.current.config);
       if (current.stage !== "add-ticker" || portfolioId !== current.portfolioId) return;
       saveProgressInBackground({
-        stage: "account",
+        stage: "desks",
         path: current.path,
         portfolioId,
         tickerSymbol: symbol,
@@ -504,9 +518,71 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
     }
   }, [account.returnToAccountChooser, isBrokerCommitting, planAccess.signedIn, saveProgressInBackground]);
 
+  const finishDesks = useCallback((desks: readonly DeskKey[]) => {
+    if (buildingDesksRef.current || finishingRef.current) return;
+    if (desks.length === 0) {
+      saveProgressInBackground({ stage: "companies", desks: [] });
+      return;
+    }
+    buildingDesksRef.current = true;
+    setBuildingDesks(true);
+    setPersistenceError(null);
+    const operation = progressSaveQueueRef.current
+      .catch(() => {})
+      .then(async () => {
+        if (finishingRef.current) return;
+        const base = stateRef.current.config;
+        const current = getOnboardingProgress(base);
+        const { tickers, financials } = stateRef.current;
+        const company = pickDeskCompany(
+          [current.tickerSymbol, ...[...tickers.values()].map((ticker) => ticker.metadata.ticker)],
+          (symbol) => isDeskStock(tickers.get(symbol), financials.get(symbol) ?? null),
+        );
+        const pro = resolvePlanAccess(apiClient.getCurrentUser()).hasProAccess;
+        const built = (await Promise.all(desks.map((key) => (
+          buildDesk(getDesk(key), { catalog: pluginRegistry, config: base, company, pro }).catch(() => null)
+        )))).filter((tab): tab is NonNullable<typeof tab> => tab !== null);
+        const index = Math.min(Math.max(0, base.activeLayoutIndex), Math.max(0, base.layouts.length - 1));
+        const layouts = [
+          ...base.layouts.slice(0, index + 1),
+          ...built,
+          ...base.layouts.slice(index + 1),
+        ];
+        const saved = withOnboardingProgress(
+          { ...base, layouts },
+          { stage: "companies", desks: [...desks] },
+        );
+        await saveConfigImmediately(saved);
+        dispatch({ type: "SET_CONFIG", config: saved });
+        pluginRegistry.events.emit("config:changed", { config: saved });
+      })
+      .catch((error: unknown) => {
+        setPersistenceError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        buildingDesksRef.current = false;
+        setBuildingDesks(false);
+      });
+    progressSaveQueueRef.current = operation.then(() => {}, () => {});
+  }, [dispatch, pluginRegistry, saveProgressInBackground, stateRef]);
+
+  const finishCompanies = useCallback(async (picks: CompanyPick[]) => {
+    if (finishingRef.current) return;
+    const watchlistId = stateRef.current.config.watchlists[0]?.id ?? "watchlist";
+    await applyCompanyPicks({
+      pluginRegistry,
+      dispatch,
+      getTickers: () => stateRef.current.tickers,
+      watchlistId,
+      picks,
+    });
+    if (finishingRef.current) return;
+    saveProgressInBackground({ stage: "account" });
+  }, [dispatch, pluginRegistry, saveProgressInBackground, stateRef]);
+
   const sectionAvailability: Partial<Record<OnboardingSectionId, boolean>> = {
     portfolio: !isBrokerCommitting && stage !== "welcome",
-    cloud: !isBrokerCommitting && (stage === "account" || stage === "upgrade" || stage === "ready" || !!progress.tickerSymbol),
+    cloud: !isBrokerCommitting && stage !== "desks" && stage !== "companies" && (stage === "account" || stage === "upgrade" || stage === "ready" || !!progress.tickerSymbol),
     pro: !isBrokerCommitting && planAccess.signedIn && (
       stage === "upgrade"
       || stage === "ready"
@@ -526,7 +602,7 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
 
     if (name === "f10") {
       consume();
-      if (stage === "portfolio" || stage === "add-ticker") return;
+      if (stage === "portfolio" || stage === "add-ticker" || stage === "desks" || stage === "companies") return;
       if (!isBrokerCommitting) {
         if (stage === "upgrade" && !planAccess.hasProAccess) continueFree();
         else void finish();
@@ -562,6 +638,27 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
       if (name === "escape" || name === "backspace") {
         consume();
         goToSection("portfolio");
+      }
+      return;
+    }
+    if (stage === "companies") return;
+    if (stage === "desks") {
+      if (enter && chosenDesks.length > 0) {
+        consume();
+        finishDesks(chosenDesks);
+      } else if (name === "s") {
+        consume();
+        finishDesks([]);
+      } else if (name === "up" || name === "k") {
+        consume();
+        setDeskCursor((index) => Math.max(0, index - 1));
+      } else if (name === "down" || name === "j") {
+        consume();
+        setDeskCursor((index) => Math.min(DESKS.length - 1, index + 1));
+      } else if (name === "space") {
+        consume();
+        const desk = DESKS[deskCursor];
+        if (desk) setChosenDesks((current) => toggleDeskChoice(current, desk.key));
       }
       return;
     }
@@ -757,6 +854,55 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, requir
           ) : null}
         </OnboardingActions>
       </OnboardingModal>
+    );
+  }
+
+  if (stage === "desks") {
+    return (
+      <OnboardingModal width={76} height={20}>
+        <OnboardingHeader
+          active="portfolio"
+          available={sectionAvailability}
+          onNavigate={goToSection}
+          onDismiss={() => { void finish(); }}
+          dismissing={isFinishing}
+          showDismiss={false}
+        />
+        <OnboardingTitle
+          step={desktop ? undefined : t("DESKS")}
+          title={t("What do you trade?")}
+          description={t("Each one adds a ready-made desk as a tab.")}
+        />
+        <DesksStep
+          chosen={chosenDesks}
+          cursor={deskCursor}
+          onCursor={setDeskCursor}
+          onToggle={(key) => setChosenDesks((current) => toggleDeskChoice(current, key))}
+        />
+        {persistenceError ? (
+          <Text fg={colors.negative} wrapText style={desktop ? { marginTop: 10 } : undefined}>
+            {persistenceError}
+          </Text>
+        ) : null}
+        <OnboardingActions>
+          <OnboardingButton label="Skip" variant="ghost" disabled={buildingDesks} onPress={() => finishDesks([])} />
+          <OnboardingButton
+            label="Continue"
+            variant="primary"
+            disabled={chosenDesks.length === 0 || buildingDesks}
+            onPress={() => finishDesks(chosenDesks)}
+          />
+        </OnboardingActions>
+      </OnboardingModal>
+    );
+  }
+
+  if (stage === "companies") {
+    return (
+      <CompanyPicker
+        searchCompanies={(query) => pluginRegistry.marketData.search(query)}
+        onDone={(picks) => { void finishCompanies(picks); }}
+      />
     );
   }
 
