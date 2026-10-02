@@ -29,6 +29,8 @@ export interface NewsArticle {
   /** RSS/Atom guid or Atom id when the source supplied one. Used for identity. */
   guid?: string;
   publishedAt: Date;
+  /** Calendar dates have no time component and must not be localized as instants. */
+  publishedAtKind?: "instant" | "date";
   summary?: string;
   imageUrl?: string;
   topic: string;
