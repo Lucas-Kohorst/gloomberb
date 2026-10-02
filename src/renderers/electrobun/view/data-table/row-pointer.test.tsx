@@ -39,6 +39,7 @@ async function mountRow(options: {
   activate?: boolean;
   onRowMouseDown?: () => boolean | void;
   cellMouseDown?: () => void;
+  selected?: boolean;
 } = {}) {
   const selected: string[] = [];
   const activated: string[] = [];
@@ -68,7 +69,7 @@ async function mountRow(options: {
       rowSize={18}
       rowStart={0}
       rowContextMenuSurface={false}
-      selected={false}
+      selected={options.selected ?? false}
     />,
   ));
   return {
@@ -78,6 +79,18 @@ async function mountRow(options: {
     activated,
   };
 }
+
+test("rows expose grid semantics, with aria-selected following the selected row", async () => {
+  const unselected = await mountRow();
+  expect(unselected.row.getAttribute("role")).toBe("row");
+  expect(unselected.row.getAttribute("aria-rowindex")).toBe("2");
+  expect(unselected.row.getAttribute("aria-selected")).toBe("false");
+  expect(unselected.cell.getAttribute("role")).toBe("gridcell");
+  await act(async () => root!.unmount());
+
+  const selected = await mountRow({ selected: true });
+  expect(selected.row.getAttribute("aria-selected")).toBe("true");
+});
 
 test("a primary click enters an activatable row instead of only selecting it", async () => {
   const probe = await mountRow();

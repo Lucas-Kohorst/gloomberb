@@ -35,6 +35,7 @@ import {
   useScrollBoxHandle,
   useScrollbarState,
 } from "./dom";
+import { createRowCountAnnouncer, VISUALLY_HIDDEN_STYLE, type RowCountAnnouncer } from "./live-status";
 import { WebDataTableHeader, WebDataTableRow } from "./row";
 
 interface VirtualRow {
@@ -216,6 +217,22 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scheduleVisibleRangeMeasure();
   }, [items.length, scheduleVisibleRangeMeasure, visibleRangeKey]);
 
+  const liveStatusRef = useRef<HTMLDivElement | null>(null);
+  const rowCountAnnouncerRef = useRef<RowCountAnnouncer | null>(null);
+  useEffect(() => {
+    const announcer = createRowCountAnnouncer((message) => {
+      if (liveStatusRef.current) liveStatusRef.current.textContent = message;
+    });
+    rowCountAnnouncerRef.current = announcer;
+    return () => {
+      announcer.dispose();
+      rowCountAnnouncerRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    rowCountAnnouncerRef.current?.update(items.length);
+  }, [items.length]);
+
   // Rows sit on a whole-cell grid, so the offset is computed in rows and only
   // then converted to pixels. Letting the virtualizer scroll by pixels landed
   // mid-row and clipped the first and last visible rows into slivers.
@@ -305,8 +322,20 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   return (
     <div ref={rootElementRef} data-gloom-role="data-table" style={rootStyle}>
       <div
+        ref={liveStatusRef}
+        data-gloom-role="data-table-live-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={VISUALLY_HIDDEN_STYLE}
+      />
+      <div
         ref={bodyElementRef}
         data-gloom-role="data-table-body-scroll"
+        role="grid"
+        aria-readonly="true"
+        aria-rowcount={items.length > 0 ? items.length + 1 : undefined}
+        aria-colcount={columns.length}
         data-gloom-scrollbar-x={
           horizontalScrollEnabled && bodyHorizontal.visible
             ? "visible"
@@ -354,6 +383,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           {items.length === 0 ? (
             emptyContent ?? (
               <div
+                role="row"
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -369,11 +399,11 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
               >
                 {/* cellTextStyle is inline-block for real cells, so the title and
                     hint would share one line and read as a single run-on string. */}
-                <div style={{ ...cellTextStyle(CSS_TEXT_BRIGHT, TextAttributes.BOLD), display: "block" }}>
+                <div role="gridcell" style={{ ...cellTextStyle(CSS_TEXT_BRIGHT, TextAttributes.BOLD), display: "block" }}>
                   {emptyStateTitle}
                 </div>
                 {emptyStateHint ? (
-                  <div style={{ ...cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE), display: "block" }}>
+                  <div role="gridcell" style={{ ...cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE), display: "block" }}>
                     {emptyStateHint}
                   </div>
                 ) : null}

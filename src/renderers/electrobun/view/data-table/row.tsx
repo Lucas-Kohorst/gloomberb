@@ -33,8 +33,16 @@ function renderHeaderLabel<C extends DataTableColumn>(
   const indicator = isSorted ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
   return {
     isSorted,
+    indicator,
     text: column.label + indicator,
-  };
+    ariaSort: isSorted
+      ? (sortDirection === "asc" ? "ascending" : "descending")
+      : "none",
+  } as const;
+}
+
+function isActivationKey(key: string): boolean {
+  return key === "Enter" || key === " " || key === "Spacebar";
 }
 
 function contentJustifyForAlign(align: string | undefined): CSSProperties["justifyContent"] {
@@ -228,6 +236,8 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   return (
     <div
       data-gloom-role="data-table-header-row"
+      role="row"
+      aria-rowindex={1}
       style={{
         position: "sticky",
         top: 0,
@@ -246,7 +256,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
       }}
     >
       {columns.map((column) => {
-        const { isSorted, text } = renderHeaderLabel(
+        const { isSorted, indicator, text, ariaSort } = renderHeaderLabel(
           column,
           sortColumnId,
           sortDirection,
@@ -257,6 +267,18 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             key={column.id}
             data-gloom-role="data-table-header-cell"
             data-gloom-interactive="true"
+            role="columnheader"
+            aria-sort={ariaSort}
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget || !isActivationKey(event.key)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onHeaderClick(column.id);
+            }}
+            onFocus={(event) => {
+              if (event.target === event.currentTarget) focusPane();
+            }}
             style={{
               // The frozen header pins above the resize handles (z-index 3) so
               // scrolled headers and their handles pass under it.
@@ -286,7 +308,8 @@ export function WebDataTableHeader<C extends DataTableColumn>({
                 whiteSpace: "pre",
               }}
             >
-              {text}
+              {column.label}
+              {indicator ? <span aria-hidden="true">{indicator}</span> : null}
             </span>
             <WebColumnResizeHandle
               column={column}
@@ -385,6 +408,8 @@ function WebDataTableRowInner<
       <div
         key={itemKey}
         data-gloom-role="data-table-section-header"
+        role="row"
+        aria-rowindex={index + 2}
         style={{
           ...baseRowStyle,
           backgroundColor: sectionHeader.backgroundColor ?? CSS_BG,
@@ -398,6 +423,8 @@ function WebDataTableRowInner<
         }}
       >
         <span
+          role="rowheader"
+          aria-colspan={Math.max(1, columns.length)}
           title={sectionHeader.text}
           style={{
             ...cellTextStyle(
@@ -459,6 +486,9 @@ function WebDataTableRowInner<
       data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-roll-in={arriving ? "true" : undefined}
+      role="row"
+      aria-rowindex={index + 2}
+      aria-selected={selected}
       style={{
         ...baseRowStyle,
         backgroundColor: rowBg,
@@ -481,6 +511,7 @@ function WebDataTableRowInner<
           <div
             key={column.id}
             data-gloom-role="data-table-cell"
+            role="gridcell"
             style={{
               ...(frozen ? { position: "sticky", left: 0, zIndex: 1 } : null),
               minWidth: 0,

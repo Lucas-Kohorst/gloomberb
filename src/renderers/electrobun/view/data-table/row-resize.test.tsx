@@ -14,7 +14,10 @@ afterEach(async () => {
   testWindow.document.body.innerHTML = "";
 });
 
-async function mount(renderedWidth = 12) {
+async function mount(
+  renderedWidth = 12,
+  sort: { columnId: string | null; direction: "asc" | "desc" } = { columnId: null, direction: "asc" },
+) {
   const resized: number[] = [];
   let ended = 0;
   let reset = 0;
@@ -24,17 +27,35 @@ async function mount(renderedWidth = 12) {
   testWindow.document.body.append(container);
   root = createRoot(container as unknown as HTMLElement);
   await act(async () => root!.render(<WebDataTableHeader
-    columns={[{ id: "name", label: "Name", width: 12 }]}
+    columns={[{ id: "name", label: "Name", width: 12 }, { id: "price", label: "Price", width: 8 }]}
     columnGap={1} horizontalPadding={1} focusPane={() => focused++}
-    gridTemplateColumns="100px" frozenColumnId={null} sortColumnId={null} sortDirection="asc"
+    gridTemplateColumns="100px 60px" frozenColumnId={null}
+    sortColumnId={sort.columnId} sortDirection={sort.direction}
     onHeaderClick={() => sorted++}
     onColumnResize={(_, width) => resized.push(width)}
     onColumnResizeEnd={() => ended++} onColumnResizeReset={() => reset++}
   />));
   const handle = container.querySelector('[role="separator"]')!;
   if (handle) handle.parentElement!.getBoundingClientRect = () => ({ width: renderedWidth * WEB_CELL_WIDTH }) as DOMRect;
-  return { handle, resized, focusCount: () => focused, counts: () => ({ ended, reset, sorted }) };
+  const headers = [...container.querySelectorAll('[role="columnheader"]')];
+  return { handle, headers, resized, focusCount: () => focused, counts: () => ({ ended, reset, sorted }) };
 }
+
+test("aria-sort follows the sort column and direction, and Enter or Space sorts", async () => {
+  const descending = await mount(12, { columnId: "price", direction: "desc" });
+  expect(descending.headers.map((header) => header.getAttribute("aria-sort"))).toEqual(["none", "descending"]);
+  expect(descending.headers[1]!.textContent).toBe("Price ▼");
+  await act(async () => root!.unmount());
+
+  const ascending = await mount(12, { columnId: "name", direction: "asc" });
+  expect(ascending.headers.map((header) => header.getAttribute("aria-sort"))).toEqual(["ascending", "none"]);
+  for (const key of ["Enter", " "]) {
+    await act(async () => {
+      ascending.headers[1]!.dispatchEvent(new testWindow.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    });
+  }
+  expect(ascending.counts().sorted).toBe(2);
+});
 
 test("keyboard resizing and reset do not sort the column", async () => {
   const probe = await mount();
