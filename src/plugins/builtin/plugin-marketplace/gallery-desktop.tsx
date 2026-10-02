@@ -456,6 +456,13 @@ export function PluginGalleryDesktop({
                 inputRef={searchInputRef}
                 onMouseDown={controller.onSearchFocus}
                 onBlur={controller.onSearchBlur}
+                onKeyDown={(event) => {
+                  const key = event.name ?? Reflect.get(event, "key");
+                  if (key !== "escape" && key !== "Escape" && key !== "Esc") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  controller.onSearchBlur?.();
+                }}
               />
             </Box>
             <ScrollBox

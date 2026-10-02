@@ -541,7 +541,7 @@ describe("recents in the root result model", () => {
       },
     }));
 
-    items.find((item) => item.id === "recent:command:theme")?.action();
+    items.find((item) => item.id === "recent:command:theme:amber")?.action();
     expect(executed).toEqual([{ id: "theme", arg: "amber" }]);
   });
 
@@ -644,6 +644,47 @@ describe("recents in the root result model", () => {
     expect(row?.category).toBe("Suggested");
     expect(row?.label).toBe("Chart");
     expect(row?.action).toBeTypeOf("function");
+  });
+
+  test("replays a stored argument when reopening a recent pane template", () => {
+    const chartTemplate = {
+      id: "ticker-news-pane",
+      paneId: "ticker-news",
+      label: "Ticker News",
+      description: "News for one ticker",
+    } as PaneTemplateDef;
+    const created: Array<string | undefined> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      createPaneTemplateItem: (template, options) => {
+        created.push(options?.createOptions?.arg);
+        return {
+          id: `pane-template:${template.id}`,
+          label: template.label,
+          detail: template.description,
+          category: "Panes",
+          kind: "action",
+          action: () => {},
+        };
+      },
+      getRecentPaneTemplate: () => chartTemplate,
+      state: {
+        ...recentState,
+        recentCommands: [
+          { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "MSFT" },
+          { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "AAPL" },
+        ],
+      },
+    }));
+
+    expect(created).toEqual(["MSFT", "AAPL"]);
+    expect(items.filter((item) => item.id.startsWith("recent:pane-template:")).map((item) => ({
+      id: item.id,
+      detail: item.detail,
+    }))).toEqual([
+      { id: "recent:pane-template:ticker-news-pane:MSFT", detail: "MSFT" },
+      { id: "recent:pane-template:ticker-news-pane:AAPL", detail: "AAPL" },
+    ]);
   });
 
   test("skip recent entries that no longer resolve to a command or template", () => {

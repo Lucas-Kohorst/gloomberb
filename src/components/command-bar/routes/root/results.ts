@@ -188,13 +188,13 @@ function buildRecentResultItems(options: {
     const command = availableCommands.find((entry) => entry.id === recent.id);
     if (command) {
       items.push({
-        id: `recent:command:${command.id}`,
+        id: recent.arg ? `recent:command:${command.id}:${recent.arg}` : `recent:command:${command.id}`,
         label: recent.label,
-        detail: command.description,
+        detail: recent.arg ? `${command.description} · ${recent.arg}` : command.description,
         category: "Suggested",
         kind: "command",
         shortcutQuery: command.prefix || undefined,
-        searchText: recent.label,
+        searchText: recent.arg ? `${recent.label} ${recent.arg}` : recent.label,
         action: () => runDirectCommand(command, recent.arg ?? ""),
       });
       continue;
@@ -212,9 +212,10 @@ function buildRecentResultItems(options: {
       const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
       if (!template) continue;
       items.push({
-        ...createPaneTemplateItem(template),
-        id: `recent:${recent.id}`,
+        ...createPaneTemplateItem(template, recent.arg ? { createOptions: { arg: recent.arg } } : undefined),
+        id: recent.arg ? `recent:${recent.id}:${recent.arg}` : `recent:${recent.id}`,
         category: "Suggested",
+        ...(recent.arg ? { detail: recent.arg } : {}),
       });
     }
   }
