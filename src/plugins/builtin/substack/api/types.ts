@@ -30,6 +30,7 @@ export interface SubstackCachedData<T> {
   data: T;
   fetchedAt: number;
   stale: boolean;
+  refreshError?: string | null;
 }
 
 export class SubstackAuthError extends Error {

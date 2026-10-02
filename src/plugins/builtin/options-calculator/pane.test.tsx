@@ -136,3 +136,20 @@ test("tabs into fields and edits them from the keyboard", async () => {
 
   expect(testSetup!.captureCharFrame()).toMatch(/Spot\s+120/);
 });
+
+test("the visible edit shortcut enters the selected field", async () => {
+  await render();
+
+  await act(async () => {
+    testSetup!.mockInput.pressKey("e");
+    await testSetup!.renderOnce();
+  });
+  await act(async () => {
+    testSetup!.mockInput.typeText("120");
+    testSetup!.mockInput.pressEnter();
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+
+  expect(testSetup!.captureCharFrame()).toMatch(/Spot\s+120/);
+});

@@ -14,7 +14,9 @@ import {
   resolveAdjacentApiKey,
   resetAdjacentPersistence,
   setSharedAdjacentApiKeyResolver,
+  setSharedAdjacentUserApiKey,
 } from "./client";
+import { readProcessEnv } from "../../../utils/process-env";
 import { useAppSelector } from "../../../state/app/context";
 import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { AdjacentPane } from "./pane";
@@ -228,6 +230,9 @@ const adjacentMarketsModule: PluginModule = {
       ?? ctx.configState?.get<string>(ADJACENT_API_KEY_CONFIG)
       ?? null
     ));
+    setSharedAdjacentUserApiKey(
+      ctx.getApiKey("adjacent") ?? readProcessEnv("ADJACENT_API_KEY") ?? null,
+    );
     adjacentClient = getSharedAdjacentClient();
     void adjacentClient.getIndices().then((payload) => {
       rememberAdjacentIndexTickers(

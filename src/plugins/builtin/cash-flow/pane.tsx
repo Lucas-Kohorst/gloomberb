@@ -12,6 +12,7 @@ import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
+import { compareSortValues, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import { useAssetData } from "../../runtime";
 import type { FinancialStatement, TickerFinancials } from "../../../types/financials";
 import { useBoundTicker, useTickerRequest } from "../shared/ticker-request";
@@ -46,6 +47,7 @@ export function CashFlowPane({
     CASH_FLOW_DEFAULTS.period,
   );
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<SortPreference>({ columnId: null, direction: "asc" });
 
   const loader = useCallback(
     (nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
@@ -80,6 +82,35 @@ export function CashFlowPane({
     () => buildCashFlowColumns(statements, period),
     [period, statements],
   );
+  const activeSortColumn = columns.find((entry) => entry.id === sortPreference.columnId);
+  const sortedRows = useMemo(() => {
+    if (!activeSortColumn) return rows;
+    const result: CashFlowTableRow[] = [];
+    let sectionRows: Extract<CashFlowTableRow, { kind: "metric" }>[] = [];
+    const flushSection = () => {
+      sectionRows = [...sectionRows].sort((left, right) => {
+        const leftValue = activeSortColumn.kind === "metric"
+          ? left.label
+          : statementCashFlowValue(activeSortColumn.statement, left.field);
+        const rightValue = activeSortColumn.kind === "metric"
+          ? right.label
+          : statementCashFlowValue(activeSortColumn.statement, right.field);
+        return compareSortValues(leftValue, rightValue, sortPreference.direction);
+      });
+      result.push(...sectionRows);
+      sectionRows = [];
+    };
+    for (const row of rows) {
+      if (row.kind === "section") {
+        flushSection();
+        result.push(row);
+      } else {
+        sectionRows.push(row);
+      }
+    }
+    flushSection();
+    return result;
+  }, [activeSortColumn, rows, sortPreference.direction]);
   const footerHints = useMemo(() => [], []);
 
   useEffect(() => {
@@ -160,7 +191,7 @@ export function CashFlowPane({
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={rows}
+      items={sortedRows}
       selection={{
         kind: "id",
         selectedId: selectedRowId && rows.some((row) => row.id === selectedRowId)
@@ -169,9 +200,13 @@ export function CashFlowPane({
         getId: (row) => row.id,
         onChange: (id) => setSelectedRowId(id),
       }}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={activeSortColumn?.id ?? null}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId,
+        { defaultDirection: columnId === "metric" ? "asc" : "desc" },
+      ))}
       onRootKeyDown={handleKeyDown}
       getItemKey={(row) => row.id}
       getRowBackgroundColor={(row) => row.kind === "section" ? colors.panel : undefined}

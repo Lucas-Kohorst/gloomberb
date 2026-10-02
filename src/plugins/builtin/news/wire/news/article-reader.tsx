@@ -11,6 +11,7 @@ import { getStashedNewsArticle } from "./article-stash";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { shouldSkipJinaForKnownBody } from "../../../shared/jina-article-text";
 import { JinaArticleReader, useJinaArticle } from "../../../shared/jina-reader";
+import { formatCalendarDate, formatDetailDate } from "../../../../../utils/datetime-format";
 
 export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const [articleId] = usePaneSettingValue("articleId", "");
@@ -114,6 +115,10 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
         focused={focused}
         state={jina}
         knownBody={article.body ?? article.summary ?? ""}
+        metadata={[[
+          article.source,
+          (article.publishedAtKind === "date" ? formatCalendarDate : formatDetailDate)(article.publishedAt, ""),
+        ].filter(Boolean).join(" · ")]}
       />
     </Box>
   );

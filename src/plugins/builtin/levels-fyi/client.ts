@@ -218,6 +218,7 @@ export class LevelsFyiClient {
   async fetchCompanySalaries(
     companyQuery: string,
     jobFamilySlug = LEVELS_FYI_JOB_FAMILY,
+    signal?: AbortSignal,
   ): Promise<CompanySalaryPage> {
     const slug = slugifyCompany(companyQuery);
     if (!slug) {
@@ -225,7 +226,7 @@ export class LevelsFyiClient {
     }
     const url = buildCompanyUrl(slug, jobFamilySlug);
     return withConnectionRequest(LEVELS_FYI_CONNECTION_ID, "fetchSalaries", async () => {
-      const response = await levelsFyiFetch.fetch(url);
+      const response = await levelsFyiFetch.fetch(url, { signal });
       if (!response.ok) {
         throw new Error(`Levels.fyi request failed (${response.status}).`);
       }

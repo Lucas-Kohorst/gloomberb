@@ -16,9 +16,7 @@ import {
   Spinner,
   type DataTableCell,
   type DataTableColumn,
-  type DataTableKeyEvent,
 } from "../../../components";
-import { isPlainKey } from "../../../utils/keyboard";
 import {
   applySortPreference,
   nextSortPreference,
@@ -173,26 +171,11 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
     });
   }, [sortPreference, surface]);
 
-  const [selectedStrike, setSelectedStrike] = useState(0);
+  const [selectedStrikeId, setSelectedStrikeId] = useState<string | null>(null);
   useEffect(() => {
-    setSelectedStrike((index) => Math.min(index, Math.max(0, surface.strikes.length - 1)));
-  }, [surface.strikes.length]);
-
-  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (isPlainKey(event, "j", "down")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelectedStrike((i) => Math.min(i + 1, surface.strikes.length - 1));
-      return true;
-    }
-    if (isPlainKey(event, "k", "up")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelectedStrike((i) => Math.max(i - 1, 0));
-      return true;
-    }
-    return false;
-  }, [surface.strikes.length]);
+    if (selectedStrikeId && rows.some((row) => String(row.strike) === selectedStrikeId)) return;
+    setSelectedStrikeId(rows[0] ? String(rows[0].strike) : null);
+  }, [rows, selectedStrikeId]);
 
   const renderCell = useCallback(
     (row: VolSurfaceRow, column: DataTableColumn): DataTableCell => {
@@ -258,7 +241,6 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       <Box flexDirection="row" height={1} gap={1}>
-        <Text fg={colors.textDim}>Vol surface</Text>
         <Text fg={colors.text}>{effectiveTicker}</Text>
         {spot != null && <Text fg={colors.textDim}>@ ${spot.toFixed(2)}</Text>}
         {anyLoading && <Spinner />}
@@ -274,11 +256,11 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
         <DataTableView<VolSurfaceRow, DataTableColumn>
           focused={focused}
           selection={{
-            kind: "index",
-            selectedIndex: selectedStrike,
-            onChange: setSelectedStrike,
+            kind: "id",
+            selectedId: selectedStrikeId,
+            getId: (row) => String(row.strike),
+            onChange: (id) => setSelectedStrikeId(id),
           }}
-          onRootKeyDown={handleTableKeyDown}
           headerScrollId="volsurf-table-header-scroll"
           bodyScrollId="volsurf-table-body-scroll"
           columns={columns}
@@ -294,8 +276,6 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
           columnGap={0}
           horizontalPadding={0}
           fillAvailableWidth={false}
-          scrollToIndex={selectedStrike}
-          scrollToIndexAlign="nearest"
         />
       )}
 

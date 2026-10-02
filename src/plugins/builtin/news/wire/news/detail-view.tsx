@@ -5,11 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarketNewsItem, NewsStoryItem } from "../../../../../types/news-source";
 import { colors } from "../../../../../theme/colors";
 import { TickerBadge } from "../../../../../components/ticker/badge";
-import { ExternalLink, ExternalLinkText } from "../../../../../components/ui";
+import { ExternalLinkText } from "../../../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { formatNewsCategoryLabel } from "../../../../../news/news-model";
-import { newsOriginLabel } from "../../../../../news/origins";
-import { MarkdownText } from "../../../../../components/markdown-text";
+import { ArticleContent } from "../../../../../components/article-content";
 import { useInlineTickers } from "../../../../../state/hooks/inline-tickers";
 import { isPlainKey } from "../../../../../utils/keyboard";
 import { wrapTextLines } from "../../../../../utils/text-wrap";
@@ -202,9 +201,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   );
   const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
   const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
-  const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
-    .filter((part) => part && part !== "—")
-    .join(" · ");
+  const metaLine = `${item.source} · last updated at ${lastUpdatedStr} · score ${item.importance}/100`;
 
   const scrollBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -249,16 +246,12 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               />
             </Box>
           )}
-          <Box height={1} flexDirection="row">
-            <Text fg={colors.textDim}>
-              {`${item.source} · last updated at ${lastUpdatedStr} · score ${item.importance}/100`}
-            </Text>
-          </Box>
-          {item.body?.trim() ? (
-            <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} selectable />
-          ) : (
-            <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
-          )}
+          <ArticleContent
+            width={innerW}
+            metadata={[metaLine]}
+            body={item.body?.trim() ? item.body : item.summary ?? ""}
+            markdown={!!item.body?.trim()}
+          />
           {tickers.length > 0 && (
             <Box flexDirection="row" flexWrap="wrap" width={contentWidth} style={contentStyle}>
               {tickers.map((ticker) => {
@@ -291,13 +284,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
             </Box>
           )}
           {categoryLabels.length > 0 && (
-            nativePaneChrome ? (
-              <TextLines text={categoryLabels} width={innerW} color={colors.textMuted} nativePaneChrome />
-            ) : (
-              <Box height={1} flexDirection="row">
-                <Text fg={colors.textMuted}>{categoryLabels}</Text>
-              </Box>
-            )
+            <ArticleContent width={innerW} metadata={[categoryLabels]} body="" />
           )}
           {timelineItems.length > 0 && (
             <Box flexDirection="column" gap={1} width={contentWidth} style={contentStyle}>
@@ -313,7 +300,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               ))}
             </Box>
           )}
-          <ExternalLink url={item.url} color={colors.textDim} />
+          <ArticleContent width={innerW} body="" note={item.url} />
         </Box>
       </ScrollBox>
     </Box>

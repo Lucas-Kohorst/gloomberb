@@ -1138,6 +1138,9 @@ import {
   TickerListTable,
   TickerListTableView,
   PaneListChrome,
+  usePaneListSearch,
+  ArticleContent,
+  ChartRangeTabs,
   ToggleList,
   Button,
   MultiSelectDialogButton,
@@ -1185,9 +1188,18 @@ Available components:
 - `ListView` — shared selectable list primitive with mouse support
 - `DataTable` — low-level table primitive when a plugin owns table state
 - `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
-- `DataTableStackView`, `FeedDataTableStackView` — stacked table views for dense list panes
+- `DataTableStackView`, `FeedDataTableStackView` — stacked table views for dense list panes. Use ID selection for live/reordered data (`selection.kind: "id"` on data tables, `selectedItemId` on feed tables). Persist the item's ID in the pane; a saved row index changes meaning when new rows arrive. Feed-table `onSelect` returns the current source index, which can be mapped back to that ID.
 - `PaneListChrome` — shared list-pane chrome: optional tabs, then `/` search (`InputSearchBar`), then the body. Adjacent indices is the gold (clickable header sort on the table, bound `[/]search`). Do not repeat the pane title in this slice.
-- `PaneTabHeader` — compact one-row in-pane tabs (HELP is the standard: underline, compact, height 1, no body title). Use this for section tabs. List panes still compose `PaneListChrome` (tabs then `/` search then table). Do not put the pane name in this row.
+- `usePaneListSearch({ focused, value, onQueryChange, placeholder })` — shared search focus and `/` handling. Pass its `search` result to `PaneListChrome`, use `focused && !searchFocused` for the table, and bind the footer search action to `focusSearch`. The input commits on Enter, returns to the list with Down, and clears on Escape. Keep filtering and remote queries in the pane; preserve their debounce and normalization options.
+- `ArticleContent` — shared article metadata, Markdown/plain body, and source note. Feed-table details and extracted articles use it. Keep metadata out of the inline body when already supplied separately; retain it in exported articles. Long source URLs wrap visually while every segment opens the complete URL.
+- Feed-table columns adapt to narrow panes: source, then time, yield space to the headline. Columns return on expansion and selection/sort remain unchanged. Keep essential metadata in the detail view as well.
+- Responsive tables should use a stable `scrollStateKey` so changing visible columns does not change their persisted scroll identity. `FeedDataTableStackView` supplies one; custom tables should name each distinct list within the pane.
+- `ChartRangeTabs` (`gloomberb/components`) — numbered, clickable, scrollable chart ranges. Arrow keys remain available to chart navigation. Pass disabled choices for unsupported ranges; use `keyboardShortcuts={false}` only when the pane already routes those numbers through its shortcut handler.
+- `ChartStats` (`gloomberb/components`) — compact label/value statistics that keep each pair together when possible and wrap onto additional rows in narrow charts. Pass the chart's available content width and already-formatted values; preserve domain units consistently in the axis, cursor, and statistics.
+- Terminal footer actions use one-cell separation and at most two rows. Actions that do not fit remain available in the clickable More menu and retain their pane shortcuts. Supply an `onPress` for every action, including actions already handled by a keyboard hook, so pointer and overflow-menu activation work. Footer registration forwards actions to the current handler even when the visible label has not changed.
+- `FeedDataTableItem.timestampKind: "date"` marks a calendar date (statement period, filing date, weekly observation). Store it at UTC midnight; the feed displays `YYYY-MM-DD` and budgets ten cells. Use `datePrecision: "year" | "month" | "day"` to preserve a source that supplies only a year or month (default: day). Omit calendar-date mode for event timestamps, which retain relative/local formatting. Sorting continues to use the timestamp.
+- `useAsyncResource` (`gloomberb/react`) — stable loaders share loading/error/refresh state. Memoize the loader by query or resource identity; cached results survive a refresh failure, while a new loader hides the old resource. Forward its second argument, an `AbortSignal`, to clients that support cancellation. Progressive loaders can use the third argument, `publishPreview(data)`, to paint initial results while still loading; previews never replace cached data during refresh and obsolete publishers are ignored. Use full loading state in the footer and reserve the loading body for requests without cached data.
+- `PaneTabHeader` — compact one-row in-pane tabs (HELP is the standard: underline, compact, height 1, no body title). Overflow scrolls by default and the active tab stays visible on resize. Use this for section tabs. List panes still compose `PaneListChrome` (tabs then `/` search then table). Do not put the pane name in this row.
 - `PaneBodyPad` — inset pane copy (HELP-scale). TUI 1 cell, desktop 12px. Do not wrap tab headers or TradingView/LWC chart hosts.
 - `TickerListTable`, `TickerListTableView` — ticker table primitives used by market list panes
 - `StockChart` — interactive area, line, candlestick, and OHLC chart

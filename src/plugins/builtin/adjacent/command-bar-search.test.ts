@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   adjacentCatalogHaystack,
   matchAdjacentIndices,
+  matchAdjacentRates,
   pickAdjacentCatalogOpen,
   scoreAdjacentCatalogMatch,
 } from "./command-bar-search";
@@ -69,6 +70,18 @@ describe("adjacent command-bar catalog search", () => {
     ]);
     expect(hits).toEqual([]);
   });
+
+  test("team queries reach NTI rate rows through the composed name", () => {
+    const rates = [
+      rate({ rate_id: "nti_buf_win_27", name: "Win total 11.5+ 2027" }),
+      rate({ rate_id: "nti_ari_conf_27", name: "Conference 2027" }),
+      rate({ rate_id: "nti_pit_div_26", name: "Division 2026" }),
+    ];
+    expect(matchAdjacentRates("cardinals", rates).map((row) => row.rate_id)).toEqual(["nti_ari_conf_27"]);
+    expect(matchAdjacentRates("arizona", rates).map((row) => row.rate_id)).toEqual(["nti_ari_conf_27"]);
+    expect(matchAdjacentRates("steelers", rates).map((row) => row.rate_id)).toEqual(["nti_pit_div_26"]);
+    expect(matchAdjacentRates("pittsburgh", rates).map((row) => row.rate_id)).toEqual(["nti_pit_div_26"]);
+  });
 });
 
 describe("pickAdjacentCatalogOpen", () => {
@@ -96,6 +109,24 @@ describe("pickAdjacentCatalogOpen", () => {
     expect(pickAdjacentCatalogOpen("house", catalogs)).toEqual({
       templateId: "adjacent-rates-pane",
       arg: "house",
+    });
+  });
+
+  test("NTI rates open from the raw name and the composed name", () => {
+    const withNti = {
+      ...catalogs,
+      rates: [
+        rate({ rate_id: "house", name: "House" }),
+        rate({ rate_id: "nti_ari_conf_27", name: "Conference 2027" }),
+      ],
+    };
+    expect(pickAdjacentCatalogOpen("conference 2027", withNti)).toEqual({
+      templateId: "adjacent-rates-pane",
+      arg: "nti_ari_conf_27",
+    });
+    expect(pickAdjacentCatalogOpen("Arizona Cardinals · Conference 2027", withNti)).toEqual({
+      templateId: "adjacent-rates-pane",
+      arg: "nti_ari_conf_27",
     });
   });
 

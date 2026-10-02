@@ -44,6 +44,7 @@ function toItems(awards: SpendingAward[], openId: string | null, detail: Spendin
     eyebrow: award.recipientName || "Unknown recipient",
     title: award.awardingAgency || "Federal award",
     timestamp: award.startDate,
+    timestampKind: "date",
     detailTitle: award.recipientName || award.id,
     detailMeta: detailMeta(award),
     detailBody: detailBody(award, openId === award.id ? detail : null, openId === award.id && loading),
@@ -64,7 +65,7 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
   const [awards, setAwards] = useState<SpendingAward[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedAwardId, setSelectedAwardId] = useDebouncedPluginPaneState<string | null>("selectedAwardId", null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SpendingDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -91,7 +92,11 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
   }, [load, query]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const selectedAward = (openId ? awards.find((award) => award.id === openId) : null) ?? awards[selectedIdx] ?? null;
+  const selectedAward = (openId ? awards.find((award) => award.id === openId) : null)
+    ?? awards.find((award) => award.id === selectedAwardId)
+    ?? awards[0]
+    ?? null;
+  const activeSelectionId = selectedAward?.id ?? null;
   useEffect(() => {
     setDetail(null); setDetailLoading(false);
     if (!selectedAward) return;
@@ -106,7 +111,7 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
   }, [client, selectedAward?.id]);
 
   const focusSearch = useCallback(() => { setSearchFocused(true); setFocusToken((value) => value + 1); }, []);
-  const updateQuery = useCallback((value: string) => { setQuery(value.trim()); setSelectedIdx(0); setOpenId(null); }, [setQuery, setSelectedIdx]);
+  const updateQuery = useCallback((value: string) => { setQuery(value.trim()); setSelectedAwardId(null); setOpenId(null); }, [setQuery, setSelectedAwardId]);
   useShortcut((event) => {
     if (!focused || openId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "/")) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); }
@@ -127,7 +132,7 @@ function FederalSpendingPane({ width, height, focused }: PaneProps) {
   const rootBefore = <InputSearchBar value={query} focused={focused && !openId} active={searchFocused} width={width} focusToken={focusToken} inputRef={inputRef} placeholder="recipient or keyword" debounceMs={250} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={updateQuery} />;
   if (status === "loading" && awards.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label="Loading federal spending..." /></Box></Box>;
   if (error && awards.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Federal spending unavailable." message={error} hint="Press r to retry." /></Box></Box>;
-  return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore} items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx} onOpenItemIdChange={setOpenId} onRootKeyDown={(event, context) => { if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; } if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; } if (event.name === "r") { event.preventDefault?.(); event.stopPropagation?.(); load(query); return true; } return false; }} markdown sourceLabel="Recipient" titleLabel="Agency" emptyStateTitle={query ? `No awards match ${query}.` : "No federal spending awards."} />;
+  return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore} items={items} selectedItemId={activeSelectionId} onSelect={(index) => setSelectedAwardId(awards[index]?.id ?? null)} onOpenItemIdChange={setOpenId} onRootKeyDown={(event, context) => { if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; } if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; } if (event.name === "r") { event.preventDefault?.(); event.stopPropagation?.(); load(query); return true; } return false; }} markdown sourceLabel="Recipient" titleLabel="Agency" emptyStateTitle={query ? `No awards match ${query}.` : "No federal spending awards."} />;
 }
 
 let disposeConnection: (() => void) | null = null;

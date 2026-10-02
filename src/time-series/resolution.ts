@@ -284,7 +284,11 @@ export function chartResolutionTabChoices(
 
 export function chartRangeTabChoices(
   support: readonly ChartResolutionSupport[] | undefined,
+  rangeSupport?: readonly TimeRange[],
 ): Array<{ range: TimeRange; enabled: boolean }> {
+  if (rangeSupport !== undefined) {
+    return TIME_RANGES.map((range) => ({ range, enabled: rangeSupport.includes(range) }));
+  }
   const effectiveSupport = effectiveChartResolutionSupport(support);
   return TIME_RANGES.map((range) => ({
     range,

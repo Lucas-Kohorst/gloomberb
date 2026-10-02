@@ -319,7 +319,7 @@ function OpenTuiTabs({
     }
   }, [dragTargetValue, onReorder, resolveDragTarget]);
 
-  useEffect(() => {
+  const revealActiveTab = useCallback(() => {
     const scrollBox = scrollRef.current;
     const activeIndex = tabs.findIndex((tab) => tab.value === activeValue);
     const viewportWidth = scrollBox?.viewport?.width || scrollBox?.width || 0;
@@ -341,6 +341,8 @@ function OpenTuiTabs({
       scrollToLeft(Math.min(activeRight - viewportWidth, maxScrollLeft));
     }
   }, [activeValue, tabWidths, tabs, totalWidth]);
+
+  useEffect(revealActiveTab, [revealActiveTab]);
 
   const handleMouseScroll = (event?: {
     preventDefault?: () => void;
@@ -488,6 +490,7 @@ function OpenTuiTabs({
       scrollX
       focusable={false}
       horizontalScrollbarOptions={{ visible: false }}
+      onSizeChange={() => queueMicrotask(revealActiveTab)}
       onMouseScroll={handleMouseScroll}
     >
       {tabRow}

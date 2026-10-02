@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../ui";
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import { t } from "../../i18n";
@@ -63,20 +63,22 @@ function DefaultRow({
   selected: boolean;
 }) {
   return (
-    <Box flexDirection="row" justifyContent="space-between" width="100%">
-      <Box flexDirection="row">
-        <Text fg={selected ? colors.selectedText : colors.textDim}>
+    <Box flexDirection="row" justifyContent="space-between" width="100%" overflow="hidden">
+      <Box flexDirection="row" flexShrink={1} minWidth={0} overflow="hidden">
+        <Text fg={selected ? colors.selectedText : colors.textDim} flexShrink={0}>
           {selected ? "\u25b8 " : "  "}
         </Text>
         <Text
           fg={selected ? colors.text : colors.textDim}
           attributes={selected ? TextAttributes.BOLD : 0}
+          flexShrink={1}
+          overflow="hidden"
         >
           {t(item.label)}
         </Text>
       </Box>
       {item.detail && (
-        <Text fg={selected ? colors.textMuted : colors.textMuted}>{t(item.detail)}</Text>
+        <Text fg={colors.textMuted} flexShrink={1} overflow="hidden">{t(item.detail)}</Text>
       )}
     </Box>
   );
@@ -202,7 +204,7 @@ export function ListView({
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
   const activeScrollIndex = scrollIndex ?? selectedIndex;
 
-  useEffect(() => {
+  const revealSelection = useCallback(() => {
     if (!scrollable || !autoScrollToIndex || activeScrollIndex < 0) return;
     const sb = scrollRef.current;
     if (!sb) return;
@@ -213,7 +215,9 @@ export function ListView({
     } else if (safeIndex >= sb.scrollTop + viewportH) {
       sb.scrollTo(safeIndex - viewportH + 1);
     }
-  }, [activeScrollIndex, autoScrollToIndex, items.length, scrollable]);
+  }, [activeScrollIndex, autoScrollToIndex, items.length, scrollable, height]);
+
+  useEffect(revealSelection, [revealSelection]);
 
   useEffect(() => {
     if (!scrollable) return;
@@ -270,6 +274,7 @@ export function ListView({
       {scrollable ? (
         <ScrollBox
           ref={scrollRef}
+          onSizeChange={() => queueMicrotask(revealSelection)}
           height={height}
           flexGrow={flexGrow}
           scrollY

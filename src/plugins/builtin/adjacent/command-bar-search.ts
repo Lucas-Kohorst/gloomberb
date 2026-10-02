@@ -145,9 +145,13 @@ export function pickAdjacentCatalogOpen(
   const exactIndex = indexRows.find((row) => sameToken(row.ticker, trimmed) || sameToken(row.id, trimmed));
   if (exactIndex) return { templateId: "adjacent-indices-pane", arg: exactIndex.ticker };
 
-  const rateRows = catalogs.rates.map(normalizeAdjacentRate);
-  const exactRate = rateRows.find((row) => sameToken(row.id, trimmed) || sameToken(row.name, trimmed));
-  if (exactRate) return { templateId: "adjacent-rates-pane", arg: exactRate.id };
+  const exactRate = catalogs.rates.find((rate) => {
+    const row = normalizeAdjacentRate(rate);
+    return sameToken(row.id, trimmed)
+      || sameToken(row.name, trimmed)
+      || sameToken(rate.name, trimmed);
+  });
+  if (exactRate) return { templateId: "adjacent-rates-pane", arg: exactRate.rate_id };
 
   const indexHits = matchAdjacentIndices(trimmed, catalogs.indices);
   const tokens = trimmed.split(/\s+/).filter(Boolean);
@@ -249,12 +253,13 @@ export function createAdjacentCatalogSearchProvider(
         });
       }
       for (const rate of rateHits) {
+        const row = normalizeAdjacentRate(rate);
         results.push({
           id: `rate:${rate.rate_id}`,
-          label: rate.name,
+          label: row.name,
           detail: rate.rate_id,
           right: "ADR",
-          keywords: [rate.name, rate.rate_id, "adjacent", "rate"],
+          keywords: [row.name, rate.rate_id, "adjacent", "rate"],
           execute: () => {
             ctx.createPaneFromTemplate("adjacent-rates-pane", { arg: rate.rate_id });
           },

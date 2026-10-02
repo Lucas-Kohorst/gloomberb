@@ -173,7 +173,6 @@ export function useNewsArticleFooter({
     registrationId,
     focused,
     url: article?.url,
-    source: article?.source,
     info: footerInfo,
     trailingInfo,
     trailingHints,

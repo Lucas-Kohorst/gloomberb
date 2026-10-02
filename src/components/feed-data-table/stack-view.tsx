@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../ui";
+import { Box, ScrollBox } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { t } from "../../i18n";
@@ -16,15 +16,18 @@ import {
   type IndexedStackRow,
   type StackSortPreference,
 } from "../feed-stack-controller";
-import { ExternalLink, type DataTableCell, type DataTableColumn } from "../ui";
-import { MarkdownText } from "../markdown-text";
-import { wrapTextLines } from "../../utils/text-wrap";
+import { type DataTableCell, type DataTableColumn } from "../ui";
+import { ArticleContent } from "../article-content";
+import { getTableWidth, tableColumnWidth, TABLE_COLUMN_GAP } from "../ui/table-layout";
 
 export interface FeedDataTableItem {
   id: string;
   eyebrow?: string;
   title: string;
   timestamp?: Date | string | null;
+  /** Calendar dates use UTC YYYY-MM-DD, without relative time or timezone shifts. */
+  timestampKind?: "instant" | "date";
+  datePrecision?: "year" | "month" | "day";
   detailTitle?: string;
   detailMeta?: string[];
   detailBody?: string | null;
@@ -43,7 +46,8 @@ interface FeedDataTableStackViewProps {
   height: number;
   focused: boolean;
   items: FeedDataTableItem[];
-  selectedIdx: number;
+  selectedIdx?: number;
+  selectedItemId?: string | null;
   onSelect: (index: number) => void;
   rootBefore?: ReactNode;
   rootAfter?: ReactNode;
@@ -79,6 +83,14 @@ function timestampValue(item: FeedDataTableItem): number {
   if (!item.timestamp) return 0;
   const timestamp = toTimestampMillis(item.timestamp);
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function timestampLabel(item: FeedDataTableItem): string {
+  if (!item.timestamp) return "";
+  if (item.timestampKind !== "date") return formatTimeAgo(item.timestamp);
+  const value = item.timestamp instanceof Date ? item.timestamp.getTime() : toTimestampMillis(item.timestamp);
+  const length = item.datePrecision === "year" ? 4 : item.datePrecision === "month" ? 7 : 10;
+  return Number.isFinite(value) ? new Date(value).toISOString().slice(0, length) : "unknown";
 }
 
 function compareText(a: string, b: string): number {
@@ -119,25 +131,32 @@ function buildColumns(
   titleLabel: string,
   items: FeedDataTableItem[],
 ): DetailColumn[] {
-  const timeWidth = 8;
+  const datedItems = items.filter((item) => item.timestamp);
+  const hasCalendarDates = datedItems.some((item) => item.timestampKind === "date");
+  const timeWidth = hasCalendarDates ? 10 : 8;
   const sourceWidth = Math.min(
     Math.max(
       displayWidth(sourceLabel),
-      ...items.map((item) => item.eyebrow?.length ?? 0),
+      ...items.map((item) => displayWidth(item.eyebrow ?? "")),
       6,
     ),
     14,
   );
-  const titleWidth = Math.max(
-    16,
-    width - (timeWidth + 1) - (sourceWidth + 1) - 3,
-  );
-
-  return [
-    { id: "time", label: t("Time"), width: timeWidth, align: "left" },
+  const columns: DetailColumn[] = [
+    { id: "time", label: t(datedItems.length > 0 && datedItems.every((item) => item.timestampKind === "date") ? "Date" : "Time"), width: timeWidth, align: "left" },
     { id: "source", label: sourceLabel, width: sourceWidth, align: "left" },
-    { id: "title", label: titleLabel, width: titleWidth, align: "left" },
+    { id: "title", label: titleLabel, width: 16, align: "left", flexGrow: 1 },
   ];
+  for (const id of ["source", "time"] as const) {
+    if (getTableWidth(columns) <= width) break;
+    columns.splice(columns.findIndex((column) => column.id === id), 1);
+  }
+  const fixedWidth = columns.filter((column) => column.id !== "title")
+    .reduce((sum, column) => sum + tableColumnWidth(column) + TABLE_COLUMN_GAP, 0);
+  const title = columns[columns.length - 1]!;
+  title.width = Math.max(1, width - fixedWidth - 2 - TABLE_COLUMN_GAP);
+  title.lockWidth = title.width < tableColumnWidth(title);
+  return columns;
 }
 
 export function FeedDataTableStackView({
@@ -145,7 +164,8 @@ export function FeedDataTableStackView({
   height,
   focused,
   items,
-  selectedIdx,
+  selectedIdx = 0,
+  selectedItemId,
   onSelect,
   rootBefore,
   rootAfter,
@@ -177,7 +197,7 @@ export function FeedDataTableStackView({
     onOpenItemIdChange?.(itemId);
   }, [controlledOpenItemId, onOpenItemIdChange]);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
-  const detailTextWidth = Math.max(width - 2, 12);
+  const detailTextWidth = Math.max(width - 2, 1);
   const columns = useMemo(
     () => buildColumns(width, t(sourceLabel), t(titleLabel), items),
     [items, language, sourceLabel, titleLabel, width],
@@ -191,7 +211,9 @@ export function FeedDataTableStackView({
   );
   const arrivingItemIds = useRecentlyArrivedIds(itemIds);
   const selectedRowIndex = sortedRows.findIndex(
-    (row) => row.itemIndex === selectedIdx,
+    (row) => selectedItemId !== undefined
+      ? row.item.id === selectedItemId
+      : row.itemIndex === selectedIdx,
   );
   const activeRowIndex = activeStackIndex(sortedRows.length, selectedRowIndex);
   const openItem = useMemo(
@@ -240,10 +262,10 @@ export function FeedDataTableStackView({
   }, [openItemId]);
 
   useEffect(() => {
-    if (items.length > 0 && selectedIdx >= items.length) {
+    if (selectedItemId === undefined && items.length > 0 && selectedIdx >= items.length) {
       onSelect(Math.max(0, items.length - 1));
     }
-  }, [items.length, onSelect, selectedIdx]);
+  }, [items.length, onSelect, selectedIdx, selectedItemId]);
 
   const renderCell = useCallback((
     row: DetailRow,
@@ -255,7 +277,7 @@ export function FeedDataTableStackView({
     switch (column.id) {
       case "time":
         return {
-          text: row.item.timestamp ? formatTimeAgo(row.item.timestamp) : "",
+          text: timestampLabel(row.item),
           color: selectedColor ?? colors.textDim,
         };
       case "source":
@@ -284,6 +306,8 @@ export function FeedDataTableStackView({
       row.item.title,
       row.item.eyebrow ?? "",
       timestampValue(row.item),
+      row.item.timestampKind ?? "instant",
+      row.item.datePrecision ?? "day",
       isItemRead?.(row.item) ? 1 : 0,
     ].join(":");
   }, [isItemRead]);
@@ -345,49 +369,13 @@ export function FeedDataTableStackView({
         scrollY
         focusable={false}
       >
-        <Box flexDirection="column">
-          {(openItem.detailMeta ?? [])
-            .flatMap((entry) => wrapTextLines(entry, detailTextWidth, 2))
-            .map((line, index) => (
-              <Box key={`meta-${index}`} height={1}>
-                <Text fg={colors.textMuted}>{line}</Text>
-              </Box>
-            ))}
-
-          <Box height={1} />
-
-          {markdown ? (
-            <MarkdownText
-              text={openItem.detailBody ?? ""}
-              lineWidth={detailTextWidth}
-              textColor={colors.text}
-            />
-          ) : (
-            wrapTextLines(openItem.detailBody ?? "", detailTextWidth).map(
-              (line, index) => (
-                <Box key={`body-${index}`} height={1}>
-                  <Text fg={colors.text}>{line}</Text>
-                </Box>
-              ),
-            )
-          )}
-
-          {openItem.detailNote ? (
-            <>
-              <Box height={1} />
-              {wrapTextLines(openItem.detailNote, detailTextWidth).map(
-                (line, index) =>
-                  /^https?:\/\/\S+$/.test(line.trim()) ? (
-                    <ExternalLink key={`note-${index}`} url={line.trim()} />
-                  ) : (
-                    <Box key={`note-${index}`} height={1}>
-                      <Text fg={colors.textDim}>{line}</Text>
-                    </Box>
-                  ),
-              )}
-            </>
-          ) : null}
-        </Box>
+        <ArticleContent
+          width={detailTextWidth}
+          metadata={openItem.detailMeta}
+          body={openItem.detailBody ?? ""}
+          note={openItem.detailNote}
+          markdown={markdown}
+        />
       </ScrollBox>
     </Box>
   ) : (
@@ -402,9 +390,10 @@ export function FeedDataTableStackView({
       detailContent={detailContent}
       detailTitle={openItem ? openItem.detailTitle ?? openItem.title : undefined}
       selection={{
-        kind: "index",
-        selectedIndex: activeRowIndex,
-        onChange: (_index, row) => {
+        kind: "id",
+        selectedId: sortedRows[activeRowIndex]?.item.id ?? null,
+        getId: (row) => row.item.id,
+        onChange: (_id, row) => {
           onSelect(row.itemIndex);
         },
       }}
@@ -432,6 +421,7 @@ export function FeedDataTableStackView({
       emptyStateMessage={emptyStateMessage ? t(emptyStateMessage) : undefined}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
+      scrollStateKey="feed"
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
     />

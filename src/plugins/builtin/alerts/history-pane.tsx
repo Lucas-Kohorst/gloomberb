@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ConfirmDialog,
   DataTableView,
-  InputSearchBar,
+  PaneListChrome,
   usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
 import { formatMarketPrice } from "../../../market-data/market/format";
 import { colors } from "../../../theme/colors";
-import { TextAttributes, type InputRenderable } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { t } from "../../../i18n";
 import { usePluginConfigState, usePluginTickerActions } from "../../runtime";
@@ -51,11 +52,8 @@ export function AlertHistoryPane({
   const [historyJson, setHistoryJson] = usePluginConfigState<string>(ALERT_HISTORY_KEY, "[]");
   const { navigateTicker } = usePluginTickerActions();
   const dialog = useDialog();
-  const [selectedIdx, setSelectedIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<SortPreference<HistoryColumnId>>({
     columnId: "triggeredAt",
     direction: "desc",
@@ -77,14 +75,21 @@ export function AlertHistoryPane({
     });
   }, [entries, searchQuery, sortPreference]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: (value) => {
+      setSearchQuery(value);
+      setSelectedKey(null);
+    },
+    placeholder: t("symbol or trigger"),
+    debounceMs: 80,
+  });
+  const rowKey = useCallback((entry: AlertHistoryEntry) => `${entry.id}:${entry.triggeredAt}`, []);
+  const selected = rows.find((entry) => rowKey(entry) === selectedKey) ?? rows[0] ?? null;
   const openSelected = useCallback(() => {
-    const entry = rows[selectedIdx];
-    if (entry) navigateTicker(entry.symbol);
-  }, [navigateTicker, rows, selectedIdx]);
+    if (selected) navigateTicker(selected.symbol);
+  }, [navigateTicker, selected]);
   const clearHistory = useCallback(async () => {
     if (entries.length === 0) return;
     const confirmed = await dialog.prompt<boolean>({
@@ -106,22 +111,13 @@ export function AlertHistoryPane({
     info: [],
     hints: [
       { id: "search", key: "/", label: t("search"), onPress: focusSearch },
-      { id: "open", key: "o", label: t("pen"), onPress: openSelected, disabled: !rows[selectedIdx] },
+      { id: "open", key: "o", label: t("pen"), onPress: openSelected, disabled: !selected },
       { id: "clear", key: "c", label: t("lear"), onPress: () => void clearHistory(), disabled: entries.length === 0 },
     ],
-  }), [clearHistory, entries.length, focusSearch, openSelected, rows, selectedIdx]);
-
-  useEffect(() => {
-    setSelectedIdx((current) => rows.length === 0 ? 0 : Math.min(current, rows.length - 1));
-  }, [rows.length]);
+  }), [clearHistory, entries.length, focusSearch, openSelected, selected]);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (handleSearchKey(event)) return true;
     if (event.name === "o") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -140,7 +136,7 @@ export function AlertHistoryPane({
       return true;
     }
     return false;
-  }, [clearHistory, close, focusSearch, openSelected]);
+  }, [clearHistory, close, handleSearchKey, openSelected]);
 
   const renderCell = useCallback((
     entry: AlertHistoryEntry,
@@ -172,16 +168,17 @@ export function AlertHistoryPane({
     <DataTableView<AlertHistoryEntry, HistoryColumn>
       focused={focused && !searchFocused}
       selection={{
-        kind: "index",
-        selectedIndex: rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1,
-        onChange: (index) => setSelectedIdx(index),
+        kind: "id",
+        selectedId: selected ? rowKey(selected) : null,
+        getId: rowKey,
+        onChange: setSelectedKey,
       }}
-      onActivate={openSelected}
+      onActivate={(entry) => navigateTicker(entry.symbol)}
       onRootKeyDown={handleTableKeyDown}
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.bg}
-      rootBefore={<InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder={t("symbol or trigger")} debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
+      rootBefore={<PaneListChrome width={width} focused={focused && !searchFocused} search={search} />}
       columns={HISTORY_COLUMNS}
       items={rows}
       sortColumnId={sortPreference.columnId}
@@ -191,7 +188,7 @@ export function AlertHistoryPane({
         columnId as HistoryColumnId,
         { defaultDirection: columnId === "symbol" || columnId === "condition" ? "asc" : "desc" },
       ))}
-      getItemKey={(entry) => `${entry.id}:${entry.triggeredAt}`}
+      getItemKey={rowKey}
       getRowRevision={(entry) => `${entry.id}:${entry.triggeredAt}:${entry.price ?? ""}`}
       renderCell={renderCell}
       emptyStateTitle={searchQuery.trim() ? t("No matching alerts.") : t("No alert history")}

@@ -16,6 +16,7 @@ import {
   type DataTableColumn,
   type DataTableCell,
   type DataTableKeyEvent,
+  type PaneHint,
   type StackSortPreference,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
@@ -34,7 +35,12 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { openUrl } from "../../../components/ui/external-link";
 import { graphFooterHint, useGraphChartPopOut } from "../shared/graph-pop-out";
-import { paneSearchHint } from "../shared/pane-footer";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
+import { requestAccountManagementTab } from "../account-management/navigation";
+import { getSharedRegistry } from "../../registry";
+import { ChartRangeTabs } from "../../../components/chart/range-tabs";
+import type { TimeRange } from "../../../components/chart/core/types";
+import { adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
 import type { AdjacentClient } from "./client";
 import { adjacentCatalogHaystack } from "./command-bar-search";
 import { filterAdjacentRows } from "./search";
@@ -209,6 +215,14 @@ function RateDetail({
   });
   const [prices, setPrices] = useState<AdjacentIndexPricePoint[]>([]);
   const [pricesLoading, setPricesLoading] = useState(false);
+  // Adjacent serves one hour of buckets over 30 days and one day over 90, so
+  // the public tier can only honestly enable 1D through 3M.
+  const [range, setRange] = useState<TimeRange>("1M");
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+  const rangeChoices = useMemo(
+    () => adjacentRangeSupport(tier).map((value) => ({ value })),
+    [tier],
+  );
   const priceGenRef = useRef(0);
   const sortedSources = useMemo(
     () => applySortPreference(sourceMarkets, sort, sourceSortValue),
@@ -219,7 +233,7 @@ function RateDetail({
     priceGenRef.current += 1;
     const gen = priceGenRef.current;
     setPricesLoading(true);
-    client.getRatePrices(rate.id)
+    client.getRatePrices(rate.id, adjacentPriceWindow(range, tier))
       .then((response) => {
         if (priceGenRef.current !== gen) return;
         setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
@@ -230,7 +244,7 @@ function RateDetail({
         setPrices([]);
         setPricesLoading(false);
       });
-  }, [client, rate.id]);
+  }, [client, range, rate.id, tier]);
 
   useEffect(() => {
     if (sortedSources.length === 0) {
@@ -261,6 +275,14 @@ function RateDetail({
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
+        <Box paddingX={1}>
+          <ChartRangeTabs
+            choices={rangeChoices}
+            value={range}
+            onSelect={setRange}
+            focused={focused}
+          />
+        </Box>
         {pricesLoading && prices.length === 0 ? (
           <Box flexGrow={1} justifyContent="center" alignItems="center">
             <Spinner label="Loading..." />
@@ -271,7 +293,7 @@ function RateDetail({
             rateId={rate.id}
             name={rate.name}
             width={width}
-            height={contentHeight - 1}
+            height={contentHeight - 2}
             focused={focused}
           />
         )}
@@ -562,19 +584,38 @@ export function AdjacentRatesPane({
   const poll = useFeedPollInterval();
   useAutoRefresh(status === "loaded" ? lastUpdated : null, load, poll.intervalMinutes);
 
+  // Without a user-owned key the rate history is on Adjacent's public tier,
+  // which caps out at 3M. That is auth state, so it belongs in the footer.
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+  const openAdjacentKeys = useCallback(() => {
+    requestAccountManagementTab("keys");
+    getSharedRegistry()?.showPane("account-management");
+  }, []);
+  const adjacentKeysHint = useMemo<PaneHint | null>(
+    () => tier === "public"
+      ? { id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }
+      : null,
+    [openAdjacentKeys, tier],
+  );
+  usePaneFooterHintBindings(focused, adjacentKeysHint ? [adjacentKeysHint] : undefined);
+
   usePaneFooter("adjacent-rates", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ...(adjacentKeysHint
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     trailingInfo: [poll.segment],
     hints: [
       graphFooterHint(graphSelected, !!selectedRate),
       paneSearchHint(focusSearch),
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
+      ...(adjacentKeysHint ? [adjacentKeysHint] : []),
     ],
-  }), [detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [adjacentKeysHint, detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

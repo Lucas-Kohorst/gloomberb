@@ -13,12 +13,13 @@ import { useAppSelector, usePaneInstance, usePaneTicker } from "../../../../stat
 import { useLiveQuoteEntries } from "../../../../state/hooks/quote-streaming";
 import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
 import { colors } from "../../../../theme/colors";
-import { EmptyState } from "../../../../components";
+import { EmptyState, usePaneFooter } from "../../../../components";
 import { getQuoteMonitorPaneSettings } from "../settings";
 import { useShortcut } from "../../../../react/input";
 import { isPlainKey } from "../../../../utils/keyboard";
 import { QuoteMonitorCard } from "./card";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
+import { usePaneFooterHintBindings } from "../../shared/pane-footer";
 
 interface BoardEntry {
   symbol: string;
@@ -136,11 +137,18 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   const openTicker = useCallback((nextSymbol: string) => {
     pinTicker(nextSymbol, { paneType: TICKER_RESEARCH_PANE_ID, floating: true });
   }, [pinTicker]);
+  const openSettings = useCallback(() => {
+    openPaneSettings(paneId);
+  }, [openPaneSettings, paneId]);
+  usePaneFooter("quote-monitor", () => ({
+    hints: [{ id: "settings", key: "s", label: "ettings", onPress: openSettings }],
+  }), [openSettings]);
+  usePaneFooterHintBindings(focused, [{ id: "settings", key: "s", label: "ettings", onPress: openSettings }]);
   useShortcut((event) => {
     if (!focused || event.targetEditable || !isPlainKey(event, "t")) return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    openPaneSettings(paneId);
+    openSettings();
   }, { allowEditable: true, enabled: focused });
 
   if (symbols.length === 0) {

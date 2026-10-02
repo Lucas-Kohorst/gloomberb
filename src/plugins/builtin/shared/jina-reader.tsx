@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
-import { MarkdownText } from "../../../components/markdown-text";
+import { ArticleContent } from "../../../components/article-content";
 import { withConnectionRequest } from "../connections/register";
 import { colors } from "../../../theme/colors";
 import { httpFetch } from "../../../utils/http-transport";
@@ -38,14 +38,18 @@ const EMPTY_STATE: JinaArticleState = {
 };
 
 export function useJinaArticle(url: string, enabled = true) {
-  const [state, setState] = useState<JinaArticleState>(EMPTY_STATE);
+  const target = url.trim();
+  const [state, setState] = useState({ ...EMPTY_STATE, url: target });
   const requestRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(() => {
-    const target = url.trim();
+    const requestId = ++requestRef.current;
+    abortRef.current?.abort();
     if (!target) {
       setState({
         ...EMPTY_STATE,
+        url: target,
         error: "no article url",
         failureMessage: "No article URL available.",
         failureKind: "unknown",
@@ -58,6 +62,7 @@ export function useJinaArticle(url: string, enabled = true) {
     } catch {
       setState({
         ...EMPTY_STATE,
+        url: target,
         error: "invalid url",
         failureMessage: "Article URL is invalid.",
         failureKind: "unknown",
@@ -67,6 +72,7 @@ export function useJinaArticle(url: string, enabled = true) {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       setState({
         ...EMPTY_STATE,
+        url: target,
         error: "invalid url",
         failureMessage: "Article URL must use HTTP or HTTPS.",
         failureKind: "unknown",
@@ -74,11 +80,11 @@ export function useJinaArticle(url: string, enabled = true) {
       return;
     }
 
-    requestRef.current += 1;
-    const requestId = requestRef.current;
     const controller = new AbortController();
+    abortRef.current = controller;
     setState((current) => ({
-      ...current,
+      ...(current.url === target ? current : EMPTY_STATE),
+      url: target,
       loading: true,
       error: null,
       failureMessage: null,
@@ -98,6 +104,7 @@ export function useJinaArticle(url: string, enabled = true) {
     }).then((content) => {
       if (requestRef.current !== requestId) return;
       setState({
+        url: target,
         content: cleanJinaArticle(content),
         loading: false,
         error: null,
@@ -117,14 +124,19 @@ export function useJinaArticle(url: string, enabled = true) {
       }));
     });
     return () => controller.abort();
-  }, [url]);
+  }, [target]);
 
   useEffect(() => {
-    if (!enabled) return;
-    return refresh();
+    if (enabled) refresh();
+    else setState((current) => current.loading ? { ...current, loading: false } : current);
+    return () => {
+      requestRef.current += 1;
+      abortRef.current?.abort();
+    };
   }, [enabled, refresh]);
 
-  return { ...state, refresh };
+  const current = state.url === target ? state : { ...EMPTY_STATE, loading: enabled };
+  return { ...current, refresh };
 }
 
 export function JinaArticleReader({
@@ -135,6 +147,7 @@ export function JinaArticleReader({
   focused,
   state,
   knownBody = "",
+  metadata = [],
 }: {
   title: string;
   url: string;
@@ -144,6 +157,7 @@ export function JinaArticleReader({
   state: JinaArticleState;
   /** Body the payload already carried (Substack post text, wire summary). */
   knownBody?: string;
+  metadata?: readonly string[];
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const lineWidth = Math.max(1, width - 4);
@@ -152,7 +166,7 @@ export function JinaArticleReader({
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [url, state.content, state.failureKind]);
+  }, [url]);
 
   if (!url && !body) {
     return <EmptyState title={title || "Article unavailable."} message="This article has no source URL." />;
@@ -185,7 +199,7 @@ export function JinaArticleReader({
           <Text fg={colors.warning} wrapText width={lineWidth}>{notice}</Text>
         ) : null}
         {body ? (
-          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} selectable />
+          <ArticleContent body={body} metadata={metadata} width={lineWidth} />
         ) : !state.error ? <Text fg={colors.textDim}>No article text returned.</Text> : null}
       </Box>
     </ScrollBox>

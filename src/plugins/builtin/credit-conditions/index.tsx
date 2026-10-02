@@ -2,17 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import {
-  Button,
   DataTableView,
   EmptyState,
+  PaneListChrome,
   Spinner,
   footerErrorChip,
   usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
+  type DataTableKeyEvent,
   type PaneFooterSegment,
 } from "../../../components";
 import { useAutoRefresh } from "../shared/auto-refresh";
+import { paneSearchHint } from "../shared/pane-footer";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import type { PluginModule } from "../plugin-module";
@@ -79,6 +82,14 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   const [stale, setStale] = useState(initial?.stale ?? false);
   const [error, setError] = useState<string | null>(initial?.errors[0] ?? null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused: focused && rows.length > 0,
+    enabled: rows.length > 0,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "series or name",
+  });
   const generation = useRef(0);
 
   const load = useCallback(async (force = false) => {
@@ -89,7 +100,6 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
       const result = await loadCreditConditions(force);
       if (generation.current !== current) return;
       setRows(result.rows);
-      setSelectedId((id) => id && result.rows.some((row) => row.seriesId === id) ? id : result.rows[0]?.seriesId ?? null);
       setStale(result.stale);
       if (!result.stale) setLastUpdated(Date.now());
       setError(result.errors[0] ?? null);
@@ -107,8 +117,18 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   // the pane can follow the global cadence without refetching daily data.
   useAutoRefresh(lastUpdated, refresh);
 
-  const sorted = useMemo(() => sortRows(rows, sort.id, sort.descending), [rows, sort]);
-  const selectedRow = rows.find((row) => row.seriesId === selectedId) ?? rows[0] ?? null;
+  const sorted = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = query.length === 0
+      ? rows
+      : rows.filter((row) => `${row.label} ${row.seriesId} ${row.title}`.toLowerCase().includes(query));
+    return sortRows(filtered, sort.id, sort.descending);
+  }, [rows, searchQuery, sort]);
+  useEffect(() => {
+    if (selectedId && sorted.some((row) => row.seriesId === selectedId)) return;
+    setSelectedId(sorted[0]?.seriesId ?? null);
+  }, [selectedId, sorted]);
+  const selectedRow = sorted.find((row) => row.seriesId === selectedId) ?? sorted[0] ?? null;
   const columns = COLUMNS;
   const renderRowCell = useCallback((
     row: CreditConditionRow,
@@ -119,12 +139,16 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     ...renderCell(row, column, index, state),
     onMouseDown: () => setSelectedId(row.seriesId),
   }), []);
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    return false;
+  }, [listSearch.handleSearchKey]);
   useShortcut((event) => {
-    if (!focused || event.name !== "r" || loading) return;
+    if (!focused || listSearch.searchFocused || event.name !== "r" || loading) return;
     reload();
     event.preventDefault?.();
     event.stopPropagation?.();
-  });
+  }, { enabled: focused && !listSearch.searchFocused });
   const asOf = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const errorChip = footerErrorChip(error);
@@ -138,7 +162,10 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   }, [asOf, error, loading, rows.length, stale]);
   usePaneFooter(paneId, () => ({
     info: footerInfo,
-  }), [footerInfo, paneId]);
+    hints: rows.length > 0
+      ? [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })]
+      : [],
+  }), [footerInfo, listSearch.focusSearch, listSearch.searchFocused, paneId, rows.length]);
 
   if (rows.length === 0 && loading) {
     return (
@@ -162,11 +189,18 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     </Box>
   );
 
-  return (    <DataTableView<CreditConditionRow, Column>
-      focused={focused}
+  return (
+    <DataTableView<CreditConditionRow, Column>
+      focused={focused && !listSearch.searchFocused}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={metadata}
+      rootBefore={(
+        <Box flexDirection="column">
+          <PaneListChrome width={width} focused={focused} search={listSearch.search} />
+          {metadata}
+        </Box>
+      )}
+      onRootKeyDown={handleTableKeyDown}
       selection={{
         kind: "id",
         selectedId,

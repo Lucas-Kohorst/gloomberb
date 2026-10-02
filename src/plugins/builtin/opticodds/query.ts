@@ -89,6 +89,17 @@ export function scopeHasRequiredFilter(scope: OddsScope): boolean {
   return Boolean(scope.fixtureId || scope.sport || scope.league);
 }
 
+/**
+ * League, sport, and fixture changes reload the board. A team word stays on the
+ * rows already loaded for that scope, so typing it must not start a request.
+ */
+export function oddsBoardRequestQuery(query: string): string {
+  const scope = resolveOddsScope(query);
+  if (scope.fixtureId) return scope.fixtureId;
+  if (scope.text) return "";
+  return query.trim();
+}
+
 function requireFilter(params: URLSearchParams, keys: readonly string[]): URLSearchParams {
   const present = keys.some((key) => params.getAll(key).some((value) => value.trim().length > 0));
   if (!present) {

@@ -50,3 +50,10 @@ export function isInverted(points: YieldPoint[]): boolean {
   const y10 = points.find((p) => p.maturity === "10Y")?.yield;
   return y2 != null && y10 != null && y2 > y10;
 }
+
+export function treasurySpreadBp(points: readonly YieldPoint[]): number | null {
+  const y2 = points.find((point) => point.maturity === "2Y")?.yield;
+  const y10 = points.find((point) => point.maturity === "10Y")?.yield;
+  if (y2 == null || y10 == null) return null;
+  return Math.round((y10 - y2) * 100);
+}

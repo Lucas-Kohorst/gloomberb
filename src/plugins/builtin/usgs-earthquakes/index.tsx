@@ -1,5 +1,5 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type {
   GloomPlugin,
   PaneProps,
@@ -7,13 +7,14 @@ import type {
   PaneTemplateContext,
 } from "../../../types/plugin";
 import {
-  EmptyState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -28,10 +29,9 @@ import {
   USGS_EARTHQUAKES_CONNECTION_ID,
   USGS_EARTHQUAKES_PLUGIN_ID,
   type Earthquake,
-  type EarthquakePage,
 } from "./types";
 
-const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_DEBOUNCE_MS = 80;
 const REFRESH_INTERVAL_MINUTES = 3;
 const MIN_MAGNITUDE_OPTIONS = [2.5, 4.0, 4.5, 5.0] as const;
 const DEFAULT_MIN_MAGNITUDE = 2.5;
@@ -56,26 +56,20 @@ function formatCoordinates(lat: number, lon: number): string {
 
 function buildDetailMeta(eq: Earthquake): string[] {
   return [
-    `M ${eq.magnitude.toFixed(1)} · ${eq.type}`,
-    eq.place,
+    eq.type,
+    `${formatTime(eq.time)} UTC`,
     formatCoordinates(eq.latitude, eq.longitude),
     `Depth: ${formatDepth(eq.depth)}`,
-    eq.tsunami ? "Tsunami warning" : "No tsunami",
+    `USGS tsunami flag: ${eq.tsunami ? "set" : "not set"}`,
     `Significance: ${eq.significance}`,
   ];
 }
 
 function buildDetailBody(eq: Earthquake): string {
   const lines: string[] = [
-    `**Magnitude:** ${eq.magnitude.toFixed(1)}`,
-    `**Place:** ${eq.place}`,
-    `**Time:** ${formatTime(eq.time)}`,
-    `**Coordinates:** ${formatCoordinates(eq.latitude, eq.longitude)}`,
-    `**Depth:** ${formatDepth(eq.depth)}`,
-    `**Type:** ${eq.type}`,
-    `**Significance:** ${eq.significance}`,
-    `**Tsunami:** ${eq.tsunami ? "Yes — tsunami warning issued" : "No"}`,
     `**Event ID:** ${eq.id}`,
+    "",
+    "The tsunami flag does not indicate whether a tsunami exists or will occur.",
   ];
   return lines.join("\n");
 }
@@ -86,9 +80,10 @@ function toFeedItems(earthquakes: Earthquake[]): FeedDataTableItem[] {
     eyebrow: earthquake.type,
     title: `M ${earthquake.magnitude.toFixed(1)} · ${earthquake.place}`,
     timestamp: earthquake.time,
-    detailTitle: earthquake.title,
+    detailTitle: `M ${earthquake.magnitude.toFixed(1)} · ${earthquake.place}`,
     detailMeta: buildDetailMeta(earthquake),
     detailBody: buildDetailBody(earthquake),
+    detailNote: "https://www.tsunami.gov/",
   }));
 }
 
@@ -112,133 +107,59 @@ function createEarthquakesPaneInstance(
   };
 }
 
-function EarthquakesPane({ width, height, focused }: PaneProps) {
+export function EarthquakesPane({ width, height, focused }: PaneProps) {
   const client = useMemo(() => new EarthquakesClient(), []);
 
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
   const [minMagnitude, setMinMagnitude] = usePluginPaneState<number>(
     "minMagnitude",
     DEFAULT_MIN_MAGNITUDE,
   );
 
-  const [earthquakes, setEarthquakes] = useState<Earthquake[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string, nextMinMag: number) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void client
-        .listEarthquakes({
-          minMagnitude: nextMinMag,
-          limit: DEFAULT_LIMIT,
-          searchQuery: nextQuery,
-        })
-        .then((page: EarthquakePage) => {
-          if (abortRef.current !== controller) return;
-          setEarthquakes(page.earthquakes);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setEarthquakes([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query, minMagnitude);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query, minMagnitude]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (earthquakes.length > 0 && selectedIdx >= earthquakes.length) {
-      setSelectedIdx(Math.max(0, earthquakes.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, earthquakes.length]);
-
-  const selectedEarthquake = earthquakes[selectedIdx] ?? null;
+  const loader = useCallback((_force: boolean, signal: AbortSignal) =>
+    client.listEarthquakes({ minMagnitude, limit: DEFAULT_LIMIT, signal }), [client, minMagnitude]);
+  const { data, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(loader);
+  const earthquakes = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (data?.earthquakes ?? []).filter((eq) => eq.place.toLowerCase().includes(needle));
+  }, [data, query]);
+  const selectedEarthquake = earthquakes.find((eq) => eq.id === selectedId) ?? earthquakes[0] ?? null;
   const openEarthquake = openItemId
     ? earthquakes.find((eq) => eq.id === openItemId) ?? null
     : null;
   const detailEarthquake = openEarthquake ?? selectedEarthquake;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "location, e.g. California or Japan", debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
   const cycleMinMagnitude = useCallback(() => {
-    setMinMagnitude((current) => {
-      const idx = MIN_MAGNITUDE_OPTIONS.indexOf(
-        current as (typeof MIN_MAGNITUDE_OPTIONS)[number],
-      );
-      const nextIdx = idx < 0 ? 0 : (idx + 1) % MIN_MAGNITUDE_OPTIONS.length;
-      const next = MIN_MAGNITUDE_OPTIONS[nextIdx]!;
-      setSelectedIdx(0);
-      setOpenItemId(null);
-      return next;
-    });
-  }, [setMinMagnitude, setSelectedIdx]);
+    const index = MIN_MAGNITUDE_OPTIONS.indexOf(minMagnitude as (typeof MIN_MAGNITUDE_OPTIONS)[number]);
+    setMinMagnitude(MIN_MAGNITUDE_OPTIONS[(index + 1) % MIN_MAGNITUDE_OPTIONS.length]!);
+    setSelectedId(null);
+    setOpenItemId(null);
+  }, [minMagnitude, setMinMagnitude, setSelectedId]);
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      load(query, minMagnitude);
+      refresh();
       return;
     }
     if (isPlainKey(event, "m")) {
@@ -248,36 +169,30 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && earthquakes.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && !data;
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const items = useMemo(() => toFeedItems(earthquakes), [earthquakes]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
-    () => load(query, minMagnitude), poll.intervalMinutes,
-  );
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
 
   const detailUrl = detailEarthquake?.url || null;
 
   usePaneStatusLinkFooter({
     registrationId: USGS_EARTHQUAKES_PLUGIN_ID,
-    focused,
-    url: error ? null : detailUrl,
-    source: detailEarthquake ? `M ${detailEarthquake.magnitude.toFixed(1)}` : undefined,
-    label: "earthquake",
-    loading,
+    focused: focused && !searchFocused,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: [
-      { id: "live", parts: [{ text: "live", tone: "value" as const }] },
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "minmag", key: "m", label: "in mag", onPress: cycleMinMagnitude },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
+      { id: "minmag", key: "m", label: `in mag ${minMagnitude.toFixed(1)}+`, onPress: cycleMinMagnitude },
     ],
   });
 
@@ -292,19 +207,14 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        focusSearch();
+        refresh();
         return true;
       }
-      if (event.name === "r") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        load(query, minMagnitude);
-        return true;
-      }
-      if (event.name === "m") {
+      if (isPlainKey(event, "m")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         cycleMinMagnitude();
@@ -312,53 +222,15 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, load, query, minMagnitude, cycleMinMagnitude],
+    [focusSearch, handleSearchKey, refresh, cycleMinMagnitude],
   );
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="location, e.g. California or Japan"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
-
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching earthquakes near ${query.trim()}...`
-                : "Loading earthquakes..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && earthquakes.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Earthquakes unavailable." message={error} hint="Press r to retry." />
-        </Box>
-      </Box>
-    );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
+  if (loading || (error && !data)) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Earthquakes" onRetry={refresh} />
+    </Box>;
   }
 
   return (
@@ -368,8 +240,9 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedEarthquake?.id ?? null}
+      onSelect={(index) => setSelectedId(earthquakes[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Type"

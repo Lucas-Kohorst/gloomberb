@@ -173,11 +173,12 @@ export class GoogleBooksClient {
   async searchVolumes(options: {
     query: string;
     maxResults?: number;
+    signal?: AbortSignal;
   }): Promise<BookVolumePage> {
     const query = options.query.trim();
     if (!query) return { volumes: [], total: 0 };
     return withConnectionRequest(GOOGLE_BOOKS_CONNECTION_ID, "search", async () => {
-      const response = await booksFetch.fetch(buildVolumesUrl(query, options.maxResults, resolveGoogleBooksApiKey()));
+      const response = await booksFetch.fetch(buildVolumesUrl(query, options.maxResults, resolveGoogleBooksApiKey()), { signal: options.signal });
       if (!response.ok) {
         throw new Error(
           `Google Books request failed: ${response.status} ${response.statusText}`,
@@ -286,7 +287,7 @@ export function createGoogleBooksDocumentSearchProvider(): DocumentSearchProvide
       const query = normalizeGoogleBooksDocumentQuery(rawQuery);
       if (!query || signal.aborted) return [];
       const limit = COMMAND_BAR_RESULT_LIMIT;
-      const page = await client.searchVolumes({ query, maxResults: limit });
+      const page = await client.searchVolumes({ query, maxResults: limit, signal });
       if (signal.aborted) return [];
       return page.volumes.slice(0, limit).map(bookVolumeToDocumentHit);
     },

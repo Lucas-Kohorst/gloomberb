@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { Box, Text } from "../../ui";
-import { type PromptContext, useDialogKeyboard } from "../../ui/dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text } from "../../ui";
+import { type PromptContext, useDialogContentSize, useDialogKeyboard } from "../../ui/dialog";
 import { colors } from "../../theme/colors";
 import { t } from "../../i18n";
 import { isPlainKey } from "../../utils/keyboard";
+import { displayWidth } from "../../utils/format";
+import { wrapTextLines } from "../../utils/text-wrap";
 import { DialogFrame } from "./frame";
 import { ListView, type ListViewItem } from "./list-view";
 
@@ -42,9 +44,9 @@ function getInitialChoiceIndex(choices: ChoiceDialogChoice[], selectedChoiceId: 
 
 function choiceDialogWidth(title: string, choices: ChoiceDialogChoice[]): number {
   const contentWidth = Math.max(
-    title.length,
-    ...choices.map((choice) => choice.label.length + (choice.detail ? choice.detail.length + 4 : 0)),
-    ...choices.map((choice) => getChoiceDescription(choice).length),
+    displayWidth(title),
+    ...choices.map((choice) => displayWidth(choice.label) + (choice.detail ? displayWidth(choice.detail) + 4 : 0)),
+    ...choices.map((choice) => displayWidth(getChoiceDescription(choice))),
   );
   return Math.max(34, Math.min(76, contentWidth + 4));
 }
@@ -61,6 +63,11 @@ export function ChoiceDialog({
     clampChoiceIndex(getInitialChoiceIndex(choices, selectedChoiceId), choices.length)
   );
   const selectedIndex = clampChoiceIndex(index, choices.length);
+  const cursorRef = useRef(selectedIndex);
+  const selectIndex = useCallback((next: number) => {
+    cursorRef.current = clampChoiceIndex(next, choices.length);
+    setIndex(cursorRef.current);
+  }, [choices.length]);
   const selectedChoice = selectedIndex >= 0 ? choices[selectedIndex] : undefined;
   const items = useMemo<ListViewItem[]>(() => choices.map((choice) => ({
     id: choice.id,
@@ -69,11 +76,22 @@ export function ChoiceDialog({
     detail: choice.detail,
     disabled: choice.disabled,
   })), [choices]);
-  const width = useMemo(() => choiceDialogWidth(title, choices), [choices, title]);
+  const contentSize = useDialogContentSize();
+  const preferredWidth = useMemo(() => choiceDialogWidth(title, choices), [choices, title]);
+  const width = Math.min(preferredWidth, contentSize?.width ?? preferredWidth);
+  const description = getChoiceDescription(selectedChoice);
+  const bodyHeight = Math.max(1, (contentSize?.height ?? 20) - 2 - (footer ? 2 : 0));
+  const descriptionHeight = description
+    ? Math.min(wrapTextLines(description, width).length, 3, Math.max(0, bodyHeight - 2))
+    : 0;
+  const listHeight = Math.max(1, Math.min(
+    Math.max(items.length, 1), MAX_VISIBLE_CHOICE_ROWS,
+    bodyHeight - (descriptionHeight > 0 ? descriptionHeight + 1 : 0),
+  ));
 
   useEffect(() => {
-    setIndex((current) => clampChoiceIndex(current, choices.length));
-  }, [choices.length]);
+    selectIndex(cursorRef.current);
+  }, [selectIndex]);
 
   const activateChoice = (choice: ChoiceDialogChoice | undefined) => {
     if (!choice || choice.disabled) return;
@@ -83,11 +101,11 @@ export function ChoiceDialog({
   useDialogKeyboard((event) => {
     event.stopPropagation();
     if (isPlainKey(event, "up", "k")) {
-      setIndex((current) => clampChoiceIndex(current - 1, choices.length));
+      selectIndex(cursorRef.current - 1);
     } else if (isPlainKey(event, "down", "j")) {
-      setIndex((current) => clampChoiceIndex(current + 1, choices.length));
+      selectIndex(cursorRef.current + 1);
     } else if (event.name === "enter" || event.name === "return") {
-      activateChoice(selectedChoice);
+      activateChoice(choices[clampChoiceIndex(cursorRef.current, choices.length)]);
     } else if (event.name === "escape") {
       resolve("");
     }
@@ -103,14 +121,21 @@ export function ChoiceDialog({
           emptyMessage={t("No choices.")}
           rowGap={0}
           surface="framed"
-          height={Math.min(Math.max(items.length, 1), MAX_VISIBLE_CHOICE_ROWS)}
-          scrollable={items.length > MAX_VISIBLE_CHOICE_ROWS}
+          height={listHeight}
+          scrollable={items.length > listHeight}
           selectOnHover
-          onSelect={setIndex}
+          onSelect={selectIndex}
           onActivate={(_, nextIndex) => activateChoice(choices[nextIndex])}
         />
-        <Box height={1} />
-        <Text fg={colors.textDim} wrapText width={width}>{getChoiceDescription(selectedChoice)}</Text>
+        {!contentSize ? <>
+          <Box height={1} />
+          <Text fg={colors.textDim}>{description}</Text>
+        </> : descriptionHeight > 0 ? <>
+          <Box height={1} />
+          <ScrollBox key={selectedChoice?.id} height={descriptionHeight} scrollY focusable={false}>
+            <Text fg={colors.textDim} wrapText wrapMode="word" width={width}>{description}</Text>
+          </ScrollBox>
+        </> : null}
       </Box>
     </DialogFrame>
   );

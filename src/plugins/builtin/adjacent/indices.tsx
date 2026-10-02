@@ -43,6 +43,10 @@ import { getSharedRegistry } from "../../registry";
 import { predictionTickerRecord } from "../../prediction-markets/collection-watchlist";
 import { openUrl } from "../../../components/ui/external-link";
 import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import { requestAccountManagementTab } from "../account-management/navigation";
+import { ChartRangeTabs } from "../../../components/chart/range-tabs";
+import type { TimeRange } from "../../../components/chart/core/types";
+import { adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
 import {
   applySortPreference,
   nextSortPreference,
@@ -223,11 +227,23 @@ function IndexDetail({
   const newsSearchRef = useRef<import("../../../ui").InputRenderable | null>(null);
   const genRef = useRef(0);
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Public Adjacent history only reaches 3M (1h buckets over 30 days, 1d over
+  // 90), so the chart offers just the ranges that tier can serve.
+  const [range, setRange] = useState<TimeRange>("1M");
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+  const rangeChoices = useMemo(
+    () => adjacentRangeSupport(tier).map((value) => ({ value })),
+    [tier],
+  );
   const popOutArticle = usePopOutNewsArticle();
   const { readArticleIds, markArticleRead } = useNewsReadState();
 
   const reloadDetail = useCallback(() => {
     setReloadNonce((value) => value + 1);
+  }, []);
+  const openAdjacentKeys = useCallback(() => {
+    requestAccountManagementTab("keys");
+    getSharedRegistry()?.showPane("account-management");
   }, []);
 
   useEffect(() => {
@@ -244,7 +260,7 @@ function IndexDetail({
         if (genRef.current !== gen) return;
         setConstituents(mergeIndexConstituents(constituents.data ?? [], detail?.sleeves));
       });
-      const pricesTask = client.getIndexPrices(index.id).then((response) => {
+      const pricesTask = client.getIndexPrices(index.id, adjacentPriceWindow(range, tier)).then((response) => {
         if (genRef.current !== gen) return;
         setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
       });
@@ -261,7 +277,7 @@ function IndexDetail({
       }
     };
     void load();
-  }, [client, index.id, index.name, reloadNonce]);
+  }, [client, index.id, index.name, range, reloadNonce, tier]);
 
   const sortedConstituents = useMemo(
     () => applySortPreference(constituents, constituentSort, constituentSortValue),
@@ -346,17 +362,23 @@ function IndexDetail({
       ];
     }
     return [
+      ...(detailTab === "chart" && tier === "public"
+        ? [{ id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }]
+        : []),
       { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
       { id: "open", key: "o", label: "pen", onPress: openTarget },
     ];
-  }, [detailTab, graphExpression, graphTarget, markArticleRead, openTarget, popOutArticle, selectedArticle]);
+  }, [detailTab, graphExpression, graphTarget, markArticleRead, openAdjacentKeys, openTarget, popOutArticle, selectedArticle, tier]);
   usePaneFooter("adjacent-indices-detail", () => ({
     info: [
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(tier === "public"
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     hints: detailHints,
-  }), [detailHints, error, loading]);
+  }), [detailHints, error, loading, tier]);
   usePaneFooterHintBindings(focused, detailHints);
   useShortcut((event) => {
     if (!focused || event.targetEditable || !isPlainKey(event, "r")) return;
@@ -490,14 +512,24 @@ function IndexDetail({
         </Box>
       )}
       {detailTab === "chart" && (
-        <IndexChart
-          prices={prices}
-          ticker={index.ticker}
-          indexId={index.id}
-          width={width}
-          height={contentHeight}
-          focused={focused}
-        />
+        <Box flexDirection="column" flexGrow={1} minHeight={0}>
+          <Box paddingX={1}>
+            <ChartRangeTabs
+              choices={rangeChoices}
+              value={range}
+              onSelect={setRange}
+              focused={focused}
+            />
+          </Box>
+          <IndexChart
+            prices={prices}
+            ticker={index.ticker}
+            indexId={index.id}
+            width={width}
+            height={Math.max(6, contentHeight - 1)}
+            focused={focused}
+          />
+        </Box>
       )}
       {detailTab === "news" && (
         <FeedDataTableStackView

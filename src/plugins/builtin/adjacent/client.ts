@@ -39,6 +39,7 @@ import {
 } from "./normalize";
 import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
+import type { AdjacentPriceWindow } from "./price-window";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
 const DEFAULT_SOURCE_KEY = "adjacent";
@@ -220,6 +221,8 @@ export function resetAdjacentPersistence(): void {
 
 export interface AdjacentClientOptions {
   apiKey?: string | null;
+  /** Key the user personally owns (BYOK entry or process env), never plugin config. */
+  userApiKey?: string | null;
 }
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
@@ -268,7 +271,7 @@ async function adjacentFetchJson<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   return withConnectionRequest("adjacent", "fetch", async () => {
-    const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
+    const headers = authHeaders(apiKey);
     let response = await ADJACENT_FETCH.fetch(url, { headers, signal });
     // A stale or rejected key 401s the auth path. Indices, filings, markets,
     // rates, and events still have a public twin that ignores that key.
@@ -347,6 +350,33 @@ async function loadCached<T>(
   return work;
 }
 
+const MAX_PRICE_WINDOW_PAGES = 6;
+
+function adjacentPriceCacheKey(id: string, window?: AdjacentPriceWindow): string {
+  if (!window) return id;
+  return `${id}|${JSON.stringify({
+    ...window,
+    start: window.start?.slice(0, 10),
+    end: window.end?.slice(0, 10),
+  })}`;
+}
+
+function pricePageHasNext(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const meta = (payload as { meta?: unknown }).meta;
+  if (!meta || typeof meta !== "object") return false;
+  return (meta as { has_next?: unknown }).has_next === true;
+}
+
+function pricePageRows(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === "object") {
+    const rows = (payload as { data?: unknown }).data;
+    if (Array.isArray(rows)) return rows;
+  }
+  return [];
+}
+
 export class AdjacentClient {
   constructor(private options: AdjacentClientOptions = {}) {}
 
@@ -354,8 +384,15 @@ export class AdjacentClient {
     return normalizeAdjacentApiKey(this.options.apiKey);
   }
 
+  /** The key actually transmitted for this request; drives the public/keyed tier. */
+  get requestApiKey(): string | null {
+    return normalizeAdjacentApiKey(
+      isHostedWebClient() ? this.options.userApiKey : this.options.apiKey,
+    );
+  }
+
   get isPublic(): boolean {
-    return isPublicMode(this.apiKey);
+    return isPublicMode(this.requestApiKey);
   }
 
   private marketsPath(): string {
@@ -408,7 +445,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-markets",
       url,
-      () => adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentMarketsResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.markets,
     );
   }
@@ -431,7 +468,7 @@ export class AdjacentClient {
       page: params?.page,
       scope: "all",
     });
-    const raw = await adjacentFetchJson<unknown>(url, this.apiKey, params?.signal);
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey, params?.signal);
     return unwrapAdjacentMarketsResponse(raw);
   }
 
@@ -451,7 +488,7 @@ export class AdjacentClient {
       scope: "all",
     });
     // Don't cache search results persistently
-    const raw = await adjacentFetchJson<unknown>(url, this.apiKey, options?.signal);
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey, options?.signal);
     return unwrapAdjacentMarketsResponse(raw);
   }
 
@@ -460,7 +497,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-market-detail",
       id,
-      () => adjacentFetchJson<AdjacentMarketDetail>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentMarketDetail>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.marketDetail,
     );
   }
@@ -473,7 +510,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-prices",
       cacheKey,
-      () => adjacentFetchJson<AdjacentPricesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentPricesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.prices,
     );
   }
@@ -484,7 +521,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-candles",
       cacheKey,
-      () => adjacentFetchJson<AdjacentCandlesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentCandlesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.candles,
     );
   }
@@ -494,7 +531,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-trades",
       id,
-      () => adjacentFetchJson<AdjacentTradesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentTradesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.trades,
     );
   }
@@ -504,7 +541,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-quotes",
       id,
-      () => adjacentFetchJson<AdjacentQuotesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentQuotesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.quotes,
     );
   }
@@ -514,7 +551,7 @@ export class AdjacentClient {
     const raw = await loadCached(
       "adjacent-similar",
       id,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.similar,
     );
     return { markets: unwrapAdjacentSimilarMarkets(raw) };
@@ -535,7 +572,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-events",
       url,
-      () => adjacentFetchJson<AdjacentEventsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentEventsResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.events,
     );
   }
@@ -545,14 +582,14 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-indices",
       url,
-      () => adjacentFetchJson<AdjacentIndicesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentIndicesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.indices,
     );
   }
 
   async getIndex(id: string): Promise<AdjacentIndex> {
     const url = buildUrl(`${this.indicesPath()}/${id}`);
-    return adjacentFetchJson<AdjacentIndex>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentIndex>(url, this.requestApiKey);
   }
 
   async getIndexConstituents(id: string): Promise<AdjacentConstituentsResponse> {
@@ -560,17 +597,52 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-constituents",
       id,
-      () => adjacentFetchJson<AdjacentConstituentsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentConstituentsResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.constituents,
     );
   }
 
-  async getIndexPrices(id: string): Promise<AdjacentIndexPricesResponse> {
-    const url = buildUrl(`${this.indicesPath()}/${id}/prices`);
+  private async fetchPricePages(path: string, window: AdjacentPriceWindow): Promise<unknown> {
+    const pages: unknown[] = [];
+    for (let page = 1; page <= MAX_PRICE_WINDOW_PAGES; page += 1) {
+      const url = buildUrl(path, {
+        interval: window.interval,
+        start: window.start,
+        end: window.end,
+        per_page: window.perPage,
+        order: window.order,
+        page,
+      });
+      const payload = await adjacentFetchJson<unknown>(url, this.requestApiKey);
+      pages.push(payload);
+      if (!pricePageHasNext(payload)) break;
+    }
+    return pages.length === 1 ? pages[0] : { data: pages.flatMap(pricePageRows) };
+  }
+
+  private async loadPriceWindow(path: string, window?: AdjacentPriceWindow): Promise<unknown> {
+    if (!window?.start) {
+      return adjacentFetchJson<unknown>(
+        buildUrl(path, window ? { interval: window.interval } : undefined),
+        this.requestApiKey,
+      );
+    }
+    try {
+      return await this.fetchPricePages(path, window);
+    } catch {
+      return adjacentFetchJson<unknown>(
+        buildUrl(path, { interval: window.interval }),
+        this.requestApiKey,
+      ).catch(() => adjacentFetchJson<unknown>(buildUrl(path), this.requestApiKey));
+    }
+  }
+
+  async getIndexPrices(id: string, window?: AdjacentPriceWindow): Promise<AdjacentIndexPricesResponse> {
+    const path = `${this.indicesPath()}/${id}/prices`;
     const raw = await loadCached(
       "adjacent-index-prices",
-      id,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      adjacentPriceCacheKey(id, window),
+      () => this.loadPriceWindow(path, window),
       ADJACENT_CACHE_POLICIES.indexPrices,
     );
     return { data: unwrapAdjacentPriceSamples(raw) };
@@ -581,7 +653,7 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-index-news",
       id,
-      () => adjacentFetchJson<AdjacentNewsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentNewsResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
   }
@@ -591,22 +663,22 @@ export class AdjacentClient {
     return loadCached(
       "adjacent-rates",
       url,
-      () => adjacentFetchJson<AdjacentRatesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<AdjacentRatesResponse>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.rates,
     );
   }
 
   async getRate(id: string): Promise<AdjacentRate> {
     const url = buildUrl(`${this.ratesPath()}/${id}`);
-    return adjacentFetchJson<AdjacentRate>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentRate>(url, this.requestApiKey);
   }
 
-  async getRatePrices(id: string): Promise<AdjacentRatePricesResponse> {
-    const url = buildUrl(`${this.ratesPath()}/${id}/prices`);
+  async getRatePrices(id: string, window?: AdjacentPriceWindow): Promise<AdjacentRatePricesResponse> {
+    const path = `${this.ratesPath()}/${id}/prices`;
     const raw = await loadCached(
       "adjacent-rate-prices",
-      id,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      adjacentPriceCacheKey(id, window),
+      () => this.loadPriceWindow(path, window),
       ADJACENT_CACHE_POLICIES.ratePrices,
     );
     return { data: unwrapAdjacentPriceSamples(raw) };
@@ -620,7 +692,7 @@ export class AdjacentClient {
     const raw = await loadCached(
       "adjacent-news",
       url,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
     return { news: unwrapAdjacentNewsArticles(raw) };
@@ -631,7 +703,7 @@ export class AdjacentClient {
     const raw = await loadCached(
       "adjacent-news-latest",
       url,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
     return { news: unwrapAdjacentNewsArticles(raw) };
@@ -639,12 +711,12 @@ export class AdjacentClient {
 
   async getNewsArticle(id: string): Promise<AdjacentNewsArticle> {
     const url = buildUrl(`${this.newsPath()}/${id}`);
-    return adjacentFetchJson<AdjacentNewsArticle>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentNewsArticle>(url, this.requestApiKey);
   }
 
   async getNewsMarkets(id: string): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(`${this.newsPath()}/${id}/markets`);
-    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.requestApiKey);
   }
 
   async getMarketNews(
@@ -656,7 +728,7 @@ export class AdjacentClient {
     const raw = await loadCached(
       "adjacent-market-news",
       `${marketId}:${limit}`,
-      () => adjacentFetchJson<unknown>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
     return { news: unwrapAdjacentNewsArticles(raw).slice(0, limit) };
@@ -673,7 +745,7 @@ export class AdjacentClient {
       per_page: limit,
       platform,
     });
-    const raw = await adjacentFetchJson<unknown>(url, this.apiKey);
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey);
     return unwrapAdjacentMarketIds(raw).slice(0, limit);
   }
 
@@ -691,7 +763,7 @@ export class AdjacentClient {
     const payload = await loadCached(
       "adjacent-filings",
       url,
-      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.apiKey),
+      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.filings,
     );
     return {
@@ -714,7 +786,7 @@ export class AdjacentClient {
             markdown?: unknown;
             documents?: unknown[];
             source_url?: unknown;
-          }>(url, this.apiKey);
+          }>(url, this.requestApiKey);
           const filing = parseFiling(payload.filing);
           if (!filing) return null;
           return {
@@ -740,7 +812,7 @@ export class AdjacentClient {
       feeds?: unknown[];
       orgs?: unknown[];
       statuses?: unknown[];
-    }>(url, this.apiKey);
+    }>(url, this.requestApiKey);
     const strings = (values: unknown[] | undefined): string[] =>
       (values ?? []).map(asString).filter((value): value is string => value !== undefined);
     return {
@@ -816,7 +888,21 @@ export function resolveAdjacentApiKey(): string | null {
   return normalizeAdjacentApiKey(resolveSharedApiKey()) ?? normalizeAdjacentApiKey(readProcessEnv("ADJACENT_API_KEY"));
 }
 
+let sharedUserApiKey: string | null = null;
+
+/** The key the user personally owns (BYOK or env); never the plugin-config key. */
+export function setSharedAdjacentUserApiKey(key: string | null): void {
+  sharedUserApiKey = normalizeAdjacentApiKey(key);
+}
+
+export function resolveAdjacentUserApiKey(): string | null {
+  return sharedUserApiKey;
+}
+
 /** Returns an Adjacent client using the effective shared API key, if any. */
 export function getSharedAdjacentClient(): AdjacentClient {
-  return new AdjacentClient({ apiKey: resolveAdjacentApiKey() });
+  return new AdjacentClient({
+    apiKey: resolveAdjacentApiKey(),
+    userApiKey: resolveAdjacentUserApiKey(),
+  });
 }

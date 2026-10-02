@@ -1,13 +1,15 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   SegmentedControl,
   Spinner,
+  usePaneListSearch,
   type DataTableCell,
+  type DataTableKeyEvent,
   type PaneFooterSegment,
 } from "../../../components";
 import { usePluginPaneState } from "../../runtime";
@@ -62,7 +64,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(initialCache?.stale ?? false);
   const [fetchedAt, setFetchedAt] = useState<number | null>(initialCache?.fetchedAt ?? null);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [impactFilter, setImpactFilter] = usePluginPaneState<ImpactFilter>("impactFilter", "all");
   const [countryFilter, setCountryFilter] = usePluginPaneState<CountryFilter>("countryFilter", "all");
   const [sortPreference, setSortPreference] = useState<SortPreference<EconCalendarColumn["id"]>>({
@@ -74,9 +76,12 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const appActive = useAppActive();
   const [detailEvent, setDetailEvent] = useState<EconEvent | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused: focused && !detailEvent,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "event, country, or release",
+  });
 
   const fetchGenRef = useRef(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -95,7 +100,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       setFetchedAt(result.fetchedAt);
       setStale(result.stale);
       setError(result.refreshError ?? null);
-      if (force) setSelectedIdx(0);
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -138,7 +142,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     });
   }, [countryFilter, events, impactFilter, searchQuery, sortPreference]);
 
-  const { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx } = useMemo(() => {
+  const { rows, nowRowIdx, nextUpcomingEventIdx } = useMemo(() => {
     // Build display rows with separator headers and NOW marker
     const today = new Date(now);
     const rows: DisplayRow[] = [];
@@ -166,15 +170,12 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       rows.push({ kind: "event", key: `event-${ev.id}-${i}`, event: ev, eventIdx: i });
     }
 
-    // Map from eventIdx to flat row index (for scroll tracking)
-    const eventIdxToRowIdx = new Map<number, number>();
     let nowRowIdx = -1;
     let nextUpcomingEventIdx = -1;
     let nextUpcomingTime = Number.POSITIVE_INFINITY;
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r]!;
       if (row.kind === "event") {
-        eventIdxToRowIdx.set(row.eventIdx, r);
         const eventTime = row.event.date.getTime();
         if (eventTime > now && eventTime < nextUpcomingTime) {
           nextUpcomingEventIdx = row.eventIdx;
@@ -185,82 +186,76 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       }
     }
 
-    return { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx };
+    return { rows, nowRowIdx, nextUpcomingEventIdx };
   }, [filtered, now]);
 
-  // On initial load, scroll to NOW and select the first upcoming event
   const initialScrollDone = useRef(false);
+  const initialSelectionDone = useRef(false);
   useEffect(() => {
     if (initialScrollDone.current || filtered.length === 0) return;
-    if (nextUpcomingEventIdx >= 0) {
-      setSelectedIdx(nextUpcomingEventIdx);
-    }
     const sb = scrollRef.current;
     if (sb?.viewport && nowRowIdx >= 0) {
-      // Position NOW a few rows from the top so you can see context
       const scrollTarget = Math.max(0, nowRowIdx - 3);
       sb.scrollTo(scrollTarget);
     }
     initialScrollDone.current = true;
-  }, [filtered.length]);
+  }, [filtered.length, nowRowIdx]);
+  useEffect(() => {
+    if (filtered.length === 0) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+    if (selectedId && filtered.some((event) => event.id === selectedId)) return;
+    if (!initialSelectionDone.current && nextUpcomingEventIdx >= 0) {
+      initialSelectionDone.current = true;
+      setSelectedId(filtered[nextUpcomingEventIdx]!.id);
+      return;
+    }
+    initialSelectionDone.current = true;
+    setSelectedId(filtered[0]!.id);
+  }, [filtered, nextUpcomingEventIdx, selectedId]);
 
   // Next upcoming event for countdown
   const nextEvent = nextUpcomingEventIdx >= 0 ? filtered[nextUpcomingEventIdx] : undefined;
   const nextCountdown = nextEvent ? formatCountdown(nextEvent.date.getTime() - now) : null;
   const selectImpactFilter = useCallback((value: ImpactFilter) => {
     setImpactFilter(value);
-    setSelectedIdx(0);
   }, [setImpactFilter]);
   const selectCountryFilter = useCallback((value: CountryFilter) => {
     setCountryFilter(value);
-    setSelectedIdx(0);
   }, [setCountryFilter]);
   const cycleImpactFilter = useCallback(() => {
     setImpactFilter((prev) => FILTER_CYCLE[(FILTER_CYCLE.indexOf(prev) + 1) % FILTER_CYCLE.length]!);
-    setSelectedIdx(0);
   }, [setImpactFilter]);
   const cycleCountryFilter = useCallback(() => {
     setCountryFilter((prev) => COUNTRY_CYCLE[(COUNTRY_CYCLE.indexOf(prev) + 1) % COUNTRY_CYCLE.length]!);
-    setSelectedIdx(0);
   }, [setCountryFilter]);
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
-  const blurSearch = useCallback(() => setSearchFocused(false), []);
 
-  const handleRootKeyDown = useCallback((event: {
-    name?: string;
-    preventDefault?: () => void;
-    stopPropagation?: () => void;
-  }) => {
-    if (event.name === "/" || event.name === "s") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return true;
-    }
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    if (listSearch.searchFocused) return false;
     if (event.name === "f") {
       event.stopPropagation?.();
       event.preventDefault?.();
       cycleImpactFilter();
       return true;
-    } else if (event.name === "c") {
+    }
+    if (event.name === "c") {
       event.stopPropagation?.();
       event.preventDefault?.();
       cycleCountryFilter();
       return true;
     }
     return false;
-  }, [cycleCountryFilter, cycleImpactFilter, focusSearch]);
+  }, [cycleCountryFilter, cycleImpactFilter, listSearch.handleSearchKey, listSearch.searchFocused]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
+    if (!focused || listSearch.searchFocused || event.targetEditable) return;
     if (!isPlainKey(event, "r")) return;
     event.stopPropagation?.();
     event.preventDefault?.();
     void load(true);
-  }, { enabled: focused && !searchFocused });
+  }, { enabled: focused && !listSearch.searchFocused });
 
   const columns = useMemo<EconCalendarColumn[]>(() => [
     { id: "time", label: "TIME", width: 6, align: "left" },
@@ -279,7 +274,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     ? "Try a different search, impact, or country."
     : undefined;
 
-  const selectedEvent = filtered[selectedIdx];
+  const selectedEvent = filtered.find((event) => event.id === selectedId);
   const activeEvent = detailEvent ?? selectedEvent;
   const activeFredMapping = useMemo(
     () => activeEvent ? resolveFredMapping(activeEvent.event, activeEvent.country) : null,
@@ -294,13 +289,13 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
   ], [stale]);
   const calendarHints = useMemo(() => [
-    paneSearchHint(focusSearch),
-    { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter },
-    { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter },
-  ], [cycleCountryFilter, cycleImpactFilter, focusSearch]);
+    paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
+    { id: "impact-filter", key: "f", label: "ilter", onPress: cycleImpactFilter, disabled: listSearch.searchFocused },
+    { id: "country-filter", key: "c", label: "ountry", onPress: cycleCountryFilter, disabled: listSearch.searchFocused },
+  ], [cycleCountryFilter, cycleImpactFilter, listSearch.focusSearch, listSearch.searchFocused]);
   usePaneStatusLinkFooter({
     registrationId: "econ-calendar",
-    focused,
+    focused: focused && !listSearch.searchFocused,
     url: sourceUrl,
     source: "FRED",
     label: "series",
@@ -308,7 +303,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     error,
     info: calendarStatus,
     trailingInfo: calendarTrailing,
-    showOpenHint: !!sourceUrl,
+    showOpenHint: !!sourceUrl && !listSearch.searchFocused,
     hints: calendarHints,
   });
 
@@ -404,19 +399,10 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   );
   const rootBefore = (
     <Box flexDirection="column" flexShrink={0}>
-      <InputSearchBar
-        value={searchQuery}
-        focused={focused && !detailEvent}
-        active={searchFocused}
+      <PaneListChrome
         width={width}
-        focusToken={searchFocusToken}
-        inputRef={searchInputRef}
-        placeholder="filter events"
-        debounceMs={80}
-        onFocus={focusSearch}
-        onBlur={blurSearch}
-        onNavigateDown={blurSearch}
-        onQueryChange={(value) => { setSearchQuery(value); setSelectedIdx(0); }}
+        focused={focused && !detailEvent}
+        search={listSearch.search}
       />
       {filterControls}
     </Box>
@@ -460,7 +446,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableStackView<DisplayRow, EconCalendarColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       detailOpen={!!detailEvent}
       onBack={() => setDetailEvent(null)}
       detailContent={detailContent}
@@ -470,10 +456,11 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       selection={{
-        kind: "index",
-        selectedIndex: eventIdxToRowIdx.get(selectedIdx) ?? selectedIdx,
-        onChange: (_index, row) => {
-          if (row.kind === "event") setSelectedIdx(row.eventIdx);
+        kind: "id",
+        selectedId,
+        getId: (row) => row.kind === "event" ? row.event.id : row.key,
+        onChange: (_id, row) => {
+          if (row.kind === "event") setSelectedId(row.event.id);
         },
       }}
       columns={columns}

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Box, Text, TextAttributes, useUiHost } from "../../../ui";
 import { StaticChartSurface, type StaticChartOverlay } from "../../../components/chart/static";
+import { ChartStats } from "../../../components/chart/stats";
 import { colors, blendHex } from "../../../theme/colors";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type {
@@ -18,8 +19,6 @@ import {
   ratingLabel,
   ratingTrend,
 } from "./format";
-
-const CHART_META_STACK_WIDTH = 84;
 
 function SentimentBadge({ rating }: { rating: FearGreedRating }) {
   const color = ratingColor(rating);
@@ -112,7 +111,6 @@ function SentimentChart({
   overlays?: StaticChartOverlay[];
 }) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
-  const stackMeta = width < CHART_META_STACK_WIDTH;
   const chartWidth = Math.max(24, width - 2);
   const chartHeight = width >= 96 ? 12 : 10;
   const color = ratingColor(rating);
@@ -126,6 +124,16 @@ function SentimentChart({
     };
   }, [color, rating]);
   const latest = points.length > 0 ? points[points.length - 1]!.close : null;
+  const latestText = formatIndicatorValue(latest, valueFormat);
+  const stats = [
+    { label: "score", value: formatScore(score), color },
+    ...(latestText !== formatScore(score)
+      ? [{ label: "latest", value: latestText }]
+      : []),
+    ...(secondaryLabel && secondaryValue != null
+      ? [{ label: "avg", value: formatIndicatorValue(secondaryValue, valueFormat) }]
+      : []),
+  ];
 
   return (
     <Box flexDirection="column" marginTop={isDesktopWeb ? 1 : 2} paddingX={1}>
@@ -134,36 +142,12 @@ function SentimentChart({
         <Box flexGrow={1} />
         <SentimentBadge rating={rating} />
       </Box>
-      {stackMeta ? (
-        <>
-          <Box flexDirection="row" height={1} overflow="hidden">
-            <SeriesLegend color={color} primaryLabel={primaryLabel} secondaryLabel={secondaryLabel} />
-          </Box>
-          <Box flexDirection="row" height={1} overflow="hidden">
-            <ChartStats
-              color={color}
-              latest={latest}
-              score={score}
-              secondaryLabel={secondaryLabel}
-              secondaryValue={secondaryValue}
-              valueFormat={valueFormat}
-            />
-          </Box>
-        </>
-      ) : (
+      <Box flexDirection="column">
         <Box flexDirection="row" height={1} overflow="hidden">
           <SeriesLegend color={color} primaryLabel={primaryLabel} secondaryLabel={secondaryLabel} />
-          <Box flexGrow={1} />
-          <ChartStats
-            color={color}
-            latest={latest}
-            score={score}
-            secondaryLabel={secondaryLabel}
-            secondaryValue={secondaryValue}
-            valueFormat={valueFormat}
-          />
         </Box>
-      )}
+        <ChartStats width={chartWidth} items={stats} />
+      </Box>
       {points.length >= 2 ? (
         <Box marginTop={1}>
           <StaticChartSurface
@@ -208,44 +192,6 @@ function SeriesLegend({
         <>
           <Text fg={colors.warning}>  ● </Text>
           <Text fg={colors.textDim}>{secondaryLabel}</Text>
-        </>
-      ) : null}
-    </>
-  );
-}
-
-function ChartStats({
-  color,
-  latest,
-  score,
-  secondaryLabel,
-  secondaryValue,
-  valueFormat,
-}: {
-  color: string;
-  latest: number | null;
-  score: number | null;
-  secondaryLabel?: string;
-  secondaryValue?: number | null;
-  valueFormat: FearGreedValueFormat;
-}) {
-  // The index history charts the score itself, so its "latest" repeats the score.
-  const latestText = formatIndicatorValue(latest, valueFormat);
-  const showLatest = latestText !== formatScore(score);
-  return (
-    <>
-      <Text fg={colors.textDim}>score </Text>
-      <Text fg={color} attributes={TextAttributes.BOLD}>{formatScore(score)}</Text>
-      {showLatest ? (
-        <>
-          <Text fg={colors.textDim}>  latest </Text>
-          <Text fg={colors.text}>{latestText}</Text>
-        </>
-      ) : null}
-      {secondaryLabel && secondaryValue != null ? (
-        <>
-          <Text fg={colors.textDim}>  avg </Text>
-          <Text fg={colors.text}>{formatIndicatorValue(secondaryValue, valueFormat)}</Text>
         </>
       ) : null}
     </>

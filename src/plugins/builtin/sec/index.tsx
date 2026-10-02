@@ -293,6 +293,7 @@ function toFeedItems(
       eyebrow: filing.ticker || filing.form,
       title: listTitle,
       timestamp: filing.filingDate,
+      timestampKind: "date",
       detailTitle: enrichedTitle,
       detailMeta: [
         `Filed ${formatFiledAt(filing)}`,
@@ -306,8 +307,8 @@ function toFeedItems(
 
 function SecTickerView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
-  const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
+  const selectionKey = `selectedAccession:${ticker?.metadata.ticker ?? "none"}`;
+  const [selectedAccessionNumber, setSelectedAccessionNumber] = useDebouncedPluginPaneState<string | null>(selectionKey, null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
@@ -344,7 +345,9 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
 
   // Only the filing in view needs its content; queueing every ownership form in
   // the list fires dozens of SEC requests the user never looks at.
-  const selectedFiling = visibleFilings[selectedIdx];
+  const selectedFiling = visibleFilings.find((filing) => filing.accessionNumber === selectedAccessionNumber)
+    ?? visibleFilings[0];
+  const activeSelectionId = selectedFiling?.accessionNumber ?? null;
   const contentTargets = useMemo(() => [
     ...(openFiling ? [openFiling] : []),
     ...(selectedFiling && selectedFiling.accessionNumber !== openFiling?.accessionNumber ? [selectedFiling] : []),
@@ -380,12 +383,6 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
       contentCache.get(summarizeTarget.accessionNumber),
     ));
   }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
-
-  useEffect(() => {
-    if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
-      setSelectedIdx(Math.max(0, visibleFilings.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, visibleFilings.length]);
 
   usePaneStatusLinkFooter({
     registrationId: "sec",
@@ -439,8 +436,8 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
         summary.summaries,
         summary.summarizingAccession,
       )}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={activeSelectionId}
+      onSelect={(index) => setSelectedAccessionNumber(visibleFilings[index]?.accessionNumber ?? null)}
       isItemRead={(item) => readArticleIds.has(item.id)}
       onItemRead={(item) => markArticleRead(item.id)}
       onOpenItemIdChange={setOpenItemId}
@@ -565,7 +562,7 @@ function SecPane({ width, height, focused }: PaneProps) {
   const [filings, setFilings] = useState<SecFilingItem[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedAccessionNumber, setSelectedAccessionNumber] = useDebouncedPluginPaneState<string | null>("selectedAccessionNumber", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -641,7 +638,10 @@ function SecPane({ width, height, focused }: PaneProps) {
     filings: visibleFilings,
     contentCache,
   });
-  const selectedFiling = visibleFilings[selectedIdx] ?? null;
+  const selectedFiling = visibleFilings.find((filing) => filing.accessionNumber === selectedAccessionNumber)
+    ?? visibleFilings[0]
+    ?? null;
+  const activeSelectionId = selectedFiling?.accessionNumber ?? null;
   const summarizeTarget = openFiling ?? selectedFiling ?? null;
   const handleSummarize = useCallback(() => {
     if (!summarizeTarget) return;
@@ -662,12 +662,6 @@ function SecPane({ width, height, focused }: PaneProps) {
     ));
   }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
 
-  useEffect(() => {
-    if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
-      setSelectedIdx(Math.max(0, visibleFilings.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, visibleFilings.length]);
-
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
     setSearchFocusToken((current) => current + 1);
@@ -677,9 +671,9 @@ function SecPane({ width, height, focused }: PaneProps) {
   }, []);
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
-    setSelectedIdx(0);
+    setSelectedAccessionNumber(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery, setSelectedAccessionNumber]);
 
   useShortcut((event) => {
     if (!focused || openItemId) return;
@@ -832,8 +826,8 @@ function SecPane({ width, height, focused }: PaneProps) {
         summary.summaries,
         summary.summarizingAccession,
       )}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={activeSelectionId}
+      onSelect={(index) => setSelectedAccessionNumber(visibleFilings[index]?.accessionNumber ?? null)}
       isItemRead={(item) => readArticleIds.has(item.id)}
       onItemRead={(item) => markArticleRead(item.id)}
       onOpenItemIdChange={setOpenItemId}

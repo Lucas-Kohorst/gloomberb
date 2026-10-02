@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataTableStackView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   Tabs,
   usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -13,7 +14,7 @@ import {
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatRelativeAge } from "../../../utils/relative-time";
@@ -21,6 +22,7 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { cycleSortPreference } from "../../../utils/sort-values";
 import { usePaneInstance } from "../../../state/app/context";
 import { useAutoRefresh } from "../shared/auto-refresh";
+import { paneSearchHint } from "../shared/pane-footer";
 import { loadTreasuryAuctions } from "./cache";
 import {
   AUCTION_FILTERS,
@@ -199,16 +201,13 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [sortPreference, setSortPreference] = useState<AuctionSortPreference>(DEFAULT_AUCTION_SORT);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused: focused && !detailOpen,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "type, term, or date",
+  });
   const fetchGenRef = useRef(0);
-
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => setSearchFocused(false), []);
 
   const load = useCallback((force = false) => {
     fetchGenRef.current += 1;
@@ -290,18 +289,15 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     event: DataTableKeyEvent,
     context: DataTableRootKeyContext,
   ) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    if (listSearch.searchFocused) return false;
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
-      focusSearch();
-      return true;
-    }
-    if (isPlainKey(event, "/")) {
-      stopSearchFocusNavigation(event);
-      focusSearch();
+      listSearch.focusSearch();
       return true;
     }
     return handlePaneKey(event);
-  }, [focusSearch, handlePaneKey]);
+  }, [handlePaneKey, listSearch.focusSearch, listSearch.handleSearchKey, listSearch.searchFocused]);
 
   const columns = useMemo(() => buildAuctionColumns(), []);
 
@@ -318,8 +314,8 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       hints: detailOpen || auctions.length === 0
         ? []
         : [
-          { id: "search", key: "/", label: "search", onPress: focusSearch },
-          { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+          paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
+          { id: "filter", key: "f", label: "ilter", onPress: cycleFilter, disabled: listSearch.searchFocused },
         ],
     };
   }, [
@@ -328,8 +324,8 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     detailOpen,
     error,
     fetchedAt,
-    focusSearch,
-    load,
+    listSearch.focusSearch,
+    listSearch.searchFocused,
     stale,
     status,
   ]);
@@ -342,7 +338,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         onSelect={(value) => selectFilter(value as AuctionFilter)}
         compact
         variant="bare"
-        focused={focused && !detailOpen && !searchFocused}
+        focused={focused && !detailOpen && !listSearch.searchFocused}
       />
     </Box>
   );
@@ -373,25 +369,16 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       <DataTableStackView<TreasuryAuction, AuctionColumn>
-        focused={focused && !searchFocused}
+        focused={focused && !listSearch.searchFocused}
         detailOpen={detailOpen && !!selected}
         onBack={() => setDetailOpen(false)}
         detailContent={selected ? <TreasuryAuctionDetail auction={selected} width={width} /> : null}
         detailTitle={selected ? `${selected.secType} ${selected.securityTerm}` : undefined}
         rootBefore={(
-          <InputSearchBar
-            value={searchQuery}
-            focused={focused && !detailOpen}
-            active={searchFocused}
+          <PaneListChrome
             width={width}
-            focusToken={searchFocusToken}
-            inputRef={searchInputRef}
-            placeholder="type, term, or date"
-            debounceMs={80}
-            onFocus={focusSearch}
-            onBlur={blurSearch}
-            onNavigateDown={blurSearch}
-            onQueryChange={setSearchQuery}
+            focused={focused && !detailOpen}
+            search={listSearch.search}
           />
         )}
         onRootKeyDown={handleRootKeyDown}
@@ -403,7 +390,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
           onChange: (id) => setSelectedId(id),
         }}
         onActivate={() => {
-          blurSearch();
+          listSearch.blurSearch();
           setDetailOpen(true);
         }}
         rootWidth={width}

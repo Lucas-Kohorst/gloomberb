@@ -15,6 +15,7 @@ import { getStashedSubstackArticle } from "./article-stash";
 import { emptyLoadState, errorMessage, type DetailState } from "./pane-state";
 import type { SubstackArticleDetail, SubstackArticleSummary } from "./types";
 import { JinaArticleReader, useJinaArticle } from "../shared/jina-reader";
+import { formatDetailDate } from "../../../utils/datetime-format";
 
 function summaryFromSettings(
   articleId: string,
@@ -62,7 +63,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
         setDetail({
           data: entry.data,
           loading: false,
-          error: null,
+          error: entry.refreshError ?? null,
           fetchedAt: entry.fetchedAt,
           stale: entry.stale,
         });
@@ -147,8 +148,6 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     registrationId: "substack-article-reader",
     focused,
     url: article?.url ?? url,
-    source: article?.publicationName,
-    label: "article",
     loading: (!skipJina && jina.loading) || (detail.loading && !knownBody),
     error: detail.error ?? jina.error,
     showOpenHint: true,
@@ -181,6 +180,10 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
         focused={focused}
         state={jina}
         knownBody={knownBody}
+        metadata={[[
+          detail.data?.publicationName ?? article.publicationName,
+          formatDetailDate(detail.data?.publishedAt ?? article.publishedAt, ""),
+        ].filter(Boolean).join(" · ")]}
       />
     </Box>
   );

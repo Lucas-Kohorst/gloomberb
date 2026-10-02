@@ -238,6 +238,10 @@ export interface ChartResolutionResult {
   series: ResolvedSeries[];
   /** Provider capabilities shared by every active market series. */
   resolutionSupport?: ChartResolutionSupport[];
+  /** Range tabs the visible sources can actually serve; omitted when none restrict the defaults. */
+  rangeSupport?: readonly TimeRange[];
+  /** Adjacent access tier behind the visible ADJ series. */
+  accessTier?: "public" | "keyed";
   /** Series available to the legend, including hidden base series that can be restored. */
   legendSeries?: ResolvedSeries[];
   /** Loaded observations retained outside the visible window for interactive navigation. */

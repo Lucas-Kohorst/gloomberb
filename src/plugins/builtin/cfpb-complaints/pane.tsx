@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -24,8 +25,9 @@ import {
   CFPB_COMPLAINTS_PLUGIN_ID,
   CFPB_COMPLAINT_DETAIL_URL,
   type CfpbComplaint,
-  type CfpbComplaintPage,
 } from "./types";
+
+const EMPTY_ITEMS: CfpbComplaint[] = [];
 
 const SEARCH_DEBOUNCE_MS = 300;
 const REFRESH_INTERVAL_MINUTES = 15;
@@ -40,9 +42,9 @@ function formatTime(date: Date): string {
 
 function buildDetailMeta(complaint: CfpbComplaint): string[] {
   const meta = [
-    complaint.company,
     complaint.subProduct ? `${complaint.product} · ${complaint.subProduct}` : complaint.product,
     complaint.subIssue ? `${complaint.issue} · ${complaint.subIssue}` : complaint.issue,
+    `Received: ${formatTime(complaint.dateReceived)}`,
   ];
   if (complaint.state) meta.push(`State: ${complaint.state}`);
   if (complaint.companyResponse) meta.push(`Response: ${complaint.companyResponse}`);
@@ -95,9 +97,10 @@ function toFeedItems(complaints: CfpbComplaint[]): FeedDataTableItem[] {
     eyebrow: complaint.product,
     title: `${complaint.issue} · ${complaint.company}`,
     timestamp: complaint.dateReceived,
+    timestampKind: "date",
     detailTitle: `#${complaint.id} ${complaint.company}`,
     detailMeta: buildDetailMeta(complaint),
-    detailBody: buildDetailBody(complaint),
+    detailBody: complaint.narrative || "No public narrative was provided for this complaint.",
   }));
 }
 
@@ -111,110 +114,44 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
   const [storedCompany] = usePaneSettingValue("company", "");
   const productFilter = String(storedProduct ?? "").trim();
   const companyFilter = String(storedCompany ?? "").trim();
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const [complaints, setComplaints] = useState<CfpbComplaint[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const loader = useCallback(async () => {
+    const page = await client.listComplaints({
+      searchTerm: query, product: productFilter, company: companyFilter, size: DEFAULT_LIMIT,
+    });
+    return page.complaints;
+  }, [client, query, productFilter, companyFilter]);
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
+  const complaints = data ?? EMPTY_ITEMS;
 
-  const load = useCallback(
-    (nextQuery: string, nextProduct: string, nextCompany: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void client
-        .listComplaints({
-          searchTerm: nextQuery,
-          product: nextProduct,
-          company: nextCompany,
-          size: DEFAULT_LIMIT,
-        })
-        .then((page: CfpbComplaintPage) => {
-          if (abortRef.current !== controller) return;
-          setComplaints(page.complaints);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setComplaints([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query, productFilter, companyFilter);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query, productFilter, companyFilter]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (complaints.length > 0 && selectedIdx >= complaints.length) {
-      setSelectedIdx(Math.max(0, complaints.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, complaints.length]);
-
-  const selectedComplaint = complaints[selectedIdx] ?? null;
+  const selectedComplaint = complaints.find((item) => item.id === selectedId) ?? complaints[0] ?? null;
   const openComplaint = openItemId
     ? complaints.find((complaint) => complaint.id === openItemId) ?? null
     : null;
   const detailComplaint = openComplaint ?? selectedComplaint;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
-  const refresh = useCallback(() => {
-    load(query, productFilter, companyFilter);
-  }, [load, query, productFilter, companyFilter]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company, issue, or keyword",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -222,12 +159,12 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && complaints.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && complaints.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(complaints), [complaints]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
+  useAutoRefresh(
+    lastUpdated,
     refresh, poll.intervalMinutes,
   );
 
@@ -241,19 +178,17 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
   usePaneStatusLinkFooter({
     registrationId: CFPB_COMPLAINTS_PLUGIN_ID,
     focused,
-    url: error ? null : detailUrl,
-    source: undefined,
-    label: "complaint",
-    loading,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      ...(detailComplaint && !error
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
+      ...(detailComplaint
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),
     ],
@@ -270,12 +205,7 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -284,55 +214,18 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, refresh],
+    [focusSearch, handleSearchKey, refresh],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company, issue, or keyword"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && complaints.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching complaints for ${query.trim()}...`
-                : "Loading complaints..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && complaints.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState
-            title="Complaints unavailable."
-            message={error}
-            hint="Press r to retry."
-          />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="CFPB complaints" onRetry={refresh} />
       </Box>
     );
   }
@@ -344,8 +237,8 @@ export function CfpbComplaintsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedComplaint?.id ?? null}
+      onSelect={(index) => setSelectedId(complaints[index]?.id ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       onPopOut={(item) => {

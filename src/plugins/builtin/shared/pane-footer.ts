@@ -86,7 +86,7 @@ export function usePaneFooterHintBindings(
     && !skipKeys?.has(hint.key.toLowerCase())
   ));
   useShortcut((event) => {
-    if (!focused || event.targetEditable) return;
+    if (!focused || event.targetEditable || event.defaultPrevented || event.propagationStopped) return;
     // Shifted letters are a different action (Shift+R is not [r]efresh).
     if (!isPlainKeyboardEvent(event)) return;
     const key = (event.name ?? event.key ?? event.sequence ?? "").toLowerCase();

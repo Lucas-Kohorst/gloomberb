@@ -275,7 +275,7 @@ export function DataTableView<
     scrollRef,
     syncHeaderScroll,
   });
-  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  const [cursor, setCursor] = useState<SelectionCommitTarget | null>(null);
   const pendingCommitRef = useRef(false);
   const pendingCommitTargetRef = useRef<SelectionCommitTarget | null>(null);
   const pendingCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -338,6 +338,13 @@ export function DataTableView<
         : tableProps.items.length > 0
           ? 0
           : -1;
+  const cursorIndex = useMemo(() => {
+    if (!cursor) return null;
+    if (selection.kind !== "id" || cursor.id == null) return cursor.index;
+    const hintedItem = tableProps.items[cursor.index];
+    if (hintedItem && selection.getId(hintedItem, cursor.index) === cursor.id) return cursor.index;
+    return tableProps.items.findIndex((item, index) => selection.getId(item, index) === cursor.id);
+  }, [cursor, selection, tableProps.items]);
   const effectiveSelectedIndex = selection.kind === "none"
     ? -1
     : isValidCursorIndex(cursorIndex)
@@ -435,11 +442,14 @@ export function DataTableView<
   useEffect(() => {
     if (selection.kind === "none") {
       clearPendingCommit();
-      setCursorIndex(null);
+      setCursor(null);
       return;
     }
     if (pendingCommitRef.current) return;
-    setCursorIndex(defaultCursorIndex >= 0 ? defaultCursorIndex : null);
+    setCursor(defaultCursorIndex >= 0 ? {
+      index: defaultCursorIndex,
+      id: selection.kind === "id" ? selection.selectedId ?? undefined : undefined,
+    } : null);
   }, [
     clearPendingCommit,
     defaultCursorIndex,
@@ -563,6 +573,10 @@ export function DataTableView<
     if (currentIndex < 0) return;
     commitIndexRef.current(currentIndex, reason);
   }, [selection, tableProps.items]);
+  const commitTargetRef = useRef(commitTarget);
+  useEffect(() => {
+    commitTargetRef.current = commitTarget;
+  }, [commitTarget]);
 
   const commitIndexImmediately = useCallback((
     index: number,
@@ -588,9 +602,9 @@ export function DataTableView<
       const pendingTarget = pendingCommitTargetRef.current;
       pendingCommitTargetRef.current = null;
       clearSelectionScrollTarget();
-      commitTarget(pendingTarget, "keyboard");
+      commitTargetRef.current(pendingTarget, "keyboard");
     }, DATA_TABLE_SELECTION_COMMIT_DELAY_MS);
-  }, [clearSelectionScrollTarget, commitTarget, getCommitTarget, selection.kind]);
+  }, [clearSelectionScrollTarget, getCommitTarget, selection.kind]);
 
   const updateCursorIndex = useCallback((
     index: number,
@@ -613,7 +627,7 @@ export function DataTableView<
       return;
     }
     effectiveSelectedIndexRef.current = index;
-    setCursorIndex(index);
+    setCursor(getCommitTarget(index));
     onCursorChange?.(item, index, reason);
     if (options.commit === "deferred") {
       requestSelectionScroll(index);
@@ -625,6 +639,7 @@ export function DataTableView<
     }
   }, [
     commitIndexImmediately,
+    getCommitTarget,
     isNavigable,
     onCursorChange,
     requestSelectionScroll,

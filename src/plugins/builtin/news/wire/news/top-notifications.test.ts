@@ -91,6 +91,7 @@ describe("top news notifications", () => {
       title: "Top News",
       body: "New top story",
       desktop: "always",
+      refId: "top-news:fresh",
     });
     expect(h.notifications[0]?.duration).toBeGreaterThan(0);
 

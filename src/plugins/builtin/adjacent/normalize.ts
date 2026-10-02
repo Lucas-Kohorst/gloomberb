@@ -18,6 +18,7 @@ import type {
   AdjacentRateRow,
   AdjacentSimilarMarket,
 } from "./types";
+import { ntiTeamForRateId } from "./nti-teams";
 import type { NewsArticle } from "../../../types/news-source";
 import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import type { PricePoint } from "../../../types/financials";
@@ -92,9 +93,10 @@ export function adjacentRateSortValue(
 }
 
 export function normalizeAdjacentRate(rate: AdjacentRate): AdjacentRateRow {
+  const team = ntiTeamForRateId(rate.rate_id);
   return {
     id: rate.rate_id,
-    name: rate.name,
+    name: team ? `${team} · ${rate.name}` : rate.name,
     value: rate.latest_price ?? null,
     spread: rate.spread ?? null,
     change1d: rate.price_change_1d ?? null,

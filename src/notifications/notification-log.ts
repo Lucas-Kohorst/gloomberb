@@ -1,6 +1,7 @@
 import type { AppNotificationRequest, AppNotificationType } from "../types/plugin";
 
 export const NOTIFICATION_LOG_LIMIT = 300;
+const IDENTICAL_BODY_DEDUPE_MS = 10 * 60 * 1000;
 
 export interface NotificationLogEntry {
   id: string;
@@ -100,6 +101,18 @@ export function appendNotificationLog(
         { ...existing, ...entry, id: existing.id, at: existing.at, read: existing.read, source: existing.source },
         ...entries.slice(existingIndex + 1),
       ]);
+      persist();
+      publish();
+      return existing;
+    }
+  } else {
+    const duplicateIndex = entries.findIndex((candidate) => (
+      candidate.body === entry.body
+      && candidate.source === entry.source
+      && at - candidate.at <= IDENTICAL_BODY_DEDUPE_MS
+    ));
+    if (duplicateIndex >= 0) {
+      const existing = entries[duplicateIndex]!;
       persist();
       publish();
       return existing;

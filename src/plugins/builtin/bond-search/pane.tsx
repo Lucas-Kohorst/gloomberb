@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   Tabs,
   usePaneFooter,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
@@ -113,7 +114,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   const [entries, setEntries] = useState<CorporateYieldEntry[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ columnId: YieldColumnId; direction: SortDirection }>({
     columnId: "rating",
     direction: "asc",
@@ -124,14 +125,18 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
 
   const [searchQuery, setSearchQuery] = useState(String(seedQuery ?? ""));
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const listSearch = usePaneListSearch({
+    focused: focused && activeTab === "search",
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "issuer, CUSIP, or series",
+    debounceMs: 120,
+  });
   const [searchHits, setSearchHits] = useState<BondSearchHit[]>([]);
   const [searchStatus, setSearchStatus] = useState<LoadStatus>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchSelectedIdx, setSearchSelectedIdx] = useState(0);
+  const [selectedHitId, setSelectedHitId] = useState<string | null>(null);
   const [searchSort, setSearchSort] = useState<{ columnId: SearchColumnId; direction: SortDirection } | null>(null);
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
   const fetchGenRef = useRef(0);
   const searchGenRef = useRef(0);
@@ -176,7 +181,6 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         setSearchHits(result.hits);
         setSearchError(result.instrumentError ?? null);
         setSearchStatus("loaded");
-        setSearchSelectedIdx(0);
         setSearchSort(null);
       })
       .catch((loadError) => {
@@ -198,8 +202,8 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
     () => (searchSort ? sortedSearchHits(searchHits, searchSort) : searchHits),
     [searchHits, searchSort],
   );
-  const selectedEntry = rows[selectedIdx] ?? null;
-  const selectedHit = visibleSearchHits[searchSelectedIdx] ?? null;
+  const selectedEntry = rows.find((entry) => entry.seriesId === selectedSeriesId) ?? null;
+  const selectedHit = visibleSearchHits.find((hit) => hit.id === selectedHitId) ?? null;
 
   const chartSelected = useCallback(() => {
     if (!selectedEntry) return;
@@ -221,29 +225,26 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   }, [openHit, selectedHit]);
 
   useEffect(() => {
-    if (rows.length === 0) {
-      if (selectedIdx !== 0) setSelectedIdx(0);
-      return;
-    }
-    if (selectedIdx >= rows.length) setSelectedIdx(0);
-  }, [rows.length, selectedIdx]);
+    if (selectedSeriesId && rows.some((entry) => entry.seriesId === selectedSeriesId)) return;
+    setSelectedSeriesId(rows[0]?.seriesId ?? null);
+  }, [rows, selectedSeriesId]);
+
+  useEffect(() => {
+    if (selectedHitId && visibleSearchHits.some((hit) => hit.id === selectedHitId)) return;
+    setSelectedHitId(visibleSearchHits[0]?.id ?? null);
+  }, [selectedHitId, visibleSearchHits]);
 
   const updatedAgo = useUpdatedAgo(lastUpdated);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-
   const selectTab = useCallback((value: string) => {
+    listSearch.blurSearch();
     setActiveTab(value === "search" ? "search" : "yields");
-  }, [setActiveTab]);
+  }, [listSearch.blurSearch, setActiveTab]);
 
   const handleRootKeyDown = useCallback(
     (event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
+      if (activeTab === "search" && listSearch.handleSearchKey(event)) return true;
+      if (listSearch.searchFocused) return false;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -267,26 +268,30 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`);
         return true;
       }
-      if (activeTab === "search") {
-        if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
-          stopSearchFocusNavigation(event);
-          focusSearch();
-          return true;
-        }
-        if (event.name === "s" || event.name === "/") {
-          event.preventDefault?.();
-          event.stopPropagation?.();
-          focusSearch();
-          return true;
-        }
+      if (activeTab === "search" && context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+        stopSearchFocusNavigation(event);
+        listSearch.focusSearch();
+        return true;
       }
       return false;
     },
-    [activeTab, chartSelected, focusSearch, load, openHit, runSearch, searchQuery, selectedEntry, selectedHit],
+    [
+      activeTab,
+      chartSelected,
+      listSearch.focusSearch,
+      listSearch.handleSearchKey,
+      listSearch.searchFocused,
+      load,
+      openHit,
+      runSearch,
+      searchQuery,
+      selectedEntry,
+      selectedHit,
+    ],
   );
 
   useShortcut((event) => {
-    if (!focused || searchFocused) return;
+    if (!focused || listSearch.searchFocused) return;
     if (event.name === "1") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -308,8 +313,8 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
           ...(searchError ? [{ id: "error", parts: [{ text: searchError, tone: "warning" as const }] }] : []),
         ];
         const hints = [
-          graphFooterHint(openSelectedHit, selectedHit?.kind === "series"),
-          paneSearchHint(focusSearch),
+          graphFooterHint(openSelectedHit, selectedHit?.kind === "series" && !listSearch.searchFocused),
+          paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
         ];
         return { info, hints };
       }
@@ -322,7 +327,12 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       ];
       const hints = [
         graphFooterHint(chartSelected, !!selectedEntry),
-        ...(selectedEntry ? [{ id: "open" as const, key: "o" as const, label: "pen" as const, onPress: () => openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`) }] : []),
+        ...(selectedEntry ? [{
+          id: "open" as const,
+          key: "o" as const,
+          label: "pen" as const,
+          onPress: () => openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`),
+        }] : []),
       ];
       return { info, hints };
     },
@@ -330,14 +340,12 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       activeTab,
       chartSelected,
       error,
-      focusSearch,
       focused,
       lastUpdated,
-      load,
+      listSearch.focusSearch,
+      listSearch.searchFocused,
       openSelectedHit,
-      runSearch,
       searchError,
-      searchQuery,
       searchStatus,
       selectedEntry,
       selectedHit,
@@ -354,7 +362,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         onSelect={selectTab}
         compact
         variant="pill"
-        focused={focused && !searchFocused}
+        focused={focused && !listSearch.searchFocused}
       />
     </Box>
   );
@@ -362,40 +370,29 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   const bodyHeight = Math.max(1, height - 1);
 
   if (activeTab === "search") {
-    const searchBar = (
-      <InputSearchBar
-        value={searchQuery}
-        focused={focused}
-        active={searchFocused}
-        width={width}
-        focusToken={searchFocusToken}
-        inputRef={searchInputRef}
-        placeholder="issuer, CUSIP, or series"
-        debounceMs={120}
-        onFocus={focusSearch}
-        onBlur={blurSearch}
-        onNavigateDown={blurSearch}
-        onQueryChange={setSearchQuery}
-      />
-    );
     const searchBodyHeight = Math.max(1, height - 2);
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        {searchBar}
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={listSearch.search}
+        />
         {searchStatus === "loading" && visibleSearchHits.length === 0 ? (
           <Box flexGrow={1} justifyContent="center" alignItems="center">
             <Spinner label="Searching bonds..." />
           </Box>
         ) : (
           <DataTableView<BondSearchHit, SearchColumnDef>
-            focused={focused && !searchFocused}
+            focused={focused && !listSearch.searchFocused}
             rootWidth={width}
             rootHeight={searchBodyHeight}
             selection={{
-              kind: "index",
-              selectedIndex: searchSelectedIdx,
-              onChange: (index) => setSearchSelectedIdx(index),
+              kind: "id",
+              selectedId: selectedHitId,
+              getId: (hit) => hit.id,
+              onChange: (id) => setSelectedHitId(id),
             }}
             onActivate={(hit) => openHit(hit)}
             onRootKeyDown={handleRootKeyDown}
@@ -446,13 +443,14 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       <DataTableView<CorporateYieldEntry, YieldColumn>
-        focused={focused && !searchFocused}
+        focused={focused}
         rootWidth={width}
         rootHeight={bodyHeight}
         selection={{
-          kind: "index",
-          selectedIndex: selectedIdx,
-          onChange: (index) => setSelectedIdx(index),
+          kind: "id",
+          selectedId: selectedSeriesId,
+          getId: (entry) => entry.seriesId,
+          onChange: (id) => setSelectedSeriesId(id),
         }}
         onActivate={() => chartSelected()}
         onRootKeyDown={handleRootKeyDown}
@@ -465,7 +463,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
             nextSort(current, columnId as YieldColumnId, columnId === "label" ? "asc" : "asc"),
           )
         }
-        getItemKey={(entry, index) => `${entry.seriesId}-${index}`}
+        getItemKey={(entry) => entry.seriesId}
         renderCell={renderYieldCell}
         emptyStateTitle="No corporate yield data."
         emptyStateHint="Press r to refresh."

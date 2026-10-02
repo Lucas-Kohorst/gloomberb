@@ -99,6 +99,32 @@ afterEach(async () => {
 });
 
 describe("correlationModule", () => {
+  test("slash focuses the ticker field for keyboard input", async () => {
+    const runtime = createTestPluginRuntime();
+
+    await act(async () => {
+      testSetup = await testRender(<CorrelationHarness runtime={runtime} />, {
+        width: 60,
+        height: 8,
+      });
+    });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => { testSetup!.mockInput.pressKey("/"); });
+    await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => {
+      testSetup!.mockInput.pressKey("x");
+      await Bun.sleep(550);
+      await testSetup!.renderOnce();
+    });
+
+    expect(testSetup!.captureCharFrame()).toContain("x");
+  });
+
   test("opens tickers from row and column labels", async () => {
     const opened: Array<{ symbol: string; options: { floating?: boolean; paneType?: string } | undefined }> = [];
     const runtime = createTestPluginRuntime({

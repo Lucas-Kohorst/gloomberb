@@ -340,6 +340,13 @@ describe("chart composer expressions", () => {
     });
   });
 
+  test("opens ADJ-only presets on the 1M range the public tier can serve", () => {
+    expect(buildCustomChartPreset("ADJ:adjacent-djt").viewport.range).toBe("1M");
+    expect(buildPriceChartPreset("red").viewport.range).toBe("1M");
+    expect(buildCustomChartPreset("AAPL:price").viewport.range).toBe("5Y");
+    expect(buildCustomChartPreset("OWID:life-expectancy:USA").viewport.range).toBe("ALL");
+  });
+
   test("plots dividend history from G AAPL:div and G AAPL:dvd", () => {
     expect(parseChartExpression("AAPL:div")).toEqual([
       { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },

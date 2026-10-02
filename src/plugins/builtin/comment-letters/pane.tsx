@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -27,6 +28,8 @@ import {
   type CommentLetter,
 } from "./types";
 
+const EMPTY_ITEMS: CommentLetter[] = [];
+
 const SEARCH_DEBOUNCE_MS = 350;
 const REFRESH_INTERVAL_MINUTES = 30;
 const LETTER_LIST_LIMIT = 50;
@@ -44,24 +47,15 @@ function listLetters(options: Parameters<CommentLettersClient["listCommentLetter
 }
 
 function buildDetailMeta(letter: CommentLetter): string[] {
-  const meta = [
-    `${letter.form} · ${severityTag(letter.severity)}`,
-    letter.companyName,
+  return [
+    `${severityTag(letter.severity)} (score ${letter.severityScore})`,
     letter.ticker,
     formatTime(letter.filingDate),
   ].filter((value): value is string => !!value);
-  if (letter.severityReasons.length > 0) {
-    meta.push(`Signals: ${letter.severityReasons.slice(0, 4).join(", ")}`);
-  }
-  return meta;
 }
 
-function buildDetailBody(letter: CommentLetter): string {
-  const lines = [
-    `**Form:** ${letter.form}`,
-    `**Filed:** ${formatTime(letter.filingDate)}`,
-    `**Severity:** ${severityTag(letter.severity)} (score ${letter.severityScore})`,
-  ];
+function buildLetterText(letter: CommentLetter): string {
+  const lines: string[] = [];
   if (letter.description) lines.push(`**Description:** ${letter.description}`);
   if (letter.severityReasons.length > 0) {
     lines.push("", "Matched signals:", ...letter.severityReasons.map((reason) => `- ${reason}`));
@@ -73,6 +67,16 @@ function buildDetailBody(letter: CommentLetter): string {
   return lines.join("\n");
 }
 
+function buildDetailBody(letter: CommentLetter): string {
+  return [
+    `**Form:** ${letter.form}`,
+    `**Filed:** ${formatTime(letter.filingDate)}`,
+    `**Severity:** ${severityTag(letter.severity)} (score ${letter.severityScore})`,
+    "",
+    buildLetterText(letter),
+  ].join("\n");
+}
+
 function toFeedItems(letters: CommentLetter[]): FeedDataTableItem[] {
   return letters.map((letter) => ({
     id: letter.id,
@@ -81,9 +85,10 @@ function toFeedItems(letters: CommentLetter[]): FeedDataTableItem[] {
       ? `${letter.companyName}${letter.ticker ? ` (${letter.ticker})` : ""} · ${letter.description || letter.form}`
       : letter.description || letter.form,
     timestamp: letter.filingDate,
+    timestampKind: "date",
     detailTitle: `${letter.form} · ${letter.companyName ?? letter.cik}`,
     detailMeta: buildDetailMeta(letter),
-    detailBody: buildDetailBody(letter),
+    detailBody: buildLetterText(letter),
   }));
 }
 
@@ -114,102 +119,43 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const [letters, setLetters] = useState<CommentLetter[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const loader = useCallback(
+    () => listLetters({ query, count: LETTER_LIST_LIMIT }),
+    [query],
+  );
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
+  const letters = data ?? EMPTY_ITEMS;
 
-  const load = useCallback((nextQuery: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStatus("loading");
-    setError(null);
-    listLetters({ query: nextQuery, count: LETTER_LIST_LIMIT })
-      .then((page) => {
-        if (abortRef.current !== controller) return;
-        setLetters(page);
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-      })
-      .catch((loadError) => {
-        if (abortRef.current !== controller) return;
-        if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-        setLetters([]);
-        setStatus("error");
-      });
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (letters.length > 0 && selectedIdx >= letters.length) {
-      setSelectedIdx(Math.max(0, letters.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, letters.length]);
-
-  const selectedLetter = letters[selectedIdx] ?? null;
+  const selectedLetter = letters.find((item) => item.id === selectedId) ?? letters[0] ?? null;
   const openLetter = openItemId
     ? letters.find((letter) => letter.id === openItemId) ?? null
     : null;
   const detailLetter = openLetter ?? selectedLetter;
   const detailUrl = detailLetter?.primaryDocumentUrl ?? detailLetter?.filingUrl ?? null;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
-  const refresh = useCallback(() => {
-    load(query);
-  }, [load, query]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company or topic",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -217,8 +163,8 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && letters.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && letters.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(letters), [letters]);
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const copyShareLink = useCopyShareLink();
@@ -227,27 +173,25 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
     void copyShareLink(newsArticleSharePayload(letterToArticle(detailLetter)));
   }, [copyShareLink, detailLetter]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
+  useAutoRefresh(
+    lastUpdated,
     refresh, poll.intervalMinutes,
   );
 
   usePaneStatusLinkFooter({
     registrationId: COMMENT_LETTERS_PLUGIN_ID,
     focused,
-    url: error ? null : detailUrl,
-    source: detailLetter ? detailLetter.companyName ?? detailLetter.form : undefined,
-    label: "filing",
-    loading,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      ...(detailLetter && !error
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
+      ...(detailLetter
         ? [{
           id: "pop-out",
           key: "p",
@@ -276,12 +220,7 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -296,55 +235,18 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, refresh, shareSelected],
+    [focusSearch, handleSearchKey, refresh, shareSelected],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company or topic"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && letters.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching comment letters for ${query.trim()}...`
-                : "Loading comment letters..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && letters.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState
-            title="Comment letters unavailable."
-            message={error}
-            hint="Press r to retry."
-          />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="SEC comment letters" onRetry={refresh} />
       </Box>
     );
   }
@@ -356,8 +258,8 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedLetter?.id ?? null}
+      onSelect={(index) => setSelectedId(letters[index]?.id ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       onPopOut={(item) => {

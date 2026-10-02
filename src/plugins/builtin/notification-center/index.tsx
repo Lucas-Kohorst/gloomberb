@@ -80,7 +80,7 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const { showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
   const [chatUnread, setChatUnread] = useState<NotificationChatUnread>(readChatUnread);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
@@ -123,16 +123,18 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
     ]);
   }, [entries, query, sort]);
 
-  const selectedRow = rows[Math.min(selectedIndex, Math.max(0, rows.length - 1))] ?? null;
+  const selectedRow = rows.find((row) => row.id === selectedRowId) ?? rows[0] ?? null;
+  const activeSelectionId = selectedRow?.id ?? null;
   const selected = selectedRow && "body" in selectedRow ? selectedRow : null;
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
     setSearchFocusToken((value) => value + 1);
   }, []);
-  const openSelected = useCallback(() => {
-    const destination = selected && sourceDestination(selected.source);
+  const openNotification = useCallback((entry: NotificationLogEntry | null) => {
+    const destination = entry && sourceDestination(entry.source);
     if (destination) showPane?.(destination);
-  }, [selected, showPane]);
+  }, [showPane]);
+  const openSelected = useCallback(() => openNotification(selected), [openNotification, selected]);
   const markAllRead = useCallback(() => {
     markNotificationLogRead();
     chatController.markAllChannelsRead();
@@ -189,8 +191,13 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<NotificationRow, NotificationColumn>
       focused={focused && !searchFocused}
-      selection={{ kind: "index", selectedIndex: rows.length ? Math.min(selectedIndex, rows.length - 1) : -1, onChange: setSelectedIndex }}
-      onActivate={() => openSelected()}
+      selection={{
+        kind: "id",
+        selectedId: activeSelectionId,
+        getId: (row) => row.id,
+        onChange: setSelectedRowId,
+      }}
+      onActivate={(row) => openNotification("body" in row ? row : null)}
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.bg}

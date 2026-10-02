@@ -4,7 +4,7 @@ import {
   EmptyState,
   InputSearchBar,
   nextStackSortPreference,
-  SegmentedControl,
+  ChartRangeTabs,
   sortStackItems,
   Spinner,
   usePaneNoticeFooter,
@@ -29,15 +29,10 @@ import { categoryLabel, changeColor, type StatCategoryId } from "./defs";
 import { StatDetail } from "./detail";
 import { DEFAULT_STAT_ID } from "./stats";
 import { selectStatViews, type StatRangeId, type StatViewModel } from "./view";
+import { RANGE_OPTIONS } from "./settings";
 
 const SPLIT_MIN_WIDTH = 108;
 const LIST_WIDTH = 46;
-
-const RANGE_OPTIONS = [
-  { value: "5Y" as const, label: "5Y" },
-  { value: "20Y" as const, label: "20Y" },
-  { value: "ALL" as const, label: "All" },
-];
 
 type LoadState =
   | { status: "idle" }
@@ -365,11 +360,12 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
         </Box>
 
         <Box flexDirection="column" flexGrow={1} width={detailWidth} overflow="hidden">
-          <Box flexDirection="row" height={1} paddingX={1} overflow="hidden" justifyContent="flex-end">
-            <SegmentedControl
-              options={RANGE_OPTIONS}
+          <Box height={1} paddingX={1}>
+            <ChartRangeTabs
+              choices={RANGE_OPTIONS}
               value={range}
-              onChange={(value) => setRange(value as StatRangeId)}
+              onSelect={setRange}
+              focused={focused && !searchFocused}
             />
           </Box>
           <ScrollBox flexGrow={1} scrollY focusable={false}>

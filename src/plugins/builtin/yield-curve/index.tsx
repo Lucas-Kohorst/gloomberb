@@ -13,6 +13,7 @@ import {
   loadYieldCurve,
   parseYieldPoints,
   isInverted,
+  treasurySpreadBp,
   TREASURY_MATURITIES,
   type YieldPoint,
 } from "./treasury-data";
@@ -30,13 +31,6 @@ function formatYield(y: number | null): string {
 
 function formatYieldAxis(value: number): string {
   return `${value.toFixed(2)}%`;
-}
-
-function spreadBp(points: YieldPoint[]): number | null {
-  const y2 = points.find((p) => p.maturity === "2Y")?.yield;
-  const y10 = points.find((p) => p.maturity === "10Y")?.yield;
-  if (y2 == null || y10 == null) return null;
-  return Math.round((y10 - y2) * 100);
 }
 
 function YieldCurvePane({ focused, width, height }: PaneProps) {
@@ -94,7 +88,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   }, { allowEditable: true, enabled: focused });
 
   const inverted = isInverted(points);
-  const bp = spreadBp(points);
+  const bp = treasurySpreadBp(points);
   // Treasury series are daily closes, so which session the curve represents is
   // status the user needs; "updated Xm ago" only says when we last fetched it.
   const asOf = curveAsOf(points);
@@ -156,7 +150,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
     return formatYield(pt?.yield ?? null).padEnd(colWidth);
   }).join("").trimEnd();
 
-  const spreadLabel = bp != null ? `2Y-10Y ${bp >= 0 ? "+" : ""}${bp}bp` : null;
+  const spreadLabel = bp != null ? `10Y-2Y ${bp >= 0 ? "+" : ""}${bp}bp` : null;
   const curveStateLabel = inverted ? "INVERTED" : "NORMAL";
   const headerLabel = [curveStateLabel, spreadLabel, asOf ? `as of ${asOf}` : null].filter(Boolean).join(" · ");
 

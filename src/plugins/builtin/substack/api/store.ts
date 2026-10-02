@@ -223,11 +223,13 @@ export async function loadCachedResource<T>(
       };
     })
     .catch((error) => {
+      if (error instanceof SubstackAuthError) throw error;
       if (fallback) {
         return {
           data: fallback.value,
           fetchedAt: fallback.fetchedAt,
           stale: true,
+          refreshError: error instanceof Error ? error.message : String(error),
         };
       }
       throw error;

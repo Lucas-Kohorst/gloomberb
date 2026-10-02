@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -25,6 +26,8 @@ import {
 } from "./types";
 
 export const OPENFDA_PANE_ID = "adverse-events";
+
+const EMPTY_ITEMS: OpenFdaRecord[] = [];
 
 const SEARCH_DEBOUNCE_MS = 250;
 const REFRESH_INTERVAL_MINUTES = 15;
@@ -44,19 +47,14 @@ function formatDate(date: Date): string {
 }
 
 function buildDetailMeta(record: OpenFdaRecord): string[] {
-  const meta = [record.flag, record.product];
+  const meta = [record.flag];
   if (record.company) meta.push(record.company);
   meta.push(formatDate(record.date));
   return meta;
 }
 
 function buildDetailBody(record: OpenFdaRecord): string {
-  const lines: string[] = [
-    `**Product:** ${record.product}`,
-    `**Date:** ${formatDate(record.date)}`,
-    `**Severity:** ${record.flag}`,
-  ];
-  if (record.company) lines.push(`**Firm:** ${record.company}`);
+  const lines: string[] = [];
   for (const entry of record.detail) lines.push(`**Finding:** ${entry}`);
   lines.push(`**Report ID:** ${record.id}`);
   return lines.join("\n");
@@ -68,7 +66,8 @@ function toFeedItems(records: OpenFdaRecord[]): FeedDataTableItem[] {
     eyebrow: DATASET_LABEL[record.dataset],
     title: record.title,
     timestamp: record.date,
-    detailTitle: record.title,
+    timestampKind: "date",
+    detailTitle: record.product,
     detailMeta: buildDetailMeta(record),
     detailBody: buildDetailBody(record),
   }));
@@ -80,117 +79,55 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [records, setRecords] = useState<OpenFdaRecord[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const loader = useCallback(async () => {
+    const page = await client.listRecords({ searchQuery: query, limit: DEFAULT_LIMIT });
+    return page.records;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
+  const records = data ?? EMPTY_ITEMS;
 
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void client
-        .listRecords({ searchQuery: nextQuery, limit: DEFAULT_LIMIT })
-        .then((page) => {
-          if (abortRef.current !== controller) return;
-          setRecords(page.records);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setRecords([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(
-      () => load(query),
-      query.trim() ? SEARCH_DEBOUNCE_MS : 0,
-    );
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (records.length > 0 && selectedIdx >= records.length) {
-      setSelectedIdx(Math.max(0, records.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, records.length]);
-
-  const selectedRecord = records[selectedIdx] ?? null;
+  const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
   const openRecord = openItemId
     ? records.find((record) => record.id === openItemId) ?? null
     : null;
   const detailRecord = openRecord ?? selectedRecord;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "drug, firm, or device, e.g. ibuprofen",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
+
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      load(query);
+      refresh();
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && records.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && records.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(records), [records]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
-    () => load(query), poll.intervalMinutes,
+  useAutoRefresh(
+    lastUpdated,
+    refresh, poll.intervalMinutes,
   );
 
   const detailUrl = detailRecord?.url || null;
@@ -198,18 +135,16 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
   usePaneStatusLinkFooter({
     registrationId: OPENFDA_PLUGIN_ID,
     focused,
-    url: error ? null : detailUrl,
-    source: detailRecord?.company || undefined,
-    label: "report",
-    loading,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -224,65 +159,27 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        load(query);
+        refresh();
         return true;
       }
       return false;
     },
-    [focusSearch, load, query],
+    [focusSearch, handleSearchKey, refresh],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="drug, firm, or device, e.g. ibuprofen"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && records.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching reports for ${query.trim()}...`
-                : "Loading reports..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && records.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="FDA reports unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="FDA reports" onRetry={refresh} />
       </Box>
     );
   }
@@ -294,8 +191,9 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedRecord?.id ?? null}
+      onSelect={(index) => setSelectedId(records[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Type"

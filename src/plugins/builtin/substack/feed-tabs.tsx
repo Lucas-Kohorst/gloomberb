@@ -1,6 +1,5 @@
 import { memo, useMemo } from "react";
-import { Box } from "../../../ui";
-import { Tabs } from "../../../components";
+import { PaneTabHeader } from "../../../components/pane-tab-header";
 import { tabIdForPublication } from "./table";
 import {
   SUBSTACK_FEED_TAB_ID,
@@ -13,12 +12,14 @@ export const SubstackFeedTabs = memo(function SubstackFeedTabs({
   activeTab,
   focused,
   detailOpen,
+  width,
   onSelect,
 }: {
   subscriptions: SubstackPublication[];
   activeTab: string;
   focused: boolean;
   detailOpen: boolean;
+  width: number;
   onSelect: (tabId: string) => void;
 }) {
   const tabs = useMemo(() => [
@@ -30,15 +31,12 @@ export const SubstackFeedTabs = memo(function SubstackFeedTabs({
   ], [subscriptions]);
 
   return (
-    <Box height={1}>
-      <Tabs
-        tabs={tabs}
-        activeValue={activeTab}
-        onSelect={onSelect}
-        compact
-        variant="pill"
-        focused={focused && !detailOpen}
-      />
-    </Box>
+    <PaneTabHeader
+      width={width}
+      tabs={tabs}
+      activeValue={activeTab}
+      onSelect={onSelect}
+      focused={focused && !detailOpen}
+    />
   );
 });

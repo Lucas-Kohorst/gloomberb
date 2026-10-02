@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -17,13 +18,13 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
-import { ShortCampaignsClient } from "./client";
+import { ShortCampaignsClient, matchesCampaignSearch } from "./client";
 import {
   SHORT_CAMPAIGNS_PLUGIN_ID,
   type ShortCampaign,
 } from "./types";
 
-const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_DEBOUNCE_MS = 80;
 const REFRESH_INTERVAL_MINUTES = 30;
 
 const trimSearchValue = (value: string) => value.trim();
@@ -53,26 +54,16 @@ function buildDetailMeta(campaign: ShortCampaign): string[] {
   ];
 }
 
-function buildDetailBody(campaign: ShortCampaign): string {
-  const lines: string[] = [
-    `**Target:** ${campaign.target}`,
-    `**Ticker:** ${campaign.ticker ?? "—"}`,
-    `**Seller:** ${campaign.seller}`,
-    `**Announced:** ${formatDate(campaign.date)}`,
-    `**Performance since report:** ${formatPerformance(campaign.performancePct)}`,
-  ];
-  return lines.join("\n");
-}
-
 function toFeedItems(campaigns: ShortCampaign[]): FeedDataTableItem[] {
   return campaigns.map((campaign) => ({
     id: campaign.id,
     eyebrow: campaign.seller,
     title: rowTitle(campaign),
     timestamp: campaign.date.getTime() === 0 ? null : campaign.date,
+    timestampKind: "date",
     detailTitle: campaign.ticker ? `${campaign.target} (${campaign.ticker})` : campaign.target,
     detailMeta: buildDetailMeta(campaign),
-    detailBody: buildDetailBody(campaign),
+    detailBody: campaign.thesis,
     detailNote: campaign.reportUrl,
   }));
 }
@@ -83,106 +74,34 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [campaigns, setCampaigns] = useState<ShortCampaign[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void client
-        .listCampaigns({ searchQuery: nextQuery, signal: controller.signal })
-        .then((page) => {
-          if (abortRef.current !== controller) return;
-          setCampaigns(page.campaigns);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setCampaigns([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (campaigns.length > 0 && selectedIdx >= campaigns.length) {
-      setSelectedIdx(Math.max(0, campaigns.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, campaigns.length]);
-
-  const selectedCampaign = campaigns[selectedIdx] ?? null;
+  const loader = useCallback((_force: boolean, signal: AbortSignal) => client.listCampaigns({ signal }), [client]);
+  const { data, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(loader);
+  const campaigns = useMemo(() => (data?.campaigns ?? []).filter((campaign) => matchesCampaignSearch(campaign, query)), [data, query]);
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedId) ?? campaigns[0] ?? null;
   const openCampaign = openItemId
     ? campaigns.find((campaign) => campaign.id === openItemId) ?? null
     : null;
   const detailCampaign = openCampaign ?? selectedCampaign;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
 
-  const refresh = useCallback(() => {
-    load(query);
-  }, [load, query]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "company, ticker, or seller", debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -190,24 +109,19 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && campaigns.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && !data;
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const items = useMemo(() => toFeedItems(campaigns), [campaigns]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
-    refresh, poll.intervalMinutes,
-  );
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
 
   const detailUrl = detailCampaign?.reportUrl || null;
 
   usePaneStatusLinkFooter({
     registrationId: SHORT_CAMPAIGNS_PLUGIN_ID,
-    focused,
-    url: error ? null : detailUrl,
-    source: detailCampaign ? detailCampaign.seller : undefined,
-    label: "report",
-    loading,
+    focused: focused && !searchFocused,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: [
       ...(updatedAgo
@@ -215,9 +129,9 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -232,13 +146,8 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
-      if (event.name === "r") {
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         refresh();
@@ -246,47 +155,15 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, refresh],
+    [focusSearch, handleSearchKey, refresh],
   );
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company, ticker, or seller"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
-
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label="Loading campaigns..." />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && campaigns.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Short campaigns unavailable." message={error} hint="Press r to retry." />
-        </Box>
-      </Box>
-    );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
+  if (loading || (error && !data)) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Short campaigns" onRetry={refresh} />
+    </Box>;
   }
 
   return (
@@ -296,8 +173,9 @@ export function ShortCampaignsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedCampaign?.id ?? null}
+      onSelect={(index) => setSelectedId(campaigns[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Seller"

@@ -169,8 +169,8 @@ export function createNotesTab(store: NotesStoreRegistry | NotesStore) {
     usePaneFooter("ticker-notes", () => ({
       info: loadError
         ? [{ id: "load-error", parts: [{ text: loadError, tone: "warning" as const }] }]
-        : [{ id: "mode", parts: [{ text: notesFiles.readOnly ? "read-only" : notesFocused ? "editing" : "viewing", tone: "muted" as const }] }],
-    }), [loadError, notesFiles.readOnly, notesFocused]);
+        : [],
+    }), [loadError]);
 
     if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
 

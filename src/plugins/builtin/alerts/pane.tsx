@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
+  PaneListChrome,
   Tabs,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 import { TextFieldDialog } from "../../../components/pane-settings-dialog/field-dialogs";
 import { colors } from "../../../theme/colors";
 import { Box, TextAttributes } from "../../../ui";
@@ -41,6 +43,7 @@ import {
   nextSortPreference,
   type SortPreference,
 } from "../../../utils/sort-values";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
 
 type AlertColumnId =
   | "status"
@@ -82,6 +85,13 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     columnId: null,
     direction: "asc",
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "symbol or trigger",
+  });
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
   const storeError = useMemo(() => readAlertsStoreError(alertsJson), [alertsJson]);
 
@@ -99,8 +109,14 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
     };
   }, [alertsJson]);
 
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query.length === 0
+      ? rows
+      : rows.filter((alert) => `${alert.symbol} ${conditionLabel(alert.condition)}`.toLowerCase().includes(query));
+  }, [rows, searchQuery]);
   const sortedRows = useMemo(
-    () => applySortPreference(rows, sortPreference, (alert, columnId) => {
+    () => applySortPreference(filteredRows, sortPreference, (alert, columnId) => {
       switch (columnId) {
         case "status": return alert.status;
         case "symbol": return alert.symbol;
@@ -119,7 +135,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
         case "rearm": return alert.status === "triggered" ? 2 : isAlertSnoozed(alert) ? 1 : 0;
       }
     }),
-    [rows, sortPreference],
+    [filteredRows, sortPreference],
   );
 
   const savePaneAlerts = useCallback((next: AlertRule[] | ((current: AlertRule[]) => AlertRule[])) => {
@@ -157,9 +173,9 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
   }, [openPluginCommandWorkflow]);
 
   const deleteSelectedAlert = useCallback(() => {
-    const selected = rows[selectedIdx];
+    const selected = sortedRows[selectedIdx];
     if (selected) deleteAlert(selected.id);
-  }, [deleteAlert, rows, selectedIdx]);
+  }, [deleteAlert, selectedIdx, sortedRows]);
 
   const snoozeSelectedAlert = useCallback(() => {
     const selected = sortedRows[selectedIdx];
@@ -168,7 +184,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
   }, [sortedRows, snoozeAlertById, selectedIdx]);
 
   const editSelectedAlert = useCallback(() => {
-    const selected = rows[selectedIdx];
+    const selected = sortedRows[selectedIdx];
     if (!selected) return;
     void dialog.alert({
       closeOnClickOutside: true,
@@ -200,7 +216,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
         />
       ),
     });
-  }, [dialog, rows, savePaneAlerts, selectedIdx]);
+  }, [dialog, savePaneAlerts, selectedIdx, sortedRows]);
 
   // Quotes come from the plugin's single background poll, which writes into the
   // same persisted store, so the pane never fetches on its own.
@@ -212,38 +228,50 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
         ? [{ id: "quote-error", parts: [{ text: quoteError, tone: "warning" as const }] }]
         : [],
     hints: [
-      { id: "add", key: "a", label: "dd alert", onPress: startAddAlert },
-      { id: "weather", key: "w", label: "eather", onPress: startAddWeatherAlert },
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
+      { id: "add", key: "a", label: "dd alert", onPress: startAddAlert, disabled: listSearch.searchFocused },
+      { id: "weather", key: "w", label: "eather", onPress: startAddWeatherAlert, disabled: listSearch.searchFocused },
       {
         id: "edit",
         key: "e",
         label: "dit",
         onPress: editSelectedAlert,
-        disabled: rows.length === 0,
+        disabled: rows.length === 0 || listSearch.searchFocused,
       },
       {
         id: "snooze",
         key: "s",
         label: "nooze",
         onPress: snoozeSelectedAlert,
-        disabled: rows.length === 0,
+        disabled: rows.length === 0 || listSearch.searchFocused,
       },
       {
         id: "delete",
         key: "d",
         label: "elete",
         onPress: deleteSelectedAlert,
-        disabled: rows.length === 0,
+        disabled: rows.length === 0 || listSearch.searchFocused,
       },
     ],
   }), [
     deleteSelectedAlert,
     editSelectedAlert,
+    listSearch.focusSearch,
+    listSearch.searchFocused,
     quoteError,
     rows.length,
     snoozeSelectedAlert,
     startAddAlert,
+    startAddWeatherAlert,
     storeError,
+  ]);
+  usePaneFooterHintBindings(focused && !listSearch.searchFocused, [
+    paneSearchHint(listSearch.focusSearch),
+    { id: "add", key: "a", label: "dd alert", onPress: startAddAlert, disabled: listSearch.searchFocused },
+    { id: "weather", key: "w", label: "eather", onPress: startAddWeatherAlert, disabled: listSearch.searchFocused },
+    { id: "edit", key: "e", label: "dit", onPress: editSelectedAlert, disabled: rows.length === 0 },
+    { id: "snooze", key: "s", label: "nooze", onPress: snoozeSelectedAlert, disabled: rows.length === 0 },
+    { id: "delete", key: "d", label: "elete", onPress: deleteSelectedAlert, disabled: rows.length === 0 },
   ]);
 
   useEffect(() => {
@@ -251,6 +279,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
   }, [rows.length]);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (event.name === "d") {
       event.preventDefault?.();
       deleteSelectedAlert();
@@ -282,7 +311,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
       return true;
     }
     return false;
-  }, [close, deleteSelectedAlert, editSelectedAlert, snoozeSelectedAlert, startAddAlert, startAddWeatherAlert]);
+  }, [close, deleteSelectedAlert, editSelectedAlert, listSearch.handleSearchKey, snoozeSelectedAlert, startAddAlert, startAddWeatherAlert]);
 
   const renderCell = useCallback((
     alert: AlertRule,
@@ -362,7 +391,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
 
   return (
     <DataTableView<AlertRule, AlertColumn>
-      focused={focused}
+      focused={focused && !listSearch.searchFocused}
       selection={{
         kind: "index",
         selectedIndex: sortedRows.length > 0 ? Math.min(selectedIdx, sortedRows.length - 1) : -1,
@@ -372,6 +401,7 @@ function AlertRulesPane({ focused, width, height, close }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.bg}
+      rootBefore={<PaneListChrome width={width} focused={focused && !listSearch.searchFocused} search={listSearch.search} />}
       columns={ALERT_COLUMNS}
       items={sortedRows}
       sortColumnId={sortPreference.columnId}

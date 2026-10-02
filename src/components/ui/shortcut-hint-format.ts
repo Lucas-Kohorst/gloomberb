@@ -1,3 +1,5 @@
+import { displayWidth } from "../../utils/format";
+
 /** Full action words that are not a single-letter prefix remainder (`[s]eries`). */
 const STANDALONE_HINT_WORDS = new Set([
   "share",
@@ -48,5 +50,5 @@ export function shortcutHintDisplayText(hotkey: string, label: string, prefix = 
 }
 
 export function getShortcutHintWidth(hotkey: string, label: string, prefix = ""): number {
-  return shortcutHintDisplayText(hotkey, label, prefix).length;
+  return displayWidth(shortcutHintDisplayText(hotkey, label, prefix));
 }

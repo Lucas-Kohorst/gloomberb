@@ -1,34 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import {
   combinePaneFooterRegistrations,
-  isPaneFooterLeftSegment,
+  isBindableFooterHintKey,
   selectPaneFooterHints,
   type PaneFooterRegistration,
   type PaneFooterSegment,
 } from "./model";
+
+describe("pane footer hint keys", () => {
+  test("rejects one-glyph aliases for keys the footer binder cannot press", () => {
+    expect(isBindableFooterHintKey("e")).toBe(true);
+    expect(isBindableFooterHintKey("/")).toBe(true);
+    expect(isBindableFooterHintKey("↵")).toBe(false);
+    expect(isBindableFooterHintKey("←")).toBe(false);
+    expect(isBindableFooterHintKey(" ")).toBe(false);
+    expect(isBindableFooterHintKey("1")).toBe(false);
+    expect(isBindableFooterHintKey("8")).toBe(false);
+  });
+});
 
 function segment(id: string, text: string): PaneFooterSegment {
   return { id, parts: [{ text }] };
 }
 
 describe("pane footer left chrome", () => {
-  test("keeps source and updated, drops live/streaming/trial", () => {
-    expect(isPaneFooterLeftSegment(segment("source", "source ECB"))).toBe(true);
-    expect(isPaneFooterLeftSegment(segment("external-link", "source European Central Bank"))).toBe(true);
-    expect(isPaneFooterLeftSegment(segment("updated", "updated ~0m"))).toBe(true);
-    expect(isPaneFooterLeftSegment(segment("error", "failed"))).toBe(true);
-    expect(isPaneFooterLeftSegment(segment("data-warnings", "⚠"))).toBe(true);
-    expect(isPaneFooterLeftSegment(segment("live", "live"))).toBe(false);
-    expect(isPaneFooterLeftSegment(segment("running", "Streaming reply"))).toBe(false);
-    expect(isPaneFooterLeftSegment(segment("cloud-access", "Pro trial · 6d left"))).toBe(false);
-    expect(isPaneFooterLeftSegment(segment("warning", "No CUSIP found for AAPL"))).toBe(false);
-  });
-
-  test("combined left info only includes source and updated", () => {
+  test("combines changing status and source context without row counts", () => {
     const registrations = new Map<string, PaneFooterRegistration>([
       ["feed", {
         info: [
           segment("live", "live"),
+          segment("count", "25 rows"),
           segment("updated", "updated ~0m"),
         ],
       }],
@@ -41,7 +42,7 @@ describe("pane footer left chrome", () => {
       }],
     ]);
     const footer = combinePaneFooterRegistrations(registrations);
-    expect(footer.info.map((entry) => entry.id)).toEqual(["updated", "external-link"]);
+    expect(footer.info.map((entry) => entry.id)).toEqual(["running", "live", "updated", "external-link"]);
     expect(footer.hints).toHaveLength(1);
   });
 

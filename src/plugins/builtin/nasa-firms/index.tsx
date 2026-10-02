@@ -1,5 +1,5 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type {
   GloomPlugin,
   GloomPluginContext,
@@ -9,13 +9,14 @@ import type {
 } from "../../../types/plugin";
 import {
   EmptyState,
-  ErrorState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -89,20 +90,7 @@ function fireUrl(d: FireDetection): string {
 }
 
 function buildFireDetailBody(d: FireDetection): string {
-  const brightC = kelvinToCelsius(d.brightness);
-  const time = formatAcqTime(d.acqTime);
-  const dn = d.dayNight === "D" ? "Day" : "Night";
-  return [
-    `**Location:** ${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}`,
-    `**Date:** ${d.acqDate}`,
-    `**Time:** ${time} UTC`,
-    `**Satellite:** ${d.satellite}`,
-    `**Brightness:** ${brightC.toFixed(1)}°C (${d.brightness.toFixed(2)} K)`,
-    `**Confidence:** ${confidenceLabel(d.confidence)}`,
-    `**FRP:** ${d.frp.toFixed(1)} MW`,
-    `**Scan / Track:** ${d.scan} / ${d.track}`,
-    `**Day / Night:** ${dn}`,
-  ].join("\n\n");
+  return `**Scan / Track:** ${d.scan} / ${d.track}`;
 }
 
 function toFeedItems(detections: FireDetection[]): FeedDataTableItem[] {
@@ -116,11 +104,11 @@ function toFeedItems(detections: FireDetection[]): FeedDataTableItem[] {
       timestamp: fireTimestamp(d),
       detailTitle: `Fire at ${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}`,
       detailMeta: [
-        `${d.acqDate} ${time}`,
+        `${d.acqDate} ${time} UTC`,
         d.satellite,
-        `${brightC.toFixed(1)}°C`,
-        confidenceLabel(d.confidence),
-        `${d.frp.toFixed(1)} MW`,
+        `Brightness: ${brightC.toFixed(1)}°C (${d.brightness.toFixed(2)} K)`,
+        `Confidence: ${confidenceLabel(d.confidence)}`,
+        `FRP: ${d.frp.toFixed(1)} MW`,
         d.dayNight === "D" ? "Day" : "Night",
       ],
       detailBody: buildFireDetailBody(d),
@@ -156,7 +144,7 @@ function createFireInstance(
 // Pane component
 // ---------------------------------------------------------------------------
 
-function FirePane({ width, height, focused }: PaneProps) {
+export function FirePane({ width, height, focused }: PaneProps) {
   const [pluginKey] = usePluginConfigState<string>(NASA_FIRMS_MAP_KEY_CONFIG, "");
   const byokKeys = useAppSelector(byokKeysConfigSelector);
   const mapKey = byokKeys.find((entry) => entry.serviceId === NASA_FIRMS_BYOK_SERVICE_ID)?.apiKey?.trim()
@@ -172,119 +160,48 @@ function FirePane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim() || "USA";
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-  const [detections, setDetections] = useState<FireDetection[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string) => {
-      if (!hasKey) return;
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void loadFires(client, nextQuery, DEFAULT_DAYS, (partial) => {
-        if (abortRef.current !== controller) return;
-        setDetections(partial);
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-      })
-        .then((page) => {
-          if (abortRef.current !== controller) return;
-          setDetections(page.detections);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setDetections([]);
-          setStatus("error");
-        });
-    },
-    [client, hasKey],
-  );
-
-  useEffect(() => {
-    if (!hasKey) return;
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query, hasKey]);
-
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-    },
-    [],
-  );
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal, publishPreview: (data: FireDetection[]) => void) => {
+    const page = await loadFires(client, query, DEFAULT_DAYS, publishPreview, signal);
+    return page.detections;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(hasKey && query.trim() ? loader : null);
+  const detections = data ?? [];
 
   const openDetection = openItemId
     ? detections.find((d) => detectionId(d) === openItemId) ?? null
     : null;
-  const selectedDetection = detections[selectedIdx] ?? null;
+  const selectedDetection = detections.find((d) => detectionId(d) === selectedId) ?? detections[0] ?? null;
   const detailDetection = openDetection ?? selectedDetection;
 
-  useEffect(() => {
-    if (detections.length > 0 && selectedIdx >= detections.length) {
-      setSelectedIdx(Math.max(0, detections.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, detections.length]);
-
-  const loading = hasKey && status === "loading" && detections.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
+  const loading = refreshing && !data;
+  const updatedAgo = useUpdatedAgo(updatedAt);
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(detections), [detections]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && hasKey && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "country code (USA, BRA, AUS) or bbox (W,S,E,N)",
+    debounceMs: SEARCH_DEBOUNCE_MS, normalizeValue: trimSearchValue,
+  });
   useShortcut(
     (event) => {
-      if (!focused || openItemId) return;
-      if (searchFocused) {
-        if (isPlainKey(event, "escape")) {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          setSearchFocused(false);
-        }
-        return;
-      }
-      if (event.targetEditable) return;
-      if (isPlainKey(event, "/")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        focusSearch();
-        return;
-      }
+      if (!focused || searchFocused || event.targetEditable) return;
       if (isPlainKey(event, "r")) {
         event.stopPropagation?.();
         event.preventDefault?.();
-        load(query);
+        refresh();
       }
     },
     { allowEditable: true, enabled: focused },
@@ -292,11 +209,9 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
 
   usePaneStatusLinkFooter({
     registrationId: NASA_FIRMS_PLUGIN_ID,
-    focused,
-    url: hasKey && !error && detailDetection ? fireUrl(detailDetection) : null,
-    source: detailDetection ? detailDetection.satellite : undefined,
-    label: "fire",
-    loading,
+    focused: focused && !searchFocused,
+    url: hasKey && detailDetection ? fireUrl(detailDetection) : null,
+    loading: refreshing,
     error: hasKey ? error : null,
     info: [
       ...(!hasKey
@@ -307,8 +222,8 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: hasKey && !error && !!detailDetection,
-    hints: hasKey
+    showOpenHint: hasKey && !!detailDetection,
+    hints: hasKey && !openItemId
       ? [
           { id: "search", key: "/", label: "search", onPress: focusSearch },
         ]
@@ -322,40 +237,19 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
-      if (event.name === "r") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        load(query);
+        refresh();
         return true;
       }
       return false;
     },
-    [focusSearch, load, query],
+    [focusSearch, handleSearchKey, refresh],
   );
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="country code (USA, BRA, AUS) or bbox (W,S,E,N)"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
 
   if (!hasKey) {
     return (
@@ -367,30 +261,11 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
     );
   }
 
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching fires for ${query.trim()}...`
-                : "Loading fire detections..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && detections.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <ErrorState kind="FIRMS" error={error} hint="Press r to retry." />
-      </Box>
-    );
+  if (loading || (error && !data)) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Fire detections" onRetry={refresh} />
+    </Box>;
   }
 
   return (
@@ -400,8 +275,9 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedDetection ? detectionId(selectedDetection) : null}
+      onSelect={(index) => setSelectedId(detections[index] ? detectionId(detections[index]!) : null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       markdown

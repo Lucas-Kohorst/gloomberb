@@ -3,6 +3,7 @@ import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import { NumberField, SegmentedControl, usePaneFooter } from "../../../components";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneSettingValue, usePaneStateValue, usePaneTicker } from "../../../state/app/context";
 import { formatNumber } from "../../../utils/format";
@@ -385,6 +386,14 @@ export function OptionsCalcPane({ focused, width, height }: PaneProps) {
     if (typeof index === "number") setSelectedFieldIndex(index);
     setActiveFieldId(fieldId);
   }, []);
+  const editSelectedField = useCallback(() => {
+    activateField(fields[safeSelectedFieldIndex]?.id ?? null, safeSelectedFieldIndex);
+  }, [activateField, fields, safeSelectedFieldIndex]);
+  const editHints = useMemo(
+    () => [{ id: "edit", key: "e", label: "dit", onPress: editSelectedField }],
+    [editSelectedField],
+  );
+  usePaneFooterHintBindings(focused, editHints);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -413,10 +422,10 @@ export function OptionsCalcPane({ focused, width, height }: PaneProps) {
     return {
       info,
       hints: [
-        { id: "edit", key: "↵", label: "edit", onPress: () => activateField(fields[safeSelectedFieldIndex]?.id ?? null, safeSelectedFieldIndex) },
+        ...editHints,
       ],
     };
-  }, [activateField, fields, safeSelectedFieldIndex, solvedIV]);
+  }, [editHints, solvedIV]);
 
   const fieldColumns = width >= 50 ? 2 : 1;
   const fieldWidth = Math.max(22, Math.floor((width - 2) / fieldColumns));

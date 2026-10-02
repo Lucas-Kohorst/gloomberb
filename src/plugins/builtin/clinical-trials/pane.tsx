@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -24,6 +25,8 @@ import {
   CLINICAL_TRIALS_PLUGIN_ID,
   type ClinicalTrial,
 } from "./types";
+
+const EMPTY_ITEMS: ClinicalTrial[] = [];
 
 const SEARCH_DEBOUNCE_MS = 250;
 const REFRESH_INTERVAL_MINUTES = 15;
@@ -45,9 +48,9 @@ function formatPhase(phases: string[]): string {
   return `Phase ${numbers.join("/")}`;
 }
 
-function formatDate(date: Date | null): string {
+function formatDate(date: Date | null, precision: "year" | "month" | "day" = "day"): string {
   if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return "—";
-  return date.toISOString().slice(0, 10);
+  return date.toISOString().slice(0, precision === "year" ? 4 : precision === "month" ? 7 : 10);
 }
 
 function trialTimestamp(trial: ClinicalTrial): Date | null {
@@ -60,7 +63,7 @@ function buildDetailMeta(trial: ClinicalTrial): string[] {
     `${formatPhase(trial.phases)}${trial.studyType ? ` · ${trial.studyType.toLowerCase()}` : ""}`,
     trial.sponsorClass ? `${trial.sponsor} (${trial.sponsorClass})` : trial.sponsor,
     trial.conditions.length > 0 ? trial.conditions.join(", ") : "No conditions listed",
-    `Start ${formatDate(trial.startDate)} · Completion ${formatDate(trial.completionDate)}`,
+    `Start ${formatDate(trial.startDate, trial.startDatePrecision)} · Completion ${formatDate(trial.completionDate, trial.completionDatePrecision)}`,
     trial.enrollment != null ? `Enrollment: ${trial.enrollment}` : "Enrollment: —",
   ];
 }
@@ -71,8 +74,8 @@ function buildDetailBody(trial: ClinicalTrial): string {
     `**Status:** ${formatStatus(trial.status)}`,
     `**Phase:** ${formatPhase(trial.phases)}`,
     `**Sponsor:** ${trial.sponsor}`,
-    `**Start:** ${formatDate(trial.startDate)}`,
-    `**Completion:** ${formatDate(trial.completionDate)}`,
+    `**Start:** ${formatDate(trial.startDate, trial.startDatePrecision)}`,
+    `**Completion:** ${formatDate(trial.completionDate, trial.completionDatePrecision)}`,
   ];
   if (trial.conditions.length > 0) {
     lines.push(`**Conditions:** ${trial.conditions.join(", ")}`);
@@ -87,9 +90,11 @@ function toFeedItems(trials: ClinicalTrial[]): FeedDataTableItem[] {
     eyebrow: formatPhase(trial.phases),
     title: `${formatStatus(trial.status)} · ${trial.title} · ${trial.sponsor}`,
     timestamp: trialTimestamp(trial),
+    timestampKind: "date",
+    datePrecision: trial.startDate ? trial.startDatePrecision : "day",
     detailTitle: trial.title,
     detailMeta: buildDetailMeta(trial),
-    detailBody: buildDetailBody(trial),
+    detailBody: trial.summary || "No summary was published for this study.",
   }));
 }
 
@@ -121,117 +126,57 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const [trials, setTrials] = useState<ClinicalTrial[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal) => {
+    const page = await client.listTrials({ term: query.trim() || undefined, pageSize: DEFAULT_PAGE_SIZE }, signal);
+    return page.trials;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
+  const trials = data ?? EMPTY_ITEMS;
 
-  const load = useCallback(
-    (nextQuery: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      void client
-        .listTrials({ term: nextQuery.trim() || undefined, pageSize: DEFAULT_PAGE_SIZE }, controller.signal)
-        .then((page) => {
-          if (controller.signal.aborted) return;
-          setTrials(page.trials);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (controller.signal.aborted) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setTrials([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(
-      () => load(query),
-      query.trim() ? SEARCH_DEBOUNCE_MS : 0,
-    );
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (trials.length > 0 && selectedIdx >= trials.length) {
-      setSelectedIdx(Math.max(0, trials.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, trials.length]);
-
-  const selectedTrial = trials[selectedIdx] ?? null;
+  const selectedTrial = trials.find((item) => item.nctId === selectedId) ?? trials[0] ?? null;
   const openTrial = openItemId
     ? trials.find((trial) => trial.nctId === openItemId) ?? null
     : null;
   const detailTrial = openTrial ?? selectedTrial;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery.trim());
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "condition, drug, or sponsor",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
+
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      load(query);
+      refresh();
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && trials.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && trials.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(trials), [trials]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
-    () => load(query), poll.intervalMinutes,
+  useAutoRefresh(
+    lastUpdated,
+    refresh, poll.intervalMinutes,
   );
 
   const detailUrl = detailTrial?.url || null;
@@ -244,19 +189,17 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
   usePaneStatusLinkFooter({
     registrationId: CLINICAL_TRIALS_PLUGIN_ID,
     focused,
-    url: error ? null : detailUrl,
-    source: detailTrial ? detailTrial.sponsor : undefined,
-    label: "trial",
-    loading,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      ...(detailTrial && !error
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
+      ...(detailTrial
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),
     ],
@@ -273,69 +216,27 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        load(query);
+        refresh();
         return true;
       }
       return false;
     },
-    [focusSearch, load, query],
+    [focusSearch, handleSearchKey, refresh],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="condition, drug, or sponsor"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && trials.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching trials for ${query.trim()}...`
-                : "Loading trials..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && trials.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState
-            title="Trials unavailable."
-            message={error}
-            hint="Press r to retry."
-          />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="Trials" onRetry={refresh} />
       </Box>
     );
   }
@@ -347,8 +248,8 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedTrial?.nctId ?? null}
+      onSelect={(index) => setSelectedId(trials[index]?.nctId ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       onPopOut={(item) => {

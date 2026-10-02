@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useShortcut } from "../react/input";
 import { useRendererHost } from "../ui";
+import { isPlainKeyboardEvent } from "../utils/keyboard";
 import {
   usePaneFooter,
   type PaneFooterSegment,
@@ -55,12 +56,13 @@ export function useExternalLinkFooter({
   }, [onOpen, rendererHost, url]);
 
   useShortcut((event) => {
+    if (event.defaultPrevented || event.propagationStopped || !isPlainKeyboardEvent(event)) return;
     const key = (event.name ?? event.key ?? "").toLowerCase();
     if (!focused || !url || key !== "o") return;
     event.stopPropagation?.();
     event.preventDefault?.();
     openUrl();
-  });
+  }, { enabled: focused && !!url });
 
   const footer = useMemo(() => {
     const contextLabel = label.trim() || "link";

@@ -1,17 +1,18 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type {
   PaneProps,
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -21,9 +22,10 @@ import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { GoogleBooksClient } from "./client";
 import type { BookVolume } from "./types";
 
+const EMPTY_VOLUMES: BookVolume[] = [];
+
 const SEARCH_DEBOUNCE_MS = 250;
 const DEFAULT_MAX_RESULTS = 20;
-const DESCRIPTION_PREVIEW_CHARS = 1500;
 
 const trimSearchValue = (value: string) => value.trim();
 
@@ -44,10 +46,7 @@ function buildDetailMeta(volume: BookVolume): string[] {
 }
 
 function buildDetailBody(volume: BookVolume): string {
-  if (!volume.description) return "No description available.";
-  const trimmed = volume.description.trim();
-  if (trimmed.length <= DESCRIPTION_PREVIEW_CHARS) return trimmed;
-  return `${trimmed.slice(0, DESCRIPTION_PREVIEW_CHARS).trimEnd()}…`;
+  return volume.description.trim() || "No description available.";
 }
 
 function toFeedItems(volumes: BookVolume[]): FeedDataTableItem[] {
@@ -56,6 +55,8 @@ function toFeedItems(volumes: BookVolume[]): FeedDataTableItem[] {
     eyebrow: formatAuthors(volume.authors),
     title: volume.title,
     timestamp: volume.publishedTime,
+    timestampKind: "date",
+    datePrecision: volume.publishedDate.length === 4 ? "year" : volume.publishedDate.length === 7 ? "month" : "day",
     detailTitle: volume.title,
     detailMeta: buildDetailMeta(volume),
     detailBody: buildDetailBody(volume),
@@ -88,136 +89,62 @@ export function BooksPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [volumes, setVolumes] = useState<BookVolume[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal) => {
+    const page = await client.searchVolumes({ query, maxResults: DEFAULT_MAX_RESULTS, signal });
+    return page.volumes;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(query.trim() ? loader : null);
+  const volumes = data ?? EMPTY_VOLUMES;
 
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const trimmed = nextQuery.trim();
-      if (!trimmed) {
-        setVolumes([]);
-        setStatus("loaded");
-        setError(null);
-        return;
-      }
-      setStatus("loading");
-      setError(null);
-      void client
-        .searchVolumes({ query: trimmed, maxResults: DEFAULT_MAX_RESULTS })
-        .then((page) => {
-          if (abortRef.current !== controller) return;
-          setVolumes(page.volumes);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setVolumes([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (volumes.length > 0 && selectedIdx >= volumes.length) {
-      setSelectedIdx(Math.max(0, volumes.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, volumes.length]);
-
-  const selectedVolume = volumes[selectedIdx] ?? null;
+  const selectedVolume = volumes.find((volume) => volume.id === selectedId) ?? volumes[0] ?? null;
   const openVolume = openItemId
     ? volumes.find((volume) => volume.id === openItemId) ?? null
     : null;
   const detailVolume = openVolume ?? selectedVolume;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-  const updateQuery = useCallback(
-    (nextQuery: string) => {
-      setQuery(nextQuery);
-      setSelectedIdx(0);
-      setOpenItemId(null);
-    },
-    [setQuery, setSelectedIdx],
-  );
+  const updateQuery = useCallback((value: string) => {
+    setQuery(value);
+    setSelectedId(null);
+    setOpenItemId(null);
+  }, [setQuery, setSelectedId]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company or person, e.g. Tesla or Curie",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      load(query);
+      refresh();
     }
-  }, { allowEditable: true, enabled: focused });
+  }, { enabled: focused });
 
-  const loading = status === "loading" && volumes.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && volumes.length === 0;
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const items = useMemo(() => toFeedItems(volumes), [volumes]);
 
   const detailUrl = detailVolume?.infoLink || null;
 
   usePaneStatusLinkFooter({
     registrationId: "google-books",
-    focused,
-    url: error ? null : detailUrl,
-    source: detailVolume ? formatAuthors(detailVolume.authors) : undefined,
-    label: "book",
-    loading,
+    focused: focused && !searchFocused,
+    url: detailUrl,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
-    showOpenHint: !error && !!detailUrl,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -232,59 +159,25 @@ export function BooksPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
-      if (event.name === "r") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        load(query);
+        refresh();
         return true;
       }
       return false;
     },
-    [focusSearch, load, query],
+    [focusSearch, handleSearchKey, refresh],
   );
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company or person, e.g. Tesla or Curie"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
 
-  if (loading) {
+  if (loading || (error && volumes.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={`Searching books for ${query.trim()}...`} />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && volumes.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Books unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="Books" onRetry={refresh} />
       </Box>
     );
   }
@@ -296,8 +189,9 @@ export function BooksPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedVolume?.id ?? null}
+      onSelect={(index) => setSelectedId(volumes[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Author"

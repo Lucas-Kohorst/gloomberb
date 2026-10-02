@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
   FeedDataTableStackView,
-  EmptyState,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -18,7 +19,7 @@ import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
-import { EiaEnergyClient, formatEiaValue, resolveEiaApiKey, type EiaDataPoint, type EiaSeriesSummary } from "./client";
+import { EiaEnergyClient, formatEiaValue, resolveEiaApiKey, type EiaDataPoint } from "./client";
 import {
   DEFAULT_EIA_SERIES_ID,
   EIA_BYOK_SERVICE_ID,
@@ -35,31 +36,19 @@ const HISTORY_LENGTH = 52;
 
 const trimSearchValue = (value: string) => value.trim();
 
-function formatPeriod(date: Date): string {
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toISOString().slice(0, 10);
-}
-
-function toFeedItems(def: EiaSeriesDef, points: EiaDataPoint[]): FeedDataTableItem[] {
-  return points.map((point, index) => ({
+function toFeedItems(def: EiaSeriesDef, points: EiaDataPoint[], latestPeriod?: string): FeedDataTableItem[] {
+  return points.map((point) => ({
     id: `${def.id}:${point.period}`,
     eyebrow: def.short,
-    title: index === 0 ? `${formatEiaValue(def, point.value)} — latest` : formatEiaValue(def, point.value),
+    title: point.period === latestPeriod ? `${formatEiaValue(def, point.value)} — latest` : formatEiaValue(def, point.value),
     timestamp: point.date,
+    timestampKind: "date",
     detailTitle: `${def.label} — ${point.period}`,
     detailMeta: [
       formatEiaValue(def, point.value),
-      `Week of ${point.period}`,
       `${def.frequency} · ${def.facetSeries}`,
     ],
-    detailBody: [
-      `**Value:** ${formatEiaValue(def, point.value)}`,
-      `**Week:** ${point.period}`,
-      `**Series:** ${def.facetSeries}`,
-      `**Frequency:** ${def.frequency}`,
-      "",
-      def.description,
-    ].join("\n"),
+    detailBody: def.description,
   }));
 }
 
@@ -100,51 +89,16 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
   const def: EiaSeriesDef = findEiaSeries(seriesId) ?? findEiaSeries(DEFAULT_EIA_SERIES_ID)!;
 
   const [query, setQuery] = usePluginPaneState("query", "");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [summary, setSummary] = useState<EiaSeriesSummary | null>(null);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback((nextSeriesId: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStatus("loading");
-    setError(null);
-    void client
-      .listSeriesPoints(nextSeriesId, HISTORY_LENGTH, controller.signal)
-      .then((next: EiaSeriesSummary) => {
-        if (abortRef.current !== controller) return;
-        setSummary(next);
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-      })
-      .catch((loadError) => {
-        if (abortRef.current !== controller) return;
-        if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-        setSummary(null);
-        setStatus("error");
-      });
-  }, [client]);
+  const loader = useCallback((_force: boolean, signal: AbortSignal) =>
+    client.listSeriesPoints(seriesId, HISTORY_LENGTH, signal), [client, seriesId]);
+  const { data: summary, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(loader);
 
   useEffect(() => {
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-    load(seriesId);
-  }, [load, seriesId]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
+  }, [seriesId, setSelectedId]);
 
   const points = useMemo(() => {
     const all = summary?.points ?? [];
@@ -157,69 +111,41 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
     ));
   }, [summary, query, def]);
 
-  useEffect(() => {
-    if (points.length > 0 && selectedIdx >= points.length) {
-      setSelectedIdx(Math.max(0, points.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, points.length]);
-
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery, setSelectedId]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: `filter ${def.label.toLowerCase()} by week or value`,
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      load(seriesId);
+      refresh();
     }
-  }, { allowEditable: true, enabled: focused });
+  }, { enabled: focused });
 
-  const loading = status === "loading" && points.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  const items = useMemo(() => toFeedItems(def, points), [def, points]);
+  const loading = refreshing && !summary;
+  const updatedAgo = useUpdatedAgo(updatedAt);
+  const items = useMemo(() => toFeedItems(def, points, summary?.points[0]?.period), [def, points, summary]);
+  const selectedItem = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes" });
-    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(seriesId), poll.intervalMinutes);
-
-  const selectedPoint = points[selectedIdx] ?? null;
-  const openPoint = openItemId
-    ? points.find((point) => `${def.id}:${point.period}` === openItemId) ?? null
-    : null;
-  const detailPoint = openPoint ?? selectedPoint;
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
 
   usePaneStatusLinkFooter({
     registrationId: EIA_ENERGY_PLUGIN_ID,
-    focused,
-    url: error ? null : def.browserUrl,
-    source: def.short,
-    label: "series",
-    loading,
+    focused: focused && !searchFocused,
+    url: def.browserUrl,
+    loading: refreshing,
     error,
     info: [
       ...(updatedAgo
@@ -227,9 +153,9 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error,
+    showOpenHint: true,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -243,57 +169,23 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
+    if (handleSearchKey(event)) return true;
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    if (event.name === "r") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      load(seriesId);
+      refresh();
       return true;
     }
     return false;
-  }, [focusSearch, load, seriesId]);
+  }, [focusSearch, handleSearchKey, refresh]);
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder={`filter ${def.label.toLowerCase()} by week or value`}
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
 
-  if (loading) {
+  if (loading || (error && !summary)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={`Loading ${def.label.toLowerCase()}...`} />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && points.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Energy data unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="Energy" onRetry={refresh} />
       </Box>
     );
   }
@@ -305,15 +197,15 @@ export function EnergyPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedItem?.id ?? null}
+      onSelect={(index) => setSelectedId(items[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Series"
-      titleLabel={detailPoint ? `Value, week of ${formatPeriod(detailPoint.date)}` : "Value"}
+      titleLabel="Value"
       markdown
       emptyStateTitle={query.trim() ? `No weeks match ${query.trim()}.` : "No data points yet."}
-      emptyStateHint="Press / to search"
     />
   );
 }

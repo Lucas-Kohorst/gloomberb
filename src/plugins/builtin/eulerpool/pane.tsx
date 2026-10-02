@@ -1,29 +1,34 @@
-import { Box, type InputRenderable } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import {
   EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
-import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { useAppSelector, usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
+import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { formatMoneyCompact } from "../../../utils/format";
-import { EulerpoolClient, eulerpoolQuoteUrl, statementAmount } from "./client";
+import { EulerpoolClient, eulerpoolQuoteUrl, resolveEulerpoolApiKey, statementAmount } from "./client";
 import {
   EULERPOOL_PLUGIN_ID,
+  EULERPOOL_BYOK_SERVICE_ID,
   type EulerpoolCashFlowPeriod,
   type EulerpoolFundamentals,
   type EulerpoolIncomePeriod,
   type EulerpoolProfile,
 } from "./types";
+
+import { byokKeysConfigSelector } from "../account-management/ai-providers";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -46,7 +51,6 @@ function buildDetailBody(
   cash: EulerpoolCashFlowPeriod | null,
 ): string {
   const lines = [
-    profile ? `${profile.name} · ${profile.ticker}` : income.ticker,
     [profile?.sector, profile?.industry, profile?.country].filter(Boolean).join(" · "),
     profile?.isin ? `ISIN ${profile.isin}` : "",
     profile?.employees != null ? `${profile.employees.toLocaleString("en-US")} employees` : "",
@@ -54,10 +58,8 @@ function buildDetailBody(
     `Revenue ${money(income.revenue)}`,
     `Gross ${money(income.grossIncome)}`,
     `EBIT ${money(income.ebit)}`,
-    `Net income ${money(income.netIncome)}`,
     income.dilutedEps != null ? `Diluted EPS ${income.dilutedEps}` : "",
     cash ? `Operating CF ${money(cash.operating)}` : "",
-    cash ? `FCF ${money(cash.fcf)}` : "",
     cash ? `Capex ${money(cash.capex)}` : "",
     profile?.description ? `\n${profile.description}` : "",
   ];
@@ -73,10 +75,13 @@ function toFeedItems(data: EulerpoolFundamentals | null): FeedDataTableItem[] {
       eyebrow: income.year ? String(income.year) : formatPeriod(income.period),
       title: `${data.profile?.name || data.identifier}  ·  ${money(income.revenue)} rev`,
       timestamp: income.period,
+      timestampKind: "date",
       detailTitle: `${data.profile?.name || data.identifier} ${formatPeriod(income.period)}`,
       detailMeta: [
+        ...((data.profile?.ticker || income.ticker) !== (data.profile?.name || data.identifier)
+          ? [data.profile?.ticker || income.ticker] : []),
         money(income.netIncome) === "—" ? "net —" : `net ${money(income.netIncome)}`,
-        cash ? `FCF ${money(cash.fcf)}` : formatPeriod(income.period),
+        ...(cash ? [`FCF ${money(cash.fcf)}`] : []),
       ],
       detailBody: buildDetailBody(data.profile, income, cash),
     };
@@ -84,107 +89,61 @@ function toFeedItems(data: EulerpoolFundamentals | null): FeedDataTableItem[] {
 }
 
 export function EulerpoolPane({ width, height, focused }: Pick<PaneProps, "width" | "height" | "focused">) {
-  const client = useMemo(() => new EulerpoolClient(), []);
+  const keys = useAppSelector(byokKeysConfigSelector);
+  const apiKey = keys.find((entry) => entry.serviceId === EULERPOOL_BYOK_SERVICE_ID)?.apiKey.trim() || resolveEulerpoolApiKey();
+  const client = useMemo(() => new EulerpoolClient(apiKey), [apiKey]);
   const { symbol } = usePaneTicker();
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim() || (symbol ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-  const [fundamentals, setFundamentals] = useState<EulerpoolFundamentals | null>(null);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback((nextQuery: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const trimmed = nextQuery.trim();
-    if (!trimmed) {
-      setFundamentals(null);
-      setStatus("loaded");
-      setError(null);
-      return;
-    }
-    setStatus("loading");
-    setError(null);
-    void client.getFundamentals(trimmed, controller.signal)
-      .then((next) => {
-        if (abortRef.current !== controller) return;
-        setFundamentals(next);
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-        setSelectedIdx(0);
-      })
-      .catch((loadError) => {
-        if (abortRef.current !== controller) return;
-        if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setFundamentals(null);
-        setStatus("error");
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-      });
-  }, [client, setSelectedIdx]);
-
+  const loader = useCallback((_force: boolean, signal: AbortSignal) => client.getFundamentals(query, signal), [client, query]);
+  const { data: fundamentals, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(query.trim() ? loader : null);
+  const previousSymbol = useRef(symbol);
   useEffect(() => {
-    const timeoutId = setTimeout(() => load(query), query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  useEffect(() => {
-    if (!query.trim() && symbol?.trim() && symbol.trim() !== query.trim()) {
+    const previous = previousSymbol.current;
+    previousSymbol.current = symbol;
+    if (symbol === previous || !symbol?.trim()) return;
+    if (!query.trim() || query.trim() === previous?.trim()) {
       setQuery(symbol.trim());
+      setSelectedId(null);
+      setOpenItemId(null);
     }
-  }, [query, setQuery, symbol]);
+  }, [query, setQuery, setSelectedId, symbol]);
 
   const items = useMemo(() => toFeedItems(fundamentals), [fundamentals]);
   const ticker = fundamentals?.profile?.ticker || query.trim().toUpperCase();
   const url = ticker ? eulerpoolQuoteUrl(ticker) : null;
-  const loading = status === "loading" && items.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && !fundamentals;
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const needsKey = error != null && error.includes("API key");
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
   const updateQuery = useCallback((value: string) => {
     setQuery(value.trim());
     setOpenItemId(null);
-    setSelectedIdx(0);
-  }, [setQuery, setSelectedIdx]);
+    setSelectedId(null);
+  }, [setQuery, setSelectedId]);
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "ticker or ISIN (AAPL, US0378331005)", debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim(),
+  });
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
-      focusSearch();
+      event.stopPropagation?.();
+      refresh();
     }
-  }, { allowEditable: true, enabled: focused });
+  }, { enabled: focused });
 
   usePaneStatusLinkFooter({
     registrationId: EULERPOOL_PLUGIN_ID,
-    focused,
+    focused: focused && !searchFocused,
     url,
-    source: fundamentals?.profile?.isin || ticker || undefined,
-    label: "fundamentals",
-    loading,
+    loading: refreshing,
     error: needsKey ? null : error,
     info: [
       ...(needsKey ? [{ id: "auth", parts: [{ text: "key required", tone: "warning" as const }] }] : []),
@@ -192,8 +151,8 @@ export function EulerpoolPane({ width, height, focused }: Pick<PaneProps, "width
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
-    showOpenHint: !!url && !error,
-    hints: [paneSearchHint(focusSearch)],
+    showOpenHint: !!url,
+    hints: !openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : [],
   });
 
   const handleRootKeyDown = useCallback((event: {
@@ -206,54 +165,33 @@ export function EulerpoolPane({ width, height, focused }: Pick<PaneProps, "width
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
+    if (handleSearchKey(event)) return true;
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      focusSearch();
+      refresh();
       return true;
     }
     return false;
-  }, [focusSearch]);
+  }, [focusSearch, handleSearchKey, refresh]);
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="ticker or ISIN (AAPL, US0378331005)"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={() => setSearchFocused(false)}
-      onNavigateDown={() => setSearchFocused(false)}
-      onQueryChange={updateQuery}
-    />
-  );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
 
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={query ? `Loading Eulerpool fundamentals for ${query.trim().toUpperCase()}...` : "Loading Eulerpool..."} />
-        </Box>
-      </Box>
-    );
+  if (loading || (error && !needsKey && !fundamentals)) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Eulerpool fundamentals" onRetry={refresh} />
+    </Box>;
   }
 
-  if (error && items.length === 0) {
+  if (needsKey && !fundamentals) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
         <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
           <EmptyState
-            title={needsKey ? "Eulerpool key required." : "Eulerpool fundamentals unavailable."}
-            message={needsKey
-              ? "Add a free token in Account Management → BYOK."
-              : error}
+            title="Eulerpool key required."
+            message="Add a free token in Account Management → BYOK."
             hint="eulerpool.com/developers/register"
           />
         </Box>
@@ -267,8 +205,8 @@ export function EulerpoolPane({ width, height, focused }: Pick<PaneProps, "width
       width={width}
       height={height}
       focused={focused && !searchFocused}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={items.find((item) => item.id === selectedId)?.id ?? items[0]?.id ?? null}
+      onSelect={(index) => setSelectedId(items[index]?.id ?? null)}
       openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       rootBefore={rootBefore}

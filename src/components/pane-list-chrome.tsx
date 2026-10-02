@@ -149,7 +149,7 @@ function PaneListChromeHeader({
         tabs={tabs}
         activeValue={activeValue ?? null}
         onSelect={onSelect}
-        scrollable={tabScrollable ?? false}
+        scrollable={tabScrollable ?? true}
       />
     )
   ) : null;

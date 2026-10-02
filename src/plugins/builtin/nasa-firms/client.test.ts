@@ -58,3 +58,15 @@ describe("nasa firms parse cap", () => {
     expect(detections.map((row) => row.frp)).toEqual([6, 5, 4]);
   });
 });
+
+test("incremental FIRMS parsing stops after cancellation during early paint", async () => {
+  const controller = new AbortController();
+  const csv = [
+    "latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,confidence,frp,daynight",
+    ...Array.from({ length: 6 }, (_, index) => `${index},1,300,0,0,2026-08-24,0100,N,h,10,D`),
+  ].join("\n");
+  await expect(parseFirmsCsvIncremental(csv, {
+    firstPaint: 2, yieldEvery: 1, signal: controller.signal,
+    onPartial: () => controller.abort(),
+  })).rejects.toThrow();
+});

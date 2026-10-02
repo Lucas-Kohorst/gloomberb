@@ -72,18 +72,19 @@ function detailMeta(doc: FedRegisterDoc): string[] {
 
 function itemsFor(
   docs: FedRegisterDoc[],
-  selectedIdx: number,
+  selectedDocumentNumber: string | null,
   detail: FedRegisterDetail | null,
   detailLoading: boolean,
 ): FeedDataTableItem[] {
-  return docs.map((doc, index) => ({
+  return docs.map((doc) => ({
     id: doc.documentNumber,
     eyebrow: `${typeLabels[doc.type] ?? doc.type} · ${doc.agencies[0] ?? "Federal Register"}`,
     title: doc.title,
     timestamp: doc.publicationDate,
+    timestampKind: "date",
     detailTitle: doc.title,
     detailMeta: [formatDate(doc.publicationDate), ...detailMeta(doc)],
-    detailBody: index === selectedIdx
+    detailBody: doc.documentNumber === selectedDocumentNumber
       ? detailLoading
         ? "Loading document detail..."
         : [doc.abstract, detail?.bodyHtml].filter(Boolean).join("\n\n") || "No further detail was published."
@@ -101,7 +102,7 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
   const [docs, setDocs] = useState<FedRegisterDoc[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedDocumentNumber, setSelectedDocumentNumber] = useDebouncedPluginPaneState<string | null>("selectedDocumentNumber", null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<FedRegisterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -129,7 +130,8 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
   }, [load, query]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const selected = docs[selectedIdx] ?? null;
+  const selected = docs.find((doc) => doc.documentNumber === selectedDocumentNumber) ?? docs[0] ?? null;
+  const activeSelectionId = selected?.documentNumber ?? null;
   const openDoc = openId ? docs.find((doc) => doc.documentNumber === openId) ?? null : null;
   const activeDoc = openDoc ?? selected;
   useEffect(() => {
@@ -156,7 +158,7 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
   }, [activeDoc, detail, markArticleRead, popOut]);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), 15);
-  const items = useMemo(() => itemsFor(docs, selectedIdx, detail, detailLoading), [docs, selectedIdx, detail, detailLoading]);
+  const items = useMemo(() => itemsFor(docs, activeSelectionId, detail, detailLoading), [docs, activeSelectionId, detail, detailLoading]);
 
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
@@ -185,7 +187,7 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     width={width} focusToken={focusToken} inputRef={inputRef} placeholder="keyword, agency, or topic"
     debounceMs={250} normalizeValue={(value) => value.trim()} onFocus={() => setSearchFocused(true)}
     onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)}
-    onQueryChange={(value) => { setQuery(value); setSelectedIdx(0); setOpenId(null); }} />;
+    onQueryChange={(value) => { setQuery(value); setSelectedDocumentNumber(null); setOpenId(null); }} />;
   if (status === "loading" && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label={query ? `Searching Federal Register for ${query}...` : "Loading Federal Register..."} /></Box></Box>;
   if (error && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Federal Register unavailable." message={error} hint="Press r to retry." /></Box></Box>;
   const handlePopOutItem = useCallback((item: FeedDataTableItem) => {
@@ -195,7 +197,8 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     popOut(toArticle(doc, doc.documentNumber === activeDoc?.documentNumber ? detail : cache.current.get(doc.documentNumber) ?? null));
   }, [activeDoc, detail, docs, markArticleRead, popOut]);
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore}
-    items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx}
+    items={items} selectedItemId={activeSelectionId}
+    onSelect={(index) => setSelectedDocumentNumber(docs[index]?.documentNumber ?? null)}
     isItemRead={(item) => readArticleIds.has(item.id)}
     onItemRead={(item) => markArticleRead(item.id)}
     onOpenItemIdChange={setOpenId} markdown onPopOut={handlePopOutItem} onRootKeyDown={(event, context) => {

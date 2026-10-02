@@ -7,6 +7,7 @@ import {
   usePaneFooter,
   usePaneNoticeFooter,
   type PaneFooterPressEvent,
+  type PaneHint,
 } from "../../../components";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import {
@@ -36,6 +37,9 @@ import {
 import { colors } from "../../../theme/colors";
 import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import { requestAccountManagementTab } from "../account-management/navigation";
+import { getSharedRegistry } from "../../registry";
 import { SeriesEditorDialog } from "./editor";
 
 function authoredChartSourceKey(source: ChartSeriesSource): string {
@@ -347,8 +351,8 @@ function GloomCanvasComposer({
     [resolutionChoices],
   );
   const rangeChoices = useMemo(
-    () => chartRangeTabChoices(resolution.resolutionSupport),
-    [resolution.resolutionSupport],
+    () => chartRangeTabChoices(resolution.resolutionSupport, resolution.rangeSupport),
+    [resolution.resolutionSupport, resolution.rangeSupport],
   );
   const rangeTabs = useMemo(
     () => rangeChoices.map((choice, index) => ({
@@ -801,6 +805,25 @@ function GloomCanvasComposer({
     }
   }, { enabled: focused && !dialogOpen });
 
+  // Adjacent history runs on the public tier until the user adds their own
+  // key, and the public tier cannot serve every range tab. Say so, and offer
+  // the one action that fixes it.
+  const hasVisibleAdjacentSeries = useMemo(
+    () => spec.series.some((entry) => entry.visible !== false && entry.source.kind === "adjacent-index"),
+    [spec.series],
+  );
+  const openAdjacentKeys = useCallback(() => {
+    requestAccountManagementTab("keys");
+    getSharedRegistry()?.showPane("account-management");
+  }, []);
+  const adjacentKeysHint = useMemo<PaneHint | null>(
+    () => hasVisibleAdjacentSeries && resolution.accessTier === "public"
+      ? { id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }
+      : null,
+    [hasVisibleAdjacentSeries, openAdjacentKeys, resolution.accessTier],
+  );
+  usePaneFooterHintBindings(focused && !dialogOpen, adjacentKeysHint ? [adjacentKeysHint] : undefined);
+
   usePaneNoticeFooter({
     registrationId: `${footerId}:notices`,
     notices: resolution.warnings,
@@ -812,6 +835,9 @@ function GloomCanvasComposer({
     info: [
       ...(resolution.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(resolution.errors[0] ? [{ id: "error", parts: [{ text: resolution.errors[0], tone: "warning" as const }] }] : []),
+      ...(adjacentKeysHint
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     hints: [
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
@@ -826,8 +852,10 @@ function GloomCanvasComposer({
       ...(publicSharing
         ? [{ id: "share", key: "y", label: "ank", onPress: shareChart, disabled: !shareData }]
         : []),
+      ...(adjacentKeysHint ? [adjacentKeysHint] : []),
     ],
   }), [
+    adjacentKeysHint,
     compareDisabled,
     footerAuto,
     footerCompare,

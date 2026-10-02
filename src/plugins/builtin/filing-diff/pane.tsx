@@ -1,11 +1,12 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
@@ -51,12 +52,18 @@ const CHANGE_RANK: Record<DiffLineType, number> = {
 
 function toRows(result: FilingDiffResult | null): DiffRow[] {
   if (!result) return [];
-  return result.lines.map((line, index) => ({
-    id: `row:${index}`,
-    change: line.type,
-    text: line.text,
-    order: index,
-  }));
+  const seen = new Map<string, number>();
+  return result.lines.map((line, index) => {
+    const key = `${line.type}\u0000${line.text}`;
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+    return {
+      id: `${key}\u0000${occurrence}`,
+      change: line.type,
+      text: line.text,
+      order: index,
+    };
+  });
 }
 
 export function FilingDiffPane({ width, height, focused }: PaneProps) {
@@ -66,9 +73,15 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
   const [sectionSetting] = usePaneSettingValue<string>("section", "risk-factors");
 
   const [filter, setFilter] = usePluginPaneState("filter", "");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: filter,
+    onQueryChange: setFilter,
+    placeholder: "changed line",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim(),
+  });
+  const { searchFocused } = listSearch;
 
   const [result, setResult] = useState<FilingDiffResult | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
@@ -106,11 +119,6 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
         setResult(diff);
         setStatus("loaded");
         setLastUpdated(Date.now());
-        setSelectedId((current) => (
-          current && diff.lines.some((_, index) => `row:${index}` === current)
-            ? current
-            : null
-        ));
       })
       .catch((loadError) => {
         if (genRef.current !== gen) return;
@@ -127,35 +135,13 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
     load({ ticker, baseYear, compareYear, section });
   }, [load, ticker, baseYear, compareYear, section]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-
   useShortcut((event) => {
-    if (!focused) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      refresh();
-    }
-  }, { allowEditable: true, enabled: focused });
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    refresh();
+  }, { enabled: focused && !searchFocused });
 
   const loading = status === "loading";
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -163,7 +149,7 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
 
   usePaneStatusLinkFooter({
     registrationId: FILING_DIFF_PANE_ID,
-    focused,
+    focused: focused && !searchFocused,
     url: openUrl,
     source: result?.ticker,
     label: "filing",
@@ -172,9 +158,9 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
-    showOpenHint: !error && !!openUrl,
+    showOpenHint: !searchFocused && !error && !!openUrl,
     hints: [
-      paneSearchHint(focusSearch),
+      paneSearchHint(listSearch.focusSearch, { disabled: searchFocused }),
     ],
   });
 
@@ -244,15 +230,11 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent, context: { selectedIndex: number }) => {
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
-      focusSearch();
+      listSearch.focusSearch();
       return true;
     }
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
+    if (searchFocused) return false;
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -260,23 +242,13 @@ export function FilingDiffPane({ width, height, focused }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, refresh]);
+  }, [listSearch.focusSearch, listSearch.handleSearchKey, refresh, searchFocused]);
 
   const searchBar = (
-    <InputSearchBar
-      value={filter}
-      focused={focused}
-      active={searchFocused}
+    <PaneListChrome
       width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="Filter changed lines..."
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={setFilter}
+      focused={focused}
+      search={listSearch.search}
     />
   );
 

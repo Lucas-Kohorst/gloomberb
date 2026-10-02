@@ -38,3 +38,14 @@ export function formatDetailDate(value: DisplayDateValue, fallback = "-"): strin
   });
   return `${datePart} at ${timePart}`;
 }
+
+export function formatCalendarDate(value: DisplayDateValue, fallback = "-"): string {
+  const date = parseDisplayDate(value);
+  if (!date) return fallback;
+  return date.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}

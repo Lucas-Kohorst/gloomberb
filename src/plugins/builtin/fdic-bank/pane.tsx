@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -65,20 +66,15 @@ function toFeedItems(banks: BankRecord[], failures: BankFailure[]): FeedDataTabl
     eyebrow: failureAction(failure),
     title: `${failure.name}  ·  ${failureLocation(failure)}  ·  ${formatFailDate(failure.failDate)}`,
     timestamp: failure.failDate,
+    timestampKind: "date",
     detailTitle: failure.name,
     detailMeta: [
       failureAction(failure),
       failureLocation(failure),
-      `Closed ${formatFailDate(failure.failDate)}`,
+      `Date ${formatFailDate(failure.failDate)}`,
       ...(failure.cert != null ? [`CERT ${failure.cert}`] : []),
     ],
-    detailBody: [
-      `**Bank:** ${failure.name}`,
-      `**Action:** ${failureAction(failure)}`,
-      `**Closed:** ${formatFailDate(failure.failDate)}`,
-      `**Location:** ${failureLocation(failure)}`,
-      `**CERT:** ${failure.cert ?? "—"}`,
-    ].join("\n"),
+    detailBody: "",
   }));
   const bankItems: FeedDataTableItem[] = banks.map((bank) => ({
     id: `bank:${bank.cert}`,
@@ -89,14 +85,10 @@ function toFeedItems(banks: BankRecord[], failures: BankFailure[]): FeedDataTabl
     detailMeta: [
       bank.active ? "Active" : "Inactive",
       ...(bank.bankClass ? [bank.bankClass] : []),
-      bankLocation(bank),
+      `${bankLocation(bank)}${bank.stateName ? ` (${bank.stateName})` : ""}`,
       `CERT ${bank.cert}`,
     ],
     detailBody: [
-      `**Bank:** ${bank.name}`,
-      `**Status:** ${bank.active ? "Active" : "Inactive"}`,
-      `**Location:** ${bankLocation(bank)}${bank.stateName ? ` (${bank.stateName})` : ""}`,
-      `**CERT:** ${bank.cert}`,
       `**Assets:** ${formatMoney(bank.assets)}`,
       `**Deposits:** ${formatMoney(bank.deposits)}`,
       ...(bank.webAddress ? [`**Website:** ${bank.webAddress}`] : []),
@@ -109,103 +101,42 @@ export function FdicBankPane({ width, height, focused }: PaneProps) {
   const client = useMemo(() => new FdicBankClient(), []);
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? "").trim());
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-  const [banks, setBanks] = useState<BankRecord[]>([]);
-  const [failures, setFailures] = useState<BankFailure[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback((nextQuery: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStatus("loading");
-    setError(null);
-    void client.searchRisk(nextQuery, controller.signal)
-      .then((page) => {
-        if (abortRef.current !== controller || controller.signal.aborted) return;
-        setBanks(page.banks);
-        setFailures(page.failures);
-        setSelectedIdx((current) => {
-          const total = page.failures.length + page.banks.length;
-          return total > 0 && current >= total ? Math.max(0, total - 1) : current;
-        });
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-      })
-      .catch((loadError) => {
-        if (abortRef.current !== controller || controller.signal.aborted) return;
-        if (loadError instanceof Error && loadError.name === "AbortError") return;
-        setBanks([]);
-        setFailures([]);
-        setStatus("error");
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-      });
-  }, [client, setSelectedIdx]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => load(query), query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const loading = status === "loading" && banks.length === 0 && failures.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
+  const loader = useCallback((_force: boolean, signal: AbortSignal) => client.searchRisk(query, signal), [client, query]);
+  const { data, loading: refreshing, error, updatedAt, reload: refresh } = useAsyncResource(loader);
+  const banks = data?.banks ?? [];
+  const failures = data?.failures ?? [];
+  const loading = refreshing && !data;
+  const updatedAgo = useUpdatedAgo(updatedAt);
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(banks, failures), [banks, failures]);
+  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
   const updateQuery = useCallback((value: string) => {
     setQuery(value.trim());
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery, setSelectedId]);
 
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "bank name, CERT, state, or failure year", debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim(),
+  });
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      load(query);
+      refresh();
     }
   }, { allowEditable: true, enabled: focused });
 
-  const selectedIsFailure = selectedIdx < failures.length;
-  const selectedBank = !selectedIsFailure ? banks[selectedIdx - failures.length] ?? null : null;
-  const selectedFailure = selectedIsFailure ? failures[selectedIdx] ?? null : null;
-  const openIsFailure = openItemId?.startsWith("failure:");
-  const openBank = openItemId && !openIsFailure
-    ? banks.find((bank) => `bank:${bank.cert}` === openItemId) ?? null
-    : null;
-  const openFailure = openItemId && openIsFailure
-    ? failures.find((failure) => `failure:${failure.id}` === openItemId) ?? null
-    : null;
-  const detailBank = openBank ?? selectedBank;
-  const detailFailure = openFailure ?? (openItemId ? null : selectedFailure);
+  const activeId = openItemId ?? selected?.id;
+  const detailBank = banks.find((bank) => `bank:${bank.cert}` === activeId) ?? null;
+  const detailFailure = failures.find((failure) => `failure:${failure.id}` === activeId) ?? null;
   const detailUrl = detailBank
     ? bankDetailsUrl(detailBank.cert)
     : detailFailure
@@ -214,19 +145,17 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
 
   usePaneStatusLinkFooter({
     registrationId: FDIC_BANK_PLUGIN_ID,
-    focused,
+    focused: focused && !searchFocused,
     url: detailUrl,
-    source: "FDIC",
-    label: detailFailure ? "failure record" : "bank record",
-    loading,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !!detailUrl && !error,
+    showOpenHint: !!detailUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -240,58 +169,22 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
+    if (handleSearchKey(event)) return true;
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    if (event.name === "r") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      load(query);
+      refresh();
       return true;
     }
     return false;
-  }, [focusSearch, load, query]);
+  }, [focusSearch, handleSearchKey, refresh]);
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="bank name, CERT, state, or failure year"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={() => setSearchFocused(false)}
-      onNavigateDown={() => setSearchFocused(false)}
-      onQueryChange={updateQuery}
-    />
-  );
-
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={query.trim() ? `Searching banks for ${query.trim()}...` : "Loading recent failures..."} />
-        </Box>
-      </Box>
-    );
-  }
-  if (error && items.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Bank data unavailable." message={error} hint="Press r to retry." />
-        </Box>
-      </Box>
-    );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
+  if (loading || (error && !data)) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Bank data" onRetry={refresh} />
+    </Box>;
   }
 
   return (
@@ -301,8 +194,9 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selected?.id ?? null}
+      onSelect={(index) => setSelectedId(items[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Type"

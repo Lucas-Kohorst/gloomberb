@@ -1,6 +1,6 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, EmptyState, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, EmptyState, PaneListChrome, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -55,6 +55,8 @@ import {
   overlayScreenerQuoteEntries,
   resolveScreenerQuoteFeedStatus,
 } from "../shared/screener-live-quotes";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 
 /** Stable identity: a fresh literal here would reload the board every render. */
 const NO_SAVED_SELECTION: string[] = [];
@@ -80,6 +82,13 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<MarketMoverSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [moversStale, setMoversStale] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker or company",
+  });
 
   const fetchGenRef = useRef(0);
 
@@ -115,7 +124,13 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     [paneInstance?.settings?.columnIds, width],
   );
   const rankedRows = useMemo(() => createRows(resolvedQuotes), [resolvedQuotes]);
-  const rows = useMemo(() => sortRows(rankedRows, sortPreference), [rankedRows, sortPreference]);
+  const rows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = query.length === 0
+      ? rankedRows
+      : rankedRows.filter((row) => `${row.symbol} ${row.name}`.toLowerCase().includes(query));
+    return sortRows(filtered, sortPreference);
+  }, [rankedRows, searchQuery, sortPreference]);
   const selectedIdx = selectedSymbol
     ? rows.findIndex((row) => row.symbol === selectedSymbol)
     : -1;
@@ -241,6 +256,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     const key = event.name;
 
     if (key === "r") {
@@ -256,7 +272,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [activeTab, loadTab, openSymbol, selectedSymbol]);
+  }, [activeTab, listSearch.handleSearchKey, loadTab, openSymbol, selectedSymbol]);
 
   const refreshMovers = useCallback(() => {
     void loadTab(activeTab, { forceRefresh: true });
@@ -285,9 +301,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       }] : []),
     ],
     hints: [
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
       ...(selectedSymbol ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedSymbol) }] : []),
     ],
-  }), [feedStatus, loading, moversStale, openSymbol, refreshMovers, selectedSymbol, summaryQuotes]);
+  }), [feedStatus, listSearch.focusSearch, listSearch.searchFocused, loading, moversStale, openSymbol, selectedSymbol, summaryQuotes]);
+  usePaneFooterHintBindings(focused && !listSearch.searchFocused, [
+    paneSearchHint(listSearch.focusSearch),
+    ...(selectedSymbol ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedSymbol) }] : []),
+  ]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -304,9 +325,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
           focused={focused}
         />
       </Box>
+      <PaneListChrome
+        width={width}
+        focused={focused}
+        search={listSearch.search}
+      />
 
       <DataTableView<MarketMoverRow, MarketMoverColumn>
-        focused={focused}
+        focused={focused && !listSearch.searchFocused}
         selection={{
           kind: "id",
           selectedId: selectedSymbol,

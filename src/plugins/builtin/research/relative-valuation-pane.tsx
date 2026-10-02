@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type InputRenderable } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import {
   DataTableView,
-  InputSearchBar,
+  PaneListChrome,
   dataErrorMessage,
   isNoDataError,
   noDataMessage,
   unavailableTitle,
   usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -20,7 +21,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import { applySortPreference, compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { formatCompact, formatCurrency, formatNumber, formatSignedPercentValue } from "../../../utils/format";
 import { usePluginTickerActions } from "../../runtime";
-import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { paneSearchHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 
@@ -138,12 +139,16 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   const [rows, setRows] = useState<RelativeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<RelativeSortPreference>(DEFAULT_RELATIVE_SORT);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker or company",
+  });
+  const { searchFocused } = listSearch;
   const columns = useMemo(() => buildRelativeColumns(), []);
   const sortedRows = useMemo(
     () => applySortPreference(rows.filter((row) => !searchQuery.trim() || `${row.symbol} ${row.financials?.quote?.name ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), sortPreference, (row, columnId) => {
@@ -208,7 +213,12 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     reload(false);
   }, [reload]);
 
-  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
+  useEffect(() => {
+    if (selectedSymbol && sortedRows.some((row) => row.symbol === selectedSymbol)) return;
+    setSelectedSymbol(sortedRows[0]?.symbol ?? null);
+  }, [selectedSymbol, sortedRows]);
+
+  const selectedRow = sortedRows.find((row) => row.symbol === selectedSymbol) ?? null;
 
   const renderCell = useCallback((row: RelativeRow, column: RelativeColumn, _index: number, rowState: { selected: boolean }): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
@@ -240,36 +250,29 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if ((event as { targetEditable?: boolean }).targetEditable) return false;
-    if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); setSearchFocused(true); setSearchFocusToken((value) => value + 1); return true; }
-    if (event.name === "o") {
-      const row = sortedRows[selectedIdx];
-      if (row) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        navigateTicker(row.symbol);
-        return true;
-      }
+    if (listSearch.handleSearchKey(event)) return true;
+    if (searchFocused) return false;
+    if (event.name === "o" && selectedRow) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      navigateTicker(selectedRow.symbol);
+      return true;
     }
     return handleRefreshKey(event, () => reload(true), { stopPropagation: true });
-  }, [navigateTicker, reload, selectedIdx, sortedRows]);
+  }, [listSearch.handleSearchKey, navigateTicker, reload, searchFocused, selectedRow]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((value) => value + 1);
-  }, []);
-  const refresh = useCallback(() => reload(true), [reload]);
   const openSelected = useCallback(() => {
-    const row = sortedRows[selectedIdx];
-    if (row) navigateTicker(row.symbol);
-  }, [navigateTicker, selectedIdx, sortedRows]);
+    if (searchFocused || !selectedRow) return;
+    navigateTicker(selectedRow.symbol);
+  }, [navigateTicker, searchFocused, selectedRow]);
 
   usePaneFooter("relative-valuation", () => ({
     info: loadingErrorFooterInfo(loading, error),
     hints: [
-      paneSearchHint(focusSearch),
-      { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !sortedRows[selectedIdx] },
+      paneSearchHint(listSearch.focusSearch, { disabled: searchFocused }),
+      { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selectedRow || searchFocused },
     ],
-  }), [error, focusSearch, loading, openSelected, selectedIdx, sortedRows]);
+  }), [error, listSearch.focusSearch, loading, openSelected, searchFocused, selectedRow]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => (
@@ -283,15 +286,22 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     <DataTableView<RelativeRow, RelativeColumn>
       focused={focused && !searchFocused}
       selection={{
-        kind: "index",
-        selectedIndex: sortedRows.length > 0 ? selectedIdx : -1,
-        onChange: (index) => setSelectedIdx(index),
+        kind: "id",
+        selectedId: selectedSymbol,
+        getId: (row) => row.symbol,
+        onChange: (id) => setSelectedSymbol(id),
       }}
       onActivate={(row) => navigateTicker(row.symbol)}
       onRootKeyDown={handleKeyDown}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={<InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or company" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
+      rootBefore={(
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          search={listSearch.search}
+        />
+      )}
       columns={columns}
       items={sortedRows}
       sortColumnId={sortPreference.columnId}

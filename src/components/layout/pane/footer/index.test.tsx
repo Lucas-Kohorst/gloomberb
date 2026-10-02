@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
 import { Box } from "../../../../ui";
 import { testRender } from "../../../../renderers/opentui/test-utils";
 import {
@@ -56,9 +56,10 @@ function PollTrailingRegistration({ onGraph }: { onGraph?: () => void }) {
   return null;
 }
 
-function ExternalLinkRegistration() {
+function ExternalLinkRegistration({ onOpen }: { onOpen?: () => void }) {
   useExternalLinkFooter({
     registrationId: "external-link",
+    onOpen,
     focused: true,
     url: "https://example.com/story?utm=raw",
     source: "Reuters",
@@ -164,12 +165,12 @@ function PollMenuFooterHarness({ onSelect }: { onSelect: (value: string) => void
   );
 }
 
-function ExternalLinkFooterHarness() {
+function ExternalLinkFooterHarness({ onOpen }: { onOpen?: () => void }) {
   return (
     <PaneFooterProvider>
       {(footer) => (
         <Box width={80} height={1}>
-          <ExternalLinkRegistration />
+          <ExternalLinkRegistration onOpen={onOpen} />
           <PaneFooterBar footer={footer} focused width={80} />
         </Box>
       )}
@@ -177,29 +178,32 @@ function ExternalLinkFooterHarness() {
   );
 }
 
-function CrowdedHintsRegistration() {
+function CrowdedHintsRegistration({ onAction }: { onAction: (id: string) => void }) {
   usePaneFooter("crowded", () => ({
+    info: [{ id: "loading", parts: [{ text: "loading" }] }],
+    trailingInfo: [{ id: "poll", parts: [{ text: "poll 1m" }] }],
     hints: [
-      { id: "series", key: "s", label: "eries" },
-      { id: "window", key: "w", label: "indow" },
-      { id: "mode", key: "m", label: "ode" },
-      { id: "log", key: "l", label: "og" },
-      { id: "res", key: "r", label: "es" },
-      { id: "range", key: "1-8", label: "range" },
-      { id: "reload", key: "Shift+R", label: "reload" },
+      { id: "search", key: "/", label: "search" },
+      { id: "open", key: "o", label: "pen" },
+      { id: "pop-out", key: "p", label: "op out" },
+      { id: "share", key: "s", label: "hare" },
+      { id: "archive", key: "a", label: "rchive" },
+      { id: "bookmark", key: "b", label: "ookmark" },
+      { id: "copy", key: "c", label: "opy" },
       { id: "yank", key: "y", label: "ank" },
-    ],
-  }), []);
+    ].map((hint) => ({ ...hint, onPress: () => onAction(hint.id) })),
+  }), [onAction]);
   return null;
 }
 
-function CrowdedFooterHarness() {
+function CrowdedFooterHarness({ onAction }: { onAction: (id: string) => void }) {
   return (
     <PaneFooterProvider>
       {(footer) => (
-        <Box width={42} height={2}>
-          <CrowdedHintsRegistration />
-          <PaneFooterBar footer={footer} focused width={42} />
+        <Box width={34} height={18} flexDirection="column">
+          <CrowdedHintsRegistration onAction={onAction} />
+          <Box flexGrow={1} />
+          <PaneFooterBar footer={footer} focused width={34} />
         </Box>
       )}
     </PaneFooterProvider>
@@ -320,8 +324,9 @@ describe("PaneFooterBar", () => {
     expect(graphCount).toBe(1);
   });
 
-  test("keeps raw external URLs out of footer text", async () => {
-    testSetup = await testRender(<ExternalLinkFooterHarness />, { width: 80, height: 1 });
+  test("opens external links only for plain unconsumed shortcuts and pointer actions", async () => {
+    let opened = 0;
+    testSetup = await testRender(<ExternalLinkFooterHarness onOpen={() => { opened++; }} />, { width: 80, height: 1 });
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
@@ -331,6 +336,20 @@ describe("PaneFooterBar", () => {
     expect(frame).toContain("source Reuters");
     expect(frame).toContain("[o]pen");
     expect(frame).not.toContain("https://example.com");
+    for (const blocked of [{ ctrl: true }, { meta: true }, { alt: true }, { shift: true }, { defaultPrevented: true }]) {
+      await act(async () => {
+        testSetup!.renderer.keyInput.emit("keypress", {
+          name: "o", sequence: "o", ctrl: false, meta: false, option: false, shift: false,
+          eventType: "press", repeated: false, preventDefault() {}, stopPropagation() {},
+          ...blocked,
+        });
+      });
+    }
+    expect(opened).toBe(0);
+    await act(async () => { testSetup!.mockInput.pressKey("o"); });
+    expect(opened).toBe(1);
+    await act(async () => { await testSetup!.mockMouse.click(frame.indexOf("[o]pen") + 1, 0); });
+    expect(opened).toBe(2);
   });
 
   test("omits disabled controls instead of rendering muted hints", async () => {
@@ -373,21 +392,61 @@ describe("PaneFooterBar", () => {
     expect(openCount).toBe(1);
   });
 
-  test("keeps hints compact and wraps extra actions onto a second row", async () => {
-    testSetup = await testRender(<CrowdedFooterHarness />, { width: 42, height: 2 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
+  test("separates actions and opens overflow actions from a narrow footer", async () => {
+    const actions: string[] = [];
+    testSetup = await testRender(<CrowdedFooterHarness onAction={(id) => actions.push(id)} />, { width: 34, height: 18 });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("[s]eries");
-    expect(frame).toContain("[1-8] range");
-    expect(frame).toContain("[Shift+R] reload");
-    expect(frame).toContain("[y]ank");
-    expect(frame).not.toContain("[1-8]range");
-    const lines = frame.split("\n").filter((line) => /\[(?:s|y|1-8|Shift\+R)\]/.test(line));
-    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(frame).toContain("loading");
+    expect(frame).toContain("poll 1m");
+    expect(frame).toContain("[o]pen [p]op out");
+    expect(frame).toContain("More");
+    const lines = frame.split("\n");
+    const moreRow = lines.findIndex((line) => line.includes("More"));
+    await act(async () => { await testSetup!.mockMouse.click(lines[moreRow]!.indexOf("More"), moreRow); });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    const menuLines = testSetup.captureCharFrame().split("\n");
+    const yankRow = menuLines.findIndex((line) => line.includes("[y]ank"));
+    expect(yankRow).toBeGreaterThanOrEqual(0);
+    await act(async () => { await testSetup!.mockMouse.click(menuLines[yankRow]!.indexOf("[y]ank"), yankRow); });
+    expect(actions).toEqual(["yank"]);
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => { await testSetup!.mockMouse.click(lines[moreRow]!.indexOf("More"), moreRow); });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      testSetup!.mockInput.pressEnter();
+    });
+    expect(actions).toEqual(["yank", "bookmark"]);
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => { await testSetup!.mockMouse.click(lines[moreRow]!.indexOf("More"), moreRow); });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => { testSetup!.mockInput.pressEscape(); await Bun.sleep(60); });
+    expect(actions).toEqual(["yank", "bookmark"]);
+  });
+
+  test("pointer actions follow the current item even when the footer text is unchanged", async () => {
+    const opened: string[] = [];
+    let navigate!: (item: string) => void;
+    function CurrentItem() {
+      const [item, setItem] = useState("first");
+      navigate = setItem;
+      usePaneFooter("current-item", () => ({
+        hints: [{ id: "open", key: "o", label: "pen", onPress: () => opened.push(item) }],
+      }), [item]);
+      return null;
+    }
+    testSetup = await testRender(<PaneFooterProvider>{(footer) => <>
+      <CurrentItem />
+      <PaneFooterBar footer={footer} focused width={30} />
+    </>}</PaneFooterProvider>, { width: 30, height: 2 });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    const column = testSetup.captureCharFrame().indexOf("[o]pen");
+    await act(async () => { await testSetup!.mockMouse.click(column + 1, 0); });
+    await act(async () => { navigate("second"); });
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await testSetup!.renderOnce(); });
+    await act(async () => { await testSetup!.mockMouse.click(column + 1, 0); });
+    expect(opened).toEqual(["first", "second"]);
   });
 
   test("opens a poll interval list and applies the chosen option", async () => {

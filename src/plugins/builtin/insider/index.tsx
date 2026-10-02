@@ -82,6 +82,7 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
         eyebrow: formatFilingFormLabel(filing.form),
         title: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
         timestamp: filing.filingDate,
+        timestampKind: "date",
         detailTitle: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
         detailMeta: filingMeta,
         detailBody: isLoading
@@ -95,6 +96,7 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
       eyebrow: transaction.reportedName,
       title: buildInsiderTransactionTitle(transaction),
       timestamp: transaction.filingDate,
+      timestampKind: "date",
       detailTitle: transaction.reportedName,
       detailMeta: [
         ...(transaction.title ? [transaction.title] : []),
@@ -108,7 +110,7 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
 function InsiderView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const tickerKey = ticker?.metadata.ticker ?? "none";
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(`insider:selectedIdx:${tickerKey}`, 0);
+  const [selectedAccessionNumber, setSelectedAccessionNumber] = usePluginPaneState<string | null>(`insider:selectedAccession:${tickerKey}`, null);
   const [nameFilter, setNameFilter] = usePluginPaneState<string | null>(`insider:nameFilter:${tickerKey}`, null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const eligibleTicker = isUsEquityTicker(ticker);
@@ -168,19 +170,23 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   ), [allParsed, nameFilter]);
   const feedItems = useMemo(() => toFeedItems(parsed), [parsed]);
   const summary = useMemo(() => buildSummary(allParsed), [allParsed]);
-  const selectedTransaction = parsed[selectedIdx]?.transaction ?? null;
+  const selectedFiling = parsed.find(({ filing }) => filing.accessionNumber === selectedAccessionNumber)
+    ?? parsed[0]
+    ?? null;
+  const activeSelectionId = selectedFiling?.filing.accessionNumber ?? null;
+  const selectedTransaction = selectedFiling?.transaction ?? null;
   const openFiling = openItemId
     ? parsed.find(({ filing }) => filing.accessionNumber === openItemId)?.filing ?? null
     : null;
 
   const toggleNameFilter = useCallback((reportedName: string) => {
     setNameFilter((current) => current === reportedName ? null : reportedName);
-    setSelectedIdx(0);
-  }, [setNameFilter, setSelectedIdx]);
+    setSelectedAccessionNumber(null);
+  }, [setNameFilter, setSelectedAccessionNumber]);
   const clearNameFilter = useCallback(() => {
     setNameFilter(null);
-    setSelectedIdx(0);
-  }, [setNameFilter, setSelectedIdx]);
+    setSelectedAccessionNumber(null);
+  }, [setNameFilter, setSelectedAccessionNumber]);
 
   const refresh = useCallback(() => {
     if (!instrument || !eligibleTicker) return;
@@ -270,8 +276,8 @@ function InsiderView({ width, height, focused }: { width: number; height: number
       height={height}
       focused={focused}
       items={feedItems}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={activeSelectionId}
+      onSelect={(index) => setSelectedAccessionNumber(parsed[index]?.filing.accessionNumber ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Insider"

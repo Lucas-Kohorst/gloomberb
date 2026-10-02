@@ -1,10 +1,14 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, TextAttributes } from "../../../ui";
 import {
   DataTableView,
+  PaneListChrome,
   SelectButton,
+  usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
+  type DataTableKeyEvent,
   type SelectButtonOption,
 } from "../../../components";
 import { ScannerWaitingState } from "./waiting";
@@ -16,6 +20,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { ScannerFlowEvent } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { paneSearchHint } from "../shared/pane-footer";
 import { ScannerDeniedState } from "./denied";
 import { useFlowFeed, useScannerStatusFooter } from "./feed";
 import {
@@ -131,6 +136,14 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<SortPreference<string>>({ columnId: null, direction: "desc" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    enabled: !feed.denied,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker or contract",
+  });
 
   const [minPremium, setMinPremium] = usePaneSettingValue<FlowMinPremium>("minPremium", DEFAULT_FLOW_FILTERS.minPremium);
   const [side, setSide] = usePaneSettingValue<FlowSide>("side", DEFAULT_FLOW_FILTERS.side);
@@ -149,10 +162,16 @@ function FlowPane({ focused, width, height }: PaneProps) {
     () => ({ minPremium, side, kind, volOi, expiry, universe }),
     [expiry, kind, minPremium, side, universe, volOi],
   );
-  const events = useMemo(
-    () => filterFlowEvents(feed.payload?.events, filters, watchlist),
-    [feed.payload?.events, filters, watchlist],
-  );
+  const events = useMemo(() => {
+    const filtered = filterFlowEvents(feed.payload?.events, filters, watchlist);
+    const needle = searchQuery.trim().toLowerCase();
+    if (needle.length === 0) return filtered;
+    return filtered.filter((event) => (
+      `${event.underlying} ${event.contract} ${event.right} ${event.kind} ${event.side} ${event.strike} ${event.expiry}`
+        .toLowerCase()
+        .includes(needle)
+    ));
+  }, [feed.payload?.events, filters, searchQuery, watchlist]);
 
   const emptyState = useMemo(
     () => flowEmptyState(feed.payload?.events.length ?? 0, events.length, feed.payload?.status),
@@ -187,7 +206,17 @@ function FlowPane({ focused, width, height }: PaneProps) {
     [events, sortPreference],
   );
 
-  useScannerStatusFooter("flow", feed, focused);
+  useEffect(() => {
+    if (selectedId && sortedEvents.some((event) => event.id === selectedId)) return;
+    setSelectedId(sortedEvents[0]?.id ?? null);
+  }, [selectedId, sortedEvents]);
+
+  useScannerStatusFooter("flow", feed, focused && !listSearch.searchFocused);
+  usePaneFooter("scanner-flow-search", () => (
+    feed.denied ? null : {
+      hints: [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
+    }
+  ), [feed.denied, listSearch.focusSearch, listSearch.searchFocused]);
 
   const columns = useMemo(() => buildColumns(width), [width]);
 
@@ -195,6 +224,11 @@ function FlowPane({ focused, width, height }: PaneProps) {
     setSelectedId(event.id);
     selectTicker(event.underlying);
   }, [selectTicker]);
+
+  const handleTableKey = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    return false;
+  }, [listSearch.handleSearchKey]);
 
   if (feed.denied) {
     return <ScannerDeniedState reason={feed.deniedReason} />;
@@ -254,16 +288,18 @@ function FlowPane({ focused, width, height }: PaneProps) {
           onChange={setUniverse}
         />
       </Box>
+      <PaneListChrome width={width} focused={focused} search={listSearch.search} />
       <DataTableView<ScannerFlowEvent>
-        focused={focused}
+        focused={focused && !listSearch.searchFocused}
         selection={{
           kind: "id",
           selectedId,
           getId: (event) => event.id,
           onChange: (_id, event) => handleSelect(event),
         }}
+        onRootKeyDown={handleTableKey}
         rootWidth={width}
-        rootHeight={Math.max(2, height - 1)}
+        rootHeight={Math.max(2, height - 2)}
         columns={columns}
         items={sortedEvents}
         sortColumnId={sortPreference.columnId}
@@ -277,8 +313,10 @@ function FlowPane({ focused, width, height }: PaneProps) {
         onActivate={(event) => pinTicker(event.underlying, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
         renderCell={(event, column, _index, rowState) => renderCell(event, column, rowState)}
         emptyContent={feed.payload ? undefined : <ScannerWaitingState />}
-        emptyStateTitle={emptyState.title}
-        emptyStateHint={emptyState.hint}
+        emptyStateTitle={searchQuery.trim() && events.length === 0 && (feed.payload?.events.length ?? 0) > 0
+          ? "No prints match."
+          : emptyState.title}
+        emptyStateHint={searchQuery.trim() ? undefined : emptyState.hint}
       />
     </Box>
   );

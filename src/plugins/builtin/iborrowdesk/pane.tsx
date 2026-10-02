@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -43,15 +44,15 @@ export function formatShares(value: number | null): string {
   return String(Math.round(value));
 }
 
-function snapshotDetailBody(snapshot: BorrowSnapshot): string {
-  const lines = [
+function snapshotDetailBody(snapshot: BorrowSnapshot, selectedDate: string): string {
+  const lines = selectedDate === snapshot.days.at(-1)?.date ? [] : [
     `**Latest fee:** ${snapshot.latestFee != null ? formatFee(snapshot.latestFee) : "—"}`,
-    `**Available:** ${formatShares(snapshot.available)}${snapshot.availableStale ? " (stale)" : ""}`,
+    `**Latest availability:** ${formatShares(snapshot.available)}${snapshot.availableStale ? " (stale)" : ""}`,
   ];
   if (snapshot.name) lines.push(`**Name:** ${snapshot.name}`);
   if (snapshot.country) lines.push(`**Market:** ${snapshot.country}`);
-  const recent = snapshot.days.slice(-5).reverse();
-  if (recent.length > 1) {
+  const recent = snapshot.days.slice(-5).reverse().filter((day) => day.date !== selectedDate);
+  if (recent.length > 0) {
     lines.push(
       "",
       "Last sessions:",
@@ -66,10 +67,8 @@ function snapshotDetailBody(snapshot: BorrowSnapshot): string {
 
 function moverDetailBody(mover: BorrowMover): string {
   return [
-    `**Fee:** ${formatFee(mover.latestFee)} (from ${formatFee(mover.startFee)})`,
-    `**Change:** ${mover.feeChange >= 0 ? "+" : ""}${mover.feeChange.toFixed(2)} pts`,
+    `**Previous fee:** ${formatFee(mover.startFee)}`,
     `**Available:** ${formatShares(mover.latestAvailable)}`,
-    mover.name ? `**Name:** ${mover.name}` : "",
     "",
     "A sharp fee increase means short demand is outpacing lendable supply.",
   ].filter(Boolean).join("\n");
@@ -81,13 +80,14 @@ function snapshotItems(snapshot: BorrowSnapshot): FeedDataTableItem[] {
     eyebrow: formatFee(day.fee),
     title: `${formatShares(day.available)} available`,
     timestamp: new Date(`${day.date}T00:00:00Z`),
+    timestampKind: "date",
     detailTitle: `${snapshot.symbol} borrow · ${day.date}`,
     detailMeta: [
       `Fee ${formatFee(day.fee)}`,
       day.rebate != null ? `Rebate ${day.rebate.toFixed(2)}%` : undefined,
       `Available ${formatShares(day.available)}`,
     ].filter((value): value is string => !!value),
-    detailBody: snapshotDetailBody(snapshot),
+    detailBody: snapshotDetailBody(snapshot, day.date),
   }));
 }
 
@@ -124,66 +124,16 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
   const [query, setQuery] = usePluginPaneState("symbol", settingsSymbol);
   const [localView, setLocalView] = usePluginPaneState<"snapshot" | "movers">("view", view);
   const activeView = localView === "movers" ? "movers" : "snapshot";
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [snapshot, setSnapshot] = useState<BorrowSnapshot | null>(null);
-  const [movers, setMovers] = useState<{ up: BorrowMover[]; down: BorrowMover[] } | null>(null);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextView: "snapshot" | "movers", nextSymbol: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStatus("loading");
-      setError(null);
-      const request = nextView === "movers"
-        ? client.getMovers(controller.signal).then((page) => {
-          setMovers({ up: page.up, down: page.down });
-        })
-        : client.getSnapshot(nextSymbol, controller.signal).then((page) => {
-          setSnapshot(page);
-        });
-      void request
-        .then(() => {
-          if (abortRef.current !== controller) return;
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    if (activeView === "snapshot" && !query.trim()) {
-      setSnapshot(null);
-      setStatus("loaded");
-      setError(null);
-      return;
-    }
-    const timeoutId = setTimeout(() => {
-      load(activeView, query);
-    }, activeView === "snapshot" ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, activeView, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
+  const snapshotLoader = useCallback((_force: boolean, signal: AbortSignal) =>
+    client.getSnapshot(query, signal), [client, query]);
+  const moversLoader = useCallback((_force: boolean, signal: AbortSignal) => client.getMovers(signal), [client]);
+  const snapshotResource = useAsyncResource(activeView === "snapshot" && query.trim() ? snapshotLoader : null);
+  const moversResource = useAsyncResource(activeView === "movers" ? moversLoader : null);
+  const snapshot = snapshotResource.data;
+  const movers = moversResource.data;
+  const { loading: refreshing, error, updatedAt, reload: refresh } = activeView === "movers" ? moversResource : snapshotResource;
 
   const items = useMemo(() => {
     if (activeView === "movers") {
@@ -195,13 +145,7 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
     return snapshot ? snapshotItems(snapshot) : [];
   }, [activeView, movers, snapshot, query]);
 
-  useEffect(() => {
-    if (items.length > 0 && selectedIdx >= items.length) {
-      setSelectedIdx(Math.max(0, items.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, items.length]);
-
-  const selected = items[selectedIdx] ?? null;
+  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
   const openItem = openItemId
     ? items.find((item) => item.id === openItemId) ?? null
     : null;
@@ -215,49 +159,29 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
     ? `${IBORROWDESK_REPORT_URL}/${encodeURIComponent(detailSymbol)}`
     : activeView === "movers" ? `${IBORROWDESK_BASE_URL}/fee-movers` : null;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
-  const refresh = useCallback(() => {
-    load(activeView, query);
-  }, [load, activeView, query]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: activeView === "snapshot" ? "ticker" : "filter movers",
+    debounceMs: activeView === "snapshot" ? SEARCH_DEBOUNCE_MS : 80,
+    normalizeValue: trimSearchValue,
+  });
   const toggleView = useCallback(() => {
     const next = activeView === "snapshot" ? "movers" : "snapshot";
     setLocalView(next);
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-  }, [activeView, setLocalView, setSelectedIdx]);
+  }, [activeView, setLocalView, setSelectedId]);
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -271,23 +195,16 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && items.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && !(activeView === "movers" ? movers : snapshot);
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
-    refresh, poll.intervalMinutes,
-  );
+  useAutoRefresh(!refreshing && !error ? updatedAt : null, refresh, poll.intervalMinutes);
 
   usePaneStatusLinkFooter({
     registrationId: IBORROWDESK_PLUGIN_ID,
-    focused,
-    url: error ? null : openUrl,
-    source: activeView === "snapshot"
-      ? (snapshot?.availableStale ? "availability stale" : undefined)
-      : undefined,
-    label: "report",
-    loading,
+    focused: focused && !searchFocused,
+    url: openUrl,
+    loading: refreshing,
     error,
     info: [
       ...(snapshot?.availableStale && !loading && !error
@@ -298,9 +215,9 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!openUrl,
+    showOpenHint: !!openUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
       { id: "view", key: "v", label: "iew movers/snapshot", onPress: toggleView },
     ],
   });
@@ -316,19 +233,14 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
-      if (event.name === "r") {
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         refresh();
         return true;
       }
-      if (event.name === "v") {
+      if (isPlainKey(event, "v")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         toggleView();
@@ -336,51 +248,15 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, refresh, toggleView],
+    [focusSearch, handleSearchKey, refresh, toggleView],
   );
 
-  const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder={activeView === "snapshot" ? "ticker" : "filter movers"}
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
-  );
-
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={activeView === "movers"
-              ? "Loading fee movers..."
-              : `Loading borrow data for ${query.trim() || "…"}...`}
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && items.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Borrow data unavailable." message={error} hint="Press r to retry." />
-        </Box>
-      </Box>
-    );
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
+  if (loading || (error && !(activeView === "movers" ? movers : snapshot))) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Borrow data" onRetry={refresh} />
+    </Box>;
   }
 
   return (
@@ -390,8 +266,9 @@ export function IBorrowDeskPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selected?.id ?? null}
+      onSelect={(index) => setSelectedId(items[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel={activeView === "movers" ? "Move" : "Fee"}

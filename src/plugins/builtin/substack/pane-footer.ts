@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useUpdatedAgo, type PaneFooterSegment, type PaneHint } from "../../../components";
-import { usePaneStatusLinkFooter, paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { usePaneStatusLinkFooter, paneSearchHint } from "../shared/pane-footer";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import type { SubstackAuthState } from "./api/types";
 import { SUBSTACK_PANE_ID, type SubstackArticleSummary } from "./types";
@@ -16,7 +16,6 @@ export function useSubstackPaneFooter({
   openSelectedArticle,
   popOutArticle,
   focusSearch,
-  refreshActive,
 }: {
   auth: SubstackAuthState | null;
   focused: boolean;
@@ -27,7 +26,6 @@ export function useSubstackPaneFooter({
   openSelectedArticle: () => void;
   popOutArticle: () => void;
   focusSearch: () => void;
-  refreshActive: () => void;
 }) {
   const updatedAgo = useUpdatedAgo(activeFeedState.fetchedAt);
   const poll = useFeedPollInterval();
@@ -48,9 +46,7 @@ export function useSubstackPaneFooter({
   }, [activeFeedState.stale, auth, updatedAgo]);
   const trailingHints = useMemo<PaneHint[]>(() => {
     if (!auth) return [];
-    // This pane advertises [r]efresh. The letter is the first letter of the action.
     const hints: PaneHint[] = [
-      paneRefreshHint(refreshActive),
       paneSearchHint(focusSearch),
     ];
     if (selectedArticle) {
@@ -62,7 +58,7 @@ export function useSubstackPaneFooter({
       });
     }
     return hints;
-  }, [auth, focusSearch, popOutArticle, refreshActive, selectedArticle]);
+  }, [auth, focusSearch, popOutArticle, selectedArticle]);
 
   usePaneStatusLinkFooter({
     registrationId: SUBSTACK_PANE_ID,

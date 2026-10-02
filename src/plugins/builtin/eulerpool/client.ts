@@ -42,16 +42,14 @@ export function eulerpoolQuoteUrl(ticker: string): string {
   return `${EULERPOOL_SITE_BASE_URL}/stock/${encodeURIComponent(ticker.trim().toUpperCase())}`;
 }
 
-export function buildEulerpoolUrl(resource: string, identifier: string): string {
+export function buildEulerpoolUrl(resource: string, identifier: string, apiKey = resolveEulerpoolApiKey()): string {
   const id = identifier.trim();
   const url = new URL(`${EULERPOOL_API_BASE_URL}/${resource}/${encodeURIComponent(id)}`);
-  const key = resolveEulerpoolApiKey();
-  if (key) url.searchParams.set("token", key);
+  if (apiKey) url.searchParams.set("token", apiKey);
   return url.toString();
 }
 
-function requestHeaders(): Record<string, string> {
-  const key = resolveEulerpoolApiKey();
+function requestHeaders(key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "User-Agent": "gloomberb-eulerpool",
@@ -183,9 +181,9 @@ export class EulerpoolAuthError extends Error {
   }
 }
 
-async function fetchJson(resource: string, identifier: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await eulerpoolFetch.fetch(buildEulerpoolUrl(resource, identifier), {
-    headers: requestHeaders(),
+async function fetchJson(resource: string, identifier: string, signal: AbortSignal | undefined, apiKey: string | undefined): Promise<unknown> {
+  const response = await eulerpoolFetch.fetch(buildEulerpoolUrl(resource, identifier, apiKey), {
+    headers: requestHeaders(apiKey),
     signal,
   });
   if (response.status === 401) {
@@ -201,16 +199,19 @@ async function fetchJson(resource: string, identifier: string, signal?: AbortSig
 }
 
 export class EulerpoolClient {
+  constructor(private readonly apiKey?: string) {}
+
   async getFundamentals(identifier: string, signal?: AbortSignal): Promise<EulerpoolFundamentals> {
     const trimmed = identifier.trim();
     if (!trimmed) {
       return { identifier: "", profile: null, income: [], cashFlow: [] };
     }
+    const apiKey = this.apiKey ?? resolveEulerpoolApiKey();
     return withConnectionRequest(EULERPOOL_CONNECTION_ID, "fundamentals", async () => {
       const [profileResult, incomeResult, cashResult] = await Promise.allSettled([
-        fetchJson("equity/profile", trimmed, signal),
-        fetchJson("equity/incomestatement", trimmed, signal),
-        fetchJson("equity/cashflowstatement", trimmed, signal),
+        fetchJson("equity/profile", trimmed, signal, apiKey),
+        fetchJson("equity/incomestatement", trimmed, signal, apiKey),
+        fetchJson("equity/cashflowstatement", trimmed, signal, apiKey),
       ]);
       const authError = [profileResult, incomeResult, cashResult].find(
         (result) => result.status === "rejected" && result.reason instanceof EulerpoolAuthError,

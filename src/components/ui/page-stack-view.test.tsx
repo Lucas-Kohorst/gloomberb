@@ -85,7 +85,7 @@ describe("PageStackView", () => {
   test("can switch between the fallback and host implementations without changing hook topology", async () => {
     testSetup = await testRender(<HostSwitchHarness />, { width: 48, height: 8 });
     await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("← Back Detail title");
+    expect(testSetup.captureCharFrame()).toContain("← Back │ Detail title");
 
     await act(async () => {
       setUseHost?.(true);
@@ -103,7 +103,7 @@ describe("PageStackView", () => {
     await act(async () => {
       await testSetup!.renderOnce();
     });
-    expect(testSetup.captureCharFrame()).toContain("← Back Detail title");
+    expect(testSetup.captureCharFrame()).toContain("← Back │ Detail title");
   });
 
   test("keeps the fallback back action mouse-accessible", async () => {

@@ -30,14 +30,15 @@ const lawsuit = (id: string): Lawsuit => ({
   snippet: "", citeCount: 0, url: "", downloadUrl: "",
 });
 
-test("failed pagination keeps rows and retries the same cursor only on request", async () => {
+test("pagination retry deduplicates results and refresh failure preserves readable rows", async () => {
   const next = "https://www.courtlistener.com/api/rest/v4/search/?cursor=second";
-  spies.push(spyOn(CourtListenerClient.prototype, "searchLawsuits").mockResolvedValue({
+  const searchSpy = spyOn(CourtListenerClient.prototype, "searchLawsuits").mockResolvedValue({
     lawsuits: Array.from({ length: 30 }, (_, i) => lawsuit(String(i))), total: 31, next,
-  }));
+  });
+  spies.push(searchSpy);
   const pageSpy = spyOn(CourtListenerClient.prototype, "searchLawsuitsPage")
     .mockRejectedValueOnce(new Error("Rate limit reached"))
-    .mockResolvedValue({ lawsuits: [lawsuit("final")], total: 31, next: null });
+    .mockResolvedValue({ lawsuits: [lawsuit("29"), lawsuit("final"), lawsuit("final")], total: 31, next: null });
   spies.push(pageSpy);
   const paneId = "court-test";
   const config = createDefaultConfig("/tmp/gloom-court-test");
@@ -47,7 +48,7 @@ test("failed pagination keeps rows and retries the same cursor only on request",
     floating: [], detached: [],
   };
   let footer: CombinedPaneFooter;
-  setup = await testRender(
+  await act(async () => { setup = await testRender(
     <AppContext value={{ state: createInitialState(config), dispatch: () => {} }}>
       <PaneInstanceProvider paneId={paneId}>
         <PluginRenderProvider pluginId="courtlistener" runtime={createTestPluginRuntime()}>
@@ -58,7 +59,7 @@ test("failed pagination keeps rows and retries the same cursor only on request",
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>, { width: 100, height: 15 },
-  );
+  ); });
   await settle();
   for (let i = 0; i < 30; i++) {
     await act(async () => { setup!.mockInput.pressArrow("down"); await setup!.renderOnce(); });
@@ -80,4 +81,17 @@ test("failed pagination keeps rows and retries the same cursor only on request",
   expect(pageSpy.mock.calls.map(([url]) => url)).toEqual([next, next]);
   expect(JSON.stringify(footer!.info)).not.toContain("Rate limit reached");
   expect(footer!.hints.some((hint) => hint.id === "retry-page")).toBe(false);
+  await act(async () => { setup!.mockInput.pressArrow("down"); });
+  await settle();
+  expect(setup.captureCharFrame().match(/Case final/g)).toHaveLength(1);
+  searchSpy.mockRejectedValueOnce(new Error("Refresh unavailable"));
+  await act(async () => { setup!.mockInput.pressKey("r"); });
+  await settle();
+  expect(searchSpy).toHaveBeenCalledTimes(2);
+  expect(setup.captureCharFrame()).toContain("Case final");
+  expect(JSON.stringify(footer!.info)).toContain("unavailable");
+  await act(async () => { setup!.mockInput.pressEnter(); });
+  await settle();
+  expect(setup.captureCharFrame()).toContain("← Back │ Case");
+  expect(setup.captureCharFrame()).toContain("No excerpt available.");
 });
