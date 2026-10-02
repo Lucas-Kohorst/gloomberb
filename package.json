@@ -31,7 +31,8 @@
     "./plugins": "./src/plugins/helpers.ts"
   },
   "bin": {
-    "gloomberb": "bin/gloomberb"
+    "gloomberb": "bin/gloomberb",
+    "gloom": "bin/gloom"
   },
   "files": [
     "bin",

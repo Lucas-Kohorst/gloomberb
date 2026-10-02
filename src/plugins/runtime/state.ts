@@ -209,16 +209,17 @@ export function useDebouncedPluginPaneState<T>(
 export function usePluginState<T>(key: string, fallback: T, options?: { schemaVersion?: number }): [T, (value: SetStateAction<T>) => void] {
   const { pluginId, runtime } = usePluginRenderContext();
   const schemaVersion = options?.schemaVersion;
+  // Freeze the first fallback. A fresh [] each render makes getSnapshot unstable
+  // and retriggers every resume subscriber (prediction-market venue writes).
   const fallbackRef = useRef(fallback);
-  fallbackRef.current = fallback;
 
   const subscribe = useCallback((listener: () => void) => (
     runtime.subscribeResumeState(pluginId, key, listener)
   ), [key, pluginId, runtime]);
 
   const getSnapshot = useCallback(() => (
-    runtime.getResumeState<T>(pluginId, key, schemaVersion) ?? fallback
-  ), [fallback, key, pluginId, runtime, schemaVersion]);
+    runtime.getResumeState<T>(pluginId, key, schemaVersion) ?? fallbackRef.current
+  ), [key, pluginId, runtime, schemaVersion]);
 
   const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 

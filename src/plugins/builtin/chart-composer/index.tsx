@@ -234,7 +234,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Browse chart series: securities, options, crypto, DefiLlama TVL/fees/revenue, FRED, treasuries, and futures.",
+    description: "Browse chart series: securities, options, crypto, DefiLlama TVL/fees/revenue, FRED, treasuries, futures, and valuation multiples.",
     keywords: [
       "catalog",
       "series",
@@ -248,6 +248,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "tvl",
       "options",
       "option",
+      "valuation",
     ],
     shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
     canCreate: () => true,
