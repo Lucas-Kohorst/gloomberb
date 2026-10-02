@@ -575,7 +575,7 @@ describe("CommandBar", () => {
       .split("\n")
       .find((line) => line.includes("Ticker Research"));
     // The shortcut sits in the badge column left of the label, not on the right.
-    expect(tickerResearchRow).toMatch(/^\s*T\s+Ticker Research\s*$/);
+    expect(tickerResearchRow).toMatch(/^\s*TR\s+Ticker Research\s*$/);
 
     await act(async () => {
       testSetup!.mockInput.pressEnter();

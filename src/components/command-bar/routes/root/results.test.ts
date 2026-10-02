@@ -657,3 +657,36 @@ describe("recents in the root result model", () => {
     expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
   });
 });
+
+describe("same-prefix command and pane template rows", () => {
+  const teamCommandRow: ResultItem = {
+    id: "team",
+    label: "Team",
+    detail: "Your teams",
+    category: "Navigation",
+    kind: "command",
+    shortcutQuery: "TEAM",
+    action: () => {},
+  };
+  const teamTemplateRow: ResultItem = {
+    id: "pane-template:team-pane:",
+    label: "Team",
+    detail: "Members, invites, channels",
+    category: "Panes",
+    kind: "action",
+    shortcutQuery: "TEAM",
+    action: () => {},
+  };
+
+  test("list one TEAM entry when browsing and when fuzzy matching", () => {
+    for (const rootQuery of ["", "tea"]) {
+      const { items } = buildRootResultModel(rootOptions({
+        rootQuery,
+        paneShortcutItems: () => [teamTemplateRow, paneRow],
+        pluginCommandItems: () => [teamCommandRow],
+      }));
+      const teamRows = items.filter((item) => item.shortcutQuery === "TEAM");
+      expect(teamRows.map((item) => item.id), rootQuery || "(empty)").toEqual(["team"]);
+    }
+  });
+});

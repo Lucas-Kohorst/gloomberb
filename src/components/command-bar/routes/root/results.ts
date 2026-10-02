@@ -130,6 +130,23 @@ function dedupeCatalogBrowseActions(items: ResultItem[], query: string): ResultI
 }
 
 /**
+ * A pane template that shares its prefix with a command (HELP, TEAM, TWIT)
+ * opens the same pane, and typing the prefix always runs the command. Listing
+ * both shows the same entry twice, so the command row wins.
+ */
+function dropShadowedPaneTemplateRows(items: ResultItem[]): ResultItem[] {
+  const commandPrefixes = new Set(items
+    .filter((item) => item.kind === "command" && item.shortcutQuery)
+    .map((item) => item.shortcutQuery!.trim().toUpperCase()));
+  if (commandPrefixes.size === 0) return items;
+  return items.filter((item) => !(
+    item.id.startsWith("pane-template:")
+    && item.shortcutQuery
+    && commandPrefixes.has(item.shortcutQuery.trim().toUpperCase())
+  ));
+}
+
+/**
  * Rows of recently used tickers and commands shown only when the bar opens
  * empty (the `!rootQuery` branch), so recents can never leak into a typed or
  * prefix-routed query. Ticker rows go through the normal ticker-search execute
@@ -448,7 +465,9 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   }
 
   return {
-    items: dedupeCatalogBrowseActions(dedupeById([...assistItems, ...items]), rootQuery),
+    items: dropShadowedPaneTemplateRows(
+      dedupeCatalogBrowseActions(dedupeById([...assistItems, ...items]), rootQuery),
+    ),
     initialIdx,
   };
 }
