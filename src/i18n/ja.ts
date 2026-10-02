@@ -1088,6 +1088,7 @@ export const ja: Record<string, string> = {
   "Forgot password?": "パスワードをお忘れですか？",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを隠す",
+  "Command results": "コマンドの結果",
   "Sending reset link...": "再設定リンクを送信中...",
   "Reset link sent to {email}. Check your inbox.": "{email} に再設定リンクを送信しました。受信トレイをご確認ください。",
   "Could not send the reset email.": "再設定メールを送信できませんでした。",

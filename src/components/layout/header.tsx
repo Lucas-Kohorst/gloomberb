@@ -124,7 +124,8 @@ function HeaderPromptInput({
 }) {
   const colors = useThemeColors();
   const inputRef = useRef<InputRenderable | null>(null);
-  const { ghostSuffix, onQueryChange, placeholder, query, screenKey } = binding;
+  const dom = useUiHost().kind === "desktop-web";
+  const { activeOptionId, ghostSuffix, listboxId, onQueryChange, placeholder, query, screenKey } = binding;
   const textColor = commandBarText(colors);
   const subtleColor = commandBarSubtleText(colors);
 
@@ -149,6 +150,13 @@ function HeaderPromptInput({
         focused
         data-gloom-remote-scope="command-bar"
         data-gloom-remote-surface="command-bar"
+        {...(dom ? {
+          role: "combobox",
+          "aria-autocomplete": "list",
+          "aria-expanded": listboxId ? "true" : "false",
+          "aria-controls": listboxId ?? undefined,
+          "aria-activedescendant": activeOptionId ?? undefined,
+        } : {})}
         width={nativePaneChrome ? "100%" : width}
         backgroundColor="transparent"
         focusedBackgroundColor="transparent"
