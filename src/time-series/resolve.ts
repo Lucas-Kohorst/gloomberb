@@ -718,6 +718,12 @@ function baseSecuritySeries(
   const latestChangePercent = marketField && field.unit.startsWith("currency")
     ? financials.quote?.changePercent
     : undefined;
+  const latestChange = marketField && field.unit.startsWith("currency")
+    ? financials.quote?.change
+    : undefined;
+  const previousClose = marketField && field.unit.startsWith("currency")
+    ? financials.quote?.previousClose
+    : undefined;
   return {
     id: spec.id,
     label: seriesSpecLabel(spec, `${symbol} ${field.shortLabel}`),
@@ -745,6 +751,12 @@ function baseSecuritySeries(
       : undefined,
     latestChangePercent: typeof latestChangePercent === "number" && Number.isFinite(latestChangePercent)
       ? latestChangePercent
+      : undefined,
+    latestChange: typeof latestChange === "number" && Number.isFinite(latestChange)
+      ? latestChange
+      : undefined,
+    previousClose: typeof previousClose === "number" && Number.isFinite(previousClose)
+      ? previousClose
       : undefined,
     points,
   };

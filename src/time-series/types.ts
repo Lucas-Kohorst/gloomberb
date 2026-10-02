@@ -204,8 +204,12 @@ export interface ResolvedSeries {
   interpolation: SeriesInterpolation;
   /** Present only for exchange-traded market observations. */
   timeBasis?: ResolvedSeriesMarketTimeBasis;
+  /** Absolute regular-session move supplied with the latest market quote. */
+  latestChange?: number;
   /** Regular-session move supplied with the latest market quote. */
   latestChangePercent?: number;
+  /** Close the quote's move is measured against. */
+  previousClose?: number;
   points: TimeSeriesPoint[];
   warning?: string;
   /** Load failure shown in the legend; the series stays listed even with no points. */

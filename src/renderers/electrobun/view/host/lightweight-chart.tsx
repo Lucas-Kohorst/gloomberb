@@ -233,6 +233,8 @@ export function WebLightweightChart({
   vectors,
   armedTool,
   timeZone,
+  showCrosshairTooltip = true,
+  onCursorDateChange,
   style,
   ...props
 }: LightweightChartProps) {
@@ -253,6 +255,10 @@ export function WebLightweightChart({
   viewportRef.current = viewport;
   const timeZoneRef = useRef(timeZone);
   timeZoneRef.current = timeZone;
+  const showCrosshairTooltipRef = useRef(showCrosshairTooltip);
+  showCrosshairTooltipRef.current = showCrosshairTooltip;
+  const onCursorDateChangeRef = useRef(onCursorDateChange);
+  onCursorDateChangeRef.current = onCursorDateChange;
   const seriesRef = useRef<SeriesEntry[]>([]);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
@@ -405,12 +411,15 @@ export function WebLightweightChart({
     chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange);
 
     const handleCrosshairMove: MouseEventHandler<Time> = (param) => {
+      const cursorMs = param.time ? timeToMs(param.time, packingRef.current) : null;
+      // The composite scene owns the legend strip and the custom chrome; the
+      // native renderer has to tell it where the crosshair is pointing.
+      onCursorDateChangeRef.current?.(cursorMs === null ? null : new Date(cursorMs));
       const tooltip = tooltipRef.current;
-      if (!tooltip || !param.point || !param.time) {
+      if (!tooltip || !showCrosshairTooltipRef.current || !param.point || !param.time) {
         if (tooltip) tooltip.hidden = true;
         return;
       }
-      const cursorMs = timeToMs(param.time, packingRef.current);
       const view = viewportRef.current;
       const dateLabel = cursorMs === null
         ? null
@@ -463,6 +472,12 @@ export function WebLightweightChart({
       chartRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (showCrosshairTooltip) return;
+    const tooltip = tooltipRef.current;
+    if (tooltip) tooltip.hidden = true;
+  }, [showCrosshairTooltip]);
 
   useEffect(() => {
     const current = visibleMsRef.current;

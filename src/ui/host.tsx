@@ -265,6 +265,16 @@ export interface LightweightChartProps extends BoxProps {
   vectors?: readonly ChartVectorShape[] | null;
   armedTool?: ChartToolKind | null;
   timeZone?: string;
+  /**
+   * The legend strip already reads out hovered values, so the floating
+   * readout would only repeat it while the crosshair moves.
+   */
+  showCrosshairTooltip?: boolean;
+  /**
+   * Reports the crosshair's date to the composite scene, so the legend strip
+   * and the custom chrome follow the native renderer's cursor.
+   */
+  onCursorDateChange?: (date: Date | null) => void;
 }
 
 /** The trackpad gesture that produced a viewport change. */
