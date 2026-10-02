@@ -8,7 +8,7 @@ import {
   setViewRefResolver,
   type ViewSpec,
 } from "../../custom-view";
-import { teamPrefix } from "./model";
+import { teamMark } from "./model";
 import { teamStore } from "./store";
 
 export const CLOUD_VIEWS_CAPABILITY_ID = "cloud.views";
@@ -28,6 +28,7 @@ export class TeamViewsStore {
   private readonly templateDisposers = new Map<string, () => void>();
   private ctx: Pick<GloomPluginContext, "registerPaneTemplate"> | null = null;
   private disposers: Array<() => void> = [];
+  private generation = 0;
 
   attach(ctx: Pick<GloomPluginContext, "registerPaneTemplate">): void {
     this.ctx = ctx;
@@ -51,9 +52,10 @@ export class TeamViewsStore {
 
   start(): void {
     setViewRefResolver(async (source) => {
+      const generation = this.generation;
       const cached = this.views.get(source.viewId);
       const view = cached ?? (await apiClient.getTeamView(source.viewId).catch(() => null));
-      if (!view) return null;
+      if (!view || generation !== this.generation) return null;
       if (!cached) this.upsert(view);
       return parseViewSpec(view.spec);
     });
@@ -74,6 +76,9 @@ export class TeamViewsStore {
   }
 
   dispose(): void {
+    this.generation += 1;
+    this.ctx = null;
+    this.lastTeamKey = "";
     for (const dispose of this.disposers.splice(0)) dispose();
     for (const dispose of this.templateDisposers.values()) dispose();
     this.templateDisposers.clear();
@@ -86,13 +91,16 @@ export class TeamViewsStore {
   async refresh(): Promise<void> {
     const teams = teamStore.getSnapshot().teams;
     const teamKey = teams.map((team) => team.id).join(",");
-    if (teamKey === this.lastTeamKey && this.views.size > 0) return;
+    const verified = apiClient.isVerified();
+    if (verified && teams.length > 0 && teamKey === this.lastTeamKey && this.views.size > 0) return;
+    const generation = ++this.generation;
     this.lastTeamKey = teamKey;
-    if (!apiClient.isVerified() || teams.length === 0) {
+    if (!verified || teams.length === 0) {
       for (const id of [...this.views.keys()]) this.remove(id);
       return;
     }
     const lists = await Promise.all(teams.map((team) => apiClient.listTeamViews(team.id).catch(() => [] as TeamView[])));
+    if (generation !== this.generation) return;
     const next = new Map(lists.flat().map((view) => [view.id, view]));
     for (const id of [...this.views.keys()]) {
       if (!next.has(id)) this.remove(id);
@@ -116,7 +124,7 @@ export class TeamViewsStore {
   private registerTemplate(view: TeamView): void {
     if (!this.ctx) return;
     const team = teamStore.getTeam(view.teamId);
-    const label = `${team ? `${teamPrefix(team)} ` : ""}${view.name}`;
+    const label = team ? teamMark(team, view.name) : view.name;
     const spec: ViewSpec = {
       version: 1,
       source: { kind: "ref", viewId: view.id, teamId: view.teamId },

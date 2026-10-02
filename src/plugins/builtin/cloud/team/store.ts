@@ -6,7 +6,14 @@ import {
   type TeamUpdatedEvent,
 } from "../../../../api-client";
 import type { AppNotificationDelivery, AppNotificationRequest, PluginPersistence } from "../../../../types/plugin";
-import { describeTeamNotification, findTeam, teamIdFromChannelId } from "./model";
+import { appendNotificationLog, markNotificationLogReadByRef } from "../../../../notifications/notification-log";
+import {
+  describeTeamNotification,
+  findTeam,
+  teamIdFromChannelId,
+  teamNotificationRefId,
+} from "./model";
+import { teamSessionReady } from "./session";
 
 export interface TeamStoreSnapshot {
   /** Teams the signed-in person belongs to, sorted by name. */
@@ -60,6 +67,7 @@ const EMPTY: TeamStoreSnapshot = {
 /** The slice of the API client the store uses, so tests can hand in a fake. */
 export type TeamStoreClient = Pick<
   typeof apiClient,
+  | "isSignedIn"
   | "isVerified"
   | "subscribeCurrentUser"
   | "subscribeTeamNotifications"
@@ -115,9 +123,15 @@ export class TeamStore {
     if (this.started) return;
     this.started = true;
     const syncAuth = () => {
-      if (this.client.isVerified()) {
+      // isVerified() misses a Pro cache that dropped emailVerified. The fake
+      // client used in tests has no plan, so only the real client gets that pass.
+      const ready = this.client.isVerified() || (this.client === apiClient && teamSessionReady());
+      if (ready) {
         void this.refresh();
-      } else if (this.snapshot.loaded || this.snapshot.teams.length > 0) {
+      } else if (
+        (this.snapshot.loaded || this.snapshot.teams.length > 0)
+        && !this.client.isSignedIn()
+      ) {
         this.update({ ...EMPTY, focus: this.snapshot.focus, collapsedTeams: this.snapshot.collapsedTeams });
       }
     };
@@ -232,6 +246,7 @@ export class TeamStore {
           error: null,
         });
         this.persistNotifications();
+        if (notifications) this.rememberInNotificationCenter(this.snapshot.notifications);
       } catch (error) {
         this.update({
           loading: false,
@@ -248,9 +263,14 @@ export class TeamStore {
   /** Marks cards handled and tells the server so they stop coming back. */
   async dismissNotifications(ids: readonly string[]): Promise<void> {
     if (ids.length === 0) return;
+    const dismissed = this.snapshot.notifications.filter((entry) => ids.includes(entry.id));
     const remaining = this.snapshot.notifications.filter((entry) => !ids.includes(entry.id));
     this.update({ notifications: remaining });
     this.persistNotifications();
+    // Pending cards are the unread badge. Marking one read removes it from
+    // that list, but the notification log keeps the same card as history.
+    this.rememberInNotificationCenter(dismissed);
+    markNotificationLogReadByRef(dismissed.map((entry) => teamNotificationRefId(entry.id)));
     try {
       await this.client.markChatNotificationsDelivered([...ids]);
     } catch {
@@ -271,9 +291,11 @@ export class TeamStore {
     if (notification.type === "team-joined" || notification.type === "team-invite") {
       void this.refresh();
     }
+    this.rememberInNotificationCenter([notification]);
     const { title, body } = describeTeamNotification(notification);
     const action = this.actionFor(notification);
     this.notifier?.({
+      refId: teamNotificationRefId(notification.id),
       title,
       body,
       type: "info",
@@ -297,6 +319,19 @@ export class TeamStore {
       };
     }
     return null;
+  }
+
+  private rememberInNotificationCenter(notifications: readonly TeamNotification[]): void {
+    for (const notification of notifications) {
+      const { title, body } = describeTeamNotification(notification);
+      const at = Date.parse(notification.createdAt);
+      appendNotificationLog({
+        title,
+        body,
+        type: "info",
+        refId: teamNotificationRefId(notification.id),
+      }, "team", Number.isFinite(at) ? at : Date.now());
+    }
   }
 
   private mergeNotifications(incoming: readonly TeamNotification[]): TeamNotification[] {

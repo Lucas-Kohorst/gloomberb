@@ -14,6 +14,21 @@ export function teamPrefix(team: Pick<TeamSummary, "shortName">): string {
   return `${team.shortName}·`;
 }
 
+/** Short name and a title, with a space on each side of the mark. */
+export function teamMark(team: Pick<TeamSummary, "shortName">, name: string): string {
+  return `${team.shortName} · ${name}`;
+}
+
+export function teamNotificationRefId(id: string): string {
+  return `team:${id}`;
+}
+
+export function teamNotificationIdFromRef(refId: string | undefined): string | null {
+  if (!refId?.startsWith("team:")) return null;
+  const id = refId.slice("team:".length);
+  return id.length > 0 ? id : null;
+}
+
 export const TEAM_ACCENT_COLORS: readonly TeamAccentColor[] = [
   "amber", "blue", "cyan", "green", "magenta", "orange", "red", "violet",
 ];
@@ -159,7 +174,7 @@ export function findTeam(
 }
 
 export function teamLabel(team: Pick<TeamSummary, "name" | "shortName">): string {
-  return `${teamPrefix(team)} ${team.name}`;
+  return teamMark(team, team.name);
 }
 
 export function describeTeam(team: TeamSummary): string {

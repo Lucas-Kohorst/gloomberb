@@ -485,7 +485,9 @@ export function CreateTeamForm({
       <Box flexDirection="column">
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>New team</Text>
         <Muted width={width}>
-          A team shares layouts, watchlists, paper portfolios, notes, custom views, and chat channels. Creating needs Pro; joining is free.
+          {hasPro
+            ? "A team shares layouts, watchlists, paper portfolios, notes, custom views, and chat channels."
+            : "A team shares layouts, watchlists, paper portfolios, notes, custom views, and chat channels. Creating needs Pro; joining is free."}
         </Muted>
       </Box>
       <TeamDraftFields draft={draft} width={width} onChange={onChange} onSubmit={onCreate} editable={false} />

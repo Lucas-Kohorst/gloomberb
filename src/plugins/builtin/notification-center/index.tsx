@@ -3,6 +3,7 @@ import {
   ConfirmDialog,
   DataTableView,
   InputSearchBar,
+  Tabs,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -10,7 +11,18 @@ import {
 import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
+import { Box } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
+import { teamChannelId, teamNotificationIdFromRef } from "../cloud/team/model";
+import { openTeamPane } from "../cloud/team/pane-request";
+import { teamStore } from "../cloud/team/store";
+import {
+  consumeRequestedNotificationCenterFilter,
+  isNotificationSourceFilter,
+  notificationSourceVisible,
+  subscribeRequestedNotificationCenterFilter,
+  type NotificationSourceFilter,
+} from "./filter";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import {
   clearNotificationLog,
@@ -62,8 +74,16 @@ function readChatUnread(): NotificationChatUnread {
   };
 }
 
-function sourceDestination(source: string): "alerts" | "chat" | null {
+const SOURCE_FILTERS: ReadonlyArray<{ value: NotificationSourceFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "alerts", label: "Alerts" },
+  { value: "chat", label: "Chat" },
+  { value: "team", label: "Team" },
+];
+
+function sourceDestination(source: string): "alerts" | "chat" | "team" | null {
   if (source === "alerts") return "alerts";
+  if (source === "team") return "team";
   if (source === "gloomberb-cloud" || source === "chat") return "chat";
   return null;
 }
@@ -77,10 +97,13 @@ function notificationSortValue(entry: NotificationLogEntry, column: Notification
 
 export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
-  const { showPane } = usePluginAppActions();
+  const { createPaneFromTemplate, showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
   const [chatUnread, setChatUnread] = useState<NotificationChatUnread>(readChatUnread);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<NotificationSourceFilter>(
+    () => consumeRequestedNotificationCenterFilter() ?? "all",
+  );
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
@@ -92,6 +115,10 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => subscribeNotificationLog(() => setEntries(getNotificationLog())), []);
   useEffect(() => chatController.subscribe(() => setChatUnread(readChatUnread())), []);
+  useEffect(() => subscribeRequestedNotificationCenterFilter((filter) => {
+    setSourceFilter(filter);
+    setSelectedRowId(null);
+  }), []);
   const unreadIds = useMemo(
     () => notificationIdsThatAppearUnread(entries, chatUnread),
     [chatUnread, entries],
@@ -99,12 +126,12 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
 
   const rows = useMemo<NotificationRow[]>(() => {
     const lowerQuery = query.trim().toLowerCase();
-    const filtered = entries.filter((entry) => !lowerQuery || [
+    const filtered = entries.filter((entry) => notificationSourceVisible(entry.source, sourceFilter) && (!lowerQuery || [
       entry.title,
       entry.body,
       entry.source,
       formatDate(entry.at),
-    ].filter(Boolean).join(" ").toLowerCase().includes(lowerQuery));
+    ].filter(Boolean).join(" ").toLowerCase().includes(lowerQuery)));
     const days = new Map<string, NotificationLogEntry[]>();
     for (const entry of filtered) {
       const group = formatDate(entry.at);
@@ -121,7 +148,7 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
       { id: `group-${group}`, group },
       ...applySortPreference(groupEntries, sort, notificationSortValue),
     ]);
-  }, [entries, query, sort]);
+  }, [entries, query, sort, sourceFilter]);
 
   const selectedRow = rows.find((row) => row.id === selectedRowId) ?? rows[0] ?? null;
   const activeSelectionId = selectedRow?.id ?? null;
@@ -130,14 +157,41 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
     setSearchFocused(true);
     setSearchFocusToken((value) => value + 1);
   }, []);
+  const openTeamNotification = useCallback((entry: NotificationLogEntry) => {
+    markNotificationLogRead([entry.id]);
+    const cardId = teamNotificationIdFromRef(entry.refId);
+    const card = cardId
+      ? teamStore.getSnapshot().notifications.find((notification) => notification.id === cardId) ?? null
+      : null;
+    if (cardId) void teamStore.dismissNotifications([cardId]);
+    if (!card) {
+      openTeamPane(createPaneFromTemplate);
+      return;
+    }
+    if (card.type === "team-joined") {
+      createPaneFromTemplate("new-chat-pane", { arg: teamChannelId(card.data.team.id) });
+      return;
+    }
+    openTeamPane(createPaneFromTemplate, {
+      teamId: card.data.team.id,
+      ...(card.type === "team-invite" ? { section: "invites" as const } : {}),
+    });
+  }, [createPaneFromTemplate]);
   const openNotification = useCallback((entry: NotificationLogEntry | null) => {
-    const destination = entry && sourceDestination(entry.source);
-    if (destination) showPane?.(destination);
-  }, [showPane]);
+    if (!entry) return;
+    if (entry.source === "team") {
+      openTeamNotification(entry);
+      return;
+    }
+    const destination = sourceDestination(entry.source);
+    if (destination && destination !== "team") showPane?.(destination);
+  }, [openTeamNotification, showPane]);
   const openSelected = useCallback(() => openNotification(selected), [openNotification, selected]);
   const markAllRead = useCallback(() => {
     markNotificationLogRead();
     chatController.markAllChannelsRead();
+    const teamIds = teamStore.getSnapshot().notifications.map((notification) => notification.id);
+    if (teamIds.length > 0) void teamStore.dismissNotifications(teamIds);
   }, []);
   const requestClear = useCallback(async () => {
     const confirmed = await dialog.prompt<boolean>({
@@ -201,7 +255,24 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.bg}
-      rootBefore={<InputSearchBar value={query} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder={t("Search notifications")} debounceMs={80} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setQuery} />}
+      rootBefore={(
+        <Box flexDirection="column" width={width}>
+          <InputSearchBar value={query} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder={t("Search notifications")} debounceMs={80} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setQuery} />
+          <Tabs
+            tabs={SOURCE_FILTERS.map((filter) => ({ label: t(filter.label), value: filter.value }))}
+            activeValue={sourceFilter}
+            onSelect={(value) => {
+              if (isNotificationSourceFilter(value)) {
+                setSourceFilter(value);
+                setSelectedRowId(null);
+              }
+            }}
+            compact
+            focused={false}
+            keyboardNavigation={false}
+          />
+        </Box>
+      )}
       columns={COLUMNS}
       items={rows}
       sortColumnId={sort.columnId}
@@ -209,8 +280,8 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
       onHeaderClick={(columnId) => setSort((current) => nextSortPreference(current, columnId as NotificationColumnId, { defaultDirection: columnId === "date" ? "desc" : "asc" }))}
       getItemKey={(entry) => entry.id}
       renderCell={renderCell}
-      emptyStateTitle={t("No notifications.")}
-      emptyStateHint={t("Notifications from alerts and chat will appear here.")}
+      emptyStateTitle={sourceFilter === "team" ? t("No team notifications.") : t("No notifications.")}
+      emptyStateHint={t("Notifications from alerts, chat, and teams will appear here.")}
     />
   );
 }

@@ -100,7 +100,7 @@ describe("TeamPane", () => {
     await flush();
     const frame = setup!.captureCharFrame();
     if (process.env.PRINT_FRAMES) console.log(frame);
-    expect(frame).toContain("MD· Macro Desk");
+    expect(frame).toContain("MD · Macro Desk");
     expect(frame).toContain("Members (3)");
     expect(frame).toContain("@vince");
     expect(frame).toContain("Owner");
@@ -129,6 +129,20 @@ describe("TeamPane", () => {
     expect(frame).not.toContain("@example.com");
   });
 
+  test("a Pro account is not told to sign in when the cached user lost emailVerified", async () => {
+    apiClient.restoreCachedUser({ id: "u0", username: "vince", emailVerified: false, plan: "pro" });
+    teamsOnServer = [];
+    (teamStore as any).update({ teams: [], invitations: [], loaded: true });
+    await act(async () => {
+      setup = await testRender(<Pane />, { width: 84, height: 24 });
+    });
+    await flush();
+    const frame = setup!.captureCharFrame();
+    expect(frame).not.toContain("Sign in to use teams");
+    expect(frame).toContain("Create team");
+    expect(frame).not.toContain("Upgrade to Pro");
+  });
+
   test("the create form previews the accent with the short name derived from the name", async () => {
     teamsOnServer = [];
     (teamStore as any).update({ teams: [], invitations: [], loaded: true });
@@ -142,7 +156,7 @@ describe("TeamPane", () => {
     expect(frame).toContain("Create team");
     // The picker marks the chosen swatch and previews the prefix.
     expect(frame).toContain("▣");
-    expect(frame).toContain("TM· Your team");
+    expect(frame).toContain("TM · Your team");
   });
 
   test("settings edit in place with a live accent preview; channels list with a creator", async () => {
@@ -157,7 +171,7 @@ describe("TeamPane", () => {
     let frame = setup!.captureCharFrame();
     if (process.env.PRINT_FRAMES) console.log(frame);
     expect(frame).toContain("Short name");
-    expect(frame).toContain("MD· Macro Desk");
+    expect(frame).toContain("MD · Macro Desk");
     expect(frame).toContain("Members can share invite links");
     expect(frame).toContain("Save changes");
     expect(frame).toContain("Delete team");
@@ -188,7 +202,7 @@ describe("TeamPane", () => {
     await flush();
     const frame = setup!.captureCharFrame();
     if (process.env.PRINT_FRAMES) console.log(frame);
-    expect(frame).toContain("RD· Rates Desk");
+    expect(frame).toContain("RD · Rates Desk");
     expect(frame).toContain("@ann invited you");
     expect(frame).toContain("Accept");
     expect(frame).toContain("Decline");

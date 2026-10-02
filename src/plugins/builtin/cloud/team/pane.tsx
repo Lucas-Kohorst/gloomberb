@@ -19,7 +19,7 @@ import { usePluginAppActions } from "../../../runtime";
 import { chatController } from "../../chat/controller";
 import { SignInWall } from "../auth-actions";
 import { useCloudUpgradeAction } from "../../shared/cloud-upgrade";
-import { usePlanAccess } from "../../shared/plan-access";
+import { needsEmailVerification, usePlanAccess } from "../../shared/plan-access";
 import {
   canInviteToTeam,
   canManageTeam,
@@ -29,7 +29,7 @@ import {
   teamAccentHex,
   teamChannelId,
   teamIdFromChannelId,
-  teamPrefix,
+  teamLabel,
   userHandle,
 } from "./model";
 import {
@@ -155,7 +155,7 @@ function InvitationBanner({
       backgroundColor={colors.panel}
       paddingX={1}
     >
-      <Text fg={accent} attributes={TextAttributes.BOLD}>{`${teamPrefix(invitation.team)} ${invitation.team.name}`}</Text>
+      <Text fg={accent} attributes={TextAttributes.BOLD}>{teamLabel(invitation.team)}</Text>
       <Text fg={colors.text}>
         {`${userHandle(invitation.inviter)} invited you · ${describeMemberCount(invitation.team.memberCount)} · ${describeExpiry(invitation.expiresAt)}`}
       </Text>
@@ -175,17 +175,16 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     (onChange) => teamStore.subscribe(onChange),
     () => teamStore.getSnapshot(),
   );
-  const signedIn = useSyncExternalStore(
-    (onChange) => apiClient.subscribeCurrentUser(onChange),
-    () => apiClient.isVerified(),
-  );
-  useEffect(() => {
-    if (signedIn) return;
-    // Chat may already hold a verified persisted session while get-session
-    // cleared the shared api client on desktop; refresh re-syncs both sides.
-    void chatController.refreshSession();
-  }, [signedIn]);
   const selfUserId = apiClient.getCurrentUser()?.id ?? null;
+  const sessionReady = plan.signedIn && plan.accountKnown && !needsEmailVerification(plan);
+  const sessionRecoveryAttempted = useRef(false);
+  useEffect(() => {
+    if (sessionReady || sessionRecoveryAttempted.current) return;
+    // Desktop chat can hold a verified persisted session the shared client lost;
+    // one refresh re-syncs both. Retrying on every auth flip caused a flicker loop.
+    sessionRecoveryAttempted.current = true;
+    void chatController.refreshSession();
+  }, [sessionReady]);
 
   const [teamId, setTeamId] = useState<string | null>(null);
   const [section, setSection] = useState<TeamPaneSection>("members");
@@ -198,7 +197,6 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
   const [message, setMessage] = useState<Message>(null);
   const [activeField, setActiveFieldState] = useState<string | null>(null);
   const actions = useRef(new Map<string, () => void>());
-
   const team = useMemo(() => {
     if (teamId) return snapshot.teams.find((entry) => entry.id === teamId) ?? null;
     return snapshot.teams.find((entry) => entry.id === teamStore.getDefaultTeamId()) ?? snapshot.teams[0] ?? null;
@@ -325,7 +323,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     setSection("invites");
     setCreateDraft(emptyTeamDraft());
     notify({ body: `${created.name} is ready. Invite people, then find its #general in chat.`, type: "success" });
-    return { tone: "success", text: `Created ${teamPrefix(created)} ${created.name}. Now invite a few people.` };
+    return { tone: "success", text: `Created ${teamLabel(created)}. Now invite a few people.` };
   }), [createDraft, notify, run]);
 
   const saveSettings = useCallback(() => {
@@ -469,12 +467,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
   }, { allowEditable: true, phase: "before" });
 
   const hints = useMemo<PaneHint[]>(() => {
-    if (!signedIn) return [];
-    if (showCreate) {
-      return snapshot.teams.length > 0
-        ? [{ id: "back", key: "Esc", label: "back", onPress: () => setCreating(false) }]
-        : [];
-    }
+    if (!sessionReady || showCreate) return [];
     const list: PaneHint[] = [
       { id: "new", key: "n", label: "ew team", onPress: () => { setCreating(true); setMessage(null); } },
     ];
@@ -483,7 +476,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
       if (canInviteToTeam(team)) list.push({ id: "invite", key: "i", label: "nvite", onPress: () => setSection("invites") });
     }
     return list;
-  }, [openChannel, showCreate, signedIn, snapshot.teams.length, team]);
+  }, [openChannel, showCreate, sessionReady, team]);
   usePaneFooter(TEAM_PANE_ID, () => ({
     info: [
       ...(busy ? [{ id: "busy", parts: [{ text: "working", tone: "muted" as const }] }] : []),
@@ -500,8 +493,14 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     }
   }, { allowEditable: true });
 
-  if (!signedIn) {
+  if (!plan.signedIn) {
     return <SignInWall action="use teams" />;
+  }
+  if (!plan.accountKnown) {
+    return <Muted>Loading…</Muted>;
+  }
+  if (needsEmailVerification(plan)) {
+    return <SignInWall action="use teams" needsVerification />;
   }
 
   const contentWidth = Math.max(24, width - 2);
@@ -529,7 +528,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
           <Tabs
             tabs={[
               ...snapshot.teams.map((entry) => ({
-                label: `${teamPrefix(entry)} ${entry.name}`,
+                label: teamLabel(entry),
                 value: entry.id,
                 fg: teamAccentHex(entry.accentColor),
               })),

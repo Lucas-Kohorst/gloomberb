@@ -8,6 +8,7 @@ import { usePluginAppActions } from "../../../runtime";
 import { describeTeam, teamAccentHex, teamLabel, userHandle } from "./model";
 import { openTeamPane } from "./pane-request";
 import { teamStore } from "./store";
+import { usePlanAccess } from "../../shared/plan-access";
 
 const NEW_TEAM_ID = "__new__";
 
@@ -17,6 +18,7 @@ const NEW_TEAM_ID = "__new__";
  */
 export function TeamsAccountTab({ focused, width }: { focused: boolean; width: number }) {
   const { createPaneFromTemplate } = usePluginAppActions();
+  const plan = usePlanAccess();
   const snapshot = useSyncExternalStore(
     (onChange) => teamStore.subscribe(onChange),
     () => teamStore.getSnapshot(),
@@ -45,10 +47,12 @@ export function TeamsAccountTab({ focused, width }: { focused: boolean; width: n
     {
       id: NEW_TEAM_ID,
       label: "New team",
-      description: "Name, short name, accent color. Needs Pro; joining is free.",
+      description: plan.hasProAccess
+        ? "Name, short name, accent color."
+        : "Name, short name, accent color. Needs Pro; joining is free.",
       right: "+",
     },
-  ], [snapshot.invitations, snapshot.teams]);
+  ], [plan.hasProAccess, snapshot.invitations, snapshot.teams]);
 
   const activate = (item: ListViewItem) => {
     if (item.id === NEW_TEAM_ID) {

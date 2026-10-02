@@ -1,5 +1,6 @@
 import { apiClient } from "../../../../api-client";
 import type { CommandResultDef, GloomPluginContext } from "../../../../types/plugin";
+import { hasProAccess } from "../../shared/plan-access";
 import { requestAuthDialog } from "../auth-dialog";
 import {
   canInviteToTeam,
@@ -11,12 +12,13 @@ import {
   userHandle,
 } from "./model";
 import { openTeamPane, type TeamPaneSection } from "./pane-request";
+import { teamSessionReady } from "./session";
 import { teamStore } from "./store";
 
 const TEAM_SUBCOMMAND = /^(invite|new|settings|members|channels|leave|focus|chat)\b\s*(.*)$/i;
 
 function requireSignIn(ctx: GloomPluginContext): boolean {
-  if (apiClient.isVerified()) return true;
+  if (teamSessionReady()) return true;
   const opened = requestAuthDialog({ mode: apiClient.isSignedIn() ? "login" : "signup" });
   if (!opened) ctx.notify({ body: "Sign in to use teams.", type: "info" });
   return false;
@@ -65,7 +67,7 @@ export function buildTeamCommandResults(ctx: GloomPluginContext, arg: string): C
   const sub = TEAM_SUBCOMMAND.exec(trimmed);
   const category = "Teams";
 
-  if (!apiClient.isVerified()) {
+  if (!teamSessionReady()) {
     return [{
       id: "sign-in",
       label: "Sign in to use teams",
@@ -87,7 +89,9 @@ export function buildTeamCommandResults(ctx: GloomPluginContext, arg: string): C
       return [{
         id: "new",
         label: "New team",
-        detail: "Name, short name, accent color. Needs Pro; joining is free.",
+        detail: hasProAccess(apiClient.getCurrentUser())
+          ? "Name, short name, accent color."
+          : "Name, short name, accent color. Needs Pro; joining is free.",
         category,
         right: "TEAM",
         execute: () => open(ctx, { mode: "create" }),
@@ -186,7 +190,9 @@ export function buildTeamCommandResults(ctx: GloomPluginContext, arg: string): C
       id: "new",
       label: snapshot.teams.length === 0 ? "Create a team" : "New team",
       detail: snapshot.teams.length === 0
-        ? "Share layouts, notes, watchlists, and chat channels. Needs Pro; joining is free."
+        ? hasProAccess(apiClient.getCurrentUser())
+          ? "Share layouts, notes, watchlists, and chat channels."
+          : "Share layouts, notes, watchlists, and chat channels. Needs Pro; joining is free."
         : "TEAM new",
       category,
       right: "TEAM",
@@ -300,7 +306,7 @@ export function registerTeamCommands(ctx: GloomPluginContext): void {
       kind: "text",
       parse: (arg) => ({ query: arg.trim() }),
     },
-    hidden: () => !apiClient.isVerified() || teamStore.getSnapshot().teams.length === 0,
+    hidden: () => !teamSessionReady() || teamStore.getSnapshot().teams.length === 0,
     buildResults: (arg) => buildFocusResults(ctx, arg),
     execute: async (values) => {
       const query = values?.query ?? values?.shortcut ?? "";

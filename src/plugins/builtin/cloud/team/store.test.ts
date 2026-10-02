@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamNotification, TeamReceivedInvitation, TeamSummary, TeamUpdatedEvent } from "../../../../api-client";
 import { MemoryPluginPersistence } from "../../../../test-support/plugin-persistence";
+import { configureNotificationLog, flushNotificationLog, getNotificationLog, resetNotificationLogForTest } from "../../../../notifications/notification-log";
 import { TeamStore, type TeamStoreClient } from "./store";
 
 function team(overrides: Partial<TeamSummary>): TeamSummary {
@@ -34,6 +35,7 @@ function notification(id: string, kind: "team-invite" | "team-joined" | "layout-
 
 function fakeClient(overrides: Partial<TeamStoreClient> = {}) {
   let verified = true;
+  let signedIn = true;
   const userListeners = new Set<() => void>();
   const teamListeners = new Set<(n: TeamNotification) => void>();
   const delivered: string[][] = [];
@@ -43,6 +45,7 @@ function fakeClient(overrides: Partial<TeamStoreClient> = {}) {
   let listCalls = 0;
   const client: TeamStoreClient = {
     isVerified: () => verified,
+    isSignedIn: () => signedIn,
     subscribeCurrentUser: (listener) => {
       userListeners.add(listener);
       return () => userListeners.delete(listener);
@@ -73,8 +76,9 @@ function fakeClient(overrides: Partial<TeamStoreClient> = {}) {
     get listCalls() {
       return listCalls;
     },
-    setVerified(value: boolean) {
+    setVerified(value: boolean, options: { signedIn?: boolean } = {}) {
       verified = value;
+      signedIn = options.signedIn ?? value;
       for (const listener of userListeners) listener();
     },
     setTeams(next: TeamSummary[]) {
@@ -111,10 +115,25 @@ describe("TeamStore", () => {
     expect(store.getTeamForChannel("team:org-1")?.name).toBe("Macro Desk");
     expect(store.findTeam("rt")?.id).toBe("org-2");
 
-    fake.setVerified(false);
+    fake.setVerified(false, { signedIn: false });
     expect(store.getSnapshot().teams).toEqual([]);
     expect(store.getSnapshot().loaded).toBe(false);
     expect(seen.at(-1)).toBe(0);
+    store.dispose();
+  });
+
+  test("keeps loaded teams when auth flickers unverified but session credential remains", async () => {
+    const fake = fakeClient();
+    const store = new TeamStore(fake.client);
+    store.start();
+    await flush();
+    expect(store.getSnapshot().teams).toHaveLength(2);
+
+    fake.setVerified(false, { signedIn: true });
+    expect(store.getSnapshot().teams).toHaveLength(2);
+
+    fake.setVerified(true);
+    expect(store.getSnapshot().teams).toHaveLength(2);
     store.dispose();
   });
 
@@ -134,6 +153,7 @@ describe("TeamStore", () => {
   });
 
   test("receives cards, notifies with an action, refreshes on joins, and dismisses", async () => {
+    resetNotificationLogForTest();
     const fake = fakeClient();
     const store = new TeamStore(fake.client);
     const persistence = new MemoryPluginPersistence();
@@ -151,7 +171,10 @@ describe("TeamStore", () => {
     fake.push(notification("n1", "team-joined"));
     await flush();
     expect(toasts).toEqual([
-      { title: "MD· Macro Desk", body: "@alice joined Macro Desk.", action: { label: "Open chat", onClick: expect.any(Function) } },
+      { title: "MD · Macro Desk", body: "@alice joined Macro Desk.", action: { label: "Open chat", onClick: expect.any(Function) } },
+    ]);
+    expect(getNotificationLog().filter((entry) => entry.refId === "team:n1")).toEqual([
+      expect.objectContaining({ source: "team", title: "MD · Macro Desk", body: "@alice joined Macro Desk.", read: false }),
     ]);
     expect(fake.listCalls).toBe(before + 1);
     toasts[0]?.action && (toasts[0].action as { onClick: () => void }).onClick();
@@ -167,9 +190,38 @@ describe("TeamStore", () => {
 
     await store.dismissNotificationsForTeam("org-1", ["layout-updated"]);
     expect(store.getSnapshot().notifications.map((entry) => entry.id)).toEqual(["n1"]);
+    expect(getNotificationLog().find((entry) => entry.refId === "team:n2")?.read).toBe(true);
+    expect(getNotificationLog().find((entry) => entry.refId === "team:n1")?.read).toBe(false);
     expect(fake.delivered).toEqual([["n2"]]);
     await store.dismissNotifications([]);
     expect(fake.delivered).toHaveLength(1);
+    store.dispose();
+  });
+
+  test("a card that is only in the pending list is kept in the log once it is marked read", async () => {
+    resetNotificationLogForTest();
+    const saved: unknown[][] = [];
+    configureNotificationLog({ get: () => [], set: (entries) => { saved.push(entries.map((entry) => ({ ...entry }))); } });
+    const persistence = new MemoryPluginPersistence();
+    persistence.setState("team-notifications", [notification("n1", "team-joined")]);
+    const store = new TeamStore(fakeClient().client);
+    store.attach(persistence);
+
+    await store.dismissNotifications(["n1"]);
+    await flushNotificationLog();
+
+    expect(persistence.getState<TeamNotification[]>("team-notifications")).toEqual([]);
+    expect(getNotificationLog()).toEqual([
+      expect.objectContaining({
+        source: "team",
+        read: true,
+        refId: "team:n1",
+        body: "@alice joined Macro Desk.",
+      }),
+    ]);
+    expect(saved.at(-1)).toEqual([
+      expect.objectContaining({ read: true, refId: "team:n1" }),
+    ]);
     store.dispose();
   });
 

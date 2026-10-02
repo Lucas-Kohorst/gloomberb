@@ -3,6 +3,7 @@ import type {
   AppNotificationRequest,
 } from "../../../../types/plugin";
 import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../../api-client";
+import { appendNotificationLog, markNotificationLogRead } from "../../../../notifications/notification-log";
 import type { ChannelRuntimeState, MergeMessagesOptions } from "./state";
 import { formatChatPaneTitle } from "../channel-labels";
 import {
@@ -87,6 +88,22 @@ export function handleChatNotification({
   });
   if (activelyViewed) {
     notifiedMessageIds.add(notification.messageId);
+    // A team channel that is already open marks the message read immediately.
+    // Still keep it in the notification log, or the team history only has
+    // messages that arrived while the channel was closed.
+    if (notification.channelId.startsWith("team:")) {
+      const entry = appendNotificationLog({
+        title: formatChatPaneTitle(getChannel(notification.channelId), notification.channelId),
+        body: notification.type === "reply"
+          ? formatReplyToast(notification.message)
+          : notification.type === "mention"
+            ? formatMentionToast(notification.message)
+            : formatChannelToast(notification.message, false),
+        type: "info",
+        refId: notification.messageId,
+      }, "team");
+      markNotificationLogRead([entry.id]);
+    }
   }
   if (delivered) {
     void apiClient.markChatNotificationsDelivered([notification.id]).catch(() => {});

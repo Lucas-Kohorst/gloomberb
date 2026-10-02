@@ -86,3 +86,15 @@ describe("notification log", () => {
     });
   });
 });
+
+test("queued writes retain the store that owned the notification", async () => {
+  const savedA: unknown[] = [];
+  const savedB: unknown[] = [];
+  configureNotificationLog({ get: () => [], set: (entries) => { savedA.push(entries); } });
+  appendNotificationLog({ body: "Account A" });
+  configureNotificationLog({ get: () => [], set: (entries) => { savedB.push(entries); } });
+  appendNotificationLog({ body: "Account B" });
+  await flushNotificationLog();
+  expect(savedA).toMatchObject([[{ body: "Account A" }]]);
+  expect(savedB).toMatchObject([[{ body: "Account B" }]]);
+});

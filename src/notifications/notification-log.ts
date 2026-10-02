@@ -57,9 +57,10 @@ function publish(): void {
 function persist(): void {
   if (!store) return;
   const snapshot = entries;
+  const targetStore = store;
   writeQueue = writeQueue
-    .catch(() => {})
-    .then(() => store?.set(snapshot));
+    .then(() => targetStore.set(snapshot))
+    .catch(() => {});
 }
 
 export function configureNotificationLog(nextStore: NotificationLogStore | null): void {
@@ -133,6 +134,14 @@ export function markNotificationLogRead(ids?: Iterable<string>): void {
   entries = next;
   persist();
   publish();
+}
+
+export function markNotificationLogReadByRef(refIds: Iterable<string>): void {
+  const wanted = new Set(refIds);
+  if (wanted.size === 0) return;
+  markNotificationLogRead(
+    entries.filter((entry) => entry.refId && wanted.has(entry.refId)).map((entry) => entry.id),
+  );
 }
 
 export function clearNotificationLog(): void {

@@ -1,18 +1,25 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { colors } from "../../../../theme/colors";
-import { Box, Span, Text, TextAttributes } from "../../../../ui";
+import { Box, Text, TextAttributes } from "../../../../ui";
 import { usePluginAppActions } from "../../../runtime";
 import { chatController } from "../../chat/controller";
 import { countTeamUpdates, teamAccentHex, teamIdFromChannelId } from "./model";
+import { requestNotificationCenterFilter } from "../../notification-center/filter";
 import { openTeamPane } from "./pane-request";
 import { teamStore } from "./store";
 
 /**
  * One chip per team in the status bar, in the team's accent, with the unread
  * chat count and the number of pending cards (invites, layout updates). Hidden
- * teams under FOCUS keep their chip so the lens is visible, dimmed. A click
- * opens the team pane on that team.
+ * teams under FOCUS keep their chip so the lens is visible, dimmed. A chip
+ * with pending cards opens the notification center on the team filter.
+ * Otherwise it opens the team pane.
  */
+/** `ADJ [1]`, one space before the count. No count means just the short name. */
+export function teamStatusChipText(shortName: string, count: number): string {
+  return count > 0 ? `${shortName} [${count}]` : shortName;
+}
+
 export function TeamStatusWidget() {
   const { createPaneFromTemplate } = usePluginAppActions();
   const snapshot = useSyncExternalStore(
@@ -37,7 +44,7 @@ export function TeamStatusWidget() {
   const updates = countTeamUpdates(snapshot.notifications);
 
   return (
-    <Box flexDirection="row" paddingRight={1}>
+    <Box flexDirection="row" gap={1}>
       {snapshot.teams.map((team) => {
         const accent = teamAccentHex(team.accentColor);
         let unread = 0;
@@ -57,6 +64,11 @@ export function TeamStatusWidget() {
             onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
               event.preventDefault?.();
               event.stopPropagation?.();
+              if (cards > 0) {
+                requestNotificationCenterFilter("team");
+                createPaneFromTemplate("notification-center-pane");
+                return;
+              }
               openTeamPane(createPaneFromTemplate, { teamId: team.id });
             }}
             data-gloom-role="status-team"
@@ -64,13 +76,8 @@ export function TeamStatusWidget() {
             style={{ cursor: "pointer" }}
           >
             <Text fg={fg} attributes={count > 0 && !muted ? TextAttributes.BOLD : 0}>
-              <Span fg={fg}>●</Span>
-              {` ${team.shortName}`}
+              {teamStatusChipText(team.shortName, count)}
             </Text>
-            {count > 0 ? (
-              <Text fg={fg} attributes={TextAttributes.BOLD}>{`[${count}]`}</Text>
-            ) : null}
-            <Text> </Text>
           </Box>
         );
       })}
