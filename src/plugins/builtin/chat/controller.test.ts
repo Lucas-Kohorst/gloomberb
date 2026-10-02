@@ -501,6 +501,8 @@ describe("ChatController", () => {
       username: "vince",
       emailVerified: true,
     });
+    expect(apiClient.getCurrentUser()?.username).toBe("vince");
+    expect(apiClient.isVerified()).toBe(true);
     controller.dispose();
   });
 

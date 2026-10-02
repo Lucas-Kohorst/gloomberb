@@ -5,6 +5,7 @@ import {
 } from "./state";
 import {
   normalizeSessionUser,
+  persistedAuthUserFromChatSession,
   type ChatSessionUser,
 } from "./persistence";
 import {
@@ -133,6 +134,14 @@ export async function refreshChatControllerSession({
     if (persistedToken) {
       session.sessionToken = persistedToken;
       session.user = session.user ?? normalizeSessionUser(apiClient.getCurrentUser());
+      apiClient.setSessionToken(persistedToken);
+      // get-session clears apiClient.currentUser when the cookie did not reach
+      // the server, but chat keeps session.user. Verified-only surfaces such as
+      // Teams read isVerified(), so restore the shared client from the session
+      // the controller already trusts.
+      if (session.user) {
+        apiClient.restoreCachedUser(persistedAuthUserFromChatSession(session.user));
+      }
       session.sessionChecked = true;
       persistSession(session.sessionToken, session.user);
       emit();

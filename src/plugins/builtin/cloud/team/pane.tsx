@@ -179,6 +179,12 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     (onChange) => apiClient.subscribeCurrentUser(onChange),
     () => apiClient.isVerified(),
   );
+  useEffect(() => {
+    if (signedIn) return;
+    // Chat may already hold a verified persisted session while get-session
+    // cleared the shared api client on desktop; refresh re-syncs both sides.
+    void chatController.refreshSession();
+  }, [signedIn]);
   const selfUserId = apiClient.getCurrentUser()?.id ?? null;
 
   const [teamId, setTeamId] = useState<string | null>(null);
