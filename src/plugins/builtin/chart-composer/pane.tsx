@@ -953,7 +953,6 @@ function GloomCanvasComposer({
           focused={focused}
           interactive={surfacePointerInteractive}
           allowHistoricalBackfill
-          showLatestChangePercent={!spec.viewport.dateWindow && spec.viewport.range === "1D"}
           timeZone={displayTimeZone}
           onViewportChange={handleChartViewportChange}
           onActivate={activatePane}

@@ -177,8 +177,6 @@ export interface CompositeChartProps {
   colors?: Partial<CompositeChartColors>;
   axisWidth?: number;
   showLegend?: boolean;
-  /** Show the regular-session percentage beside latest eligible legend values. */
-  showLatestChangePercent?: boolean;
   legendAccessory?: ReactNode;
   legendAccessoryWidth?: number;
   showTimeAxis?: boolean;
