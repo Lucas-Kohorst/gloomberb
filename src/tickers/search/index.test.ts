@@ -9,7 +9,6 @@ import {
   createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
   normalizeTickerInput,
-  parseTickerListingQuery,
   rankTickerSearchItems,
   resolveTickerSearch,
   searchTickerCandidates,
@@ -157,6 +156,45 @@ describe("ticker-search utilities", () => {
     });
     expect(resolved?.kind === "provider" ? resolved.result.name : null).toBe("Coinbase Global, Inc.");
     expect(resolved?.kind === "provider" ? resolved.result.exchange : null).toBe("NASDAQ");
+  });
+
+  test("keeps the other exchanges when a saved listing already covers one venue", () => {
+    const results = buildTickerSearchCandidates({
+      query: "BIRD",
+      tickers: new Map<string, TickerRecord>([[
+        "BIRD",
+        makeTicker("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+      ]]),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IEX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "TSXV" }),
+      ],
+      totalLimit: 8,
+    });
+
+    const venues = results.map((item) => item.exchangeLabel || item.right);
+    expect(venues.filter((venue) => venue === "IDX")).toEqual(["IDX"]);
+    expect(new Set(venues)).toEqual(new Set(["IDX", "NASDAQ", "LSE", "IEX", "TSXV"]));
+    expect(results.find((item) => item.exchangeLabel === "IDX")?.kind).toBe("ticker");
+  });
+
+  test("keeps only the named class when a class code precedes the symbol", () => {
+    const results = buildTickerSearchCandidates({
+      query: "EQ BIRD",
+      tickers: new Map(),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
+        makeSearchResult("BIRD", "Allbirds ETF", { exchange: "ARCA", type: "ETF" }),
+        makeSearchResult("BIRDF", "Bird Fund", { exchange: "NASDAQ", type: "EQUITY" }),
+      ],
+      totalLimit: 8,
+    });
+    expect(results.map((item) => item.symbol)).toContain("BIRD");
+    expect(results.every((item) => item.instrumentClass === "equity")).toBe(true);
+    expect(results.some((item) => item.symbol === "BIRD" && item.exchangeLabel === "ARCA")).toBe(false);
   });
 
   test("combines local and provider candidates without duplicate saved symbols", async () => {

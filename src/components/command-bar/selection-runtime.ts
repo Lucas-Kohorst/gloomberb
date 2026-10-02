@@ -20,6 +20,7 @@ import type {
 } from "./workflow/types";
 import type { CollectionCommandId } from "./commands/collection";
 import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-actions";
+import { isAssetClassResultId } from "../../tickers/search/asset-classes";
 import {
   acceptRootShortcutTabAction,
   buildImmediateRootSelection,
@@ -116,23 +117,34 @@ export function useCommandBarSelectionRuntime({
     setRootQuery(arg ? `TH ${arg}` : "TH ");
   }, [rootThemeBaseIdRef, setRootQuery, stateRef]);
 
-  const acceptRootShortcutTab = useCallback((): boolean => acceptRootShortcutTabAction({
-    activeTickerSymbol,
-    availableCommands,
-    createPaneTemplateItem,
-    createPluginCommandItem,
-    executeCollectionCommand,
-    getAvailablePaneShortcutTemplates,
-    getAvailablePluginCommands,
-    openModeRoute,
-    openPaneTemplateWorkflow,
-    pluginCommandResultItems,
-    query: rootQueryRef.current,
-    runDirectCommand,
-    runSecurityDescriptionShortcut,
-    setRootQuery,
-    startThemePicker,
-  }), [
+  const acceptRootShortcutTab = useCallback((): boolean => {
+    const listState = visibleListStateRef.current;
+    if (listState?.kind === "root") {
+      const selected = listState.results[listState.selectedIdx];
+      const code = isAssetClassResultId(selected?.id) ? selected?.shortcutQuery?.trim() : "";
+      if (code) {
+        setRootQuery(`${code} `);
+        return true;
+      }
+    }
+    return acceptRootShortcutTabAction({
+      activeTickerSymbol,
+      availableCommands,
+      createPaneTemplateItem,
+      createPluginCommandItem,
+      executeCollectionCommand,
+      getAvailablePaneShortcutTemplates,
+      getAvailablePluginCommands,
+      openModeRoute,
+      openPaneTemplateWorkflow,
+      pluginCommandResultItems,
+      query: rootQueryRef.current,
+      runDirectCommand,
+      runSecurityDescriptionShortcut,
+      setRootQuery,
+      startThemePicker,
+    });
+  }, [
     activeTickerSymbol,
     availableCommands,
     createPaneTemplateItem,
@@ -148,6 +160,7 @@ export function useCommandBarSelectionRuntime({
     runSecurityDescriptionShortcut,
     setRootQuery,
     startThemePicker,
+    visibleListStateRef,
   ]);
 
   const acceptSelectedShortcutTab = useCallback((): boolean => {

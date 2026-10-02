@@ -1,11 +1,17 @@
 import { CANONICAL_EXCHANGE_ALIASES, canonicalExchange } from "../../utils/exchanges";
+import { leadingAssetClassFilter } from "./asset-classes";
 import type {
   TickerSearchInstrumentClass,
   TickerSearchRankableItem,
 } from "./types";
 
-const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
-const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
+const ETF_TYPES = new Set(["ETF", "ETN", "ETP"]);
+const FUND_TYPES = new Set(["FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
+const OPTION_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "CALL", "PUT"]);
+const FUTURE_TYPES = new Set(["FUT", "FUTURE", "FUTURES"]);
+const INDEX_TYPES = new Set(["INDEX", "INDX"]);
+const CURRENCY_TYPES = new Set(["CURRENCY", "CUR", "FX", "FOREX", "CASH"]);
+const DERIVATIVE_TYPES = new Set(["WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
 const EQUITY_TYPES = new Set(["STK", "STOCK", "EQUITY", "COMMONSTOCK", "COMMON STOCK", "ADR", "DEPOSITARY RECEIPT", "DEPOSITARYRECEIPT", "ORDINARYSHARES", "ORDINARY SHARES"]);
 const PREDICTION_TYPES = new Set([
   "KALSHI",
@@ -63,18 +69,18 @@ const ASSET_HINT_MAP: Record<string, TickerSearchInstrumentClass> = {
   SHARE: "equity",
   SHARES: "equity",
   COMMON: "equity",
-  ETF: "fund",
-  ETN: "fund",
-  ETP: "fund",
+  ETF: "etf",
+  ETN: "etf",
+  ETP: "etf",
   FUND: "fund",
-  OPTION: "derivative",
-  OPTIONS: "derivative",
-  CALL: "derivative",
-  PUT: "derivative",
+  OPTION: "option",
+  OPTIONS: "option",
+  CALL: "option",
+  PUT: "option",
   WARRANT: "derivative",
   WARRANTS: "derivative",
-  FUTURE: "derivative",
-  FUTURES: "derivative",
+  FUTURE: "future",
+  FUTURES: "future",
 };
 
 const SAVED_MATCH_BONUS = 900;
@@ -87,6 +93,8 @@ interface SearchQueryIntent {
   symbolQuery: string;
   exchangeHints: string[];
   assetPreference: TickerSearchInstrumentClass | null;
+  /** Set when a class code precedes a symbol. Mismatches are dropped, not just demoted. */
+  assetClassFilter: TickerSearchInstrumentClass | null;
 }
 
 export interface ParsedTickerListingQuery {
@@ -178,16 +186,26 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
       };
     });
 
-  const matchedLocalSymbols = new Set(
-    ranked
-      .filter(({ item, textScore }) => textScore > 0 && item.kind === "ticker")
-      .map(({ normalizedSymbol }) => normalizedSymbol),
-  );
+  // A saved row only stands in for the venue it is listed on. The same symbol
+  // on NASDAQ, LSE, or TSXV is a different listing and stays in the results.
+  const savedVenuesBySymbol = new Map<string, Set<string>>();
+  for (const { item, normalizedSymbol, textScore } of ranked) {
+    if (textScore <= 0 || item.kind !== "ticker") continue;
+    const venues = savedVenuesBySymbol.get(normalizedSymbol) ?? new Set<string>();
+    for (const venue of listingVenues(item)) venues.add(venue);
+    savedVenuesBySymbol.set(normalizedSymbol, venues);
+  }
 
   const filtered = ranked.filter(({ item, normalizedSymbol, textScore }) => {
     if (textScore <= 0) return false;
+    if (intent.assetClassFilter && (item.instrumentClass || "other") !== intent.assetClassFilter) return false;
     if (item.kind !== "search") return true;
-    return !matchedLocalSymbols.has(normalizedSymbol);
+    const savedVenues = savedVenuesBySymbol.get(normalizedSymbol);
+    if (!savedVenues) return true;
+    if (savedVenues.size === 0) return false;
+    const venues = listingVenues(item);
+    if (venues.length === 0) return false;
+    return !venues.some((venue) => savedVenues.has(venue));
   });
 
   type RankedEntry = (typeof ranked)[number];
@@ -321,12 +339,17 @@ export function buildSymbolAliases(symbol: string): string[] {
 export function classifyInstrumentKind(rawType?: string): TickerSearchInstrumentClass {
   const normalizedType = normalizeSearchText(rawType || "");
   if (!normalizedType) return "other";
-  if (FUND_TYPES.has(normalizedType)) return "fund";
-  if (DERIVATIVE_TYPES.has(normalizedType)) return "derivative";
+  if (INDEX_TYPES.has(normalizedType) || normalizedType.includes("INDEX")) return "index";
+  if (CURRENCY_TYPES.has(normalizedType)) return "currency";
+  if (ETF_TYPES.has(normalizedType) || normalizedType.includes("ETF") || normalizedType.includes("ETN") || normalizedType.includes("ETP")) {
+    return "etf";
+  }
+  if (FUND_TYPES.has(normalizedType) || normalizedType.includes("FUND")) return "fund";
+  if (OPTION_TYPES.has(normalizedType) || normalizedType.includes("OPTION")) return "option";
+  if (FUTURE_TYPES.has(normalizedType) || normalizedType.includes("FUTURE")) return "future";
+  if (DERIVATIVE_TYPES.has(normalizedType) || normalizedType.includes("WARRANT")) return "derivative";
   if (EQUITY_TYPES.has(normalizedType)) return "equity";
   if (PREDICTION_TYPES.has(normalizedType)) return "prediction";
-  if (normalizedType.includes("ETF") || normalizedType.includes("FUND")) return "fund";
-  if (normalizedType.includes("OPT") || normalizedType.includes("FUT") || normalizedType.includes("WARRANT")) return "derivative";
   if (normalizedType.includes("EQUITY") || normalizedType.includes("STOCK") || normalizedType.includes("STK")) return "equity";
   if (normalizedType.includes("KALSHI") || normalizedType.includes("POLYMARKET") || normalizedType.includes("PREDICTION")) {
     return "prediction";
@@ -335,8 +358,14 @@ export function classifyInstrumentKind(rawType?: string): TickerSearchInstrument
 }
 
 export function parseTickerListingQuery(query: string): ParsedTickerListingQuery {
-  const trimmed = query.trim().toUpperCase().replace(/\s+/g, " ");
+  let trimmed = query.trim().toUpperCase().replace(/\s+/g, " ");
   if (!trimmed) return { symbol: "", textQuery: "", exchangeHints: [] };
+  // "EQ BIRD" searches BIRD. A lone "EQ" stays the symbol.
+  const assetClass = leadingAssetClassFilter(trimmed);
+  if (assetClass) {
+    const space = trimmed.indexOf(" ");
+    if (space > 0) trimmed = trimmed.slice(space + 1).trim();
+  }
 
   const colonIndex = trimmed.indexOf(":");
   if (colonIndex > 0 && colonIndex < trimmed.length - 1) {
@@ -407,6 +436,7 @@ function analyzeSearchQuery(query: string): SearchQueryIntent {
     symbolQuery,
     exchangeHints,
     assetPreference,
+    assetClassFilter: leadingAssetClassFilter(query),
   };
 }
 
@@ -539,8 +569,8 @@ function scoreAssetPreference(intent: SearchQueryIntent, instrumentClass?: Ticke
   const itemClass = instrumentClass || "other";
   if (!intent.assetPreference) {
     if (itemClass === "equity") return 400;
-    if (itemClass === "fund") return -250;
-    if (itemClass === "derivative") return -500;
+    if (itemClass === "fund" || itemClass === "etf") return -250;
+    if (itemClass === "derivative" || itemClass === "option" || itemClass === "future") return -500;
     return 0;
   }
 
@@ -708,4 +738,47 @@ function getTickerSearchDedupKey(item: Pick<TickerSearchRankableItem, "id" | "ki
   if (item.kind !== "ticker" && item.kind !== "search") return item.id;
   const qualifier = normalizeSearchText(item.right || item.detail.split("|").at(-1) || "");
   return `${normalizeSearchText(item.symbol || item.label)}|${qualifier}`;
+}
+
+/** Venue identity for one exchange string. Known aliases collapse (NMS and NASDAQ). */
+export function listingVenueKey(value: string | undefined): string {
+  return listingVenueTokens(value)[0] ?? "";
+}
+
+function listingVenues(item: {
+  exchangeLabel?: string;
+  primaryExchangeLabel?: string;
+  right?: string;
+  result?: {
+    exchange?: string;
+    primaryExchange?: string;
+    brokerContract?: { exchange?: string; primaryExchange?: string } | null;
+  };
+}): string[] {
+  const venues = new Set<string>();
+  for (const value of [
+    item.exchangeLabel,
+    item.primaryExchangeLabel,
+    item.right,
+    item.result?.exchange,
+    item.result?.primaryExchange,
+    item.result?.brokerContract?.exchange,
+    item.result?.brokerContract?.primaryExchange,
+  ]) {
+    for (const venue of listingVenueTokens(value)) venues.add(venue);
+  }
+  return [...venues];
+}
+
+function listingVenueTokens(value: string | undefined): string[] {
+  const upper = (value ?? "").trim().toUpperCase();
+  if (!upper) return [];
+  if (CANONICAL_EXCHANGE_ALIASES[upper]) return [canonicalExchange(upper)];
+  const tokens = upper.split(/\s+/).filter(Boolean);
+  const known = tokens.flatMap((token) => (
+    CANONICAL_EXCHANGE_ALIASES[token] ? [canonicalExchange(token)] : []
+  ));
+  if (known.length > 0) return known;
+  const last = tokens.at(-1);
+  return last ? [canonicalExchange(last)] : [];
 }

@@ -1,4 +1,5 @@
 import type { CommandBarBadgeTone } from "../../../theme/colors";
+import { isAssetClassCode } from "../../../tickers/search/asset-classes";
 import type { ResultItem } from "./model";
 
 export interface CommandBarRowBadge {
@@ -38,6 +39,7 @@ export function looksLikeShortcut(value: string | undefined): value is string {
 function resolveBadgeTone(item: BadgeSource): CommandBarBadgeTone {
   if (item.accent) return "assist";
   if (item.kind === "ticker" || item.kind === "search") return "instrument";
+  if (isAssetClassCode(item.badge)) return "instrument";
   return item.badge ? "document" : "command";
 }
 

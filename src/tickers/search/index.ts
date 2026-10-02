@@ -434,12 +434,12 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
 
   return items.map((item) => {
     if (item.saved || item.kind === "ticker") {
-      if (item.instrumentClass !== "fund" && item.instrumentClass !== "derivative") {
+      if (!isFundsOrDerivativesClass(item.instrumentClass)) {
         assignedPrimaryListing = true;
       }
       return { ...item, category: "Saved" };
     }
-    if (item.instrumentClass === "fund" || item.instrumentClass === "derivative") {
+    if (isFundsOrDerivativesClass(item.instrumentClass)) {
       return { ...item, category: "Funds & Derivatives" };
     }
     if (!assignedPrimaryListing) {
@@ -448,6 +448,14 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
     }
     return { ...item, category: "Other Listings" };
   }) as T[];
+}
+
+function isFundsOrDerivativesClass(instrumentClass: TickerSearchCandidate["instrumentClass"]): boolean {
+  return instrumentClass === "fund"
+    || instrumentClass === "etf"
+    || instrumentClass === "derivative"
+    || instrumentClass === "option"
+    || instrumentClass === "future";
 }
 
 function limitTickerSearchCandidates<T extends TickerSearchCandidate>(

@@ -182,6 +182,7 @@ export function truncateText(text: string, width: number): string {
  * nothing outranks it. Typing "sive" put the AI's "DES SIVE" above the SIVE row
  * it was derived from, which is a guess sitting above the fact behind it.
  */
+const ASSET_CLASSES_SECTION_PRIORITY = -160;
 const EXACT_MATCH_SECTION_PRIORITY = -150;
 /**
  * The AI leads the rest even though it is the slowest source (~600ms+): it
@@ -209,6 +210,7 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
   if (contributed !== undefined) return contributed;
   const sectionOrder = options?.sectionOrder ?? "default";
   const normalized = category.trim().toLowerCase();
+  if (normalized === "asset classes") return ASSET_CLASSES_SECTION_PRIORITY;
   if (sectionOrder === "ranked") {
     if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
     if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;

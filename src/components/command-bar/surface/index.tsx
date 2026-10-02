@@ -730,6 +730,7 @@ export function CommandBar({
     rootShortcutIntent,
     runDirectCommand,
     runSecurityDescriptionShortcut,
+    setRootQuery,
     setRootHoveredIdx,
     setRootSelectedIdx,
     skipTickerSearchDebounceRef,
