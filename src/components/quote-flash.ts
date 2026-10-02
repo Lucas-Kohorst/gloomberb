@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TickerFinancials } from "../types/financials";
 import { getActiveQuoteDisplay } from "../market-data/market/status";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 
 export type QuoteFlashDirection = "up" | "down" | "flat";
 
@@ -42,6 +43,12 @@ export function numberFlashSignature(
   return parts.join("|");
 }
 
+/** The flash is transient motion; the settled up/down color still renders under reduced motion. */
+function useFlashEnabled(enabled: boolean): boolean {
+  const reducedMotion = usePrefersReducedMotion();
+  return enabled && !reducedMotion;
+}
+
 function resolveFlashPrice(financials: TickerFinancials | null | undefined): number | null {
   return getActiveQuoteDisplay(financials?.quote)?.price ?? financials?.quote?.price ?? null;
 }
@@ -50,6 +57,7 @@ export function useNumberFlashMap(
   values: Iterable<readonly [string, number | null | undefined]>,
   enabled: boolean,
 ): Map<string, QuoteFlashDirection> {
+  const flashEnabled = useFlashEnabled(enabled);
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,7 +72,7 @@ export function useNumberFlashMap(
     );
     previousPricesRef.current = prices;
 
-    if (!enabled) {
+    if (!flashEnabled) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
       setFlashSymbols((current) => (current.size === 0 ? current : new Map()));
@@ -79,7 +87,7 @@ export function useNumberFlashMap(
       timeoutRef.current = null;
       setFlashSymbols(new Map());
     }, FLASH_DURATION_MS);
-  }, [enabled, signature]);
+  }, [flashEnabled, signature]);
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -92,6 +100,7 @@ export function useQuoteFlashMap(
   financialsMap: Map<string, TickerFinancials>,
   enabled: boolean,
 ): Map<string, QuoteFlashDirection> {
+  const flashEnabled = useFlashEnabled(enabled);
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +113,7 @@ export function useQuoteFlashMap(
     const { prices, flashes } = collectNumberFlashes(previousPricesRef.current, nextValues);
     previousPricesRef.current = prices;
 
-    if (!enabled) {
+    if (!flashEnabled) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
       setFlashSymbols((current) => (current.size === 0 ? current : new Map()));
@@ -119,7 +128,7 @@ export function useQuoteFlashMap(
       timeoutRef.current = null;
       setFlashSymbols(new Map());
     }, FLASH_DURATION_MS);
-  }, [enabled, financialsMap]);
+  }, [flashEnabled, financialsMap]);
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -132,6 +141,7 @@ export function useQuoteFlashDirection(
   financials: TickerFinancials | null | undefined,
   enabled: boolean,
 ): QuoteFlashDirection | undefined {
+  const flashEnabled = useFlashEnabled(enabled);
   const [flashDirection, setFlashDirection] = useState<QuoteFlashDirection | undefined>();
   const previousPriceRef = useRef<number | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,7 +153,7 @@ export function useQuoteFlashDirection(
       previousPriceRef.current = price;
     }
 
-    if (!enabled) {
+    if (!flashEnabled) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
       setFlashDirection(undefined);
@@ -159,7 +169,7 @@ export function useQuoteFlashDirection(
       timeoutRef.current = null;
       setFlashDirection(undefined);
     }, FLASH_DURATION_MS);
-  }, [enabled, financials]);
+  }, [flashEnabled, financials]);
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
