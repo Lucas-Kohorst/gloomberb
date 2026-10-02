@@ -1088,6 +1088,7 @@ export const zhCN: Record<string, string> = {
   "Forgot password?": "忘记密码？",
   "Show password": "显示密码",
   "Hide password": "隐藏密码",
+  "Messages": "消息",
   "Command results": "命令结果",
   "Sending reset link...": "正在发送重置链接...",
   "Reset link sent to {email}. Check your inbox.": "重置链接已发送至 {email}。请查收邮箱。",

@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../../ui";
+import { Box, ScrollBox, Text, useUiHost, type ScrollBoxRenderable } from "../../../../ui";
 import type { Dispatch, SetStateAction } from "react";
 import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import { Button } from "../../../../components";
@@ -91,6 +91,7 @@ export function ChatTranscript({
   userByUsername,
   onSetUpProfile,
 }: ChatTranscriptProps) {
+  const dom = useUiHost().kind === "desktop-web";
   return (
     <>
       <ScrollBox
@@ -103,6 +104,7 @@ export function ChatTranscript({
         stickyStart="bottom"
         onMouseScroll={handleTranscriptScrollActivity}
         style={nativePaneChrome ? { minHeight: 0 } : undefined}
+        {...(dom ? { role: "log", "aria-live": "polite", "aria-label": t("Messages") } : {})}
       >
         {loadingOlderMessages && (
           <Box alignItems="center" justifyContent="center" height={1} width={contentWidth}>

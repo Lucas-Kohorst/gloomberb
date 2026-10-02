@@ -1086,6 +1086,7 @@ export const ko: Record<string, string> = {
   "Forgot password?": "비밀번호를 잊으셨나요?",
   "Show password": "비밀번호 표시",
   "Hide password": "비밀번호 숨기기",
+  "Messages": "메시지",
   "Command results": "명령 결과",
   "Sending reset link...": "재설정 링크 보내는 중...",
   "Reset link sent to {email}. Check your inbox.": "{email}(으)로 재설정 링크를 보냈습니다. 받은편지함을 확인하세요.",

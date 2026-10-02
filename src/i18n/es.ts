@@ -1087,6 +1087,7 @@ export const es: Record<string, string> = {
   "Forgot password?": "¿Olvidaste tu contraseña?",
   "Show password": "Mostrar contraseña",
   "Hide password": "Ocultar contraseña",
+  "Messages": "Mensajes",
   "Command results": "Resultados de comandos",
   "Sending reset link...": "Enviando enlace de restablecimiento...",
   "Reset link sent to {email}. Check your inbox.": "Enlace de restablecimiento enviado a {email}. Revisa tu bandeja de entrada.",

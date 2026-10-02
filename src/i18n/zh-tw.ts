@@ -1088,6 +1088,7 @@ export const zhTW: Record<string, string> = {
   "Forgot password?": "忘記密碼？",
   "Show password": "顯示密碼",
   "Hide password": "隱藏密碼",
+  "Messages": "訊息",
   "Command results": "命令結果",
   "Sending reset link...": "正在傳送重設連結...",
   "Reset link sent to {email}. Check your inbox.": "重設連結已傳送至 {email}。請查看收件匣。",
