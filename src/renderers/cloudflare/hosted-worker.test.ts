@@ -1024,6 +1024,29 @@ PRECIPITATION (IN)
     expect(fetched.some((url) => url.includes("/api/v1/public/markets"))).toBe(true);
   });
 
+  test("Adjacent 401 on filings retries the public twin", async () => {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      fetched.push(url);
+      if (url.includes("/api/v1/filings") && !url.includes("/public/")) {
+        return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
+      }
+      return new Response(JSON.stringify({ data: [], meta: {} }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/filings?per_page=5"),
+      { ...makeEnv(), ADJACENT_API_KEY: "dead-clerk-key" } as Env,
+    );
+    expect(response?.status).toBe(200);
+    expect(fetched.some((url) => url.includes("/api/v1/filings") && !url.includes("/public/"))).toBe(true);
+    expect(fetched.some((url) => url.includes("/api/v1/public/filings"))).toBe(true);
+  });
+
   test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
     let upstreamHits = 0;
     globalThis.fetch = (async (input: URL | RequestInfo) => {
