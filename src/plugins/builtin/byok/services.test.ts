@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { registerByokKnownService as registerByokKnownServiceFromPlugins } from "../../helpers";
 import {
   getByokKnownService,
   getByokKnownServices,
@@ -7,6 +8,10 @@ import {
 } from "./services";
 
 describe("plugin BYOK registration", () => {
+  test("gloomberb/plugins re-exports registerByokKnownService for external plugins", () => {
+    expect(registerByokKnownServiceFromPlugins).toBe(registerByokKnownService);
+  });
+
   test("discovers a plugin-registered service and withdraws it on dispose", () => {
     const dispose = registerByokKnownService({
       id: "test-plugin-api",

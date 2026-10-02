@@ -738,6 +738,36 @@ describe("PluginRegistry API-key access", () => {
     expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
   });
 
+  test("registerByokService grants that plugin its own key", async () => {
+    const registry = createRegistry();
+    registry.getConfigFn = () => configWithByokKeys([
+      { serviceId: "optic-odds", apiKey: "optic-secret" },
+    ]);
+
+    let externalCtx: GloomPluginContext | null = null;
+    await registry.registerExternalPlugin(
+      {
+        id: "optic-odds",
+        name: "OpticOdds",
+        version: "1.0.0",
+        setup: (ctx) => {
+          ctx.registerByokService({
+            id: "optic-odds",
+            name: "OpticOdds",
+            description: "Sportsbook odds",
+            authType: "header",
+            authKey: "X-Api-Key",
+          });
+          externalCtx = ctx;
+        },
+      },
+      "/tmp/gloomberb-optic-odds/index.ts",
+    );
+
+    expect(externalCtx!.getApiKey("optic-odds")).toBe("optic-secret");
+    expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
+  });
+
   test("bundled plugins keep resolving BYOK keys and see the raw config", async () => {
     const registry = createRegistry();
     registry.getConfigFn = () => configWithByokKeys([

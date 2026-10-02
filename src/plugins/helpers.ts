@@ -39,11 +39,12 @@ import {
   withConnectionRequest,
   reportConnectionRequest,
 } from "./builtin/connections/register";
+import { registerByokKnownService } from "./builtin/byok/services";
 import type { ConnectionKind } from "./builtin/connections/types";
 import { createAlert } from "./builtin/alerts/alert-registry";
 
-// Re-export connection and alert utilities so external plugins import everything from one place.
-export { withConnectionRequest, reportConnectionRequest, createAlert };
+// Re-export connection, BYOK, and alert utilities so external plugins import everything from one place.
+export { withConnectionRequest, reportConnectionRequest, createAlert, registerByokKnownService };
 export type { ConnectionKind };
 
 export interface ConnectionOptions {

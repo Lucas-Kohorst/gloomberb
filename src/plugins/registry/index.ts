@@ -559,6 +559,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getTicker: (symbol) => this.getTickerFn(symbol),
       getConfig: () => this.configForPlugin(pluginId),
       getApiKey: (serviceId: string) => this.resolveApiKeyForPlugin(pluginId, serviceId),
+      grantApiKeyAccess: (targetPluginId, serviceId) => this.grantApiKeyAccess(targetPluginId, serviceId),
+      revokeApiKeyAccess: (targetPluginId, serviceId) => this.revokeApiKeyAccess(targetPluginId, serviceId),
       getResumeState: (key, schemaVersion) => this.getResumeState(pluginId, key, schemaVersion),
       setResumeState: (key, value, schemaVersion) => this.setResumeState(pluginId, key, value, schemaVersion),
       deleteResumeState: (key) => this.deleteResumeState(pluginId, key),
