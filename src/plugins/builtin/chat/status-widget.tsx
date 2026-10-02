@@ -157,13 +157,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
             >
               {nativePaneChrome ? null : " "}
-              <Span fg={colors.positive}>@</Span>
-              {username ? (
-                <>
-                  {" "}
-                  <Span fg={colors.positive}>{username}</Span>
-                </>
-              ) : null}
+              <Span fg={colors.positive}>{username ? `@${username}` : "@"}</Span>
             </Text>
           </Box>
           {unreadCount > 0 ? (

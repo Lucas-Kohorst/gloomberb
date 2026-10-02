@@ -1608,7 +1608,7 @@ describe("ChatContent", () => {
     expect(frame).toContain("[1]");
 
     const line = frame.split("\n")[0] ?? "";
-    expect(line).toContain("@ vince [1]");
+    expect(line).toContain("@vince [1]");
     expect(line).not.toContain("vince[");
     const usernameCol = line.indexOf("vince");
 
@@ -1647,7 +1647,7 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const line = setup().captureCharFrame().split("\n")[0] ?? "";
-    expect(line).toContain("12 online @ lucas");
+    expect(line).toContain("12 online @lucas");
     expect(line).not.toContain("online@");
   });
 
