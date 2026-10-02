@@ -110,11 +110,16 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
       if (!url) return;
       const command = openUrlCommand(url);
       if (!command) return;
-      const proc = Bun.spawn(command, {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      await proc.exited;
+      try {
+        const proc = Bun.spawn(command, {
+          stdout: "ignore",
+          stderr: "ignore",
+        });
+        if (await proc.exited === 0) return;
+      } catch {
+        // Spawning throws when the opener is not installed, such as xdg-open on minimal Linux.
+      }
+      renderer.copyToClipboardOSC52(url);
     },
     async copyText(text) {
       if (!text) return;
