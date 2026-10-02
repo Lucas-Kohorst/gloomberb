@@ -11,9 +11,10 @@ export function usePaneListSearch({
   value,
   onQueryChange,
   placeholder,
+  label,
   debounceMs = 80,
   normalizeValue,
-}: Pick<PaneListSearchProps, "value" | "onQueryChange" | "placeholder" | "debounceMs" | "normalizeValue"> & {
+}: Pick<PaneListSearchProps, "value" | "onQueryChange" | "placeholder" | "label" | "debounceMs" | "normalizeValue"> & {
   focused: boolean;
   enabled?: boolean;
 }) {
@@ -41,6 +42,7 @@ export function usePaneListSearch({
     focusToken,
     inputRef,
     placeholder,
+    label,
     debounceMs,
     normalizeValue,
     onFocus: focusSearch,

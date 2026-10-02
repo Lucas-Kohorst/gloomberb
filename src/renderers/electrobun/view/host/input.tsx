@@ -49,6 +49,10 @@ function getStringProp(props: Record<string, unknown>, key: string): string | un
   return typeof value === "string" ? value : undefined;
 }
 
+function accessibleFieldLabel(props: Record<string, unknown>): string | undefined {
+  return getStringProp(props, "aria-label") ?? getStringProp(props, "placeholder");
+}
+
 function callTextHandler(handler: unknown, value: string): void {
   if (typeof handler === "function") {
     (handler as (value: string) => void)(value);
@@ -283,6 +287,7 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
       autoComplete={getStringProp(props, "autoComplete") ?? "off"}
       spellCheck={false}
       placeholder={getStringProp(props, "placeholder")}
+      aria-label={accessibleFieldLabel(props)}
       onInput={(event) => handleValueChange(event.currentTarget.value)}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onMouseDown={() => focusOnPress(elementRef.current)}
@@ -401,6 +406,7 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
       value={value}
       readOnly={!autofillUnlocked}
       placeholder={getStringProp(props, "placeholder")}
+      aria-label={accessibleFieldLabel(props)}
       onInput={(event) => handleValueChange(event.currentTarget.value)}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onFocus={(event) => {
