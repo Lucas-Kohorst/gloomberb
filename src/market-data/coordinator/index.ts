@@ -444,7 +444,3 @@ export function resolveTickerFinancialsForInstrument(instrument: InstrumentRef |
 export function resolveEntryValue<T>(entry: QueryEntry<T>): T | null {
   return resolveEntryData(entry);
 }
-
-export { futuresCurveModule } from "../../plugins/builtin/futures-curve";
-export { relativeRotationModule } from "../../plugins/builtin/relative-rotation";
-export { ivHistoryModule } from "../../plugins/builtin/iv-history";

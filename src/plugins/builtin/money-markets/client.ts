@@ -25,6 +25,12 @@ interface CacheEntry<T> {
   fetchedAt: number;
 }
 
+interface BundleResource<T> {
+  payload: T;
+  stale: boolean;
+  refreshError: string | null;
+}
+
 const STALE_MS = 60 * 60_000;
 const EXPIRE_MS = 7 * 24 * 60 * 60_000;
 
@@ -61,7 +67,7 @@ async function getCloudJson<T>(path: string): Promise<T> {
 function createBundleCache<T>(kind: string) {
   let persistence: PluginPersistence | null = null;
   const memory = new Map<string, CacheEntry<T>>();
-  const inflight = new Map<string, Promise<MoneyMarketsResource>>();
+  const inflight = new Map<string, Promise<BundleResource<T>>>();
 
   const read = (key: string, allowExpired: boolean): (CacheEntry<T> & { stale: boolean }) | null => {
     const cached = memory.get(key);
@@ -95,7 +101,7 @@ function createBundleCache<T>(kind: string) {
     get(key: string, allowExpired = false) {
       return read(key, allowExpired);
     },
-    load(key: string, loader: () => Promise<T>, options?: { force?: boolean }): Promise<MoneyMarketsResource> {
+    load(key: string, loader: () => Promise<T>, options?: { force?: boolean }): Promise<BundleResource<T>> {
       if (!options?.force) {
         const cached = read(key, false);
         if (cached && !cached.stale) {

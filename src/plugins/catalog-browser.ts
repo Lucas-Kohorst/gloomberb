@@ -22,17 +22,28 @@ import {
 } from "./builtin/market-valuation/cache";
 import { economicCalendarModule } from "./builtin/econ";
 import { econStatisticsModule } from "./builtin/econ-statistics";
+import { equityScreenerModule } from "./builtin/equity-screener";
+import { futuresCurveModule } from "./builtin/futures-curve";
 import { futuresModule } from "./builtin/futures";
 import { fxMatrixModule } from "./builtin/fx-matrix";
 import { helpModule } from "./builtin/help";
+import { ivHistoryModule } from "./builtin/iv-history";
 import { positionSizerModule } from "./builtin/kelly-sizer";
 import { layoutManagerModule } from "./builtin/layout-manager";
 import { tickerNewsModule } from "./builtin/news";
+import { mnaModule } from "./builtin/mna";
+import { moneyMarketsModule } from "./builtin/money-markets";
 import { optionsModule } from "./builtin/options";
 import { optionsCalculatorModule } from "./builtin/options-calculator";
+import { optionsPositioningModule } from "./builtin/options-positioning";
+import { optionsScenarioModule } from "./builtin/options-scenario";
 import { composeBuiltinPlugin, type PluginModule } from "./builtin/plugin-module";
 import { portfolioListModule } from "./builtin/portfolio-list";
+import { ratePathModule } from "./builtin/rate-path";
+import { relativeRotationModule } from "./builtin/relative-rotation";
 import { researchModule } from "./builtin/research";
+import { seasonalityModule } from "./builtin/seasonality";
+import { socialMentionsModule } from "./builtin/social-mentions";
 import { scannerModule } from "./builtin/scanner";
 import { sectorsModule } from "./builtin/sectors";
 import { executivesModule } from "./builtin/executives";
@@ -72,8 +83,14 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     chartComposerModule,
     optionsModule,
     optionsCalculatorModule,
+    optionsPositioningModule,
+    optionsScenarioModule,
     researchModule,
     executivesModule,
+    seasonalityModule,
+    ivHistoryModule,
+    socialMentionsModule,
+    mnaModule,
   ],
 });
 
@@ -94,12 +111,15 @@ const browserMarketOverviewPlugin = composeBuiltinPlugin({
   toggleable: true,
   modules: [
     correlationModule,
+    relativeRotationModule,
     worldIndicesModule,
     worldVenueMapModule,
     scannerModule,
     sectorsModule,
     fxMatrixModule,
     futuresModule,
+    futuresCurveModule,
+    equityScreenerModule,
   ],
 });
 
@@ -125,6 +145,8 @@ const browserMacroPlugin = composeBuiltinPlugin({
     economicCalendarModule,
     econStatisticsModule,
     yieldCurveModule,
+    ratePathModule,
+    moneyMarketsModule,
     volatilityModule,
     creditConditionsModule,
     marketValuationModule,

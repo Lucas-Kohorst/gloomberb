@@ -8,14 +8,20 @@ import { esgModule } from "./esg";
 import { executivesModule } from "./executives";
 import { holdersModule } from "./holders";
 import { insiderModule } from "./insider";
+import { ivHistoryModule } from "./iv-history";
+import { mnaModule } from "./mna";
 import { momentumSortinoModule } from "./momentum";
 import { optionsModule } from "./options";
 import { optionsCalculatorModule } from "./options-calculator";
+import { optionsPositioningModule } from "./options-positioning";
+import { optionsScenarioModule } from "./options-scenario";
 import { patternRecognitionModule } from "./patterns";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { researchModule } from "./research";
 import { secModule } from "./sec";
+import { seasonalityModule } from "./seasonality";
 import { shortInterestModule } from "./short-interest";
+import { socialMentionsModule } from "./social-mentions";
 import { technicalSummaryModule } from "./technical-summary";
 import { thirteenFModule } from "./thirteenf";
 import { tickerDetailModule } from "./ticker-detail";
@@ -33,6 +39,8 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     defillamaModule,
     optionsModule,
     optionsCalculatorModule,
+    optionsPositioningModule,
+    optionsScenarioModule,
     researchModule,
     cashFlowModule,
     executivesModule,
@@ -49,5 +57,9 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     trendAnalysisModule,
     technicalSummaryModule,
     momentumSortinoModule,
+    seasonalityModule,
+    ivHistoryModule,
+    socialMentionsModule,
+    mnaModule,
   ],
 });
