@@ -87,4 +87,21 @@ describe("QuoteMonitorCard without a quote", () => {
       error: { reasonCode: "UPSTREAM_ERROR", message: "Provider is down" },
     })).toContain("Provider is down");
   });
+
+  test("a quote with no usable price reads as no data, not a card of dashes", async () => {
+    const frame = await renderCard({
+      ...createIdleEntry<Quote>(),
+      phase: "ready",
+      data: {
+        symbol: "MSFT",
+        price: Number.NaN,
+        currency: "USD",
+        change: Number.NaN,
+        changePercent: Number.NaN,
+        lastUpdated: 1,
+      },
+    });
+    expect(frame).toContain("No quote data");
+    expect(frame).not.toContain("—");
+  });
 });

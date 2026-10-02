@@ -66,6 +66,7 @@ import { usePortfolioPaneStreaming } from "./streaming";
 import { usePredictionWatchlistQuotes } from "../../../prediction-markets/watchlist-quotes";
 import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
+import { hasDelayedQuote, useDelayedQuotesFooter } from "../../shared/cloud-upgrade";
 import { CHART_COMPOSER_TEMPLATE_ID } from "../../shared/graph-pop-out";
 import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 import { paneSearchHint } from "../../shared/pane-footer";
@@ -526,6 +527,17 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     sortedTickers,
     width,
   ]);
+
+  const anyQuoteDelayed = useMemo(
+    () => hasDelayedQuote(sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote)),
+    [financialsMap, sortedTickers],
+  );
+  useDelayedQuotesFooter({
+    registrationId: "portfolio-list-access",
+    delayed: anyQuoteDelayed,
+    focused,
+    shortcutScope: "portfolio-list:upgrade",
+  });
 
   usePaneFooter("portfolio-list", () => ({
     info: summaryFooterInfo,
