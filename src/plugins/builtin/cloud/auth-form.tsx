@@ -206,7 +206,11 @@ export function AuthForm({
           >
             {t("Password")}
           </Text>
-          <Box onMouseDown={() => setShowPassword((current) => !current)}>
+          <Box
+            onMouseDown={() => setShowPassword((current) => !current)}
+            data-gloom-interactive="true"
+            aria-label={showPassword ? t("Hide password") : t("Show password")}
+          >
             <Text fg={colors.textMuted}>{showPassword ? t("hide") : t("show")}</Text>
           </Box>
         </Box>
@@ -231,7 +235,9 @@ export function AuthForm({
         ) : resetState === "sending" ? (
           <Spinner label={t("Sending reset link...")} />
         ) : error ? (
-          <Text fg={colors.negative} wrapText>{error}</Text>
+          <Box role="alert">
+            <Text fg={colors.negative} wrapText>{error}</Text>
+          </Box>
         ) : resetState === "sent" ? (
           <Text fg={colors.positive} wrapText>
             {tf("Reset link sent to {email}. Check your inbox.", { email: email.trim() })}

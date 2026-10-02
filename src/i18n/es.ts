@@ -1085,6 +1085,8 @@ export const es: Record<string, string> = {
   "Signed in to Gloom Cloud": "Sesión iniciada en Gloom Cloud",
   "Signing you in...": "Iniciando sesión...",
   "Forgot password?": "¿Olvidaste tu contraseña?",
+  "Show password": "Mostrar contraseña",
+  "Hide password": "Ocultar contraseña",
   "Sending reset link...": "Enviando enlace de restablecimiento...",
   "Reset link sent to {email}. Check your inbox.": "Enlace de restablecimiento enviado a {email}. Revisa tu bandeja de entrada.",
   "Could not send the reset email.": "No se pudo enviar el correo de restablecimiento.",
