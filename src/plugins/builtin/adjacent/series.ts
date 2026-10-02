@@ -1,9 +1,32 @@
+import { pricePointsToResolvedSeries } from "../../../components/chart/composite";
+import { priceColor } from "../../../theme/colors";
+import type { PricePoint } from "../../../types/financials";
 import type { AdjacentClient } from "./client";
 import type { AdjacentPriceSample } from "./types";
 import { normalizeAdjacentIndexPrices } from "./normalize";
 import { adjacentPriceTier, adjacentPriceWindow } from "./price-window";
-import type { TimeSeriesPoint } from "../../../time-series/types";
+import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import type { UniversalSeriesLoadRequest, UniversalSeriesLoadResult } from "../../../time-series/resolve";
+
+/** Index and rate levels are a line on the right axis, colored by the window's change. */
+export function adjacentLevelSeries(
+  points: readonly PricePoint[],
+  options: { id: string; label: string },
+): ResolvedSeries {
+  const first = points[0]?.close ?? 0;
+  const last = points.at(-1)?.close ?? first;
+  return pricePointsToResolvedSeries(points, {
+    id: options.id,
+    label: options.label,
+    color: priceColor(last - first),
+    unit: "index",
+    unitGroup: "level",
+    style: "line",
+    axis: "right",
+    panelId: "price",
+    providerId: "adjacent",
+  });
+}
 
 function samplesToSeries(samples: AdjacentPriceSample[]): UniversalSeriesLoadResult {
   const points: TimeSeriesPoint[] = normalizeAdjacentIndexPrices(samples).map((point) => ({

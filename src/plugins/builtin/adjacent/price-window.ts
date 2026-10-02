@@ -34,6 +34,8 @@ const PUBLIC_START_FLOOR_DAYS: Record<AdjacentPriceWindow["interval"], number> =
 
 const PUBLIC_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M"];
 
+export const ADJACENT_DEFAULT_PRICE_RANGE: TimeRange = "1M";
+
 const PUBLIC_RESOLUTIONS: ChartResolutionSupport[] = [
   { resolution: "1h", maxRange: "1M" },
   { resolution: "1d", maxRange: "3M" },

@@ -23,7 +23,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/format";
-import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
+import { CompositeChart } from "../../../components/chart/composite";
 import {
   applySortPreference,
   nextSortPreference,
@@ -40,7 +40,8 @@ import { requestAccountManagementTab } from "../account-management/navigation";
 import { getSharedRegistry } from "../../registry";
 import { ChartRangeTabs } from "../../../components/chart/range-tabs";
 import type { TimeRange } from "../../../components/chart/core/types";
-import { adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
+import { ADJACENT_DEFAULT_PRICE_RANGE, adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
+import { adjacentLevelSeries } from "./series";
 import type { AdjacentClient } from "./client";
 import { adjacentCatalogHaystack } from "./command-bar-search";
 import { filterAdjacentRows } from "./search";
@@ -137,16 +138,7 @@ function RateChart({
     [prices],
   );
   const series = useMemo(
-    () => pricePointsToResolvedSeries(pricePoints, {
-      id: `ADJ:${rateId}`,
-      label: name,
-      color: colors.borderFocused,
-      unit: "index",
-      unitGroup: "level",
-      style: "area",
-      panelId: "price",
-      providerId: "adjacent",
-    }),
+    () => adjacentLevelSeries(pricePoints, { id: `ADJ:${rateId}`, label: name }),
     [name, pricePoints, rateId],
   );
   if (pricePoints.length === 0) {
@@ -180,6 +172,8 @@ function RateChart({
         panels={[{ id: "price" }]}
         axisWidth={8}
         showLegend={false}
+        formatValue={(value) => value.toFixed(2)}
+        formatAxisValue={(value) => value.toFixed(2)}
       />
     </Box>
   );
@@ -217,7 +211,7 @@ function RateDetail({
   const [pricesLoading, setPricesLoading] = useState(false);
   // Adjacent serves one hour of buckets over 30 days and one day over 90, so
   // the public tier can only honestly enable 1D through 3M.
-  const [range, setRange] = useState<TimeRange>("1M");
+  const [range, setRange] = useState<TimeRange>(ADJACENT_DEFAULT_PRICE_RANGE);
   const tier = useMemo(() => adjacentPriceTier(client), [client]);
   const rangeChoices = useMemo(
     () => adjacentRangeSupport(tier).map((value) => ({ value })),

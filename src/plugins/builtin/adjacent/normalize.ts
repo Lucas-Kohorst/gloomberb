@@ -7,7 +7,6 @@ import type {
   AdjacentIndexSleeve,
   AdjacentMarket,
   AdjacentMarketRow,
-  AdjacentMarketSortColumnId,
   AdjacentMarketsResponse,
   AdjacentNewsArticle,
   AdjacentPlatform,
@@ -127,27 +126,6 @@ export function normalizeAdjacentMarket(market: AdjacentMarket): AdjacentMarketR
   };
 }
 
-export function adjacentMarketSortValue(
-  row: AdjacentMarketRow,
-  columnId: AdjacentMarketSortColumnId,
-): string | number | null {
-  switch (columnId) {
-    case "ticker":
-      return row.ticker;
-    case "title":
-      return row.title;
-    case "platform":
-      return row.platform;
-    case "status":
-      return row.status;
-    case "ends": {
-      if (!row.endsAt) return null;
-      const ts = new Date(row.endsAt).getTime();
-      return Number.isFinite(ts) ? ts : null;
-    }
-  }
-}
-
 export function normalizeAdjacentPriceHistory(
   prices: AdjacentPricePoint[],
 ): AdjacentPriceHistoryPoint[] {
@@ -252,7 +230,7 @@ export function parseAdjacentNewsArticle(value: unknown): AdjacentNewsArticle | 
     title,
     url,
     source: stringField(record, "source") || "Adjacent Press",
-    summary: stringField(record, "summary"),
+    summary: stringField(record, "summary", "via_market_question"),
     published_at: stringField(record, "published_at", "published_date") || "",
     image: stringField(record, "image", "image_url"),
     author: stringField(record, "author"),

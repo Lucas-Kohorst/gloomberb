@@ -4,9 +4,9 @@ import type {
   GloomPluginContext,
 } from "../../../types/plugin";
 import { getSharedAdjacentClient } from "./client";
-import { normalizeAdjacentIndex, normalizeAdjacentMarket, normalizeAdjacentRate } from "./normalize";
-import type { AdjacentIndex, AdjacentMarket, AdjacentRate } from "./types";
-import { filterAdjacentRows, scoreAdjacentAndMatch } from "./search";
+import { normalizeAdjacentIndex, normalizeAdjacentRate } from "./normalize";
+import type { AdjacentIndex, AdjacentRate } from "./types";
+import { scoreAdjacentAndMatch } from "./search";
 
 const RESULT_LIMIT = 6;
 
@@ -110,7 +110,6 @@ export function matchAdjacentRates(
 }
 
 export type AdjacentCatalogTemplateId =
-  | "adjacent-markets-pane"
   | "adjacent-indices-pane"
   | "adjacent-rates-pane";
 
@@ -123,23 +122,15 @@ function sameToken(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
-function marketsFromSearch(response: {
-  markets?: readonly AdjacentMarket[] | null;
-  data?: readonly AdjacentMarket[] | null;
-}): AdjacentMarket[] {
-  return [...(response.markets ?? response.data ?? [])];
-}
-
 export function pickAdjacentCatalogOpen(
   query: string,
   catalogs: {
     indices: readonly AdjacentIndex[];
     rates: readonly AdjacentRate[];
-    markets: readonly AdjacentMarket[];
   },
 ): AdjacentCatalogOpen {
   const trimmed = query.trim();
-  if (!trimmed) return { templateId: "adjacent-markets-pane" };
+  if (!trimmed) return { templateId: "adjacent-indices-pane" };
 
   const indexRows = catalogs.indices.map(normalizeAdjacentIndex);
   const exactIndex = indexRows.find((row) => sameToken(row.ticker, trimmed) || sameToken(row.id, trimmed));
@@ -154,22 +145,13 @@ export function pickAdjacentCatalogOpen(
   if (exactRate) return { templateId: "adjacent-rates-pane", arg: exactRate.rate_id };
 
   const indexHits = matchAdjacentIndices(trimmed, catalogs.indices);
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length >= 2 && indexHits[0]) {
-    const ticker = indexHits[0].ticker?.trim() || indexHits[0].index_id.toUpperCase();
-    return { templateId: "adjacent-indices-pane", arg: ticker };
-  }
-
-  if (catalogs.markets.length > 0) {
-    return { templateId: "adjacent-markets-pane", arg: trimmed };
-  }
   if (indexHits[0]) {
     const ticker = indexHits[0].ticker?.trim() || indexHits[0].index_id.toUpperCase();
     return { templateId: "adjacent-indices-pane", arg: ticker };
   }
   const rateHits = matchAdjacentRates(trimmed, catalogs.rates);
   if (rateHits[0]) return { templateId: "adjacent-rates-pane", arg: rateHits[0].rate_id };
-  return { templateId: "adjacent-markets-pane", arg: trimmed };
+  return { templateId: "adjacent-indices-pane", arg: trimmed };
 }
 
 export async function openAdjacentCatalogSearch(
@@ -178,19 +160,17 @@ export async function openAdjacentCatalogSearch(
 ): Promise<void> {
   const trimmed = query.trim();
   if (!trimmed) {
-    ctx.createPaneFromTemplate("adjacent-markets-pane");
+    ctx.createPaneFromTemplate("adjacent-indices-pane");
     return;
   }
   const client = getSharedAdjacentClient();
-  const [indices, rates, marketResponse] = await Promise.all([
+  const [indices, rates] = await Promise.all([
     client.getIndices().catch(() => ({ data: [] as AdjacentIndex[] })),
     client.getRates().catch(() => ({ data: [] as AdjacentRate[] })),
-    client.searchMarkets(trimmed, 12).catch(() => ({ markets: [] as AdjacentMarket[] })),
   ]);
   const target = pickAdjacentCatalogOpen(trimmed, {
     indices: indices.data ?? [],
     rates: rates.data ?? [],
-    markets: marketsFromSearch(marketResponse),
   });
   ctx.createPaneFromTemplate(target.templateId, target.arg ? { arg: target.arg } : undefined);
 }
@@ -206,39 +186,16 @@ export function createAdjacentCatalogSearchProvider(
     debounceMs: 200,
     async provide(query, _context, signal) {
       const client = getSharedAdjacentClient();
-      const [indices, rates, marketResponse] = await Promise.all([
+      const [indices, rates] = await Promise.all([
         client.getIndices().catch(() => ({ data: [] as AdjacentIndex[] })),
         client.getRates().catch(() => ({ data: [] as AdjacentRate[] })),
-        client.searchMarkets(query, RESULT_LIMIT).catch(() => ({ markets: [] as AdjacentMarket[] })),
       ]);
       if (signal.aborted) return [];
 
       const indexHits = matchAdjacentIndices(query, indices.data ?? []);
       const rateHits = matchAdjacentRates(query, rates.data ?? []);
-      const markets = filterAdjacentRows(
-        marketsFromSearch(marketResponse),
-        query,
-        (market) => {
-          const row = normalizeAdjacentMarket(market);
-          return [row.ticker, row.title, row.platform, market.id].filter(Boolean).join(" ");
-        },
-      ).slice(0, RESULT_LIMIT);
       const results: CommandBarResultDef[] = [];
 
-      for (const market of markets) {
-        const row = normalizeAdjacentMarket(market);
-        results.push({
-          id: `market:${market.id}`,
-          label: row.ticker,
-          detail: row.title,
-          right: "ADJ",
-          category: "Adjacent",
-          keywords: [row.ticker, row.title, row.platform, market.id, "adjacent", "market"],
-          execute: () => {
-            ctx.createPaneFromTemplate("adjacent-markets-pane", { arg: row.title });
-          },
-        });
-      }
       for (const index of indexHits) {
         const ticker = index.ticker?.trim() || index.index_id.toUpperCase();
         results.push({

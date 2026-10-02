@@ -89,16 +89,16 @@ describe("pickAdjacentCatalogOpen", () => {
     indices: [
       index({ index_id: "red", ticker: "RED", name: "RED Index" }),
       index({ index_id: "buf_nti", ticker: "BUFNTI", name: "NFL Team Index: Buffalo" }),
+      index({ index_id: "hou_nti", ticker: "HOUNTI", name: "NFL Team Index: Houston" }),
     ],
     rates: [rate({ rate_id: "house", name: "House" })],
-    markets: [market({ id: "kalshi:KXPRES", title: "Who will win the election?", ticker: "KXPRES" })],
   };
 
-  test("opens the markets list when the query is empty", () => {
-    expect(pickAdjacentCatalogOpen("", catalogs)).toEqual({ templateId: "adjacent-markets-pane" });
+  test("opens the indices list when the query is empty", () => {
+    expect(pickAdjacentCatalogOpen("", catalogs)).toEqual({ templateId: "adjacent-indices-pane" });
   });
 
-  test("exact index ticker opens ADI, not markets", () => {
+  test("exact index ticker opens ADI", () => {
     expect(pickAdjacentCatalogOpen("RED", catalogs)).toEqual({
       templateId: "adjacent-indices-pane",
       arg: "RED",
@@ -130,16 +130,23 @@ describe("pickAdjacentCatalogOpen", () => {
     });
   });
 
-  test("multi-token index nickname opens ADI even when markets exist", () => {
+  test("multi-token index nickname opens ADI", () => {
     expect(pickAdjacentCatalogOpen("buffalo bills", catalogs)).toEqual({
       templateId: "adjacent-indices-pane",
       arg: "BUFNTI",
     });
   });
 
-  test("generic market queries open the Adjacent markets list", () => {
+  test("single-token index nickname opens ADI", () => {
+    expect(pickAdjacentCatalogOpen("houston", catalogs)).toEqual({
+      templateId: "adjacent-indices-pane",
+      arg: "HOUNTI",
+    });
+  });
+
+  test("unmatched queries open the indices list with the query", () => {
     expect(pickAdjacentCatalogOpen("election", catalogs)).toEqual({
-      templateId: "adjacent-markets-pane",
+      templateId: "adjacent-indices-pane",
       arg: "election",
     });
   });

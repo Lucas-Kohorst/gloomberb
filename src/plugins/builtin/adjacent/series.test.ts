@@ -1,5 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { loadAdjacentChartSeries } from "./series";
+import { adjacentLevelSeries, loadAdjacentChartSeries } from "./series";
+import { priceColor } from "../../../theme/colors";
+
+describe("adjacentLevelSeries", () => {
+  test("draws a line on the right axis, colored by the window change", () => {
+    const up = adjacentLevelSeries([
+      { date: new Date("2026-09-01T00:00:00Z"), close: 390 },
+      { date: new Date("2026-10-01T00:00:00Z"), close: 421.6 },
+    ], { id: "ADJ:hou_nti", label: "HOUNTI" });
+    expect(up.style).toBe("line");
+    expect(up.axis).toBe("right");
+    expect(up.color).toBe(priceColor(421.6 - 390));
+
+    const down = adjacentLevelSeries([
+      { date: new Date("2026-09-01T00:00:00Z"), close: 421.6 },
+      { date: new Date("2026-10-01T00:00:00Z"), close: 390 },
+    ], { id: "ADJ:hou_nti", label: "HOUNTI" });
+    expect(down.color).toBe(priceColor(390 - 421.6));
+  });
+});
 
 describe("loadAdjacentChartSeries", () => {
   test("uses index prices when the id is an Adjacent index", async () => {

@@ -245,7 +245,6 @@ describe("pane design catalog — ADJ Adjacent search", () => {
     const inventory = `${adj?.description ?? ""} ${(adj?.keywords ?? []).join(" ")}`.toLowerCase();
     expect(inventory).toContain("indices");
     expect(inventory).toContain("rates");
-    expect(inventory).toContain("markets");
   });
 });
 

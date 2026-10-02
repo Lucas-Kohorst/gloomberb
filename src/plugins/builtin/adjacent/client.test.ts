@@ -488,6 +488,53 @@ describe("AdjacentClient paths", () => {
     expect(new URL(requested[5]!.url).searchParams.get("page")).toBe("6");
     expect(result.data.map((sample) => sample.price)).toEqual([1, 2, 3, 4, 5, 6]);
   });
+
+  test("loads related index news from the public route and unwraps article rows", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [{
+        article_id: "hou-1",
+        title: "Texans injury report",
+        url: "https://example.com/texans",
+        source: "USA Today",
+        published_date: "2026-09-25T17:42:11Z",
+        via_market_question: "Will Houston win at least 3 games?",
+      }],
+    });
+    const page = await new AdjacentClient().getIndexNews("hou_nti");
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/public/indices/hou_nti/news?per_page=3",
+    );
+    expect(page.news?.[0]).toMatchObject({
+      id: "hou-1",
+      title: "Texans injury report",
+      source: "USA Today",
+      summary: "Will Houston win at least 3 games?",
+    });
+  });
+
+  test("loads related index filings on the keyed route and accepts filing_id", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [{
+        filing_id: 63380,
+        title: "NFL Starter Designation Contracts",
+        feed: "dcm_products",
+        org_code: "QCEX",
+        status: "Certified",
+        status_date: "2026-08-25",
+      }],
+      meta: { total: 1, page: 1, per_page: 40, has_next: false },
+    });
+    const page = await new AdjacentClient({ apiKey: "ak_test" }).getIndexFilings("hou_nti");
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/indices/hou_nti/filings?per_page=40",
+    );
+    expect(requested[0]?.authorization).toBe("Bearer ak_test");
+    expect(page.filings).toHaveLength(1);
+    expect(page.filings[0]?.id).toBe(63380);
+    expect(page.filings[0]?.orgCode).toBe("QCEX");
+  });
 });
 
 describe("stripMarkdownHeader", () => {

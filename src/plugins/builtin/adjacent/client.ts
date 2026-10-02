@@ -117,6 +117,7 @@ export const ADJACENT_CACHE_POLICIES = {
   events: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   indices: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   constituents: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
+  indexDetail: { staleMs: 60_000, expireMs: 10 * 60_000 },
   indexPrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
   rates: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   ratePrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
@@ -148,7 +149,8 @@ function asFeed(value: unknown): CftcFeed {
 function parseFiling(raw: unknown): CftcFiling | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
-  const id = typeof record.id === "number" ? record.id : Number(record.id);
+  const rawId = record.filing_id ?? record.id;
+  const id = typeof rawId === "number" ? rawId : Number(rawId);
   if (!Number.isFinite(id)) return null;
   const title = asString(record.title);
   if (!title) return null;
@@ -589,7 +591,12 @@ export class AdjacentClient {
 
   async getIndex(id: string): Promise<AdjacentIndex> {
     const url = buildUrl(`${this.indicesPath()}/${id}`);
-    return adjacentFetchJson<AdjacentIndex>(url, this.requestApiKey);
+    return loadCached(
+      "adjacent-index",
+      `${this.isPublic ? "public" : "keyed"}:${id}`,
+      () => adjacentFetchJson<AdjacentIndex>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.indexDetail,
+    );
   }
 
   async getIndexConstituents(id: string): Promise<AdjacentConstituentsResponse> {
@@ -649,13 +656,33 @@ export class AdjacentClient {
   }
 
   async getIndexNews(id: string): Promise<AdjacentNewsResponse> {
-    const url = buildUrl(`${this.indicesPath()}/${id}/news`);
-    return loadCached(
+    // Public related news is capped at 3. The keyed route pages up to 500.
+    const perPage = this.isPublic ? 3 : 40;
+    const url = buildUrl(`${this.indicesPath()}/${id}/news`, { per_page: perPage });
+    const raw = await loadCached(
       "adjacent-index-news",
-      id,
-      () => adjacentFetchJson<AdjacentNewsResponse>(url, this.requestApiKey),
+      `${this.isPublic ? "public" : "keyed"}:${id}:${perPage}`,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
+    return { news: unwrapAdjacentNewsArticles(raw) };
+  }
+
+  /** Related CFTC filings. The public index routes do not serve this. */
+  async getIndexFilings(id: string): Promise<CftcFilingsPage> {
+    const url = buildUrl(`${this.indicesPath()}/${id}/filings`, { per_page: 40 });
+    const payload = await loadCached(
+      "adjacent-index-filings",
+      `${this.isPublic ? "public" : "keyed"}:${id}`,
+      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.filings,
+    );
+    return {
+      filings: (payload.data ?? [])
+        .map(parseFiling)
+        .filter((filing): filing is CftcFiling => filing !== null),
+      meta: parseMeta(payload.meta),
+    };
   }
 
   async getRates(): Promise<AdjacentRatesResponse> {
