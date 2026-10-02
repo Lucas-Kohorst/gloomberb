@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   ChartSurface,
-  LightweightChart,
   ScrollBox,
   StyledText,
   Text,
@@ -22,7 +21,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
 import { downsampleCompositeChartScene } from "./downsample";
-import { groupSeriesByPanelId, reuseResolvedSeriesList } from "./panel-series";
+import { reuseResolvedSeriesList } from "./panel-series";
 import {
   buildPriceStrip,
   fitPriceStrip,
@@ -103,6 +102,7 @@ import {
   type ChartToolDrag,
   type ChartToolKind,
 } from "./tools";
+import { levelVectors, paintLevels, projectLevels, writeLevelText } from "./levels";
 import { unprojectCompositeTimestamp } from "./time-scale";
 import {
   allocateCompositePanelHeights,
@@ -124,6 +124,7 @@ import {
 import type {
   CompositeAxisDomain,
   CompositeChartColors,
+  CompositeChartPriceLevel,
   CompositeChartProps,
   CompositeChartScene,
   CompositePanelScene,
@@ -732,11 +733,8 @@ function resolveSeriesCursorYRatio(
   return null;
 }
 
-const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
-
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
-  panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
   leftAxisWidth: number;
@@ -773,11 +771,11 @@ interface CompositePanelSurfaceProps {
       tooltip would only repeat it. */
   showCrosshairTooltip?: boolean;
   timeZone?: string;
+  priceLevels: readonly CompositeChartPriceLevel[];
 }
 
 function CompositePanelSurface({
   panel,
-  panelSeries,
   scene,
   plotWidth,
   leftAxisWidth,
@@ -807,10 +805,10 @@ function CompositePanelSurface({
   showTextFallback,
   showCrosshairTooltip,
   timeZone,
+  priceLevels,
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const hasLightweightChart = !!ui.LightweightChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -837,14 +835,14 @@ function CompositePanelSurface({
   const [toolDrag, setToolDrag] = useState<ChartToolDrag | null>(null);
   const plotAspect = (plotWidth * cellWidthPx) / Math.max(panel.height * cellHeightPx, 1);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, panel.height);
-  // Desktop mounts Lightweight Charts for custom OHLCV. Keep the software
-  // raster for TUI and for any desktop path that still uses ChartSurface.
+  // The canvas raster is the plot for the terminal (including kitty) and for
+  // desktop series the TradingView embed cannot accept.
   const bitmap = useCompositePanelBitmap({
     panel,
     bitmapSize,
     colors,
     isDesktopWeb,
-    enabled: !hasLightweightChart,
+    enabled: true,
   });
   const columnLayout = useMemo(() => buildCompositeColumnLayout(panel), [panel]);
   // The level line follows the pointer only. A keyboard or shared cursor knows
@@ -909,24 +907,44 @@ function CompositePanelSurface({
     () => drawings.filter((drawing) => drawing.panelId === panel.id),
     [drawings, panel.id],
   );
+  const projectedLevels = useMemo(() => {
+    const projected: ReturnType<typeof projectLevels> = [];
+    for (const series of panel.series) {
+      const items = priceLevels.filter((level) => level.seriesId === series.source.id);
+      const axis = panel.axes[series.source.axis];
+      if (items.length === 0 || !axis) continue;
+      projected.push(...projectLevels(items.map((level) => ({
+        id: level.id,
+        value: level.value,
+        color: level.color,
+        editable: level.editable !== false,
+      })), axis));
+    }
+    return projected;
+  }, [panel.axes, panel.series, priceLevels]);
   const bitmapLayers = useMemo(() => {
     if (!bitmap) return null;
     // The desktop composites overlays as vectors, so the plot raster stays put
     // while a tool drags. Copying and reblending it per frame is what made the
     // ruler feel heavy.
-    if (isDesktopWeb || (!toolDrag && panelDrawings.length === 0)) return [bitmap];
-    return [drawChartToolOverlay(
-      bitmap,
-      toolDrag,
-      {
-        positive: themeColors.positive,
-        negative: colors.negative,
-        zoom: colors.crosshair,
-        draw: drawColor,
-      },
-      toolReadout?.direction ?? "up",
-      { scene, panel, items: panelDrawings, selectedId: selectedDrawingId },
-    )];
+    const bakeTools = !isDesktopWeb && (!!toolDrag || panelDrawings.length > 0);
+    const bakeLevels = !isDesktopWeb && projectedLevels.length > 0;
+    if (!bakeTools && !bakeLevels) return [bitmap];
+    const withTools = bakeTools
+      ? drawChartToolOverlay(
+        bitmap,
+        toolDrag,
+        {
+          positive: themeColors.positive,
+          negative: colors.negative,
+          zoom: colors.crosshair,
+          draw: drawColor,
+        },
+        toolReadout?.direction ?? "up",
+        { scene, panel, items: panelDrawings, selectedId: selectedDrawingId },
+      )
+      : bitmap;
+    return [bakeLevels ? paintLevels(withTools, projectedLevels) : withTools];
   }, [
     bitmap,
     colors.crosshair,
@@ -935,6 +953,7 @@ function CompositePanelSurface({
     isDesktopWeb,
     panel,
     panelDrawings,
+    projectedLevels,
     scene,
     selectedDrawingId,
     toolDrag,
@@ -942,20 +961,23 @@ function CompositePanelSurface({
   ]);
   const vectors = useMemo<ChartSurfaceProps["vectors"]>(() => {
     if (!isDesktopWeb) return null;
-    const shapes = buildChartToolVectors({
-      scene,
-      panel,
-      drawings: panelDrawings,
-      selectedId: selectedDrawingId,
-      drag: toolDrag,
-      colors: {
-        positive: themeColors.positive,
-        negative: colors.negative,
-        zoom: colors.crosshair,
-        draw: drawColor,
-      },
-      direction: toolReadout?.direction ?? "up",
-    });
+    const shapes = [
+      ...buildChartToolVectors({
+        scene,
+        panel,
+        drawings: panelDrawings,
+        selectedId: selectedDrawingId,
+        drag: toolDrag,
+        colors: {
+          positive: themeColors.positive,
+          negative: colors.negative,
+          zoom: colors.crosshair,
+          draw: drawColor,
+        },
+        direction: toolReadout?.direction ?? "up",
+      }),
+      ...levelVectors(projectedLevels),
+    ];
     return shapes.length > 0 ? shapes : null;
   }, [
     colors.crosshair,
@@ -964,16 +986,19 @@ function CompositePanelSurface({
     isDesktopWeb,
     panel,
     panelDrawings,
+    projectedLevels,
     scene,
     selectedDrawingId,
     toolDrag,
     toolReadout?.direction,
   ]);
   const textLines = useMemo(
-    () => isDesktopWeb || !showTextFallback
-      ? []
-      : renderCompositePanelText(panel, plotWidth, scene.cursorXRatio, pointerCursorYRatio),
-    [isDesktopWeb, panel, plotWidth, pointerCursorYRatio, scene.cursorXRatio, showTextFallback],
+    () => {
+      if (isDesktopWeb || !showTextFallback) return [];
+      const lines = renderCompositePanelText(panel, plotWidth, scene.cursorXRatio, pointerCursorYRatio);
+      return projectedLevels.length > 0 ? writeLevelText(lines, projectedLevels) : lines;
+    },
+    [isDesktopWeb, panel, plotWidth, pointerCursorYRatio, projectedLevels, scene.cursorXRatio, showTextFallback],
   );
   const leftAxisLabels = useMemo(
     () => axisLabelRows(
@@ -1321,51 +1346,29 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      {hasLightweightChart ? (
-        <LightweightChart
-          width={plotWidth}
-          height={panel.height}
-          panel={panel}
-          seriesData={panelSeries}
-          colors={colors}
-          viewport={viewport}
-          interactive={interactive}
-          vectors={vectors}
-          armedTool={armedTool}
-          timeZone={timeZone}
-          onViewportChange={onSetViewport}
-          showCrosshairTooltip={showCrosshairTooltip}
-          onCursorDateChange={onCursorDateChange}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        />
-      ) : (
-        <ChartSurface
-          ref={plotRef}
-          width={plotWidth}
-          height={panel.height}
-          flexDirection="column"
-          bitmaps={bitmapLayers}
-          crosshair={crosshair}
-          vectors={vectors}
-          onMouseMove={interactive ? handleMouseMove : undefined}
-          onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
-          onMouseDrag={interactive && navigable ? dragViewport : undefined}
-          onMouseUp={interactive && navigable ? resetDrag : undefined}
-          onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
-          onMouseScroll={interactive && navigable ? panFromWheel : undefined}
-          onMouseOut={interactive ? clearCursor : undefined}
-          cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        >
-          {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
-        </ChartSurface>
-      )}
+      <ChartSurface
+        ref={plotRef}
+        width={plotWidth}
+        height={panel.height}
+        flexDirection="column"
+        bitmaps={bitmapLayers}
+        crosshair={crosshair}
+        vectors={vectors}
+        onMouseMove={interactive ? handleMouseMove : undefined}
+        onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
+        onMouseDrag={interactive && navigable ? dragViewport : undefined}
+        onMouseUp={interactive && navigable ? resetDrag : undefined}
+        onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
+        onMouseScroll={interactive && navigable ? panFromWheel : undefined}
+        onMouseOut={interactive ? clearCursor : undefined}
+        cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
+        data-gloom-interactive={interactive ? "true" : undefined}
+        data-gloom-role={COMPOSITE_PANEL_ROLE}
+        data-gloom-remote-kind={remoteKind}
+        data-gloom-label={panel.label ?? panel.id}
+      >
+        {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
+      </ChartSurface>
       {rightAxisWidth > 0 ? (
         <>
           <Box width={axisGap} />
@@ -1791,12 +1794,12 @@ export function CompositeChart({
   onToggleSeries,
   isSeriesToggleable,
   timeZone,
+  priceLevels,
 }: CompositeChartProps) {
   const activeThemeColors = useThemeColors();
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const nativeLwcChrome = !!ui.LightweightChart;
   const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
@@ -1861,14 +1864,6 @@ export function CompositeChart({
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
   );
-  // Renderers that own their own time scale need the unwindowed series, and
-  // need it at a stable identity so panning does not look like new data.
-  const seriesByPanelIdRef = useRef<Map<string, ResolvedSeries[]>>(new Map());
-  const seriesByPanelId = useMemo(() => {
-    const next = groupSeriesByPanelId(visibleSeries, seriesByPanelIdRef.current);
-    seriesByPanelIdRef.current = next;
-    return next;
-  }, [visibleSeries]);
   useEffect(() => {
     setLegendKeyboardIndex((current) => (
       current === null || visibleLegendSeries.length === 0
@@ -2012,9 +2007,9 @@ export function CompositeChart({
       isDesktopWeb,
     )
     : 0;
-  const timeAxisRows = nativeLwcChrome ? 0 : (showTimeAxis ? 1 : 0);
+  const timeAxisRows = showTimeAxis ? 1 : 0;
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
-  const xMarkerRows = nativeLwcChrome ? 0 : (xMarkers.some((marker) => marker.label) ? 1 : 0);
+  const xMarkerRows = xMarkers.some((marker) => marker.label) ? 1 : 0;
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
   const lastTickKey = visibleSeries.map((entry) => {
     const last = entry.points.at(-1);
@@ -2063,9 +2058,9 @@ export function CompositeChart({
       ]),
     ),
   ), [formatAxisValue, maximumAxisWidth, projectedScene]);
-  const leftAxisWidth = nativeLwcChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
-  const rightAxisWidth = nativeLwcChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
-  const axisGap = nativeLwcChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
+  const leftAxisWidth = hasLeftAxis ? resolvedAxisWidth : 0;
+  const rightAxisWidth = hasRightAxis ? resolvedAxisWidth : 0;
+  const axisGap = resolvedAxisWidth > 0 ? 1 : 0;
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
@@ -2269,10 +2264,10 @@ export function CompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis && !nativeLwcChrome
+  const timeAxisLayout = scene && showTimeAxis
     ? buildCompositeTimeAxisLayout(scene, plotWidth)
     : null;
-  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeLwcChrome && effectiveViewport
+  const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
 
@@ -2429,7 +2424,6 @@ export function CompositeChart({
         <CompositePanelSurface
           key={panel.id}
           panel={panel}
-          panelSeries={seriesByPanelId.get(panel.id) ?? EMPTY_PANEL_SERIES}
           scene={scene}
           plotWidth={plotWidth}
           leftAxisWidth={leftAxisWidth}
@@ -2459,6 +2453,7 @@ export function CompositeChart({
           showTextFallback={showTextFallback}
           showCrosshairTooltip={showLegend}
           timeZone={timeZone}
+          priceLevels={priceLevels ?? []}
         />
       ))}
       {xMarkers.length > 0 ? (

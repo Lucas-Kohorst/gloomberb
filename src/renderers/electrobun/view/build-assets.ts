@@ -50,7 +50,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    // youtubei.js / hls.js / lightweight-charts are dynamic imports. Without
+    // youtubei.js / hls.js are dynamic imports. Without
     // splitting Bun inlines them into web-main.js and Portfolio pays for TV.
     splitting: true,
     extraAliasRules: [
@@ -65,7 +65,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     "web-main",
   );
   // Split chunks still `import from "./web-main.js"`. Hashing the entry
-  // would 404 those dynamic imports (DES Chart, LWC, youtubei).
+  // would 404 those dynamic imports (DES Chart, youtubei).
   await rewriteSplitChunkEntryImports(
     options.outdir,
     entrySrc.replace(/^\.\//, ""),

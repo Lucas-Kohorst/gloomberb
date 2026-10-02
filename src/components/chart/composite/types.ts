@@ -200,4 +200,17 @@ export interface CompositeChartProps {
   isSeriesToggleable?: (series: ResolvedSeries) => boolean;
   /** IANA zone for axis and cursor labels. Omit for UTC. */
   timeZone?: string;
+  /**
+   * Horizontal prices for one series. Drawn on this plot; the TradingView
+   * iframe cannot take them, so that surface lists them instead.
+   */
+  priceLevels?: readonly CompositeChartPriceLevel[];
+}
+
+export interface CompositeChartPriceLevel {
+  id: string;
+  seriesId: string;
+  value: number;
+  color: string;
+  editable?: boolean;
 }

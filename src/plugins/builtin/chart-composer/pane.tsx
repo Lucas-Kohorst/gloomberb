@@ -28,6 +28,9 @@ import { defaultChartSeriesPresentation, resolveChartDisplayTimeZone } from "../
 import { chartSeriesSourceKey } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
+import { ChartDataHeader } from "./chart-data-header";
+import { selectChartHeader } from "./chart-header";
+import { useChartPriceLevels, usePriceLevelPrompt } from "./price-level-state";
 import {
   useAppDispatch,
   usePaneInstanceId,
@@ -167,18 +170,51 @@ function isPriceStudyTarget(spec: ChartSpec): boolean {
 
 function DesktopTradingViewComposer({
   plot,
+  spec,
   focused,
   width,
   height,
   footerId,
+  onCapture,
+  liveWhenUnfocused = true,
 }: {
   plot: TradingViewWidgetPlot;
+  spec: ChartSpec;
   focused: boolean;
   width: number;
   height: number;
   footerId: string;
+  onCapture?: (capturing: boolean) => void;
+  liveWhenUnfocused?: boolean;
 }) {
   const openUrl = tradingViewPublicChartUrl(plot.symbol);
+  const liveStreaming = useLiveStreamingSetting();
+  const dialogOpen = useDialogState((state) => state.isOpen);
+  // The iframe draws TradingView's bars. This resolution is only so the header
+  // can show our quote and studies above it.
+  const resolution = useResolvedChartSpec(spec, {
+    liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
+  });
+  const { listing, levels, listed, edit, alertAtLevel } = useChartPriceLevels(spec);
+  const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
+  const header = useMemo(
+    () => selectChartHeader({
+      series: resolution.bufferedSeries ?? resolution.series,
+      baseSeriesIds,
+      levels: listed,
+      includeLevels: true,
+    }),
+    [baseSeriesIds, listed, resolution.bufferedSeries, resolution.series],
+  );
+  usePriceLevelPrompt({
+    listing,
+    levels,
+    edit,
+    alertAtLevel,
+    currentPrice: header.close,
+    enabled: focused && listing !== null && !dialogOpen,
+    onCapture,
+  });
   useExternalLinkFooter({
     registrationId: footerId,
     focused,
@@ -194,6 +230,7 @@ function DesktopTradingViewComposer({
       data-gloom-role="tradingview-composer"
       style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
+      <ChartDataHeader text={header.text} width={width} />
       <TradingViewChart
         flexGrow={1}
         minHeight={4}
@@ -223,10 +260,13 @@ function ChartComposerSurface({
     return (
       <DesktopTradingViewComposer
         plot={plot}
+        spec={spec}
         focused={focused}
         width={width}
         height={height}
         footerId={footerId}
+        onCapture={onCapture}
+        liveWhenUnfocused={liveWhenUnfocused}
       />
     );
   }
@@ -370,6 +410,14 @@ function GloomCanvasComposer({
   const selectedPairStudies = getSelectedPairStudies(spec);
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
+  const { listing, levels, drawn, edit, alertAtLevel } = useChartPriceLevels(spec);
+  const header = useMemo(
+    () => selectChartHeader({
+      series: resolution.bufferedSeries ?? resolution.series,
+      baseSeriesIds,
+    }),
+    [baseSeriesIds, resolution.bufferedSeries, resolution.series],
+  );
   // Hidden series are never loaded, so the resolver has nothing to report for
   // them. Without a placeholder they vanish from the legend entirely and the
   // only way back is the series dialog.
@@ -452,6 +500,15 @@ function GloomCanvasComposer({
   /** The plot keeps its pointer unless something modal is actually covering it. */
   const surfacePointerInteractive = !dialogOpen && !modalCaptured;
   const shortcutActive = focused && surfaceInteractive;
+  usePriceLevelPrompt({
+    listing,
+    levels,
+    edit,
+    alertAtLevel,
+    currentPrice: header.close,
+    enabled: shortcutActive && listing !== null,
+    onCapture: (captured) => setInteractionCaptured("level", captured),
+  });
   const activatePane = useCallback(() => {
     if (!focused) dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch, focused, paneId]);
@@ -938,6 +995,7 @@ function GloomCanvasComposer({
           />
         </Box>
       </Box>
+      <ChartDataHeader text={header.text} width={width} />
       <MultiSelectDialogButton
         ref={indicatorsDialogRef}
         label="Indicators"
@@ -977,8 +1035,9 @@ function GloomCanvasComposer({
           viewportResetKey={authoredViewportKey}
           adoptedViewport={adoptedViewport}
           width={Math.max(1, width)}
-          height={Math.max(4, height - 1)}
+          height={Math.max(4, height - 1 - (header.text ? 1 : 0))}
           focused={focused}
+          priceLevels={drawn}
           interactive={surfacePointerInteractive}
           allowHistoricalBackfill
           timeZone={displayTimeZone}

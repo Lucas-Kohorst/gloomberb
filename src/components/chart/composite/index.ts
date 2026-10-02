@@ -9,6 +9,7 @@ export type {
   CompositeAxisDomain,
   CompositeAxisSide,
   CompositeChartColors,
+  CompositeChartPriceLevel,
   CompositeChartProps,
   CompositeChartScene,
   CompositeCursorValue,
