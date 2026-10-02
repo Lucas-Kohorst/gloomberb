@@ -1,9 +1,11 @@
 /**
  * Mandatory sign-in for the hosted browser terminal.
  *
- * The app mounts and runs behind a dark scrim so the workspace is visible while
- * the panel is up, but nothing behind it is reachable: the panel cannot be
- * dismissed, the scrim swallows the pointer, and every app shortcut is held.
+ * The app mounts and runs behind an opaque scrim. Anonymous hosted sessions
+ * still load public delayed quotes, so a dimmed see-through workspace would
+ * show ticking prices that read as a live, signed-in terminal. Nothing behind
+ * it is reachable: the panel cannot be dismissed, the scrim swallows the
+ * pointer, and every app shortcut is held.
  * The gate closes by itself, because both sign-in paths install a session that
  * `usePlanAccess` observes.
  */
@@ -105,7 +107,7 @@ export function SignInGate() {
         width: "100%",
         height: "100%",
         padding: 24,
-        backgroundColor: `color-mix(in srgb, ${colors.bg} 82%, transparent)`,
+        backgroundColor: colors.bg,
         boxSizing: "border-box",
       }}
       data-gloom-role="sign-in-gate"
