@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Command hygiene and Help essentials
+
+An audit found command-bar prefixes that two entries claimed, plus a weather pane that nothing registered.
+
+- The unregistered Weather pane and its UI-only feeds are gone. `WX` still opens Adjacent climate/weather markets. The Kalshi/TWC/NWS helpers behind `G WX:…` / `G NWS:…`, weather alerts, and the Prediction Markets Settlement tab stay.
+- `T` is only the `DES` alias now. Opening another Ticker Research pane moved to `TR`.
+- The command bar lists `HELP`, `TEAM`, and `TWIT` once. The command row stays and the duplicate pane-template row is hidden.
+- A test fails when two commands or pane templates claim the same prefix or alias, unless both are listed as opening the same pane.
+- Help opens on a new Essentials tab that lists about 20 core commands, read from the live registry. Click a row or press Enter to open that command in the command bar.
+
 ## Unreleased — Connections search and Assist POLL/FR/OFAC/USA/WX
 
 The Connections pane sorted ~65 rows from the header and `[s]ort` but had no way to filter them. Assist also dropped `POLL`, `FR`, `OFAC`, `USA`, and `WX` on a clean TUI catalog because those panes were in-tree ghosts, not the 150-prefix cap.
