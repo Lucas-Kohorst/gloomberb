@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
 import { adjacentPlugin } from "../adjacent";
-import { aiPlugin } from "../ai";
-import { AI_PROVIDER_IDS } from "../ai/providers";
 import {
   ADJACENT_CLOUD_CONNECTION_ID,
   ADJACENT_CLOUD_PROVIDER_IDS,
@@ -246,41 +244,6 @@ describe("connection source registry", () => {
     expect(ids).toEqual([
       ADJACENT_CLOUD_CONNECTION_ID,
     ]);
-  });
-
-  test("does not register AI providers as Connections sources", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-ai-connections");
-    await aiPlugin.setup?.({
-      getConfig: () => config,
-      configState: {
-        get: (key: string) => config.pluginConfig.ai?.[key] ?? null,
-        set: async (key: string, value: unknown) => {
-          config.pluginConfig.ai = { ...(config.pluginConfig.ai ?? {}), [key]: value };
-        },
-        delete: async () => {},
-        keys: () => Object.keys(config.pluginConfig.ai ?? {}),
-      },
-      resume: {
-        getState: () => null,
-        setState() {},
-        deleteState() {},
-        getPaneState: () => null,
-        setPaneState() {},
-        deletePaneState() {},
-      },
-      registerPane() {},
-      registerPaneTemplate() {},
-      registerTickerResearchTab() {},
-      registerCommand() {},
-      on: () => () => {},
-      log: { warn() {}, info() {} },
-    } as never);
-    disposers.push(() => aiPlugin.dispose?.());
-
-    const ids = listConnectionSources().map((source) => source.id);
-    for (const providerId of AI_PROVIDER_IDS) {
-      expect(ids).not.toContain(`ai-${providerId}`);
-    }
   });
 
   test("createInitialConnectionState propagates authRequired", () => {

@@ -2025,7 +2025,7 @@ describe("hosted Robinhood OAuth routes", () => {
   });
 });
 
-describe("BYOK redirect credentials", () => {
+describe("outbound proxy redirect credentials", () => {
   afterEach(restoreFetch);
 
   test("does not forward credentials to a different origin", async () => {
@@ -2038,7 +2038,7 @@ describe("BYOK redirect credentials", () => {
         ? new Response(null, { status: 302, headers: { location: "https://other.example/collect" } })
         : new Response("ok");
     }) as typeof fetch;
-    const response = await workerModule.default.fetch(makeRequest("POST", "/api/byok/proxy", {
+    const response = await workerModule.default.fetch(makeRequest("POST", "/api/proxy/outbound", {
       origin: ORIGIN, sessionToken: "tok",
       body: JSON.stringify({ url: "https://vendor.example/data", headers: { Authorization: "Bearer fixture", "X-API-Key": "fixture" } }),
     }), makeEnv());

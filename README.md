@@ -192,7 +192,6 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb notes|alerts [action]` | Manage local notes and alerts |
 | `NOTF` | Open notification center history |
 | `gloomberb broker|ibkr [action]` | Inspect broker profiles |
-| `gloomberb ai providers|ask` | Use configured AI providers |
 | `gloomberb rss fetch <url>` | Fetch an RSS feed |
 | `gloomberb provider status` | Inspect enabled data providers |
 | `gloomberb config|cache|plugin|layout|pane|debug|doctor|version|changelog` | Inspect and manage local app state |

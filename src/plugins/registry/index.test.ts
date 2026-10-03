@@ -12,7 +12,6 @@ import {
   macroPlugin,
   portfolioPlugin,
 } from "../builtin/composite-plugins";
-import { getAiRunHost, setAiRunHost } from "../builtin/ai/runner";
 import { PluginRegistry } from "./index";
 import { browserBuiltinPlugins } from "../catalog-browser";
 
@@ -131,42 +130,6 @@ describe("PluginRegistry lifecycle", () => {
     expect(() => registry.unregister("throwing-dispose")).toThrow("dispose failed");
     expect(registry.allPlugins.has("throwing-dispose")).toBe(false);
     expect(registry.panes.has("disposable-pane")).toBe(false);
-  });
-
-  test("drops plugin-contributed agent tools when the plugin is unregistered", async () => {
-    const tools = new Map<string, AgentTool>();
-    setAiRunHost({
-      run: () => ({ done: Promise.resolve(""), cancel() {} }),
-      registerTool(tool) { tools.set(tool.name, tool); },
-      unregisterTool(name) { tools.delete(name); },
-      getAvailableTools() {
-        return [...tools.values()].map((tool) => ({
-          name: tool.name,
-          description: tool.description ?? "",
-          parameters: {},
-        }));
-      },
-    });
-    try {
-      const registry = createRegistry();
-      await registry.register(plugin("agent-tools", (ctx) => {
-        ctx.registerAgentTool({
-          name: "plugin_echo",
-          label: "Echo",
-          description: "Echo a string.",
-          parameters: Type.Object({}),
-          async execute() {
-            return { content: [{ type: "text" as const, text: "ok" }], details: null };
-          },
-        });
-      }));
-      expect(getAiRunHost()?.getAvailableTools?.().some((tool) => tool.name === "plugin_echo")).toBe(true);
-
-      registry.unregister("agent-tools");
-      expect(getAiRunHost()?.getAvailableTools?.().some((tool) => tool.name === "plugin_echo")).toBe(false);
-    } finally {
-      setAiRunHost(null);
-    }
   });
 
   test("maps Agent title/render panes onto a React component", async () => {
@@ -695,8 +658,8 @@ describe("PluginRegistry broker runtime", () => {
 });
 
 describe("PluginRegistry API-key access", () => {
-  function configWithByokKeys(keys: Array<{ serviceId: string; apiKey: string }>) {
-    const config = createDefaultConfig("/tmp/gloomberb-byok-grant");
+  function configWithStoredKeys(keys: Array<{ serviceId: string; apiKey: string }>) {
+    const config = createDefaultConfig("/tmp/gloomberb-api-key-grant");
     config.pluginConfig = {
       application: {
         byokApiKeys: {
@@ -713,9 +676,9 @@ describe("PluginRegistry API-key access", () => {
     return config;
   }
 
-  test("external plugins cannot resolve BYOK keys or read raw key config without a host grant", async () => {
+  test("external plugins never resolve API keys and see a redacted config", async () => {
     const registry = createRegistry();
-    registry.getConfigFn = () => configWithByokKeys([
+    registry.getConfigFn = () => configWithStoredKeys([
       { serviceId: "adjacent", apiKey: "adj-secret" },
       { serviceId: "sec-edgar", apiKey: "edgar-secret" },
     ]);
@@ -744,18 +707,15 @@ describe("PluginRegistry API-key access", () => {
     expect(redactedConfig.keys.map((entry) => entry.apiKey)).toEqual(["[redacted]", "[redacted]"]);
     expect(redactedConfig.keys.map((entry) => entry.serviceId)).toEqual(["adjacent", "sec-edgar"]);
 
-    // A host-issued grant unlocks exactly the granted service.
+    // With no vault there is no key a host-issued grant could hand out.
     registry.grantApiKeyAccess("external-plugin", "adjacent");
-    expect(externalCtx!.getApiKey("adjacent")).toBe("adj-secret");
-    expect(externalCtx!.getApiKey("sec-edgar")).toBeUndefined();
-
-    registry.revokeApiKeyAccess("external-plugin", "adjacent");
     expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
+    registry.revokeApiKeyAccess("external-plugin", "adjacent");
   });
 
-  test("registerByokService grants that plugin its own key", async () => {
+  test("registerByokService stays inert and never resolves a stored key", async () => {
     const registry = createRegistry();
-    registry.getConfigFn = () => configWithByokKeys([
+    registry.getConfigFn = () => configWithStoredKeys([
       { serviceId: "optic-odds", apiKey: "optic-secret" },
     ]);
 
@@ -779,13 +739,13 @@ describe("PluginRegistry API-key access", () => {
       "/tmp/gloomberb-optic-odds/index.ts",
     );
 
-    expect(externalCtx!.getApiKey("optic-odds")).toBe("optic-secret");
+    expect(externalCtx!.getApiKey("optic-odds")).toBeUndefined();
     expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
   });
 
-  test("bundled plugins keep resolving BYOK keys and see the raw config", async () => {
+  test("bundled plugins see the raw config but no stored API keys", async () => {
     const registry = createRegistry();
-    registry.getConfigFn = () => configWithByokKeys([
+    registry.getConfigFn = () => configWithStoredKeys([
       { serviceId: "adjacent", apiKey: "adj-secret" },
     ]);
 
@@ -797,7 +757,7 @@ describe("PluginRegistry API-key access", () => {
       setup: (ctx) => { builtinCtx = ctx; },
     });
 
-    expect(builtinCtx!.getApiKey("adjacent")).toBe("adj-secret");
+    expect(builtinCtx!.getApiKey("adjacent")).toBeUndefined();
     const rawConfig = builtinCtx!.getConfig().pluginConfig.application
       .byokApiKeys as { keys: Array<{ apiKey: string }> };
     expect(rawConfig.keys[0]!.apiKey).toBe("adj-secret");

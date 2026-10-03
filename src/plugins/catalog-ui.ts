@@ -4,7 +4,6 @@ import type { LoadedExternalPlugin } from "./loader";
 import { newsPlugin } from "./builtin/news";
 import { substackPlugin } from "./builtin/substack";
 import { notesPlugin } from "./builtin/notes";
-import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { customViewPlugin } from "./builtin/custom-view";
 import { yahooPlugin } from "./builtin/yahoo";
@@ -55,7 +54,6 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   substackPlugin,
   adjacentPlugin,
   notesPlugin,
-  aiPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,

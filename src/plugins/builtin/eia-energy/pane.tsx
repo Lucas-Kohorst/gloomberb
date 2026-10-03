@@ -14,15 +14,13 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
-import { byokKeysConfigSelector } from "../account-management/ai-providers";
+import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { EiaEnergyClient, formatEiaValue, resolveEiaApiKey, type EiaDataPoint } from "./client";
 import {
   DEFAULT_EIA_SERIES_ID,
-  EIA_BYOK_SERVICE_ID,
   EIA_DEMO_KEY,
   EIA_ENERGY_PLUGIN_ID,
   EIA_SERIES,
@@ -79,10 +77,8 @@ export function buildEiaEnergySettingsDef() {
 export function EnergyPane({ width, height, focused }: PaneProps) {
   const [seriesIdSetting] = usePaneSettingValue<string>("seriesId", DEFAULT_EIA_SERIES_ID);
   const [apiKeySetting] = usePaneSettingValue<string>("apiKey", "");
-  const byokKeys = useAppSelector(byokKeysConfigSelector);
   const seriesId = resolveEiaSeriesId(seriesIdSetting);
-  const apiKey = byokKeys.find((entry) => entry.serviceId === EIA_BYOK_SERVICE_ID)?.apiKey?.trim()
-    || (typeof apiKeySetting === "string" && apiKeySetting.trim())
+  const apiKey = (typeof apiKeySetting === "string" && apiKeySetting.trim())
     || resolveEiaApiKey();
 
   const client = useMemo(() => new EiaEnergyClient(apiKey), [apiKey]);

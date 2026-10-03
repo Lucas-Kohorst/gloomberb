@@ -1,8 +1,6 @@
 import type { BrokerConnectionStatus } from "../types/broker";
 import type { QuoteSubscriptionTarget } from "../types/data-provider";
 import type { Quote } from "../types/financials";
-import type { AiAuthProgressEvent } from "../plugins/builtin/ai/runner";
-import type { AiAgentHistoryMessage } from "../plugins/builtin/ai/agent-history";
 
 export const BROKER_CAPABILITY_ID = "broker.core";
 export const NOTES_FILES_CAPABILITY_ID = "notes.files";
@@ -21,6 +19,48 @@ export type BrokerQuoteEvent = {
 };
 
 export type BrokerRemoteEvent = BrokerStatusEvent | BrokerQuoteEvent;
+
+/**
+ * What an AI runtime reports while it signs an account in.
+ *
+ * The runtime itself is a plugin's business: which providers exist, how they
+ * authenticate, and what a run costs all change faster than the app releases.
+ * The wire shape is the app's, because the desktop view and the Bun process
+ * have to agree on it before either of them knows which plugin is on the
+ * other end.
+ */
+export type AiAuthProgressEvent =
+  | {
+      type: "info";
+      message: string;
+      links?: readonly { url: string; label?: string }[];
+    }
+  | {
+      type: "auth_url";
+      url: string;
+      instructions?: string;
+    }
+  | {
+      type: "device_code";
+      userCode: string;
+      verificationUri: string;
+      intervalSeconds?: number;
+      expiresInSeconds?: number;
+    }
+  | {
+      type: "progress";
+      message: string;
+    };
+
+/**
+ * One turn of an agent transcript, carried back so a thread survives a restart.
+ * Only the discriminator is fixed here; the runtime that produced it owns the
+ * rest and validates it on the way in.
+ */
+export interface AiAgentHistoryMessage {
+  role: string;
+  [key: string]: unknown;
+}
 
 export type AiRunnerEvent =
   | { kind: "chunk"; output: string }

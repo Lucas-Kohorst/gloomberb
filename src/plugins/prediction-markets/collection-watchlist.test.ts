@@ -4,7 +4,7 @@ import {
   hydrateHostedUserConfig,
   setHostedConfigUserId,
 } from "../../data/config/hosted-user-persist";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../builtin/byok/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../data/config/byok-legacy";
 import { coreConfigSyncContributor, overlayCoreConfigPayload } from "../../sync/core-contributors";
 import { createDefaultConfig } from "../../types/config";
 import type { TickerRecord } from "../../types/ticker";

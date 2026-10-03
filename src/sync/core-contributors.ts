@@ -25,7 +25,7 @@ import {
   normalizeBuiltinPaneStatePluginOwners,
   normalizeBuiltinPluginStateMap,
 } from "../plugins/ownership";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../data/config/byok-legacy";
 import { peekHostedUserConfigStamp } from "../data/config/hosted-user-persist";
 import { shouldKeepNewerHostedLocalConfig } from "../data/config/hosted-config-snapshot";
 import { parseIncomingTickerRecords } from "../data/config/hosted-ticker-persist";

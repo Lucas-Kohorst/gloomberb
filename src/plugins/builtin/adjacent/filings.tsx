@@ -50,10 +50,6 @@ import {
   formatFilingDay,
 } from "./filings-format";
 import {
-  renderCftcSummary,
-  useCftcFilingSummary,
-} from "./filings-summary";
-import {
   type CftcFiling,
   type CftcFilingDetail,
 } from "./types";
@@ -173,25 +169,18 @@ function FilingDetail({
   filing,
   detail,
   loading,
-  summaryMarkdown,
-  summarizing,
   width,
   scrollRef,
 }: {
   filing: CftcFiling;
   detail: CftcFilingDetail | null;
   loading: boolean;
-  summaryMarkdown?: string | null;
-  summarizing?: boolean;
   width: number;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
   const lineWidth = Math.max(width - 2, 1);
   const meta = buildDetailMeta(filing);
   const body = buildDetailBody(filing, detail, loading);
-  const summaryText = summarizing
-    ? "Summarizing with AI..."
-    : summaryMarkdown ?? "";
   return (
     <Box
       flexDirection="column"
@@ -213,7 +202,7 @@ function FilingDetail({
         <ArticleContent
           width={lineWidth}
           metadata={meta}
-          body={[summaryText, body].filter(Boolean).join("\n\n")}
+          body={body}
         />
       </ScrollBox>
     </Box>
@@ -427,7 +416,6 @@ export function AdjacentFilingsPane({
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const copyShareLink = useCopyShareLink();
-  const filingSummary = useCftcFilingSummary();
   const markFilingRead = useCallback((filing: CftcFiling) => {
     markArticleRead(filingId(filing));
   }, [markArticleRead]);
@@ -451,11 +439,6 @@ export function AdjacentFilingsPane({
       await copyShareLink(newsArticleSharePayload(cftcFilingToArticle(filing, loaded)));
     })();
   }, [client, copyShareLink, detail, detailFiling]);
-  const handleSummarize = useCallback(() => {
-    if (!openFiling || detailLoading) return;
-    void filingSummary.summarize(openFiling, buildDetailBody(openFiling, detail, false));
-  }, [detail, detailLoading, filingSummary, openFiling]);
-  const openSummary = openFiling ? filingSummary.summaries.get(openFiling.id) : undefined;
 
   useEffect(() => {
     if (selectedFilingId !== selectedId) setSelectedId(selectedFilingId);
@@ -496,8 +479,8 @@ export function AdjacentFilingsPane({
     url: detail?.sourceUrl || null,
     source: detailFiling ? feedLabel(detailFiling) : undefined,
     label: "filing",
-    loading: status === "loading" || loadingMore || filingSummary.summarizingId != null,
-    error: error ?? filingSummary.summaryError,
+    loading: status === "loading" || loadingMore,
+    error,
     info: [
       ...(client.isPublic
         ? [{ id: "tier", parts: [{ text: "public, last 90d", tone: "muted" as const }] }]
@@ -518,9 +501,6 @@ export function AdjacentFilingsPane({
         : []),
       ...(detailFiling && !openFiling
         ? [{ id: "share", key: "s", label: "hare", onPress: shareSelected, disabled: searchFocused }]
-        : []),
-      ...(openFiling && !detailLoading
-        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize, disabled: searchFocused }]
         : []),
     ],
   });
@@ -567,14 +547,8 @@ export function AdjacentFilingsPane({
       popOutSelected();
       return true;
     }
-    if (isPlainKey(event, "s") && openFiling && !detailLoading) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      handleSummarize();
-      return true;
-    }
     return false;
-  }, [detailFiling, detailLoading, handleSummarize, openFiling, popOutSelected, scrollDetailBy]);
+  }, [detailFiling, popOutSelected, scrollDetailBy]);
 
   const rootBefore = (
     <PaneListChrome
@@ -622,8 +596,6 @@ export function AdjacentFilingsPane({
           filing={openFiling}
           detail={detail}
           loading={detailLoading}
-          summaryMarkdown={openSummary ? renderCftcSummary(openSummary) : null}
-          summarizing={openFiling != null && filingSummary.summarizingId === openFiling.id}
           width={width}
           scrollRef={detailScrollRef}
         />

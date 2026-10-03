@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PluginCapability, RegisteredCapability } from "../../../capabilities/types";
 import type { DataProvider } from "../../../types/data-provider";
 import type { GloomPluginContext } from "../../../types/plugin";
-import { AI_PROVIDER_IDS } from "../ai/providers";
 import {
   ADJACENT_CLOUD_CONNECTION_ID,
   ADJACENT_CLOUD_PROVIDER_IDS,
@@ -91,23 +90,6 @@ describe("ConnectionTracker inventory", () => {
       "chart",
       "polls",
     ]);
-  });
-
-  test("does not surface AI providers as Connections rows", () => {
-    const next = attach();
-    for (const providerId of AI_PROVIDER_IDS) {
-      reportConnectionRequest(`ai-${providerId}`, {
-        success: true,
-        durationMs: 4,
-        operation: "run",
-      });
-    }
-
-    const ids = next.getSnapshot().connections.map((row) => row.id);
-    for (const providerId of AI_PROVIDER_IDS) {
-      expect(ids).not.toContain(`ai-${providerId}`);
-    }
-    expect(listConnectionSources().some((source) => source.id.startsWith("ai-"))).toBe(false);
   });
 
   test("coalesces multiple recordSuccess calls into one listener fire after flush", () => {

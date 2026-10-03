@@ -43,7 +43,6 @@ import { getSharedRegistry } from "../../registry";
 import { predictionTickerRecord } from "../../prediction-markets/collection-watchlist";
 import { openUrl } from "../../../components/ui/external-link";
 import { usePaneFooterHintBindings } from "../shared/pane-footer";
-import { requestAccountManagementTab } from "../account-management/navigation";
 import { ChartRangeTabs } from "../../../components/chart/range-tabs";
 import type { TimeRange } from "../../../components/chart/core/types";
 import { ADJACENT_DEFAULT_PRICE_RANGE, adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
@@ -291,11 +290,6 @@ function IndexDetail({
   const bump = useCallback((slice: "constituents" | "news" | "filings" | "prices") => {
     setReload((current) => ({ ...current, [slice]: current[slice] + 1 }));
   }, []);
-  const openAdjacentKeys = useCallback(() => {
-    requestAccountManagementTab("keys");
-    getSharedRegistry()?.showPane("account-management");
-  }, []);
-
   useEffect(() => {
     setConstituents([]);
     setPrices([]);
@@ -461,9 +455,6 @@ function IndexDetail({
   const detailHints = useMemo(() => {
     if (detailTab === "filings") {
       return [
-        ...(client.isPublic
-          ? [{ id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }]
-          : []),
         ...(selectedFiling
           ? [{
             id: "open",
@@ -512,13 +503,10 @@ function IndexDetail({
       ];
     }
     return [
-      ...(detailTab === "chart" && tier === "public"
-        ? [{ id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }]
-        : []),
       { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
       { id: "open", key: "o", label: "pen", onPress: openTarget },
     ];
-  }, [client, detailTab, graphExpression, graphTarget, markArticleRead, openAdjacentKeys, openSelectedFiling, openTarget, popOutArticle, selectedArticle, selectedFiling, tier]);
+  }, [detailTab, graphExpression, graphTarget, markArticleRead, openSelectedFiling, openTarget, popOutArticle, selectedArticle, selectedFiling]);
   usePaneFooter("adjacent-indices-detail", () => ({
     info: [
       ...(tabLoading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),

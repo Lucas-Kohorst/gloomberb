@@ -17,8 +17,6 @@ import {
   setSharedAdjacentUserApiKey,
 } from "./client";
 import { readProcessEnv } from "../../../utils/process-env";
-import { useAppSelector } from "../../../state/app/context";
-import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { AdjacentPane } from "./pane";
 import { createAdjacentNewsCapability } from "./news";
 import { createAdjacentCatalogSearchProvider, openAdjacentCatalogSearch } from "./command-bar-search";
@@ -50,9 +48,7 @@ function getOrCreateClient(apiKey: string | null): AdjacentClient {
  */
 function useAdjacentClient(): AdjacentClient {
   const [pluginKey] = usePluginConfigState<string>(ADJACENT_API_KEY_CONFIG, "");
-  const byokKeys = useAppSelector(byokKeysConfigSelector);
-  const apiKey = byokKeys.find((entry) => entry.serviceId === "adjacent")?.apiKey?.trim()
-    || pluginKey?.trim()
+  const apiKey = pluginKey?.trim()
     || resolveAdjacentApiKey()
     || "";
   const client = useMemo(

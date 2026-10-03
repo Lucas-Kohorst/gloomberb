@@ -270,7 +270,7 @@ describe("assist catalog coverage", () => {
     }
   });
 
-  test("splits KEYS (BYOK) from BIND/KB (keybindings) and prefixes Team and X Feed", () => {
+  test("maps BIND/KB (keybindings) and prefixes Team and X Feed", () => {
     const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
     const keybindings = paneTemplates.find((template) => template.id === "keybindings-pane");
     const team = paneTemplates.find((template) => template.id === "team-pane");
@@ -302,18 +302,9 @@ describe("assist catalog coverage", () => {
 
     const inventory = buildAssistCommandInventory({
       commands: [],
-      pluginCommands: [{
-        id: "byok-manage-keys",
-        label: "Manage API Keys",
-        description: "Open BYOK settings to add, edit, or test API keys.",
-        keywords: ["byok", "api"],
-        category: "config",
-        shortcut: "KEYS",
-        execute: () => {},
-      }],
+      pluginCommands: [],
       paneTemplates,
     });
-    expect(inventory.find((entry) => entry.prefix === "KEYS")?.name).toBe("Manage API Keys");
     expect(inventory.find((entry) => entry.prefix === "BIND")?.name).toBe("Key Bindings");
     expect(inventory.find((entry) => entry.prefix === "TEAM")?.name).toBe("Team");
   });

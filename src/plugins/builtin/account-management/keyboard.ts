@@ -34,11 +34,6 @@ export function useAccountManagementKeyboard({
   useShortcut((event) => {
     if (!focused) return;
 
-    // The AI providers tab has its own keyboard handler (row navigation,
-    // activate, add-key, etc.). Skip the ACM field-cycling logic so arrow
-    // keys and Tab reach the data table inside it.
-    if (activeField === "aiProvidersAction" || activeField === "byokKeysAction" || activeField === "keysAction") return;
-
     const displayField = activeField === "themeAction"
       || activeField === "fontSizeAction";
 

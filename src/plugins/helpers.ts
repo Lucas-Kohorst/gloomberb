@@ -39,7 +39,7 @@ import {
   withConnectionRequest,
   reportConnectionRequest,
 } from "./builtin/connections/register";
-import { registerByokKnownService } from "./builtin/byok/services";
+import { registerByokKnownService } from "../data/config/byok-legacy";
 import type { ConnectionKind } from "./builtin/connections/types";
 import { createAlert } from "./builtin/alerts/alert-registry";
 

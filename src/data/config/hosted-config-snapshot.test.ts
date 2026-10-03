@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "../../plugins/builtin/byok/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "./byok-legacy";
 import {
   createHostedConfigSnapshotPusher,
   isPlaceholderHostedConfig,

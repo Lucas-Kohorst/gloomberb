@@ -2,7 +2,7 @@ import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "./byok-legacy";
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
 import { attachHostedUserWorkspaceExtras, captureHostedPersistenceIdentity } from "./hosted-user-persist";
 import { readHostedTickers } from "./hosted-ticker-persist";
@@ -28,8 +28,8 @@ export interface HostedConfigSnapshotResponse {
 
 /**
  * Removes raw BYOK API keys from a config object destined for a server-side
- * snapshot. Keys stay local via `writeHostedByokKeys` and must never appear in
- * a synced or server-persisted payload.
+ * snapshot. The vault is gone but old installs still carry stored keys, and
+ * those must never appear in a synced or server-persisted payload.
  */
 export function stripByokKeysForSnapshot(config: AppConfig): AppConfig {
   const pluginConfig = config.pluginConfig[BYOK_PLUGIN_ID];

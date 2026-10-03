@@ -10,11 +10,6 @@ import {
 } from "../../data/config/hosted-user-persist";
 import { getHostedConfigSnapshotPusher } from "../../data/config/hosted-config-snapshot";
 import { clearHostedBrowserWorkspace } from "../../data/config/hosted-file-ops";
-import {
-  hydrateHostedByokConfig,
-  initHostedByokCrypto,
-  writeHostedByokKeys,
-} from "../../plugins/builtin/byok/hosted-persist";
 
 export const BROWSER_DATA_DIR = "browser://local";
 
@@ -32,15 +27,12 @@ export function createBrowserConfigStore(): ConfigStoreHost {
     async loadConfig(dataDir) {
       const config = createBrowserDefaultConfig(dataDir);
       hydrateHostedUserConfig(config);
-      await initHostedByokCrypto();
-      hydrateHostedByokConfig(config);
       return browserReady(config);
     },
     async saveConfig(config) {
       if (!resolveHostedPersistUserId()) return;
       const saved = browserReady({ ...config, dataDir: BROWSER_DATA_DIR });
       writeHostedUserConfig(saved);
-      writeHostedByokKeys(saved);
       getHostedConfigSnapshotPusher().schedule(saved);
     },
     async initDataDir(dataDir) {
@@ -54,7 +46,6 @@ export function createBrowserConfigStore(): ConfigStoreHost {
       clearHostedBrowserWorkspace();
       const config = createBrowserDefaultConfig(dataDir);
       writeHostedUserConfig(config);
-      writeHostedByokKeys(config);
       await pusher.flushForced(config);
     },
     async exportConfig() {

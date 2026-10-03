@@ -18,8 +18,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { nextSortPreference } from "../../../utils/sort-values";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
-import { selectByokKeys } from "../byok/store";
+import { usePaneSettingValue } from "../../../state/app/context";
 import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
@@ -35,8 +34,6 @@ import {
   type UmaSort,
 } from "./model";
 import {
-  BRAVADO_UMA_BYOK_SERVICE_ID,
-  BRAVADO_UMA_SECRET_SERVICE_ID,
   UMA_DISPUTES_PANE_ID,
   type UmaDisputeColumnId,
   type UmaQuestion,
@@ -78,12 +75,6 @@ function renderCell(
 }
 
 export function UmaDisputesPane({ width, height, focused }: PaneProps) {
-  const storedCredential = useAppSelector((state) => {
-    const keys = selectByokKeys(state);
-    const apiKey = keys.find((entry) => entry.serviceId === BRAVADO_UMA_BYOK_SERVICE_ID)?.apiKey ?? "";
-    const apiSecret = keys.find((entry) => entry.serviceId === BRAVADO_UMA_SECRET_SERVICE_ID)?.apiKey ?? "";
-    return `${apiKey}\0${apiSecret}`;
-  });
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? "").trim());
   const listSearch = usePaneListSearch({
@@ -136,7 +127,7 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
   useEffect(() => {
     load();
     return () => abortRef.current?.abort();
-  }, [load, storedCredential]);
+  }, [load]);
 
   const filtered = useMemo(() => filterDisputes(questions, query), [questions, query]);
   const rows = useMemo(() => sortDisputes(filtered, sort), [filtered, sort]);

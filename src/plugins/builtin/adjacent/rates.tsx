@@ -16,7 +16,6 @@ import {
   type DataTableColumn,
   type DataTableCell,
   type DataTableKeyEvent,
-  type PaneHint,
   type StackSortPreference,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
@@ -35,9 +34,7 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { openUrl } from "../../../components/ui/external-link";
 import { graphFooterHint, useGraphChartPopOut } from "../shared/graph-pop-out";
-import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
-import { requestAccountManagementTab } from "../account-management/navigation";
-import { getSharedRegistry } from "../../registry";
+import { paneSearchHint } from "../shared/pane-footer";
 import { ChartRangeTabs } from "../../../components/chart/range-tabs";
 import type { TimeRange } from "../../../components/chart/core/types";
 import { ADJACENT_DEFAULT_PRICE_RANGE, adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
@@ -581,24 +578,13 @@ export function AdjacentRatesPane({
   // Without a user-owned key the rate history is on Adjacent's public tier,
   // which caps out at 3M. That is auth state, so it belongs in the footer.
   const tier = useMemo(() => adjacentPriceTier(client), [client]);
-  const openAdjacentKeys = useCallback(() => {
-    requestAccountManagementTab("keys");
-    getSharedRegistry()?.showPane("account-management");
-  }, []);
-  const adjacentKeysHint = useMemo<PaneHint | null>(
-    () => tier === "public"
-      ? { id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }
-      : null,
-    [openAdjacentKeys, tier],
-  );
-  usePaneFooterHintBindings(focused, adjacentKeysHint ? [adjacentKeysHint] : undefined);
 
   usePaneFooter("adjacent-rates", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
-      ...(adjacentKeysHint
+      ...(tier === "public"
         ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
         : []),
     ],
@@ -607,9 +593,8 @@ export function AdjacentRatesPane({
       graphFooterHint(graphSelected, !!selectedRate),
       paneSearchHint(focusSearch),
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
-      ...(adjacentKeysHint ? [adjacentKeysHint] : []),
     ],
-  }), [adjacentKeysHint, detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, tier, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

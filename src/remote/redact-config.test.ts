@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../types/config";
 import { REDACTED, hydrateRedactedConfigForRemote, redactConfigForRemote } from "./redact-config";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../data/config/byok-legacy";
 
 // Obviously-fake sentinels defined by the test itself. Never real credentials.
 const BROKER_TOKEN = "BROKER_SECRET_TOKEN_xyz123";

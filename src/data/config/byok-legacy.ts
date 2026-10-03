@@ -1,24 +1,28 @@
 /**
- * Types for the BYOK (Bring Your Own Key) settings system.
+ * Legacy BYOK (Bring Your Own Key) config schema.
  *
- * API keys are stored in the application plugin's config namespace and are
- * never written to AppConfig top-level fields. Other plugins retrieve keys
- * at runtime via {@link GloomPluginContext.getApiKey}.
+ * The BYOK plugin is gone, but existing installs and synced snapshots still
+ * carry `pluginConfig["application"].byokApiKeys`. These constants and types
+ * only describe that persisted data so config hygiene keeps working: keys are
+ * stripped before server-side snapshots, redacted before logs/remote payloads,
+ * and preserved against a cloud pull. Nothing here stores, reads, or serves a
+ * key at runtime — plugins that once resolved keys now fall back to their own
+ * environment variables.
  */
 
 export type ByokAuthType = "bearer" | "header" | "query" | "user-agent" | "none";
 
 export type ByokDataFormat = "json" | "csv" | "text" | "auto";
 
-/** A known service that the app or its plugins can use API keys for. */
+/** A known service that the app or its plugins could take an API key for. */
 export interface ByokKnownService {
-  /** Stable identifier used by `ctx.getApiKey(serviceId)`. */
+  /** Stable identifier historically used by `ctx.getApiKey(serviceId)`. */
   id: string;
-  /** Human-readable name shown in the settings pane. */
+  /** Human-readable name. */
   name: string;
-  /** Base API URL for the service (optional for services like SEC EDGAR). */
+  /** Base API URL for the service. */
   apiUrl?: string;
-  /** How the key is transmitted in requests. */
+  /** How the key was transmitted in requests. */
   authType: ByokAuthType;
   /** Header or query parameter name when authType is "header" or "query". */
   authKey?: string;
@@ -76,5 +80,24 @@ export interface ByokStoredConfig {
 export const BYOK_CUSTOM_SERVICE_ID = "custom";
 export const BYOK_API_KEYS_CONFIG_KEY = "byokApiKeys";
 
-/** The plugin id that owns BYOK config state (the application composite plugin). */
+/** The plugin id that historically owned BYOK config state. */
 export const BYOK_PLUGIN_ID = "application";
+
+/**
+ * localStorage blob that once held a user's encrypted keys. Nothing writes it
+ * any more; the key is kept so a workspace wipe still deletes old key material.
+ */
+export const HOSTED_BYOK_STORAGE_KEY = "gloomberb:hosted-byok-keys";
+
+export function hostedByokStorageKey(userId: string): string {
+  return `${HOSTED_BYOK_STORAGE_KEY}:${userId}`;
+}
+
+/**
+ * Advertising a BYOK service no longer does anything: there is no key vault
+ * left to register into. Kept so plugins declaring services keep loading.
+ */
+export function registerByokKnownService(service: ByokKnownService): () => void {
+  void service;
+  return () => {};
+}

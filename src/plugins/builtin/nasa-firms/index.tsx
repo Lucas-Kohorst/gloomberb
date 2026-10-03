@@ -21,12 +21,11 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useDebouncedPluginPaneState, usePluginPaneState, usePluginConfigState } from "../../runtime";
-import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
+import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
-import { byokKeysConfigSelector } from "../account-management/ai-providers";
 import { FirmsClient, loadFires, resolveNasaFirmsMapKey, setNasaFirmsMapKeyResolver } from "./client";
 import {
   NASA_FIRMS_API_BASE_URL,
@@ -146,9 +145,7 @@ function createFireInstance(
 
 export function FirePane({ width, height, focused }: PaneProps) {
   const [pluginKey] = usePluginConfigState<string>(NASA_FIRMS_MAP_KEY_CONFIG, "");
-  const byokKeys = useAppSelector(byokKeysConfigSelector);
-  const mapKey = byokKeys.find((entry) => entry.serviceId === NASA_FIRMS_BYOK_SERVICE_ID)?.apiKey?.trim()
-    || pluginKey?.trim()
+  const mapKey = pluginKey?.trim()
     || resolveNasaFirmsMapKey()
     || "";
   const hasKey = !!mapKey;

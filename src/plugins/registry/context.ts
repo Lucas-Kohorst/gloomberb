@@ -21,7 +21,7 @@ import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
 import { createPluginTeamState } from "../team-state";
 import { createAlert as createAlertHandler } from "../builtin/alerts/alert-registry";
-import { registerByokKnownService } from "../builtin/byok/services";
+import { registerByokKnownService } from "../../data/config/byok-legacy";
 import type { PluginEvents } from "../event-bus";
 import type { PluginItems, RegistryContributions } from "./contributions";
 import {

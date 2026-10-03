@@ -57,9 +57,6 @@ import {
   useSecFilingContentCache,
 } from "./filing-content";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
-import { attachSecSummaryPersistence, resetSecSummaryPersistence } from "./summary-cache";
-import { renderFilingSummary, type FilingSummary } from "./summary-contract";
-import { useFilingSummary } from "./use-filing-summary";
 
 const SEC_FILING_FETCH_LIMIT = 20_000;
 const SEC_FILING_PAGE_SIZE = 50;
@@ -241,8 +238,6 @@ function toFeedItems(
   selectedDocuments: SecFilingDocument[],
   loadingDocuments: boolean,
   showEntity = false,
-  summaries: ReadonlyMap<string, FilingSummary> = new Map(),
-  summarizingAccession: string | null = null,
 ): FeedDataTableItem[] {
   return filings.map((filing) => {
     const displayTitle = getFilingDisplayTitle(filing);
@@ -265,21 +260,14 @@ function toFeedItems(
     const primaryDetailBody = loadingContent && selected
       ? "Loading filing content..."
       : form4Detail ?? fetchedContent ?? fallbackBody;
-    const summary = summaries.get(filing.accessionNumber);
-    const isSummarizing = summarizingAccession === filing.accessionNumber;
-    const summaryBlock = summary
-      ? `\n\n${renderFilingSummary(summary)}`
-      : isSummarizing && selected
-        ? "\n\nAI Summary\n\nSummarizing filing with AI..."
-        : "";
     const detailBody = selected
-      ? `${buildDetailBodyWithDocuments({
+      ? buildDetailBodyWithDocuments({
           filing,
           documents: selectedDocuments,
           documentsLoading: loadingDocuments,
           contentCache,
           primaryContent: primaryDetailBody,
-        })}${summaryBlock}`
+        })
       : form4Detail ?? fallbackBody;
 
     const entityLabel = showEntity ? filingEntityLabel(filing) : undefined;
@@ -360,29 +348,18 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
   });
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
 
-  const summary = useFilingSummary({
-    filings: visibleFilings,
-    contentCache,
-  });
-  const summarizeTarget = openFiling ?? selectedFiling ?? null;
-  const handleSummarize = useCallback(() => {
-    if (!summarizeTarget) return;
-    const content = contentCache.get(summarizeTarget.accessionNumber);
-    if (!content) return;
-    void summary.summarize(summarizeTarget, content);
-  }, [contentCache, summarizeTarget, summary]);
-  const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const detailTarget = openFiling ?? selectedFiling ?? null;
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle();
-  const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
+  const canPopOut = !!detailTarget && isPeriodicFiling(detailTarget);
   const popOutSelected = useCallback(() => {
-    if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
-    markArticleRead(summarizeTarget.accessionNumber);
+    if (!detailTarget || !isPeriodicFiling(detailTarget)) return;
+    markArticleRead(detailTarget.accessionNumber);
     popOutArticle(filingToArticle(
-      summarizeTarget,
-      contentCache.get(summarizeTarget.accessionNumber),
+      detailTarget,
+      contentCache.get(detailTarget.accessionNumber),
     ));
-  }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
+  }, [contentCache, markArticleRead, popOutArticle, detailTarget]);
 
   usePaneStatusLinkFooter({
     registrationId: "sec",
@@ -433,8 +410,6 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
         openDocuments,
         loadingDocuments,
         false,
-        summary.summaries,
-        summary.summarizingAccession,
       )}
       selectedItemId={activeSelectionId}
       onSelect={(index) => setSelectedAccessionNumber(visibleFilings[index]?.accessionNumber ?? null)}
@@ -634,33 +609,22 @@ function SecPane({ width, height, focused }: PaneProps) {
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes" });
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
 
-  const summary = useFilingSummary({
-    filings: visibleFilings,
-    contentCache,
-  });
   const selectedFiling = visibleFilings.find((filing) => filing.accessionNumber === selectedAccessionNumber)
     ?? visibleFilings[0]
     ?? null;
   const activeSelectionId = selectedFiling?.accessionNumber ?? null;
-  const summarizeTarget = openFiling ?? selectedFiling ?? null;
-  const handleSummarize = useCallback(() => {
-    if (!summarizeTarget) return;
-    const content = contentCache.get(summarizeTarget.accessionNumber);
-    if (!content) return;
-    void summary.summarize(summarizeTarget, content);
-  }, [contentCache, summarizeTarget, summary]);
-  const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const detailTarget = openFiling ?? selectedFiling ?? null;
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle();
-  const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
+  const canPopOut = !!detailTarget && isPeriodicFiling(detailTarget);
   const popOutSelected = useCallback(() => {
-    if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
-    markArticleRead(summarizeTarget.accessionNumber);
+    if (!detailTarget || !isPeriodicFiling(detailTarget)) return;
+    markArticleRead(detailTarget.accessionNumber);
     popOutArticle(filingToArticle(
-      summarizeTarget,
-      contentCache.get(summarizeTarget.accessionNumber),
+      detailTarget,
+      contentCache.get(detailTarget.accessionNumber),
     ));
-  }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
+  }, [contentCache, markArticleRead, popOutArticle, detailTarget]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -703,11 +667,6 @@ function SecPane({ width, height, focused }: PaneProps) {
       event.preventDefault?.();
       popOutSelected();
     }
-    if (isPlainKey(event, "s") && canSummarize) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      handleSummarize();
-    }
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
@@ -716,8 +675,8 @@ function SecPane({ width, height, focused }: PaneProps) {
     url: error ? null : openFiling?.filingUrl,
     source: openFiling?.form,
     label: "filing",
-    loading: loading || !!summary.summarizingAccession,
-    error: error ?? summary.summaryError,
+    loading,
+    error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : undefined,
@@ -730,9 +689,6 @@ function SecPane({ width, height, focused }: PaneProps) {
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       ...(canPopOut
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
-        : []),
-      ...(canSummarize
-        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
         : []),
     ],
   });
@@ -761,14 +717,8 @@ function SecPane({ width, height, focused }: PaneProps) {
       popOutSelected();
       return true;
     }
-    if (event.name === "s" && canSummarize) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      handleSummarize();
-      return true;
-    }
     return false;
-  }, [canPopOut, canSummarize, focusSearch, handleSummarize, load, popOutSelected, query]);
+  }, [canPopOut, focusSearch, load, popOutSelected, query]);
 
   const rootBefore = (
     <InputSearchBar
@@ -823,8 +773,6 @@ function SecPane({ width, height, focused }: PaneProps) {
         openDocuments,
         loadingDocuments,
         true,
-        summary.summaries,
-        summary.summarizingAccession,
       )}
       selectedItemId={activeSelectionId}
       onSelect={(index) => setSelectedAccessionNumber(visibleFilings[index]?.accessionNumber ?? null)}
@@ -926,7 +874,6 @@ export const secModule: PluginModule = {
   ],
 
   setup(ctx) {
-    attachSecSummaryPersistence(ctx.persistence);
     ctx.registerByokService({
       id: SEC_EDGAR_BYOK_SERVICE_ID,
       name: "SEC EDGAR",
@@ -958,6 +905,5 @@ export const secModule: PluginModule = {
   dispose() {
     disposeSecConnection?.();
     disposeSecConnection = null;
-    resetSecSummaryPersistence();
   },
 };

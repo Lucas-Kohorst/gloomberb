@@ -15,7 +15,6 @@ import {
   type HostedSyncPull,
 } from "../data/config/hosted-sync-hydrate";
 import { readHostedTickers } from "../data/config/hosted-ticker-persist";
-import { hydrateHostedByokConfig, initHostedByokCrypto } from "../plugins/builtin/byok/hosted-persist";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
 import type { AppAction, AppState } from "../core/state/app/state";
@@ -82,8 +81,6 @@ async function configForHostedAccount(current: AppConfig, userId: string): Promi
   const config = createDefaultConfig(dataDir);
   config.onboardingComplete = true;
   hydrateHostedUserConfig(config, userId);
-  await initHostedByokCrypto(userId);
-  hydrateHostedByokConfig(config, userId);
   return config;
 }
 

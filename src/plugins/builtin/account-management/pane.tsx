@@ -52,13 +52,9 @@ import {
   type PlanPriceDisplay,
 } from "./model";
 import { PasswordChangeDialog } from "./password-dialog";
-import { AiProvidersTab } from "./ai-providers-tab";
-import { AccountByokTab } from "./byok-tab";
 import { DisplayTab, cycleDisplayFieldValue } from "./display-tab";
 import { TeamsAccountTab } from "../cloud/team/acm-tab";
 import { CalendarAccountTab } from "./calendar-tab";
-import { ByokSettingsPane } from "../byok/pane";
-import { isHostedWebClient } from "../ai/providers";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
 import { buildTrackedCurrencies } from "../analytics/sector-model";
@@ -88,9 +84,6 @@ const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = 
   { label: "Display", value: "display" },
   { label: "Emails", value: "emails" },
   { label: "Calendar", value: "calendar" },
-  { label: "AI", value: "ai" },
-  { label: "BYOK", value: "byok" },
-  { label: "Keys", value: "keys" },
   { label: "Teams", value: "teams" },
   { label: "Pro", value: "pro" },
   { label: "Advanced", value: "advanced" },
@@ -117,9 +110,6 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
     "emailAlertsOffAction",
   ],
   calendar: [],
-  ai: ["aiProvidersAction"],
-  byok: ["byokKeysAction"],
-  keys: ["keysAction"],
   teams: [],
   pro: ["upgradeAction"],
   advanced: ["passwordAction", "deleteAccountAction"],
@@ -347,12 +337,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [draft, setDraft] = useState<AccountDraft>(() => (
     parseAccountDraft(storedDraft) ?? profileToDraft(null)
   ));
-  const showByokTab = !isHostedWebClient();
   const [initialTab] = useState<AccountManagementTab>(
-    () => {
-      const requested = consumeRequestedAccountManagementTab() ?? "profile";
-      return requested === "byok" && isHostedWebClient() ? "profile" : requested;
-    },
+    () => consumeRequestedAccountManagementTab() ?? "profile",
   );
   const [activeField, setActiveField] = useState<AccountFieldKey>(
     () => ACCOUNT_TAB_FIELD_ORDER[initialTab][0] ?? "username",
@@ -362,7 +348,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [activeTab, setActiveTab] = useState<AccountManagementTab>(initialTab);
 
   useEffect(() => subscribeRequestedAccountManagementTab((tab) => {
-    if (tab === "byok" && isHostedWebClient()) return;
     setActiveTab(tab);
     setActiveField(ACCOUNT_TAB_FIELD_ORDER[tab][0] ?? "username");
   }), []);
@@ -382,9 +367,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const formLabelWidth = accountFieldLabelWidth(formWidth);
   const bodyHeight = Math.max(5, height);
   const fieldOrder = ACCOUNT_TAB_FIELD_ORDER[activeTab];
-  const accountTabs = ACCOUNT_TAB_DEFS
-    .filter((tab) => tab.value !== "byok" || showByokTab)
-    .map((tab) => ({ ...tab, label: t(tab.label) }));
+  const accountTabs = ACCOUNT_TAB_DEFS.map((tab) => ({ ...tab, label: t(tab.label) }));
 
   const planAccess = useMemo(() => resolvePlanAccess(profile), [profile]);
   const planPrice = useMemo(() => formatCloudMonthlyPrice(pricing), [language, pricing]);
@@ -625,7 +608,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   const selectTab = useCallback((tab: string) => {
     const nextTab = tab as AccountManagementTab;
-    if (nextTab === "byok" && isHostedWebClient()) return;
     setActiveTab(nextTab);
     setActiveField(ACCOUNT_TAB_FIELD_ORDER[nextTab][0] ?? "username");
   }, []);
@@ -863,7 +845,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     turnOffEmailAlerts,
   });
 
-  if (!hasSession && !apiClient.isSignedIn() && activeTab !== "byok" && activeTab !== "keys") {
+  if (!hasSession && !apiClient.isSignedIn()) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
         <Tabs
@@ -891,27 +873,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         compact
         keyboardNavigation={false}
       />
-      {activeTab === "ai" ? (
-        <AiProvidersTab
-          focused={focused}
-          width={Math.max(1, width - 2)}
-          height={Math.max(3, height - 2)}
-        />
-      ) : activeTab === "byok" ? (
-        <AccountByokTab
-          focused={focused}
-          width={Math.max(1, width - 2)}
-          height={Math.max(3, height - 2)}
-        />
-      ) : activeTab === "keys" ? (
-        <ByokSettingsPane
-          paneId="account-management"
-          paneType="account-management"
-          focused={focused}
-          width={Math.max(1, width - 2)}
-          height={Math.max(3, height - 2)}
-        />
-      ) : activeTab === "teams" ? (
+      {activeTab === "teams" ? (
         <TeamsAccountTab focused={focused} width={Math.max(1, width - 2)} />
       ) : activeTab === "calendar" ? (
         <CalendarAccountTab width={contentWidth} sessionMarker={sessionMarker} />

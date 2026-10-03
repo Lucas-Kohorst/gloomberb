@@ -4,7 +4,6 @@ import { registerConnectionSource } from "./connections/register";
 import { portfolioAnalyticsModule } from "./analytics";
 import { bondSearchModule } from "./bond-search";
 import { brokerManagerModule } from "./broker-manager";
-import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
 import { connectionsModule } from "./connections/index.ts";
 import { marketplaceModule } from "./marketplace";
@@ -76,7 +75,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, marketplaceModule, helpModule, byokModule, keybindingsModule, changelogModule, connectionsModule],
+  modules: [layoutManagerModule, marketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

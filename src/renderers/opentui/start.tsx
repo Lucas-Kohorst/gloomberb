@@ -30,8 +30,6 @@ import {
 import type { CliLaunchRequest } from "../../types/plugin";
 import type { RemoteControlAdapter } from "../../remote/app-host";
 import { startRemoteControlServer, type RemoteControlServer } from "../../remote/server";
-import { createPiAiHost } from "../../plugins/builtin/ai/pi";
-import { installAiRunHost } from "../../plugins/builtin/ai/runner";
 import { createAppServices } from "../../core/app-services";
 import { flushPendingPersistence } from "../../state/persist-scheduler";
 import { DEFAULT_THEME } from "../../theme/themes";
@@ -40,8 +38,6 @@ import { loadCustomThemes } from "../../theme/custom-themes";
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
 setCurrentPluginTarget("tui");
-
-const AI_STARTUP_READINESS_TIMEOUT_MS = 5_000;
 
 export interface StartOpenTuiAppOptions {
   externalPlugins?: Awaited<ReturnType<typeof loadExternalPlugins>>;
@@ -162,10 +158,7 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
       startupThemeNotice = startupThemeNotice
         ?? tf("{count} custom theme file(s) were rejected.", { count: themeLoad.errors.length });
     }
-    const aiHost = createPiAiHost({
-      appKind: "tui",
-      dataDir: config.dataDir,
-    });
+
     host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
     host.renderer.once("destroy", finishProcessExit);
 
@@ -173,23 +166,6 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
     // (visible) warmup stays eager via the bootstrap priority-0 plan.
     enableStartupNetworkDeferral();
     host.renderer.once("frame", markStartupInteractive);
-    void measurePerfAsync(
-      "startup.opentui.ai-catalog",
-      () => installAiRunHost(aiHost, {
-        catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
-        timeoutMessage: "In-app AI provider discovery timed out during startup",
-        afterStartupBackground: true,
-        onCatalogError(error) {
-          appLog.warn("In-app AI provider discovery could not finish during startup", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
-      }),
-    ).catch((error) => {
-      appLog.warn("In-app AI providers could not be initialized", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
 
     host.render(
       <UiHostProvider ui={openTuiUiHost} renderer={host.rendererHost} nativeRenderer={host.nativeRenderer}>

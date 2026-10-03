@@ -8,7 +8,6 @@ import {
   usePaneFooter,
   usePaneNoticeFooter,
   type PaneFooterPressEvent,
-  type PaneHint,
 } from "../../../components";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import {
@@ -44,9 +43,6 @@ import {
 import { colors } from "../../../theme/colors";
 import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
-import { usePaneFooterHintBindings } from "../shared/pane-footer";
-import { requestAccountManagementTab } from "../account-management/navigation";
-import { getSharedRegistry } from "../../registry";
 import { SeriesEditorDialog } from "./editor";
 
 function authoredChartSourceKey(source: ChartSeriesSource): string {
@@ -77,6 +73,7 @@ import {
   setPairStudies,
   appendCompareTicker,
   rebindChartSecuritySymbol,
+  replacePrimaryChartSource,
   setChartDisplayTimeZone,
   toggleMainPanelAutoScale,
   toggleMainPanelPercentScale,
@@ -195,16 +192,29 @@ function DesktopTradingViewComposer({
     () => createResolvedChartSources(dataProvider, createChartSeriesResolver(capabilityInvoker)),
     [capabilityInvoker, dataProvider],
   );
-  const model = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  const authoredModel = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  const authoredOwnerSymbol = authoredModel?.symbol ?? "";
   const [selectedPrimary, setSelectedPrimary] = usePaneSettingValue<{
-    ownerSymbol: string; ticker: string; name: string;
+    ownerSymbol: string; ticker: string; name: string; source?: ChartSeriesSource;
   } | null>("advancedChartPrimary", null);
-  const primaryReplaced = selectedPrimary?.ownerSymbol === model?.symbol && selectedPrimary?.ticker !== model?.symbol;
-  const rememberPrimary = useCallback((selected: { ticker: string; name: string }) => {
-    if (!model) return;
-    setSelectedPrimary((current) => current?.ownerSymbol === model.symbol && current.ticker === selected.ticker && current.name === selected.name
-      ? current : { ownerSymbol: model.symbol, ...selected });
-  }, [model, setSelectedPrimary]);
+  const primaryReplaced = !!authoredModel
+    && selectedPrimary?.ownerSymbol === authoredOwnerSymbol
+    && selectedPrimary.ticker !== authoredOwnerSymbol;
+  const effectiveSpec = useMemo(() => primaryReplaced
+    ? selectedPrimary.source
+      ? replacePrimaryChartSource(spec, selectedPrimary.source, selectedPrimary.name)
+      : rebindChartSecuritySymbol(spec, authoredOwnerSymbol, selectedPrimary.ticker)
+    : spec, [authoredOwnerSymbol, primaryReplaced, selectedPrimary, spec]);
+  const model = useMemo(() => libraryChartFromSpec(effectiveSpec), [effectiveSpec]);
+  const rememberPrimary = useCallback((selected: { ticker: string; name: string; source?: ChartSeriesSource }) => {
+    if (!authoredModel) return;
+    setSelectedPrimary((current) => current?.ownerSymbol === authoredOwnerSymbol
+      && current.ticker === selected.ticker
+      && current.name === selected.name
+      && JSON.stringify(current.source) === JSON.stringify(selected.source)
+      ? current
+      : { ownerSymbol: authoredOwnerSymbol, ...selected });
+  }, [authoredModel, authoredOwnerSymbol, setSelectedPrimary]);
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
   const directoryRef = useRef(model?.directory ?? new Map());
@@ -222,20 +232,25 @@ function DesktopTradingViewComposer({
   const liveStreaming = useLiveStreamingSetting();
   const dialogOpen = useDialogState((state) => state.isOpen);
   // The library draws our bars. This resolution still feeds the quote header and price alerts.
-  const resolution = useResolvedChartSpec(spec, {
+  const resolution = useResolvedChartSpec(effectiveSpec, {
     liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
   });
   const primaryPoints = resolution.series[0]?.points ?? [];
   const defaults = libraryDataDefaults(primaryPoints);
+  const displayStyle = model?.chartStyle === "step"
+    ? "step"
+    : model?.chartStyle === "candles"
+      ? defaults.chartStyle
+      : "line";
   const latestPoint = primaryPoints.at(-1);
-  const publishedInterval = tradingViewIntervalForSpec(spec);
+  const publishedInterval = tradingViewIntervalForSpec(effectiveSpec);
   useEffect(() => {
     if (!model || !latestPoint) return;
     const bar = barFromPoint(latestPoint);
-    if (bar) library.publish(model.symbol, bar, publishedInterval);
+    if (bar) library.feed.publish?.(model.symbol, bar, publishedInterval);
   }, [latestPoint, library, model, publishedInterval]);
-  const { listing, levels, listed, edit, alertAtLevel } = useChartPriceLevels(spec);
-  const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
+  const { listing, levels, listed, edit, alertAtLevel } = useChartPriceLevels(effectiveSpec);
+  const baseSeriesIds = useMemo(() => new Set(effectiveSpec.series.map((series) => series.id)), [effectiveSpec.series]);
   const header = useMemo(
     () => selectChartHeader({
       series: resolution.bufferedSeries ?? resolution.series,
@@ -253,13 +268,13 @@ function DesktopTradingViewComposer({
     edit,
     alertAtLevel,
     currentPrice: header.close,
-    enabled: focused && !primaryReplaced && listing !== null && !dialogOpen,
+    enabled: focused && listing !== null && !dialogOpen,
     onCapture,
   });
   useExternalLinkFooter({
     registrationId: footerId,
     focused,
-    url: primaryReplaced ? null : openUrl,
+    url: openUrl,
   });
   return (
     <Box
@@ -271,16 +286,16 @@ function DesktopTradingViewComposer({
       data-gloom-role="tradingview-composer"
       style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
-      <ChartDataHeader text={primaryReplaced ? "" : header.text} width={width} />
+      <ChartDataHeader text={header.text} width={width} />
       {model && (!resolution.loading || primaryPoints.length > 0) ? (
         <TradingViewChart
           flexGrow={1}
           minHeight={4}
           symbol={model.symbol}
-          interval={defaults.chartStyle === "heikinashi" && spec.viewport.resolution === "auto" ? "240" : model.interval}
+          interval={defaults.chartStyle === "heikinashi" && effectiveSpec.viewport.resolution === "auto" ? "240" : model.interval}
           timezone={model.timezone}
           compareSymbols={model.compares}
-          chartStyle={model.chartStyle === "step" ? "step" : defaults.chartStyle}
+          chartStyle={displayStyle}
           hasVolume={defaults.hasVolume}
           priceScale={model.priceScale}
           backgroundColor={colors.panel}
@@ -913,25 +928,6 @@ function GloomCanvasComposer({
     }
   }, { enabled: focused && !dialogOpen });
 
-  // Adjacent history runs on the public tier until the user adds their own
-  // key, and the public tier cannot serve every range tab. Say so, and offer
-  // the one action that fixes it.
-  const hasVisibleAdjacentSeries = useMemo(
-    () => spec.series.some((entry) => entry.visible !== false && entry.source.kind === "adjacent-index"),
-    [spec.series],
-  );
-  const openAdjacentKeys = useCallback(() => {
-    requestAccountManagementTab("keys");
-    getSharedRegistry()?.showPane("account-management");
-  }, []);
-  const adjacentKeysHint = useMemo<PaneHint | null>(
-    () => hasVisibleAdjacentSeries && resolution.accessTier === "public"
-      ? { id: "adjacent-keys", key: "k", label: "eys", onPress: openAdjacentKeys }
-      : null,
-    [hasVisibleAdjacentSeries, openAdjacentKeys, resolution.accessTier],
-  );
-  usePaneFooterHintBindings(focused && !dialogOpen, adjacentKeysHint ? [adjacentKeysHint] : undefined);
-
   usePaneNoticeFooter({
     registrationId: `${footerId}:notices`,
     notices: resolution.warnings,
@@ -943,7 +939,7 @@ function GloomCanvasComposer({
     info: [
       ...(resolution.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(resolution.errors[0] ? [{ id: "error", parts: [{ text: resolution.errors[0], tone: "warning" as const }] }] : []),
-      ...(adjacentKeysHint
+      ...(resolution.accessTier === "public"
         ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
         : []),
     ],
@@ -960,10 +956,8 @@ function GloomCanvasComposer({
       ...(publicSharing
         ? [{ id: "share", key: "y", label: "ank", onPress: shareChart, disabled: !shareData }]
         : []),
-      ...(adjacentKeysHint ? [adjacentKeysHint] : []),
     ],
   }), [
-    adjacentKeysHint,
     compareDisabled,
     footerAuto,
     footerCompare,

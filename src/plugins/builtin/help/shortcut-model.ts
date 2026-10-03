@@ -42,7 +42,6 @@ export const ESSENTIAL_COMMAND_PREFIXES = [
   "NOTE",
   "NOT",
   "LAY",
-  "KEYS",
   "BIND",
   "HELP",
 ] as const;
