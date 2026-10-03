@@ -88,6 +88,10 @@ export function selectChartHeader(input: {
   baseSeriesIds: ReadonlySet<string>;
   levels?: readonly ChartHeaderLevel[];
   includeLevels?: boolean;
+  /** The TradingView embed already draws the visible bar. Skip our OHLC there. */
+  includeOhlc?: boolean;
+  /** The charting library draws volume in its own pane. Skip that study here. */
+  includeVolume?: boolean;
 }): ChartHeaderSelection {
   const price = pickPriceSeries(input.series, input.baseSeriesIds);
   const point = price ? latestPoint(price) : null;
@@ -103,6 +107,7 @@ export function selectChartHeader(input: {
   const studies: ChartHeaderStudy[] = [];
   for (const series of input.series) {
     if (series.hidden || input.baseSeriesIds.has(series.id)) continue;
+    if (input.includeVolume === false && series.unitGroup === "volume") continue;
     const latest = latestPoint(series);
     if (!latest) continue;
     const value = finite(latest.value) ? latest.value : pointClose(latest);
@@ -117,7 +122,7 @@ export function selectChartHeader(input: {
     : [];
 
   const parts: string[] = [];
-  if (price && close !== null) {
+  if (input.includeOhlc !== false && price && close !== null) {
     const hud = barMatchesQuote
       ? formatOhlcvHud({
         open,

@@ -1,5 +1,6 @@
 import type { ChartResolution, TimeRange } from "../../../time-series/range";
 import type { ChartSpec, ChartSeriesSource } from "../../../time-series/types";
+import { getSharedRegistry } from "../../../plugins/registry/shared";
 import {
   canonicalExchange,
   normalizeSymbol,
@@ -44,6 +45,40 @@ const TV_EXCHANGE_PREFIX: Record<string, string> = {
   B3: "BMFBOVESPA",
 };
 
+/**
+ * Bare symbols TradingView binds to a different company than the index.
+ * SPX with no venue is the S&P 500 here; TradingView's bare SPX is SpaceX.
+ */
+const TV_INDEX_SYMBOLS: Record<string, string> = {
+  SPX: "SP:SPX",
+  GSPC: "SP:SPX",
+  DJI: "TVC:DJI",
+  IXIC: "TVC:IXIC",
+  NDX: "TVC:NDX",
+  RUT: "TVC:RUT",
+  VIX: "TVC:VIX",
+  TNX: "TVC:TNX",
+};
+
+function isIndexExchange(exchange: string): boolean {
+  return exchange === "INDEX" || exchange === "INDX" || exchange === "CBOE";
+}
+
+/**
+ * Yahoo's continuous future is `ROOT=F`. TradingView's public site rejects
+ * that ticker, so the open-on-TradingView link stays blank. The charting
+ * library feed still plots the Yahoo symbol.
+ */
+const YAHOO_CONTINUOUS_FUTURE = /^[A-Z0-9]{1,6}=F$/;
+
+/** A saved equity listing wins over the index alias. An INDEX record does not. */
+function exchangeForChartInstrument(instrument: { symbol: string; exchange?: string }): string {
+  const explicit = canonicalExchange(instrument.exchange);
+  if (explicit) return explicit;
+  const saved = getSharedRegistry()?.getTickerFn(normalizeSymbol(instrument.symbol))?.metadata.exchange;
+  return canonicalExchange(saved);
+}
+
 const INTERVAL_FROM_RESOLUTION: Record<Exclude<ChartResolution, "auto">, TradingViewInterval> = {
   "1m": "1",
   "5m": "5",
@@ -60,7 +95,7 @@ const INTERVAL_FROM_RESOLUTION: Record<Exclude<ChartResolution, "auto">, Trading
 const RANGE_PRESET_RESOLUTION: Record<TimeRange, Exclude<ChartResolution, "auto">> = {
   "1D": "1m",
   "1W": "5m",
-  "1M": "15m",
+  "1M": "4h",
   "3M": "1h",
   "6M": "1d",
   "1Y": "1d",
@@ -95,8 +130,8 @@ export function tradingViewSymbolForSecurity(instrument: {
   exchange?: string;
 }): string {
   const symbol = normalizeSymbol(instrument.symbol);
-  const exchange = canonicalExchange(instrument.exchange);
-  if (!symbol) return "";
+  const exchange = exchangeForChartInstrument(instrument);
+  if (!symbol || YAHOO_CONTINUOUS_FUTURE.test(symbol)) return "";
   const crypto = splitCryptoPair(symbol, exchange);
   if (crypto) {
     // A bare ZECUSD symbol resolves to CRYPTOCAP, which is market cap, not price.
@@ -104,6 +139,7 @@ export function tradingViewSymbolForSecurity(instrument: {
     return `BINANCE:${crypto.base}${quote}`;
   }
   if (exchange === "CCC" || exchange === "CRYPTO") return `BINANCE:${symbol.replace(/[^A-Z0-9]/g, "")}USDT`;
+  if ((!exchange || isIndexExchange(exchange)) && TV_INDEX_SYMBOLS[symbol]) return TV_INDEX_SYMBOLS[symbol]!;
   const prefix = TV_EXCHANGE_PREFIX[exchange]
     ?? (exchange && /^[A-Z0-9]{2,8}$/.test(exchange) ? exchange : "");
   return prefix ? `${prefix}:${symbol}` : symbol;
@@ -152,38 +188,4 @@ export function resolveTradingViewPlot(spec: ChartSpec): TradingViewPlot {
 
 export function tradingViewPublicChartUrl(symbol: string): string {
   return `${TRADINGVIEW_ORIGIN}/chart/?symbol=${encodeURIComponent(symbol)}`;
-}
-
-export function tradingViewEmbedSrc(
-  plot: TradingViewWidgetPlot,
-  options: { theme: "dark" | "light"; backgroundColor: string },
-): string {
-  const config: Record<string, unknown> = {
-    autosize: true,
-    symbol: plot.symbol,
-    interval: plot.interval,
-    timezone: plot.timezone,
-    theme: options.theme,
-    style: "1",
-    locale: "en",
-    allow_symbol_change: false,
-    hide_top_toolbar: false,
-    hide_legend: false,
-    hide_side_toolbar: false,
-    save_image: true,
-    calendar: false,
-    hide_volume: true,
-    withdateranges: true,
-    details: false,
-    hotlist: false,
-    support_host: TRADINGVIEW_ORIGIN,
-    backgroundColor: options.backgroundColor,
-  };
-  if (plot.compareSymbols.length > 0) {
-    config.compareSymbols = plot.compareSymbols.map((symbol) => ({
-      symbol,
-      position: "SameScale",
-    }));
-  }
-  return `${TRADINGVIEW_ORIGIN}/embed-widget/advanced-chart/?locale=en#${encodeURIComponent(JSON.stringify(config))}`;
 }

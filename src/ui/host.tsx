@@ -237,7 +237,7 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
-  /** TradingView symbol, such as NASDAQ:AAPL or FRED:CPIAUCSL. */
+  /** Symbol the charting-library datafeed resolves. */
   symbol: string;
   /** TradingView interval token. Default D. */
   interval?: string;
@@ -245,6 +245,13 @@ export interface TradingViewChartProps extends BoxProps {
   timezone?: string;
   compareSymbols?: readonly string[];
   backgroundColor?: string;
+  /** Candles for price series. A line for probability, macro, and other single-value series. */
+  chartStyle?: "candles" | "heikinashi" | "line" | "step";
+  hasVolume?: boolean;
+  /** Percentage rebases unlike series onto one axis. Percent, temperature, and precip stay linear. */
+  priceScale?: "normal" | "percentage";
+  /** Our bars. The widget asks this object for history instead of TradingView's tape. */
+  feed?: import("../plugins/builtin/chart-composer/charting-library-feed").LibraryDatafeed;
 }
 
 export interface LightweightChartProps extends BoxProps {

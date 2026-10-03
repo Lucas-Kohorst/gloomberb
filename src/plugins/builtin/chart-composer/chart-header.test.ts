@@ -97,6 +97,43 @@ test("a live quote newer than the loaded bar replaces the close and is what an a
   expect(header.text.startsWith("C ")).toBe(true);
 });
 
+test("the embed header keeps studies and levels and leaves OHLC to TradingView", () => {
+  const vwap = series({
+    id: "vwap",
+    label: "VWAP AAPL",
+    points: [point(3, 11.5)],
+  });
+  const header = selectChartHeader({
+    series: [price, vwap],
+    baseSeriesIds: new Set(["px"]),
+    levels: [{ id: "a", price: 14 }],
+    includeLevels: true,
+    includeOhlc: false,
+  });
+  expect(header.close).toBe(12);
+  expect(header.text).toContain("VWAP AAPL");
+  expect(header.text).toContain("Lvl");
+  expect(header.text).not.toMatch(/(?:^|\s)[OHLCV] /);
+});
+
+test("the desktop header leaves the volume study to the charting library", () => {
+  const volume = series({
+    id: "vol",
+    label: "Volume HOOD:XNAS Price",
+    unit: "shares",
+    unitGroup: "volume",
+    points: [point(3, 82_000_000)],
+  });
+  const header = selectChartHeader({
+    series: [price, volume],
+    baseSeriesIds: new Set(["px"]),
+    includeOhlc: false,
+    includeVolume: false,
+  });
+  expect(header.studies).toEqual([]);
+  expect(header.text).toBe("");
+});
+
 test("levels are listed only on the surface that cannot draw them", () => {
   const input = {
     series: [price],

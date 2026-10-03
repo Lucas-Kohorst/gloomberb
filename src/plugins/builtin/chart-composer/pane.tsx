@@ -1,3 +1,4 @@
+import { libraryDataDefaults } from "./charting-library-options";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TradingViewChart, useUiCapabilities, useUiHost } from "../../../ui";
 import {
@@ -24,8 +25,11 @@ import {
   type ManualChartResolution,
 } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
+import { useAssetData, useCapabilityInvoker } from "../../runtime";
+import { createResolvedChartSources } from "../../chart-sources";
+import { barFromPoint, createSpecLibraryFeed, libraryChartFromSpec } from "./charting-library-feed";
 import { defaultChartSeriesPresentation, resolveChartDisplayTimeZone } from "../../../time-series/spec";
-import { chartSeriesSourceKey } from "../../../capabilities";
+import { chartSeriesSourceKey, createChartSeriesResolver } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
 import { ChartDataHeader } from "./chart-data-header";
@@ -99,9 +103,9 @@ import {
 } from "./range-sync";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import {
-  resolveTradingViewPlot,
+  tradingViewIntervalForSpec,
   tradingViewPublicChartUrl,
-  type TradingViewWidgetPlot,
+  tradingViewSymbolForSecurity,
 } from "./tradingview-plot";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { usePublicShare } from "../shared/public-share";
@@ -169,7 +173,6 @@ function isPriceStudyTarget(spec: ChartSpec): boolean {
 }
 
 function DesktopTradingViewComposer({
-  plot,
   spec,
   focused,
   width,
@@ -178,7 +181,6 @@ function DesktopTradingViewComposer({
   onCapture,
   liveWhenUnfocused = true,
 }: {
-  plot: TradingViewWidgetPlot;
   spec: ChartSpec;
   focused: boolean;
   width: number;
@@ -187,14 +189,42 @@ function DesktopTradingViewComposer({
   onCapture?: (capturing: boolean) => void;
   liveWhenUnfocused?: boolean;
 }) {
-  const openUrl = tradingViewPublicChartUrl(plot.symbol);
+  const dataProvider = useAssetData();
+  const capabilityInvoker = useCapabilityInvoker();
+  const sources = useMemo(
+    () => createResolvedChartSources(dataProvider, createChartSeriesResolver(capabilityInvoker)),
+    [capabilityInvoker, dataProvider],
+  );
+  const model = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  const sourcesRef = useRef(sources);
+  sourcesRef.current = sources;
+  const directoryRef = useRef(model?.directory ?? new Map());
+  directoryRef.current = model?.directory ?? directoryRef.current;
+  const library = useMemo(() => createSpecLibraryFeed({
+    getSources: () => sourcesRef.current,
+    getDirectory: () => directoryRef.current,
+    timezone: model?.timezone,
+  }), [model?.timezone]);
+  const primary = model ? model.directory.get(model.symbol) : undefined;
+  const publicSymbol = primary?.kind === "security"
+    ? tradingViewSymbolForSecurity(primary.instrument)
+    : "";
+  const openUrl = publicSymbol ? tradingViewPublicChartUrl(publicSymbol) : null;
   const liveStreaming = useLiveStreamingSetting();
   const dialogOpen = useDialogState((state) => state.isOpen);
-  // The iframe draws TradingView's bars. This resolution is only so the header
-  // can show our quote and studies above it.
+  // The library draws our bars. This resolution still feeds the quote header and price alerts.
   const resolution = useResolvedChartSpec(spec, {
     liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
   });
+  const primaryPoints = resolution.series[0]?.points ?? [];
+  const defaults = libraryDataDefaults(primaryPoints);
+  const latestPoint = primaryPoints.at(-1);
+  const publishedInterval = tradingViewIntervalForSpec(spec);
+  useEffect(() => {
+    if (!model || !latestPoint) return;
+    const bar = barFromPoint(latestPoint);
+    if (bar) library.publish(model.symbol, bar, publishedInterval);
+  }, [latestPoint, library, model, publishedInterval]);
   const { listing, levels, listed, edit, alertAtLevel } = useChartPriceLevels(spec);
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
   const header = useMemo(
@@ -203,6 +233,8 @@ function DesktopTradingViewComposer({
       baseSeriesIds,
       levels: listed,
       includeLevels: true,
+      includeOhlc: false,
+      includeVolume: false,
     }),
     [baseSeriesIds, listed, resolution.bufferedSeries, resolution.series],
   );
@@ -231,15 +263,21 @@ function DesktopTradingViewComposer({
       style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
       <ChartDataHeader text={header.text} width={width} />
-      <TradingViewChart
-        flexGrow={1}
-        minHeight={4}
-        symbol={plot.symbol}
-        interval={plot.interval}
-        timezone={plot.timezone}
-        compareSymbols={plot.compareSymbols}
-        backgroundColor={colors.panel}
-      />
+      {model && (!resolution.loading || primaryPoints.length > 0) ? (
+        <TradingViewChart
+          flexGrow={1}
+          minHeight={4}
+          symbol={model.symbol}
+          interval={defaults.chartStyle === "heikinashi" && spec.viewport.resolution === "auto" ? "240" : model.interval}
+          timezone={model.timezone}
+          compareSymbols={model.compares}
+          chartStyle={model.chartStyle === "step" ? "step" : defaults.chartStyle}
+          hasVolume={defaults.hasVolume}
+          priceScale={model.priceScale}
+          backgroundColor={colors.panel}
+          feed={library.feed}
+        />
+      ) : null}
     </Box>
   );
 }
@@ -255,11 +293,10 @@ function ChartComposerSurface({
   liveWhenUnfocused = true,
 }: ChartComposerSurfaceProps) {
   const ui = useUiHost();
-  const plot = useMemo(() => resolveTradingViewPlot(spec), [spec]);
-  if (ui.kind === "desktop-web" && plot.kind === "widget") {
+  const libraryChart = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  if (ui.kind === "desktop-web" && libraryChart) {
     return (
       <DesktopTradingViewComposer
-        plot={plot}
         spec={spec}
         focused={focused}
         width={width}

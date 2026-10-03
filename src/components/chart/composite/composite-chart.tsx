@@ -20,6 +20,7 @@ import { displayWidth } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
+import { DesktopAdvancedChart, shouldUseDesktopAdvancedChart } from "./desktop-advanced-chart";
 import { downsampleCompositeChartScene } from "./downsample";
 import { reuseResolvedSeriesList } from "./panel-series";
 import {
@@ -2270,6 +2271,25 @@ export function CompositeChart({
   const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
+
+  if (shouldUseDesktopAdvancedChart({
+    isDesktopWeb,
+    hasPoints: visibleSeries.length > 0,
+    xAxis,
+    showTimeAxis,
+    formatAxisValue,
+  })) {
+    return (
+      <DesktopAdvancedChart
+        series={visibleSeries}
+        width={totalWidth}
+        height={totalHeight}
+        background={resolvedColors.background}
+        tickKey={lastTickKey}
+        timeZone={timeZone}
+      />
+    );
+  }
 
   if (!scene) {
     const emptyPlotHeight = Math.max(0, totalHeight - legendRows - timeAxisRows - xMarkerRows);

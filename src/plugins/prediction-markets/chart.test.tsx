@@ -11,8 +11,85 @@ import {
 } from "../../state/app/context";
 import { createDefaultConfig } from "../../types/config";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface/manager";
-import { PredictionMarketChart } from "./chart";
+import { librarySafeTicker } from "../builtin/chart-composer/charting-library-feed";
+import { PredictionMarketChart, predictionLibraryInterval, predictionLibrarySymbol } from "./chart";
 import type { PredictionHistoryRange } from "./types";
+
+const MINUTE_MS = 60_000;
+
+function timesEvery(gapMs: number, count = 8, start = Date.UTC(2026, 3, 1)): number[] {
+  return Array.from({ length: count }, (_, index) => start + index * gapMs);
+}
+
+describe("prediction library interval", () => {
+  test("follows the median bar gap instead of the range tab", () => {
+    expect(predictionLibraryInterval(timesEvery(60 * MINUTE_MS))).toBe("60");
+    expect(predictionLibraryInterval(timesEvery(15 * MINUTE_MS))).toBe("15");
+    expect(predictionLibraryInterval(timesEvery(5 * MINUTE_MS))).toBe("5");
+    expect(predictionLibraryInterval(timesEvery(24 * 60 * MINUTE_MS))).toBe("D");
+    expect(predictionLibraryInterval(timesEvery(MINUTE_MS))).toBe("1");
+    expect(predictionLibraryInterval(timesEvery(30 * MINUTE_MS))).toBe("30");
+    expect(predictionLibraryInterval(timesEvery(45 * MINUTE_MS))).toBe("45");
+    expect(predictionLibraryInterval(timesEvery(4 * 60 * MINUTE_MS))).toBe("240");
+    expect(predictionLibraryInterval(timesEvery(7 * 24 * 60 * MINUTE_MS))).toBe("W");
+    expect(predictionLibraryInterval(timesEvery(30 * 24 * 60 * MINUTE_MS))).toBe("M");
+    expect(predictionLibraryInterval([])).toBe("D");
+    expect(predictionLibraryInterval([Date.UTC(2026, 3, 1)])).toBe("D");
+    expect(predictionLibraryInterval([Date.UTC(2026, 3, 1), Date.UTC(2026, 3, 1)])).toBe("D");
+  });
+
+  test("uses the median, so one wide gap does not set the interval", () => {
+    const start = Date.UTC(2026, 3, 1);
+    const day = 24 * 60 * MINUTE_MS;
+    const times = [
+      start,
+      start + 5 * MINUTE_MS,
+      start + 5 * MINUTE_MS + 7 * day,
+      start + 10 * MINUTE_MS + 7 * day,
+    ];
+    expect(predictionLibraryInterval(times)).toBe("5");
+  });
+
+  test("the first matching max gap wins", () => {
+    const start = Date.UTC(2026, 3, 1);
+    expect(predictionLibraryInterval([start, start + 90_000])).toBe("1");
+    expect(predictionLibraryInterval([start, start + 90_001])).toBe("5");
+    expect(predictionLibraryInterval([start, start + 360_000])).toBe("5");
+    expect(predictionLibraryInterval([start, start + 1_200_000])).toBe("15");
+    expect(predictionLibraryInterval([start, start + 2_400_000])).toBe("30");
+    expect(predictionLibraryInterval([start, start + 3_000_000])).toBe("45");
+    expect(predictionLibraryInterval([start, start + 5_400_000])).toBe("60");
+    expect(predictionLibraryInterval([start, start + 18_000_000])).toBe("240");
+    expect(predictionLibraryInterval([start, start + 172_800_000])).toBe("D");
+    expect(predictionLibraryInterval([start, start + 1_209_600_000])).toBe("W");
+    expect(predictionLibraryInterval([start, start + 1_209_600_001])).toBe("M");
+  });
+});
+
+describe("prediction library symbol", () => {
+  test("rewrites Kalshi hyphens so the library does not parse a spread", () => {
+    expect(predictionLibrarySymbol("kalshi:KXHIGHNY-26OCT02-T70", [1, 2])).toBe(
+      "KALSHI:KXHIGHNY_26OCT02_T70",
+    );
+  });
+
+  test("falls back to history identity instead of YES", () => {
+    const times = [1_700_000_000_000, 1_700_003_600_000, 1_700_007_200_000];
+    const symbol = predictionLibrarySymbol(undefined, times);
+    expect(symbol).not.toBe("YES");
+    expect(symbol).toBe(librarySafeTicker(`H${times.length}_${times[0]}_${times[2]}`));
+    expect(predictionLibrarySymbol("", times)).toBe(symbol);
+    expect(predictionLibrarySymbol("   ", times)).toBe(symbol);
+    expect(predictionLibrarySymbol(undefined, times)).toBe(symbol);
+    expect(predictionLibrarySymbol(undefined, [...times, times[2]! + 60_000])).not.toBe(symbol);
+    expect(predictionLibrarySymbol("---", times)).toBe(symbol);
+  });
+
+  test("keeps the market symbol when only the history changes", () => {
+    expect(predictionLibrarySymbol("polymarket:abc-def", [1])).toBe("POLYMARKET:ABC_DEF");
+    expect(predictionLibrarySymbol("polymarket:abc-def", [1, 2, 3])).toBe("POLYMARKET:ABC_DEF");
+  });
+});
 
 const TEST_PANE_ID = "prediction-scroll:test";
 

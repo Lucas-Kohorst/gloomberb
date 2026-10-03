@@ -5,10 +5,13 @@ import {
   electrobunViewAliasPlugin,
 } from "../src/renderers/electrobun/view/build-assets";
 
+import { copyChartingLibrary } from "./copy-charting-library";
+
 const root = process.cwd();
 const outdir = join(root, "dist", "web");
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
+await copyChartingLibrary(outdir);
 await writeFile(join(outdir, "favicon.svg"), await readFile(join(root, "src/assets/gloomberb-logo.svg")));
 
 async function buildPage(name: string, entrypoint: string, title: string, loadingText: string, htmlName: string) {

@@ -1,5 +1,6 @@
-import { Box, Text } from "../../ui";
-import { useMemo } from "react";
+import { Box, Text, TradingViewChart, useUiHost } from "../../ui";
+import { useEffect, useMemo } from "react";
+import { createStaticLibraryFeed, librarySafeTicker, type LibraryBar } from "../builtin/chart-composer/charting-library-feed";
 import { ChartRangeTabs } from "../../components/chart/range-tabs";
 import {
   CompositeChart,
@@ -31,6 +32,63 @@ function toPricePoints(points: PredictionHistoryPoint[]): PricePoint[] {
 
 const RANGE_CHOICES = RANGES.map((value) => ({ value }));
 
+// First matching max gap wins. These candles are not the range-tab interval.
+const PREDICTION_INTERVAL_GAPS: ReadonlyArray<readonly [number, string]> = [
+  [90_000, "1"],
+  [360_000, "5"],
+  [1_200_000, "15"],
+  [2_400_000, "30"],
+  [3_000_000, "45"],
+  [5_400_000, "60"],
+  [18_000_000, "240"],
+  [172_800_000, "D"],
+  [1_209_600_000, "W"],
+];
+
+export function predictionLibraryInterval(times: readonly number[]): string {
+  const ordered = times.filter((time) => Number.isFinite(time)).sort((left, right) => left - right);
+  const gaps: number[] = [];
+  for (let index = 1; index < ordered.length; index += 1) {
+    const gap = ordered[index]! - ordered[index - 1]!;
+    if (gap > 0) gaps.push(gap);
+  }
+  if (gaps.length === 0) return "D";
+  gaps.sort((left, right) => left - right);
+  const middle = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 === 1
+    ? gaps[middle]!
+    : (gaps[middle - 1]! + gaps[middle]!) / 2;
+  for (const [maxGapMs, interval] of PREDICTION_INTERVAL_GAPS) {
+    if (median <= maxGapMs) return interval;
+  }
+  return "M";
+}
+
+export function predictionLibrarySymbol(marketKey: string | undefined, times: readonly number[]): string {
+  const fromMarket = marketKey?.trim() ? librarySafeTicker(marketKey) : "";
+  if (fromMarket) return fromMarket;
+  const finite = times.filter((time) => Number.isFinite(time));
+  const first = finite[0] ?? 0;
+  const last = finite[finite.length - 1] ?? first;
+  return librarySafeTicker(`H${finite.length}_${first}_${last}`) || "H0";
+}
+
+function predictionBars(points: PricePoint[]): LibraryBar[] {
+  return points.flatMap((point) => {
+    const time = point.date.getTime();
+    if (!Number.isFinite(time) || !Number.isFinite(point.close)) return [];
+    const open = point.open ?? point.close;
+    return [{
+      time,
+      open,
+      high: point.high ?? Math.max(open, point.close),
+      low: point.low ?? Math.min(open, point.close),
+      close: point.close,
+      ...(point.volume == null ? {} : { volume: point.volume }),
+    }];
+  });
+}
+
 export function PredictionMarketChart({
   history,
   width,
@@ -39,6 +97,7 @@ export function PredictionMarketChart({
   focused = false,
   range,
   onRangeSelect,
+  marketKey,
 }: {
   history: PredictionHistoryPoint[];
   width: number;
@@ -47,8 +106,21 @@ export function PredictionMarketChart({
   focused?: boolean;
   range: PredictionHistoryRange;
   onRangeSelect: (range: PredictionHistoryRange) => void;
+  marketKey?: string;
 }) {
   const pricePoints = useMemo(() => toPricePoints(history), [history]);
+  const bars = useMemo(() => predictionBars(pricePoints), [pricePoints]);
+  const barTimes = useMemo(() => bars.map((bar) => bar.time), [bars]);
+  const symbol = predictionLibrarySymbol(marketKey, barTimes);
+  const interval = predictionLibraryInterval(barTimes);
+  const desktop = useUiHost().kind === "desktop-web";
+  const libraryFeed = useMemo(
+    () => createStaticLibraryFeed(symbol, "YES price", { pricescale: 1000, type: "index" }),
+    [symbol],
+  );
+  useEffect(() => {
+    libraryFeed.setBars(bars);
+  }, [libraryFeed, bars]);
 
   if (pricePoints.length === 0) {
     return (
@@ -119,16 +191,32 @@ export function PredictionMarketChart({
         </Text>
       </Box>
 
-      <CompositeChart
-        width={width}
-        height={chartHeight}
-        focused={focused}
-        interactive
-        series={[priceSeries]}
-        panels={[{ id: "price" }]}
-        axisWidth={8}
-        showLegend={false}
-      />
+      {desktop ? (
+        <TradingViewChart
+          key={`${symbol}|${interval}`}
+          width={width}
+          height={chartHeight}
+          flexGrow={1}
+          symbol={symbol}
+          interval={interval}
+          timezone="America/New_York"
+          chartStyle="step"
+          backgroundColor={colors.panel}
+          feed={libraryFeed.feed}
+        />
+      ) : (
+        <CompositeChart
+          width={width}
+          height={chartHeight}
+          focused={focused}
+          interactive
+          allowHistoricalBackfill
+          series={[priceSeries]}
+          panels={[{ id: "price" }]}
+          axisWidth={8}
+          showLegend={false}
+        />
+      )}
     </Box>
   );
 }

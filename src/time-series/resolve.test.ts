@@ -467,7 +467,7 @@ describe("resolveChartSpecData", () => {
       loadFredSeries: async () => fredLoad(),
     });
 
-    expect(requestedResolutions).toEqual(["15m"]);
+    expect(requestedResolutions).toEqual(["4h"]);
     expect(result.errors).toEqual([]);
     expect(result.warnings).toContain(
       "45M data is unavailable for this range. Auto resolution was used instead.",
@@ -1213,7 +1213,7 @@ describe("resolveChartSpecData", () => {
     });
 
     expect(detailRequest).not.toBeNull();
-    expect(detailRequest!.barSize).toBe("15m");
+    expect(detailRequest!.barSize).toBe("4h");
     expect(detailRequest!.start.getTime()).toBeLessThan(new Date("2025-01-01T00:00:00Z").getTime());
     expect(detailRequest!.end.toISOString()).toBe("2025-02-01T00:00:00.000Z");
     expect(result.series.find((entry) => entry.id === "price")?.points.map((point) => point.date.toISOString())).toEqual([
@@ -1271,7 +1271,7 @@ describe("resolveChartSpecData", () => {
 
     expect(detailAttempted).toBe(true);
     expect(requestedRange).toBe("5Y");
-    expect(requestedResolution).toBe("15m");
+    expect(requestedResolution).toBe("4h");
     expect(result.series[0]?.points).toHaveLength(1);
   });
 

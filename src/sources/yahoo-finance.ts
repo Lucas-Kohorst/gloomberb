@@ -2,6 +2,7 @@ import type { Quote, PricePoint, TickerFinancials, OptionsChain, CompanyProfile,
 import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, QuoteBatchResult, QuoteSubscriptionTarget, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../time-series/range";
 import {
+  isIntradayResolution,
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../time-series/resolution";
@@ -469,7 +470,9 @@ export class YahooFinanceClient implements DataProvider {
       ticker,
       exchange,
       range,
-      fetchChart: (symbol, chartRange, interval) => this.fetchChart(symbol, chartRange, interval),
+      fetchChart: (symbol, chartRange, interval) => (
+        this.fetchChart(symbol, chartRange, interval, isIntradayResolution(interval))
+      ),
     });
   }
 
@@ -485,7 +488,9 @@ export class YahooFinanceClient implements DataProvider {
       exchange,
       bufferRange,
       resolution,
-      fetchChart: (symbol, chartRange, interval) => this.fetchChart(symbol, chartRange, interval),
+      fetchChart: (symbol, chartRange, interval) => (
+        this.fetchChart(symbol, chartRange, interval, isIntradayResolution(interval))
+      ),
     });
   }
 

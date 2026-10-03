@@ -59,6 +59,8 @@ describe("desktop chrome clip", () => {
     expect(footerRuleStart).toBeGreaterThanOrEqual(0);
     const footerRule = css.slice(footerRuleStart, css.indexOf("}", footerRuleStart));
     expect(footerRule).toContain("pointer-events: none");
+    expect(footerRule).toContain("calc(var(--cell-h) + 15px)");
+    expect(footerRule).toContain("padding-bottom: 10px");
     const hintRuleStart = css.indexOf('[data-gloom-role="pane-footer"] [data-gloom-interactive="true"]');
     expect(hintRuleStart).toBeGreaterThanOrEqual(0);
     expect(css.slice(hintRuleStart, hintRuleStart + 220)).toContain("pointer-events: auto");
@@ -95,5 +97,17 @@ describe("desktop chrome clip", () => {
 
     expect(css).toContain("[data-gloom-scrollbar-x]:hover");
     expect(css).toContain("[data-gloom-role=\"pane-close\"]:focus-visible");
+
+    const scrollbarSupports = css.indexOf("@supports not selector(::-webkit-scrollbar)");
+    expect(scrollbarSupports).toBeGreaterThanOrEqual(0);
+    expect(css.indexOf("scrollbar-width: thin")).toBeGreaterThan(scrollbarSupports);
+    expect(css.slice(0, scrollbarSupports)).not.toContain("scrollbar-width: thin");
+
+    const leftHandle = css.indexOf('[data-gloom-role="resize-handle"][data-corner="left"] {');
+    expect(leftHandle).toBeGreaterThanOrEqual(0);
+    const leftHandleRule = css.slice(leftHandle, leftHandle + 320);
+    expect(leftHandleRule).toContain("left: 0");
+    expect(leftHandleRule).toContain("right: auto");
+    expect(leftHandleRule).toContain("max-width: 10px");
   });
 });

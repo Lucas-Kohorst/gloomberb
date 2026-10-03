@@ -34,12 +34,25 @@ describe("chart-resolution", () => {
 
   test("maps range presets to their default manual resolutions", () => {
     expect(getPresetResolution("1W")).toBe("5m");
-    expect(getPresetResolution("1M")).toBe("15m");
+    expect(getPresetResolution("1M")).toBe("4h");
     expect(getPresetResolution("3M")).toBe("1h");
     expect(getPresetResolution("6M")).toBe("1d");
     expect(getPresetResolution("1Y")).toBe("1d");
     expect(getPresetResolution("5Y")).toBe("1wk");
     expect(getPresetResolution("ALL")).toBe("1mo");
+  });
+
+  test("defaults a 1M window to 4h and keeps 4h selectable", () => {
+    expect(getPresetResolution("1M")).toBe("4h");
+    const choices = chartResolutionTabChoices("1M", DEFAULT_CHART_RESOLUTION_SUPPORT);
+    expect(choices.find((choice) => choice.resolution === "4h")?.enabled).toBe(true);
+    expect(choices.find((choice) => choice.resolution === "auto")?.enabled).toBe(true);
+    expect(chartResolutionTabChoices("1M", DEFAULT_CHART_RESOLUTION_SUPPORT, {
+      start: "2026-01-01",
+      end: "2026-01-31",
+    }).find((choice) => choice.resolution === "4h")?.enabled).toBe(true);
+    expect(chartRangeTabChoices(DEFAULT_CHART_RESOLUTION_SUPPORT)
+      .find((choice) => choice.range === "1M")?.enabled).toBe(true);
   });
 
   test("checks whether a range preset is supported by the visible capability set", () => {
