@@ -237,6 +237,7 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
+  onPrimarySymbolChange?: (symbol: { ticker: string; name: string }) => void;
   /** Symbol the charting-library datafeed resolves. */
   symbol: string;
   /** TradingView interval token. Default D. */

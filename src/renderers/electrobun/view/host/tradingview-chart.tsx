@@ -15,6 +15,7 @@ export function WebTradingViewChart({
   chartStyle = "candles",
   priceScale = "normal",
   hasVolume = false,
+  onPrimarySymbolChange,
   feed,
   style,
   ...props
@@ -52,6 +53,7 @@ export function WebTradingViewChart({
           chartStyle={chartStyle}
           priceScale={priceScale}
           hasVolume={hasVolume}
+          onPrimarySymbolChange={onPrimarySymbolChange}
           backgroundColor={String(backgroundColor)}
           feed={feed}
           onReady={() => {

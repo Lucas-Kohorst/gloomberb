@@ -1,3 +1,4 @@
+import { isPriceOnlyMarketFieldId } from "../../../time-series/field-catalog";
 import { resolveExchangeTimeZone } from "../../../utils/exchanges";
 import type { ChartResolveSources } from "../../../time-series/resolve";
 import { ChartResolveCache, resolveChartSpecData } from "../../../time-series/resolve";
@@ -393,16 +394,54 @@ function sourceForTicker(
   };
 }
 
-function libraryResolutionInfo(): Record<string, unknown> {
+const DAILY_LIBRARY_RESOLUTIONS = ["D", "W", "M"] as const;
+
+function libraryResolutionInfo(resolutions: readonly string[]): Record<string, unknown> {
+  const intraday = resolutions.filter((resolution) => /^\d+$/.test(resolution));
   return {
-    has_intraday: true,
-    intraday_multipliers: ["1", "5", "15", "30", "45", "60", "240"],
-    daily_multipliers: ["1"],
-    weekly_multipliers: ["1"],
-    monthly_multipliers: ["1"],
-    has_weekly_and_monthly: true,
-    supported_resolutions: [...LIBRARY_RESOLUTIONS],
+    has_intraday: intraday.length > 0,
+    intraday_multipliers: intraday,
+    has_daily: resolutions.includes("D"),
+    daily_multipliers: resolutions.includes("D") ? ["1"] : [],
+    weekly_multipliers: resolutions.includes("W") ? ["1"] : [],
+    monthly_multipliers: resolutions.includes("M") ? ["1"] : [],
+    has_weekly_and_monthly: resolutions.includes("W") || resolutions.includes("M"),
+    supported_resolutions: [...resolutions],
   };
+}
+
+async function sourceLibraryResolutions(source: ChartSeriesSource, sources: ChartResolveSources): Promise<string[]> {
+  let supported: readonly ManualChartResolution[] = [];
+  if (source.kind === "security" && isPriceOnlyMarketFieldId(source.fieldId)) {
+    const provider = sources.dataProvider;
+    const { symbol, exchange } = source.instrument;
+    const context = {
+      brokerId: source.instrument.brokerId,
+      brokerInstanceId: source.instrument.brokerInstanceId,
+      instrument: source.instrument.instrument ?? null,
+    };
+    if (provider?.getChartResolutionSupport) {
+      supported = (await provider.getChartResolutionSupport(symbol, exchange, context)).map((entry) => entry.resolution);
+    } else if (provider?.getChartResolutionCapabilities) {
+      supported = await provider.getChartResolutionCapabilities(symbol, exchange, context);
+    }
+  } else if (source.kind !== "security" && source.kind !== "economic" && source.kind !== "capability" && source.kind !== "constant") {
+    supported = sources.universalSeriesSupport?.(source)?.resolutions?.map((entry) => entry.resolution) ?? [];
+    if (source.kind === "prediction-market" && supported.length === 0 && sources.loadUniversalSeries) {
+      const { points } = await sources.loadUniversalSeries(source);
+      return storedLibraryResolutions(points.map(barFromPoint).filter((bar): bar is LibraryBar => bar !== null));
+    }
+  }
+  return LIBRARY_RESOLUTIONS.filter((resolution) =>
+    DAILY_LIBRARY_RESOLUTIONS.some((daily) => daily === resolution)
+    || supported.includes(resolutionFromLibraryInterval(resolution)));
+}
+
+function storedLibraryResolutions(bars: readonly LibraryBar[]): string[] {
+  const gap = medianBarGapMs(bars);
+  return LIBRARY_RESOLUTIONS.filter((resolution) =>
+    DAILY_LIBRARY_RESOLUTIONS.some((daily) => daily === resolution)
+    || (gap !== null && LIBRARY_BAR_SIZE_MS[resolution]! >= gap));
 }
 
 // A cash session on a futures, crypto, or non-New York listing drops the prints that fall outside it.
@@ -422,7 +461,7 @@ function symbolSession(type: string, exchange: string, requestedSession = "exten
   };
 }
 
-function symbolInfo(ticker: string, source: ChartSeriesSource, timezone: string, session?: string): Record<string, unknown> {
+function symbolInfo(ticker: string, source: ChartSeriesSource, timezone: string, session?: string, resolutions: readonly string[] = DAILY_LIBRARY_RESOLUTIONS): Record<string, unknown> {
   const colon = ticker.indexOf(":");
   const exchange = colon > 0 ? ticker.slice(0, colon) : "";
   const name = colon > 0 ? ticker.slice(colon + 1) : ticker;
@@ -445,12 +484,14 @@ function symbolInfo(ticker: string, source: ChartSeriesSource, timezone: string,
     ...(axisUnit ? { unit_id: axisUnit, original_unit_id: axisUnit } : {}),
     type,
     ...symbolSession(type, exchange, session),
-    timezone,
+    timezone: source.kind === "security"
+      ? resolveExchangeTimeZone(source.instrument.exchange ?? exchange) ?? timezone
+      : "Etc/UTC",
     exchange,
     minmov: 1,
     pricescale,
     visible_plots_set: "ohlcv",
-    ...libraryResolutionInfo(),
+    ...libraryResolutionInfo(resolutions),
     volume_precision: 0,
     data_status: "streaming",
     format: "price",
@@ -666,6 +707,27 @@ export function createSpecLibraryFeed(options: {
   const cache = new ChartResolveCache();
   const listeners = new Map<string, LibraryBarListener>();
   const timezone = options.timezone ?? "America/New_York";
+  const predictionLoads = new Map<string, {
+    at: number;
+    pending: ReturnType<NonNullable<ChartResolveSources["loadUniversalSeries"]>>;
+  }>();
+  const getSources = (): ChartResolveSources => {
+    const sources = options.getSources();
+    const load = sources.loadUniversalSeries;
+    if (!load) return sources;
+    return { ...sources, loadUniversalSeries: (source, request) => {
+      if (source.kind !== "prediction-market") return load(source, request);
+      const key = JSON.stringify([source.venue, source.marketId, request?.range ?? null, request?.start ?? null, request?.end ?? null]);
+      const cached = predictionLoads.get(key);
+      if (cached && Date.now() - cached.at < 60_000) return cached.pending;
+      const pending = load(source, request).catch((error: unknown) => {
+        predictionLoads.delete(key);
+        throw error;
+      });
+      predictionLoads.set(key, { at: Date.now(), pending });
+      return pending;
+    } };
+  };
   const publish = (symbol: string, bar: LibraryBar, resolution?: string) => {
     const ticker = symbol.trim().toUpperCase();
     for (const listener of listeners.values()) {
@@ -699,12 +761,17 @@ export function createSpecLibraryFeed(options: {
     resolveSymbol(symbolName, onResolve, onError, extension) {
       const ticker = symbolName.trim().toUpperCase();
       const source = sourceForTicker(ticker, options.getDirectory());
-      setTimeout(() => {
+      setTimeout(async () => {
         if (!source) {
           onError("unknown_symbol");
           return;
         }
-        onResolve(symbolInfo(feedTickerForSource(source) ?? ticker, source, timezone, extension?.session));
+        try {
+          const resolutions = await sourceLibraryResolutions(source, getSources());
+          onResolve(symbolInfo(feedTickerForSource(source) ?? ticker, source, timezone, extension?.session, resolutions));
+        } catch (error) {
+          onError(error instanceof Error ? error.message : String(error));
+        }
       }, 0);
     },
     getBars(symbolInfo, resolution, periodParams, onResult, onError) {
@@ -734,11 +801,11 @@ export function createSpecLibraryFeed(options: {
         fetchToSec,
         fullHistory,
       );
-      void resolveChartSpecData(spec, withWeeklyHistoryCap(options.getSources()), cache, fullHistory
+      void resolveChartSpecData(spec, withWeeklyHistoryCap(getSources()), cache, fullHistory
         ? {}
         : { requestViewport: { start: new Date(startMs), end: new Date(fetchEndMs) } },
       ).then((result) => {
-        const points = aggregateLibraryPoints(result.series[0]?.points ?? [], manualResolution);
+        const points = aggregateLibraryPoints(result.series[0]?.points ?? [], manualResolution, source.kind === "prediction-market");
         const bars = selectLibraryBars(points, startMs, endMs, periodParams.countBack);
         // The clipped window is the whole history this resolution can serve. Another page
         // to the left asks Yahoo for a trailing range that does not cover it, and the chart errors.
@@ -786,7 +853,6 @@ export function createStaticLibraryFeed(
     minmov: 1,
     pricescale: options.pricescale ?? 100,
     visible_plots_set: "ohlcv",
-    ...libraryResolutionInfo(),
     volume_precision: 0,
     data_status: "streaming",
     format: "price",
@@ -818,7 +884,7 @@ export function createStaticLibraryFeed(
             onError("unknown_symbol");
             return;
           }
-          onResolve(info);
+          onResolve({ ...info, ...libraryResolutionInfo(storedLibraryResolutions(bars)) });
         }, 0);
       },
       getBars(_symbolInfo, resolution, periodParams, onResult) {
@@ -881,7 +947,7 @@ export function createResolvedSeriesLibraryFeed(): {
   let listenerEpoch = 0;
   const listeners = new Map<string, LibraryBarListener>();
   const find = (ticker: string) => entries.find((entry) => entry.ticker === ticker);
-  const infoFor = (entry: { ticker: string; label: string; unit?: string }): Record<string, unknown> => {
+  const infoFor = (entry: { ticker: string; label: string; unit?: string; bars: LibraryBar[] }): Record<string, unknown> => {
     const axisUnit = libraryAxisUnit(entry.unit);
     return {
     ticker: entry.ticker,
@@ -896,7 +962,7 @@ export function createResolvedSeriesLibraryFeed(): {
     minmov: 1,
     pricescale: 100,
     visible_plots_set: "ohlcv",
-    ...libraryResolutionInfo(),
+    ...libraryResolutionInfo(storedLibraryResolutions(entry.bars)),
     volume_precision: 0,
     data_status: "streaming",
     format: "price",

@@ -111,11 +111,12 @@ export function libraryChartChrome(input: LibraryChartChromeInput): {
       // fix_left_edge stays off. It glues the first bar to the left, so a short series fills the pane with empty future time and the drag only moves further into that gap.
       "always_show_legend_values_on_mobile",
       "symbol_info_long_description",
-      "pricescale_unit",
       "pre_post_market_sessions",
     ],
     disabled_features: [
       "use_localstorage_for_settings",
+      "display_market_status",
+      "pricescale_unit",
       "symbol_search_hot_key",
       "header_saveload",
       "show_right_widgets_panel_by_default",

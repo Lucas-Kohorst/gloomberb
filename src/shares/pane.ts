@@ -11,6 +11,11 @@ export function buildPaneSharePayload(
   paneState: Record<string, unknown> = {},
   resolvedTicker?: string | null,
 ): Extract<SharePayload, { kind: "pane" }> | null {
+  const selected = pane.settings?.advancedChartPrimary;
+  if (pane.paneId === "chart-composer" && selected && typeof selected === "object"
+    && "ticker" in selected && "ownerSymbol" in selected && selected.ticker !== selected.ownerSymbol) {
+    return null;
+  }
   const def = pluginRegistry.panes.get(pane.paneId);
   if (!def) return null;
   try {

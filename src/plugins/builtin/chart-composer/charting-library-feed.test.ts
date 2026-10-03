@@ -146,6 +146,7 @@ describe("charting library feed", () => {
     expect(fromSafe.ticker).toBe("OWID:LIFE_EXPECTANCY_USA");
     expect(fromSafe.name).toBe("LIFE_EXPECTANCY_USA");
     expect(fromSafe.description).toBe("life expectancy USA");
+    expect(fromSafe.supported_resolutions).toEqual(["D", "W", "M"]);
     expect(fromRaw.ticker).toBe("OWID:LIFE_EXPECTANCY_USA");
     expect(String(fromSafe.name)).not.toContain(":");
     expect(String(fromSafe.name)).not.toContain("-");
@@ -213,7 +214,7 @@ describe("charting library feed", () => {
     expect(model?.symbol).toBe("ADJ:SEA_NTI_MV");
     const feed = createSpecLibraryFeed({
       getDirectory: () => model!.directory,
-      getSources: () => { throw new Error("resolve does not load bars"); },
+      getSources: () => ({ dataProvider: null, loadFredSeries: async () => { throw new Error("resolve must not load bars"); } }),
     });
     const resolved = await new Promise<Record<string, unknown>>((resolve, reject) => {
       feed.feed.resolveSymbol("ADJ:sea_nti_mv", resolve, reject);
@@ -818,7 +819,7 @@ describe("charting library feed", () => {
       const model = libraryChartFromSpec(singleSpec(source));
       const feed = createSpecLibraryFeed({
         getDirectory: () => model!.directory,
-        getSources: () => { throw new Error("resolve does not load bars"); },
+        getSources: () => ({ dataProvider: null, loadFredSeries: async () => { throw new Error("resolve must not load bars"); } }),
       });
       return new Promise<Record<string, unknown>>((done, reject) => {
         feed.feed.resolveSymbol(model!.symbol, done, reject);
@@ -837,14 +838,14 @@ describe("charting library feed", () => {
       { description: "Pre-market", id: "premarket", session: "0400-0930" },
       { description: "Post-market", id: "postmarket", session: "1600-2000" },
     ]);
-    expect(stock.intraday_multipliers).toEqual(["1", "5", "15", "30", "45", "60", "240"]);
+    expect(stock.intraday_multipliers).toEqual([]);
     const sessionSource: ChartSeriesSource = {
       kind: "security", instrument: { symbol: "NVDA", exchange: "XNAS" }, fieldId: "market.ohlcv",
     };
     const sessionModel = libraryChartFromSpec(singleSpec(sessionSource))!;
     const sessionFeed = createSpecLibraryFeed({
       getDirectory: () => sessionModel.directory,
-      getSources: () => { throw new Error("symbol resolution must not fetch"); },
+      getSources: () => ({ dataProvider: null, loadFredSeries: async () => { throw new Error("resolve must not load bars"); } }),
     });
     for (const session of ["regular", "extended"] as const) {
       const info = await new Promise<Record<string, unknown>>((done, reject) => {
@@ -897,6 +898,95 @@ describe("charting library feed", () => {
     expect(ticks).toEqual(history);
     handle.setBars(bars.map((bar, index) => index === 3 ? { ...bar, high: 7, close: 7 } : bar));
     expect(ticks.at(-1)).toEqual({ time: start, open: 1, high: 7, low: 0, close: 7, volume: 40 });
+  });
+
+  test("advertises only the selected provider's intervals while retaining daily aggregation", async () => {
+    const providerCalls: string[] = [];
+    const source: ChartSeriesSource = {
+      kind: "security", instrument: { symbol: "TEST", exchange: "LSE" }, fieldId: "market.ohlcv",
+    };
+    const model = libraryChartFromSpec(singleSpec(source))!;
+    const instance = createSpecLibraryFeed({
+      getDirectory: () => model.directory,
+      getSources: () => ({
+        dataProvider: {
+          getChartResolutionSupport: async (symbol: string, exchange: string) => {
+            providerCalls.push(`${exchange}:${symbol}`);
+            return [{ resolution: "1h", maxRange: "3M" }, { resolution: "4h", maxRange: "3M" }];
+          },
+        } as DataProvider,
+        loadFredSeries: async () => { throw new Error("metadata must not load prices"); },
+      }),
+    });
+    const info = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      instance.feed.resolveSymbol(model.symbol, resolve, reject);
+    });
+    expect(providerCalls).toEqual(["LSE:TEST"]);
+    expect(info.supported_resolutions).toEqual(["60", "240", "D", "W", "M"]);
+    expect(info.intraday_multipliers).toEqual(["60", "240"]);
+    expect(info.timezone).toBe("Europe/London");
+    const economic = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      instance.feed.resolveSymbol("FRED:CPIAUCSL", resolve, reject);
+    });
+    expect(economic.supported_resolutions).toEqual(["D", "W", "M"]);
+    expect(economic.has_intraday).toBe(false);
+    expect(economic.timezone).toBe("Etc/UTC");
+    expect(providerCalls).toEqual(["LSE:TEST"]);
+  });
+
+  test("prediction metadata cache never substitutes a preview load for a requested history window", async () => {
+    const source: ChartSeriesSource = { kind: "prediction-market", venue: "kalshi", marketId: "daily-market" };
+    const model = libraryChartFromSpec(singleSpec(source))!;
+    let loads = 0;
+    const start = Date.UTC(2026, 0, 1);
+    const instance = createSpecLibraryFeed({
+      getDirectory: () => model.directory,
+      getSources: () => ({
+        dataProvider: null,
+        loadFredSeries: async () => { throw new Error("not FRED"); },
+        loadUniversalSeries: async (_source, request) => {
+          loads += 1;
+          return { points: Array.from({ length: 8 }, (_, index) => ({
+            date: new Date(start + index * 3_600_000),
+            observedAt: new Date(start + index * 3_600_000), value: (request ? 110 : 10) + index,
+          })) };
+        },
+      }),
+    });
+    const info = await new Promise<Record<string, unknown>>((done, reject) => {
+      instance.feed.resolveSymbol(model.symbol, done, reject);
+    });
+    expect(info.supported_resolutions).toEqual(["60", "240", "D", "W", "M"]);
+    const result = await readBars(instance.feed, model.symbol, "240", start / 1000, (start + 8 * 3_600_000) / 1000, 10);
+    expect(result.map((bar) => [bar.time, bar.open, bar.close])).toEqual([
+      [start, 110, 113], [start + 4 * 3_600_000, 114, 117],
+    ]);
+    await new Promise<Record<string, unknown>>((done, reject) => {
+      instance.feed.resolveSymbol(model.symbol, done, reject);
+    });
+    expect(loads).toBe(2);
+  });
+
+  test("cached symbol capabilities track observed cadence and never infer minutes from annual points", async () => {
+    const instance = createStaticLibraryFeed("SERIES", "Series");
+    const resolve = () => new Promise<Record<string, unknown>>((done, reject) => {
+      instance.feed.resolveSymbol("SERIES", done, reject);
+    });
+    const bars = (step: number) => Array.from({ length: 5 }, (_, index) => ({
+      time: Date.UTC(2026, 0, 1) + index * step, open: 1, high: 1, low: 1, close: 1,
+    }));
+    instance.setBars(bars(3_600_000));
+    expect((await resolve()).supported_resolutions).toEqual(["60", "240", "D", "W", "M"]);
+    instance.setBars(bars(365 * 86_400_000));
+    expect((await resolve()).supported_resolutions).toEqual(["D", "W", "M"]);
+    const resolved = createResolvedSeriesLibraryFeed();
+    resolved.setSeries([{ id: "hourly", label: "Hourly", style: "line", points: bars(3_600_000).map((bar) => ({
+      date: new Date(bar.time), observedAt: new Date(bar.time), value: bar.close,
+    })) }]);
+    const info = await new Promise<Record<string, unknown>>((done, reject) => {
+      resolved.feed.resolveSymbol(resolved.model().symbol, done, reject);
+    });
+    expect(info.supported_resolutions).toEqual(["60", "240", "D", "W", "M"]);
   });
 
   test("keeps the minute and hour resolution a timeframe button asked for", async () => {

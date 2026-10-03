@@ -198,6 +198,9 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     },
     publicShare: {
       serialize: ({ pane }) => {
+        const selected = pane.settings?.advancedChartPrimary;
+        // A replacement lives in the library snapshot, not the authored share spec.
+        if (isRecord(selected) && selected.ticker !== selected.ownerSymbol) return null;
         const spec = parseChartSpec(pane.settings?.[CHART_SPEC_SETTING_KEY]);
         if (!spec) return null;
         const drawings = parseChartDrawings(pane.settings?.[CHART_DRAWINGS_SETTING_KEY]);

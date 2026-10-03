@@ -1,10 +1,13 @@
 /** @jsxImportSource react */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useThemeColors } from "../../../theme/theme-context";
 import { getSharedRegistry } from "../../registry/shared";
 import { isPublicShareLocation } from "../shared/share-link";
 import { chartLayoutKey, persistChartLayout, readChartLayout, type PersistableChartWidget } from "./charting-library-persistence";
+import { supportedLibraryResolution } from "./charting-library-resolution";
+import { bindChartCommandBarKey } from "./charting-library-keyboard";
 import type { LibraryDatafeed } from "./charting-library-feed";
+import { createRegisteredLibraryFeed } from "./charting-library-instruments";
 import {
   backgroundColorLooksLight,
   libraryChartChrome,
@@ -18,6 +21,13 @@ interface ChartingWindow {
     widget: new (options: Record<string, unknown>) => PersistableChartWidget & {
       onChartReady?: (callback: () => void) => void;
       activeChart?: () => {
+        symbolExt?: () => { ticker?: string; name?: string; supported_resolutions?: string[] } | null;
+        onSymbolChanged?: () => {
+          subscribe: (owner: null, callback: (info: { ticker?: string; name?: string; supported_resolutions?: string[] }) => void) => void;
+          unsubscribe: (owner: null, callback: (info: { ticker?: string; name?: string; supported_resolutions?: string[] }) => void) => void;
+        };
+        resolution?: () => string;
+        setResolution?: (resolution: string) => Promise<boolean>;
         setChartType?: (type: number) => void;
         createStudy?: (name: string, forceOverlay: boolean, lock: boolean, inputs: Record<string, unknown>) => void;
         getPanes?: () => Array<{
@@ -69,6 +79,7 @@ export function ChartingLibraryFrame({
   backgroundColor,
   feed,
   onReady,
+  onPrimarySymbolChange,
   onError,
 }: {
   symbol: string;
@@ -80,12 +91,17 @@ export function ChartingLibraryFrame({
   priceScale?: LibraryPriceScale;
   backgroundColor: string;
   feed: LibraryDatafeed;
+  onPrimarySymbolChange?: (symbol: { ticker: string; name: string }) => void;
   onReady?: () => void;
   onError?: (error: unknown) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [retry, setRetry] = useState(0);
   const feedRef = useRef(feed);
   feedRef.current = feed;
+  const onPrimarySymbolChangeRef = useRef(onPrimarySymbolChange);
+  onPrimarySymbolChangeRef.current = onPrimarySymbolChange;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const onErrorRef = useRef(onError);
@@ -106,9 +122,16 @@ export function ChartingLibraryFrame({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    const stopKeyboard = bindChartCommandBarKey(container, () => getSharedRegistry()?.openCommandBar());
     let cancelled = false;
+    setStatus("loading");
+    const loadingTimeout = window.setTimeout(() => {
+      if (!cancelled) setStatus("error");
+    }, 20_000);
     let widget: { remove?: () => void } | null = null;
     let stopPersistence: (() => void) | undefined;
+    let stopPrimarySymbol: (() => void) | undefined;
+    let stopSearch: (() => void) | undefined;
     const { script, libraryPath } = assetPaths();
     void loadLibrary(script).then(() => {
       if (cancelled || !containerRef.current) return;
@@ -117,6 +140,8 @@ export function ChartingLibraryFrame({
       if (!Widget) throw new Error("Charting library did not register TradingView.widget");
       const compareSymbols = compareKey ? compareKey.split("\n") : [];
       const store = isPublicShareLocation() ? undefined : getSharedRegistry();
+      const searchable = store ? createRegisteredLibraryFeed(feedRef.current, store) : undefined;
+      stopSearch = searchable?.dispose;
       const layoutKey = chartLayoutKey(symbol, compareSymbols);
       const savedLayout = readChartLayout(store, layoutKey);
       const chrome = libraryChartChrome({
@@ -136,7 +161,7 @@ export function ChartingLibraryFrame({
       const next = new Widget({
         container: containerRef.current,
         library_path: libraryPath,
-        datafeed: feedRef.current,
+        datafeed: searchable?.feed ?? feedRef.current,
         symbol,
         interval,
         timezone,
@@ -183,29 +208,66 @@ export function ChartingLibraryFrame({
             chart?.getPanes?.()[0]?.getMainSourcePriceScale?.()?.setMode?.(libraryPercentScaleMode());
           }
         }
+        let primaryRevision = 0;
+        const notifyPrimarySymbol = (info: { ticker?: string; name?: string; supported_resolutions?: string[] }) => {
+          if (cancelled) return;
+          const revision = ++primaryRevision;
+          const current = chart?.resolution?.();
+          const supported = current ? supportedLibraryResolution(current, info.supported_resolutions) : undefined;
+          if (supported && supported !== current && chart?.setResolution) {
+            void Promise.resolve().then(() => cancelled || revision !== primaryRevision ? true : chart.setResolution!(supported)).then((changed) => {
+              if (!changed && !cancelled) throw new Error(`Could not switch chart to supported interval ${supported}`);
+            }).catch((error: unknown) => {
+              if (!cancelled) {
+                setStatus("error");
+                onErrorRef.current?.(error);
+              }
+            });
+          }
+          const ticker = info.ticker ?? info.name;
+          if (!cancelled && ticker) onPrimarySymbolChangeRef.current?.({ ticker, name: info.name ?? ticker });
+        };
+        const symbolChanges = chart?.onSymbolChanged?.();
+        symbolChanges?.subscribe(null, notifyPrimarySymbol);
+        stopPrimarySymbol = () => symbolChanges?.unsubscribe(null, notifyPrimarySymbol);
+        const currentSymbol = chart?.symbolExt?.();
+        if (currentSymbol) notifyPrimarySymbol(currentSymbol);
         stopPersistence = persistChartLayout(next, store, layoutKey, (error) => onErrorRef.current?.(error));
+        window.clearTimeout(loadingTimeout);
+        setStatus("ready");
         onReadyRef.current?.();
       });
     }).catch((error: unknown) => {
-      if (!cancelled) onErrorRef.current?.(error);
+      if (!cancelled) {
+        window.clearTimeout(loadingTimeout);
+        setStatus("error");
+        onErrorRef.current?.(error);
+      }
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingTimeout);
+      stopKeyboard();
+      stopPrimarySymbol?.();
       stopPersistence?.();
       widget?.remove?.();
+      stopSearch?.();
     };
-  }, [backgroundColor, chartStyle, hasVolume, compareKey, interval, palette, priceScale, symbol, themeKey, timezone]);
+  }, [backgroundColor, chartStyle, hasVolume, compareKey, interval, palette, priceScale, symbol, themeKey, timezone, retry]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        minWidth: 0,
-        minHeight: 0,
-        flex: 1,
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0, flex: 1 }}>
+      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+      {status !== "ready" ? (
+        <div role="status" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor, color: palette.textMuted }}>
+          {status === "loading" ? "Loading chart…" : (
+            <>
+              <span>Chart could not finish loading.</span>
+              <button type="button" onClick={() => setRetry((current) => current + 1)} style={{ cursor: "pointer", color: palette.text, background: "transparent", border: `1px solid ${palette.textMuted}`, padding: "4px 8px" }}>Retry</button>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }

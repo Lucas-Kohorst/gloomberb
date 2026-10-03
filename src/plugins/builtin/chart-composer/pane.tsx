@@ -196,6 +196,15 @@ function DesktopTradingViewComposer({
     [capabilityInvoker, dataProvider],
   );
   const model = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  const [selectedPrimary, setSelectedPrimary] = usePaneSettingValue<{
+    ownerSymbol: string; ticker: string; name: string;
+  } | null>("advancedChartPrimary", null);
+  const primaryReplaced = selectedPrimary?.ownerSymbol === model?.symbol && selectedPrimary?.ticker !== model?.symbol;
+  const rememberPrimary = useCallback((selected: { ticker: string; name: string }) => {
+    if (!model) return;
+    setSelectedPrimary((current) => current?.ownerSymbol === model.symbol && current.ticker === selected.ticker && current.name === selected.name
+      ? current : { ownerSymbol: model.symbol, ...selected });
+  }, [model, setSelectedPrimary]);
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
   const directoryRef = useRef(model?.directory ?? new Map());
@@ -244,13 +253,13 @@ function DesktopTradingViewComposer({
     edit,
     alertAtLevel,
     currentPrice: header.close,
-    enabled: focused && listing !== null && !dialogOpen,
+    enabled: focused && !primaryReplaced && listing !== null && !dialogOpen,
     onCapture,
   });
   useExternalLinkFooter({
     registrationId: footerId,
     focused,
-    url: openUrl,
+    url: primaryReplaced ? null : openUrl,
   });
   return (
     <Box
@@ -262,7 +271,7 @@ function DesktopTradingViewComposer({
       data-gloom-role="tradingview-composer"
       style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
-      <ChartDataHeader text={header.text} width={width} />
+      <ChartDataHeader text={primaryReplaced ? "" : header.text} width={width} />
       {model && (!resolution.loading || primaryPoints.length > 0) ? (
         <TradingViewChart
           flexGrow={1}
@@ -276,8 +285,13 @@ function DesktopTradingViewComposer({
           priceScale={model.priceScale}
           backgroundColor={colors.panel}
           feed={library.feed}
+          onPrimarySymbolChange={rememberPrimary}
         />
-      ) : null}
+      ) : (
+        <Text fg={colors.textMuted}>
+          {model ? "Loading chart data…" : "Chart data is unavailable"}
+        </Text>
+      )}
     </Box>
   );
 }
