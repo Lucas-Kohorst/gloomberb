@@ -1,4 +1,4 @@
-import { Box } from "../../../ui";
+import { Box, useUiCapabilities } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PaneProps, TickerResearchTabDef } from "../../../types/plugin";
 import { t, tf } from "../../../i18n";
@@ -90,6 +90,7 @@ function useRegistryTickerResearchTabsSnapshot(registry: ReturnType<typeof getSh
 }
 
 export function TickerResearchPane({ focused, width, height }: PaneProps) {
+  const { fractionalViewport = false } = useUiCapabilities();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
@@ -179,7 +180,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
       : (allTabs.some((tab) => tab.id === paneSettings.defaultTabId)
         ? paneSettings.defaultTabId
         : (allTabs[0]?.id ?? "overview")));
-  const tabStrip = splitTickerResearchTabStrip(allTabs, resolvedTabId);
+  const tabStrip = fractionalViewport ? { inline: allTabs, overflow: [] } : splitTickerResearchTabStrip(allTabs, resolvedTabId);
   const stripTabs = [
     ...tabStrip.inline.map((tab) => ({ label: t(tab.name), value: tab.id })),
     ...(tabStrip.overflow.length > 0 ? [{ label: t("More"), value: TICKER_RESEARCH_MORE_TAB_VALUE }] : []),
@@ -397,7 +398,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
           tabs={stripTabs}
           activeValue={resolvedTabId}
           onSelect={handleTabSelect}
-          scrollable={stripTabs.length > 8}
+          scrollable={fractionalViewport || stripTabs.length > 8}
         />
       )}
 

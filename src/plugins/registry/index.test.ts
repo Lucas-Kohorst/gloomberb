@@ -194,6 +194,21 @@ describe("PluginRegistry lifecycle", () => {
 });
 
 describe("built-in composite plugin ownership", () => {
+  test("resolves retired price-chart templates without listing a duplicate", async () => {
+    const registry = createRegistry();
+    await registry.register(plugin("chart-compat", (ctx) => {
+      ctx.registerPaneTemplate({
+        id: "chart-composer-pane", paneId: "chart-composer", label: "Chart", description: "Chart",
+      });
+    }));
+    expect(registry.paneTemplates.get("graph-price-pane")).toBe(registry.paneTemplates.get("chart-composer-pane"));
+    expect(registry.paneTemplates.has("graph-price-pane")).toBe(true);
+    expect([...registry.paneTemplates.keys()]).toEqual(["chart-composer-pane"]);
+    expect(registry.getPaneTemplatePluginId("graph-price-pane")).toBe("chart-compat");
+    registry.unregister("chart-compat");
+    expect(registry.paneTemplates.get("graph-price-pane")).toBeUndefined();
+  });
+
   test("registers modules through their one top-level owner", async () => {
     const registry = createRegistry();
     await registry.register(portfolioPlugin);

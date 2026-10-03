@@ -516,7 +516,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
   }
 
   getPaneTemplatePluginId(templateId: string): string | undefined {
-    return this.contributions.paneTemplateOwners.get(templateId);
+    return this.contributions.paneTemplateOwners.get(templateId)
+      ?? (templateId === "graph-price-pane" ? this.contributions.paneTemplateOwners.get("chart-composer-pane") : undefined);
   }
 
   getShortcutPluginId(shortcutId: string): string | undefined {

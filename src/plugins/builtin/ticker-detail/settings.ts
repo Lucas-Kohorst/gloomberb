@@ -1,3 +1,4 @@
+import { OVERVIEW_PANEL_OPTIONS, OVERVIEW_PRESET_OPTIONS, normalizeOverviewPanel, normalizeOverviewPreset, type OverviewPreset } from "./overview/layout";
 import type { PaneSettingsDef, TickerResearchTabDef } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -13,6 +14,8 @@ export interface TickerResearchPaneSettings {
   lockedTabId: string;
   defaultTabId: string;
   chainRefreshMinutes: string;
+  overviewPreset: OverviewPreset;
+  overviewPanels: string[];
 }
 
 export interface QuoteMonitorPaneSettings {
@@ -38,6 +41,8 @@ export function getTickerResearchPaneSettings(
     lockedTabId: tabId,
     defaultTabId,
     chainRefreshMinutes,
+    overviewPreset: normalizeOverviewPreset(settings?.overviewPreset),
+    overviewPanels: OVERVIEW_PANEL_OPTIONS.slice(0, 4).map((option, index) => normalizeOverviewPanel(settings?.[`overviewPanel${index + 1}`] ?? option.value)),
   };
 }
 
@@ -76,8 +81,23 @@ export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSetti
       lockedTabId: settings.lockedTabId,
       defaultTabId: settings.defaultTabId,
       chainRefreshMinutes: settings.chainRefreshMinutes,
+      overviewPreset: settings.overviewPreset,
+      ...Object.fromEntries(settings.overviewPanels.map((panel, index) => [`overviewPanel${index + 1}`, panel])),
     },
     fields: [
+      {
+        key: "overviewPreset",
+        label: "Overview layout",
+        description: "Desktop overview panels. Quote overview is unchanged in the terminal.",
+        type: "select" as const,
+        options: [...OVERVIEW_PRESET_OPTIONS],
+      },
+      ...(settings.overviewPreset === "custom" ? settings.overviewPanels.map((_, index) => ({
+        key: `overviewPanel${index + 1}`,
+        label: `Overview panel ${index + 1}`,
+        type: "select" as const,
+        options: [{ value: "none", label: "None" }, ...OVERVIEW_PANEL_OPTIONS],
+      })) : []),
       ...(settings.hideTabs
         ? []
         : [{

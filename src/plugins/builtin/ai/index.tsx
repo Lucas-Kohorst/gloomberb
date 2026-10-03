@@ -1,5 +1,6 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import type { AppConfig } from "../../../types/config";
+import { queueAskGloomDraft } from "./workspace/pending-draft";
 import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import {
   AI_PROVIDER_IDS,
@@ -269,7 +270,7 @@ export const aiPlugin: GloomPlugin = {
 
     ctx.registerPane({
       id: "local-agent-workspace",
-      name: "AI Agent",
+      name: "Ask Gloom",
       icon: "A",
       component: LocalAgentWorkspacePane,
       defaultPosition: "right",
@@ -304,7 +305,7 @@ export const aiPlugin: GloomPlugin = {
           ?? workspace.threads[0]
           ?? null;
         return buildAiPaneSettingsDef({
-          title: "AI Agent Settings",
+          title: "Ask Gloom Settings",
           providers: settingsProviders(workspaceProviders),
           models: settingsModels(workspaceProviderIds),
           defaultProviderId: workspaceDefaults.providerId,
@@ -326,14 +327,18 @@ export const aiPlugin: GloomPlugin = {
     ctx.registerPaneTemplate({
       id: "new-local-agent-workspace",
       paneId: "local-agent-workspace",
-      label: "AI Agent",
-      description: "Create a persistent AI thread with optional model selection.",
+      label: "Ask Gloom",
+      description: "Ask Gloom using your local or BYOK AI provider, with persistent threads and model selection.",
       keywords: ["ai", "agent", "claude", "openai", "chatgpt", "gemini", "copilot", "grok", "factory", "openrouter", "spore", "research", "thread"],
-      shortcut: { prefix: "AGENT" },
-      createInstance: () => ({
-        title: "AI Agent",
-        placement: "floating",
-      }),
+      shortcut: { prefix: "ASKG", aliases: ["AGENT"], argPlaceholder: "question", argKind: "text", argOptional: true },
+      createInstance: (_context, options) => {
+        const askGloomDraftId = queueAskGloomDraft(options?.arg ?? "");
+        return {
+          title: "Ask Gloom",
+          placement: "floating",
+          ...(askGloomDraftId ? { params: { askGloomDraftId } } : {}),
+        };
+      },
     });
 
     ctx.registerPane({
@@ -407,7 +412,7 @@ export const aiPlugin: GloomPlugin = {
       label: "AI Screener",
       description: "Create a prompt-driven AI screener pane with reusable screening tabs.",
       keywords: ["ai", "screener", "screen", "watchlist", "prompt"],
-      shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+      shortcut: { prefix: "AIS", aliases: ["AI"], argPlaceholder: "prompt", argKind: "text" },
       wizard: screenerWizard,
       createInstance: (context, options) => {
         const prompt = options?.values?.prompt?.trim() || options?.arg?.trim() || "";

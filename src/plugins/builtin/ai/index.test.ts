@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { parseRootShortcutIntent, shortcutClaimsQuery } from "../../../components/command-bar/routes/root/shortcuts";
 import { createDefaultConfig } from "../../../types/config";
 import type { PaneDef, PaneTemplateDef } from "../../../types/plugin";
 import { consumeRequestedAccountManagementTab } from "../account-management/navigation";
+import { consumeAskGloomDraft } from "./workspace/pending-draft";
 import { aiPlugin } from "./index";
 import {
   AI_PROVIDER_IDS,
@@ -164,10 +166,28 @@ describe("AI plugin shared provider settings", () => {
     const screenerTemplate = templates.find(
       (template) => template.id === "new-ai-screener-pane",
     );
+    expect(workspaceTemplate?.shortcut).toMatchObject({ prefix: "ASKG", aliases: ["AGENT"] });
+    expect(screenerTemplate?.shortcut).toMatchObject({ prefix: "AIS", aliases: ["AI"] });
+    for (const query of ["ASKG compare my holdings", "AGENT compare my holdings", "ASKG"]) {
+      const intent = parseRootShortcutIntent({
+        query, commands: [], pluginCommands: [], paneTemplates: templates, activeTicker: null,
+      });
+      expect(intent.kind).toBe(query === "ASKG" ? "partial" : "complete");
+      expect(shortcutClaimsQuery(intent)).toBe(query !== "ASKG");
+      if (intent.kind === "none" || intent.source !== "pane-template") throw new Error("Expected assistant route");
+      expect(intent.template.id).toBe("new-local-agent-workspace");
+      expect(intent.argText).toBe(query === "ASKG" ? "" : "compare my holdings");
+    }
+    const drafted = await workspaceTemplate?.createInstance?.({} as any, { arg: "compare my holdings" });
+    const draftId = drafted?.params?.askGloomDraftId;
+    expect(typeof draftId).toBe("string");
+    expect(JSON.stringify(drafted)).not.toContain("compare my holdings");
+    expect(consumeAskGloomDraft(String(draftId))).toBe("compare my holdings");
+    expect(consumeAskGloomDraft(String(draftId))).toBeUndefined();
     expect(workspaceTemplate?.wizard).toBeUndefined();
     const workspaceInstance = workspaceTemplate?.createInstance?.({} as any, {});
     expect(workspaceInstance).toMatchObject({
-      title: "AI Agent",
+      title: "Ask Gloom",
       placement: "floating",
     });
     expect((workspaceInstance as any)?.params?.newThreadId).toBeUndefined();

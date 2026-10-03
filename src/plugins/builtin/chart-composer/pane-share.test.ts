@@ -22,6 +22,17 @@ const context: PaneTemplateContext = {
 };
 
 describe("chart pane sharing", () => {
+  test("G price queries keep OHLC defaults while expressions retain their source", async () => {
+    const template = chartComposerModule.paneTemplates?.find((entry) => entry.id === "chart-composer-pane");
+    const price = await template?.createInstance?.(context, { arg: "AAPL" });
+    expect(price?.settings?.[CHART_SPEC_SETTING_KEY]).toEqual(buildPriceChartPreset("AAPL"));
+    const legacy = await template?.createInstance?.(context, { symbol: "MSFT" });
+    expect(legacy?.settings?.[CHART_SPEC_SETTING_KEY]).toEqual(buildPriceChartPreset("MSFT"));
+    const economic = await template?.createInstance?.(context, { arg: "FRED:CPIAUCSL" });
+    const spec = parseChartSpec(economic?.settings?.[CHART_SPEC_SETTING_KEY]);
+    expect(spec?.series[0]?.source).toMatchObject({ kind: "economic", seriesId: "CPIAUCSL" });
+  });
+
   test("round-trips chart setup, drawings, and the panned viewport", async () => {
     const template = chartComposerModule.paneTemplates?.find((entry) => entry.id === "chart-composer-pane");
     const spec = buildPriceChartPreset("AAPL");

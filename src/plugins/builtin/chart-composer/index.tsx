@@ -37,6 +37,7 @@ import {
   buildBoundChartPreset,
   buildValuationChartPreset,
   chartSeriesLabel,
+  parseSeriesExpression,
 } from "./presets";
 import { buildChartComposerPaneSettingsDef } from "./settings";
 import { buildDataCatalogPaneSettingsDef } from "./catalog-settings";
@@ -124,7 +125,7 @@ function securityTemplate({
   build,
 }: {
   id: string;
-  prefix: "GP" | "GIP" | "CMP" | "GF" | "GE";
+  prefix: "GIP" | "CMP" | "GF" | "GE";
   label: string;
   description: string;
   argKind: "ticker" | "ticker-list";
@@ -186,8 +187,14 @@ const chartComposerTemplates: PaneTemplateDef[] = [
           ...(viewport ? { viewport } : {}),
         });
       }
-      const expression = options?.arg?.trim() || options?.values?.series?.trim() || context.activeTicker || "";
-      return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
+      const expression = options?.arg?.trim() || options?.values?.series?.trim()
+        || options?.symbol?.trim() || options?.ticker?.metadata.ticker
+        || options?.values?.tickers?.trim() || context.activeTicker || "";
+      const parsed = parseSeriesExpression(expression);
+      const spec = parsed?.kind === "security" && parsed.fieldId === "market.ohlcv" && !parsed.transform
+        ? buildBoundChartPreset(publicTickerKey(parsed.symbol, parsed.exchange))
+        : buildCustomChartPreset(expression, context.activeTicker);
+      return instanceFor(spec, "G");
     },
     publicShare: {
       serialize: ({ pane }) => {
@@ -271,15 +278,6 @@ const chartComposerTemplates: PaneTemplateDef[] = [
         : null,
     },
   },
-  securityTemplate({
-    id: "graph-price-pane",
-    prefix: "GP",
-    label: "Graph Price",
-    description: "Open a price chart for a ticker.",
-    argKind: "ticker",
-    minimumSymbols: 1,
-    build: (symbols) => buildBoundChartPreset(symbols[0]!),
-  }),
   securityTemplate({
     id: "graph-intraday-price-pane",
     prefix: "GIP",

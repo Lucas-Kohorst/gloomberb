@@ -59,6 +59,7 @@ import {
   type LocalAgentAttachmentPayload,
   type LocalAgentWorkspaceState,
 } from "./model";
+import { consumeAskGloomDraft } from "./pending-draft";
 import { selectLiveDeskContext } from "./live-desk";
 
 export const LOCAL_AGENT_WORKSPACE_STATE_KEY = "local-agent-workspace";
@@ -336,6 +337,16 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  useEffect(() => {
+    if (creating || !activeThread) return;
+    const id = paneInstance?.params?.askGloomDraftId;
+    if (typeof id !== "string") return;
+    const draft = consumeAskGloomDraft(id);
+    if (draft) {
+      setInputValue(draft);
+      inputRef.current?.editBuffer.setText?.(draft);
+    }
+  }, [creating, activeThread?.id, paneInstance?.params?.askGloomDraftId]);
   const [attachments, setAttachments] = useState<LocalAgentAttachmentPayload[]>([]);
   const [runningMessageId, setRunningMessageId] = useState<string | null>(null);
   const [streamingOutput, setStreamingOutput] = useState("");
