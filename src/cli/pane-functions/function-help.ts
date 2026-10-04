@@ -587,6 +587,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: NEWS,
     bloomberg: ["N"],
   },
+  FH: {
+    summary: "The latest stories in one list, newest first, with the publishing origin next to the outlet.",
+    usage: ["FH"],
+    keys: [OPEN, key("p", "op out"), key("t", "icker")],
+    data: NEWS,
+    bloomberg: [],
+  },
   CN: {
     summary: "Stories linked to the ticker, newest first.",
     usage: ["CN NVDA"],
