@@ -751,6 +751,51 @@ describe("SecEdgarClient", () => {
     expect(filings[1]?.accessionNumber).toBe("0000320193-18-000001");
   });
 
+  test("form filter keeps requested EDGAR filings past the first rows and older pages", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("company_tickers_exchange.json")) {
+        return new Response(JSON.stringify({
+          fields: ["cik", "name", "ticker", "exchange"],
+          data: [[320193, "Apple Inc.", "AAPL", "Nasdaq"]],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("CIK0000320193.json")) {
+        return new Response(JSON.stringify({
+          cik: "0000320193",
+          name: "Apple Inc.",
+          filings: {
+            recent: {
+              accessionNumber: ["0000320193-24-000123", "0000320193-24-000124", "0000320193-24-000125"],
+              form: ["8-K", "10-Q", "N-1A"],
+              filingDate: ["2024-08-02", "2024-08-01", "2024-07-01"],
+              acceptanceDateTime: ["20240802120000", "20240801120000", "20240701120000"],
+              primaryDocument: ["aapl-8k.htm", "aapl-10q.htm", "n1a.htm"],
+              primaryDocDescription: ["Current report", "Quarterly", "Prospectus"],
+              items: ["", "", ""],
+            },
+            files: [{ name: "CIK0000320193-submissions-001.json" }],
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        accessionNumber: ["0000320193-18-000001", "0000320193-18-000002"],
+        form: ["485BPOS", "10-K"],
+        filingDate: ["2018-01-02", "2018-01-03"],
+        acceptanceDateTime: ["20180102120000", "20180103120000"],
+        primaryDocument: ["485.htm", "10k.htm"],
+        primaryDocDescription: ["Post-effective", "Annual"],
+        items: ["", ""],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const filings = await new SecEdgarClient().getRecentFilings("AAPL", 2, { forms: ["N-1A", "485BPOS"] });
+    expect(urls.some((url) => url.endsWith("CIK0000320193-submissions-001.json"))).toBe(true);
+    expect(filings.map((filing) => filing.form)).toEqual(["N-1A", "485BPOS"]);
+  });
+
   test("surfaces SEC bot blocking errors clearly", async () => {
     globalThis.fetch = (async () => new Response(
       "<html><body>Undeclared Automated Tool</body></html>",

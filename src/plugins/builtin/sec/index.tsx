@@ -7,6 +7,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
 import type { ScrollBoxRenderable } from "../../../ui";
 import { EmptyState, FeedDataTableStackView, Spinner, StatGrid, useTableLoadMore, type FeedDataTableItem, type StatItem } from "../../../components";
 import { isUsEquityTicker, secFilingItemCodes } from "../../../utils/sec";
@@ -33,7 +34,9 @@ import {
 import { usePaneStatusLinkFooter } from "../../../components/layout/pane/status-footer";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { SignInWall } from "../cloud/auth-actions";
-import { secHeadless } from "./headless";
+import { loadSecFilings } from "./client";
+import { ETF_FILING_FORMS, ETF_FORMS_SETTING, parseFormsSetting } from "./forms";
+import { createSecHeadless, secHeadless } from "./headless";
 import {
   getFilingDisplayTitle,
   getFilingColumnText,
@@ -231,12 +234,51 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
+  const [formsSetting] = usePaneSettingValue("forms", "");
+  const forms = useMemo(
+    () => parseFormsSetting(typeof formsSetting === "string" ? formsSetting : ""),
+    [formsSetting],
+  );
+  const symbol = instrument?.symbol ?? "";
+  const exchange = instrument?.exchange ?? "";
+  const formFilterKey = forms && eligibleTicker && symbol ? `${symbol}:${exchange}:${forms.join(",")}` : "";
   const filingsEntry = useSecFilingsQuery(
-    instrument && eligibleTicker
+    !forms && instrument && eligibleTicker
       ? { instrument, count: SEC_FILING_FETCH_LIMIT }
       : null,
   );
-  const filings = useResolvedEntryValue(filingsEntry) ?? [];
+  const coordinatorFilings = useResolvedEntryValue(filingsEntry) ?? [];
+  const [edgarFilings, setEdgarFilings] = useState<SecFilingItem[]>([]);
+  const [edgarPhase, setEdgarPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [edgarError, setEdgarError] = useState<string | null>(null);
+  const [edgarKey, setEdgarKey] = useState("");
+  const edgarRequest = useRef(0);
+  const loadEdgarFilings = useCallback(() => {
+    if (!formFilterKey || !forms) return;
+    const requestId = ++edgarRequest.current;
+    const requestKey = formFilterKey;
+    setEdgarPhase("loading");
+    setEdgarError(null);
+    void loadSecFilings(null, symbol, SEC_FILING_FETCH_LIMIT, exchange, undefined, { forms })
+      .then((rows) => {
+        if (edgarRequest.current !== requestId) return;
+        setEdgarFilings(rows);
+        setEdgarKey(requestKey);
+        setEdgarPhase("ready");
+      })
+      .catch((loadError: unknown) => {
+        if (edgarRequest.current !== requestId) return;
+        setEdgarError(loadError instanceof Error ? loadError.message : String(loadError));
+        setEdgarKey(requestKey);
+        setEdgarPhase("error");
+      });
+  }, [exchange, formFilterKey, forms, symbol]);
+  useEffect(() => {
+    if (!formFilterKey) return;
+    loadEdgarFilings();
+  }, [formFilterKey, loadEdgarFilings]);
+  const filingsReady = !formFilterKey || edgarKey === formFilterKey;
+  const filings = formFilterKey ? (filingsReady ? edgarFilings : []) : coordinatorFilings;
   const [visibleCount, setVisibleCount] = useState(SEC_FILING_PAGE_SIZE);
   const visibleFilings = useMemo(() => filings.slice(0, visibleCount), [filings, visibleCount]);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -247,8 +289,10 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
   useEffect(() => {
     setVisibleCount(SEC_FILING_PAGE_SIZE);
-  }, [ticker?.metadata.ticker, ticker?.metadata.exchange]);
-  const loading = filingsEntry?.phase === "loading" || filingsEntry?.phase === "refreshing";
+  }, [ticker?.metadata.ticker, ticker?.metadata.exchange, formFilterKey]);
+  const loading = formFilterKey
+    ? !filingsReady || edgarPhase === "loading" || edgarPhase === "idle"
+    : filingsEntry?.phase === "loading" || filingsEntry?.phase === "refreshing";
   // A restored or shared open filing can sit past the first page, or be gone
   // from the feed entirely.
   useEffect(() => {
@@ -262,7 +306,9 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
       setVisibleCount(Math.ceil((index + 1) / SEC_FILING_PAGE_SIZE) * SEC_FILING_PAGE_SIZE);
     }
   }, [filings, loading, openItemId, setOpenItemId, visibleCount]);
-  const error = filingsEntry?.error && filingsEntry.error.reasonCode !== "NO_DATA" ? filingsEntry.error.message : null;
+  const error = formFilterKey
+    ? (filingsReady ? edgarError : null)
+    : filingsEntry?.error && filingsEntry.error.reasonCode !== "NO_DATA" ? filingsEntry.error.message : null;
   // Hosted, the only filings source is Gloom Cloud, which needs an account.
   const cloudSession = useResearchCloudSession();
   const authWall = filings.length === 0 && isCloudSessionRequired(error);
@@ -310,6 +356,16 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   }, [visibleFilings]);
 
   const refresh = useCallback(() => {
+    if (formFilterKey) {
+      loadEdgarFilings();
+      const coordinator = getSharedMarketDataCoordinator();
+      if (!coordinator) return;
+      if (openFiling && (documentsError || openDocuments.length === 0)) {
+        void coordinator.loadSecFilingDocuments(openFiling, { forceRefresh: true });
+      }
+      void retryContent();
+      return;
+    }
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument || !eligibleTicker) return;
     void coordinator.loadSecFilings({ instrument, count: SEC_FILING_FETCH_LIMIT }, { forceRefresh: true });
@@ -317,7 +373,16 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
       void coordinator.loadSecFilingDocuments(openFiling, { forceRefresh: true });
     }
     void retryContent();
-  }, [instrument, eligibleTicker, openFiling, documentsError, openDocuments.length, retryContent]);
+  }, [
+    eligibleTicker,
+    formFilterKey,
+    instrument,
+    loadEdgarFilings,
+    openFiling,
+    documentsError,
+    openDocuments.length,
+    retryContent,
+  ]);
   useShortcut((event) => { if (isPlainKey(event, "r")) refresh(); }, { enabled: focused, scope: "sec" });
   // Signing in must retry the request the wall was shown for.
   const sessionKeyRef = useRef(cloudSession.requestKey);
@@ -419,6 +484,29 @@ export const secModule: PluginModule = {
         canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
       }),
       headless: secHeadless,
+    },
+    {
+      ...createTickerSurfacePaneTemplate({
+        id: "sec-etf-pane",
+        paneId: "sec",
+        label: "ETF Filings",
+        description: "Opens N-1A, 485BPOS, 497, N-CSR, N-CEN, and N-PORT filings for the selected ticker.",
+        keywords: ["etf", "fund", "n-1a", "485bpos", "497", "n-csr", "n-cen", "n-port", "prospectus"],
+        shortcut: "ETF",
+        viewKey: "etf",
+        canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
+        settings: () => ({ forms: ETF_FORMS_SETTING }),
+      }),
+      headless: createSecHeadless({
+        loadFilings: (symbol, limit, _args, ctx) => loadSecFilings(
+          ctx.marketData,
+          symbol,
+          limit,
+          "",
+          undefined,
+          { forms: ETF_FILING_FORMS },
+        ),
+      }),
     },
   ],
 
