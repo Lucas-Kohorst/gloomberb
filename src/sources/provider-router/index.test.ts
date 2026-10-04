@@ -942,11 +942,48 @@ describe("AssetDataRouter", () => {
     };
 
     const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
-    const results = await router.search("SEC0");
+    const results = await router.search("iShares ETF");
 
     expect(results[0]?.providerId).toBe("cloud");
     expect(cloudCalls).toBe(1);
     expect(yahooCalls).toBe(0);
+  });
+
+  test("asks another provider when a symbol search has only one listing", async () => {
+    let yahooCalls = 0;
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async search() {
+        return [{ providerId: "cloud", symbol: "BIRD", name: "Allbirds", exchange: "IDX", type: "EQUITY" }];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async search() {
+        yahooCalls += 1;
+        return [{ providerId: "yahoo", symbol: "BIRD", name: "Allbirds Inc.", exchange: "NASDAQ", type: "EQUITY" }];
+      },
+    };
+
+    const partials: string[][] = [];
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const results = await router.search("BIRD", {
+      onPartial: (items) => partials.push(items.map((item) => item.exchange).sort()),
+    });
+
+    expect(results.map((result) => result.exchange)).toEqual(["IDX"]);
+    const deadline = Date.now() + 500;
+    while (partials.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(yahooCalls).toBe(1);
+    expect(partials.at(-1)).toEqual(["IDX", "NASDAQ"]);
   });
 
   test("routes through registered asset-data capabilities", async () => {

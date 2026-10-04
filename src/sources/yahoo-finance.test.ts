@@ -142,6 +142,24 @@ describe("YahooFinanceClient exchange aliases", () => {
       symbol: "EURUSD=X",
       type: "CURRENCY",
     });
+    expect(mapYahooInstrumentSearchQuote({
+      symbol: "BIRD",
+      shortname: "Allbirds Inc.",
+      exchDisp: "NASDAQ",
+      quoteType: "EQUITY",
+      regularMarketVolume: 5_000,
+      averageDailyVolume3Month: { raw: 4_000 },
+    })).toMatchObject({
+      symbol: "BIRD",
+      exchange: "NASDAQ",
+      volume: 5_000,
+      averageVolume: 4_000,
+    });
+    expect(mapYahooInstrumentSearchQuote({
+      symbol: "BIRD",
+      exchDisp: "NYSE",
+      quoteType: "EQUITY",
+    })).not.toHaveProperty("volume");
   });
 
   test("fetches Yahoo quotes and history for crypto pairs", async () => {

@@ -14,6 +14,7 @@ import { SecEdgarClient } from "./sec-edgar";
 import { mergeFinancialStatementRows } from "../utils/financial-statements";
 import { YahooHttpClient } from "./yahoo-finance/http";
 import {
+  financeRawNumber,
   normalizeSubUnitCurrency,
 } from "./yahoo-finance/mappers";
 import { getYahooSymbol, getYahooSymbolsToTry } from "./yahoo-finance/symbols";
@@ -74,10 +75,14 @@ export function mapYahooInstrumentSearchQuote(q: {
   exchDisp?: string;
   exchange?: string;
   quoteType?: string;
+  regularMarketVolume?: unknown;
+  averageDailyVolume3Month?: unknown;
+  averageDailyVolume10Day?: unknown;
 }): InstrumentSearchResult {
   const symbol = q.symbol || "";
   const exchange = q.exchDisp || q.exchange || "";
   const type = q.quoteType || "";
+  const activity = yahooSearchActivity(q);
   const cryptoHint = isCryptoSearchType(type) ? "CCC" : exchange;
   const canonical = canonicalCryptoInstrument(symbol, cryptoHint);
   if (canonical) {
@@ -88,6 +93,7 @@ export function mapYahooInstrumentSearchQuote(q: {
       exchange: canonical.exchange,
       type: "CRYPTO",
       currency: canonical.symbol.split("-")[1] || "USD",
+      ...activity,
     };
   }
   return {
@@ -96,7 +102,27 @@ export function mapYahooInstrumentSearchQuote(q: {
     name: q.shortname || q.longname || "",
     exchange,
     type,
+    ...activity,
   };
+}
+
+function yahooSearchActivity(q: {
+  regularMarketVolume?: unknown;
+  averageDailyVolume3Month?: unknown;
+  averageDailyVolume10Day?: unknown;
+}): { volume?: number; averageVolume?: number } {
+  const volume = nonNegativeActivity(q.regularMarketVolume);
+  const averageVolume = nonNegativeActivity(q.averageDailyVolume3Month)
+    ?? nonNegativeActivity(q.averageDailyVolume10Day);
+  return {
+    ...(volume != null ? { volume } : {}),
+    ...(averageVolume != null ? { averageVolume } : {}),
+  };
+}
+
+function nonNegativeActivity(value: unknown): number | undefined {
+  const parsed = financeRawNumber(value);
+  return parsed != null && parsed >= 0 ? parsed : undefined;
 }
 
 export class YahooFinanceClient implements DataProvider {

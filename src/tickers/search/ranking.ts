@@ -186,14 +186,20 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
       };
     });
 
+  type RankedEntry = (typeof ranked)[number];
+
   // A saved row only stands in for the venue it is listed on. The same symbol
   // on NASDAQ, LSE, or TSXV is a different listing and stays in the results.
   const savedVenuesBySymbol = new Map<string, Set<string>>();
-  for (const { item, normalizedSymbol, textScore } of ranked) {
-    if (textScore <= 0 || item.kind !== "ticker") continue;
-    const venues = savedVenuesBySymbol.get(normalizedSymbol) ?? new Set<string>();
-    for (const venue of listingVenues(item)) venues.add(venue);
-    savedVenuesBySymbol.set(normalizedSymbol, venues);
+  const savedEntryByVenue = new Map<string, RankedEntry>();
+  for (const entry of ranked) {
+    if (entry.textScore <= 0 || entry.item.kind !== "ticker") continue;
+    const venues = savedVenuesBySymbol.get(entry.normalizedSymbol) ?? new Set<string>();
+    for (const venue of listingVenues(entry.item)) {
+      venues.add(venue);
+      savedEntryByVenue.set(`${entry.normalizedSymbol}|${venue}`, entry);
+    }
+    savedVenuesBySymbol.set(entry.normalizedSymbol, venues);
   }
 
   const filtered = ranked.filter(({ item, normalizedSymbol, textScore }) => {
@@ -201,14 +207,18 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     if (intent.assetClassFilter && (item.instrumentClass || "other") !== intent.assetClassFilter) return false;
     if (item.kind !== "search") return true;
     const savedVenues = savedVenuesBySymbol.get(normalizedSymbol);
-    if (!savedVenues) return true;
-    if (savedVenues.size === 0) return false;
+    if (!savedVenues || savedVenues.size === 0) return true;
     const venues = listingVenues(item);
     if (venues.length === 0) return false;
-    return !venues.some((venue) => savedVenues.has(venue));
+    const covered = venues.some((venue) => savedVenues.has(venue));
+    if (!covered) return true;
+    for (const venue of venues) {
+      const saved = savedEntryByVenue.get(`${normalizedSymbol}|${venue}`);
+      if (saved) saved.item = withFilledListingActivity(saved.item, item);
+    }
+    return false;
   });
 
-  type RankedEntry = (typeof ranked)[number];
   const compareFallbackEntries = (a: RankedEntry, b: RankedEntry): number => {
     if (b.symbolMatchRank !== a.symbolMatchRank) return b.symbolMatchRank - a.symbolMatchRank;
     if (b.score !== a.score) return b.score - a.score;
@@ -294,15 +304,104 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     return compareFallbackEntries(a, b);
   });
 
-  const deduped: T[] = [];
-  const seen = new Set<string>();
+  const deduped: RankedEntry[] = [];
+  const seen = new Map<string, RankedEntry>();
   for (const entry of filtered) {
     const key = getTickerSearchDedupKey(entry.item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(entry.item);
+    const prior = seen.get(key);
+    if (!prior) {
+      seen.set(key, entry);
+      deduped.push(entry);
+      continue;
+    }
+    // The kept row is often the saved listing, which has no quote. Take activity
+    // from the other row of that same venue so the venue sort can see it.
+    prior.item = withFilledListingActivity(prior.item, entry.item);
   }
-  return deduped;
+  orderSameSymbolVenuesByActivity(deduped, hasExplicitHint);
+  return deduped.map((entry) => entry.item);
+}
+
+function finiteListingActivity(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** Session volume when the hit has it, otherwise average volume. Missing stays missing. */
+function listingActivity(item: Partial<TickerSearchRankableItem>): number | null {
+  return finiteListingActivity(item.volume) ?? finiteListingActivity(item.averageVolume);
+}
+
+function compareListingActivity(
+  a: Partial<TickerSearchRankableItem>,
+  b: Partial<TickerSearchRankableItem>,
+): number {
+  const aActivity = listingActivity(a);
+  const bActivity = listingActivity(b);
+  if (aActivity != null && bActivity != null && aActivity !== bActivity) return bActivity - aActivity;
+  // A reported positive print outranks an unknown one. Zero does not: that is
+  // not evidence the other venue is quieter, and we do not invent its volume.
+  if (aActivity != null && aActivity > 0 && bActivity == null) return -1;
+  if (bActivity != null && bActivity > 0 && aActivity == null) return 1;
+  return 0;
+}
+
+function withFilledListingActivity<T extends Partial<TickerSearchRankableItem>>(kept: T, extra: Partial<TickerSearchRankableItem>): T {
+  const volume = finiteListingActivity(kept.volume) ?? finiteListingActivity(extra.volume);
+  const averageVolume = finiteListingActivity(kept.averageVolume) ?? finiteListingActivity(extra.averageVolume);
+  if (
+    (volume == null || volume === finiteListingActivity(kept.volume))
+    && (averageVolume == null || averageVolume === finiteListingActivity(kept.averageVolume))
+  ) {
+    return kept;
+  }
+  return {
+    ...kept,
+    ...(volume != null ? { volume } : {}),
+    ...(averageVolume != null ? { averageVolume } : {}),
+  };
+}
+
+/**
+ * Venues of one exact symbol, most active first. Ties keep the order the
+ * ranker already chose, including any US-venue preference. An explicit
+ * venue or asset hint still wins over volume.
+ */
+function orderSameSymbolVenuesByActivity<T extends {
+  item: Partial<TickerSearchRankableItem>;
+  symbolMatchRank: number;
+  normalizedSymbol: string;
+  explicitIntentScore: number;
+}>(
+  entries: T[],
+  hasExplicitHint: boolean,
+): void {
+  let start = 0;
+  while (start < entries.length) {
+    const entry = entries[start]!;
+    if (entry.symbolMatchRank < 2 || !entry.normalizedSymbol) {
+      start += 1;
+      continue;
+    }
+    let end = start + 1;
+    while (
+      end < entries.length
+      && entries[end]!.symbolMatchRank >= 2
+      && entries[end]!.normalizedSymbol === entry.normalizedSymbol
+    ) {
+      end += 1;
+    }
+    if (end - start > 1) {
+      const block = entries.slice(start, end);
+      block.sort((a, b) => {
+        if (hasExplicitHint && b.explicitIntentScore !== a.explicitIntentScore) {
+          return b.explicitIntentScore - a.explicitIntentScore;
+        }
+        return compareListingActivity(a.item, b.item);
+      });
+      for (let index = 0; index < block.length; index += 1) entries[start + index] = block[index]!;
+    }
+    start = end;
+  }
 }
 
 export function normalizeSearchText(text: string): string {

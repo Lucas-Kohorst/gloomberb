@@ -55,9 +55,11 @@ function mergeSearchResults(
     }
 
     const existing = results[existingIndex]!;
-    if (getSearchResultRichness(item, context) > getSearchResultRichness(existing, context)) {
-      results[existingIndex] = item;
-    }
+    const incomingRicher = getSearchResultRichness(item, context) > getSearchResultRichness(existing, context);
+    const preferred = incomingRicher ? item : existing;
+    const other = incomingRicher ? existing : item;
+    const merged = mergeListingActivity(preferred, other);
+    if (merged !== existing) results[existingIndex] = merged;
   }
 }
 
@@ -115,9 +117,9 @@ export class ProviderRouterSearchRoutes {
    * preferred provider was asked at all, so one unreachable broker delayed
    * every lookup by its full timeout.
    *
-   * Fallback providers stay a fallback: they are only asked when that first
-   * round found nothing, because they are metered upstreams and racing them on
-   * every keystroke would bill for answers already in hand.
+   * Phrase searches stay on that first round. A symbol that came back from one
+   * venue asks the other providers before the caller sees the list, so BIRD is
+   * not only the first exchange that answered.
    *
    * Ordering still matters, it just no longer costs latency: `mergeSearchResults`
    * keeps the richest entry per symbol, so a broker arriving after the cloud
@@ -156,11 +158,10 @@ export class ProviderRouterSearchRoutes {
       cacheResults();
       if (!answered) {
         answered = true;
+        // A copy: a later venue must not mutate the array already handed back.
         resolveFirst([...results]);
         return;
       }
-      // The caller already has an answer, so a later, richer source is handed
-      // over rather than silently dropped into the cache.
       context?.onPartial?.([...results]);
     };
 
@@ -198,21 +199,42 @@ export class ProviderRouterSearchRoutes {
         ...brokers.map(searchBroker),
         ...(preferred ? [searchProvider(preferred)] : []),
       ]);
-      if (results.length === 0) {
+      // A symbol typeahead often comes back as one venue. Ask the other
+      // providers so BIRD on NASDAQ is not hidden behind a single IDX hit.
+      // Phrase searches stay on the first answer; those fallbacks are metered.
+      if (results.length === 0 || symbolSearchNeedsMoreVenues(query, results)) {
         await Promise.allSettled(fallbacks.map(searchProvider));
       }
     })().then(() => {
       if (!answered) {
         answered = true;
-        // Nothing matched anywhere, so hold the empty answer briefly rather
-        // than asking every source again on the next keystroke.
-        cacheResults(Math.min(SEARCH_CACHE_TTL_MS, 5_000));
-        resolveFirst([]);
+        if (results.length === 0) {
+          // Nothing matched anywhere, so hold the empty answer briefly rather
+          // than asking every source again on the next keystroke.
+          cacheResults(Math.min(SEARCH_CACHE_TTL_MS, 5_000));
+        }
+        resolveFirst([...results]);
       }
     });
 
     return { first, settled };
   }
+}
+
+const SYMBOL_SEARCH = /^[A-Z0-9.]{1,8}$/;
+
+/** The query is that symbol, and only one exchange has answered. Name searches stay put. */
+function symbolSearchNeedsMoreVenues(query: string, results: InstrumentSearchResult[]): boolean {
+  const symbol = query.trim().toUpperCase();
+  if (!SYMBOL_SEARCH.test(symbol)) return false;
+  const matches = results.filter((item) => item.symbol.trim().toUpperCase() === symbol);
+  if (matches.length === 0) return false;
+  const venues = new Set(
+    matches
+      .map((item) => (item.exchange || item.primaryExchange || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  return venues.size < 2;
 }
 
 function normalizeSearchKeyPart(value?: string): string {
@@ -227,6 +249,30 @@ function buildSearchResultKey(item: InstrumentSearchResult): string {
     normalizeSearchKeyPart(item.primaryExchange),
     normalizeSearchKeyPart(item.currency),
   ].join("|");
+}
+
+function finiteListingActivity(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Keep whichever source actually reported activity. Do not invent a number. */
+function mergeListingActivity(
+  preferred: InstrumentSearchResult,
+  other: InstrumentSearchResult,
+): InstrumentSearchResult {
+  const volume = finiteListingActivity(preferred.volume) ?? finiteListingActivity(other.volume);
+  const averageVolume = finiteListingActivity(preferred.averageVolume) ?? finiteListingActivity(other.averageVolume);
+  if (
+    finiteListingActivity(preferred.volume) === volume
+    && finiteListingActivity(preferred.averageVolume) === averageVolume
+  ) {
+    return preferred;
+  }
+  return {
+    ...preferred,
+    ...(volume != null ? { volume } : {}),
+    ...(averageVolume != null ? { averageVolume } : {}),
+  };
 }
 
 function getSearchResultRichness(item: InstrumentSearchResult, context?: SearchRequestContext): number {

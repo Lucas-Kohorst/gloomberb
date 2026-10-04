@@ -84,6 +84,12 @@ function mergeTickerMetadataFromSearchResult(
   const nextAssetCategory = canonical
     ? "CRYPTO"
     : (result.brokerContract?.secType || result.type || "").trim();
+  const storedIsIndex = canonicalExchange(metadata.exchange) === "INDEX"
+    || classifyInstrumentKind(metadata.assetCategory) === "index";
+  const nextIsIndex = canonicalExchange(nextExchange) === "INDEX"
+    || classifyInstrumentKind(nextAssetCategory) === "index";
+  // SPX is the S&P 500 record. A stock search hit (LSE Spirax) must not retitle it.
+  if (storedIsIndex && nextExchange && !nextIsIndex) return false;
 
   if (nextName && shouldReplaceTickerName(metadata.name, metadata.ticker, nextName)) {
     metadata.name = nextName;

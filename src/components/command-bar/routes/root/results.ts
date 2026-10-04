@@ -376,10 +376,13 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       }))
       : [shortcutItem];
     const relatedTemplateItems = rootQuery.trim().toUpperCase() === rootShortcutIntent.prefix
-      ? paneShortcutItems({
-        filterQuery: rootQuery,
-        includePromptableTickerTemplates: true,
-      }).map((item) => ({ ...item, category: "Panes" }))
+      ? paneShortcutItems({ includePromptableTickerTemplates: true })
+        .filter((item) => {
+          const itemPrefix = (item.shortcutQuery || item.right || "").trim().toUpperCase();
+          // MAP extends MA. "Market Heatmap" does not, even though the name contains "ma".
+          return itemPrefix.startsWith(rootShortcutIntent.prefix) && itemPrefix !== rootShortcutIntent.prefix;
+        })
+        .map((item) => ({ ...item, category: "Panes" }))
       : [];
     items.push(...templateItems, ...relatedTemplateItems);
     if (!shortcutOwnsQuery) items.push(...collectFreeTextMatches());

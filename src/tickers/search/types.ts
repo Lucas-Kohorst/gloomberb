@@ -28,6 +28,10 @@ export interface TickerSearchRankableItem {
   primaryExchangeLabel?: string;
   providerRank?: number;
   searchAliases?: string[];
+  /** Session volume from the search hit. Missing stays missing. */
+  volume?: number;
+  /** Average volume from the search hit, used only when session volume is missing. */
+  averageVolume?: number;
 }
 
 export interface TickerSearchCandidate extends TickerSearchRankableItem {
