@@ -902,6 +902,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: AS_FILED,
     bloomberg: [],
   },
+  FDA: {
+    summary: "Drug and device adverse events and recalls, searchable by name. Open the public record.",
+    usage: ["FDA", "FDA metformin"],
+    keys: [SEARCH, OPEN],
+    data: same("As reports are posted"),
+    bloomberg: [],
+  },
   HDS: {
     summary: "Institutional holders as a table (value, shares, change, percent held) or as an ownership treemap.",
     usage: ["HDS NVDA"],
