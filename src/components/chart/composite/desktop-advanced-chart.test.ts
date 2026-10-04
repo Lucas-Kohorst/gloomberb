@@ -182,6 +182,24 @@ describe("shouldUseDesktopAdvancedChart", () => {
       hasPoints: false,
     })).toBe(false);
   });
+
+  test("GLOOM_CHART_BACKEND=custom forces the canvas even on desktop", () => {
+    process.env.GLOOM_CHART_BACKEND = "custom";
+    try {
+      expect(shouldUseDesktopAdvancedChart({
+        isDesktopWeb: true,
+        hasPoints: true,
+        showTimeAxis: true,
+      })).toBe(false);
+    } finally {
+      delete process.env.GLOOM_CHART_BACKEND;
+    }
+    expect(shouldUseDesktopAdvancedChart({
+      isDesktopWeb: true,
+      hasPoints: true,
+      showTimeAxis: true,
+    })).toBe(true);
+  });
 });
 
 describe("desktopAdvancedChartInterval", () => {

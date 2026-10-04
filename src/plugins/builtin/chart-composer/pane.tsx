@@ -15,6 +15,7 @@ import {
   type MultiSelectDialogButtonHandle,
 } from "../../../components/ui";
 import { CompositeChart, type CompositeAdoptedViewport } from "../../../components/chart/composite";
+import { tradingViewChartsEnabled } from "../../../components/chart/backend";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
 import type { ChartSeriesSource, ChartSpec, ResolvedSeries } from "../../../time-series/types";
@@ -323,7 +324,7 @@ function ChartComposerSurface({
 }: ChartComposerSurfaceProps) {
   const ui = useUiHost();
   const libraryChart = useMemo(() => libraryChartFromSpec(spec), [spec]);
-  if (ui.kind === "desktop-web" && libraryChart) {
+  if (ui.kind === "desktop-web" && libraryChart && tradingViewChartsEnabled()) {
     return (
       <DesktopTradingViewComposer
         spec={spec}

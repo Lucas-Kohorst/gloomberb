@@ -25,6 +25,19 @@ export async function copyChartingLibrary(outdir: string): Promise<void> {
   const source = join(process.cwd(), "vendor", "charting_library", "charting_library");
   const dest = join(outdir, "charting_library");
   await rm(dest, { recursive: true, force: true });
+  try {
+    await stat(source);
+  } catch {
+    // The library is a git submodule (`git submodule update --init`). Checkouts
+    // without it can still build: GLOOM_CHART_BACKEND=custom renders every
+    // chart with the built-in renderer, and auto falls back where the library
+    // cannot load.
+    console.warn(
+      "[charts] vendor/charting_library is missing (submodule not initialized); skipping the copy.\n" +
+      "         Set GLOOM_CHART_BACKEND=custom to ship the fully custom charts without it.",
+    );
+    return;
+  }
   await cp(source, dest, { recursive: true });
   await stampEmptyChartChunks(dest);
 }

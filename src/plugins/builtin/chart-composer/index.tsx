@@ -10,6 +10,7 @@ import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import { registerConnectionSource } from "../connections/register";
+import { tradingViewChartsEnabled } from "../../../components/chart/backend";
 import { TRADINGVIEW_CONNECTION_ID } from "./tradingview-plot";
 import {
   CHART_COMPOSER_TEMPLATE_ID,
@@ -357,14 +358,18 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
-    disposeTradingViewConnection = registerConnectionSource({
-      id: TRADINGVIEW_CONNECTION_ID,
-      name: "TradingView",
-      kind: "asset-data",
-      pluginId: "ticker-research",
-      authRequired: false,
-      priority: 200,
-    });
+    // GLOOM_CHART_BACKEND=custom never mounts the charting library, so there
+    // is no live TradingView integration to inventory.
+    if (tradingViewChartsEnabled()) {
+      disposeTradingViewConnection = registerConnectionSource({
+        id: TRADINGVIEW_CONNECTION_ID,
+        name: "TradingView",
+        kind: "asset-data",
+        pluginId: "ticker-research",
+        authRequired: false,
+        priority: 200,
+      });
+    }
   },
   dispose() {
     disposeTradingViewConnection?.();

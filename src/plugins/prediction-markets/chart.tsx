@@ -6,6 +6,7 @@ import {
   CompositeChart,
   pricePointsToResolvedSeries,
 } from "../../components/chart/composite";
+import { tradingViewChartsEnabled } from "../../components/chart/backend";
 import { EmptyState } from "../../components/ui/status";
 import { colors } from "../../theme/colors";
 import { displayWidth, formatNumber, formatPercentRaw } from "../../utils/format";
@@ -191,7 +192,7 @@ export function PredictionMarketChart({
         </Text>
       </Box>
 
-      {desktop ? (
+      {desktop && tradingViewChartsEnabled() ? (
         <TradingViewChart
           key={`${symbol}|${interval}`}
           width={width}

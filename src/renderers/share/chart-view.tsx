@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatChartLegendValue } from "../../components/chart/composite/format";
+import { tradingViewChartsEnabled } from "../../components/chart/backend";
 import { ChartingLibraryFrame } from "../../plugins/builtin/chart-composer/charting-library-frame";
 import {
   createResolvedSeriesLibraryFeed,
@@ -269,7 +270,9 @@ export function ChartShareView({
     fill: index === 0,
     heightPx: STUDY_PANEL_HEIGHT_PX,
   })).filter((entry) => entry.series.length > 0), [payload.panels, payload.series]);
-  const libraryMode = !libraryFailed && shareLibrarySeries(payload.series).length > 0;
+  const libraryMode = tradingViewChartsEnabled()
+    && !libraryFailed
+    && shareLibrarySeries(payload.series).length > 0;
   const legendSeries = useMemo(
     () => shareLegendSeries(
       libraryMode ? payload.series : panels.flatMap((panel) => panel.series),

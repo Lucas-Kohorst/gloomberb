@@ -143,6 +143,7 @@ export async function writeSharePage(options: {
     define: {
       "process.env.NODE_ENV": "\"production\"",
       __GLOOMBERB_API_URL__: options.sameOriginApi ? "location.origin" : JSON.stringify(""),
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
   });
   if (!result.success) {
@@ -267,6 +268,9 @@ async function buildElectrobunViewBundle({
       // The webview has no `process`, so the cloud endpoint override the terminal
       // already reads from the environment is baked in at build time.
       __GLOOMBERB_API_URL__: JSON.stringify(process.env.GLOOMBERB_API_URL ?? ""),
+      // Same story for the chart backend: the view reads this compile-time
+      // constant, the terminal reads GLOOM_CHART_BACKEND from the process env.
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
     plugins: [electrobunViewAliasPlugin(pluginName, extraAliasRules)],
   });

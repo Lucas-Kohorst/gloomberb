@@ -1,6 +1,7 @@
 import { libraryDataDefaults } from "../../../plugins/builtin/chart-composer/charting-library-options";
 import { useEffect, useRef, useState } from "react";
 import { Box, TradingViewChart } from "../../../ui";
+import { tradingViewChartsEnabled } from "../backend";
 import {
   createResolvedSeriesLibraryFeed,
   type ResolvedLibraryModel,
@@ -51,6 +52,7 @@ export function shouldUseDesktopAdvancedChart(input: {
   showTimeAxis?: boolean;
   formatAxisValue?: unknown;
 }): boolean {
+  if (!tradingViewChartsEnabled()) return false;
   if (!input.isDesktopWeb || !input.hasPoints) return false;
   if (input.xAxis != null) return false;
   if (input.showTimeAxis === false) return false;
