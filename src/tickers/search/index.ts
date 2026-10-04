@@ -5,6 +5,7 @@ import { canonicalExchange, parsePublicTickerKey, publicTickerKey } from "../../
 import { getListingSymbol, tickerHasListingSuffix } from "../../sources/listing-symbols";
 import { parseOptionSymbol } from "../../utils/options";
 import { resolveCurrencyUnit } from "../../utils/currency-units";
+import { parseAssetClassQuery } from "./asset-classes";
 import { searchContractKey, searchInstrumentKey } from "./identity";
 import { tickerInstrumentLabel } from "../instrument-label";
 import {
@@ -403,10 +404,13 @@ async function searchProviderResults(
     }
   };
 
+  // "EQ BIRD" looks up BIRD. A lone "EQ" stays the symbol.
+  const parsedClass = parseAssetClassQuery(query);
+  const providerQuery = parsedClass.code && parsedClass.symbolQuery ? parsedClass.symbolQuery : query;
   // The variants are independent lookups of the same words, so they run
   // together. Awaited in turn they multiplied every per-source timeout by the
   // number of spellings tried.
-  await Promise.all(buildProviderSearchQueries(query).map(async (searchQuery) => {
+  await Promise.all(buildProviderSearchQueries(providerQuery).map(async (searchQuery) => {
     try {
       const results = await dataProvider.search(searchQuery, {
         ...searchContext,
@@ -427,12 +431,12 @@ async function searchProviderResults(
 
   // Catalogues can omit exact market symbols or return a crypto pair from a
   // different venue. Verify the requested quote before accepting an alias.
-  const requested = parsePublicTickerKey(normalizeTickerSymbol(query));
+  const requested = parsePublicTickerKey(normalizeTickerSymbol(providerQuery));
   const possibleCryptoPair = /^[A-Z0-9]{1,15}-[A-Z]{3,5}$/.test(requested.symbol);
-  if ((isExplicitMarketSymbol(query) || possibleCryptoPair)
+  if ((isExplicitMarketSymbol(providerQuery) || possibleCryptoPair)
     && !findExactTickerSearchMatch([...byKey.values()].map((result) => ({
       label: getSearchResultSymbol(result), instrumentType: result.type, right: result.exchange,
-    })), query)) {
+    })), providerQuery)) {
     const { symbol, exchange } = requested;
     const marketType = /=F$/.test(symbol) ? "FUTURE"
       : /^(?:[A-Z]{3}(?:\/[A-Z]{3}|(?:[A-Z]{3})?=X))$/.test(symbol) ? "CURRENCY"
@@ -547,12 +551,12 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
 
   return items.map((item) => {
     if (item.saved || item.kind === "ticker") {
-      if (item.instrumentClass !== "fund" && item.instrumentClass !== "derivative") {
+      if (!isFundOrDerivativeClass(item.instrumentClass)) {
         assignedPrimaryListing = true;
       }
       return { ...item, category: "Saved" };
     }
-    if (item.instrumentClass === "fund" || item.instrumentClass === "derivative") {
+    if (isFundOrDerivativeClass(item.instrumentClass)) {
       return { ...item, category: "Funds & Derivatives" };
     }
     if (!assignedPrimaryListing) {
@@ -561,6 +565,14 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
     }
     return { ...item, category: "Other Listings" };
   }) as T[];
+}
+
+function isFundOrDerivativeClass(instrumentClass: TickerSearchCandidate["instrumentClass"]): boolean {
+  return instrumentClass === "fund"
+    || instrumentClass === "etf"
+    || instrumentClass === "derivative"
+    || instrumentClass === "option"
+    || instrumentClass === "future";
 }
 
 function limitTickerSearchCandidates<T extends TickerSearchCandidate>(

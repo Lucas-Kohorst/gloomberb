@@ -10,6 +10,7 @@ import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
 import type { CommandBarCategoryPriorities } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
+import { isAssetClassResultId, parseAssetClassQuery } from "../../../../tickers/search/asset-classes";
 import { normalizeCommandTickerSearchText } from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { buildRootResultModel, type RootResultModel } from "./results";
@@ -75,6 +76,7 @@ interface UseCommandBarRootRuntimeOptions {
   rootQuery: string;
   rootSelectionNavigatedRef: RefObject<boolean>;
   rootShortcutIntent: ShortcutIntent;
+  setRootQuery?: (query: string) => void;
   runDirectCommand(command: Command, arg: string): void;
   runSecurityDescriptionShortcut(query?: string): void | Promise<void>;
   setRootHoveredIdx: Dispatch<SetStateAction<number | null>>;
@@ -126,6 +128,7 @@ export function useCommandBarRootRuntime({
   rootQuery,
   rootSelectionNavigatedRef,
   rootShortcutIntent,
+  setRootQuery,
   runDirectCommand,
   runSecurityDescriptionShortcut,
   setRootHoveredIdx,
@@ -195,6 +198,7 @@ export function useCommandBarRootRuntime({
     pluginInstallItem,
     rootQuery,
     rootShortcutIntent,
+    setRootQuery,
     providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
@@ -225,6 +229,7 @@ export function useCommandBarRootRuntime({
     pluginInstallItem,
     rootQuery,
     rootShortcutIntent,
+    setRootQuery,
     providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
@@ -236,10 +241,14 @@ export function useCommandBarRootRuntime({
     ? activeMatch.arg
     : null;
   // Free text that no prefix claims also goes to symbol search, so "nvidia"
-  // finds NVDA without the backtick. Skipped when a local row already carries
-  // that exact name, since an "Exact Match" symbol would otherwise outrank it.
+  // finds NVDA without the backtick. A class code is a filter, so "ETF SPY"
+  // and bare "FUT" still search even though those prefixes also open panes.
+  // Skipped when a local row already carries that exact name, since an
+  // "Exact Match" symbol would otherwise outrank it.
   const rootPlainTickerSearchArg = useMemo(() => {
-    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    const classOwnsListing = parseAssetClassQuery(rootQuery).code !== null;
+    if (currentRoute || activeMatch) return null;
+    if (!classOwnsListing && rootShortcutIntent.kind !== "none") return null;
     const trimmed = rootQuery.trim();
     if (trimmed.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
@@ -247,6 +256,7 @@ export function useCommandBarRootRuntime({
     // must not keep Grupo Televisa out of the list.
     const hasExactLocalRow = rootResultModel.items.some((item) => (
       item !== pluginInstallItem
+      && !isAssetClassResultId(item.id)
       && item.kind !== "ticker"
       && item.kind !== "search"
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
@@ -304,9 +314,17 @@ export function useCommandBarRootRuntime({
         if (shiftedIdx >= 0) return shiftedIdx;
         return clampIndex(current, resultIds.length);
       }
-      // Untouched, the selection follows the best row on offer.
+      // Untouched, the selection follows the best row on offer. A class row
+      // stays selected after category grouping moves an exact symbol above it.
       const defaultIdx = orderedRootResults.findIndex(isDefaultSelectable);
-      return clampIndex(Math.max(rootResultModel.initialIdx, defaultIdx), resultIds.length);
+      const preferred = rootResultModel.items[rootResultModel.initialIdx];
+      const classIdx = isAssetClassResultId(preferred?.id)
+        ? orderedRootResults.findIndex((item) => item.id === preferred?.id)
+        : -1;
+      return clampIndex(
+        classIdx >= 0 ? classIdx : Math.max(rootResultModel.initialIdx, defaultIdx),
+        resultIds.length,
+      );
     });
   }, [
     activeMatch?.command.id,
@@ -315,6 +333,7 @@ export function useCommandBarRootRuntime({
     rootModeKind,
     rootQuery,
     rootResultModel.initialIdx,
+    rootResultModel.items,
     rootSelectionNavigatedRef,
     setRootHoveredIdx,
     setRootSelectedIdx,

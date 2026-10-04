@@ -1,7 +1,16 @@
 import type { BrokerContractRef, InstrumentSearchResult, TickerListingRef } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 
-export type TickerSearchInstrumentClass = "equity" | "fund" | "derivative" | "other";
+export type TickerSearchInstrumentClass =
+  | "equity"
+  | "currency"
+  | "option"
+  | "future"
+  | "index"
+  | "etf"
+  | "fund"
+  | "derivative"
+  | "other";
 type TickerSearchCategory = "Saved" | "Primary Listing" | "Other Listings" | "Funds & Derivatives";
 
 export interface TickerSearchRankableItem {

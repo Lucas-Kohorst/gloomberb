@@ -196,7 +196,7 @@ describe("ticker-search utilities", () => {
     });
     const candidates = await searchTickerCandidates({ query: "ES=F", tickers: new Map(), dataProvider });
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ symbol: "ES=F", instrumentClass: "derivative", result: { currency: "USD", exchange: "CME", type: "FUTURE" } });
+    expect(candidates[0]).toMatchObject({ symbol: "ES=F", instrumentClass: "future", result: { currency: "USD", exchange: "CME", type: "FUTURE" } });
     expect(quoteCalls).toEqual(["ES=F"]);
 
     for (const invalidQuote of [
@@ -483,6 +483,22 @@ describe("ticker-search utilities", () => {
     expect(firstSymbolFor("Apple XETRA")).toBe("APC");
     expect(firstSymbolFor("Apple NASDAQ")).toBe("AAPL");
     expect(firstSymbolFor("Apple ETF")).toBe("APLY");
+  });
+
+  test("keeps only the named class when a class code precedes the symbol", () => {
+    const results = buildTickerSearchCandidates({
+      query: "EQ BIRD",
+      tickers: new Map(),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
+        makeSearchResult("BIRD", "Allbirds ETF", { exchange: "ARCA", type: "ETF" }),
+        makeSearchResult("BIRDF", "Bird Fund", { exchange: "NASDAQ", type: "EQUITY" }),
+      ],
+      totalLimit: 8,
+    });
+    expect(results.map((item) => item.symbol)).toContain("BIRD");
+    expect(results.every((item) => item.instrumentClass === "equity")).toBe(true);
+    expect(results.some((item) => item.symbol === "BIRD" && item.exchangeLabel === "ARCA")).toBe(false);
   });
 
   test("uses provider ordering without assuming the canonical listing is on a US exchange", () => {

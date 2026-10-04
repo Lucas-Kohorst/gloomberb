@@ -107,6 +107,11 @@ test("folds a plain query's symbol hits into one capped Instruments section behi
 test("names the instrument class for the badge column", () => {
   const search = (type: string) => ({ providerId: "gloom", symbol: "X", name: "X", exchange: "NYQ", type });
   expect(formatInstrumentBadge({ instrumentClass: "equity" })).toBe("EQ");
+  expect(formatInstrumentBadge({ instrumentClass: "currency" })).toBe("CUR");
+  expect(formatInstrumentBadge({ instrumentClass: "option" })).toBe("OPT");
+  expect(formatInstrumentBadge({ instrumentClass: "future" })).toBe("FUT");
+  expect(formatInstrumentBadge({ instrumentClass: "index" })).toBe("IDX");
+  expect(formatInstrumentBadge({ instrumentClass: "etf" })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("ETF") })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("ETN") })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("MUTUALFUND") })).toBe("FUND");

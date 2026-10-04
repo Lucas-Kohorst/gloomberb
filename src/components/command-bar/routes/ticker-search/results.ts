@@ -40,6 +40,16 @@ export function formatInstrumentBadge(
   switch (candidate.instrumentClass) {
     case "equity":
       return "EQ";
+    case "currency":
+      return "CUR";
+    case "option":
+      return "OPT";
+    case "future":
+      return "FUT";
+    case "index":
+      return "IDX";
+    case "etf":
+      return "ETF";
     case "fund":
       return /\bET[FNP]\b/i.test(rawInstrumentType(candidate)) ? "ETF" : "FUND";
     case "derivative":

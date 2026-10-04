@@ -571,6 +571,69 @@ describe("CommandBar", () => {
     expect(frame).toContain("Security Description");
   });
 
+  test("lists asset classes for a class code and fills it on enter", async () => {
+    await tui.render(<CommandBarHarness query="EQ" live showQueryState />, {
+      width: 80,
+      height: 24,
+    });
+
+    await tui.setup().renderOnce();
+    const frame = tui.frame();
+    expect(frame).toContain("Asset Classes");
+    for (const label of ["Equity", "Currency", "Option", "Future", "Index", "Exchange-Traded Fund"]) {
+      expect(frame).toContain(label);
+    }
+    expect(frame).toContain("Tab");
+    expect(frame.indexOf("Asset Classes")).toBeLessThan(frame.indexOf("Equity"));
+
+    await act(async () => {
+      tui.setup().mockInput.pressEnter();
+      await tui.setup().renderOnce();
+    });
+
+    expect(tui.frame()).toContain("query:EQ ");
+  });
+
+  test("tab on Future fills the class instead of opening the futures pane", async () => {
+    await tui.render(<CommandBarHarness
+      query="FUT"
+      live
+      showQueryState
+      configurePluginRegistry={(pluginRegistry) => {
+        mutablePaneRegistryMap(pluginRegistry.panes).set("futures", {
+          id: "futures",
+          name: "Futures",
+          component: () => null,
+          defaultPosition: "right",
+        });
+        mutablePaneRegistryMap(pluginRegistry.paneTemplates).set("futures-pane", {
+          id: "futures-pane",
+          paneId: "futures",
+          label: "Futures Board",
+          description: "Front-month futures",
+          shortcut: { prefix: "FUT" },
+        });
+      }}
+    />, {
+      width: 100,
+      height: 40,
+    });
+
+    await tui.setup().renderOnce();
+    const frame = tui.frame();
+    expect(frame).toContain("Future");
+    expect(frame).toContain("Futures Board");
+
+    await act(async () => {
+      tui.setup().mockInput.pressTab();
+      await tui.setup().renderOnce();
+    });
+
+    const filled = tui.frame();
+    expect(filled).toContain("query:FUT ");
+    expect(filled).not.toContain("Back");
+  });
+
   test("QQ with an active ticker shows ghost completion and tab inserts the symbol", async () => {
     await tui.render(<CommandBarHarness query="QQ" live selectedTicker="AAPL" showQueryState />, {
       width: 100,

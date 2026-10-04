@@ -192,6 +192,16 @@ function formatInstrumentClass(instrumentClass: TickerSearchInstrumentClass): st
   switch (instrumentClass) {
     case "equity":
       return "Equity";
+    case "currency":
+      return "Currency";
+    case "option":
+      return "Option";
+    case "future":
+      return "Future";
+    case "index":
+      return "Index";
+    case "etf":
+      return "ETF";
     case "fund":
       return "Fund";
     case "derivative":

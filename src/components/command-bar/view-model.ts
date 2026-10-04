@@ -187,6 +187,11 @@ const PLUGIN_INSTALL_SECTION_PRIORITY = -200;
  */
 const EXACT_MATCH_SECTION_PRIORITY = -150;
 /**
+ * Typing a class code is choosing the filter, not the symbol that code also
+ * spells. The class rows lead that symbol (EQ is also Equillium).
+ */
+const ASSET_CLASS_SECTION_PRIORITY = -180;
+/**
  * The AI leads the rest even though it is the slowest source (~600ms+): it
  * translates the sentence the user typed into commands, which is the answer to
  * what they asked when no symbol matched outright. Its Thinking placeholder
@@ -208,6 +213,7 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
   const normalized = category.trim().toLowerCase();
   if (sectionOrder === "ranked") return 0;
   if (normalized === "ask ai") return ASSIST_SECTION_PRIORITY;
+  if (normalized === "asset classes") return ASSET_CLASS_SECTION_PRIORITY;
   if (normalized === "exact match") return EXACT_MATCH_SECTION_PRIORITY;
   if (category === PLUGIN_INSTALL_CATEGORY) return PLUGIN_INSTALL_SECTION_PRIORITY;
   if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
