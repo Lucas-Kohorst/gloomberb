@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useEffect, useState } from "react";
 import { getDockedPaneIds } from "../../layout/pane-manager";
+import { createTestTeam } from "../../plugins/builtin/cloud/team/test-fixture";
+import { teamStore } from "../../plugins/builtin/cloud/team/store";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 import { createOpenTuiTestHarness } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app/context";
 import { createStaticAppStore } from "../../test-support/app-store";
 import { cloneLayout, createDefaultConfig, createPaneInstance, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest } from "../../types/plugin";
+import { subscribeFormModalRequests } from "../form-modal/request";
 import { StatusBar } from "./status-bar";
+import { buildStatusBarTabGroups } from "./status-bar-groups";
 import { TransientLayoutProvider, useTransientLayout } from "./transient-layout";
 
 const tui = createOpenTuiTestHarness();
@@ -154,6 +158,79 @@ describe("StatusBar", () => {
     });
 
     expect(actions).toContainEqual({ type: "REORDER_LAYOUT", fromIndex: 0, toIndex: 2 });
+  });
+
+  test("shows a new-layout control beside grouped layout tabs", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-status-bar-new-layout");
+    const rates = createTestTeam({
+      id: "rates",
+      name: "Rates",
+      slug: "rates",
+      shortName: "RA",
+      channelId: "team:rates",
+    });
+    const layouts = [
+      { name: "Home", layout: cloneLayout(config.layout) },
+      {
+        name: "Rates Book",
+        layout: cloneLayout(config.layout),
+        origin: {
+          kind: "team" as const,
+          teamId: rates.id,
+          layoutId: "a".repeat(32),
+          revision: 1,
+          contentHash: "x",
+          syncedAt: "2026-09-14T12:00:00.000Z",
+        },
+      },
+    ];
+    config.layouts = layouts;
+    config.activeLayoutIndex = 0;
+    const teamGroup = buildStatusBarTabGroups(layouts, 0, [rates], "all", new Set())
+      .find((group) => group.id === `team:${rates.id}`);
+    expect(teamGroup?.collapsed).toBe(false);
+    expect(teamGroup?.team?.shortName).toBe("RA");
+
+    const opened: string[] = [];
+    let unsubscribe = () => {};
+    try {
+      await act(async () => {
+        teamStore.setFocus("all");
+        teamStore.upsertTeam(rates);
+      });
+      unsubscribe = subscribeFormModalRequests((request) => {
+        if (request.kind === "builtin") opened.push(request.actionId);
+        return true;
+      });
+      const state = {
+        ...createInitialState(config),
+        statusBarVisible: true,
+      };
+      await tui.render(
+        <AppContext value={createStaticAppStore(state, () => {})}>
+          <StatusBar />
+        </AppContext>,
+        { width: 120, height: 1 },
+      );
+      await tui.setup().renderOnce();
+
+      const line = tui.frame().split("\n")[0] ?? "";
+      const markerAt = line.indexOf(`${teamGroup!.team!.shortName}·`);
+      const plusAt = line.indexOf("+");
+      expect(markerAt).toBeGreaterThanOrEqual(0);
+      expect(plusAt).toBeGreaterThan(markerAt);
+
+      await act(async () => {
+        await tui.setup().mockMouse.click(plusAt, 0);
+        await tui.setup().renderOnce();
+      });
+      expect(opened).toEqual(["new-layout"]);
+    } finally {
+      unsubscribe();
+      await act(async () => {
+        teamStore.removeTeam(rates.id);
+      });
+    }
   });
 
   /** Float three chat windows at `rect(index)`, then click Tidy Windows. */

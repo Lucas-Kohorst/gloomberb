@@ -124,6 +124,18 @@ function truncate(text: string, width: number): string {
   return `${text.slice(0, width - 2)}..`;
 }
 
+const openLayoutWorkflow = (actionId: "new-layout" | "rename-layout") => {
+  openFormModal({ kind: "builtin", actionId });
+};
+
+const openNewLayout = (event?: StatusBarEvent) => {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  openLayoutWorkflow("new-layout");
+};
+
+const terminalNewLayoutLabel = (): string => " + ";
+
 export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: string) => void } = {}) {
   const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
@@ -294,9 +306,6 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
         dispatch({ type: "SWITCH_LAYOUT", index });
       }
     };
-    const openLayoutWorkflow = (actionId: "new-layout" | "rename-layout") => {
-      openFormModal({ kind: "builtin", actionId });
-    };
     const items: ContextMenuItem[] = [];
 
     if (!active) {
@@ -390,6 +399,7 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
   const tidyWindowsKey = actionKey("tidy-windows");
   const leftWidth = 1
     + (hasMultipleLayouts ? layoutTabsWidth : 0)
+    + (terminalNewLayoutLabel().length + 1)
     + (showTidyWindows ? terminalTidyWindowsLabel(tidyWindowsKey).length + 1 : 0);
   const feedbackWidth = displayWidth(t("Feedback")) + 1;
   usePublishStatusWidgetRoom(statusBarVisible ? Math.max(0, termWidth - leftWidth - feedbackWidth) : 0);
@@ -447,6 +457,7 @@ function NativeStatusBar({
       }}
     >
       <StatusBarLayoutControl nativePaneChrome {...props} />
+      <NativeNewLayout />
       {showTidyWindows && <NativeTidyWindows {...props} />}
       <Box flexGrow={1} minWidth={0} />
       <StatusBarSummary nativePaneChrome {...props} />
@@ -475,6 +486,7 @@ function TerminalStatusBar({
       }}
     >
       <StatusBarLayoutControl nativePaneChrome={false} {...props} />
+      <TerminalNewLayout {...props} />
       {showTidyWindows && <TerminalTidyWindows {...props} />}
       <Box flexGrow={1} minWidth={0} />
       <StatusBarSummary nativePaneChrome={false} {...props} />
@@ -653,6 +665,47 @@ function StatusBarChip({
     </Box>
   );
 }
+
+const NativeNewLayout = () => (
+  <Box paddingLeft={1} flexShrink={0} flexDirection="row" alignItems="center">
+    <Button
+      variant="plain"
+      compact
+      label="New Layout"
+      displayLabel="+"
+      title={t("New Layout")}
+      onPress={() => openNewLayout()}
+    />
+  </Box>
+);
+
+const TerminalNewLayout = ({
+  hoveredControl,
+  setHoveredControl,
+}: Pick<StatusBarViewProps, "hoveredControl" | "setHoveredControl">) => {
+  const colors = useThemeColors();
+  const hovered = hoveredControl === "new-layout";
+  return (
+    <Box paddingLeft={1} flexShrink={0} flexDirection="row">
+      <Box
+        backgroundColor={hovered ? hoverBg(colors) : colors.header}
+        cursor="pointer"
+        onMouseOver={() => setHoveredControl((current) => (current === "new-layout" ? current : "new-layout"))}
+        onMouseDown={openNewLayout}
+      >
+        <Text
+          fg={colors.headerText}
+          role="button"
+          aria-label={t("New Layout")}
+          title={t("New Layout")}
+          style={{ cursor: "pointer" }}
+        >
+          {terminalNewLayoutLabel()}
+        </Text>
+      </Box>
+    </Box>
+  );
+};
 
 function NativeTidyWindows({ handleTidyWindows, tidyWindowsKey }: Pick<StatusBarViewProps, "handleTidyWindows" | "tidyWindowsKey">) {
   return (
