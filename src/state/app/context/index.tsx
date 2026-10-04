@@ -100,6 +100,20 @@ function sameStringList(left: readonly string[], right: readonly string[]): bool
   return left.every((value, index) => value === right[index]);
 }
 
+function sameRecentCommands(
+  left: AppConfig["recentCommands"],
+  right: AppConfig["recentCommands"],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => {
+    const other = right[index];
+    return !!other
+      && entry.id === other.id
+      && entry.label === other.label
+      && entry.arg === other.arg;
+  });
+}
+
 export function useAppStateRef() {
   const context = useRequiredAppContext();
   const stateRef = useRef(isAppStoreContextValue(context) ? context.getState() : context.state);
@@ -455,6 +469,7 @@ export function AppProvider({
   );
   const effectiveThemeId = getEffectiveThemeId(state);
   const previousRecentTickers = useRef(state.recentTickers);
+  const previousRecentCommands = useRef(state.recentCommands);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());
   const storeRef = useRef<AppContextStoreValue | null>(null);
@@ -520,13 +535,30 @@ export function AppProvider({
   useEffect(() => {
     if (sameStringList(previousRecentTickers.current, state.recentTickers)) return;
     previousRecentTickers.current = state.recentTickers;
-    // Assembled when the write fires so it carries whatever config and recent
-    // tickers are current by then, not the ones from this cursor move.
+    // Assembled when the write fires so it carries whatever config and recents
+    // are current by then, not the ones from this cursor move.
     scheduleConfigSave(
-      () => ({ ...stateRef.current.config, recentTickers: stateRef.current.recentTickers }),
+      () => ({
+        ...stateRef.current.config,
+        recentTickers: stateRef.current.recentTickers,
+        recentCommands: stateRef.current.recentCommands,
+      }),
       { delayMs: LOW_PRIORITY_CONFIG_SAVE_DEBOUNCE_MS },
     );
   }, [state.config, state.recentTickers]);
+
+  useEffect(() => {
+    if (sameRecentCommands(previousRecentCommands.current, state.recentCommands)) return;
+    previousRecentCommands.current = state.recentCommands;
+    scheduleConfigSave(
+      () => ({
+        ...stateRef.current.config,
+        recentTickers: stateRef.current.recentTickers,
+        recentCommands: stateRef.current.recentCommands,
+      }),
+      { delayMs: LOW_PRIORITY_CONFIG_SAVE_DEBOUNCE_MS },
+    );
+  }, [state.config, state.recentCommands]);
 
   useEffect(() => {
     if (!desktopBridge) return;

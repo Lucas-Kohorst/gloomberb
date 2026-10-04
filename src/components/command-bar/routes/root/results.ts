@@ -48,6 +48,8 @@ export interface RootResultModelOptions {
   /** Natural-language fallback rows; omit to build the list without an AI section. */
   assist?: AssistRowHandlers | null;
   availableCommands: Command[];
+  /** Builds one select/pin ticker row for a recent symbol. */
+  buildRecentTickerItem?: (symbol: string) => ResultItem | null;
   /** Offers to bind a key to the typed text once it resolves to a command; omit to hide the row. */
   bindKey?: (query: string) => void;
   buildLayoutItems: (query: string, options?: { confirmDangerousActions?: boolean }) => ResultItem[];
@@ -61,6 +63,8 @@ export interface RootResultModelOptions {
     rawInput?: string,
   ) => void | Promise<void>;
   getAvailablePaneShortcutTemplates: (query: string) => PaneTemplateDef[];
+  /** Looks a recorded `pane-template:<id>` entry back up so it can run again. */
+  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
   hasPaneSettings: (paneId: string) => boolean;
   localTickerSearchResultItems: (query?: string, options?: { category?: string; limit?: number }) => ResultItem[];
   nonShortcutPaneTemplateItems: (filterQuery?: string) => ResultItem[];
@@ -129,6 +133,59 @@ function buildBindKeyItem(
   };
 }
 
+const MAX_RECENT_TICKER_ROWS = 8;
+
+function buildRecentResultItems(options: {
+  availableCommands: Command[];
+  buildRecentTickerItem?: (symbol: string) => ResultItem | null;
+  createPaneTemplateItem: (template: PaneTemplateDef, options?: PaneTemplateItemOptions) => ResultItem;
+  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  recentCommands: AppState["recentCommands"];
+  recentTickers: string[];
+  runDirectCommand: (command: Command, arg: string) => void;
+}): ResultItem[] {
+  const {
+    availableCommands,
+    buildRecentTickerItem = () => null,
+    createPaneTemplateItem,
+    getRecentPaneTemplate = () => undefined,
+    recentCommands,
+    recentTickers,
+    runDirectCommand,
+  } = options;
+  const items: ResultItem[] = [];
+  for (const symbol of recentTickers.slice(0, MAX_RECENT_TICKER_ROWS)) {
+    const item = buildRecentTickerItem(symbol);
+    if (item) items.push({ ...item, category: "Suggested" });
+  }
+  for (const recent of recentCommands) {
+    const command = availableCommands.find((entry) => entry.id === recent.id);
+    if (command) {
+      items.push({
+        id: recent.arg ? `recent:command:${command.id}:${recent.arg}` : `recent:command:${command.id}`,
+        label: recent.label,
+        detail: recent.arg ? `${command.description} · ${recent.arg}` : command.description,
+        category: "Suggested",
+        kind: "command",
+        shortcutQuery: command.prefix || undefined,
+        searchText: recent.arg ? `${recent.label} ${recent.arg}` : recent.label,
+        action: () => runDirectCommand(command, recent.arg ?? ""),
+      });
+      continue;
+    }
+    if (!recent.id.startsWith("pane-template:")) continue;
+    const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
+    if (!template) continue;
+    items.push({
+      ...createPaneTemplateItem(template, recent.arg ? { createOptions: { arg: recent.arg } } : undefined),
+      id: recent.arg ? `recent:${recent.id}:${recent.arg}` : `recent:${recent.id}`,
+      category: "Suggested",
+      ...(recent.arg ? { detail: recent.arg } : {}),
+    });
+  }
+  return items;
+}
+
 export function buildRootResultModel(options: RootResultModelOptions): RootResultModel {
   const {
     activeCollectionId,
@@ -138,6 +195,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     availableCommands,
     bindKey,
     buildLayoutItems,
+    buildRecentTickerItem,
     buildPaneSettingItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -145,6 +203,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     currentRoute,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,
+    getRecentPaneTemplate,
     hasPaneSettings,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
@@ -252,6 +311,17 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     const item = commandToItem(match.command);
     if (item) items.push(item);
   } else if (!rootQuery) {
+    if (rootShortcutIntent.kind === "none") {
+      items.push(...buildRecentResultItems({
+        availableCommands,
+        buildRecentTickerItem,
+        createPaneTemplateItem,
+        getRecentPaneTemplate,
+        recentCommands: state.recentCommands ?? [],
+        recentTickers: state.recentTickers ?? [],
+        runDirectCommand,
+      }));
+    }
     items.push(...paneShortcutItems());
     for (const command of availableCommands) {
       const item = commandToItem(command);

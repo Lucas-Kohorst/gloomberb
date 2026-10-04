@@ -203,6 +203,16 @@ export interface TelemetryConfig {
   attention?: boolean;
 }
 
+/**
+ * One recently executed command-bar entry. `id` is a built-in command id or
+ * `pane-template:<templateId>`. `label` is the text shown under Suggested.
+ */
+export interface RecentCommand {
+  id: string;
+  label: string;
+  arg?: string;
+}
+
 export interface AppConfig {
   dataDir: string;
   configVersion: number;
@@ -234,6 +244,8 @@ export interface AppConfig {
   valueFlashingEnabled: boolean;
   fontSize: number;
   recentTickers: string[];
+  /** Recently executed command-bar commands and pane templates, newest first. */
+  recentCommands: RecentCommand[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;
   /** App version at the last launch, used to show release notes after an update. */
@@ -887,6 +899,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     valueFlashingEnabled: true,
     fontSize: 12,
     recentTickers: [],
+    recentCommands: [],
   };
 }
 

@@ -14,6 +14,7 @@ import {
   getPanelFocusTarget,
   getTopFloatingPaneId,
   hydrateDesktopSnapshot,
+  nextRecentCommands,
   nextRecentTickers,
   reconcilePaneState,
   resolveCollectionForPane,
@@ -126,6 +127,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "TRACK_TICKER":
       return { ...state, recentTickers: nextRecentTickers(state.recentTickers, action.symbol) };
+
+    case "RECORD_COMMAND": {
+      const arg = action.arg?.trim();
+      return {
+        ...state,
+        recentCommands: nextRecentCommands(state.recentCommands, {
+          id: action.id,
+          label: action.label,
+          ...(arg ? { arg } : {}),
+        }),
+      };
+    }
 
     case "SET_ACTIVE_PANEL": {
       if (action.preserveFocus) return state;
@@ -345,6 +358,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     previousFocusedPaneId: null,
     paneState,
     recentTickers: config.recentTickers,
+    recentCommands: config.recentCommands ?? [],
     commandBarOpen: false,
     commandBarQuery: "",
     commandBarLaunchRequest: null,

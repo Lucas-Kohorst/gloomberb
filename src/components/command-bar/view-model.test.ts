@@ -25,6 +25,22 @@ describe("command bar view model helpers", () => {
     expect(resolveCommandBarMode("CR", desktopCommands)).toMatchObject({ kind: "default", badge: "FILTER" });
   });
 
+  test("puts Suggested ahead of the other empty-bar sections", () => {
+    const sections = buildSections([
+      { id: "pane", category: "Panes" },
+      { id: "cmd", category: "Commands" },
+      { id: "cfg", category: "Config" },
+      { id: "recent", category: "Suggested" },
+    ]);
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Suggested",
+      "Panes",
+      "Commands",
+      "Config",
+    ]);
+  });
+
   test("builds sections while preserving order", () => {
     const sections = buildSections([
       { id: "a", category: "Tickers" },

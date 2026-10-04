@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PaneTemplateDef } from "../../../../types/plugin";
+import type { Command } from "../../commands/registry";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { PLUGIN_INSTALL_CATEGORY } from "../../view-model";
 import { buildRootResultModel, type RootResultModelOptions } from "./results";
@@ -189,5 +190,149 @@ describe("the plugin install row in the root result model", () => {
 
     expect(orderListResults(items, { categoryPriorities: new Map([["Documents", 200]]) }).map((item) => item.id))
       .toEqual([installRow.id, "assist:pending", documentRow.id]);
+  });
+});
+
+describe("recents in the root result model", () => {
+  const themeCommand: Command = {
+    id: "theme",
+    prefix: "TH",
+    label: "Change Theme",
+    description: "Switch color theme",
+    category: "Config",
+  };
+  const recentState = {
+    focusedPaneId: null,
+    config: { watchlists: [], portfolios: [] },
+    recentTickers: ["AAPL"],
+    recentCommands: [{ id: "theme", label: "Change Theme" }],
+  } as unknown as RootResultModelOptions["state"];
+
+  test("an empty query includes Suggested rows and re-executes a command by id", () => {
+    const recentTicker: ResultItem = {
+      id: "ticker:AAPL",
+      label: "AAPL",
+      detail: "Apple",
+      category: "Exact Match",
+      kind: "ticker",
+      action: () => {},
+    };
+    const executed: Array<{ id: string; arg: string }> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [themeCommand],
+      buildRecentTickerItem: () => recentTicker,
+      runDirectCommand: (command, arg) => { executed.push({ id: command.id, arg }); },
+      state: recentState,
+    }));
+
+    const recentRows = items.filter((item) => item.category === "Suggested");
+    expect(recentRows.map((item) => item.id)).toEqual(["ticker:AAPL", "recent:command:theme"]);
+    expect(orderListResults(items)[0]?.category).toBe("Suggested");
+    recentRows[1]?.action();
+    expect(executed).toEqual([{ id: "theme", arg: "" }]);
+  });
+
+  test("a typed query or a prefix that owns the query drops Suggested rows", () => {
+    for (const query of ["TH", "margin"]) {
+      const { items } = buildRootResultModel(rootOptions({
+        availableCommands: [themeCommand],
+        rootQuery: query,
+        state: recentState,
+      }));
+      expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
+    }
+  });
+
+  test("re-executes a recent command with its stored argument", () => {
+    const executed: Array<{ id: string; arg: string }> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [themeCommand],
+      runDirectCommand: (command, arg) => { executed.push({ id: command.id, arg }); },
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [{ id: "theme", label: "Change Theme", arg: "amber" }],
+      },
+    }));
+
+    items.find((item) => item.id === "recent:command:theme:amber")?.action();
+    expect(executed).toEqual([{ id: "theme", arg: "amber" }]);
+  });
+
+  test("caps recent ticker rows at 8", () => {
+    const symbols = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
+    const { items } = buildRootResultModel(rootOptions({
+      buildRecentTickerItem: (symbol) => ({
+        id: `ticker:${symbol}`,
+        label: symbol,
+        detail: "",
+        category: "Exact Match",
+        kind: "ticker",
+        action: () => {},
+      }),
+      state: {
+        ...recentState,
+        recentTickers: symbols,
+        recentCommands: [],
+      },
+    }));
+
+    expect(items.filter((item) => item.category === "Suggested").map((item) => item.id)).toEqual(
+      symbols.slice(0, 8).map((symbol) => `ticker:${symbol}`),
+    );
+  });
+
+  test("re-executes a recorded pane template, including a stored argument", () => {
+    const chartTemplate = {
+      id: "ticker-news-pane",
+      paneId: "ticker-news",
+      label: "Ticker News",
+      description: "News for one ticker",
+    } as PaneTemplateDef;
+    const created: Array<string | undefined> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      createPaneTemplateItem: (template, options) => {
+        created.push(options?.createOptions?.arg);
+        return {
+          id: `pane-template:${template.id}`,
+          label: template.label,
+          detail: template.description,
+          category: "Panes",
+          kind: "action",
+          action: () => {},
+        };
+      },
+      getRecentPaneTemplate: () => chartTemplate,
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [
+          { id: "pane-template:ticker-news-pane", label: "Ticker News" },
+          { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "MSFT" },
+        ],
+      },
+    }));
+
+    expect(created).toEqual([undefined, "MSFT"]);
+    expect(items.filter((item) => item.category === "Suggested").map((item) => ({
+      id: item.id,
+      detail: item.detail,
+    }))).toEqual([
+      { id: "recent:pane-template:ticker-news-pane", detail: "News for one ticker" },
+      { id: "recent:pane-template:ticker-news-pane:MSFT", detail: "MSFT" },
+    ]);
+  });
+
+  test("skips a recent entry that no longer resolves", () => {
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      state: {
+        ...recentState,
+        recentTickers: [],
+        recentCommands: [{ id: "gone-command", label: "Gone" }, { id: "article:story-1", label: "Fed decision" }],
+      },
+    }));
+    expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
   });
 });

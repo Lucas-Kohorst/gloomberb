@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { appReducer, createInitialState, resolveCollectionForPane, resolveTickerForPane, type AppState } from "./state";
 import { cloneLayout, createBlankLayout, createDefaultConfig, createPaneInstance, findPaneInstance } from "../../../types/config";
+import { RECENT_COMMANDS_LIMIT } from "./layout";
 import type { AppSessionSnapshot } from "../session-persistence";
 import { removePane } from "../../../layout/pane-manager";
 import { buildBrokerPortfolioId } from "../../../utils/broker-instances";
@@ -917,5 +918,44 @@ describe("update checks", () => {
 
     expect(next.updateAvailable?.version).toBe("0.3.2");
     expect(next.updateNotice).toBeNull();
+  });
+});
+
+describe("recent commands ring", () => {
+  test("records newest first, caps the ring, and promotes a repeat instead of duplicating it", () => {
+    let next = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    for (let index = 0; index < RECENT_COMMANDS_LIMIT + 2; index += 1) {
+      next = appReducer(next, { type: "RECORD_COMMAND", id: `cmd-${index}`, label: `Command ${index}` });
+    }
+    expect(next.recentCommands).toHaveLength(RECENT_COMMANDS_LIMIT);
+    expect(next.recentCommands[0]?.id).toBe(`cmd-${RECENT_COMMANDS_LIMIT + 1}`);
+    expect(next.recentCommands.at(-1)?.id).toBe("cmd-2");
+
+    next = appReducer(next, { type: "RECORD_COMMAND", id: "cmd-2", label: "Command 2" });
+    expect(next.recentCommands[0]?.id).toBe("cmd-2");
+    expect(next.recentCommands.filter((entry) => entry.id === "cmd-2")).toHaveLength(1);
+  });
+
+  test("keeps separate arguments for the same pane", () => {
+    let next = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    next = appReducer(next, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "AAPL",
+    });
+    next = appReducer(next, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "  MSFT  ",
+    });
+    expect(next.recentCommands.map((entry) => entry.arg)).toEqual(["MSFT", "AAPL"]);
+  });
+
+  test("restores recent commands from config", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.recentCommands = [{ id: "theme", label: "Change Theme", arg: "amber" }];
+    expect(createInitialState(config).recentCommands).toEqual(config.recentCommands);
   });
 });
