@@ -1,7 +1,7 @@
 import { httpFetch } from "../../../utils/http-transport";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 
-export const TRIALS_DISPLAY_CAP = 50;
+const TRIALS_DISPLAY_CAP = 50;
 const DEFAULT_PAGE_SIZE = 25;
 const CLINICAL_TRIALS_API_BASE_URL = "https://clinicaltrials.gov/api/v2";
 const CLINICAL_TRIALS_STUDY_BASE_URL = "https://clinicaltrials.gov/study";

@@ -888,6 +888,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: AS_FILED,
     bloomberg: ["CF"],
   },
+  TRIAL: {
+    summary: "Clinical studies by condition, drug, or sponsor, with status, phase, and enrollment. Open the study record.",
+    usage: ["TRIAL", "TRIAL semaglutide"],
+    keys: [SEARCH, OPEN],
+    data: same("As studies are posted"),
+    bloomberg: [],
+  },
   HDS: {
     summary: "Institutional holders as a table (value, shares, change, percent held) or as an ownership treemap.",
     usage: ["HDS NVDA"],
