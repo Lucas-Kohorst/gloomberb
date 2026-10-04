@@ -18,12 +18,17 @@ import {
 } from "./feed-config";
 import { IndustryPane, TOPIC_NEWS_TITLE } from "./industry-pane";
 import { newsMuteSettingsDef } from "./mutes";
-import { createNewsPresetPane } from "./news/preset-pane";
+import { createNewsPresetPane as createPresetPane, type NewsPresetPaneConfig } from "./news/preset-pane";
 import { createNewsStoryPaneTemplate, NEWS_STORY_PANE_ID, NewsStoryPane } from "./news/pop-out";
 import { NEWS_INDUSTRY_CODES, NEWS_QUERY_PRESETS, parseNewsIndustryCode } from "./news/query-presets";
 import { createRssNewsCapability } from "./rss/source";
 import { rssCliCommand } from "./rss/cli";
 import { newsFeedHeadless } from "../headless";
+
+const createNewsPresetPane = (config: NewsPresetPaneConfig) => Object.assign(
+  createPresetPane(config),
+  { query: config.query },
+);
 
 const TopPane = createNewsPresetPane({
   paneKey: "top:curated",
@@ -45,6 +50,16 @@ const FeedPane = createNewsPresetPane({
   defaultSort: { columnId: "time", direction: "desc" },
   emptyStateTitle: "No feed stories yet",
   emptyStateHint: "Run the Add News Feed command to wire up another source.",
+});
+
+const FirehosePane = createNewsPresetPane({
+  paneKey: "firehose",
+  title: "Firehose",
+  query: NEWS_QUERY_PRESETS.firehose,
+  columns: ["time", "origin", "source", "title", "tickers", "categories", "sentiment"],
+  defaultSort: { columnId: "time", direction: "desc" },
+  emptyStateTitle: "No stories yet",
+  emptyStateHint: "Latest stories appear here as they are published.",
 });
 
 export const BreakingPane = createNewsPresetPane({
@@ -71,6 +86,15 @@ const newsWirePanes: PluginModule["panes"] = [
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 35 },
       settings: (context) => newsMuteSettingsDef(context, "News Feed Settings"),
+    },
+    {
+      id: "news-firehose",
+      name: "Firehose",
+      icon: "F",
+      component: FirehosePane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 130, height: 35 },
     },
     {
       id: "news-industry",
@@ -133,6 +157,14 @@ const newsWirePanes: PluginModule["panes"] = [
 const newsWirePaneTemplates: PluginModule["paneTemplates"] = [
   { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" } },
   { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" }, headless: newsFeedHeadless },
+  {
+    id: "news-firehose-pane",
+    paneId: "news-firehose",
+    label: "Firehose",
+    description: "Combined latest news from every source",
+    keywords: ["fh", "firehose", "latest", "news", "all"],
+    shortcut: { prefix: "FH" },
+  },
   {
     id: "news-industry-pane",
     paneId: "news-industry",

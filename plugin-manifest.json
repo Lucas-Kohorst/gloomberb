@@ -194,6 +194,7 @@
         "panes": [
           "news-breaking",
           "news-feed",
+          "news-firehose",
           "news-industry",
           "news-story",
           "news-top",

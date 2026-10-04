@@ -22,6 +22,7 @@ import { useOpenTickerChoice } from "../../../shared/ticker-choice";
 export type NewsColumnId =
   | "rank"
   | "time"
+  | "origin"
   | "source"
   | "title"
   | "tickers"
@@ -75,6 +76,11 @@ function compareText(a: string, b: string): number {
   return a.localeCompare(b, "en-US", { sensitivity: "base" });
 }
 
+const articleOrigin = (article: MarketNewsItem): string => {
+  const item = article.items?.[0];
+  return item?.sourceKey || item?.sourceName || article.source;
+};
+
 function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColumnId): number {
   switch (columnId) {
     case "rank":
@@ -82,6 +88,8 @@ function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColu
       return a.importance - b.importance;
     case "time":
       return a.publishedAt.getTime() - b.publishedAt.getTime();
+    case "origin":
+      return compareText(articleOrigin(a), articleOrigin(b));
     case "source":
       return compareText(a.source, b.source);
     case "title":
@@ -114,6 +122,8 @@ const FIXED_COLUMN_WIDTHS: Record<Exclude<NewsColumnId, "title">, number> = {
   rank: 4,
   // "Mon 09:10", or "Sep 18, 25" for a story from another year.
   time: 10,
+  // Provider key stored on the story ("prnewswire-americas").
+  origin: 20,
   // Publishers and X handles: "GlobeNewswire", "@unusual_whales".
   source: 15,
   tickers: 18,
@@ -126,6 +136,7 @@ const FIXED_COLUMN_WIDTHS: Record<Exclude<NewsColumnId, "title">, number> = {
 const COLUMN_LABELS: Record<NewsColumnId, string> = {
   rank: "#",
   time: "TIME",
+  origin: "Origin",
   source: "SOURCE",
   title: "HEADLINE",
   tickers: "TICKERS",
@@ -149,6 +160,7 @@ const NARROW_STEPS: { id: Exclude<NewsColumnId, "title">; width?: number }[] = [
   { id: "categories" },
   // Room for one badge and its change.
   { id: "tickers", width: 10 },
+  { id: "origin" },
   { id: "source" },
   { id: "tickers" },
   { id: "sentiment" },
@@ -284,6 +296,8 @@ export function NewsArticleStackView({
         return { text: String(index + 1), color: colors.textDim };
       case "time":
         return { text: formatFeedTime(item.publishedAt), value: item.publishedAt, color: colors.textDim };
+      case "origin":
+        return { text: articleOrigin(item), color: colors.textMuted };
       case "source":
         return { text: item.source, color: colors.textMuted };
       case "title":
@@ -359,7 +373,7 @@ export function NewsArticleStackView({
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference(nextHeaderSort(sortPreference, columnId as NewsColumnId, {
-        firstDirection: columnId === "title" || columnId === "source" || columnId === "categories" ? "asc" : "desc",
+        firstDirection: columnId === "title" || columnId === "origin" || columnId === "source" || columnId === "categories" ? "asc" : "desc",
       }))}
       getItemKey={(item) => item.id}
       renderCell={renderCell}
