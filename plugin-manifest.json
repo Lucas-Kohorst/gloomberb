@@ -68,6 +68,22 @@
       }
     },
     {
+      "id": "comment-letters",
+      "name": "SEC Comment Letters",
+      "description": "SEC comment letters (CORRESP and UPLOAD). Search by company or topic.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "comment-letters"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "custom-view",
       "name": "Custom Views",
       "description": "Tables built from any data function: columns, a filter, a sort. Made by the agent, shared with a team.",
