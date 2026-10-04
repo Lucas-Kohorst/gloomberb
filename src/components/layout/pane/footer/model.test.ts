@@ -29,9 +29,15 @@ test("no-data yields no chip and a real error yields unavailable", () => {
   expect(footerErrorChip("UPSTREAM_ERROR")).toEqual({ text: "unavailable", tone: "warning" });
   expect(footerErrorChip("The request timed out.")).toEqual({ text: "unavailable", tone: "warning" });
 
-  expect(loadingErrorFooterInfo(false, "No options available.")).toEqual([]);
+  expect(loadingErrorFooterInfo(false, "No options available.")).toEqual([
+    { id: "error", parts: [{ text: "No options available.", tone: "warning" }] },
+  ]);
   expect(loadingErrorFooterInfo(true, "No analyst data for ZCSH")).toEqual([
     { id: "loading", parts: [{ text: "loading", tone: "muted" }] },
+    { id: "error", parts: [{ text: "No analyst data for ZCSH", tone: "warning" }] },
+  ]);
+  expect(loadingErrorFooterInfo(false, "No dividend data found")).toEqual([
+    { id: "error", parts: [{ text: "No dividend data found", tone: "warning" }] },
   ]);
   expect(loadingErrorFooterInfo(true, "UPSTREAM_ERROR")).toEqual([
     { id: "loading", parts: [{ text: "loading", tone: "muted" }] },
