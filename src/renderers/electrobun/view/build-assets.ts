@@ -149,6 +149,9 @@ export async function writeSharePage(options: {
       __GLOOMBERB_API_URL__: options.sameOriginApi ? "location.origin" : JSON.stringify(""),
       __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
+    // Same native stubs as the web client. Without them the share bundle
+    // parses the terminal kitty encoder and the browser build fails.
+    plugins: [electrobunViewAliasPlugin("gloomberb-share-renderer")],
   });
   if (!result.success) {
     const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
