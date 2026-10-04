@@ -9,6 +9,7 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatMessage,
+  type ChatPresence,
   type PersistedAuthUser,
 } from "../../../../api-client";
 import { normalizeSessionUser } from "./persistence";
@@ -57,6 +58,7 @@ import { ChatControllerChannels } from "./channels";
 import { ChatControllerView } from "./view";
 import { ChatControllerMessageLoading } from "./message-loading";
 import { ChatControllerStorage } from "./storage";
+import { listUnreadInboxItems } from "../unread-inbox";
 import {
   applySignedOutChatControllerSession,
   createChatControllerSessionState,
@@ -96,6 +98,8 @@ export class ChatController {
     isSessionChecked: () => this.session.sessionChecked,
     hasSession: () => !!this.session.sessionToken || !!this.session.user,
     getOnlineCount: () => this.channelCatalog.getOnlineCount(),
+    getOnlineUserIds: () => this.channelCatalog.getOnlineUserIds(),
+    getOnlineUsernames: () => this.channelCatalog.getOnlineUsernames(),
     getUser: () => this.session.user,
     getListenerSnapshot: (channelId) => this.getSnapshot(channelId),
     getVisibleMessages: (channelId) => this.getVisibleMessages(channelId),
@@ -113,8 +117,8 @@ export class ChatController {
     getUser: () => this.session.user,
     refreshSession: () => this.refreshSession(),
     handleNotification: (notification) => this.handleChatNotification(notification),
-    setOnlineCount: (onlineCount) => {
-      this.channelCatalog.setOnlineCount(onlineCount);
+    applyPresence: (presence) => {
+      this.channelCatalog.applyPresence(presence);
     },
     emit: () => this.emit(),
     getSafetyRefreshChannelIds: () => getChannelIdsForSafetyRefresh(this.storage.channelStates),
@@ -156,6 +160,25 @@ export class ChatController {
 
   getSnapshot(channelId = DEFAULT_CHAT_CHANNEL_ID): ChatControllerSnapshot {
     return this.view.getSnapshot(channelId);
+  }
+
+  applyPresence(presence: ChatPresence | { onlineCount: number }): void {
+    this.channelCatalog.applyPresence(presence);
+    this.emit();
+  }
+
+  listUnreadInbox(limit?: number) {
+    return listUnreadInboxItems({
+      channels: this.channelCatalog.getChannels(),
+      user: this.session.user,
+      limit,
+      states: [...this.storage.channelStates.entries()].map(([channelId, channel]) => ({
+        channelId,
+        unreadCount: channel.unreadCount,
+        lastViewedMessageId: channel.lastViewedMessageId,
+        messages: channel.messages,
+      })),
+    });
   }
 
   getChannels(): ChatChannel[] {

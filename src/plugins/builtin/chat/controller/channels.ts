@@ -1,8 +1,12 @@
 import {
   apiClient,
+  emptyChatPresence,
+  mergeChatPresence,
+  normalizeChatPresence,
   type ChatChannel,
   type ChatChannelState,
   type ChatNotification,
+  type ChatPresence,
 } from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
@@ -22,7 +26,7 @@ interface ChatControllerChannelsOptions {
 
 export class ChatControllerChannels {
   private channels: ChatChannel[] = [];
-  private onlineCount = 0;
+  private presence = emptyChatPresence();
   private channelsLoading = false;
   private channelsPromise: Promise<void> | null = null;
   private presencePromise: Promise<void> | null = null;
@@ -34,11 +38,19 @@ export class ChatControllerChannels {
   }
 
   getOnlineCount(): number {
-    return this.onlineCount;
+    return this.presence.onlineCount;
   }
 
-  setOnlineCount(onlineCount: number): void {
-    this.onlineCount = onlineCount;
+  getOnlineUserIds(): string[] {
+    return this.presence.onlineUserIds;
+  }
+
+  getOnlineUsernames(): string[] {
+    return this.presence.onlineUsernames;
+  }
+
+  applyPresence(presence: ChatPresence | { onlineCount: number }): void {
+    this.presence = mergeChatPresence(this.presence, normalizeChatPresence(presence));
   }
 
   isLoading(): boolean {
@@ -98,7 +110,7 @@ export class ChatControllerChannels {
     if (this.presencePromise) return this.presencePromise;
     const request = apiClient.getChatPresence()
       .then((presence) => {
-        this.onlineCount = presence.onlineCount;
+        this.applyPresence(presence);
         this.options.emit();
       })
       .finally(() => {
@@ -116,7 +128,7 @@ export class ChatControllerChannels {
     const state = await apiClient.getChatState();
     if (!isCurrent()) return;
     this.channels = normalizeChannels(state.channels);
-    this.onlineCount = state.onlineCount;
+    this.applyPresence(state);
     for (const entry of state.channelStates) {
       const channel = this.options.ensureChannelState(entry.channelId);
       channel.notificationsEnabled = entry.notificationsEnabled;
