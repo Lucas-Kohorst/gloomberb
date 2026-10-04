@@ -755,7 +755,7 @@ export function Shell({
         alignItems="center"
         justifyContent="center"
       >
-        <Box flexDirection="column" alignItems="center">
+        <Box flexDirection="column" alignItems="center" width={nativePaneChrome ? "100%" : undefined}>
           <AsciiText text="Gloomberb" font="wordmark" color={colors.textMuted} />
           <Box height={1} />
           <Text fg={colors.textDim}>

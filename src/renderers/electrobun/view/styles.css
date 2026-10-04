@@ -489,8 +489,12 @@ body.gloom-dragging {
   cursor: pointer;
 }
 [data-gloom-role="pane-suggestions"] {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  row-gap: 8px;
 }
 [data-gloom-role="pane-suggestion"] {
   flex-shrink: 0;

@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useThemeColors } from "../../../theme/theme-context";
 import { getSharedRegistry } from "../../registry/shared";
 import { isPublicShareLocation } from "../shared/share-link";
 import { chartLayoutKey, persistChartLayout, readChartLayout, type PersistableChartWidget } from "./charting-library-persistence";
+import type { ChartSeriesSource } from "../../../time-series/types";
 import { supportedLibraryResolution } from "./charting-library-resolution";
 import { bindChartCommandBarKey } from "./charting-library-keyboard";
 import type { LibraryDatafeed } from "./charting-library-feed";
@@ -45,6 +46,10 @@ function assetPaths(): { script: string; libraryPath: string } {
   const rooted = protocol !== "views:" && protocol !== "file:";
   const libraryPath = rooted ? "/charting_library/" : "./charting_library/";
   return { script: `${libraryPath}charting_library.standalone.js`, libraryPath };
+}
+
+function mountedChartWindow(container: HTMLElement): Window | null {
+  return container.querySelector("iframe")?.contentWindow ?? null;
 }
 
 function loadLibrary(script: string): Promise<void> {
@@ -91,7 +96,7 @@ export function ChartingLibraryFrame({
   priceScale?: LibraryPriceScale;
   backgroundColor: string;
   feed: LibraryDatafeed;
-  onPrimarySymbolChange?: (symbol: { ticker: string; name: string }) => void;
+  onPrimarySymbolChange?: (symbol: { ticker: string; name: string; source?: ChartSeriesSource }) => void;
   onReady?: () => void;
   onError?: (error: unknown) => void;
 }) {
@@ -107,6 +112,7 @@ export function ChartingLibraryFrame({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const compareKey = compares.join("\n");
+  const layoutKey = chartLayoutKey(symbol, compares);
   const palette = useThemeColors();
   const themeKey = [
     palette.borderFocused,
@@ -119,7 +125,9 @@ export function ChartingLibraryFrame({
     palette.bg,
   ].join("|");
 
-  useEffect(() => {
+  // Runs before React removes the iframe. WebKit then clears contentWindow,
+  // and the library's unsubscribe throws on doWhenApiIsReady.
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
     const stopKeyboard = bindChartCommandBarKey(container, () => getSharedRegistry()?.openCommandBar());
@@ -142,7 +150,6 @@ export function ChartingLibraryFrame({
       const store = isPublicShareLocation() ? undefined : getSharedRegistry();
       const searchable = store ? createRegisteredLibraryFeed(feedRef.current, store) : undefined;
       stopSearch = searchable?.dispose;
-      const layoutKey = chartLayoutKey(symbol, compareSymbols);
       const savedLayout = readChartLayout(store, layoutKey);
       const chrome = libraryChartChrome({
         chartStyle,
@@ -171,10 +178,11 @@ export function ChartingLibraryFrame({
         autosize: true,
         theme: backgroundColorLooksLight(backgroundColor) ? "light" : "dark",
         // Settings storage is off, so the header interval buttons have to be passed here.
-        // Without them the bar shows only the current interval.
+        // Without them the bar shows only the current interval. Adaptive keeps those
+        // favorites and uses icons once the pane is too narrow for full buttons.
         disabled_features: chrome.disabled_features,
         enabled_features: chrome.enabled_features,
-        header_widget_buttons_mode: "fullsize",
+        header_widget_buttons_mode: "adaptive",
         favorites: chrome.favorites,
         time_frames: chrome.time_frames,
         overrides,
@@ -225,7 +233,12 @@ export function ChartingLibraryFrame({
             });
           }
           const ticker = info.ticker ?? info.name;
-          if (!cancelled && ticker) onPrimarySymbolChangeRef.current?.({ ticker, name: info.name ?? ticker });
+          const source = ticker ? searchable?.feed.getSourceForSymbol?.(ticker) : null;
+          if (!cancelled && ticker) onPrimarySymbolChangeRef.current?.({
+            ticker,
+            name: info.name ?? ticker,
+            ...(source ? { source } : {}),
+          });
         };
         const symbolChanges = chart?.onSymbolChanged?.();
         symbolChanges?.subscribe(null, notifyPrimarySymbol);
@@ -248,12 +261,16 @@ export function ChartingLibraryFrame({
       cancelled = true;
       window.clearTimeout(loadingTimeout);
       stopKeyboard();
-      stopPrimarySymbol?.();
-      stopPersistence?.();
-      widget?.remove?.();
+      // unsubscribe throws on doWhenApiIsReady once WebKit has cleared the
+      // iframe window. A throw here becomes the pane crash dialog.
+      if (mountedChartWindow(container)) {
+        try { stopPrimarySymbol?.(); } catch { /* window already gone */ }
+        try { stopPersistence?.(); } catch { /* window already gone */ }
+      }
+      try { widget?.remove?.(); } catch { /* iframe already detached */ }
       stopSearch?.();
     };
-  }, [backgroundColor, chartStyle, hasVolume, compareKey, interval, palette, priceScale, symbol, themeKey, timezone, retry]);
+  }, [backgroundColor, chartStyle, hasVolume, compareKey, interval, layoutKey, palette, priceScale, symbol, themeKey, timezone, retry]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0, flex: 1 }}>

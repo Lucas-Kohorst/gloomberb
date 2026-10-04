@@ -54,7 +54,11 @@ export function persistChartLayout(
   };
   widget.subscribe?.("onAutoSaveNeeded", autosave);
   return () => {
-    widget.unsubscribe?.("onAutoSaveNeeded", autosave);
+    try {
+      widget.unsubscribe?.("onAutoSaveNeeded", autosave);
+    } catch {
+      return;
+    }
     save();
   };
 }
