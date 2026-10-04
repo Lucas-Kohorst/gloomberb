@@ -126,3 +126,35 @@ test("plain exact-symbol search retains venue choices while deduplicating the sa
   expect(mergePlainRootTickerResults("GLD", items, []).map((item) => item.id))
     .toEqual(["gld:tsv", "gld:nyse", "gld:byma"]);
 });
+
+test("keeps each exchange of an exact symbol in the exact-match section", () => {
+  const pane: ResultItem = {
+    id: "pane:news",
+    label: "News",
+    detail: "",
+    category: "Panes",
+    kind: "action",
+    action: () => {},
+  };
+  const exchanges = ["IDX", "NASDAQ", "LSE", "IEX", "TSXV"];
+  const providerItems = [
+    resultItem("goto:BIRD", "BIRD", "IDX"),
+    ...exchanges.map((exchange) => resultItem(`search:BIRD:${exchange}`, "BIRD", exchange, "search")),
+    resultItem("search:BIRDF", "BIRDF", "NASDAQ", "search"),
+  ];
+
+  const merged = mergePlainRootTickerResults("bird", providerItems, [pane]);
+
+  expect(merged.filter((item) => item.category === "Exact Match").map((item) => item.right)).toEqual(exchanges);
+  expect(merged.some((item) => item.label === "BIRDF")).toBe(false);
+});
+
+test("collapses venue aliases of an exact symbol and keeps another exchange", () => {
+  const items = [
+    resultItem("saved", "BIRD", "NMS"),
+    resultItem("nasdaq", "BIRD", "NASDAQ", "search"),
+    resultItem("compound", "BIRD", "Equity NMS", "search"),
+    resultItem("lse", "BIRD", "LSE", "search"),
+  ];
+  expect(mergePlainRootTickerResults("BIRD", items, []).map((item) => item.id)).toEqual(["saved", "lse"]);
+});

@@ -412,6 +412,46 @@ describe("ticker-search utilities", () => {
     });
   }
 
+  test("keeps the other exchanges when a saved listing already covers one venue", () => {
+    const results = buildTickerSearchCandidates({
+      query: "BIRD",
+      tickers: new Map<string, TickerRecord>([[
+        "BIRD",
+        createTestTicker("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+      ]]),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IEX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "TSXV" }),
+      ],
+      totalLimit: 8,
+    });
+
+    const venues = results.map((item) => item.exchangeLabel || item.right);
+    expect(venues.filter((venue) => venue === "IDX")).toEqual(["IDX"]);
+    expect(new Set(venues)).toEqual(new Set(["IDX", "NASDAQ", "LSE", "IEX", "TSXV"]));
+    expect(results.find((item) => item.exchangeLabel === "IDX")?.kind).toBe("ticker");
+  });
+
+  test("a saved NMS listing replaces only the NASDAQ provider row", () => {
+    const results = buildTickerSearchCandidates({
+      query: "BIRD",
+      tickers: new Map([["BIRD", createTestTicker("BIRD", "Allbirds Inc.", { exchange: "NMS" })]]),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "Equity NMS" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
+      ],
+      totalLimit: 8,
+    });
+
+    expect(results).toHaveLength(2);
+    expect(new Set(results.map((item) => item.exchangeLabel))).toEqual(new Set(["NMS", "LSE"]));
+    expect(results.find((item) => item.exchangeLabel === "NMS")?.kind).toBe("ticker");
+  });
+
   test("uses provider ordering to prefer the canonical saved listing for company-name queries", () => {
     const tickers = new Map<string, TickerRecord>([
       ["APC", createTestTicker("APC", "Apple Inc.", {

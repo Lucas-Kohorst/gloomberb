@@ -5,8 +5,8 @@ import {
   type TickerSearchCandidate,
 } from "../../../../tickers/search";
 import type { ResultItem } from "../../list/model";
-import { canonicalExchange, parsePublicTickerKey } from "../../../../utils/exchanges";
-import { isExplicitMarketSymbol } from "../../../../tickers/search/ranking";
+import { parsePublicTickerKey } from "../../../../utils/exchanges";
+import { isExplicitMarketSymbol, listingVenueKey } from "../../../../tickers/search/ranking";
 
 export const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
 
@@ -93,26 +93,36 @@ function isInstrumentItem(item: ResultItem): boolean {
 }
 
 /**
- * Fold symbol-search rows into a plain root query's list. An exact symbol hit
- * is promoted ahead of everything, with distinct venues retained so a bare
- * symbol cannot hide another security. Non-exact matches collapse into one
- * Instruments section with one row per symbol. Info rows ("no matches", "search
- * failed") are dropped: the instruments are an extra here, never the answer.
+ * Fold symbol-search rows into a plain root query's list. Every exchange of
+ * an exact symbol stays, and known venue aliases collapse to one row. Looser
+ * hits stay one row per symbol. Info rows ("no matches", "search failed") are
+ * dropped: the instruments are an extra here, never the answer.
  */
 export function mergePlainRootTickerResults(
   query: string,
   providerItems: ResultItem[],
   rootItems: ResultItem[],
 ): ResultItem[] {
-  const seenSymbols = new Set<string>();
+  const seenExactVenues = new Set<string>();
+  const seenLooseSymbols = new Set<string>();
+  const symbolsWithExact = new Set<string>();
   const instruments: ResultItem[] = [];
   const isExact = (item: ResultItem) => item.category === "Exact Match" || isExactTickerResultMatch(item, query);
   for (const item of providerItems) {
     if (!isInstrumentItem(item)) continue;
-    const symbol = item.label.trim().toUpperCase();
-    const key = (isExact(item) ? `${symbol}:${canonicalExchange(item.right)}` : symbol) + (item.contractKey ? `:${item.contractKey}` : "");
-    if (seenSymbols.has(key)) continue;
-    seenSymbols.add(key);
+    const label = item.label.trim().toUpperCase();
+    const symbol = parsePublicTickerKey(label).symbol || label;
+    if (isExact(item)) {
+      const key = `${symbol}|${listingVenueKey(item.right)}|${item.contractKey ?? ""}`;
+      if (seenExactVenues.has(key)) continue;
+      seenExactVenues.add(key);
+      symbolsWithExact.add(label);
+      symbolsWithExact.add(symbol);
+    } else if (symbolsWithExact.has(label) || symbolsWithExact.has(symbol) || seenLooseSymbols.has(label)) {
+      continue;
+    } else {
+      seenLooseSymbols.add(label);
+    }
     instruments.push(item);
     if (instruments.length >= ROOT_INSTRUMENTS_LIMIT) break;
   }
