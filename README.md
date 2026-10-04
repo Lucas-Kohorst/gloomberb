@@ -134,6 +134,16 @@ bun run cloud:dev      # build the web client and serve it via Wrangler
 bun run cloud:deploy   # build and deploy the Worker + assets
 ```
 
+## Fork deploy
+
+`main` on this fork deploys to [terminal.kohor.st](https://terminal.kohor.st) after the CI gate passes. Shared product changes are opened against [gloom-sh/gloomberb](https://github.com/gloom-sh/gloomberb). That upstream is not what this site runs.
+
+The deploy keeps the work that was not opened upstream:
+
+- TradingView Advanced Charts (`vendor/charting_library`). The hosted build copies that submodule into the site. Without it, the build skips the library; `GLOOM_CHART_BACKEND=custom` forces the built-in renderer instead.
+- The hosted worker for `terminal.kohor.st` (`src/renderers/cloudflare/hosted-worker.ts`, its KV namespace, and that route).
+- Yahoo quotes, Adjacent, prediction markets, and the panes left off the upstream pull requests.
+
 ## Crash reports and usage counts
 
 When the app hits an uncaught error, a render crash, or a plugin that fails to load, it sends a crash report to Gloom's API (`api.gloom.sh`), which forwards it to error tracking. A report contains the error type, message and stack trace, the app version, the operating system, and which surface it came from (terminal, desktop or web); when a plugin failed, its id. Your home directory is replaced with `~` before sending. Reports are tied to your account only when you are signed in.

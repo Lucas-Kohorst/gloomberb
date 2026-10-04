@@ -132,7 +132,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
+      # The charting library is a private submodule. A checkout without it
+      # would publish a site that silently dropped TradingView.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-bun
       - name: Deploy hosted Worker
         run: |
