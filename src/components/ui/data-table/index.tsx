@@ -88,12 +88,8 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
       sortColumnId: props.sortColumnId,
       sortDirection: props.sortDirection,
       columns: props.columns.map((column) => ({ id: column.id, label: column.label })),
-      rows: props.items.slice(0, 200).map((item, index) => ({
-        index,
-        key: props.getItemKey(item, index),
-        selected: props.isSelected(item, index),
-      })),
       rowCount: props.items.length,
+      selectedId: firstSelectedId(props),
     }),
   });
   // Header labels read the same in every table whatever case a pane wrote
@@ -121,4 +117,11 @@ function resolveTableIndex<T, C extends DataTableColumn>(
   return resolveRemoteItemIndex(input, props.items, {
     key: (item, index) => props.getItemKey(item, index),
   });
+}
+
+function firstSelectedId<T, C extends DataTableColumn>(props: DataTableProps<T, C>): string | null {
+  const index = props.items.findIndex((item, itemIndex) => props.isSelected(item, itemIndex));
+  const item = props.items[index];
+  if (item === undefined) return null;
+  return props.getItemKey(item, index);
 }
