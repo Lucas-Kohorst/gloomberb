@@ -243,6 +243,10 @@ describe("charting library feed", () => {
     expect(model?.symbol).toBe("NASDAQ:AAPL");
     expect(model?.chartStyle).toBe("candles");
     expect(model?.interval).toBe("240");
+    expect(libraryChartFromSpec({
+      ...price,
+      series: [{ ...price.series[0]!, style: "line" }],
+    })?.chartStyle).toBe("line");
 
     const prediction: ChartSpec = {
       ...price,

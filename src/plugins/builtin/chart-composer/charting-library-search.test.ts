@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createStaticLibraryFeed } from "./charting-library-feed";
+import { createSpecLibraryFeed, createStaticLibraryFeed } from "./charting-library-feed";
 import { createSearchableLibraryFeed, libraryInstrument, type LibraryInstrument } from "./charting-library-search";
 import type { ChartResolveSources } from "../../../time-series/resolve";
 import type { DataProvider } from "../../../types/data-provider";
@@ -37,6 +37,27 @@ test("replacement and comparison search route history by instrument and restore 
   const original = await new Promise<Record<string, unknown>>((resolve, reject) => restored.feed.resolveSymbol("KALSHI:TEST", resolve, reject));
   expect(original.description).toBe("Original market");
   restored.dispose();
+});
+
+test("replacement feed forwards live bars to the dynamic symbol subscription", async () => {
+  const directory = new Map([["NASDAQ:AAPL", { kind: "security", instrument: { symbol: "AAPL", exchange: "NASDAQ" }, fieldId: "market.ohlcv" } as const]]);
+  const baseHandle = createSpecLibraryFeed({ getSources: () => sources, getDirectory: () => directory });
+  const base = baseHandle.feed;
+  const handle = createSearchableLibraryFeed({ base, getSources: () => sources, search: async () => [nvda], read: () => null, remember: () => {} });
+  await new Promise<unknown[]>((resolve) => handle.feed.searchSymbols("NVDA", "", "", resolve));
+  const info = await new Promise<Record<string, unknown>>((resolve, reject) => handle.feed.resolveSymbol(nvda.ticker, resolve, reject));
+  const originalInfo = await new Promise<Record<string, unknown>>((resolve, reject) => handle.feed.resolveSymbol("NASDAQ:AAPL", resolve, reject));
+  const ticks: unknown[] = [];
+  handle.feed.subscribeBars(info, "D", (bar) => ticks.push(bar), "replacement-live", () => {});
+  handle.feed.subscribeBars(originalInfo, "D", (bar) => ticks.push(bar), "original-live", () => {});
+  const bar = { time: Date.parse("2026-09-02T00:00:00Z"), open: 15, high: 16, low: 14, close: 15.5 };
+
+  baseHandle.publish(nvda.ticker, bar, "D");
+  expect(ticks).toEqual([bar]);
+  const originalBar = { ...bar, close: 20 };
+  baseHandle.publish("NASDAQ:AAPL", originalBar, "D");
+  expect(ticks).toEqual([bar, originalBar]);
+  handle.dispose();
 });
 
 test("an older search cannot overwrite newer results and failed discovery retains the original series", async () => {

@@ -29,12 +29,13 @@ describe("charting library chrome", () => {
     expect(line.disabled_features).toContain("create_volume_indicator_by_default");
     expect(line.disabled_features).toContain("symbol_search_hot_key");
     expect(line.disabled_features).toContain("volume_force_overlay");
+    expect(line.disabled_features).toContain("pricescale_unit");
     expect(line.enabled_features).toContain("iframe_loading_same_origin");
     expect(line.enabled_features).toContain("side_toolbar_in_fullscreen_mode");
     expect(line.enabled_features).toContain("header_in_fullscreen_mode");
     expect(line.enabled_features).toContain("low_density_bars");
-    expect(line.enabled_features).toContain("pricescale_unit");
     expect(line.enabled_features).toContain("pre_post_market_sessions");
+    expect(line.enabled_features).toContain("items_favoriting");
     expect(line.enabled_features).not.toContain("link_to_tradingview");
     expect(line.enabled_features).not.toContain("seconds_resolution");
     expect(line.enabled_features).not.toContain("fix_left_edge");

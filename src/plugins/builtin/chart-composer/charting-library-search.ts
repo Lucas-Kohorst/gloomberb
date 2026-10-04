@@ -19,6 +19,20 @@ export function createSearchableLibraryFeed(options: {
   const subscriptions = new Map<string, LibraryDatafeed>();
   const dynamic = createSpecLibraryFeed({ getSources: options.getSources, getDirectory: () => directory }).feed;
   let pending: AbortController | undefined;
+  let stopPublishSubscription: (() => void) | undefined;
+  const publish = (symbol: string, bar: Parameters<NonNullable<LibraryDatafeed["publish"]>>[1], resolution?: string) => {
+    const ticker = symbol.trim().toUpperCase();
+    const instrument = find(ticker);
+    if (instrument) dynamic.publish?.(ticker, bar, resolution);
+    else if (options.base.getSourceForSymbol?.(ticker)) options.base.publish?.(ticker, bar, resolution);
+  };
+  const dispose = () => {
+    pending?.abort();
+    for (const [id, subscribedFeed] of subscriptions) subscribedFeed.unsubscribeBars(id);
+    subscriptions.clear();
+    stopPublishSubscription?.();
+    stopPublishSubscription = undefined;
+  };
   const find = (symbol: string): LibraryInstrument | null => {
     const ticker = symbol.trim().toUpperCase();
     const instrument = instruments.get(ticker) ?? options.read(ticker);
@@ -29,13 +43,7 @@ export function createSearchableLibraryFeed(options: {
     return instrument;
   };
   const route = (symbol: string | undefined) => symbol && find(symbol) ? dynamic : options.base;
-  return {
-    dispose() {
-      pending?.abort();
-      for (const [id, feed] of subscriptions) feed.unsubscribeBars(id);
-      subscriptions.clear();
-    },
-    feed: {
+  const feed: LibraryDatafeed = {
       onReady: (callback) => options.base.onReady(callback),
       searchSymbols(query, exchange, type, onResult) {
         pending?.abort();
@@ -83,8 +91,26 @@ export function createSearchableLibraryFeed(options: {
         subscriptions.get(id)?.unsubscribeBars(id);
         subscriptions.delete(id);
       },
-    },
-  };
+      publish,
+      getSourceForSymbol(symbol) {
+        return find(symbol)?.source ?? options.base.getSourceForSymbol?.(symbol) ?? null;
+      },
+      subscribePublish(listener) {
+        const stopDynamic = dynamic.subscribePublish?.(listener);
+        const stopBase = options.base.subscribePublish?.((symbol, bar, resolution) => {
+          if (!find(symbol)) listener(symbol, bar, resolution);
+        });
+        return () => {
+          stopDynamic?.();
+          stopBase?.();
+        };
+      },
+    };
+  stopPublishSubscription = options.base.subscribePublish?.((symbol, bar, resolution) => {
+    const ticker = symbol.trim().toUpperCase();
+    if (find(ticker)) dynamic.publish?.(ticker, bar, resolution);
+  });
+  return { feed, dispose };
 }
 
 export function libraryInstrument(source: ChartSeriesSource, description: string, type: string): LibraryInstrument | null {

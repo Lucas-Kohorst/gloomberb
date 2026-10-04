@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import type { ChartSeriesSource } from "../../../time-series/types";
 import { setSharedRegistryForTests, type PluginRegistry } from "../../registry";
 import { ChartingLibraryFrame } from "./charting-library-frame";
 import type { LibraryDatafeed } from "./charting-library-feed";
@@ -29,7 +30,12 @@ test("a chart remount ignores the removed widget's readiness and starts the repl
   let primaryUnsubscribeCalls = 0;
   let layoutUnsubscribeCalls = 0;
   let teardownThrows = false;
-  const selected: string[] = [];
+  const selected: Array<{ ticker: string; name: string; source?: ChartSeriesSource }> = [];
+  const sourceForSymbol = (symbol: string): ChartSeriesSource => symbol === "GDP"
+    ? { kind: "economic", provider: "fred", seriesId: "GDP" }
+    : symbol === "KX"
+      ? { kind: "prediction-market", venue: "kalshi", marketId: "KX" }
+      : { kind: "security", instrument: { symbol }, fieldId: "market.ohlcv" };
   const widgets: Array<{ ready: () => void; removed: boolean }> = [];
   const deadWindow = () => {
     throw new TypeError("null is not an object (evaluating 't.doWhenApiIsReady')");
@@ -64,7 +70,7 @@ test("a chart remount ignores the removed widget's readiness and starts the repl
   window.document.body.appendChild(container);
   const root = createRoot(container as unknown as HTMLElement);
   let readyCount = 0;
-  const chart = (key: string) => <ChartingLibraryFrame key={key} symbol="AAPL" interval="240" timezone="America/New_York" compares={[]} chartStyle="heikinashi" backgroundColor="#000000" feed={{} as LibraryDatafeed} onReady={() => { readyCount++; }} onPrimarySymbolChange={(info) => selected.push(info.ticker)} />;
+  const chart = (key: string) => <ChartingLibraryFrame key={key} symbol="AAPL" interval="240" timezone="America/New_York" compares={[]} chartStyle="heikinashi" backgroundColor="#000000" feed={{ getSourceForSymbol: sourceForSymbol } as LibraryDatafeed} onReady={() => { readyCount++; }} onPrimarySymbolChange={(info) => selected.push(info)} />;
   try {
     await act(async () => { root.render(chart("first")); });
     expect(container.textContent).toContain("Loading chart");
@@ -82,9 +88,20 @@ test("a chart remount ignores the removed widget's readiness and starts the repl
     expect(readyCount).toBe(2);
     expect(container.textContent).not.toContain("Loading chart");
     expect(container.querySelector("iframe")).not.toBeNull();
-    expect(selected).toEqual(["AAPL", "AAPL"]);
+    expect(selected).toEqual([
+      { ticker: "AAPL", name: "Apple" },
+      { ticker: "AAPL", name: "Apple" },
+    ]);
     await act(async () => { primaryChanged?.({ ticker: "NVDA", name: "Nvidia" }); });
-    expect(selected).toEqual(["AAPL", "AAPL", "NVDA"]);
+    await act(async () => { primaryChanged?.({ ticker: "GDP", name: "GDP" }); });
+    await act(async () => { primaryChanged?.({ ticker: "KX", name: "Kalshi" }); });
+    expect(selected).toEqual([
+      { ticker: "AAPL", name: "Apple" },
+      { ticker: "AAPL", name: "Apple" },
+      { ticker: "NVDA", name: "Nvidia" },
+      { ticker: "GDP", name: "GDP", source: { kind: "economic", provider: "fred", seriesId: "GDP" } },
+      { ticker: "KX", name: "Kalshi", source: { kind: "prediction-market", venue: "kalshi", marketId: "KX" } },
+    ]);
     expect(widgets).toHaveLength(2);
     teardownThrows = true;
     await act(async () => { root.render(null); });
@@ -96,8 +113,8 @@ test("a chart remount ignores the removed widget's readiness and starts the repl
     await act(async () => { widgets[2]?.ready(); });
     killWindow = true;
     await act(async () => { root.unmount(); });
-    expect(primaryUnsubscribeCalls).toBe(2);
-    expect(layoutUnsubscribeCalls).toBe(2);
+    expect(primaryUnsubscribeCalls).toBe(3);
+    expect(layoutUnsubscribeCalls).toBe(3);
     expect(widgets[2]?.removed).toBe(true);
   } finally {
     setSharedRegistryForTests(undefined);

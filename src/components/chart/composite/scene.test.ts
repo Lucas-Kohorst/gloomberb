@@ -243,7 +243,25 @@ describe("composite chart scene", () => {
     expect(scene?.panels[0]?.series[0]?.points.at(-1)?.xRatio).toBeLessThan(1);
   });
 
-  test("pins poll and probability series to a 0-100 axis without padding", () => {
+  test("keeps a probability series on 0-100 while auto-scale is on", () => {
+    const market = series({
+      id: "ossoff",
+      unit: "%",
+      unitGroup: "percent",
+      valueRange: { min: 0, max: 100 },
+      points: [point("2025-10-03", 3), point("2026-05-01", 12), point("2026-10-02", 18)],
+    });
+    const scene = buildCompositeChartScene(
+      [market],
+      [{ id: "main" }],
+      { width: 40, height: 8 },
+    );
+
+    expect(scene?.panels[0]?.axes.left?.min).toBe(0);
+    expect(scene?.panels[0]?.axes.left?.max).toBe(100);
+  });
+
+  test("pins a probability series to 0-100 when auto-scale is off", () => {
     const poll = series({
       id: "poll",
       unit: "%",
@@ -253,7 +271,7 @@ describe("composite chart scene", () => {
     });
     const scene = buildCompositeChartScene(
       [poll],
-      [{ id: "main" }],
+      [{ id: "main", autoScale: false }],
       { width: 40, height: 8 },
     );
 

@@ -112,6 +112,8 @@ export function libraryChartChrome(input: LibraryChartChromeInput): {
       "always_show_legend_values_on_mobile",
       "symbol_info_long_description",
       "pre_post_market_sessions",
+      // Child of the disabled settings-storage flag. The explicit enable is what shows interval favorites.
+      "items_favoriting",
     ],
     disabled_features: [
       "use_localstorage_for_settings",

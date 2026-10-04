@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { useLayoutEffect, useRef, useState } from "react";
 import { useThemeColors } from "../../../theme/theme-context";
+import { debugLog } from "../../../utils/debug-log";
 import { getSharedRegistry } from "../../registry/shared";
 import { isPublicShareLocation } from "../shared/share-link";
 import { chartLayoutKey, persistChartLayout, readChartLayout, type PersistableChartWidget } from "./charting-library-persistence";
@@ -16,6 +17,8 @@ import {
   libraryPercentScaleMode,
   type LibraryPriceScale,
 } from "./charting-library-options";
+
+const chartLog = debugLog.createLogger("chart-composer");
 
 interface ChartingWindow {
   TradingView?: {
@@ -48,8 +51,14 @@ function assetPaths(): { script: string; libraryPath: string } {
   return { script: `${libraryPath}charting_library.standalone.js`, libraryPath };
 }
 
-function mountedChartWindow(container: HTMLElement): Window | null {
-  return container.querySelector("iframe")?.contentWindow ?? null;
+function isDeadChartWindow(error: unknown): boolean {
+  return error instanceof TypeError
+    && /doWhenApiIsReady|contentWindow|tradingViewApi/.test(error.message);
+}
+
+function reportChartDetach(error: unknown, action: string): void {
+  if (isDeadChartWindow(error)) chartLog.warn(`Chart ${action} hit a detached window`, error);
+  else chartLog.error(`Chart ${action} failed`, error);
 }
 
 function loadLibrary(script: string): Promise<void> {
@@ -177,9 +186,10 @@ export function ChartingLibraryFrame({
         locale: "en",
         autosize: true,
         theme: backgroundColorLooksLight(backgroundColor) ? "light" : "dark",
-        // Settings storage is off, so the header interval buttons have to be passed here.
-        // Without them the bar shows only the current interval. Adaptive keeps those
-        // favorites and uses icons once the pane is too narrow for full buttons.
+        // Settings storage is off, so interval favorites are passed in the constructor
+        // and items_favoriting is enabled on its own. Adaptive drops the header from
+        // full buttons to the favorites row when the toolbar is narrow. This library
+        // build does not collapse that row to icons.
         disabled_features: chrome.disabled_features,
         enabled_features: chrome.enabled_features,
         header_widget_buttons_mode: "adaptive",
@@ -233,11 +243,11 @@ export function ChartingLibraryFrame({
             });
           }
           const ticker = info.ticker ?? info.name;
-          const source = ticker ? searchable?.feed.getSourceForSymbol?.(ticker) : null;
+          const resolved = ticker ? searchable?.feed.getSourceForSymbol?.(ticker) : null;
           if (!cancelled && ticker) onPrimarySymbolChangeRef.current?.({
             ticker,
             name: info.name ?? ticker,
-            ...(source ? { source } : {}),
+            ...(resolved && resolved.kind !== "security" ? { source: resolved } : {}),
           });
         };
         const symbolChanges = chart?.onSymbolChanged?.();
@@ -261,13 +271,9 @@ export function ChartingLibraryFrame({
       cancelled = true;
       window.clearTimeout(loadingTimeout);
       stopKeyboard();
-      // unsubscribe throws on doWhenApiIsReady once WebKit has cleared the
-      // iframe window. A throw here becomes the pane crash dialog.
-      if (mountedChartWindow(container)) {
-        try { stopPrimarySymbol?.(); } catch { /* window already gone */ }
-        try { stopPersistence?.(); } catch { /* window already gone */ }
-      }
-      try { widget?.remove?.(); } catch { /* iframe already detached */ }
+      try { stopPrimarySymbol?.(); } catch (error: unknown) { reportChartDetach(error, "symbol unsubscribe"); }
+      try { stopPersistence?.(); } catch (error: unknown) { reportChartDetach(error, "layout unsubscribe"); }
+      try { widget?.remove?.(); } catch (error: unknown) { reportChartDetach(error, "widget remove"); }
       stopSearch?.();
     };
   }, [backgroundColor, chartStyle, hasVolume, compareKey, interval, layoutKey, palette, priceScale, symbol, themeKey, timezone, retry]);

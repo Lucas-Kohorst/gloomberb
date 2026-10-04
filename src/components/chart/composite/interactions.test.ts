@@ -124,14 +124,26 @@ describe("composite chart interactions", () => {
     expect(tight.end.getTime() - tight.start.getTime()).toBe(frame.minimumSpanMs);
   });
 
-  test("lets a backfilling chart pan half a screen before the first observation, never after the last", () => {
+  test("lets a backfilling chart pan half a screen past either end of the loaded window", () => {
     const data = series([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     const requested = viewport(5, 9);
     const frame = frameFor(data, { historicalPaddingRatio: 0.5 });
 
     expect(panCompositeViewport(frame, requested, 100 * DAY_MS)).toEqual(viewport(-1, 3));
-    expect(panCompositeViewport(frame, requested, -100 * DAY_MS)).toEqual(viewport(5, 9));
+    expect(panCompositeViewport(frame, requested, -100 * DAY_MS)).toEqual(viewport(7, 11));
     expect(panCompositeViewport(frameFor(data), requested, 100 * DAY_MS)).toEqual(viewport(1, 5));
+    expect(panCompositeViewport(frameFor(data), requested, -100 * DAY_MS)).toEqual(viewport(5, 9));
+  });
+
+  test("slides a fitted series half a screen either way when backfill padding is on", () => {
+    const data = series([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const fitted = viewport(1, 9);
+    const frame = frameFor(data, { historicalPaddingRatio: 0.5 });
+
+    expect(panCompositeViewport(frame, fitted, 100 * DAY_MS)).toEqual(viewport(-3, 5));
+    expect(panCompositeViewport(frame, fitted, -100 * DAY_MS)).toEqual(viewport(5, 13));
+    expect(panCompositeViewport(frameFor(data), fitted, 100 * DAY_MS)).toEqual(fitted);
+    expect(panCompositeViewport(frameFor(data), fitted, -100 * DAY_MS)).toEqual(fitted);
   });
 
   test("enters unloaded history from a full market-session viewport without changing span", () => {

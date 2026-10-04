@@ -13,10 +13,12 @@ import {
 import {
   coerceSeriesInterpolationForStyle,
   defaultChartSeriesPresentation,
+  isOhlcSeriesStyle,
 } from "../../../time-series/spec";
 import {
   CHART_SPEC_VERSION,
   type ChartSeriesSource,
+  type ChartSeriesSpec,
   type ChartSpec,
   type TimeSeriesPoint,
 } from "../../../time-series/types";
@@ -74,6 +76,9 @@ export interface LibraryDatafeed {
     onResetCacheNeededCallback: () => void,
   ) => void;
   unsubscribeBars: (listenerGuid: string) => void;
+  publish?: (symbol: string, bar: LibraryBar, resolution?: string) => void;
+  getSourceForSymbol?: (symbol: string) => ChartSeriesSource | null;
+  subscribePublish?: (listener: (symbol: string, bar: LibraryBar, resolution?: string) => void) => () => void;
 }
 
 export interface LibraryChartModel {
@@ -161,12 +166,14 @@ function tickerForSource(source: ChartSeriesSource): string | null {
 export function libraryChartFromSpec(spec: ChartSpec): LibraryChartModel | null {
   const directory = new Map<string, ChartSeriesSource>();
   const tickers: string[] = [];
+  let primaryStyle: ChartSeriesSpec["style"] | undefined;
   for (const series of spec.series) {
     if (series.visible === false) continue;
     const ticker = feedTickerForSource(series.source);
     if (!ticker || directory.has(ticker)) continue;
     directory.set(ticker, series.source);
     tickers.push(ticker);
+    primaryStyle ??= series.style;
   }
   const symbol = tickers[0];
   if (!symbol) return null;
@@ -179,9 +186,11 @@ export function libraryChartFromSpec(spec: ChartSpec): LibraryChartModel | null 
     interval: tradingViewIntervalForSpec(spec),
     timezone,
     compares: tickers.slice(1),
-    chartStyle: primary.kind === "prediction-market" ? "step" : primary.kind === "security" && (primary.fieldId === "market.ohlcv" || primary.fieldId === "market.close")
-      ? "candles"
-      : "line",
+    chartStyle: primary.kind === "prediction-market" || primaryStyle === "step"
+      ? "step"
+      : primaryStyle && isOhlcSeriesStyle(primaryStyle)
+        ? "candles"
+        : "line",
     priceScale: libraryPriceScale(tickers.map((ticker) => defaultChartSeriesPresentation(directory.get(ticker)!).unit)),
     directory,
   };
@@ -706,6 +715,7 @@ export function createSpecLibraryFeed(options: {
 }): { feed: LibraryDatafeed; publish: (symbol: string, bar: LibraryBar, resolution?: string) => void } {
   const cache = new ChartResolveCache();
   const listeners = new Map<string, LibraryBarListener>();
+  const publishListeners = new Set<(symbol: string, bar: LibraryBar, resolution?: string) => void>();
   const timezone = options.timezone ?? "America/New_York";
   const predictionLoads = new Map<string, {
     at: number;
@@ -735,10 +745,10 @@ export function createSpecLibraryFeed(options: {
       if (resolution !== undefined && !sameLibraryBarSize(listener.resolution, resolution)) continue;
       listener.onTick(bar);
     }
+    for (const listener of publishListeners) listener(ticker, bar, resolution);
   };
-  return {
-    publish,
-    feed: {
+  const getSourceForSymbol = (symbol: string) => sourceForTicker(symbol.trim().toUpperCase(), options.getDirectory());
+  const feed: LibraryDatafeed = {
     onReady(callback) {
       setTimeout(() => callback({ supported_resolutions: [...LIBRARY_RESOLUTIONS], ...libraryFeedUnits() }), 0);
     },
@@ -826,8 +836,14 @@ export function createSpecLibraryFeed(options: {
     unsubscribeBars(listenerGuid) {
       listeners.delete(listenerGuid);
     },
-  },
   };
+  feed.publish = publish;
+  feed.getSourceForSymbol = getSourceForSymbol;
+  feed.subscribePublish = (listener) => {
+    publishListeners.add(listener);
+    return () => publishListeners.delete(listener);
+  };
+  return { publish, feed };
 }
 
 export function createStaticLibraryFeed(

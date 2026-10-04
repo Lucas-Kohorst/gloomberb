@@ -3,6 +3,7 @@ import {
   CHART_SPEC_VERSION,
   type ChartPanelSpec,
   type ChartSeriesSpec,
+  type ChartSeriesSource,
   type ChartSpec,
   type ChartStudyKind,
   type ChartStudySpec,
@@ -1649,6 +1650,32 @@ export function appendCompareTicker(spec: ChartSpec, ticker: string): ChartSpec 
 }
 
 /** Rebind research-context series without discarding authored chart choices. */
+export function replacePrimaryChartSource(spec: ChartSpec, source: ChartSeriesSource, label?: string): ChartSpec {
+  const index = spec.series.findIndex((entry) => entry.visible !== false);
+  if (index < 0) return spec;
+  const current = spec.series[index]!;
+  const nextLabel = label?.trim() || undefined;
+  if (JSON.stringify(current.source) === JSON.stringify(source) && current.label === nextLabel) return spec;
+
+  const presentation = defaultChartSeriesPresentation(source);
+  const compatibleStyles = source.kind === "security" ? getTimeSeriesField(source.fieldId)?.styles : undefined;
+  const style = source.kind === "prediction-market"
+    ? "step"
+    : source.kind === "security"
+      ? compatibleStyles?.includes(current.style) ? current.style : presentation.style
+      : presentation.style;
+  const series = [...spec.series];
+  series[index] = {
+    ...current,
+    source,
+    label: nextLabel,
+    style,
+    transform: "raw",
+    interpolation: coerceSeriesInterpolationForStyle(style),
+  };
+  return { ...spec, series };
+}
+
 export function rebindChartSecuritySymbol(spec: ChartSpec, previous: string, next: string): ChartSpec {
   const previousInstrument = normalizeInstrument(previous, true);
   const nextInstrument = normalizeInstrument(next, true);

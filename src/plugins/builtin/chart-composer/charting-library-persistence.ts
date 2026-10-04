@@ -1,3 +1,5 @@
+import { debugLog } from "../../../utils/debug-log";
+
 export interface ChartLayoutStore {
   getConfigState<T>(pluginId: string, key: string): T | null;
   setConfigState(pluginId: string, key: string, value: unknown): Promise<void>;
@@ -10,6 +12,12 @@ export interface PersistableChartWidget {
 }
 
 const PLUGIN_ID = "chart-composer";
+const log = debugLog.createLogger("chart-composer");
+
+function isDeadChartWindow(error: unknown): boolean {
+  return error instanceof TypeError
+    && /doWhenApiIsReady|contentWindow|tradingViewApi/.test(error.message);
+}
 
 export function chartLayoutKey(symbol: string, compares: readonly string[]): string {
   return `advanced-layout:v1:${JSON.stringify([symbol, [...compares].sort()])}`;
@@ -46,6 +54,10 @@ export function persistChartLayout(
         });
       });
     } catch (error) {
+      if (isDeadChartWindow(error)) {
+        log.warn("chart layout save skipped; chart window is gone", error);
+        return;
+      }
       onError(error);
     }
   };
@@ -54,11 +66,15 @@ export function persistChartLayout(
   };
   widget.subscribe?.("onAutoSaveNeeded", autosave);
   return () => {
+    save();
     try {
       widget.unsubscribe?.("onAutoSaveNeeded", autosave);
-    } catch {
-      return;
+    } catch (error) {
+      if (isDeadChartWindow(error)) {
+        log.warn("chart layout unsubscribe skipped; chart window is gone", error);
+        return;
+      }
+      onError(error);
     }
-    save();
   };
 }

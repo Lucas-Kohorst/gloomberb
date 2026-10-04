@@ -67,3 +67,73 @@ test("closing immediately after adding an SMA saves before delayed autosave", ()
   stop();
   expect(saved).toEqual(snapshot);
 });
+
+test("a dead-window unsubscribe still saves the edited snapshot without reporting", () => {
+  let snapshot: object = { studies: [] };
+  let saved: unknown;
+  const errors: unknown[] = [];
+  const stop = persistChartLayout({
+    save: (callback) => callback(snapshot),
+    unsubscribe: () => { throw new TypeError("null is not an object (evaluating 't.doWhenApiIsReady')"); },
+  }, {
+    getConfigState: () => null,
+    setConfigState: async (_plugin, _key, state) => { saved = state; },
+  }, "chart", (error) => { errors.push(error); });
+  snapshot = { studies: ["SMA"] };
+  stop();
+  expect(saved).toEqual(snapshot);
+  expect(errors).toEqual([]);
+});
+
+test("an unsubscribe failure still saves and is reported", () => {
+  let snapshot: object = { studies: [] };
+  let saved: unknown;
+  const errors: unknown[] = [];
+  const failure = new Error("unsubscribe failed");
+  const stop = persistChartLayout({
+    save: (callback) => callback(snapshot),
+    unsubscribe: () => { throw failure; },
+  }, {
+    getConfigState: () => null,
+    setConfigState: async (_plugin, _key, state) => { saved = state; },
+  }, "chart", (error) => { errors.push(error); });
+  snapshot = { studies: ["edited"] };
+  stop();
+  expect(saved).toEqual(snapshot);
+  expect(errors).toEqual([failure]);
+});
+
+test("a dead chart window during dispose save is not reported", () => {
+  const errors: unknown[] = [];
+  let mounted = true;
+  const stop = persistChartLayout({
+    save: (callback) => {
+      if (!mounted) throw new TypeError("null is not an object (evaluating 'contentWindow.tradingViewApi')");
+      callback({ studies: [] });
+    },
+  }, {
+    getConfigState: () => null,
+    setConfigState: async () => {},
+  }, "chart", (error) => { errors.push(error); });
+  mounted = false;
+  stop();
+  expect(errors).toEqual([]);
+});
+
+test("a dispose save failure is reported", () => {
+  const errors: unknown[] = [];
+  let mounted = true;
+  const failure = new Error("save failed");
+  const stop = persistChartLayout({
+    save: (callback) => {
+      if (!mounted) throw failure;
+      callback({ studies: [] });
+    },
+  }, {
+    getConfigState: () => null,
+    setConfigState: async () => {},
+  }, "chart", (error) => { errors.push(error); });
+  mounted = false;
+  stop();
+  expect(errors).toEqual([failure]);
+});

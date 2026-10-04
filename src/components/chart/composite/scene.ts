@@ -299,8 +299,10 @@ function paddedDomain(values: number[], scale: PanelScale): { min: number; max: 
     if (scale === "log") {
       return { min: rawMin / 1.1, max: rawMax * 1.1 };
     }
+    // All zero, as in a session without reported volume, sits on the floor.
+    if (rawMin === 0) return { min: 0, max: 1 };
     const delta = Math.max(Math.abs(rawMin) * 0.08, 1);
-    return { min: rawMin - delta, max: rawMax + delta };
+    return signBounded(rawMin, rawMax, { min: rawMin - delta, max: rawMax + delta });
   }
 
   if (scale === "log") {
@@ -311,13 +313,15 @@ function paddedDomain(values: number[], scale: PanelScale): { min: number; max: 
   }
 
   const padding = (rawMax - rawMin) * 0.06;
-  if (rawMin === 0 && rawMax > 0) {
-    return { min: 0, max: rawMax + padding };
-  }
-  if (rawMax === 0 && rawMin < 0) {
-    return { min: rawMin - padding, max: 0 };
-  }
-  return { min: rawMin - padding, max: rawMax + padding };
+  return signBounded(rawMin, rawMax, { min: rawMin - padding, max: rawMax + padding });
+}
+
+/** Headroom never pushes one-signed values across zero. */
+function signBounded(rawMin: number, rawMax: number, padded: { min: number; max: number }): { min: number; max: number } {
+  return {
+    min: rawMin >= 0 ? Math.max(0, padded.min) : padded.min,
+    max: rawMax <= 0 ? Math.min(0, padded.max) : padded.max,
+  };
 }
 
 function buildAxisDomain(
@@ -327,6 +331,8 @@ function buildAxisDomain(
 ): CompositeAxisDomain | undefined {
   const axisSeries = series.filter((entry) => entry.axis === side);
   if (axisSeries.length === 0) return undefined;
+  // Probability and poll series declare 0-100. Auto-scale stays on; it does
+  // not refit those prints, or a 12% market fills the plot.
   const bounded = scale === "linear" ? sharedValueRange(axisSeries) : null;
   const { min, max } = bounded ?? paddedDomain(axisSeries.flatMap(seriesDomainValues), scale);
   const first = axisSeries[0]!;
@@ -576,6 +582,7 @@ export function buildCompositeChartScene(
     const domainSeries = emptyRange || rawPanelSeries.length === 0
       ? applyPanelValueScale(dataSeries.filter((entry) => entry.panelId === panel.id), scale)
       : panelSeries;
+    const autoScale = panel.autoScale !== false;
     const left = buildAxisDomain("left", domainSeries, scale);
     const right = buildAxisDomain("right", domainSeries, scale);
     const axes: Partial<Record<CompositeAxisSide, CompositeAxisDomain>> = { left, right };
@@ -584,7 +591,7 @@ export function buildCompositeChartScene(
       label: panel.label,
       height: panelHeights.get(panel.id) ?? 1,
       scale,
-      autoScale: panel.autoScale !== false,
+      autoScale,
       axes,
       series: panelSeries.flatMap((entry) => {
         const domain = axes[entry.axis];
