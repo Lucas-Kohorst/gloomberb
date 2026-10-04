@@ -32,6 +32,7 @@ import { fearGreedPlugin } from "./builtin/fear-greed";
 import { ipoCalendarPlugin } from "./builtin/ipo-calendar";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
+import { openFdaPlugin } from "./builtin/openfda";
 import { browserGloomberbCloudPlugin } from "./builtin/cloud/browser";
 import { changelogModule } from "./builtin/changelog";
 import { chartComposerModule } from "./builtin/chart-composer";
@@ -221,6 +222,7 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   ipoCalendarPlugin,
   clinicalTrialsPlugin,
   commentLettersPlugin,
+  openFdaPlugin,
   browserMacroPlugin,
   alertsPlugin,
   researchSearchPlugin,

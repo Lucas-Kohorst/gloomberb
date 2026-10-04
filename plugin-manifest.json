@@ -249,6 +249,22 @@
       }
     },
     {
+      "id": "openfda",
+      "name": "openFDA Adverse Events",
+      "description": "Drug, device, and recall events from openFDA. Search by drug, firm, or device.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "adverse-events"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "portfolio",
       "name": "Portfolio",
       "description": "Portfolio and watchlist management, analytics, and position sizing.",
