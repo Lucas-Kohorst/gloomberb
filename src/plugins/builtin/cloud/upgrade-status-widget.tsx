@@ -37,11 +37,9 @@ export function CloudUpgradeStatusWidget() {
       } : {})}
     >
       {trial ? (
-        <Text fg={tone}>{tf("Pro trial {days}d", { days: access.trialDaysLeft })}</Text>
+        <Text fg={tone} content={tf("Pro trial {days}d", { days: access.trialDaysLeft })} />
       ) : (
-        <Text fg={tone}>
-          {nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`}
-        </Text>
+        <Text fg={tone} content={nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`} />
       )}
     </Box>
   );

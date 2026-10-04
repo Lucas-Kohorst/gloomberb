@@ -15,8 +15,8 @@ afterEach(async () => {
 
 describe("team status chip", () => {
   test("puts one space before the count and one space between chips", async () => {
-    expect(teamStatusChipText("ADJ", 1)).toBe("ADJ [1]");
-    expect(teamStatusChipText("BLUE", 0)).toBe("BLUE");
+    expect(teamStatusChipText("ADJ", 1)).toBe("<ADJ> [1]");
+    expect(teamStatusChipText("BLUE", 0)).toBe("<BLUE>");
 
     await act(async () => {
       testSetup = await testRender(
@@ -33,9 +33,9 @@ describe("team status chip", () => {
     await act(async () => { await testSetup?.renderOnce(); });
 
     const line = (testSetup?.captureCharFrame() ?? "").split("\n")[0] ?? "";
-    expect(line).toContain("@ lucas ADJ [1] BLUE");
+    expect(line).toContain("@ lucas <ADJ> [1] <BLUE>");
     expect(line).not.toContain("ADJ[1]");
-    expect(line).not.toContain("lucas  ADJ");
+    expect(line).not.toContain("lucas  <ADJ>");
   });
 
   test("a fragment of status chips still gets one cell between them", async () => {

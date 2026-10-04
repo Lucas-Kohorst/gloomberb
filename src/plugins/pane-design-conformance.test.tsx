@@ -34,7 +34,6 @@ import {
   assertUniversalPaneDesignGates,
   renderAuditedPane,
   settleFrames,
-  sourceHasBoundTableFooterHints,
   sourceHasClickableHeaderSort,
   NEWS_IN_PANE_SEARCH_PANE_IDS,
   type AuditedPaneRender,
@@ -247,8 +246,6 @@ describe("pane design conformance", () => {
       expect(sourceHasClickableHeaderSort(
         "<DataTableView onHeaderClick={() => {}} sortColumnId={null} />",
       )).toBe(true);
-      expect(sourceHasBoundTableFooterHints("paneSearchHint(focusSearch)")).toBe(true);
-      expect(sourceHasBoundTableFooterHints("hints: [{ id: \"open\", onPress: open }]")).toBe(false);
     });
   });
 

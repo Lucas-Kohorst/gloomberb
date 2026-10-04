@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { colors } from "../../../../theme/colors";
-import { Box, Text, TextAttributes } from "../../../../ui";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import { usePluginAppActions } from "../../../runtime";
 import { chatController } from "../../chat/controller";
 import { countTeamUpdates, teamAccentHex, teamIdFromChannelId } from "./model";
@@ -15,12 +15,14 @@ import { teamStore } from "./store";
  * with pending cards opens the notification center on the team filter.
  * Otherwise it opens the team pane.
  */
-/** `ADJ [1]`, one space before the count. No count means just the short name. */
+/** `<ADJ> [1]`, one space before the count. No count means just `<ADJ>`. */
 export function teamStatusChipText(shortName: string, count: number): string {
-  return count > 0 ? `${shortName} [${count}]` : shortName;
+  const name = `<${shortName}>`;
+  return count > 0 ? `${name} [${count}]` : name;
 }
 
 export function TeamStatusWidget() {
+  const { nativePaneChrome = false } = useUiCapabilities();
   const { createPaneFromTemplate } = usePluginAppActions();
   const snapshot = useSyncExternalStore(
     (onChange) => teamStore.subscribe(onChange),
@@ -44,7 +46,7 @@ export function TeamStatusWidget() {
   const updates = countTeamUpdates(snapshot.notifications);
 
   return (
-    <Box flexDirection="row" gap={1}>
+    <Box flexDirection="row" gap={1} style={nativePaneChrome ? { gap: 12 } : undefined}>
       {snapshot.teams.map((team) => {
         const accent = teamAccentHex(team.accentColor);
         let unread = 0;
@@ -75,9 +77,11 @@ export function TeamStatusWidget() {
             data-gloom-interactive="true"
             style={{ cursor: "pointer" }}
           >
-            <Text fg={fg} attributes={count > 0 && !muted ? TextAttributes.BOLD : 0}>
-              {teamStatusChipText(team.shortName, count)}
-            </Text>
+            <Text
+              fg={fg}
+              attributes={count > 0 && !muted ? TextAttributes.BOLD : 0}
+              content={teamStatusChipText(team.shortName, count)}
+            />
           </Box>
         );
       })}

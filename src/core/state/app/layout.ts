@@ -120,6 +120,10 @@ function getPaneState(state: Pick<AppState, "paneState">, paneId: string): PaneR
   return state.paneState[paneId] ?? {};
 }
 
+function isCursorSymbol(value: string): boolean {
+  return /^[A-Z0-9^][A-Z0-9.^_=/-]{0,31}$/.test(value.trim().toUpperCase());
+}
+
 /**
  * Any pane that publishes `cursorSymbol` in its pane state is a ticker source; every other pane
  * resolves through its binding, so follow chains keep working across source types.
@@ -130,7 +134,7 @@ export function resolveTickerForPane(state: AppState, paneId: string, seen = new
   const instance = findPaneInstance(state.config.layout, paneId);
   if (!instance) return null;
   const cursorSymbol = getPaneState(state, paneId).cursorSymbol;
-  if (typeof cursorSymbol === "string" && cursorSymbol.trim()) return cursorSymbol;
+  if (typeof cursorSymbol === "string" && isCursorSymbol(cursorSymbol)) return cursorSymbol.trim().toUpperCase();
   return resolveTickerFromBinding(state, instance.binding, seen);
 }
 

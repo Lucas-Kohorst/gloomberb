@@ -151,14 +151,6 @@ body.gloom-col-resizing * {
 [data-gloom-role="data-table-row"][data-selected="true"] {
   z-index: 1;
   outline: none;
-  box-shadow: inset 2px 0 0 var(--gloom-border-focused, #ffffff);
-}
-[data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"]:first-child {
-  box-shadow: inset 2px 0 0 var(--gloom-border-focused, #ffffff);
-}
-[data-gloom-role="data-table-row"][data-selected="true"],
-[data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"] {
-  background-color: color-mix(in srgb, var(--gloom-selected) 28%, var(--gloom-bg)) !important;
 }
 [data-gloom-role="data-table-row"][data-roll-in="true"]:not([data-selected="true"]) {
   animation: gloom-row-roll-in 700ms ease-out;

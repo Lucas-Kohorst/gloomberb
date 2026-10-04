@@ -31,9 +31,21 @@ describe("changelog table model", () => {
     release("9", "v0.9.0", "Buildout", "2026-05-21T10:00:00Z"),
   ];
 
-  test("sorts releases by newest date by default", () => {
+  test("sorts releases by newest semver by default", () => {
+    const mixed = [
+      ...releases,
+      release("11", "v0.11.3", "Later publish, older line", "2026-08-29T21:07:42Z"),
+      release("13", "0.13.12", "Fork note", "2026-08-26T21:21:16Z"),
+    ];
     expect(
-      sortChangelogReleases(releases, DEFAULT_CHANGELOG_SORT).map((entry) => entry.id),
+      sortChangelogReleases(mixed, DEFAULT_CHANGELOG_SORT).map((entry) => entry.id),
+    )
+      .toEqual(["13", "11", "10", "9", "8"]);
+  });
+
+  test("sorts releases by newest date when that column is selected", () => {
+    expect(
+      sortChangelogReleases(releases, { columnId: "date", direction: "desc" }).map((entry) => entry.id),
     )
       .toEqual(["10", "9", "8"]);
   });
@@ -50,9 +62,9 @@ describe("changelog table model", () => {
 
   test("cycles header sort direction without returning an undefined handler state", () => {
     const versionSort = nextChangelogSortPreference(DEFAULT_CHANGELOG_SORT, "version");
-    expect(versionSort).toEqual({ columnId: "version", direction: "desc" });
+    expect(versionSort).toEqual({ columnId: "version", direction: "asc" });
     expect(nextChangelogSortPreference(versionSort, "version"))
-      .toEqual({ columnId: "version", direction: "asc" });
+      .toEqual({ columnId: "version", direction: "desc" });
   });
 
   test("ignores unknown header ids instead of creating broken sort state", () => {

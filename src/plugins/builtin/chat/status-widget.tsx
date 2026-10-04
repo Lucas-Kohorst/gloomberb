@@ -124,7 +124,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               alignItems: "center",
               flexShrink: 0,
               whiteSpace: "nowrap",
-              columnGap: 8,
+              columnGap: 12,
             },
           } : {})}
         >
@@ -140,7 +140,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
                 flexShrink: 0,
                 whiteSpace: "nowrap",
                 cursor: "pointer",
-                columnGap: 8,
+                columnGap: 12,
               },
             } : {})}
           >
@@ -148,23 +148,21 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               fg={colors.textDim}
               title={tf("{count} online", { count: snapshot.onlineCount })}
               data-gloom-role="status-online-count"
+              content={`${nativePaneChrome ? "" : " "}${tf("{count} online", { count: snapshot.onlineCount })}`}
               {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
-            >
-              {`${nativePaneChrome ? "" : " "}${tf("{count} online", { count: snapshot.onlineCount })}`}
-            </Text>
+            />
             <Text
               fg={unreadCount > 0 ? colors.text : colors.textDim}
               {...(nativePaneChrome ? { style: { whiteSpace: "nowrap" } } : {})}
-            >
-              {nativePaneChrome ? null : " "}
-              <Span fg={colors.positive}>{username ? `@${username}` : "@"}</Span>
-            </Text>
+            >{nativePaneChrome ? null : " "}<Span fg={colors.positive}>{username ? `@${username}` : "@"}</Span></Text>
           </Box>
           {unreadCount > 0 ? (
             <Box onMouseDown={openUnreadInbox} data-gloom-interactive="true">
-              <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-                {`${nativePaneChrome ? "" : " "}[${unreadCount}]`}
-              </Text>
+              <Text
+                fg={colors.positive}
+                attributes={TextAttributes.BOLD}
+                content={`${nativePaneChrome ? "" : " "}[${unreadCount}]`}
+              />
             </Box>
           ) : null}
         </Box>

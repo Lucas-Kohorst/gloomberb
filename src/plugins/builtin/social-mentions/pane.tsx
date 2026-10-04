@@ -5,6 +5,7 @@ import {
   DataTableStackView,
   EmptyState,
   PaneStatusBody,
+  usePaneNoticeFooter,
   type DataTableCell,
 } from "../../../components";
 import { CompositeChart } from "../../../components/chart/composite";
@@ -19,7 +20,8 @@ import {
 } from "../../../public/react";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, ScrollBox, Text, useRendererHost, useUiCapabilities } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../../ui";
+import { displayWidth, truncateToDisplayWidth } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { SignInWall } from "../cloud/auth-actions";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
@@ -91,17 +93,43 @@ function PostBlock({ post, width }: { post: SocialMentionPost; width: number }) 
   );
 }
 
-function SummaryStrip({ width, items }: {
+const SUMMARY_COLUMNS = 4;
+const SUMMARY_GAP = 2;
+
+function SummaryGrid({ width, items }: {
   width: number;
   items: Array<{ id: string; label: string; value: string; detail?: string }>;
 }) {
+  if (items.length === 0) return null;
+  const labels = Math.min(18, Math.max(4, ...items.map((item) => displayWidth(item.label))));
+  const widest = Math.max(...items.map((item) => (
+    labels + 1 + displayWidth(item.value) + (item.detail ? displayWidth(item.detail) + 2 : 0) + SUMMARY_GAP
+  )));
+  const fit = Math.max(1, Math.min(SUMMARY_COLUMNS, items.length, Math.floor((Math.max(1, width - 2)) / Math.max(8, widest))));
+  const columns = Math.ceil(items.length / Math.ceil(items.length / fit));
+  const inner = Math.max(1, width - 2);
+  const cellWidth = Math.max(8, Math.floor((inner - SUMMARY_GAP * (columns - 1)) / columns));
+  const widestValue = Math.max(0, ...items.map((item) => displayWidth(item.value)));
+  const lines: Array<typeof items> = [];
+  for (let index = 0; index < items.length; index += columns) lines.push(items.slice(index, index + columns));
   return (
-    <Box flexDirection="row" flexWrap="wrap" width={width} paddingX={1} gap={2}>
-      {items.map((item) => (
-        <Box key={item.id} flexDirection="row" gap={1}>
-          <Text fg={colors.textMuted} wrapMode="none">{item.label}</Text>
-          <Text fg={colors.text} wrapMode="none">{item.value}</Text>
-          {item.detail ? <Text fg={colors.textMuted} wrapMode="none">{item.detail}</Text> : null}
+    <Box flexDirection="column" paddingX={1} flexShrink={0}>
+      {lines.map((line, rowIndex) => (
+        <Box key={rowIndex} height={1} flexDirection="row" gap={SUMMARY_GAP}>
+          {line.map((item) => {
+            const labelWidth = Math.min(labels + 1, Math.max(4, Math.floor(cellWidth * 0.5), cellWidth - widestValue - 1));
+            const valueRoom = Math.max(1, cellWidth - labelWidth);
+            const value = truncateToDisplayWidth(item.value, valueRoom);
+            const detailRoom = valueRoom - displayWidth(value) - 2;
+            const detail = item.detail && detailRoom > 1 ? truncateToDisplayWidth(item.detail, detailRoom) : "";
+            return (
+              <Box key={item.id} width={cellWidth} height={1} flexDirection="row" overflow="hidden">
+                <Text fg={colors.textMuted} wrapMode="none">{truncateToDisplayWidth(item.label, Math.max(1, labelWidth - 1)).padEnd(labelWidth)}</Text>
+                <Text fg={colors.text} attributes={TextAttributes.BOLD} wrapMode="none">{value}</Text>
+                {detail ? <Text fg={colors.textMuted} wrapMode="none">{`  ${detail}`}</Text> : null}
+              </Box>
+            );
+          })}
         </Box>
       ))}
     </Box>
@@ -127,7 +155,7 @@ function DayDetail({ symbol, row, recent, width, height, onUrl }: {
   }, [onUrl, url]);
   return (
     <Box flexDirection="column" flexGrow={1} flexBasis={0} minHeight={0}>
-      <SummaryStrip width={width} items={[
+      <SummaryGrid width={width} items={[
         { id: "posts", label: "Posts", value: socialCount(row.mentions), detail: row.closed ? undefined : "so far" },
         { id: "ratio", label: "Vs median", value: socialRatio(row.ratio) },
         { id: "stance", label: "Stance", value: socialStance(row.stance), detail: stanceWord(row.stance) },
@@ -230,6 +258,11 @@ export function SocialMentionsPane({ width, height, focused }: PaneProps) {
       ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }]
       : [],
   });
+  usePaneNoticeFooter({
+    registrationId: "social-mentions:notices",
+    focused,
+    notices: data?.warnings ?? [],
+  });
   const onDetailUrl = useCallback((url: string | null) => {
     setDetailUrl(url);
   }, []);
@@ -298,7 +331,7 @@ export function SocialMentionsPane({ width, height, focused }: PaneProps) {
             }))}
             rootBefore={(
               <Box flexDirection="column" flexShrink={0}>
-                <SummaryStrip width={width} items={[
+                <SummaryGrid width={width} items={[
                   {
                     id: "posts",
                     label: "Posts",
@@ -331,9 +364,6 @@ export function SocialMentionsPane({ width, height, focused }: PaneProps) {
                     detail: `${socialRatio(summary.reddit.ratio)} median · ${summary.reddit.day.slice(5)}`,
                   }] : []),
                 ]} />
-                {data.warnings.length ? (
-                  <Text fg={colors.warning} wrapMode="word">{data.warnings.join(" ")}</Text>
-                ) : null}
                 {chartHeight && allRows.length ? (
                   <Box paddingX={1} flexShrink={0}>
                     <CompositeChart

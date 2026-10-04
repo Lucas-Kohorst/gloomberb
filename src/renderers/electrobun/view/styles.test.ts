@@ -82,12 +82,16 @@ describe("desktop chrome clip", () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 
     const selectedRow = cssRule(css, '[data-gloom-role="data-table-row"][data-selected="true"]');
-    expect(selectedRow).toContain("inset 2px 0 0");
-    const selectedCell = cssRule(
-      css,
+    expect(selectedRow).not.toContain("inset 2px 0 0");
+    expect(selectedRow).not.toContain("box-shadow");
+    expect(css).not.toContain(
       '[data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"]:first-child',
     );
-    expect(selectedCell).toContain("inset 2px 0 0");
+    const rowHover = cssRule(
+      css,
+      '[data-gloom-role="data-table-row"]:not([data-selected="true"]):hover',
+    );
+    expect(rowHover).toContain("background-color: var(--gloom-hover-bg)");
 
     const suggestionHover = cssRule(css, '[data-gloom-role="pane-suggestion"]:hover');
     expect(suggestionHover).toContain("background-color: var(--gloom-hover-bg)");

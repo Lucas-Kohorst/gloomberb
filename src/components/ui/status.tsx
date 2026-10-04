@@ -291,13 +291,33 @@ export function PaneStatusBody({
   onRetry,
   children,
 }: PaneStatusBodyProps) {
+  if (error && isNoDataError(error)) {
+    return (
+      <Box paddingX={1} paddingY={1} data-gloom-status="empty">
+        <EmptyState
+          fill={false}
+          title={emptyTitle ?? error.trim()}
+          message={emptyMessage}
+          onRetry={onRetry}
+        />
+      </Box>
+    );
+  }
   if (error && !isNoDataError(error)) {
-    const message = dataErrorMessage(error);
+    const mapped = dataErrorMessage(error);
+    const raw = error.trim();
+    const generic = dataErrorMessage(null);
+    const message = mapped !== generic
+      ? mapped
+      : raw !== generic && !/^(NO_DATA|NOT_FOUND|BAD_MAPPING|UNSUPPORTED_RANGE|TIMEOUT|UPSTREAM_ERROR)$/.test(raw)
+        ? raw
+        : undefined;
     return (
       <Box paddingX={1} paddingY={1} data-gloom-status="error">
         <EmptyState
-          title={subject ? unavailableText(subject) : dataErrorMessage(error)}
-          message={subject && message !== dataErrorMessage(null) ? message : undefined}
+          fill={false}
+          title={subject ? unavailableText(subject) : mapped}
+          message={message}
           onRetry={onRetry}
         />
       </Box>
@@ -308,7 +328,7 @@ export function PaneStatusBody({
     // fetching. It must be a real attribute, never a word match on body text.
     return (
       <Box paddingX={1} paddingY={1} data-gloom-status="loading">
-        <EmptyState title={loadingText(subject)} />
+        <EmptyState fill={false} title={loadingText(subject)} />
       </Box>
     );
   }
@@ -316,6 +336,7 @@ export function PaneStatusBody({
     return (
       <Box paddingX={1} paddingY={1} data-gloom-status="empty">
         <EmptyState
+          fill={false}
           title={emptyTitle ?? t("Nothing to show yet.")}
           message={emptyMessage}
         />

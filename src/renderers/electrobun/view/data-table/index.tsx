@@ -312,7 +312,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     minWidth: 0,
     minHeight: 0,
     overflowX: horizontalScrollEnabled ? "auto" : "hidden",
-    overflowY: "scroll",
+    overflowY: "auto",
     backgroundColor: CSS_BG,
     // Trim the viewport to whole rows so the bottom row is never a sliver.
     // Browsers without CSS round() drop this and keep the previous behavior.

@@ -71,7 +71,7 @@ export async function loadSeasonalityHistory(
     return {
       history,
       stale: !!entry.error || (entry.staleAt != null && entry.staleAt <= now),
-      error: entry.error?.message ?? (history.length ? null : "Monthly price history unavailable"),
+      error: entry.error?.message ?? (history.length ? null : "No monthly price history available"),
       fetchedAt: entry.fetchedAt ?? now,
     };
   } catch (error) {

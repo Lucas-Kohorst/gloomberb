@@ -12,7 +12,6 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import {
   CSS_BG,
   CSS_PANEL,
-  CSS_SELECTED,
   CSS_SELECTED_TEXT,
   CSS_TEXT,
   CSS_TEXT_BRIGHT,
@@ -452,9 +451,7 @@ function WebDataTableRowInner<
   const rowState = { selected };
   const rowBackgroundColor = getRowBackgroundColor?.(item, index, rowState);
   const arriving = !selected && (isRowArriving?.(item, index) ?? false);
-  const rowBg = selected
-    ? CSS_SELECTED
-    : rowBackgroundColor ?? CSS_BG;
+  const rowBg = rowBackgroundColor ?? CSS_BG;
   const handleRowPointer = (
     event: MouseEvent<HTMLElement>,
     fromCell = false,
