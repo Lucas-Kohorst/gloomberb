@@ -48,6 +48,21 @@ test("a field that owns the keyboard keeps typed characters but not modified cho
   expect(resolvePaneFooterKey(footer, key("s", { ctrl: true }), true)).not.toBeNull();
 });
 
+test("a refresh hint is absent from the binding, and a visible hint still runs", () => {
+  pressed.length = 0;
+  const withRefresh: CombinedPaneFooter = {
+    ...footer,
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: () => pressed.push("refresh") },
+      { id: "retry", key: "r", label: "etry", onPress: () => pressed.push("retry") },
+      ...footer.hints,
+    ],
+  };
+  resolvePaneFooterKey(withRefresh, key("r"), false)?.();
+  expect(pressed).toEqual(["retry"]);
+  expect(resolvePaneFooterKey(withRefresh, key("a"), false)).not.toBeNull();
+});
+
 test("the pane menu reads a hint as the action it names", () => {
   expect(paneHintTitle({ key: "a", label: "dd" })).toBe("Add");
   expect(paneHintTitle({ key: "r", label: "retry" })).toBe("Retry");

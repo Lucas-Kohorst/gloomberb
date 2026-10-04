@@ -51,6 +51,23 @@ export function unavailableText(thing: string): string {
   return tf("{thing} unavailable.", { thing });
 }
 
+const NO_DATA_PATTERN =
+  /no .{0,48}(data|history|chain|scores|filings|transcripts|news|options|holders|ratings|events|tweets|prices|peers)( found)?(\s+for\b|$)/i;
+
+/** True when the failure is an empty result, not a transport or provider crash. */
+function isNoDataError(error: string): boolean {
+  if (/\b(NO_DATA|NOT_FOUND)\b/.test(error)) return true;
+  if (/^no .+ available\.?$/i.test(error)) return true;
+  return NO_DATA_PATTERN.test(error);
+}
+
+/** Footer chip for a real failure. Empty and no-data copy stay in the pane body. */
+export function footerErrorChip(error: string | null | undefined): { text: string; tone: "warning" } | null {
+  const message = error?.trim();
+  if (!message || isNoDataError(message)) return null;
+  return { text: "unavailable", tone: "warning" };
+}
+
 export interface PaneStatusBodyProps {
   loading?: boolean;
   error?: string | null;

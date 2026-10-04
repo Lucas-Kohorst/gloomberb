@@ -1,13 +1,21 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import { useRef } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
-import { getShortcutHintWidth, ShortcutHint } from "../../../ui/shortcut-hint";
+import { t } from "../../../../i18n";
+import { ShortcutHint } from "../../../ui/shortcut-hint";
+import { Button } from "../../../ui/button";
+import { ChoiceDialog } from "../../../ui/choice-dialog";
 import { IconButton } from "../../../ui/icon";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
+import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
 import { nativePaneFooterRows } from "../sizing";
 import {
   EMPTY_FOOTER,
+  clipPaneFooterInfo,
   hasPaneFooterContent,
+  isPerPaneRefreshHint,
+  layoutPaneFooterHintRow,
+  totalHintsWidth,
   type CombinedPaneFooter,
   type PaneFooterPart,
   type PaneFooterSegment,
@@ -142,14 +150,6 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
   );
 }
 
-function hintTextLength(hint: PaneHint, index: number): number {
-  return getShortcutHintWidth(hint.key, hint.label, index > 0 ? " " : "");
-}
-
-function totalHintsWidth(hints: PaneHint[]): number {
-  return hints.reduce((total, hint, index) => total + hintTextLength(hint, index), 0);
-}
-
 function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
   useRemoteUiNode({
     role: "pane-hint",
@@ -176,6 +176,30 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
   );
 }
 
+function FooterOverflowMenu({ hints, width, label }: { hints: PaneHint[]; width: number; label: string }) {
+  const dialog = useOptionalDialog();
+  const open = () => {
+    if (!dialog || hints.length === 0) return;
+    void dialog.prompt<string>({
+      closeOnClickOutside: true,
+      content: (context: PromptContext<string>) => (
+        <ChoiceDialog
+          {...context}
+          title={t("Pane actions")}
+          choices={hints.map((hint, index) => ({
+            id: String(index),
+            label: `[${hint.key}]${hint.label}`,
+            disabled: !hint.onPress,
+          }))}
+        />
+      ),
+    }).then((selected) => {
+      if (selected) hints[Number(selected)]?.onPress?.();
+    }, () => {});
+  };
+  return <Button label={label} width={width} variant="plain" stopPropagation onPress={open} />;
+}
+
 function FooterContent({
   footer,
   focused,
@@ -190,17 +214,22 @@ function FooterContent({
   nativePaneChrome?: boolean;
 }) {
   const hasInfo = footer.info.length > 0;
-  const visibleHints = focused ? footer.hints.filter((hint) => !hint.disabled) : [];
-  const hasHints = visibleHints.length > 0;
+  const actionableHints = focused
+    ? footer.hints.filter((hint) => !hint.disabled && !isPerPaneRefreshHint(hint))
+    : [];
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
   const availableWidth = width && width > 0 ? Math.floor(width) : null;
   const iconReserve = footer.info.reduce((total, segment) => total + iconSegmentReserve(segment, focused, nativePaneChrome), 0);
-  const hintsWidth = hasHints
-    ? Math.min(availableWidth === null ? totalHintsWidth(visibleHints) : Math.max(0, availableWidth - iconReserve), totalHintsWidth(visibleHints))
-    : 0;
+  const row = availableWidth !== null
+    ? layoutPaneFooterHintRow({ ...footer, hints: actionableHints }, availableWidth, iconReserve)
+    : null;
+  const shownHints = row?.hints ?? actionableHints;
+  const overflowHints = row?.overflow ?? [];
+  const hasHints = shownHints.length > 0 || overflowHints.length > 0;
+  const hintsWidth = hasHints ? (row?.hintsWidth ?? totalHintsWidth(shownHints)) : 0;
   const infoWidth = availableWidth !== null && hasInfo
-    ? Math.max(0, availableWidth - hintsWidth)
+    ? (row?.infoWidth ?? Math.max(0, availableWidth - hintsWidth))
     : undefined;
 
   if (!hasInfo && !hasHints) {
@@ -240,11 +269,16 @@ function FooterContent({
             overflow="hidden"
             {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
           >
-            {visibleHints.map((hint, index) => (
+            {shownHints.map((hint, index) => (
               <Box key={hint.id} flexDirection="row">
                 <HintView hint={hint} prefixSpace={index > 0} />
               </Box>
             ))}
+            {overflowHints.length > 0 && row && (
+              <Box marginLeft={shownHints.length > 0 ? 1 : 0} flexShrink={0}>
+                <FooterOverflowMenu hints={overflowHints} width={row.moreWidth} label={row.moreLabel} />
+              </Box>
+            )}
           </Box>
         </>
       )}
@@ -266,7 +300,7 @@ export function PaneFooterBar({
   showBorder?: boolean;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
-  const resolvedFooter = footer ?? EMPTY_FOOTER;
+  const resolvedFooter = clipPaneFooterInfo(footer ?? EMPTY_FOOTER);
   const empty = !hasPaneFooterContent(resolvedFooter);
   const borderColor = focused ? colors.borderFocused : colors.border;
   const topBorderColor = colors.border;

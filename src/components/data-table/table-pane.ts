@@ -1,13 +1,15 @@
 import { useEffect } from "react";
 import type { DataTableKeyEvent } from "./view";
 import type { PaneFooterSegment } from "../layout/pane/footer";
+import { footerErrorChip } from "../ui/status";
 import { useShortcut } from "../../react/input";
 import { isPlainKey } from "../../utils/keyboard";
 
 export function loadingErrorFooterInfo(loading: boolean, error: string | null | undefined): PaneFooterSegment[] {
+  const errorChip = footerErrorChip(error);
   return [
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+    ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
   ];
 }
 
