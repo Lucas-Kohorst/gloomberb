@@ -61,11 +61,16 @@ function isNoDataError(error: string): boolean {
   return NO_DATA_PATTERN.test(error);
 }
 
-/** Footer chip for a real failure. Empty and no-data copy stay in the pane body. */
-export function footerErrorChip(error: string | null | undefined): { text: string; tone: "warning" } | null {
+/** A real failure's own sentence. Empty and no-data copy stay in the pane body. */
+export function footerFailureMessage(error: string | null | undefined): string | null {
   const message = error?.trim();
   if (!message || isNoDataError(message)) return null;
-  return { text: "unavailable", tone: "warning" };
+  return message;
+}
+
+/** Short chip for callers that want one word instead of the failure sentence. */
+export function footerErrorChip(error: string | null | undefined): { text: string; tone: "warning" } | null {
+  return footerFailureMessage(error) ? { text: "unavailable", tone: "warning" } : null;
 }
 
 export interface PaneStatusBodyProps {

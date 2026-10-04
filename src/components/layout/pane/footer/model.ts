@@ -68,8 +68,6 @@ export interface CombinedPaneFooter {
 
 export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [], menu: [], keys: [] };
 
-/** Status chips in the footer row. Longer copy is clipped, not wrapped. */
-export const PANE_FOOTER_INFO_MAX_CHARS = 24;
 const INFO_FLOOR_CHARS = 10;
 const HINT_GAP = 1;
 
@@ -77,24 +75,6 @@ const HINT_GAP = 1;
 export function isPerPaneRefreshHint(hint: Pick<PaneHint, "id" | "key" | "label">): boolean {
   return hint.key.toLowerCase() === "r"
     && (hint.id.toLowerCase().includes("refresh") || /efresh/i.test(hint.label));
-}
-
-function clipFooterParts(parts: PaneFooterPart[]): PaneFooterPart[] {
-  return parts.map((part) => (
-    part.text.length <= PANE_FOOTER_INFO_MAX_CHARS
-      ? part
-      : { ...part, text: part.text.slice(0, PANE_FOOTER_INFO_MAX_CHARS) }
-  ));
-}
-
-export function clipPaneFooterInfo(footer: CombinedPaneFooter): CombinedPaneFooter {
-  return {
-    ...footer,
-    info: footer.info.map((segment) => ({
-      ...segment,
-      parts: clipFooterParts(segment.parts),
-    })),
-  };
 }
 
 function paneHintWidth(hint: Pick<PaneHint, "key" | "label">, prefix = ""): number {
@@ -211,7 +191,7 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   }
 
   if (info.length === 0 && hints.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
-  return clipPaneFooterInfo({ info, hints, menu, keys });
+  return { info, hints, menu, keys };
 }
 
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {
