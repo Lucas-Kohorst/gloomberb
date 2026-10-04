@@ -18,7 +18,7 @@ const secPaneInstanceId = (symbol: string, ticker: TickerRecord): string => {
     : base;
 };
 
-export const filingDocumentUrl = (filing: SecFilingItem): string => (
+const filingDocumentUrl = (filing: SecFilingItem): string => (
   filing.primaryDocumentUrl || filing.filingUrl
 );
 
