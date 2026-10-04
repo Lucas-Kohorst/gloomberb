@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://gloom.sh/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
+<img src="src/assets/gloomberb-logo.svg" alt="Gloomberb logo" width="76" />
 
 # Gloomberb
 
@@ -12,6 +12,8 @@ Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 &nbsp;&middot;&nbsp;
 <a href="#install"><strong>Install the TUI</strong></a>
 &nbsp;&middot;&nbsp;
+<a href="https://term.gloom.sh"><strong>Open in browser</strong></a>
+&nbsp;&middot;&nbsp;
 <a href="README.zh-CN.md">简体中文</a>
 
 <br />
@@ -19,388 +21,142 @@ Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 
 <img src="https://gloom.sh/landing-terminal.png" alt="Gloomberb terminal showing portfolio, watchlists, market data, and chart panels." width="720" />
 
+<sub>Backed by <a href="https://adjacent.markets/?ref=gloomberb"><img src="docs/assets/adjacent.svg" alt="" width="12" height="12" /> Adjacent</a></sub>
+
 </div>
 
-## Desktop App or TUI?
+- **Research companies:** quotes, charts, financials, filings, options, and analyst ratings.
+- **Follow markets:** news, global indices, FX, economic events, and market scanners.
+- **Manage your workspace:** portfolios, watchlists, broker connections, alerts, notes, and AI tools.
 
-Gloomberb has two ways in:
-
-| Surface | Best for | How it runs |
-|---------|----------|-------------|
-| Desktop app | A polished app window, pop-out panes, OS shortcuts, and built-in updates | Published for macOS and Windows. It also installs a `gloomberb` terminal command for the TUI. |
-| Terminal UI | Fast keyboard workflows inside your terminal, SSH/dev boxes, Linux machines, and script-friendly setups | Runs with `gloomberb` on macOS, Linux, and Windows. |
-| Browser app | The shared DOM interface without an install | Open [term.gloom.sh](https://term.gloom.sh). |
-
-The desktop app and TUI share the full command language and plugin system. The browser app uses the same official DOM renderer and layout with a reviewed browser plugin catalog.
-
-## Browser App
-
-[term.gloom.sh](https://term.gloom.sh) requires a free Gloom Cloud account. The workspace loads behind a sign-in panel that cannot be dismissed, and a session opens it; configuration, tickers, layouts, session state, and plugin state are stored in the browser. Free accounts receive rate-limited, 15-minute-delayed Gloom Cloud market data and read-only chat until the email is verified; Pro accounts receive realtime market data. Public share pages stay open to everyone with no account. Cloud REST and WebSocket traffic uses the same-origin `/api` path, which the Worker forwards only to `https://api.gloom.sh`; it is not an arbitrary network proxy.
-
-The browser build intentionally omits brokers and native integrations, filesystem notes, local AI, external plugins, updater/debug tools, application menus, native window controls, pop-out native windows, and native context menus. Modules that still depend on desktop-only or CORS-blocked feeds are also absent for now: RSS/Substack, prediction markets and polls, market halts/heatmap/movers, dividend/ownership/SEC panes, earnings/IPO, and TV. Public shares open under `/s/:id` in a separate slim bundle. Share creation and owner deletion use the signed-in Gloom Cloud session through the same fixed API path; public reads require no account.
-
-Local browser development:
-
-```bash
-bun run web:build
-bunx wrangler dev
-```
-
-Validate the public artifacts with `bun run web:audit` and `bun run cloudflare:dry-run`. `wrangler.jsonc` remains generic for local checks. After verification passes on `main`, GitHub Actions deploys `term.gloom.sh` with `wrangler.production.jsonc`. The private Gloom Cloud API is deployed separately.
-
-## Local web client
-
-Run the full web-rendered workspace in your browser against the local Gloomberb data directory:
-
-```bash
-bun run web:start
-```
-
-The server listens on `127.0.0.1` using an ephemeral port and prints the URL. It is intended for local development, not remote access.
-Pop-out panes open as browser popup windows. Browser deep links can be opened with `?gloomberb=gloomberb:...` or a `#gloomberb:...` fragment.
-
-## Cloudflare hosting (in progress)
-
-The `feature/cloudflare-deployment` branch hosts the web client on Cloudflare Workers as a thin proxy in front of Gloom Cloud — no separate accounts or database. You sign in with your existing Gloom Cloud account and your synced portfolios, watchlists, and settings follow you to any browser:
-
-```bash
-bun run cloud:dev    # build the web client and serve it locally via Wrangler
-bun run cloud:deploy # build and deploy the Worker + assets
-```
-
-The Worker serves the app assets and proxies `/cloud/*` API calls to `api.gloom.sh`, keeping the Gloom Cloud session in a first-party HttpOnly cookie. Fresh browsers open directly on the app's existing Gloom Cloud login step; authenticated browsers load the workspace immediately. Market data and news providers run renderer-side against the proxy. Backend RPC covers app bootstrapping (`init`, `http.fetch`); realtime events (`/_gloomberb/events`) are not wired up yet.
+The desktop app and TUI share the command language and plugin system. The [browser app](https://term.gloom.sh) offers a smaller feature set and requires a free Gloom Cloud account: free market data is rate-limited and delayed by 15 minutes; Pro provides realtime data. See [browser features and limits](docs/browser.md).
 
 ## Install
 
-### macOS
+### Desktop
 
-Install the desktop app and the `gloomberb` terminal command:
+On **macOS (Apple Silicon)**:
 
 ```bash
-brew install --cask vincelwt/tap/gloomberb
-# or
-curl -fsSL gloom.sh/install | bash
+brew install --cask gloomberb
 ```
 
-Both install `Gloomberb.app` and a `gloomberb` command that runs the TUI through the app bundle, so the bundled runtime is stored once.
+On **Windows 11**, [download the installer](https://github.com/gloom-sh/gloomberb/releases/latest/download/stable-win-x64-GloomberbSetup.exe). It supports x64, and ARM64 through x64 emulation.
 
-Prefer a direct download?
+Both desktop installers include the `gloomberb` terminal command.
 
-- [Download Gloomberb for Mac](https://gloom.sh/download/desktop)
+### Terminal
 
-### Linux
-
-Install the standalone TUI binary:
+On **macOS or Linux**:
 
 ```bash
 curl -fsSL gloom.sh/install | bash
 ```
 
-This installs `gloomberb` to `~/.local/bin` by default. A Linux desktop package is not published yet.
+On Apple Silicon Macs, this installs the desktop app and TUI. On Intel Macs and Linux, it installs the standalone TUI.
 
-### Windows
-
-Install the desktop app:
-
-- [Download GloomberbSetup.exe for Windows](https://github.com/gloom-sh/gloomberb/releases/latest/download/stable-win-x64-GloomberbSetup.exe)
-
-The installer supports Windows 11 on x64 and ARM64. On ARM64, the desktop app and its bundled `gloomberb` terminal command use Windows' built-in x64 emulation.
-
-For a terminal-only setup on x64, install Bun and use the package:
-
-```powershell
-bun install -g gloomberb
-```
-
-### Terminal Package
-
-Already have Bun installed on any supported OS?
+Or install with [Bun](https://bun.sh) on macOS, Linux, or Windows x64:
 
 ```bash
 bun install -g gloomberb
 ```
 
-Then run:
-
-```bash
-gloomberb
-```
-
-On macOS and Windows, desktop updates replace the installed app in place and keep the terminal command pointing at the updated runtime. Homebrew users can also update through `brew upgrade --cask gloomberb`.
-
-For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
-
-Live TV in the terminal also requires `mpv` with Kitty video output. Gloomberb resolves the stream in JavaScript and runs `mpv` with its `yt-dlp` integration disabled, so `yt-dlp` is not required.
+Run `gloomberb` to launch. For graphics, use a Kitty-compatible terminal such as Ghostty, Kitty, or WezTerm. See the [installation guide](docs/installation.md) for direct downloads, install locations, and updates.
 
 ## Start
 
-Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open ticker search directly.
+Press `Ctrl+P` to open the command bar, or press `` ` `` to search for a ticker. Desktop also supports `Cmd/Ctrl+K`.
 
 | Try | Opens |
 |-----|-------|
-| `DES AAPL` | Security details |
+| `DES AAPL` | Company details |
 | `GP NVDA` | Price chart |
-| `G AAPL:price, MSFT:revenue` | Mixed-series chart |
-| `TOP` | Ranked market stories |
-| `HM` | Market heatmap |
-| `MOST` | Market movers |
-| `HILO` | New highs and new lows |
+| `OVDV AAPL` | Implied-volatility surface and options term structure |
+| `OPX SPY` / `GEX SPY` | Open interest by strike and expiry, max pain and dealer gamma ([method](docs/options-positioning.md)) |
+| `HVG AAPL` / `HVT AAPL` | Realized volatility and volatility cones |
+| `SEAS AAPL` | Seasonality: monthly returns by year and year overlays |
+| `COT [code or root]` | CFTC positioning and cross-market extremes |
+| `DOE` / `NGS` | EIA weekly oil stocks and gas storage, with builds, draws and five-year ranges |
+| `TOP` | Market stories |
+| `WIRP` / `FFIP` | US rate path and conditional FOMC probabilities |
+| `BTMM` | Funding rates, bill curves and Federal Reserve liquidity |
+| `CTM [root]` | Futures contract curve, historical ghosts, roll yield and open interest, including `CTM VX` |
 | `PF` | Portfolios and watchlists |
-| `KELLY AAPL` | Position sizing |
-| `HELP` | Full in-app shortcut list |
-| `KEYS` | Manage BYOK API keys |
-| `BIND` / `KB` | Browse and rebind global and plugin shortcuts |
+| `HELP` | Commands and keyboard shortcuts |
 
-## What It Does
-
-- Research companies with quotes, charts, financials, filings, holders, insiders, options, analyst ratings, events, and relative valuation.
-- Follow markets with top stories, breaking news, sector feeds, Substack subscriptions, global indices, futures, FX, macro events, yield curves, Treasury auctions, market movers, new-high/new-low and options-flow scanners, and fear/greed.
-- Track portfolios and watchlists, connect brokers, set alerts, keep notes, run AI screens, browse prediction markets, and use Gloom Cloud chat.
-
-### Broker position sync
-
-Use **New Portfolio** or **Add Broker Account** to connect a broker. Gloomberb can import positions from Interactive Brokers, Public, Robinhood, and SimpleFIN.
-
-- Robinhood opens a browser sign-in page. Gloomberb uses only the read-only account and equity-position tools from the Robinhood Trading MCP server.
-- Public needs an API secret from Public API settings. Gloomberb creates a short-lived access token and uses only the account and portfolio endpoints.
-- SimpleFIN needs a one-time setup token from SimpleFIN Bridge. Gloomberb exchanges the token and imports only accounts that contain holdings.
-
-Gloomberb saves the connection data on the local device. It does not include this data in Gloom Cloud synchronization. A later position sync updates the managed portfolios and removes positions that the broker no longer reports.
+Use `Tab` to switch panes and `j` / `k` to navigate lists. The [user guide](docs/usage.md) covers charts, broker setup, keyboard shortcuts, and the full command reference. See [research data conventions](docs/research-data.md) for return definitions, financial sources, and model assumptions. [Supply chain disclosures](docs/supply-chain.md) explains SPLC evidence, reverse relationships and flow diagrams.
 
 ## CLI
 
-Running `gloomberb` with no arguments launches the terminal UI. Normal commands run through a headless CLI path; use `gloomberb launch-ui` when a script should explicitly open the UI.
+Run commands directly from your shell:
 
-Human-readable output is the default. Automation can opt into structured output with `--json`, `--csv`, or `--ndjson`. JSON output favors the richest fetched model available and includes display-column metadata when a command has table columns; CSV and NDJSON use the command's tabular row view. Common global flags include `--limit`, `--refresh`, `--quiet`, `--no-color`, `--dry-run`, and `--yes`.
-
-| Command | Use |
-|---------|-----|
-| `gloomberb` | Launch the terminal UI |
-| `gloomberb launch-ui` | Explicitly launch the terminal UI |
-| `gloomberb help` | Show all CLI commands |
-| `gloomberb api list|get|invoke|subscribe` | Inspect and call plugin capabilities directly |
-| `gloomberb quote <symbols>` | Fetch current quotes |
-| `gloomberb search <query>` / `provider-search <query>` | Search tickers and provider symbols |
-| `gloomberb ticker <symbol>` | Show quote, ownership, and financials |
-| `gloomberb history|financials|fundamentals|options <symbol>` | Fetch research data |
-| `gloomberb news|filings|holders|insider|13f|analyst|events|valuation <symbol>` | Fetch company research feeds |
-| `gloomberb movers|indices|sectors|fx|fear-greed|earnings` | Fetch market overview data |
-| `gloomberb econ|fred|yield-curve` | Fetch macro data |
-| `gloomberb compare|correlation|relationship <symbols>` | Compare securities |
-| `gloomberb portfolio [action]` | Manage manual portfolios |
-| `gloomberb watchlist [action]` | Manage watchlists |
-| `gloomberb notes|alerts [action]` | Manage local notes and alerts |
-| `NOTF` | Open notification center history |
-| `gloomberb broker|ibkr [action]` | Inspect broker profiles |
-| `gloomberb rss fetch <url>` | Fetch an RSS feed |
-| `gloomberb provider status` | Inspect enabled data providers |
-| `gloomberb config|cache|plugin|layout|pane|debug|doctor|version|changelog` | Inspect and manage local app state |
-| `gloomberb fn [...]` | Run a pane-backed report command |
-| `gloomberb shot [...]` | Capture a pane-backed screenshot |
-| `gloomberb predictions [...]` | Launch Prediction Markets |
-| `gloomberb plugins` | List installed plugins |
-| `gloomberb plugin-search <query>` | Search for plugins on GitHub |
-| `gloomberb install <user/repo>` | Install a plugin from GitHub |
-| `gloomberb remove <name>` | Remove an installed plugin |
-| `gloomberb update [name]` | Update plugins |
-
-## Plugins
-
-Everything from the portfolio list to broker integrations is a plugin. Plugins can add panes, tabs, columns, command bar commands, CLI commands, status bar widgets, and data providers.
-
-Core plugin areas include:
-
-- Portfolios, watchlists, manual entry, and broker connections
-- Ticker details, quotes, charts, options, filings, holders, insiders, and research
-- News, Substack reader feeds, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
-- Prediction markets, alerts, notes, chat, AI screeners, and external plugins
-
-See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface available through `gloomberb/components`.
-
-## Keyboard
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+P` | Open command mode |
-| `` ` `` | Open ticker search |
-| `?` | Show focused-pane actions and global keys; choose All shortcuts for full help |
-| `Ctrl+,` | Open focused pane settings |
-| `Ctrl+W` | Close focused pane |
-| `Ctrl+Shift+T` | Reopen most recently closed pane |
-| `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
-| `Ctrl+Shift+D` | Dock or float focused pane |
-| `Ctrl+Shift+E` | Export focused pane table as CSV |
-| `Ctrl+Shift+L` | Layout actions |
-| `Ctrl+Shift+G` | Tidy windows |
-| `Tab` | Switch panes |
-| `j` / `k` | Navigate lists |
-| `h` / `l` | Switch tabs |
-| `m` | Cycle chart mode |
-| `q` | Quit |
-
-Desktop builds also accept `Cmd/Ctrl+K` for the command bar, the matching `Cmd` shortcuts on macOS, `Cmd/Ctrl+Shift+O` to pop out a pane, and `Cmd/Ctrl+Shift+C` to copy a focused pane screenshot.
-
-## Command Reference
-
-In terminal tables, double-click a column resize handle to restore its width. `Alt+0` restores the sorted column (or the first column when unsorted) in the focused pane.
-
-Use `HELP` inside Gloomberb for the live shortcut list; its Essentials tab lists the core commands and opens each one in the command bar. The common command-bar prefixes are listed here for quick scanning.
-
-### Company Research
-
-| Shortcut | Function |
-|----------|----------|
-| `DES <ticker>` / `T <ticker>` | Security details for a ticker |
-| `TR <ticker>` | Open another Ticker Research pane pinned to a ticker |
-| `FA <ticker>` | Financial statement view |
-| `G <series>` | Custom chart composer |
-| `CAT [query]` | Browse and search chartable series |
-| `GP <ticker>` | Price chart |
-| `GIP <ticker>` | Intraday price chart |
-| `HP <ticker>` | Historical OHLCV prices |
-| `GF <tickers>` | Fundamental statement graph |
-| `GE <tickers>` | Valuation multiple graph |
-| `GR <tickers>` | Security relationship graph |
-| `EE <ticker>` | Events view with earnings and revenue estimates |
-| `EM [tickers]` | Earnings monitor |
-| `SRCH [query]` | Full-text search across earnings call transcripts, news, and SEC filings |
-| `QQ <tickers>` | Ticker quote monitor |
-| `CMP <tickers>` | Normalized price comparison |
-| `CORR <tickers>` | Ticker return correlations |
-| `ANR <ticker>` | Analyst targets and ratings |
-| `DIAG <ticker>` | Equity Diagnostic with cited flags and anomalies |
-| `SEC <ticker>` | SEC filings and company disclosures |
-| `10K <ticker>` / `10Q <ticker>` | 10-K and 10-Q periodic reports |
-| `OMON <ticker>` | Options monitor |
-| `OVME` | Black-Scholes option calculator with Greeks and implied volatility |
-| `HDS <ticker>` | Institutional holders |
-| `DVD <ticker>` | Dividend yield and history |
-| `SI <ticker>` | Short interest |
-| `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
-| `INS <ticker>` | Insider activity |
-| `EVT <ticker>` | Corporate actions, earnings, and estimates |
-| `RV <tickers>` | Relative valuation |
-
-### Chart Composer
-
-`G`, `GP`, `GIP`, `CMP`, `GF`, and `GE` all open the same chart composer with different starting presets. `CAT` opens a searchable catalog of those chartable series so you can graph one without typing the expression. A custom expression can mix unrelated data sources on one synchronized timeline:
-
-```text
-G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
+```bash
+gloomberb quote AAPL
+gloomberb quote AAPL --json
+gloomberb help
 ```
 
-Open **Series** to add, remove, reorder, or hide series and choose each series' field, chart style, transform, axis, panel, period, and panel scale. Price data supports candles, OHLC, HLC, line, and area; scalar data supports its compatible line, area, step, column, and point modes. Panels can use independent left/right axes and linear or logarithmic scales.
+Output is human-readable by default; use `--json`, `--csv`, or `--ndjson` for scripts. See the [CLI reference](docs/usage.md#cli) for commands and flags.
 
-The toolbar controls preset or exact date ranges, intervals from one minute through monthly, the primary chart mode, technical indicators, and pair formulas. Indicators include volume, SMA, EMA, Bollinger Bands, VWAP, RSI, and MACD; formulas include ratio, spread, and rolling correlation. Mixed-frequency values use as-of alignment: fundamentals use filing dates when available, sparse series carry forward only after becoming available, and missing publication dates are called out in the chart status.
+## Plugins and contributing
 
-### Markets, News, and Macro
+Plugins add panes, data providers, broker connections, and commands. Install one from GitHub:
 
-| Shortcut | Function |
-|----------|----------|
-| `TOP` | Ranked market stories |
-| `HM` | Market heatmap for large US stocks and ETFs |
-| `MOST` | Top gainers, losers, most active, and trending tickers |
-| `HILO` | Session new highs and new lows with 30s/1m/5m momentum |
-| `FLOW` | Unusual options activity: sweeps, blocks, and large premium |
-| `PM <query>` | Polymarket and Kalshi prediction data |
-| `N` | News feed |
-| `CN <ticker>` | Ticker news |
-| `NI` | Sector news |
-| `SUB` | Authenticated Substack reader feed |
-| `FH` | News firehose — all article sources in one stream |
-| `FIRST` | Breaking news |
-| `SVD` | Saved news — stories bookmarked with `b` in any news pane |
-| `TWIT <query>` | Ticker-related market posts |
-| `TBO` | TheBuildout infrastructure intelligence |
-| `CG` | Congress trading disclosures |
-| `WEI` | Global equity indices |
-| `MAP` | Live world venue map with local market status and clocks |
-| `FUT` | Front-month futures across index, rates, energy, metals, grains, and FX |
-| `ECO` | Economic events and releases |
-| `ECST [statistic]` | Economic statistics: inflation, labour, growth, consumer, housing, rates |
-| `WB` | Country and regional GDP, CPI, unemployment, and population |
-| `GC` | Yield curve |
-| `AUCT` | Treasury auction results: high rate, bid-to-cover, indirect share, and size |
-| `VIX` | VIX 30-day/3-month implied-volatility curve |
-| `CRD` | Credit spreads |
-| `VAL [indicator]` | Whole-market valuation: Buffett, CAPE, excess CAPE yield, Tobin Q, investor equity allocation, dividend yield, margin debt, cap/profits, cap/M2 |
-| `CDS [ticker]` | Single-name corporate CDS activity: most-active issuers, or one issuer's trades |
-| `ERN` | Earnings calendar |
-| `IPO` | Upcoming and recent IPOs |
-| `HALT` | US trading halts with reason and resumption times |
-| `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
-| `AIS` | Delayed OpenSky aircraft and public AIS ship positions |
-| `SAT` | NASA FIRMS fire hotspots and GIBS / HLS satellite imagery |
-| `BI` / `SP` | S&P 500 sector performance |
-| `FXC` | Major FX cross rates |
-| `FNG` | Fear and greed market gauge |
+```bash
+gloomberb install gloom-sh/gloom-tv
+```
 
-### Workspace and App Controls
+See the [plugin development guide](PLUGINS.md), [TV setup](docs/usage.md#live-tv), or [contributing guide](CONTRIBUTING.md) to get started.
 
-| Shortcut | Function |
-|----------|----------|
-| `PF` | Portfolio and watchlist workspace |
-| `PORT` | Portfolio risk and sector exposure |
-| `ALRT` | Price alerts |
-| `SA <symbol condition price>` | Create a price alert |
-| `AI <prompt>` | AI screener |
-| `AGENT` | Local AI research workspace |
-| `CHAT [channel]` | Gloom Cloud chat |
-| `TEAM [team \| new \| invite \| members \| channels \| settings]` | Teams: members, invites, channels, settings |
-| `DM @user [@user...]` | Open or start a direct or group chat |
-| `ACM` | Gloom Cloud account settings |
-| `NOTE` | Notes |
-| `IBKR` | IBKR trading pane |
-| `BR` | Broker connections |
-| `CHG` | Changelog |
-| `HELP` | Open essential commands, shortcut, and layout help |
-| `KEYS` | Manage BYOK API keys |
-| `BIND` / `KB` | Browse and rebind global and plugin keyboard shortcuts |
-| `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |
-| `IMP` | Paste ticker symbols or `symbol, shares, average cost` portfolio rows into the active collection |
-| `RW` / `RP <ticker>` | Remove a ticker from the active watchlist or portfolio |
-| `PS` | Open focused pane settings |
-| `LAY` | Open the layout browser to switch, publish, or add layouts |
-| `LMA <query>` | Layout and pane arrangement actions |
-| `WIN move\|resize` | Move or resize the focused window |
-| `GL` | Tidy all windows |
-| `SB` | Toggle the status bar |
-| `VF` | Toggle quote value flashing |
-| `TH <theme>` | Change color theme |
-| `FONT+` / `FONT-` | Increase or decrease desktop font size |
-| `CONN` | Connection health |
-| `POLL` | Prediction-market polls |
-| `UPGRADE` | Account upgrade |
-| `CR` | Cycle chart renderer |
-| `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
-| `PL <plugin>` | Toggle plugins from the command bar |
-| `PLUGINS` / `PLUG` | Plugin Marketplace: search installed and GitHub plugins, then install, toggle, update, or remove |
+Available in English, Spanish, Simplified Chinese, Traditional Chinese, Japanese, and Korean. Use `LANG` in the command bar to switch; see [language settings](docs/usage.md#localized-interface).
 
-Published layouts preserve portable pane setup and state, including searches, chart viewport, and drawings. Credentials, accounts, portfolios, and pane fields marked private stay local. Publishing copies a durable `term.gloom.sh/l/...` link for social sharing.
+[MIT licensed](LICENSE). Built with [OpenTUI](https://opentui.com/).
 
-## Gloom Cloud sign-in
+## Building from source
 
-Sign in with email and password, or pick `Log In with QR Code` from the command bar and scan the code with the Gloomberb mobile companion app to sign the terminal in without typing. The onboarding wizard offers the same QR option as the recommended path, with email and password as the alternative.
+Requires [Bun](https://bun.sh):
 
-## Localized interface
+```bash
+git clone https://github.com/Lucas-Kohorst/gloomberb.git
+cd gloomberb
+bun install
+bun dev          # TUI on a watch loop
+bun run build    # standalone TUI binary
+```
 
-Gloomberb includes English, Spanish, Simplified Chinese, Traditional Chinese, Japanese, and Korean UI support. English remains the default fallback language.
+TradingView charts load the `vendor/charting_library` git submodule (`git submodule update --init`); builds warn and skip it when the submodule is missing. Set `GLOOM_CHART_BACKEND=custom` to render every chart with the fully custom renderer instead — no TradingView library needed. The default (`auto`) keeps TradingView charts on desktop where the host can mount them. For browser, share-page, and desktop-view builds, set it when building; the TUI reads it from the environment at runtime.
 
-- **Automatic detection:** supported `LANG` / `LC_ALL` and desktop system locales select the matching interface automatically.
-- **Command switching:** enter `LANG` in the command bar (Ctrl+P) to cycle languages, or use `LANG auto`, `LANG en`, `LANG es`, `LANG zh-CN`, `LANG zh-TW`, `LANG ja`, or `LANG ko`. The choice is persisted in `config.json`.
-- **One-run override:** `GLOOMBERB_LANG=ja gloomberb` (or another supported locale) takes highest priority in environments that expose process locale variables.
+Web and Cloudflare builds:
 
-Implementation notes:
+```bash
+bun run web:start     # web-rendered workspace on 127.0.0.1
+bun run cloud:dev      # build the web client and serve it via Wrangler
+bun run cloud:deploy   # build and deploy the Worker + assets
+```
 
-- Locale dictionaries live in [src/i18n](src/i18n), keyed by the original English UI text. Missing entries safely fall back to English.
-- Shared render sinks call `t()` / `tf()` / `tc()` for pane titles, the command bar, menus, settings, tabs, help, and onboarding.
-- Finance abbreviations such as BID, ASK, and CHG% intentionally remain in English for terminal conventions and fixed-width alignment.
-- CJK wide characters and grapheme clusters are measured by [src/utils/format.ts](src/utils/format.ts) using terminal display-cell widths.
+## Crash reports and usage counts
 
-## License
+When the app hits an uncaught error, a render crash, or a plugin that fails to load, it sends a crash report to Gloom's API (`api.gloom.sh`), which forwards it to error tracking. A report contains the error type, message and stack trace, the app version, the operating system, and which surface it came from (terminal, desktop or web); when a plugin failed, its id. Your home directory is replaced with `~` before sending. Reports are tied to your account only when you are signed in.
 
-MIT
+The app also counts how often you open each function, from the command bar, a menu or a link in another pane, and which functions are on screen when a workspace is restored at launch. It sends each function's mnemonic (such as `DES` or `GP`) with those two counts, the surface, the app version and the operating system, a minute after the first count, then every 15 minutes, and when you quit. Functions from plugins other than the official gloom-sh ones are sent as `plugin`, so their names never leave your machine. The server adds your plan (signed out, Free or Pro); the counts are never tied to your account.
 
-## Credits
+Neither contains anything from your workspace: no tickers, arguments, portfolios, watchlists, layouts, settings or queries. Both carry a random install id stored in `install-id` in the data folder, `~/.gloomberb` by default (in the browser, in local storage).
 
-- [OpenTUI](https://opentui.com/) for the layout engine
+The usage setting also covers command bar searches. When you are signed in, a search you finish in the command bar (you pause typing or run something, never each keystroke) is stored with your account to improve search: its text, the AI suggestions it got and the result you picked. Searches are deleted with your account.
+
+To turn either off, run `Crash Reports` or `Usage Counts` from the command bar, or:
+
+```bash
+gloomberb config set telemetry.crashReports false
+gloomberb config set telemetry.usage false
+```
+
+Setting `GLOOMBERB_NO_TELEMETRY=1` or `DO_NOT_TRACK=1` in the environment turns all of it off. The browser app also honours Do Not Track and Global Privacy Control.
+
+## Sponsors
+
+<a href="https://adjacent.markets/?ref=gloomberb"><img src="docs/assets/adjacent.svg" alt="Adjacent" width="56" /></a>
+
+[Adjacent](https://adjacent.markets/?ref=gloomberb) builds prediction-market indices, reference rates, and data. Thank you for backing Gloomberb's open-source work.
+
+To sponsor Gloomberb, email [hello@gloom.sh](mailto:hello@gloom.sh).
