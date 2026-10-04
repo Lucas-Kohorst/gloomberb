@@ -61,8 +61,8 @@ function isNoDataError(error: string): boolean {
   return NO_DATA_PATTERN.test(error);
 }
 
-/** A real failure's own sentence. Empty and no-data copy stay in the pane body. */
-export function footerFailureMessage(error: string | null | undefined): string | null {
+/** A real failure's own sentence. Empty and no-data copy stay out of the short chip. */
+function footerFailureMessage(error: string | null | undefined): string | null {
   const message = error?.trim();
   if (!message || isNoDataError(message)) return null;
   return message;
