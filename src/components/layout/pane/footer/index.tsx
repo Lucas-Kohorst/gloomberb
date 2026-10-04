@@ -11,7 +11,6 @@ import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
 import { nativePaneFooterRows } from "../sizing";
 import {
   EMPTY_FOOTER,
-  clipPaneFooterInfo,
   hasPaneFooterContent,
   isPerPaneRefreshHint,
   layoutPaneFooterHintRow,
@@ -300,7 +299,7 @@ export function PaneFooterBar({
   showBorder?: boolean;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
-  const resolvedFooter = clipPaneFooterInfo(footer ?? EMPTY_FOOTER);
+  const resolvedFooter = footer ?? EMPTY_FOOTER;
   const empty = !hasPaneFooterContent(resolvedFooter);
   const borderColor = focused ? colors.borderFocused : colors.border;
   const topBorderColor = colors.border;

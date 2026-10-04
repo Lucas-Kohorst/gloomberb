@@ -2,10 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { footerErrorChip } from "../../../ui/status";
 import { loadingErrorFooterInfo } from "../../../data-table/table-pane";
 import {
-  clipPaneFooterInfo,
   combinePaneFooterRegistrations,
   layoutPaneFooterHintRow,
-  PANE_FOOTER_INFO_MAX_CHARS,
   type PaneHint,
 } from "./model";
 
@@ -37,10 +35,13 @@ test("no-data yields no chip and a real error yields unavailable", () => {
   ]);
   expect(loadingErrorFooterInfo(true, "UPSTREAM_ERROR")).toEqual([
     { id: "loading", parts: [{ text: "loading", tone: "muted" }] },
-    { id: "error", parts: [{ text: "unavailable", tone: "warning" }] },
+    { id: "error", parts: [{ text: "UPSTREAM_ERROR", tone: "warning" }] },
   ]);
   expect(loadingErrorFooterInfo(false, "The request timed out.")).toEqual([
-    { id: "error", parts: [{ text: "unavailable", tone: "warning" }] },
+    { id: "error", parts: [{ text: "The request timed out.", tone: "warning" }] },
+  ]);
+  expect(loadingErrorFooterInfo(false, "provider down")).toEqual([
+    { id: "error", parts: [{ text: "provider down", tone: "warning" }] },
   ]);
 });
 
@@ -58,23 +59,12 @@ test("a refresh hint is absent from the prepared footer", () => {
   expect(footer.hints.some((hint) => hint.label.includes("efresh"))).toBe(false);
 });
 
-test("clips prepared footer status at 24 characters", () => {
-  const clipped = clipPaneFooterInfo({
-    info: [{
-      id: "error",
-      parts: [{ text: '{"finance":{"result":null,"error":{"code":"Not Found"}}}', tone: "warning" }],
-    }],
-    hints: [],
-    menu: [],
-    keys: [],
-  });
-  expect(clipped.info[0]?.parts[0]?.text).toBe('{"finance":{"result":nul');
-  expect(clipped.info[0]?.parts[0]?.text.length).toBe(PANE_FOOTER_INFO_MAX_CHARS);
-
+test("keeps a full status sentence in the prepared footer", () => {
+  const sentence = "Save or cancel the edit first.";
   const prepared = combinePaneFooterRegistrations(new Map([
-    ["status", { info: [{ id: "error", parts: [{ text: "x".repeat(40), tone: "warning" as const }] }] }],
+    ["status", { info: [{ id: "error", parts: [{ text: sentence, tone: "warning" as const }] }] }],
   ]));
-  expect(prepared.info[0]?.parts[0]?.text.length).toBe(PANE_FOOTER_INFO_MAX_CHARS);
+  expect(prepared.info[0]?.parts[0]?.text).toBe(sentence);
 });
 
 describe("footer hint row", () => {
