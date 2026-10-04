@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { DataProvider } from "../../../types/data-provider";
+import type { NewsArticle } from "../../../news/types";
+import { openNewsStoryPane } from "../../../plugins/builtin/news/wire/news/pop-out";
+import { openSecFiling } from "../../../plugins/builtin/sec/filing-article";
+import type { DataProvider, SecFilingItem } from "../../../types/data-provider";
+import { useRendererHost } from "../../../ui";
+import { useCommandBarCorpus } from "../routes/root/article-results";
 import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutBounds } from "../../../layout/pane-manager";
@@ -369,6 +374,31 @@ export function CommandBar({
     () => new Map(searchProviders.map((provider) => [provider.category, provider.priority ?? 0])),
     [searchProviders],
   );
+  const rendererHost = useRendererHost();
+  const corpusEnabled = !currentRoute && rootShortcutIntent.kind === "none" && rootQuery.trim().length >= 3;
+  const corpus = useCommandBarCorpus(rootQuery, corpusEnabled);
+  const onOpenCorpusArticle = useCallback((article: NewsArticle) => {
+    openNewsStoryPane(article, (templateId, options) => {
+      pluginRegistry.createPaneFromTemplate(templateId, options);
+    });
+    closeAfterRun({ revertThemePreview: false });
+  }, [closeAfterRun, pluginRegistry]);
+  const onOpenCorpusFiling = useCallback((filing: SecFilingItem, ticker: string) => {
+    openSecFiling({
+      filing,
+      ticker,
+      createPaneFromTemplate: (templateId, options) => {
+        pluginRegistry.createPaneFromTemplate(templateId, options);
+      },
+      getTicker: (symbol) => pluginRegistry.getTicker(symbol),
+      getPaneRuntimeState: (paneId) => pluginRegistry.getPaneRuntimeState(paneId),
+      updatePaneRuntimeState: (paneId, patch) => {
+        pluginRegistry.updatePaneRuntimeState(paneId, patch);
+      },
+      openExternal: (url) => rendererHost.openExternal(url),
+    });
+    closeAfterRun({ revertThemePreview: false });
+  }, [closeAfterRun, pluginRegistry, rendererHost]);
 
   const {
     activeMatch,
@@ -410,6 +440,11 @@ export function CommandBar({
     providerResultItems,
     providerCategoryPriorities,
     providerSearching,
+    corpusArticles: corpus.articles,
+    corpusFilings: corpus.filings,
+    corpusFilingTicker: corpus.filingTicker,
+    onOpenCorpusArticle,
+    onOpenCorpusFiling,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,

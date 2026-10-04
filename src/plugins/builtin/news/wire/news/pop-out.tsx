@@ -4,7 +4,7 @@ import { mergeNewsArticle } from "../../../../../news/news-model";
 import { useLoadNewsStory } from "../../../../../news/hooks";
 import { PaneStatusBody } from "../../../../../components";
 import { usePaneInstance } from "../../../../../state/app/context";
-import type { PaneProps, PaneTemplateDef } from "../../../../../types/plugin";
+import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateDef } from "../../../../../types/plugin";
 import { usePluginAppActions } from "../../../../runtime";
 import { NewsDetailView } from "./detail-view";
 import { useNewsArticleFooter } from "./footer";
@@ -23,16 +23,23 @@ function shownStory(articleId: string): NewsArticle | null {
   return shownStories.get(articleId) ?? null;
 }
 
+export const openNewsStoryPane = (
+  article: NewsArticle,
+  createPaneFromTemplate: (templateId: string, options?: PaneTemplateCreateOptions) => void,
+): void => {
+  rememberNewsStory(article);
+  createPaneFromTemplate(NEWS_STORY_TEMPLATE_ID, {
+    arg: article.id,
+    values: { title: article.title },
+  });
+};
+
 export function usePopOutNewsArticle(onReturnedToList?: () => void) {
   const { createPaneFromTemplate } = usePluginAppActions();
 
   return useCallback((article: NewsArticle | null | undefined) => {
     if (!article) return;
-    rememberNewsStory(article);
-    createPaneFromTemplate(NEWS_STORY_TEMPLATE_ID, {
-      arg: article.id,
-      values: { title: article.title },
-    });
+    openNewsStoryPane(article, createPaneFromTemplate);
     onReturnedToList?.();
   }, [createPaneFromTemplate, onReturnedToList]);
 }

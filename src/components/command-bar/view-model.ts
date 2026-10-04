@@ -196,10 +196,12 @@ const EXACT_MATCH_SECTION_PRIORITY = -150;
 const ASSIST_SECTION_PRIORITY = -100;
 /**
  * The other async sections sit below the local matches in arrival order, so
- * each answer only ever pushes rows below itself: instruments at 100, then news
- * at 190 and the rest of the corpus at 200 (both contributed by their provider).
+ * each answer only ever pushes rows below itself: instruments at 100, then
+ * articles at 190 and filings at 200.
  */
 const INSTRUMENTS_SECTION_PRIORITY = 100;
+const ARTICLES_SECTION_PRIORITY = 190;
+const FILINGS_SECTION_PRIORITY = 200;
 
 function getCategoryPriority(category: string, options?: CommandBarSectionOptions): number {
   const contributed = options?.categoryPriorities?.get(category);
@@ -211,6 +213,8 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
   if (normalized === "exact match") return EXACT_MATCH_SECTION_PRIORITY;
   if (category === PLUGIN_INSTALL_CATEGORY) return PLUGIN_INSTALL_SECTION_PRIORITY;
   if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
+  if (normalized === "articles") return ARTICLES_SECTION_PRIORITY;
+  if (normalized === "filings") return FILINGS_SECTION_PRIORITY;
   if (sectionOrder === "app-first") {
     if (normalized === "saved") return 100;
     if (normalized === "primary listing") return 110;
