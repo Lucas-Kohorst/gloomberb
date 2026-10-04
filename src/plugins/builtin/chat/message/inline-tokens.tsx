@@ -19,6 +19,7 @@ export function ResponsiveTickerBadgeText({
   userByUsername,
   onUserHover,
   onUserHoverEnd,
+  onUserActivate,
 }: {
   text?: string;
   tokens?: readonly InlineContentToken[];
@@ -29,6 +30,7 @@ export function ResponsiveTickerBadgeText({
   userByUsername?: Map<string, ChatUserSummary>;
   onUserHover?: (user: ChatUserSummary) => void;
   onUserHoverEnd?: () => void;
+  onUserActivate?: (user: ChatUserSummary) => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const tokens = useMemo(() => providedTokens ?? tokenizeInlineContent(text), [providedTokens, text]);
@@ -53,6 +55,11 @@ export function ResponsiveTickerBadgeText({
   };
   const renderUsernameToken = (username: string, value: string, tokenIndex: number) => {
     const user = userByUsername?.get(username.toLowerCase()) ?? null;
+    const activateUser = user ?? {
+      id: username.toLowerCase(),
+      username,
+      displayName: username,
+    };
     return (
       <Box
         key={`mention:${tokenIndex}:${username}`}
@@ -65,6 +72,12 @@ export function ResponsiveTickerBadgeText({
         onMouseOut={() => {
           if (user) onUserHoverEnd?.();
         }}
+        onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          onUserActivate?.(activateUser);
+        }}
+        style={{ cursor: "pointer" }}
       >
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
           {value}

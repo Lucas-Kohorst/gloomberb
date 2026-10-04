@@ -40,6 +40,7 @@ interface ChatTranscriptProps {
   selectedIdx: number;
   setHoveredIdx: Dispatch<SetStateAction<number | null>>;
   showProfilePopover: (user: ChatUserSummary) => void;
+  openProfile?: (user: ChatUserSummary) => void;
   onSetUpProfile: () => void;
   stickyTranscript: boolean;
   user: { id: string; username: string; emailVerified: boolean } | null;
@@ -74,6 +75,7 @@ export function ChatTranscript({
   selectedIdx,
   setHoveredIdx,
   showProfilePopover,
+  openProfile,
   stickyTranscript,
   user,
   userByUsername,
@@ -126,6 +128,7 @@ export function ChatTranscript({
               openTicker={openTicker}
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
+              onUserActivate={openProfile}
               beginReplyTo={beginReplyTo}
               beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}
@@ -148,6 +151,7 @@ export function ChatTranscript({
               openTicker={openTicker}
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
+              onUserActivate={openProfile}
               beginReplyTo={beginReplyTo}
               beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}

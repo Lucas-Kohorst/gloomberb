@@ -20,6 +20,8 @@ import { chatSidebarStore } from "./sidebar-store";
 import { buildChatSidebarRows } from "./sidebar-rows";
 import { formatChannelLabel } from "./channel-labels";
 import { channelPrefix } from "./channels";
+import { isSidebarChannelOnline } from "./peer-online";
+import { PresenceSlot } from "./presence-dot";
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 /** Leading gutter plus the one-column active marker every channel row carries. */
@@ -100,6 +102,10 @@ export function ChannelSidebar({
   channels,
   channelStates,
   activeChannelId,
+  onlineUserIds,
+  onlineUsernames,
+  selfUserId,
+  selfUsername,
   cursorHeaderKey = null,
   width,
   paneWidth,
@@ -120,6 +126,10 @@ export function ChannelSidebar({
   channels: ChatChannel[];
   channelStates: ReturnType<ChatController["getSnapshot"]>["channelStates"];
   activeChannelId: string;
+  onlineUserIds?: readonly string[];
+  onlineUsernames?: readonly string[];
+  selfUserId?: string | null;
+  selfUsername?: string | null;
   /** The section header the keyboard cursor rests on, if it is on one. */
   cursorHeaderKey?: string | null;
   width: number;
@@ -265,6 +275,13 @@ export function ChannelSidebar({
               const channelState = channelStateById.get(channel.id);
               const notificationsEnabled = channelState?.notificationsEnabled === true;
               const unread = (channelState?.unreadCount ?? 0) > 0;
+              const conversation = channel.kind === "direct" || channel.kind === "group";
+              const peerOnline = conversation && isSidebarChannelOnline(channel, {
+                onlineUserIds,
+                onlineUsernames,
+                selfUserId,
+                selfUsername,
+              });
               const label = formatChannelLabel(channel, channel.id);
               const selectChannel = () => {
                 onFocusRequest?.();
@@ -283,7 +300,11 @@ export function ChannelSidebar({
                   {({ foregroundColor, onMouseDown }) => (
                     <>
                       <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}> </Text>
-                      <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
+                      {conversation ? (
+                        <PresenceSlot online={peerOnline} onMouseDown={onMouseDown} />
+                      ) : (
+                        <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
+                      )}
                       <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{truncateWithEllipsis(label, labelWidth)}</Text>
                       <Box flexGrow={1} onMouseDown={onMouseDown} />
                       {canManageNotifications && (

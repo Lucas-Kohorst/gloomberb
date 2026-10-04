@@ -9,7 +9,7 @@ import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { parseHex } from "../../../theme/color-utils";
 import { createDefaultConfig } from "../../../types/config";
 import { Box } from "../../../ui";
-import { apiClient, type AccountProfile, type ChatChannel, type ChatMessage } from "../../../api-client";
+import { apiClient, emptyChatPresence, type AccountProfile, type ChatChannel, type ChatMessage } from "../../../api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "./content";
@@ -38,7 +38,7 @@ const TEST_CHAT_CHANNELS: ChatChannel[] = [
 ];
 
 export function installChatApiTestDefaults(): void {
-  apiClient.getChatPresence = async () => ({ onlineCount: 0 });
+  apiClient.getChatPresence = async () => emptyChatPresence();
   apiClient.updateChatChannelState = async (channelId, body) => ({
     channelId,
     notificationsEnabled: body.notificationsEnabled ?? false,

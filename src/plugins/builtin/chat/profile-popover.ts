@@ -45,6 +45,7 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const ownProfileRequestRef = useRef<Promise<void> | null>(null);
   const ownProfileLoadedAtRef = useRef(0);
   const activeRef = useRef(true);
+  const pinnedRef = useRef(false);
 
   const cancelProfilePopoverClose = useCallback(() => {
     if (profilePopoverCloseTimerRef.current == null) return;
@@ -54,13 +55,16 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
 
   const closeProfilePopover = useCallback(() => {
     cancelProfilePopoverClose();
+    pinnedRef.current = false;
     setProfilePopoverUser(null);
   }, [cancelProfilePopoverClose]);
 
   const scheduleProfilePopoverClose = useCallback(() => {
+    if (pinnedRef.current) return;
     cancelProfilePopoverClose();
     profilePopoverCloseTimerRef.current = setTimeout(() => {
       profilePopoverCloseTimerRef.current = null;
+      if (pinnedRef.current) return;
       setProfilePopoverUser(null);
     }, PROFILE_POPOVER_CLOSE_DELAY_MS);
   }, [cancelProfilePopoverClose]);
@@ -96,17 +100,19 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
 
   const showProfilePopover = useCallback((
     targetUser: ChatUserSummary,
-    options?: { ownProfile?: boolean },
+    options?: { ownProfile?: boolean; pin?: boolean },
   ) => {
     const ownProfile = options?.ownProfile === true;
+    const pin = options?.pin === true;
     const cachedUser = ownProfile && ownProfileRef.current?.id === targetUser.id
       ? ownProfileRef.current
       : targetUser;
-    if (!ownProfile && !hasPublicChatProfileInfo(cachedUser)) {
-      closeProfilePopover();
+    if (!ownProfile && !pin && !hasPublicChatProfileInfo(cachedUser)) {
+      if (!pinnedRef.current) closeProfilePopover();
       return;
     }
     cancelProfilePopoverClose();
+    if (pin) pinnedRef.current = true;
     setProfilePopoverUser(cachedUser);
     if (ownProfile) refreshOwnProfile(targetUser.id);
   }, [cancelProfilePopoverClose, closeProfilePopover, refreshOwnProfile]);

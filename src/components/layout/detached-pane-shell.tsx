@@ -13,6 +13,7 @@ import { hasPaneFooterContent, PaneFooterBar, PaneFooterKeys, PaneFooterProvider
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
 import { PaneHeader } from "./pane/header";
+import { PaneHeaderAccessoryProvider } from "./pane/header-accessory";
 import { PaneHeaderTabsProvider, usePaneHeaderTabsHost } from "./pane/header-tabs";
 import { nativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
@@ -378,6 +379,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
         const bodyHeight = bodyFrame.height ?? 1;
 
         return (
+          <PaneHeaderAccessoryProvider>
+          {(titleAccessory) => (
           <Box
             flexDirection="column"
             flexGrow={1}
@@ -408,6 +411,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
               }))}
               tabs={headerTabs}
               bodyBackground={background}
+              titleAccessory={titleAccessory?.node}
+              titleAccessoryWidth={titleAccessory?.width}
               titleBar={{
                 rows: headerHeightRows,
                 overlay: titleBarOverlay === true,
@@ -443,6 +448,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
               onHoverItem={() => {}}
             />
           </Box>
+          )}
+          </PaneHeaderAccessoryProvider>
         );
       }}
     </PaneFooterProvider>
