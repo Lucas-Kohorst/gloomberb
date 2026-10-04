@@ -168,6 +168,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: QUOTES,
     bloomberg: ["HP"],
   },
+  RETURN: {
+    summary: "Interval and cumulative price returns in a scrollable table, for a selectable range and granularity.",
+    usage: ["RETURN AAPL"],
+    keys: [key("/", "search")],
+    data: QUOTES,
+    bloomberg: [],
+  },
   GR: {
     summary: "How two tickers move together: indexed prices, their ratio, rolling correlation, and a return regression with beta, alpha and R².",
     usage: ["GR NVDA, AMD"],
