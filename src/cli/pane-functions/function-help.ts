@@ -888,6 +888,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: AS_FILED,
     bloomberg: ["CF"],
   },
+  ETF: {
+    summary: "Fund filings for a ticker: prospectuses, shareholder reports, and portfolio holdings. Open any of them inline.",
+    usage: ["ETF SPY"],
+    keys: [OPEN, OPEN_SOURCE],
+    data: AS_FILED,
+    bloomberg: [],
+  },
   HDS: {
     summary: "Institutional holders as a table (value, shares, change, percent held) or as an ownership treemap.",
     usage: ["HDS NVDA"],
