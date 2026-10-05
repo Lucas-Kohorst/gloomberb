@@ -24,6 +24,7 @@ import type {
 import { usePlanAccess } from "../../../api-client/plan-access";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginPaneState, useShortcut } from "../../../public/react";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
+import { listingIdentity } from "../shared/ticker-request";
 import { blendHex } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
@@ -120,11 +121,13 @@ type Item = { kind: "deal"; deal: MnaDeal } | { kind: "locked"; index: number };
 
 const itemKey = (item: Item) => (item.kind === "deal" ? item.deal.id : `locked:${item.index}`);
 
-/** `MA`, or `MA ACVA` with the ticker kept in pane settings. */
+/** `MA`, or `MA ACVA`. A link supplies the ticker; an older pane still has it in settings. */
 export function MnaPane(props: PaneProps) {
+  const { symbol: bound } = usePaneTickerIdentity();
   const [ticker] = usePaneSettingValue("ticker", "");
-  const symbol = typeof ticker === "string" ? ticker.trim().toUpperCase() : "";
-  return <MnaDealsView key={symbol} focused={props.focused} width={props.width} height={props.height} symbol={symbol || null} />;
+  const fromSettings = typeof ticker === "string" ? ticker.trim().toUpperCase() : "";
+  const symbol = listingIdentity(bound)?.symbol || fromSettings;
+  return <MnaDealsView key={symbol || "market"} focused={props.focused} width={props.width} height={props.height} symbol={symbol || null} />;
 }
 
 export function MnaTickerTab({ focused, width, height }: TickerResearchTabProps) {

@@ -8,7 +8,7 @@ const scenarioSettingKeys = ["legs", "strategy", "expiration", "spot", "rate", "
 export const optionsScenarioModule: PluginModule = {
   panes: [{
     id: "options-scenario", name: "Options Scenario", icon: "V", component: OptionsScenarioPane,
-    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 126, height: 36 },
+    defaultPosition: "right", tickerFollower: true, defaultMode: "floating", defaultFloatingSize: { width: 126, height: 36 },
     tableExport: true, headless: optionsScenarioHeadless,
     settings: {
       title: "Options Scenario Settings",

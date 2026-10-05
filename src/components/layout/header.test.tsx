@@ -79,3 +79,20 @@ test("hosts the command bar input while a list screen is published", async () =>
   });
   expect(tui.frame()).not.toContain("QQ");
 });
+
+test("shows the focused instrument in the command prompt", async () => {
+  const state = createInitialState(createDefaultConfig("/tmp/gloomberb-header-instrument"));
+  state.focusedPaneId = "portfolio-list:main";
+  state.paneState["portfolio-list:main"] = { cursorSymbol: "NVDA" };
+
+  await tui.render(
+    <AppContext value={createStaticAppStore(state)}>
+      <Header />
+    </AppContext>,
+    { width: 120, height: 1 },
+  );
+  await tui.setup().renderOnce();
+
+  expect(tui.frame()).toContain("NVDA");
+  expect(tui.frame()).not.toContain("Search or run a command");
+});
