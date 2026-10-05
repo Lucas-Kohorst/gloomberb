@@ -45,9 +45,9 @@ describe("isDirectPeerOnline", () => {
 
 describe("isChatUserOnline", () => {
   test("matches controller presence by user id or username", () => {
-    expect(isChatUserOnline({ id: "u2", username: "bob", displayName: "Bob" }, { onlineUserIds: ["u2"] })).toBe(true);
-    expect(isChatUserOnline({ id: "u2", username: "bob", displayName: "Bob" }, { onlineUsernames: ["Bob"] })).toBe(true);
-    expect(isChatUserOnline({ id: "u9", username: "cara", displayName: "Cara" }, { onlineUserIds: ["u2"] })).toBe(false);
+    expect(isChatUserOnline({ id: "u2", username: "bob" }, { onlineUserIds: ["u2"] })).toBe(true);
+    expect(isChatUserOnline({ id: "u2", username: "bob" }, { onlineUsernames: ["Bob"] })).toBe(true);
+    expect(isChatUserOnline({ id: "u9", username: "cara" }, { onlineUserIds: ["u2"] })).toBe(false);
   });
 });
 
