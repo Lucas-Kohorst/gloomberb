@@ -1,7 +1,6 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from "react";
 import { PageStackView } from "../../../../components/ui";
-import { t } from "../../../../i18n";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
@@ -90,7 +89,9 @@ export function ChatContent({
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [followMessages, setFollowMessages] = useState(true);
   const [newDmOpen, setNewDmOpen] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(true);
+  // Only while the pane is too small for the sidebar: the channel list stands
+  // in for the open channel until one is picked.
+  const [channelListOpen, setChannelListOpen] = useState(false);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const messageElementsRef = useRef(new Map<string, unknown>());
@@ -148,7 +149,8 @@ export function ChatContent({
     applyingExternalDraftRef,
     channelId,
     controller,
-    focused,
+    // A channel hidden behind the list is not being read.
+    focused: focused && !channelListOpen,
     initialSnapshot,
     inputRef,
     inputValueRef,
@@ -174,9 +176,14 @@ export function ChatContent({
     nativePaneChrome,
     sidebarWidth,
   });
-  const stackedNav = !showChannelSidebar;
-  const stackedConversationOpen = stackedNav && conversationOpen;
-  const channelListVisible = showChannelSidebar || (stackedNav && !conversationOpen);
+  // Too small for the sidebar, the list and the open channel take turns as a
+  // stack. A single channel has no list to go back to.
+  const stackedNav = !showChannelSidebar && channels.length >= 2 && !!onChannelChange;
+  const showingChannelList = stackedNav && channelListOpen;
+  const channelListVisible = showChannelSidebar || showingChannelList;
+  useEffect(() => {
+    if (!stackedNav) setChannelListOpen(false);
+  }, [stackedNav]);
   composerTextWidthRef.current = composerTextWidth;
   const canSend = !!user?.emailVerified;
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
@@ -251,7 +258,7 @@ export function ChatContent({
     mentionSuggestionCount: mentionSuggestions.length,
     nativePaneChrome,
     replyTo,
-    headerRows: stackedConversationOpen ? (nativePaneChrome ? 2 : 1) : 0,
+    stackHeader: stackedNav && !channelListOpen,
   });
   const {
     cancelProfilePopoverClose,
@@ -329,7 +336,6 @@ export function ChatContent({
     inputFocused,
     onChannelChange,
     resetTranscriptSelection,
-    showChannelSidebar,
     channelListVisible,
   });
 
@@ -354,19 +360,39 @@ export function ChatContent({
     dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
   }, [blurInput, closeProfilePopover, dispatch, setSidebarFocused]);
 
-  const closeConversation = useCallback(() => {
+  const openChannelList = useCallback(() => {
     blurInput();
     closeNewDmDialog();
     closeProfilePopover();
-    setConversationOpen(false);
-    setSidebarFocused(true);
-  }, [blurInput, closeNewDmDialog, closeProfilePopover, setSidebarFocused]);
+    setChannelListOpen(true);
+  }, [blurInput, closeNewDmDialog, closeProfilePopover]);
+
+  // The list owns the keys while it is shown, with its cursor on the open channel.
+  useEffect(() => {
+    if (!showingChannelList || !focused || newDmOpen || sidebarFocused) return;
+    focusChannelSidebar();
+  }, [focusChannelSidebar, focused, newDmOpen, showingChannelList, sidebarFocused]);
 
   const selectChannelFromList = useCallback((nextChannelId: string) => {
     selectSidebarChannel(nextChannelId);
-    setConversationOpen(true);
+    setChannelListOpen(false);
     setSidebarFocused(false);
   }, [selectSidebarChannel, setSidebarFocused]);
+
+  // Enter or Right on a channel opens it, which in the stack also leaves the list.
+  const openChannelFromList = useCallback(() => {
+    if (!focusChatContent()) return false;
+    setChannelListOpen(false);
+    return true;
+  }, [focusChatContent]);
+
+  // Left and the pane menu's Channel List reach the list in either layout.
+  const canReachChannelList = channelListVisible || stackedNav;
+  const reachChannelList = useCallback(() => {
+    if (!stackedNav || channelListOpen) return focusChannelSidebar();
+    openChannelList();
+    return true;
+  }, [channelListOpen, focusChannelSidebar, openChannelList, stackedNav]);
 
   const openConversationFromDialog = useCallback(async (usernames: string[]) => {
     const channel = usernames.length === 1
@@ -374,7 +400,7 @@ export function ChatContent({
       : await controller.openGroupChannel({ usernames });
     expandDirectSection();
     selectSidebarChannel(channel.id);
-    setConversationOpen(true);
+    setChannelListOpen(false);
     setSidebarFocused(false);
     closeNewDmDialog();
   }, [closeNewDmDialog, controller, expandDirectSection, selectSidebarChannel, setSidebarFocused]);
@@ -495,6 +521,11 @@ export function ChatContent({
     useDefaultControllerChannel,
   });
 
+  // A jump to a message (a notification, the unread list) shows the channel.
+  useEffect(() => {
+    if (targetMessageId) setChannelListOpen(false);
+  }, [targetMessageId]);
+
   const handledTargetMessageRef = useRef<string | null>(null);
   useEffect(() => {
     if (!targetMessageId || loading || messages.length === 0) return;
@@ -522,8 +553,8 @@ export function ChatContent({
     clearReplyTarget,
     closeProfilePopover,
     cycleChannel,
-    focusChannelSidebar,
-    focusChatContent,
+    focusChannelSidebar: reachChannelList,
+    focusChatContent: openChannelFromList,
     focusComposer,
     focused: focused && !newDmOpen,
     hasOlderMessages,
@@ -551,8 +582,7 @@ export function ChatContent({
     setSelectedIdx,
     setSidebarSectionExpanded,
     shouldLeaveComposerForSelection,
-    showChannelSidebar,
-    channelListVisible,
+    channelListReachable: canReachChannelList,
     sidebarCursorRow,
     sidebarFocusedRef,
   });
@@ -596,8 +626,8 @@ export function ChatContent({
     openTeamChannel,
     canCycleChannels: channels.length > 1 && !!onChannelChange,
     cycleChannel,
-    canFocusSidebar: channelListVisible && !sidebarFocused && !!onChannelChange,
-    focusChannelSidebar,
+    canFocusSidebar: canReachChannelList && !sidebarFocused && !!onChannelChange,
+    focusChannelSidebar: reachChannelList,
     jumpToMessage,
     needsProfileSetup: !!user?.id && ownProfileConfigured === false,
     openProfileSetup,
@@ -617,6 +647,7 @@ export function ChatContent({
       cursorHeaderKey={sidebarFocused ? sidebarHeaderCursor : null}
       width={stackedNav ? width : channelSidebarWidth}
       paneWidth={width}
+      resizable={!stackedNav}
       height={height}
       focused={focused}
       keyboardFocused={sidebarFocused}
@@ -657,7 +688,8 @@ export function ChatContent({
       onMouseDown={() => focusChatContent()}
       style={nativeFillStyle}
     >
-      {!nativePaneChrome && (
+      {/* In the stack, the Back row above takes the place of the top rule. */}
+      {!nativePaneChrome && !stackedNav && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
         </Box>
@@ -697,6 +729,8 @@ export function ChatContent({
         userByUsername={userByUsername}
         onSetUpProfile={openProfileSetup}
       />
+
+      {stackedNav ? null : newDmDialog}
 
       {!nativePaneChrome && !canSend && (
         <Box height={1} width={contentWidth}>
@@ -745,11 +779,10 @@ export function ChatContent({
         style={nativeFillStyle}
       >
         <PageStackView
-          focused={focused && !newDmOpen}
-          detailOpen={conversationOpen}
-          onBack={closeConversation}
-          backLabel={t("Chats")}
-          detailTitle={activeChannelTitle}
+          // Esc first drops a selection or the profile card, then leaves the channel.
+          focused={focused && !newDmOpen && !inputFocused && !selectionActive && !profilePopoverUser}
+          detailOpen={!channelListOpen}
+          onBack={openChannelList}
           rootContent={channelSidebar}
           detailContent={threadPane}
         />
@@ -764,19 +797,10 @@ export function ChatContent({
       width={width}
       height={chatLayoutHeight}
       flexGrow={nativePaneChrome ? 1 : undefined}
-      position="relative"
       style={nativeFillStyle}
     >
-      {channelSidebar}
-      <Box
-        position="relative"
-        width={chatWidth}
-        height={chatLayoutHeight}
-        flexGrow={nativePaneChrome ? 1 : undefined}
-      >
-        {threadPane}
-        {newDmDialog}
-      </Box>
+      {showChannelSidebar && channelSidebar}
+      {threadPane}
     </Box>
   );
 }

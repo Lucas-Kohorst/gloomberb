@@ -38,8 +38,7 @@ export function useChatChannelNavigation({
   inputFocused,
   onChannelChange,
   resetTranscriptSelection,
-  showChannelSidebar,
-  channelListVisible = showChannelSidebar,
+  channelListVisible,
 }: {
   blurInput: () => void;
   /** Whether the sidebar draws a DMs header with no DMs under it yet. */
@@ -52,8 +51,8 @@ export function useChatChannelNavigation({
   inputFocused: boolean;
   onChannelChange?: (channelId: string) => void;
   resetTranscriptSelection: () => void;
-  showChannelSidebar: boolean;
-  channelListVisible?: boolean;
+  /** The sidebar, or in the narrow stack the list that stands in for the channel. */
+  channelListVisible: boolean;
 }): {
   cycleChannel: (direction: 1 | -1) => boolean;
   expandDirectSection: () => void;

@@ -104,6 +104,7 @@ export function ChannelSidebar({
   cursorHeaderKey = null,
   width,
   paneWidth,
+  resizable = true,
   height,
   focused,
   keyboardFocused,
@@ -126,6 +127,8 @@ export function ChannelSidebar({
   width: number;
   /** Width of the whole chat pane, which caps how far the sidebar can grow. */
   paneWidth: number;
+  /** False when the list fills the pane in place of the open channel. */
+  resizable?: boolean;
   height: number;
   focused: boolean;
   keyboardFocused: boolean;
@@ -167,12 +170,12 @@ export function ChannelSidebar({
       height={height}
       focused={focused}
       keyboardFocused={keyboardFocused}
-      resize={{
+      resize={resizable ? {
         min: widthRange.min,
         max: widthRange.max,
         onResize: (nextWidth) => chatSidebarStore.setWidth(nextWidth),
         onResizeEnd: (nextWidth) => chatSidebarStore.commitWidth(nextWidth),
-      }}
+      } : undefined}
     >
       {({ backgroundColor: sidebarBg, listWidth }) => {
         const labelWidth = Math.max(listWidth - CHANNEL_ROW_INDENT - notificationWidth, 1);

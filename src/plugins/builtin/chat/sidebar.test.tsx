@@ -36,6 +36,7 @@ function createChannelPane(
   controller: ReturnType<typeof createController>,
   initialChannelId = "equities",
   onChannelChange?: (channelId: string) => void,
+  width = 90,
 ) {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
 
@@ -46,7 +47,7 @@ function createChannelPane(
         <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
           <ChatContent
             controller={controller}
-            width={90}
+            width={width}
             height={12}
             focused
             channelId={channelId}
@@ -102,25 +103,55 @@ describe("ChatContent channel sidebar", () => {
     });
 
     await flushFrame();
-    expect(tui.frame()).toContain("← Chats");
-    expect(tui.frame()).toContain("#options");
+    expect(tui.frame()).not.toContain("options");
+  });
 
-    const backLines = tui.frame().split("\n");
-    const backRow = backLines.findIndex((line) => line.includes("← Chats"));
-    const backCol = backLines[backRow]?.indexOf("←") ?? -1;
-    expect(backRow).toBeGreaterThanOrEqual(0);
-    expect(backCol).toBeGreaterThanOrEqual(0);
+  test("a narrow pane stacks the list behind the open channel, by key and by mouse", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).ensureChannelState("macro").unreadCount = 2;
+    const changes: string[] = [];
+    const ChannelPane = createChannelPane(controller, "options", (channelId) => changes.push(channelId), 60);
 
     await act(async () => {
-      await tui.setup().mockMouse.click(backCol, backRow);
-      await tui.setup().renderOnce();
-      await tui.setup().renderOnce();
+      await tui.render(<ChannelPane />, { width: 60, height: 12 });
     });
     await flushFrame();
+    // The pane title names the channel, so the stack row is only Back.
+    expect(tui.frame()).toContain("← Back");
+    expect(tui.frame()).not.toContain("#options");
+    expect(tui.frame()).not.toContain("equities");
 
-    expect(tui.frame()).not.toContain("← Chats");
-    expect(tui.frame()).toContain("everyone");
+    const back = await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(back.propagationStopped).toBe(true);
+    await flushFrame();
+    expect(tui.frame()).not.toContain("← Back");
     expect(tui.frame()).toContain("equities");
+
+    // Passing over a channel in the list neither opens it nor reads it.
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    await flushFrame();
+    expect(tui.frame()).not.toContain("← Back");
+    expect((controller as any).ensureChannelState("macro").unreadCount).toBe(2);
+
+    await emitKeypress({ name: "return", sequence: "\r" });
+    await flushFrame();
+    expect(tui.frame()).toContain("← Back");
+    expect(changes.at(-1)).toBe("macro");
+    expect((controller as any).ensureChannelState("macro").unreadCount).toBe(0);
+
+    await tui.clickFrameText("← Back");
+    await flushFrame();
+    expect(tui.frame()).not.toContain("← Back");
+    await tui.clickFrameText("everyone");
+    await flushFrame();
+    expect(tui.frame()).toContain("← Back");
+    expect(changes.at(-1)).toBe("everyone");
   });
 
   test("selects a sidebar channel from a single text click", async () => {
@@ -509,7 +540,7 @@ describe("ChatContent channel sidebar", () => {
         inputFocused: false,
         onChannelChange: handleChannelChange,
         resetTranscriptSelection: () => {},
-        showChannelSidebar: true,
+        channelListVisible: true,
       });
       latestCursorChannelId = navigation.sidebarCursorChannelId;
       latestCommittedChannelId = channelId;
