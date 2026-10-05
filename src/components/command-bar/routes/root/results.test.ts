@@ -191,3 +191,95 @@ describe("the plugin install row in the root result model", () => {
       .toEqual([installRow.id, "assist:pending", documentRow.id]);
   });
 });
+
+describe("recents in the root result model", () => {
+  const newsTemplate = {
+    id: "ticker-news-pane",
+    paneId: "ticker-news",
+    label: "Ticker News",
+    description: "News for one ticker",
+    shortcut: { prefix: "CN", argKind: "ticker" },
+  } as PaneTemplateDef;
+  const recentPanes = [
+    { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "MSFT" },
+    { id: "pane-template:ticker-news-pane", label: "Ticker News" },
+  ];
+  const stateWith = (recentTickers: string[], recentCommands: unknown[]) => ({
+    focusedPaneId: null,
+    config: { watchlists: [], portfolios: [], recentCommands },
+    recentTickers,
+  }) as unknown as RootResultModelOptions["state"];
+  const recentState = stateWith(["AAPL"], recentPanes);
+  const tickerRow = (symbol: string): ResultItem => ({
+    id: `ticker:${symbol}`,
+    label: symbol,
+    detail: "",
+    category: "Exact Match",
+    kind: "ticker",
+    action: () => {},
+  });
+  const templateRow = (template: PaneTemplateDef, options?: { createOptions?: { arg?: string } }): ResultItem => ({
+    id: `pane-template:${template.id}`,
+    label: template.label,
+    detail: template.description ?? "",
+    category: "Panes",
+    kind: "action",
+    right: template.shortcut?.prefix,
+    action: () => created.push(options?.createOptions?.arg),
+  });
+  let created: Array<string | undefined> = [];
+
+  test("an empty bar leads with recent tickers, then recent panes that run again with their ticker", () => {
+    created = [];
+    const { items } = buildRootResultModel(rootOptions({
+      buildRecentTickerItem: tickerRow,
+      createPaneTemplateItem: templateRow,
+      getRecentPaneTemplate: (id) => (id === newsTemplate.id ? newsTemplate : undefined),
+      state: recentState,
+    }));
+
+    const recentRows = items.filter((item) => item.category === "Suggested");
+    expect(recentRows.map((item) => [item.id, item.label])).toEqual([
+      ["ticker:AAPL", "AAPL"],
+      ["recent:pane-template:ticker-news-pane:MSFT", "Ticker News MSFT"],
+      ["recent:pane-template:ticker-news-pane", "Ticker News"],
+    ]);
+    expect(orderListResults(items)[0]?.id).toBe("ticker:AAPL");
+    recentRows[1]?.action();
+    expect(created).toEqual(["MSFT"]);
+  });
+
+  test("a typed query drops the recents, and a pane the bar no longer offers is skipped", () => {
+    const { items } = buildRootResultModel(rootOptions({
+      buildRecentTickerItem: tickerRow,
+      createPaneTemplateItem: templateRow,
+      rootQuery: "news",
+      state: recentState,
+    }));
+    expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
+
+    // A disabled plugin's template, one that cannot open for the stored
+    // ticker, and an entry that is not a pane template.
+    const { items: emptyBar } = buildRootResultModel(rootOptions({
+      createPaneTemplateItem: templateRow,
+      getRecentPaneTemplate: () => undefined,
+      state: stateWith([], [...recentPanes, { id: "reset-all-data", label: "Reset All Data" }]),
+    }));
+    expect(emptyBar.filter((item) => item.category === "Suggested")).toEqual([]);
+  });
+
+  test("keeps the section short", () => {
+    const { items } = buildRootResultModel(rootOptions({
+      buildRecentTickerItem: tickerRow,
+      createPaneTemplateItem: templateRow,
+      getRecentPaneTemplate: () => newsTemplate,
+      state: stateWith(
+        ["A", "B", "C", "D", "E", "F"],
+        ["A", "B", "C", "D", "E", "F"].map((arg) => ({ id: "pane-template:ticker-news-pane", label: "Ticker News", arg })),
+      ),
+    }));
+    expect(items.filter((item) => item.category === "Suggested").map((item) => item.label)).toEqual([
+      "A", "B", "C", "D", "Ticker News A", "Ticker News B", "Ticker News C", "Ticker News D",
+    ]);
+  });
+});
