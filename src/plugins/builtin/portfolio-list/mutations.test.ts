@@ -8,6 +8,7 @@ import {
   deleteWatchlist,
   hasOpenPortfolioPositions,
   removeTickerFromPortfolio,
+  removeTickerFromWatchlist,
   resolveManualPositionCurrency,
   setManualPortfolioPosition,
 } from "./mutations";
@@ -125,6 +126,23 @@ describe("portfolio-list mutations", () => {
       currency: "USD",
       broker: "manual",
     }]);
+  });
+
+  test("removing a ticker from a watchlist leaves its other lists and positions", () => {
+    const position = { portfolio: "main", shares: 2, avgCost: 40, currency: "USD", broker: "manual" };
+    const ticker = makeTicker({
+      portfolios: ["main"],
+      watchlists: ["tech", "team:t1:w1", "watchlist"],
+      positions: [position],
+    });
+
+    const result = removeTickerFromWatchlist(ticker, "tech");
+
+    expect(result.changed).toBe(true);
+    expect(result.ticker.metadata.watchlists).toEqual(["team:t1:w1", "watchlist"]);
+    expect(result.ticker.metadata.portfolios).toEqual(["main"]);
+    expect(result.ticker.metadata.positions).toEqual([position]);
+    expect(removeTickerFromWatchlist(ticker, "missing").changed).toBe(false);
   });
 
   test("setting a manual position replaces the aggregate entry for that portfolio", () => {
