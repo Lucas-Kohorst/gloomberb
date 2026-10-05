@@ -40,7 +40,6 @@ import type {
 
 export {
   emptyChatPresence,
-  isChatPresenceEvent,
   mergeChatPresence,
   normalizeChatPresence,
 } from "./normalizers";

@@ -33,7 +33,7 @@ export function clearChatPaneTargetMessage(
   return nextSettings;
 }
 
-export function setChatPaneJump(
+function setChatPaneJump(
   settings: ChatPaneSettings | undefined,
   channelId: string,
   targetMessageId: string | null | undefined,

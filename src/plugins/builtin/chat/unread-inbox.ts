@@ -9,7 +9,7 @@ import {
 
 export const UNREAD_INBOX_PANE_ID = "unread-inbox";
 export const UNREAD_INBOX_TEMPLATE_ID = "unread-inbox-pane";
-export const UNREAD_INBOX_LIMIT = 12;
+const UNREAD_INBOX_LIMIT = 12;
 
 export interface UnreadInboxChannelState {
   channelId: string;
