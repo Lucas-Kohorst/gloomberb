@@ -412,44 +412,22 @@ describe("ticker-search utilities", () => {
     });
   }
 
-  test("keeps the other exchanges when a saved listing already covers one venue", () => {
+  test("a saved second listing keeps its venue's place among the issuer's listings", () => {
+    const venues = ["NYSE", "XETRA", "XSTU", "FWB2", "VIE", "SWX", "MUNICH", "HANOVER", "BUD"];
     const results = buildTickerSearchCandidates({
-      query: "BIRD",
-      tickers: new Map<string, TickerRecord>([[
-        "BIRD",
-        createTestTicker("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
-      ]]),
-      providerResults: [
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IEX" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "TSXV" }),
-      ],
-      totalLimit: 8,
+      query: "SAP",
+      tickers: new Map([
+        ["SAP", createTestTicker("SAP", "SAP SE", { exchange: "NYSE", assetCategory: "EQUITY" })],
+        ["SAP:XETR", createTestTicker("SAP:XETR", "SAP SE", { exchange: "XETRA", assetCategory: "Common Stock" })],
+      ]),
+      providerResults: venues.map((exchange) => makeSearchResult("SAP", "SAP SE", { exchange, type: "Common Stock" })),
     });
 
-    const venues = results.map((item) => item.exchangeLabel || item.right);
-    expect(venues.filter((venue) => venue === "IDX")).toEqual(["IDX"]);
-    expect(new Set(venues)).toEqual(new Set(["IDX", "NASDAQ", "LSE", "IEX", "TSXV"]));
-    expect(results.find((item) => item.exchangeLabel === "IDX")?.kind).toBe("ticker");
-  });
-
-  test("a saved NMS listing replaces only the NASDAQ provider row", () => {
-    const results = buildTickerSearchCandidates({
-      query: "BIRD",
-      tickers: new Map([["BIRD", createTestTicker("BIRD", "Allbirds Inc.", { exchange: "NMS" })]]),
-      providerResults: [
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "Equity NMS" }),
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
-      ],
-      totalLimit: 8,
-    });
-
-    expect(results).toHaveLength(2);
-    expect(new Set(results.map((item) => item.exchangeLabel))).toEqual(new Set(["NMS", "LSE"]));
-    expect(results.find((item) => item.exchangeLabel === "NMS")?.kind).toBe("ticker");
+    expect(results.slice(0, 3).map((item) => [item.label, item.exchangeLabel, item.kind])).toEqual([
+      ["SAP", "NYSE", "ticker"],
+      ["SAP:XETR", "XETRA", "ticker"],
+      ["SAP", "XSTU", "search"],
+    ]);
   });
 
   test("uses provider ordering to prefer the canonical saved listing for company-name queries", () => {

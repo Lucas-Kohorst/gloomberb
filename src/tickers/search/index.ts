@@ -129,7 +129,8 @@ export function createLocalTickerSearchCandidates(
           right: venue,
           exchangeLabel: venue,
           primaryExchangeLabel: contractKey ? result!.primaryExchange : primaryExchangeLabel,
-          providerRank: options.providerRanks?.get(symbol),
+          providerRank: options.providerRanks?.get(symbol)
+            ?? options.providerRanks?.get(publicTickerKey(symbol, ticker.metadata.exchange)),
           popularity: options.providerPopularity?.get(symbol),
           category: "Saved",
           kind: "ticker",
@@ -366,6 +367,10 @@ function buildProviderHints(
   for (const [rank, result] of searchResults.entries()) {
     const symbol = getSearchResultSymbol(result);
     if (!ranks.has(symbol)) ranks.set(symbol, rank);
+    // A saved second listing is keyed with its venue (SAP:XETR); it takes
+    // that venue's place instead of the end of the issuer's listings.
+    const listingKey = publicTickerKey(symbol, listingExchange(result));
+    if (listingKey !== symbol && !ranks.has(listingKey)) ranks.set(listingKey, rank);
     const score = searchResultPopularity(result);
     if (score != null) popularity.set(symbol, Math.max(score, popularity.get(symbol) ?? score));
     const existing = results.get(symbol);

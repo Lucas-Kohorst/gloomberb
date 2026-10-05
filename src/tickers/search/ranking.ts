@@ -3,7 +3,7 @@ import type {
   TickerSearchRankableItem,
 } from "./types";
 import { getListingSymbol, tickerHasListingSuffix } from "../../sources/listing-symbols";
-import { CANONICAL_EXCHANGE_ALIASES, canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
+import { canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
 
 const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
 const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
@@ -158,7 +158,7 @@ function getTickerSearchListingKey(item: Pick<TickerSearchRankableItem, "label">
   const parsed = parsePublicTickerKey(normalizeTickerSymbol(item.symbol || item.label));
   const exchange = parsed.exchange || (item.exchangeLabel === "SMART" ? item.primaryExchangeLabel
     : item.exchangeLabel || item.primaryExchangeLabel || item.right);
-  return `${parsed.symbol}|${listingVenueKey(exchange)}${item.contractKey ? `|${item.contractKey}` : ""}`;
+  return `${parsed.symbol}|${canonicalExchange(exchange)}${item.contractKey ? `|${item.contractKey}` : ""}`;
 }
 
 export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "id" | "label" | "detail" | "kind" | "category" | "right"> & Partial<TickerSearchRankableItem>>(
@@ -230,27 +230,18 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
       };
     });
 
-  // A saved listing replaces a provider row only when they share a venue.
-  const savedVenuesByListing = new Map<string, Set<string>>();
-  for (const { item, textScore } of ranked) {
-    if (textScore <= 0 || item.kind !== "ticker") continue;
-    const id = listingIdentity(item);
-    const key = `${id.symbol}|${id.contract}`;
-    const venues = savedVenuesByListing.get(key) ?? new Set<string>();
-    for (const venue of listingVenues(item)) venues.add(venue);
-    savedVenuesByListing.set(key, venues);
-  }
+  // A saved symbol replaces its own source listing, not every exchange using it.
+  const matchedLocalListings = new Set(
+    ranked
+      .filter(({ item, textScore }) => textScore > 0 && item.kind === "ticker")
+      .map(({ item }) => getTickerSearchListingKey(item)),
+  );
 
   const filtered = ranked.filter(({ item, textScore }) => {
     if (textScore <= 0) return false;
     if (isExplicitMarketSymbol(query) && !isExplicitMarketSymbol(item.symbol || item.label)) return false;
     if (item.kind !== "search") return true;
-    const id = listingIdentity(item);
-    const savedVenues = savedVenuesByListing.get(`${id.symbol}|${id.contract}`);
-    if (!savedVenues || savedVenues.size === 0) return true;
-    const venues = listingVenues(item);
-    if (venues.length === 0) return false;
-    return !venues.some((venue) => savedVenues.has(venue));
+    return !matchedLocalListings.has(getTickerSearchListingKey(item));
   });
 
   promoteMuchMorePopularCompanies(filtered);
@@ -639,7 +630,7 @@ function getCompanyNameKey(detail: string): string {
   return normalizeCompanyName(detail.split("|")[0] || "");
 }
 
-function getIssuerGroupKey(detail: string): string {
+export function getIssuerGroupKey(detail: string): string {
   // Listing descriptions do not create a different issuer. Strip only these
   // recognized tails for grouping, preserving full names and query relevance.
   const issuer = normalizeSearchText(detail.split("|")[0] || "")
@@ -704,51 +695,4 @@ function scoreSearchField(query: string, value: string, weights: { exact: number
 function getTickerSearchDedupKey(item: Pick<TickerSearchRankableItem, "id" | "kind" | "label" | "detail" | "right"> & Partial<TickerSearchRankableItem>): string {
   if (item.kind !== "ticker" && item.kind !== "search") return item.id;
   return getTickerSearchListingKey(item);
-}
-
-/** Venue identity for one exchange string. Known aliases collapse (NMS and NASDAQ). */
-export function listingVenueKey(value: string | undefined): string {
-  return listingVenueTokens(value)[0] ?? "";
-}
-
-function listingIdentity(item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>): { symbol: string; contract: string } {
-  const parsed = parsePublicTickerKey(normalizeTickerSymbol(item.symbol || item.label));
-  return { symbol: parsed.symbol, contract: item.contractKey ?? "" };
-}
-
-function listingVenues(item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem> & {
-  result?: {
-    exchange?: string;
-    primaryExchange?: string;
-    brokerContract?: { exchange?: string; primaryExchange?: string } | null;
-  };
-}): string[] {
-  const venues = new Set<string>();
-  const parsed = parsePublicTickerKey(normalizeTickerSymbol(item.symbol || item.label));
-  if (parsed.exchange) venues.add(listingVenueKey(parsed.exchange));
-  for (const value of [
-    item.exchangeLabel,
-    item.primaryExchangeLabel,
-    item.right,
-    item.result?.exchange,
-    item.result?.primaryExchange,
-    item.result?.brokerContract?.exchange,
-    item.result?.brokerContract?.primaryExchange,
-  ]) {
-    for (const venue of listingVenueTokens(value)) venues.add(venue);
-  }
-  return [...venues];
-}
-
-function listingVenueTokens(value: string | undefined): string[] {
-  const upper = (value ?? "").trim().toUpperCase();
-  if (!upper) return [];
-  if (CANONICAL_EXCHANGE_ALIASES[upper]) return [canonicalExchange(upper)];
-  const tokens = upper.split(/\s+/).filter(Boolean);
-  const known = tokens.flatMap((token) => (
-    CANONICAL_EXCHANGE_ALIASES[token] ? [canonicalExchange(token)] : []
-  ));
-  if (known.length > 0) return known;
-  const last = tokens.at(-1);
-  return last ? [canonicalExchange(last)] : [];
 }

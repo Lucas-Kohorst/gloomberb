@@ -127,34 +127,47 @@ test("plain exact-symbol search retains venue choices while deduplicating the sa
     .toEqual(["gld:tsv", "gld:nyse", "gld:byma"]);
 });
 
-test("keeps each exchange of an exact symbol in the exact-match section", () => {
-  const pane: ResultItem = {
-    id: "pane:news",
-    label: "News",
-    detail: "",
-    category: "Panes",
-    kind: "action",
-    action: () => {},
-  };
-  const exchanges = ["IDX", "NASDAQ", "LSE", "IEX", "TSXV"];
+test("an exact symbol keeps a row for each security before more exchanges of one, then looser hits", () => {
+  const listing = (id: string, label: string, right: string, detail: string): ResultItem => ({
+    ...resultItem(id, label, right, "search"), detail, badge: "EQ",
+  });
+  // Cloud's answer for SAP: SAP SE on nine venues, Saputo on Toronto last.
+  const sapSe = ["NYSE", "XETRA", "XSTU", "FWB2", "VIE", "SWX", "MUNICH", "HANOVER", "BUD"]
+    .map((venue) => listing(`sap:${venue}`, "SAP", venue, "SAP SE | Common Stock"));
   const providerItems = [
-    resultItem("goto:BIRD", "BIRD", "IDX"),
-    ...exchanges.map((exchange) => resultItem(`search:BIRD:${exchange}`, "BIRD", exchange, "search")),
-    resultItem("search:BIRDF", "BIRDF", "NASDAQ", "search"),
+    ...sapSe,
+    listing("sap:TSX", "SAP", "TSX", "Saputo Inc. | EQUITY"),
+    listing("sapr", "SAPR", "IDX", "Saraswati Persada | Common Stock"),
   ];
 
-  const merged = mergePlainRootTickerResults("bird", providerItems, [pane]);
-
-  expect(merged.filter((item) => item.category === "Exact Match").map((item) => item.right)).toEqual(exchanges);
-  expect(merged.some((item) => item.label === "BIRDF")).toBe(false);
+  expect(mergePlainRootTickerResults("SAP", providerItems, []).map((item) => [item.id, item.category])).toEqual([
+    ["sap:NYSE", "Exact Match"],
+    ["sap:XETRA", "Exact Match"],
+    ["sap:XSTU", "Exact Match"],
+    ["sap:FWB2", "Exact Match"],
+    ["sap:TSX", "Exact Match"],
+  ]);
+  // Fewer exact rows than the cap leave the rest to looser hits, as before.
+  expect(mergePlainRootTickerResults("SAP", [sapSe[0]!, sapSe[1]!, providerItems.at(-1)!], [])
+    .map((item) => item.id)).toEqual(["sap:NYSE", "sap:XETRA", "sapr"]);
 });
 
-test("collapses venue aliases of an exact symbol and keeps another exchange", () => {
+test("one exchange is one exact row however the listing is spelled", () => {
   const items = [
-    resultItem("saved", "BIRD", "NMS"),
-    resultItem("nasdaq", "BIRD", "NASDAQ", "search"),
-    resultItem("compound", "BIRD", "Equity NMS", "search"),
-    resultItem("lse", "BIRD", "LSE", "search"),
+    resultItem("saved:SAP", "SAP", "NYSE"),
+    resultItem("saved:SAP:XETR", "SAP:XETR", "XETRA"),
+    resultItem("search:XETRA", "SAP", "XETRA", "search"),
+    resultItem("search:FWB2", "SAP", "FWB2", "search"),
   ];
-  expect(mergePlainRootTickerResults("BIRD", items, []).map((item) => item.id)).toEqual(["saved", "lse"]);
+  expect(mergePlainRootTickerResults("SAP", items, []).map((item) => item.id))
+    .toEqual(["saved:SAP", "saved:SAP:XETR", "search:FWB2"]);
+  // Cloud answers BRK.B and its BRK-B spelling with a row each for NYSE.
+  const berkshire = [
+    resultItem("dot:NYSE", "BRK.B", "NYSE", "search"),
+    resultItem("dot:IEX", "BRK.B", "IEX", "search"),
+    resultItem("dash:NYSE", "BRK-B", "NYSE", "search"),
+    resultItem("compact:BMV", "BRKB", "BMV", "search"),
+  ];
+  expect(mergePlainRootTickerResults("BRK.B", berkshire, []).map((item) => item.id))
+    .toEqual(["dot:NYSE", "dot:IEX", "compact:BMV"]);
 });

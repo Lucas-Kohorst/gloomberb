@@ -5,10 +5,17 @@ import {
   type TickerSearchCandidate,
 } from "../../../../tickers/search";
 import type { ResultItem } from "../../list/model";
-import { parsePublicTickerKey } from "../../../../utils/exchanges";
-import { isExplicitMarketSymbol, listingVenueKey } from "../../../../tickers/search/ranking";
+import { canonicalExchange, parsePublicTickerKey } from "../../../../utils/exchanges";
+import { compactSearchText, getIssuerGroupKey, isExplicitMarketSymbol } from "../../../../tickers/search/ranking";
 
 export const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
+
+/**
+ * The command bar ranks a full page of symbol search (Cloud answers ten), so
+ * a second security on the same symbol is still in hand when the root list
+ * picks its exact rows.
+ */
+export const COMMAND_BAR_TICKER_SEARCH_LIMIT = 10;
 
 export function buildTickerSearchCacheKey(
   query: string,
@@ -93,10 +100,16 @@ function isInstrumentItem(item: ResultItem): boolean {
 }
 
 /**
- * Fold symbol-search rows into a plain root query's list. Every exchange of
- * an exact symbol stays, and known venue aliases collapse to one row. Looser
- * hits stay one row per symbol. Info rows ("no matches", "search failed") are
- * dropped: the instruments are an extra here, never the answer.
+ * Fold symbol-search rows into a plain root query's list. An exact symbol
+ * keeps one row per exchange: a saved listing written with its venue
+ * (`SAP:XETR`) counts as that exchange, and share-class spellings of one
+ * listing (BRK.B and BRK-B on NYSE) are one row. Looser hits stay one row per
+ * symbol.
+ * When the rows outnumber the cap, each distinct security gets a row before a
+ * further exchange of one already shown, so Saputo's SAP on Toronto is not
+ * pushed out by SAP SE's fourth German venue; the rows keep their ranked order.
+ * Info rows ("no matches", "search failed") are dropped: the instruments are
+ * an extra here, never the answer.
  */
 export function mergePlainRootTickerResults(
   query: string,
@@ -106,14 +119,15 @@ export function mergePlainRootTickerResults(
   const seenExactVenues = new Set<string>();
   const seenLooseSymbols = new Set<string>();
   const symbolsWithExact = new Set<string>();
-  const instruments: ResultItem[] = [];
+  const candidates: ResultItem[] = [];
   const isExact = (item: ResultItem) => item.category === "Exact Match" || isExactTickerResultMatch(item, query);
   for (const item of providerItems) {
     if (!isInstrumentItem(item)) continue;
     const label = item.label.trim().toUpperCase();
     const symbol = parsePublicTickerKey(label).symbol || label;
     if (isExact(item)) {
-      const key = `${symbol}|${listingVenueKey(item.right)}|${item.contractKey ?? ""}`;
+      const venue = canonicalExchange(parsePublicTickerKey(label).exchange || item.right);
+      const key = `${compactSearchText(symbol)}|${venue}|${item.contractKey ?? ""}`;
       if (seenExactVenues.has(key)) continue;
       seenExactVenues.add(key);
       symbolsWithExact.add(label);
@@ -123,9 +137,9 @@ export function mergePlainRootTickerResults(
     } else {
       seenLooseSymbols.add(label);
     }
-    instruments.push(item);
-    if (instruments.length >= ROOT_INSTRUMENTS_LIMIT) break;
+    candidates.push(item);
   }
+  const instruments = pickRootInstruments(candidates, isExact);
   if (instruments.length === 0) return rootItems;
 
   return [
@@ -133,4 +147,27 @@ export function mergePlainRootTickerResults(
     ...rootItems,
     ...instruments.filter((item) => !isExact(item)).map((item) => ({ ...item, category: ROOT_INSTRUMENTS_CATEGORY })),
   ];
+}
+
+/**
+ * Up to the cap, in this order: the first exact row of each security, the
+ * exact symbol's other exchanges, then looser hits. The rows keep their
+ * ranked order. Exchanges of one security share its issuer name and class.
+ */
+function pickRootInstruments(candidates: ResultItem[], isExact: (item: ResultItem) => boolean): ResultItem[] {
+  if (candidates.length <= ROOT_INSTRUMENTS_LIMIT) return candidates;
+  const exact = candidates.filter(isExact);
+  const picked = new Set<ResultItem>();
+  const securities = new Set<string>();
+  for (const item of exact) {
+    const security = `${getIssuerGroupKey(item.detail) || item.id}|${item.badge ?? item.instrumentType ?? ""}`;
+    if (securities.has(security)) continue;
+    securities.add(security);
+    picked.add(item);
+  }
+  for (const item of [...exact, ...candidates]) {
+    if (picked.size >= ROOT_INSTRUMENTS_LIMIT) break;
+    picked.add(item);
+  }
+  return candidates.filter((item) => picked.has(item)).slice(0, ROOT_INSTRUMENTS_LIMIT);
 }
