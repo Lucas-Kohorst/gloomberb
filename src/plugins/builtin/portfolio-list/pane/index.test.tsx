@@ -588,21 +588,22 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
   });
 
-  test("d removes the selected ticker from a watchlist and leaves its other lists", async () => {
-    const config = createManualCollectionConfig("watchlist");
-    const position = { portfolio: "main", shares: 2, avgCost: 40, currency: "USD", broker: "manual" as const };
+  async function renderRemovable(
+    config: AppConfig,
+    collectionId: string,
+    tickers: TickerRecord[],
+    cursorSymbol = tickers[0]!.metadata.ticker,
+  ) {
     const notifications: Array<{ type?: string; body: string }> = [];
     installQuickAddRegistry(createQuickAddProvider(true));
-
     await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
       <PortfolioHarness
         config={config}
-        collectionId="watchlist"
-        ticker={makeTicker({
-          portfolios: ["main"],
-          watchlists: ["watchlist", "team:t1:w1"],
-          positions: [position],
-        })}
+        collectionId={collectionId}
+        stateMutator={(state) => {
+          state.tickers = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
+          state.paneState[TEST_PANE_ID] = { ...state.paneState[TEST_PANE_ID], cursorSymbol };
+        }}
         runtime={createTestPluginRuntime({
           notify: (notification) => { notifications.push(notification); },
         })}
@@ -610,109 +611,83 @@ describe("PortfolioListPane cash and margin UI", () => {
       />
       <PaneFooterBar footer={footer} focused width={100} />
       <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
-    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
-
+    </Box>}</PaneFooterProvider>, { width: 100, height: 24 });
     await flushFrame();
-    expect(tui.frame()).toContain("[d]elete");
+    return notifications;
+  }
 
+  async function press(key: "d" | "y" | "escape") {
     await act(async () => {
-      tui.setup().mockInput.pressKey("d");
+      if (key === "escape") tui.setup().mockInput.pressEscape();
+      else tui.setup().mockInput.pressKey(key);
       await Promise.resolve();
       await tui.setup().renderOnce();
     });
     await flushFrame();
+  }
 
-    const ticker = harnessState?.tickers.get("AAPL");
-    expect(ticker?.metadata.watchlists).toEqual(["team:t1:w1"]);
-    expect(ticker?.metadata.portfolios).toEqual(["main"]);
-    expect(ticker?.metadata.positions).toEqual([position]);
-    expect(notifications.at(-1)).toMatchObject({
-      type: "success",
-      body: "Removed AAPL from Watchlist.",
+  test("d asks before taking the selected ticker off a watchlist, then moves to the next row", async () => {
+    const position = { portfolio: "main", shares: 2, avgCost: 40, currency: "USD", broker: "manual" as const };
+    const watched = (symbol: string, overrides: Partial<TickerRecord["metadata"]> = {}) => makeTicker({
+      ticker: symbol, name: symbol, portfolios: [], positions: [], watchlists: ["watchlist"], ...overrides,
     });
+    const notifications = await renderRemovable(createManualCollectionConfig("watchlist"), "watchlist", [
+      watched("AAPL"),
+      watched("MSFT", { watchlists: ["watchlist", "team:t1:w1"], portfolios: ["main"], positions: [position] }),
+      watched("NVDA"),
+    ], "MSFT");
+    expect(tui.frame()).toContain("[d]elete");
+
+    await press("d");
+    expect(tui.frame()).toContain("Remove MSFT from Watchlist?");
+    await press("escape");
+    await tui.waitForFrameToExclude("Remove MSFT from Watchlist?");
+    expect(harnessState?.tickers.get("MSFT")?.metadata.watchlists).toEqual(["watchlist", "team:t1:w1"]);
+
+    await press("d");
+    await press("y");
+    const ticker = harnessState?.tickers.get("MSFT");
+    expect(ticker?.metadata.watchlists).toEqual(["team:t1:w1"]);
+    expect(ticker?.metadata.positions).toEqual([position]);
+    expect(harnessState?.paneState[TEST_PANE_ID]?.cursorSymbol).toBe("NVDA");
+    expect(notifications.at(-1)).toMatchObject({ type: "success", body: "Removed MSFT from Watchlist." });
   });
 
-  test("d removes a manual portfolio ticker and its position", async () => {
-    const config = createManualCollectionConfig("main");
+  test("d on a manual portfolio says the position goes with the ticker", async () => {
     const kept = { portfolio: "other", shares: 1, avgCost: 10, currency: "USD", broker: "manual" as const };
-    const notifications: Array<{ type?: string; body: string }> = [];
-    installQuickAddRegistry(createQuickAddProvider(true));
+    await renderRemovable(createManualCollectionConfig("main"), "main", [makeTicker({
+      portfolios: ["main", "other"],
+      watchlists: ["watchlist"],
+      positions: [{ portfolio: "main", shares: 4, avgCost: 100, currency: "USD", broker: "manual" }, kept],
+    })]);
 
-    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
-      <PortfolioHarness
-        config={config}
-        collectionId="main"
-        ticker={makeTicker({
-          portfolios: ["main", "other"],
-          watchlists: ["watchlist"],
-          positions: [
-            { portfolio: "main", shares: 4, avgCost: 100, currency: "USD", broker: "manual" },
-            kept,
-          ],
-        })}
-        runtime={createTestPluginRuntime({
-          notify: (notification) => { notifications.push(notification); },
-        })}
-        paneHeight={11}
-      />
-      <PaneFooterBar footer={footer} focused width={100} />
-      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
-    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
-
-    await flushFrame();
-    expect(tui.frame()).toContain("[d]elete");
-
-    await act(async () => {
-      tui.setup().mockInput.pressKey("d");
-      await Promise.resolve();
-      await tui.setup().renderOnce();
-    });
-    await flushFrame();
-
+    await press("d");
+    expect(tui.frame()).toContain("Its position here, 4 at 100");
+    await press("y");
     const ticker = harnessState?.tickers.get("AAPL");
     expect(ticker?.metadata.portfolios).toEqual(["other"]);
     expect(ticker?.metadata.positions).toEqual([kept]);
     expect(ticker?.metadata.watchlists).toEqual(["watchlist"]);
-    expect(notifications.at(-1)).toMatchObject({
-      type: "success",
-      body: "Removed AAPL from Main Portfolio.",
-    });
   });
 
-  test("a broker portfolio does not offer delete", async () => {
-    const portfolioId = "broker:ibkr-flex:DU12345";
-    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
-    const notifications: Array<{ type?: string; body: string }> = [];
-    installQuickAddRegistry(createQuickAddProvider(true));
-    const ticker = makeTicker();
+  const teamConfig = createManualCollectionConfig("team:t1:w1");
+  teamConfig.watchlists = [{ id: "team:t1:w1", name: "Desk", teamId: "t1" }];
+  for (const [name, collectionId, config] of [
+    ["a broker portfolio", "broker:ibkr-flex:DU12345", createPortfolioConfig("broker:ibkr-flex:DU12345", [createBrokerInstance("flex")])],
+    ["a team watchlist", "team:t1:w1", teamConfig],
+  ] satisfies Array<[string, string, AppConfig]>) {
+    test(`${name} offers no delete`, async () => {
+      const ticker = makeTicker({ watchlists: ["team:t1:w1"] });
+      const notifications = await renderRemovable(config, collectionId, [ticker]);
+      expect(tui.frame()).toContain("AAPL");
+      expect(tui.frame()).not.toContain("[d]elete");
 
-    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
-      <PortfolioHarness
-        config={config}
-        collectionId={portfolioId}
-        ticker={ticker}
-        runtime={createTestPluginRuntime({
-          notify: (notification) => { notifications.push(notification); },
-        })}
-        paneHeight={11}
-      />
-      <PaneFooterBar footer={footer} focused width={100} />
-      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
-    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
-
-    await flushFrame();
-    expect(tui.frame()).not.toContain("[d]elete");
-
-    await act(async () => {
-      tui.setup().mockInput.pressKey("d");
-      await Promise.resolve();
-      await tui.setup().renderOnce();
+      await press("d");
+      expect(tui.frame()).not.toContain("Remove AAPL");
+      expect(harnessState?.tickers.get("AAPL")).toBe(ticker);
+      expect(notifications).toEqual([]);
     });
-    await flushFrame();
-
-    expect(harnessState?.tickers.get("AAPL")?.metadata.portfolios).toEqual(ticker.metadata.portfolios);
-    expect(notifications).toEqual([]);
-  });
+  }
 
   test("quick-add rejects unresolved ticker input", async () => {
     const config = createManualCollectionConfig("watchlist");
