@@ -5,7 +5,7 @@ import type { TickerSearchInstrumentClass } from "./types";
  * instrument. ETF and FUT also open panes; the class row fills the query
  * instead of replacing those commands.
  */
-export const ASSET_CLASS_FILTERS = [
+const ASSET_CLASS_FILTERS = [
   { code: "EQ", label: "Equity", instrumentClass: "equity" },
   { code: "CUR", label: "Currency", instrumentClass: "currency" },
   { code: "OPT", label: "Option", instrumentClass: "option" },
