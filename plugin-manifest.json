@@ -250,8 +250,8 @@
     },
     {
       "id": "openfda",
-      "name": "openFDA Adverse Events",
-      "description": "Drug, device, and recall events from openFDA. Search by drug, firm, or device.",
+      "name": "FDA Reports and Recalls",
+      "description": "FDA adverse event reports for drugs and devices, and drug recalls, from openFDA. Search by drug, device, or firm name.",
       "categories": [
         "research"
       ],

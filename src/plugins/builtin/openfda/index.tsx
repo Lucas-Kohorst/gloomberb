@@ -3,11 +3,13 @@ import { OpenFdaPane } from "./pane";
 import { OPENFDA_PANE_ID, OPENFDA_PLUGIN_ID } from "./types";
 
 const createOpenFdaPaneInstance = (options?: PaneTemplateCreateOptions) => {
-  const query = (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+  // A search of product and firm names, never a ticker: FDA records name the
+  // firm as it filed, not a symbol, so a ticker would match unrelated text.
+  const query = (options?.arg ?? options?.values?.query ?? "").trim();
   const encoded = encodeURIComponent(query).replace(/%/g, "~");
   return {
     instanceId: query ? `fda:${encoded}` : "fda:latest",
-    title: query ? `Adverse Events ${query}` : "Adverse Events",
+    title: query ? `FDA ${query}` : "FDA Reports",
     placement: "floating" as const,
     binding: { kind: "none" as const },
     settings: { query },
@@ -16,10 +18,10 @@ const createOpenFdaPaneInstance = (options?: PaneTemplateCreateOptions) => {
 
 export const openFdaPlugin: GloomPlugin = {
   id: OPENFDA_PLUGIN_ID,
-  name: "openFDA Adverse Events",
+  name: "FDA Reports and Recalls",
   version: "1.0.0",
   description:
-    "Drug, device, and recall events from openFDA. Search by drug, firm, or device.",
+    "FDA adverse event reports for drugs and devices, and drug recalls, from openFDA. Search by drug, device, or firm name.",
   toggleable: true,
 
   // Public JSON over HTTPS, so every renderer. The host is declared so the web app proxies api.fda.gov.
@@ -29,7 +31,7 @@ export const openFdaPlugin: GloomPlugin = {
   panes: [
     {
       id: OPENFDA_PANE_ID,
-      name: "Adverse Events",
+      name: "FDA Reports",
       icon: "F",
       component: OpenFdaPane,
       defaultPosition: "right",
@@ -43,9 +45,9 @@ export const openFdaPlugin: GloomPlugin = {
     {
       id: "adverse-events-pane",
       paneId: OPENFDA_PANE_ID,
-      label: "Adverse Events",
+      label: "FDA Reports",
       description:
-        "openFDA drug, device, and recall events. Search by drug, firm, or device.",
+        "Drug and device adverse event reports and drug recalls, by drug, device, or firm name.",
       keywords: [
         "fda",
         "openfda",
@@ -59,7 +61,7 @@ export const openFdaPlugin: GloomPlugin = {
       ],
       shortcut: {
         prefix: "FDA",
-        argPlaceholder: "drug, firm, or device",
+        argPlaceholder: "drug, device or firm",
         argKind: "text",
         argOptional: true,
       },

@@ -1,306 +1,128 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { parseRootShortcutIntent } from "../../../components/command-bar/routes/root/shortcuts";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import {
-  OPENFDA_DISPLAY_CAP,
   OpenFdaClient,
-  buildDeviceEventSearch,
-  buildDrugEventSearch,
-  buildRecallSearch,
-  mergeOpenFdaPages,
-  openFdaRowsFromPayload,
-  parseDeviceEvent,
-  parseDeviceEventPage,
-  parseDrugEvent,
-  parseDrugEventPage,
-  parseOpenFdaDate,
-  parseRecall,
-  parseRecallPage,
+  buildOpenFdaUrl,
+  parseDeviceReport,
+  parseDrugRecall,
+  parseDrugReport,
+  parseOpenFdaPage,
 } from "./client";
-import { openFdaPlugin } from "./index";
-import type { OpenFdaPage } from "./types";
 
+const savedKey = process.env.OPENFDA_API_KEY;
 afterEach(() => {
   setHttpFetchTransport(null);
+  if (savedKey === undefined) delete process.env.OPENFDA_API_KEY;
+  else process.env.OPENFDA_API_KEY = savedKey;
 });
 
-const DRUG_FIXTURE = {
-  safetyreportid: "10003304-1",
+// Trimmed from a live FAERS answer to "metformin": the patient took twenty
+// drugs, Dupixent was the suspect one and metformin was only concomitant.
+const DRUG_REPORT = {
+  safetyreportid: "26940238",
+  receivedate: "20260630",
   serious: "1",
-  receivedate: "20240115",
+  seriousnesshospitalization: "1",
+  occurcountry: "US",
+  primarysource: { qualification: "5" },
   patient: {
-    reaction: [
-      { reactionmeddrapt: "Nausea" },
-      { reactionmeddrapt: "Headache" },
-    ],
+    reaction: [{ reactionmeddrapt: "Upper-airway cough syndrome" }, { reactionmeddrapt: "Nasal congestion" }],
     drug: [
+      { medicinalproduct: "DUPIXENT", drugcharacterization: "1", openfda: { generic_name: ["DUPILUMAB"], manufacturer_name: ["Sanofi-Aventis U.S. LLC"] } },
+      { medicinalproduct: "AMLODIPINE BESYLATE", drugcharacterization: "2", openfda: { manufacturer_name: ["Zydus Pharmaceuticals USA Inc.", "Viatris Specialty LLC"] } },
       {
-        medicinalproduct: "IBUPROFEN",
-        openfda: {
-          brand_name: ["Advil"],
-          manufacturer_name: ["Pfizer Inc"],
-        },
+        medicinalproduct: "METFORMIN",
+        drugcharacterization: "2",
+        openfda: { generic_name: ["METFORMIN"], manufacturer_name: ["Mylan Pharmaceuticals Inc.", "Granules Pharmaceuticals Inc."] },
       },
     ],
   },
 };
 
-const DEVICE_FIXTURE = {
-  mdr_report_key: "98765",
-  event_type: "Malfunction",
-  date_received: "20240220",
-  device: [
-    {
-      brand_name: "HeartPump X",
-      generic_name: "Ventricular pump",
-      manufacturer_d_name: "Acme Medical",
-      device_report_product_code: "XYZ",
-      model_number: "HP-1",
-    },
-  ],
-};
-
-const RECALL_FIXTURE = {
-  recall_number: "D-001-2024",
-  recalling_firm: "Acme Pharma",
-  product_description: "Ibuprofen 200mg tablets, 100 count",
-  reason_for_recall: "Failed dissolution specifications",
-  classification: "Class II",
-  status: "Ongoing",
-  recall_initiation_date: "20240301",
-};
-
-describe("FDA shortcut", () => {
-  test("is registered for an optional drug, firm, or device", () => {
-    const templates = openFdaPlugin.paneTemplates ?? [];
-    const template = templates.find((entry) => entry.shortcut?.prefix === "FDA");
-    expect(template?.shortcut).toMatchObject({
-      prefix: "FDA",
-      argKind: "text",
-      argOptional: true,
-      argPlaceholder: "drug, firm, or device",
-    });
-    expect(template?.description).toBe(
-      "openFDA drug, device, and recall events. Search by drug, firm, or device.",
+describe("openFDA requests", () => {
+  test("join the search clauses with spaces, page by skip and keep each dataset's newest-first order", () => {
+    const url = buildOpenFdaUrl("drug", "metformin", 100);
+    // A literal "+OR+" is sent as "%2BOR%2B", which openFDA answers with no matches.
+    expect(url).not.toContain("%2BOR%2B");
+    const params = new URL(url).searchParams;
+    // By drug name only: a generic's manufacturer list names every labeler.
+    expect(params.get("search")).toBe(
+      '(patient.drug.medicinalproduct:"metformin" OR patient.drug.openfda.brand_name:"metformin" OR '
+      + 'patient.drug.openfda.generic_name:"metformin")',
     );
+    expect(params.get("skip")).toBe("100");
+    expect(params.get("sort")).toBe("receivedate:desc");
+    expect(new URL(buildOpenFdaUrl("recall", "")).searchParams.has("search")).toBe(false);
+    expect(new URL(buildOpenFdaUrl("device", 'insulin "pump"')).searchParams.get("search")).toContain('device.brand_name:"insulin pump"');
+  });
 
-    const intent = parseRootShortcutIntent({
-      query: "FDA ibuprofen",
-      commands: [],
-      paneTemplates: templates,
-      activeTicker: null,
+  test("send the optional key in a header, never in the URL, treat no match as empty and fail loudly otherwise", async () => {
+    process.env.OPENFDA_API_KEY = "test-key-123";
+    const seen: Array<{ url: string; authorization: string | null }> = [];
+    const answers = [
+      new Response(JSON.stringify({ error: { code: "NOT_FOUND" } }), { status: 404 }),
+      new Response("bad request", { status: 400 }),
+    ];
+    setHttpFetchTransport(async (url, init) => {
+      seen.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+      return answers.shift() ?? new Response("bad request", { status: 400 });
     });
-    expect(intent).toMatchObject({
-      source: "pane-template",
-      prefix: "FDA",
-      kind: "complete",
-      argKind: "text",
-      argText: "ibuprofen",
-    });
-    if (intent.kind === "none" || intent.source !== "pane-template") return;
-    expect(intent.template.id).toBe("adverse-events-pane");
-
-    const bare = parseRootShortcutIntent({
-      query: "FDA",
-      commands: [],
-      paneTemplates: templates,
-      activeTicker: null,
-    });
-    expect(bare).toMatchObject({ prefix: "FDA", kind: "partial", argText: "" });
-
-    expect(template?.createInstance?.({} as never, { arg: "ibuprofen" })).toMatchObject({
-      title: "Adverse Events ibuprofen",
-      settings: { query: "ibuprofen" },
-    });
-    expect(template?.createInstance?.({} as never, {})).toMatchObject({
-      instanceId: "fda:latest",
-      title: "Adverse Events",
-      settings: { query: "" },
-    });
+    const client = new OpenFdaClient();
+    expect(await client.listPage("device", "no such device", 0)).toMatchObject({ rows: [], matched: 0, hasMore: false });
+    await expect(client.listPage("drug", "x", 0)).rejects.toThrow("FDA data request failed (400)");
+    expect(seen[0]!.url).not.toContain("test-key-123");
+    expect(seen[0]!.authorization).toBe(`Basic ${btoa("test-key-123:")}`);
   });
 });
 
-describe("openfda search builders", () => {
-  test("drug search spans product, brand, generic, and manufacturer", () => {
-    const search = buildDrugEventSearch("ibuprofen");
-    expect(search).toContain('patient.drug.medicinalproduct:"ibuprofen"');
-    expect(search).toContain('patient.drug.openfda.brand_name:"ibuprofen"');
-    expect(search).toContain('patient.drug.openfda.generic_name:"ibuprofen"');
-    expect(search).toContain('patient.drug.openfda.manufacturer_name:"ibuprofen"');
-  });
-
-  test("device search spans brand, generic, and manufacturer", () => {
-    const search = buildDeviceEventSearch("Acme");
-    expect(search).toContain('device.brand_name:"Acme"');
-    expect(search).toContain('device.generic_name:"Acme"');
-    expect(search).toContain('device.manufacturer_d_name:"Acme"');
-  });
-
-  test("recall search spans firm, product, and reason", () => {
-    const search = buildRecallSearch("Acme");
-    expect(search).toContain('recalling_firm:"Acme"');
-    expect(search).toContain('product_description:"Acme"');
-    expect(search).toContain('reason_for_recall:"Acme"');
-  });
-
-  test("blank queries build no search param", () => {
-    expect(buildDrugEventSearch("   ")).toBeUndefined();
-    expect(buildDeviceEventSearch("")).toBeUndefined();
-    expect(buildRecallSearch("  ")).toBeUndefined();
-  });
-
-  test("embedded quotes are stripped so the search stays valid", () => {
-    expect(buildDrugEventSearch('a"b')).toContain('"ab"');
-  });
-});
-
-describe("openfda date parsing", () => {
-  test("parses YYYYMMDD as UTC", () => {
-    expect(parseOpenFdaDate("20240115").toISOString()).toBe("2024-01-15T00:00:00.000Z");
-  });
-
-  test("parses dashed dates too", () => {
-    expect(parseOpenFdaDate("2024-02-20").toISOString()).toBe("2024-02-20T00:00:00.000Z");
-  });
-
-  test("falls back to epoch for garbage", () => {
-    expect(parseOpenFdaDate("not-a-date").getTime()).toBe(0);
-    expect(parseOpenFdaDate(undefined).getTime()).toBe(0);
-  });
-});
-
-describe("openfda record parsing", () => {
-  test("drug event picks product, company, reactions, and seriousness", () => {
-    const record = parseDrugEvent(DRUG_FIXTURE, 0);
-    expect(record?.id).toBe("drug:10003304-1");
-    expect(record?.dataset).toBe("drug");
-    expect(record?.product).toBe("IBUPROFEN");
-    expect(record?.company).toBe("Pfizer Inc");
-    expect(record?.title).toContain("IBUPROFEN");
-    expect(record?.title).toContain("Nausea");
-    expect(record?.flag).toBe("Serious");
-    expect(record?.date.toISOString()).toBe("2024-01-15T00:00:00.000Z");
-    expect(record?.url).toContain("drug/event.json");
-    expect(record?.url).toContain("10003304-1");
-  });
-
-  test("drug event flags death over serious", () => {
-    const record = parseDrugEvent({ ...DRUG_FIXTURE, seriousnessdeath: "1" }, 0);
-    expect(record?.flag).toBe("Death");
-  });
-
-  test("drug event survives missing openfda block", () => {
-    const record = parseDrugEvent({
-      safetyreportid: "9",
-      receivedate: "20240101",
-      patient: { drug: [{ medicinalproduct: "ASPIRIN" }] },
-    }, 0);
-    expect(record?.product).toBe("ASPIRIN");
-    expect(record?.company).toBe("");
-    expect(record?.detail).toEqual([]);
-  });
-
-  test("drug event page reads the total from meta", () => {
-    const page = parseDrugEventPage({
-      meta: { results: { total: 617933 } },
-      results: [DRUG_FIXTURE],
+describe("openFDA records", () => {
+  test("a drug report names the drug the search matched, with its role, not the report's first drug", () => {
+    const report = parseDrugReport(DRUG_REPORT, "metformin");
+    expect(report).toMatchObject({
+      id: "drug:26940238",
+      product: "METFORMIN",
+      role: "concomitant",
+      outcome: "Serious",
+      outcomes: ["Hospitalization"],
+      reporter: "Consumer",
+      reactions: ["Upper-airway cough syndrome", "Nasal congestion"],
     });
-    expect(page.total).toBe(617933);
-    expect(page.records).toHaveLength(1);
+    // A generic lists every labeler, so none is named as the product's maker.
+    expect(report?.manufacturer).toBeNull();
+    expect(parseDrugReport(DRUG_REPORT, "dupilumab")).toMatchObject({ product: "DUPIXENT", role: "suspect", manufacturer: "Sanofi-Aventis U.S. LLC" });
+    expect(parseDrugReport(DRUG_REPORT, "")?.product).toBe("DUPIXENT");
+    expect(parseDrugReport({ ...DRUG_REPORT, seriousnessdeath: "1" }, "metformin")?.outcome).toBe("Death");
   });
 
-  test("device event picks brand, manufacturer, and event type", () => {
-    const record = parseDeviceEvent(DEVICE_FIXTURE, 0);
-    expect(record?.id).toBe("device:98765");
-    expect(record?.product).toBe("HeartPump X");
-    expect(record?.company).toBe("Acme Medical");
-    expect(record?.flag).toBe("Malfunction");
-    expect(record?.detail.join(" ")).toContain("XYZ");
-    expect(record?.url).toContain("device/event.json");
+  test("a device report names the matched device, and recalls without a number stay apart", () => {
+    const device = parseDeviceReport({
+      mdr_report_key: "50515356",
+      date_received: "20260831",
+      event_type: "Malfunction",
+      product_problems: ["Failure to Charge"],
+      device: [
+        { brand_name: "N/A", generic_name: "Infusion set", manufacturer_d_name: "Acme" },
+        { brand_name: "t:slim X2 Insulin Pump", generic_name: "Insulin Infusion Pump", manufacturer_d_name: "Tandem Diabetes Care" },
+      ],
+    }, "insulin pump");
+    expect(device).toMatchObject({ product: "t:slim X2 Insulin Pump", manufacturer: "Tandem Diabetes Care", eventType: "Malfunction" });
+
+    const first = parseDrugRecall({ recall_number: "N/A", event_id: "96082", product_description: "Tablets 500 mg, lot A" });
+    const second = parseDrugRecall({ recall_number: "N/A", event_id: "96082", product_description: "Tablets 1000 mg, lot B" });
+    expect(first?.id).not.toBe(second?.id);
+    expect(first?.recallNumber).toBeNull();
+    expect(parseDrugRecall({ recall_number: "D-0192-2025", recalling_firm: "Granules", classification: "Class II" }))
+      .toMatchObject({ id: "recall:D-0192-2025", firm: "Granules", classification: "Class II" });
   });
 
-  test("device event falls back to generic name for N/A brands", () => {
-    const record = parseDeviceEvent({
-      mdr_report_key: "1",
-      date_received: "20240101",
-      device: [{ brand_name: "N/A", generic_name: "Manual bed" }],
-    }, 0);
-    expect(record?.product).toBe("Manual bed");
-  });
-
-  test("recall picks firm, classification, status, and reason", () => {
-    const record = parseRecall(RECALL_FIXTURE, 0);
-    expect(record?.id).toBe("recall:D-001-2024");
-    expect(record?.dataset).toBe("recall");
-    expect(record?.company).toBe("Acme Pharma");
-    expect(record?.flag).toBe("Class II — Ongoing");
-    expect(record?.detail[0]).toContain("dissolution");
-    expect(record?.url).toContain("drug/enforcement.json");
-  });
-
-  test("empty payloads parse to empty pages", () => {
-    expect(parseDrugEventPage({})).toEqual({ records: [], total: 0 });
-    expect(parseDeviceEventPage(null)).toEqual({ records: [], total: 0 });
-    expect(parseRecallPage({ results: "nope" })).toEqual({ records: [], total: 0 });
-    expect(parseDrugEvent(null)).toBeNull();
-  });
-});
-
-describe("openfda rows", () => {
-  test("turns a fixture payload into rows", () => {
-    const rows = openFdaRowsFromPayload({
-      drug: { meta: { results: { total: 10 } }, results: [DRUG_FIXTURE] },
-      device: { meta: { results: { total: 20 } }, results: [DEVICE_FIXTURE] },
-      recall: { meta: { results: { total: 30 } }, results: [RECALL_FIXTURE] },
-    });
-    expect(rows.map((row) => row.id)).toEqual([
-      "recall:D-001-2024",
-      "device:98765",
-      "drug:10003304-1",
-    ]);
-    expect(rows.map((row) => row.dataset)).toEqual(["recall", "device", "drug"]);
-    expect(rows.every((row) => row.url.startsWith("https://api.fda.gov/"))).toBe(true);
-  });
-});
-
-describe("openfda page merging", () => {
-  test("merges newest-first, sums totals, and caps", () => {
-    const page: OpenFdaPage = mergeOpenFdaPages([
-      { records: [parseDrugEvent(DRUG_FIXTURE, 0)!], total: 10 },
-      { records: [parseDeviceEvent(DEVICE_FIXTURE, 0)!], total: 20 },
-      { records: [parseRecall(RECALL_FIXTURE, 0)!], total: 30 },
-    ]);
-    expect(page.total).toBe(60);
-    expect(page.records.map((record) => record.id)).toEqual([
-      "recall:D-001-2024",
-      "device:98765",
-      "drug:10003304-1",
-    ]);
-
-    const many = Array.from({ length: OPENFDA_DISPLAY_CAP + 5 }, (_, index) =>
-      parseRecall({ ...RECALL_FIXTURE, recall_number: `D-${index}` }, index)!);
-    expect(mergeOpenFdaPages([{ records: many, total: many.length }]).records).toHaveLength(OPENFDA_DISPLAY_CAP);
-  });
-});
-
-describe("openfda client", () => {
-  test("openFDA 404 (no matches) becomes an empty page, not an error", async () => {
-    const requested: string[] = [];
-    setHttpFetchTransport(async (url: string) => {
-      requested.push(url);
-      return new Response(JSON.stringify({ error: { code: "NOT_FOUND" } }), { status: 404 });
-    });
-    const page = await new OpenFdaClient().listRecords({ searchQuery: "zzz-no-such-drug" });
-    expect(page).toEqual({ records: [], total: 0 });
-    expect(requested).toHaveLength(3);
-    expect(requested.some((url) => url.includes("/drug/event.json"))).toBe(true);
-    expect(requested.some((url) => url.includes("/device/event.json"))).toBe(true);
-    expect(requested.some((url) => url.includes("/drug/enforcement.json"))).toBe(true);
-    expect(requested.every((url) => url.includes("search="))).toBe(true);
-  });
-
-  test("failed endpoints still throw", async () => {
-    setHttpFetchTransport(async () => new Response("oops", { status: 500, statusText: "Bad" }));
-    await expect(new OpenFdaClient().listRecords({})).rejects.toThrow(/openFDA request failed: 500/);
+  test("a page keeps what matched, its data date, and stops where skipping can no longer reach", () => {
+    const results = Array.from({ length: 50 }, (_, index) => ({ ...DRUG_REPORT, safetyreportid: String(index) }));
+    const meta = (total: number) => ({ last_updated: "2026-07-30", results: { skip: 0, limit: 50, total } });
+    expect(parseOpenFdaPage("drug", { meta: meta(461_396), results }, "metformin", 0))
+      .toMatchObject({ matched: 461_396, lastUpdated: "2026-07-30", hasMore: true, nextOffset: 50, windowLimited: false });
+    expect(parseOpenFdaPage("drug", { meta: meta(461_396), results }, "metformin", 25_000))
+      .toMatchObject({ hasMore: false, nextOffset: null, windowLimited: true });
+    expect(parseOpenFdaPage("drug", { meta: meta(60), results: results.slice(0, 10) }, "metformin", 50))
+      .toMatchObject({ hasMore: false, windowLimited: false });
   });
 });

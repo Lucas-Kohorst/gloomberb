@@ -917,10 +917,10 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: [],
   },
   FDA: {
-    summary: "Drug and device adverse events and recalls, searchable by name. Open the public record.",
-    usage: ["FDA", "FDA metformin"],
+    summary: "FDA drug and device adverse event reports and drug recalls, by drug, device or firm name. A report is what someone observed, not proof the product caused it.",
+    usage: ["FDA", "FDA metformin", "FDA insulin pump"],
     keys: [SEARCH, OPEN],
-    data: same("As reports are posted"),
+    data: same("As FDA updates each dataset; drug reports quarterly"),
     bloomberg: [],
   },
   HDS: {
