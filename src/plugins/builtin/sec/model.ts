@@ -31,6 +31,8 @@ export function getMeaningfulPrimaryDescription(filing: SecFilingItem): string |
   const description = filing.primaryDocDescription?.trim();
   if (!description) return undefined;
   if (normalizeComparableText(description) === normalizeComparableText(filing.form)) return undefined;
+  // Fund filers often describe every document with their own name.
+  if (filing.companyName && normalizeComparableText(description) === normalizeComparableText(filing.companyName)) return undefined;
 
   const stripped = stripRedundantFormPrefix(filing.form, description);
   if (!stripped) return undefined;
@@ -82,7 +84,25 @@ export function getFormDescription(form: string): string {
     case "DEF 14A": return "Proxy Statement";
     case "S-1": return "Registration Statement";
     case "20-F": return "Annual Report (Foreign)";
-    default: return "";
+    case "N-1A": return "Fund Registration Statement";
+    case "N-2": return "Closed-End Fund Registration Statement";
+    case "485APOS":
+    case "485BPOS": return "Post-Effective Amendment";
+    case "485BXT": return "Effective Date Extension";
+    case "497": return "Prospectus Supplement";
+    case "497J": return "Prospectus Certification";
+    case "497K": return "Summary Prospectus";
+    case "N-CSR": return "Certified Shareholder Report";
+    case "N-CSRS": return "Certified Shareholder Report (Semiannual)";
+    case "N-30D": return "Shareholder Report";
+    case "N-CEN": return "Annual Report for Registered Investment Companies";
+    case "NPORT-P": return "Monthly Portfolio Holdings Report";
+    case "NPORT-EX": return "Portfolio Holdings Exhibit";
+    case "24F-2NT": return "Annual Notice of Securities Sold";
+    default: {
+      const base = normalized.endsWith("/A") ? getFormDescription(normalized.slice(0, -2)) : "";
+      return base ? `${base} (Amended)` : "";
+    }
   }
 }
 

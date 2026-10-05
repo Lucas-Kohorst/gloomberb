@@ -5,6 +5,10 @@
  * version here never waits on a deploy. Modeled on `chart-composer/chart-spec`.
  */
 
+import { NUMERIC_FIELDS } from "../../../api-client/equity-screener";
+import { getTimeSeriesField } from "../../../time-series/field-catalog";
+import { parseScreenDefinition } from "../equity-screener/model";
+import { parseFormula } from "./formula";
 import { formatCompact, formatCompactAmount } from "../../../utils/format";
 import { isRecord } from "../../../utils/guards";
 
@@ -12,10 +16,21 @@ const VIEW_SPEC_VERSION = 1;
 const MAX_VIEW_COLUMNS = 24;
 const MAX_VIEW_FILTERS = 12;
 const MAX_VIEW_LIMIT = 2_000;
+const MAX_TICKER_SYMBOLS = 100;
+const TICKER_PATTERN = /^[A-Z0-9.^=-]{1,16}$/;
+const EQUITY_COLUMN_KEYS = new Set<string>([
+  "symbol", "name", "exchange", "sector", "industry", "currency",
+  ...NUMERIC_FIELDS,
+]);
 
 export type ViewTransform = "raw" | "percent" | "compact" | "abs" | "index100";
 type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains" | "in" | "exists";
 type ViewPrimitive = string | number | boolean | null;
+
+export interface ViewColumnFrom {
+  pane: string;
+  field: string;
+}
 
 export interface ViewColumn {
   key: string;
@@ -23,6 +38,10 @@ export interface ViewColumn {
   align?: "left" | "right" | "center";
   width?: number;
   transform?: ViewTransform;
+  /** First row, or latest point, of a ticker-keyed data function. */
+  from?: ViewColumnFrom;
+  /** Arithmetic over other column keys. Names may contain dots, as in market.close. */
+  formula?: string;
 }
 
 interface ViewFilter {
@@ -49,6 +68,15 @@ export type ViewSource =
     /** A team view id; the cloud.views capability resolves it to its latest spec. */
     viewId: string;
     teamId?: string;
+  }
+  | {
+    kind: "screen";
+    /** Unparsed so a broken screen can report the screener parser's message. */
+    definition: unknown;
+  }
+  | {
+    kind: "tickers";
+    symbols: string[];
   };
 
 export interface ViewProjection {
@@ -114,7 +142,20 @@ function normalizeColumn(value: unknown): ViewColumn | null {
   if (typeof value.transform === "string" && TRANSFORMS.has(value.transform as ViewTransform)) {
     column.transform = value.transform as ViewTransform;
   }
+  if (isRecord(value.from) && typeof value.from.pane === "string" && typeof value.from.field === "string") {
+    const pane = value.from.pane.trim();
+    const field = value.from.field.trim();
+    if (pane && field) column.from = { pane, field };
+  }
+  const formula = cleanString(value.formula, 200);
+  if (formula) column.formula = formula;
   return column;
+}
+
+/** Chart-catalog id for a column that is not already an equity-screener field. */
+export function catalogColumnField(column: ViewColumn): string | null {
+  if (column.formula || column.from || EQUITY_COLUMN_KEYS.has(column.key)) return null;
+  return getTimeSeriesField(column.key)?.id ?? null;
 }
 
 function normalizeFilter(value: unknown): ViewFilter | null {
@@ -123,6 +164,20 @@ function normalizeFilter(value: unknown): ViewFilter | null {
   if (Array.isArray(value.value)) filter.value = value.value.filter(primitive);
   else if (primitive(value.value)) filter.value = value.value;
   return filter;
+}
+
+function normalizeTickers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const symbols: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const symbol = entry.trim().toUpperCase();
+    if (!symbol || seen.has(symbol)) continue;
+    seen.add(symbol);
+    symbols.push(symbol);
+  }
+  return symbols;
 }
 
 function normalizeSource(value: unknown): ViewSource | null {
@@ -135,7 +190,13 @@ function normalizeSource(value: unknown): ViewSource | null {
       ...(typeof value.teamId === "string" && value.teamId ? { teamId: value.teamId } : {}),
     };
   }
-  if (value.kind !== "inline" && value.kind !== undefined) return null;
+  if (value.kind === "screen") {
+    return { kind: "screen", definition: isRecord(value.definition) ? value.definition : {} };
+  }
+  if (value.kind === "tickers") {
+    return { kind: "tickers", symbols: normalizeTickers(value.symbols) };
+  }
+  if (value.kind !== "inline" && value.kind !== "function" && value.kind !== undefined) return null;
   if (typeof value.pane !== "string") return null;
   const source: ViewSource = { kind: "inline", pane: value.pane.trim() };
   const argument = cleanString(value.argument, 500);
@@ -190,12 +251,42 @@ export function validateViewSpec(spec: ViewSpec): ViewSpecValidationResult {
   if (spec.version !== VIEW_SPEC_VERSION) {
     errors.push(issue("version", "unsupported-version", `Unsupported view spec version ${String(spec.version)}.`));
   }
-  if (spec.source.kind === "inline") {
-    if (!spec.source.pane || !PANE_TOKEN_PATTERN.test(spec.source.pane)) {
-      errors.push(issue("source.pane", "missing-pane", "A source pane token is required."));
+  switch (spec.source.kind) {
+    case "inline":
+      if (!spec.source.pane || !PANE_TOKEN_PATTERN.test(spec.source.pane)) {
+        errors.push(issue("source.pane", "missing-pane", "A source pane token is required."));
+      }
+      break;
+    case "ref":
+      if (!spec.source.viewId) {
+        errors.push(issue("source.viewId", "missing-view", "A referenced view needs an id."));
+      }
+      break;
+    case "screen":
+      try {
+        spec.source.definition = parseScreenDefinition(spec.source.definition);
+      } catch (error) {
+        errors.push(issue(
+          "source.definition",
+          "invalid-screen",
+          error instanceof Error ? error.message : "Invalid screen definition.",
+        ));
+      }
+      break;
+    case "tickers":
+      if (spec.source.symbols.length < 1 || spec.source.symbols.length > MAX_TICKER_SYMBOLS) {
+        errors.push(issue("source.symbols", "invalid-symbols", `A ticker list needs 1 to ${MAX_TICKER_SYMBOLS} symbols.`));
+      }
+      spec.source.symbols.forEach((symbol, index) => {
+        if (!TICKER_PATTERN.test(symbol)) {
+          errors.push(issue(`source.symbols.${index}`, "invalid-symbol", `Invalid ticker ${symbol}.`));
+        }
+      });
+      break;
+    default: {
+      const unreachable: never = spec.source;
+      errors.push(issue("source", "invalid-source", `Unknown view source ${String(unreachable)}.`));
     }
-  } else if (!spec.source.viewId) {
-    errors.push(issue("source.viewId", "missing-view", "A referenced view needs an id."));
   }
   if (spec.projection.columns.length > MAX_VIEW_COLUMNS) {
     errors.push(issue("projection.columns", "too-many-columns", `A view shows at most ${MAX_VIEW_COLUMNS} columns.`));
@@ -207,6 +298,32 @@ export function validateViewSpec(spec: ViewSpec): ViewSpecValidationResult {
     seen.add(column.key);
     if (column.width !== undefined && (column.width < 2 || column.width > 80)) {
       errors.push(issue(`projection.columns.${index}.width`, "invalid-width", "Column width must be between 2 and 80."));
+    }
+    if (column.formula && column.from) {
+      errors.push(issue(`projection.columns.${index}`, "mixed-column", "A column is a field, a join, or a formula."));
+    }
+    if (column.formula && !parseFormula(column.formula)) {
+      errors.push(issue(`projection.columns.${index}.formula`, "invalid-formula", `Invalid formula ${column.formula}.`));
+    }
+    if (column.from) {
+      if (!PANE_TOKEN_PATTERN.test(column.from.pane)) {
+        errors.push(issue(`projection.columns.${index}.from.pane`, "invalid-pane", "A joined column needs a data function."));
+      }
+      if (!KEY_PATTERN.test(column.from.field)) {
+        errors.push(issue(`projection.columns.${index}.from.field`, "invalid-key", `Invalid joined field ${column.from.field}.`));
+      }
+    }
+    if (spec.source.kind === "screen" || spec.source.kind === "tickers") {
+      if (!column.formula && !column.from && !catalogColumnField(column) && !EQUITY_COLUMN_KEYS.has(column.key)) {
+        errors.push(issue(`projection.columns.${index}.key`, "unknown-field", `Unknown screener field ${column.key}.`));
+      }
+      if (column.transform === "percent" && column.key.endsWith("Percent")) {
+        warnings.push(issue(
+          `projection.columns.${index}.transform`,
+          "percent-points",
+          `${column.key} is already in percent points.`,
+        ));
+      }
     }
   });
   if (spec.projection.filters.length > MAX_VIEW_FILTERS) {

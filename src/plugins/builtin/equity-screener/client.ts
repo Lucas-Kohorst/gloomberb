@@ -8,7 +8,7 @@ import type {
   SavedScreen,
 } from "../../../api-client/equity-screener";
 
-type ScreenerClient = Pick<typeof apiClient, "equityScreener">;
+export type ScreenerClient = Pick<typeof apiClient, "equityScreener">;
 const json = (method: string, body: unknown, init: RequestInit = {}): RequestInit => ({
   ...init,
   method,

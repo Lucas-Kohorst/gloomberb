@@ -895,6 +895,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: AS_FILED,
     bloomberg: ["CF"],
   },
+  ETF: {
+    summary: "A US-listed fund's SEC filings: registration statements and prospectus updates, shareholder reports, N-CEN and N-PORT reports. Open any of them inline.",
+    usage: ["ETF SPY"],
+    keys: [OPEN, OPEN_SOURCE],
+    data: AS_FILED,
+    bloomberg: [],
+  },
   TRIAL: {
     summary: "Clinical studies by condition, drug, or sponsor, with status, phase, and enrollment. Open the study record.",
     usage: ["TRIAL", "TRIAL semaglutide"],

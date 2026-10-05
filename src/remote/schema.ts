@@ -122,15 +122,22 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
   ),
   op(
     "view.create",
-    "Create a custom view pane: a table from a data function with columns, a filter, and a sort. "
-      + "spec = { source: { pane: <tool name or pane id>, argument?, options? }, projection: { columns?: [{ key, label?, transform? }], filters?: [{ key, op, value }], sort?: { by, direction }, limit? }, presentation?: { title?, symbolKey? } }.",
+    "Open a worksheet pane and leave the rows there. A screen request uses this, not a data-function call whose rows get pasted back. "
+      + "spec.source is { pane, argument?, options? } for one catalog function, "
+      + "{ kind: 'screen', definition } for an equity-screener definition (version 1, criteria, sort, currency) whose columns are screener field ids such as marketCap, trailingPE, return1MPercent plus symbol, name, exchange, sector, industry, currency, "
+      + "or { kind: 'tickers', symbols } for up to 100 symbols and those same columns. "
+      + "A column may also be a chart field id such as market.close or fundamental.totalRevenue (the latest point), "
+      + "{ from: { pane, field } } to take that field from a ticker-keyed data function such as news or filings, "
+      + "or { formula } using + - * / and other column keys. "
+      + "The catalog has no index membership. A market-cap screen is not the S&P 500. "
+      + "projection is { columns?, filters?, sort?: { by, direction }, limit? }. presentation is { title?, symbolKey? }.",
     "{ name?: string, spec: object }",
     "local-write",
     objectSchema({ name: stringSchema, spec: openObjectSchema }, ["spec"]),
   ),
   op(
     "view.update",
-    "Replace the spec of an existing custom view pane. Same spec shape as view.create.",
+    "Replace the spec of an existing custom view pane. Same worksheet shape as view.create, including a screen or a ticker list.",
     "{ paneId: string, spec: object, name?: string }",
     "local-write",
     objectSchema({ paneId: requiredStringSchema, spec: openObjectSchema, name: stringSchema }, ["paneId", "spec"]),
@@ -373,6 +380,29 @@ export const REMOTE_AGENT_HELP = {
       goal: "Pan a chart through its semantic scroll action",
       request: { type: "call", operation: "ui.invokeMatching", input: { role: "chart", action: "scroll", input: { direction: "down", delta: 3 } } },
     },
+    {
+      goal: "Open an equity worksheet and leave the rows in the pane",
+      request: {
+        type: "call",
+        operation: "view.create",
+        input: {
+          name: "Large cap by P/E",
+          spec: {
+            source: {
+              kind: "screen",
+              definition: {
+                version: 1,
+                currency: "USD",
+                criteria: [{ field: "marketCap", op: "gte", value: 10000000000 }],
+                sort: { field: "trailingPE", direction: "asc" },
+              },
+            },
+            projection: { columns: ["symbol", "name", "marketCap", "trailingPE"], limit: 50 },
+            presentation: { title: "Large cap by P/E", symbolKey: "symbol" },
+          },
+        },
+      },
+    },
   ],
   batching: {
     requestShape: "{ type: 'batch', requests: RemoteControlRequest[], haltOnError?: boolean, settle?: 'none' | 'afterEach' | 'afterBatch', include?: RemoteStateInclude[] }",
@@ -387,6 +417,7 @@ export const REMOTE_AGENT_HELP = {
     "A form with covered: true has another dialog over it, such as a listing picker or a sign-in; its controls wait until that one is answered or closed with app.closeDialog.",
     "Pane settings open in their own dialog, not as command-bar rows; change one with pane.setSetting, read them from app://pane-settings/{paneId}, and close the dialog with app.closeDialog.",
     "Use ui.invokeMatching only after checking app-level operations; it is intentionally generic and depends on visible semantic controls.",
+    "A screener or worksheet request uses view.create. The catalog has no index membership, so an S&P 500 sheet needs an explicit ticker list or a screen whose criteria you name. Chart columns are the latest point. News, filings, and other ticker functions join with from.",
   ],
 };
 
