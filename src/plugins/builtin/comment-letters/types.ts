@@ -1,79 +1,43 @@
 export const COMMENT_LETTERS_PLUGIN_ID = "comment-letters";
 export const COMMENT_LETTERS_PANE_ID = "comment-letters";
 
-export type CommentLetterSeverity = "high" | "medium" | "low";
+/** UPLOAD is a letter SEC staff wrote; CORRESP is one the company sent. */
+type CommentLetterAuthor = "staff" | "company";
 
-export interface SeverityAssessment {
-  level: CommentLetterSeverity;
-  /** Sum of matched keyword weights. Thresholds: >= 6 high, >= 2 medium. */
-  score: number;
-  /** Human-readable matched signals, most significant first. */
-  reasons: string[];
-}
-
-/** One SEC comment-letter filing (staff letter or company response). */
+/** One SEC comment-letter filing: a staff letter or a company's correspondence. */
 export interface CommentLetter {
+  /** The accession number: one filing, however many documents it holds. */
   id: string;
-  form: string;
-  companyName?: string;
-  ticker?: string;
-  cik: string;
-  accessionNumber: string;
-  filingDate: Date;
-  filingUrl: string;
-  primaryDocumentUrl?: string;
-  description?: string;
-  severity: CommentLetterSeverity;
-  severityScore: number;
-  severityReasons: string[];
-}
-
-/** One filing the parser accepts before it becomes a comment letter. */
-export interface CommentLetterFiling {
   accessionNumber: string;
   form: string;
-  filingDate: Date;
-  cik: string;
+  author: CommentLetterAuthor;
   companyName?: string;
-  ticker?: string;
+  /** Every ticker EDGAR lists for the filer, first one first. */
+  tickers: string[];
+  /** Ten-digit, zero-padded. */
+  cik: string;
+  filingDate: Date;
   filingUrl: string;
+  primaryDocument?: string;
   primaryDocumentUrl?: string;
-  primaryDocDescription?: string;
-  items?: string;
 }
 
-/** A table row the pane renders from a comment letter. */
-export interface CommentLetterRow {
-  id: string;
-  form: string;
-  company: string;
+/** A company a ticker names, as EDGAR resolves it. */
+export interface CommentLetterIssuer {
+  cik: string;
   ticker: string;
-  cik: string;
-  filed: string;
-  filedAt: number;
-  severity: CommentLetterSeverity;
-  severityLabel: string;
-  score: number;
-  topic: string;
-  reasons: string[];
-  url: string | null;
+  name: string;
 }
 
-const SEVERITY_ORDER: Record<CommentLetterSeverity, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-};
-
-export const severityRank = (level: CommentLetterSeverity): number => SEVERITY_ORDER[level] ?? 0;
-
-export const severityTag = (level: CommentLetterSeverity): string => {
-  switch (level) {
-    case "high":
-      return "HIGH";
-    case "medium":
-      return "MED";
-    case "low":
-      return "LOW";
-  }
-};
+/**
+ * One page of letters. `issuer` is set when the search was a ticker and the
+ * page lists that company's letters. `windowLimited` says the search matched
+ * more letters than the full-text search lets anyone page through.
+ */
+export interface CommentLetterPage {
+  rows: CommentLetter[];
+  hasMore: boolean;
+  nextOffset: number | null;
+  issuer: CommentLetterIssuer | null;
+  windowLimited: boolean;
+}
