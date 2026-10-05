@@ -126,6 +126,9 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
       + "spec.source is { pane, argument?, options? } for one catalog function, "
       + "{ kind: 'screen', definition } for an equity-screener definition (version 1, criteria, sort, currency) whose columns are screener field ids such as marketCap, trailingPE, return1MPercent plus symbol, name, exchange, sector, industry, currency, "
       + "or { kind: 'tickers', symbols } for up to 100 symbols and those same columns. "
+      + "A column may also be a chart field id such as market.close or fundamental.totalRevenue (the latest point), "
+      + "{ from: { pane, field } } to take that field from a ticker-keyed data function such as news or filings, "
+      + "or { formula } using + - * / and other column keys. "
       + "The catalog has no index membership. A market-cap screen is not the S&P 500. "
       + "projection is { columns?, filters?, sort?: { by, direction }, limit? }. presentation is { title?, symbolKey? }.",
     "{ name?: string, spec: object }",
@@ -414,7 +417,7 @@ export const REMOTE_AGENT_HELP = {
     "A form with covered: true has another dialog over it, such as a listing picker or a sign-in; its controls wait until that one is answered or closed with app.closeDialog.",
     "Pane settings open in their own dialog, not as command-bar rows; change one with pane.setSetting, read them from app://pane-settings/{paneId}, and close the dialog with app.closeDialog.",
     "Use ui.invokeMatching only after checking app-level operations; it is intentionally generic and depends on visible semantic controls.",
-    "A screener or worksheet request uses view.create. The catalog has no index membership, so an S&P 500 sheet needs an explicit ticker list or a screen whose criteria you name.",
+    "A screener or worksheet request uses view.create. The catalog has no index membership, so an S&P 500 sheet needs an explicit ticker list or a screen whose criteria you name. Chart columns are the latest point. News, filings, and other ticker functions join with from.",
   ],
 };
 

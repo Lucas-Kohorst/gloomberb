@@ -1,13 +1,15 @@
 import type { HeadlessPaneColumn } from "../../../types/headless";
-import { NUMERIC_FIELDS, type NumericField, type ScreenDefinition, type ScreenRow } from "../../../api-client/equity-screener";
+import { NUMERIC_FIELDS, type ScreenDefinition, type ScreenRow } from "../../../api-client/equity-screener";
 import { loadResolvedHeadlessPaneModel, serializeHeadlessPaneResult } from "../../../cli/pane-functions/headless";
 import { resolvePaneFunction } from "../../../cli/pane-functions/resolver";
 import type { AppConfig } from "../../../types/config";
 import { getSharedRegistry } from "../../registry";
 import { marketContextFromRegistry } from "../cloud/askg/host";
+import { getTimeSeriesField } from "../../../time-series/field-catalog";
 import { fetchScreen, type ScreenerClient } from "../equity-screener/client";
 import { parseScreenDefinition, SHORT_LABELS } from "../equity-screener/model";
-import type { ViewRow, ViewSource, ViewSpec } from "./view-spec";
+import { joinWorksheetColumns, worksheetNeedsJoin, type QuoteScalars, type WorksheetJoinDeps } from "./join";
+import type { ViewColumn, ViewRow, ViewSource, ViewSpec } from "./view-spec";
 
 export interface LoadedView {
   rows: ViewRow[];
@@ -92,15 +94,35 @@ function screenRowToViewRow(row: ScreenRow): ViewRow {
   return view;
 }
 
+function columnHeader(column: Pick<ViewColumn, "key" | "from">): string {
+  const equityHeader = (SHORT_LABELS as Record<string, string>)[column.key];
+  return LIVE_HEADERS[column.key]
+    ?? IDENTITY_HEADERS[column.key]
+    ?? equityHeader
+    ?? getTimeSeriesField(column.key)?.shortLabel
+    ?? column.from?.field
+    ?? column.key;
+}
+
 function equityColumns(spec: ViewSpec): HeadlessPaneColumn[] {
-  const keys = spec.projection.columns.length > 0
-    ? spec.projection.columns.map((column) => column.key)
-    : DEFAULT_EQUITY_COLUMNS;
-  return keys.map((key) => ({
-    key,
-    header: LIVE_HEADERS[key] ?? IDENTITY_HEADERS[key] ?? SHORT_LABELS[key as NumericField] ?? key,
-    align: TEXT_KEYS.has(key) ? "left" as const : "right" as const,
+  const columns: Array<Pick<ViewColumn, "key" | "from">> = spec.projection.columns.length > 0
+    ? spec.projection.columns
+    : DEFAULT_EQUITY_COLUMNS.map((key) => ({ key }));
+  return columns.map((column) => ({
+    key: column.key,
+    header: columnHeader(column),
+    align: TEXT_KEYS.has(column.key) || column.from ? "left" as const : "right" as const,
   }));
+}
+
+function withSpecColumns(spec: ViewSpec, columns: HeadlessPaneColumn[]): HeadlessPaneColumn[] {
+  if (spec.projection.columns.length === 0) return columns;
+  const known = new Map(columns.map((column) => [column.key, column]));
+  return spec.projection.columns.map((column) => known.get(column.key) ?? {
+    key: column.key,
+    header: columnHeader(column),
+    align: column.from ? "left" as const : "right" as const,
+  });
 }
 
 function equityLimit(spec: ViewSpec): number {
@@ -158,9 +180,76 @@ async function loadTickerRows(
   });
 }
 
+async function liveJoinDeps(config: AppConfig, signal: AbortSignal): Promise<WorksheetJoinDeps> {
+  const registry = getSharedRegistry();
+  if (!registry) throw new Error("The plugin registry is not available.");
+  const context = marketContextFromRegistry(registry, config);
+  const provider = context.dataProvider;
+  return {
+    quotes: async (symbols, quoteSignal) => {
+      if (quoteSignal.aborted) return new Map();
+      if (!provider.getQuotesBatch) return new Map();
+      const results = await provider.getQuotesBatch(symbols.map((symbol) => ({ symbol, exchange: "" })));
+      const quotes = new Map<string, QuoteScalars>();
+      results.forEach((result, index) => {
+        const symbol = (result.quote?.symbol ?? symbols[index] ?? "").toUpperCase();
+        if (!symbol || !result.quote) return;
+        quotes.set(symbol, {
+          price: result.quote.price ?? null,
+          open: result.quote.open ?? null,
+          high: result.quote.high ?? null,
+          low: result.quote.low ?? null,
+          volume: result.quote.volume ?? null,
+        });
+      });
+      return quotes;
+    },
+    financials: (symbol, exchange) => provider.getTickerFinancials(symbol, exchange).catch(() => null),
+    paneResult: async (pane, symbol) => {
+      const resolved = await resolvePaneFunction(registry, context, {
+        target: pane,
+        arg: symbol,
+        options: {},
+        outputPath: null,
+        width: 1280,
+        height: 720,
+        theme: null,
+        scale: 1,
+        watermark: null,
+        requireBotSafe: false,
+      }, { strictHeadlessOptions: true });
+      const kind = resolved.headless?.argument.kind;
+      if (!resolved.headless || (kind !== "ticker" && kind !== "tickers" && kind !== "symbol-list")) {
+        throw new Error(`${pane} is not keyed by a symbol.`);
+      }
+      const loaded = await loadResolvedHeadlessPaneModel(resolved, context, symbol, signal);
+      return serializeHeadlessPaneResult(loaded.definition, loaded.result);
+    },
+  };
+}
+
+async function finishLoaded(
+  spec: ViewSpec,
+  loaded: LoadedView,
+  config: AppConfig,
+  signal: AbortSignal,
+  deps?: WorksheetJoinDeps,
+): Promise<LoadedView> {
+  const columns = withSpecColumns(spec, loaded.columns);
+  if (!worksheetNeedsJoin(spec.projection.columns)) return { ...loaded, columns };
+  const joined = await joinWorksheetColumns(loaded.rows, spec, signal, deps ?? await liveJoinDeps(config, signal));
+  return {
+    ...loaded,
+    rows: joined.rows,
+    columns,
+    errors: [...loaded.errors, ...joined.errors],
+  };
+}
+
 /**
  * Inline sources use the headless loader ASKG and the CLI use.
  * A screen or a ticker list reads equity-screener metrics directly.
+ * Chart fields, ticker-keyed functions, and formulas are joined onto those rows.
  */
 export async function loadViewSource(
   spec: ViewSpec,
@@ -168,24 +257,25 @@ export async function loadViewSource(
   signal: AbortSignal,
   depth = 0,
   client?: ScreenerClient,
+  deps?: WorksheetJoinDeps,
 ): Promise<LoadedView> {
   if (spec.source.kind === "ref") {
     if (depth > 2) throw new Error("This view references itself.");
     if (!refResolver) throw new Error("Team views are not available right now.");
     const resolved = await refResolver(spec.source);
     if (!resolved) throw new Error("The referenced team view no longer exists.");
-    return loadViewSource(resolved, config, signal, depth + 1, client);
+    return loadViewSource(resolved, config, signal, depth + 1, client, deps);
   }
   if (spec.source.kind === "screen" || spec.source.kind === "tickers") {
     const loaded = spec.source.kind === "screen"
       ? await loadScreenRows(parseScreenDefinition(spec.source.definition), equityLimit(spec), signal, client)
       : { rows: await loadTickerRows(spec.source.symbols, signal, client), errors: [] };
-    return {
+    return finishLoaded(spec, {
       rows: loaded.rows,
       columns: equityColumns(spec),
       errors: loaded.errors,
       sourceLabel: spec.source.kind === "screen" ? "Equity screener" : "Tickers",
-    };
+    }, config, signal, deps);
   }
   const registry = getSharedRegistry();
   if (!registry) throw new Error("The plugin registry is not available.");
@@ -210,10 +300,10 @@ export async function loadViewSource(
   const loaded = await loadResolvedHeadlessPaneModel(resolved, context, spec.source.argument ?? "", signal);
   const serialized = serializeHeadlessPaneResult(loaded.definition, loaded.result);
   const { rows, columns } = rowsFromResult(serialized);
-  return {
+  return finishLoaded(spec, {
     rows,
     columns,
     errors: (loaded.result.errors ?? []).filter(Boolean),
     sourceLabel: resolved.label,
-  };
+  }, config, signal, deps);
 }

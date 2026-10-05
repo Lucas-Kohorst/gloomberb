@@ -101,6 +101,28 @@ describe("view spec parsing", () => {
     expect(warned.warnings.map((entry) => entry.code)).toContain("percent-points");
     expect(parseViewSpec({ source: { kind: "tickers", symbols: [] } })).toBeNull();
   });
+
+  test("a worksheet column can be a chart field, a function join, or a formula", () => {
+    const spec = parseViewSpec({
+      source: { kind: "tickers", symbols: ["AAPL"] },
+      projection: {
+        columns: [
+          "market.close",
+          { key: "headline", from: { pane: "news", field: "headline" } },
+          { key: "cheap", formula: "market.close / trailingPE" },
+        ],
+      },
+    });
+    expect(spec?.projection.columns.map((column) => column.key)).toEqual(["market.close", "headline", "cheap"]);
+    expect(parseViewSpec({
+      source: { kind: "tickers", symbols: ["AAPL"] },
+      projection: { columns: ["dividend"] },
+    })).toBeNull();
+    expect(parseViewSpec({
+      source: { kind: "tickers", symbols: ["AAPL"] },
+      projection: { columns: [{ key: "x", formula: "trailingPE +" }] },
+    })).toBeNull();
+  });
 });
 
 describe("applyViewProjection", () => {

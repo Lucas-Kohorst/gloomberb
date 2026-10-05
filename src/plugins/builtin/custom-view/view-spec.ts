@@ -6,7 +6,9 @@
  */
 
 import { NUMERIC_FIELDS } from "../../../api-client/equity-screener";
+import { getTimeSeriesField } from "../../../time-series/field-catalog";
 import { parseScreenDefinition } from "../equity-screener/model";
+import { parseFormula } from "./formula";
 import { formatCompact, formatCompactAmount } from "../../../utils/format";
 import { isRecord } from "../../../utils/guards";
 
@@ -25,12 +27,21 @@ export type ViewTransform = "raw" | "percent" | "compact" | "abs" | "index100";
 type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains" | "in" | "exists";
 type ViewPrimitive = string | number | boolean | null;
 
+export interface ViewColumnFrom {
+  pane: string;
+  field: string;
+}
+
 export interface ViewColumn {
   key: string;
   label?: string;
   align?: "left" | "right" | "center";
   width?: number;
   transform?: ViewTransform;
+  /** First row, or latest point, of a ticker-keyed data function. */
+  from?: ViewColumnFrom;
+  /** Arithmetic over other column keys. Names may contain dots, as in market.close. */
+  formula?: string;
 }
 
 interface ViewFilter {
@@ -131,7 +142,20 @@ function normalizeColumn(value: unknown): ViewColumn | null {
   if (typeof value.transform === "string" && TRANSFORMS.has(value.transform as ViewTransform)) {
     column.transform = value.transform as ViewTransform;
   }
+  if (isRecord(value.from) && typeof value.from.pane === "string" && typeof value.from.field === "string") {
+    const pane = value.from.pane.trim();
+    const field = value.from.field.trim();
+    if (pane && field) column.from = { pane, field };
+  }
+  const formula = cleanString(value.formula, 200);
+  if (formula) column.formula = formula;
   return column;
+}
+
+/** Chart-catalog id for a column that is not already an equity-screener field. */
+export function catalogColumnField(column: ViewColumn): string | null {
+  if (column.formula || column.from || EQUITY_COLUMN_KEYS.has(column.key)) return null;
+  return getTimeSeriesField(column.key)?.id ?? null;
 }
 
 function normalizeFilter(value: unknown): ViewFilter | null {
@@ -275,8 +299,22 @@ export function validateViewSpec(spec: ViewSpec): ViewSpecValidationResult {
     if (column.width !== undefined && (column.width < 2 || column.width > 80)) {
       errors.push(issue(`projection.columns.${index}.width`, "invalid-width", "Column width must be between 2 and 80."));
     }
+    if (column.formula && column.from) {
+      errors.push(issue(`projection.columns.${index}`, "mixed-column", "A column is a field, a join, or a formula."));
+    }
+    if (column.formula && !parseFormula(column.formula)) {
+      errors.push(issue(`projection.columns.${index}.formula`, "invalid-formula", `Invalid formula ${column.formula}.`));
+    }
+    if (column.from) {
+      if (!PANE_TOKEN_PATTERN.test(column.from.pane)) {
+        errors.push(issue(`projection.columns.${index}.from.pane`, "invalid-pane", "A joined column needs a data function."));
+      }
+      if (!KEY_PATTERN.test(column.from.field)) {
+        errors.push(issue(`projection.columns.${index}.from.field`, "invalid-key", `Invalid joined field ${column.from.field}.`));
+      }
+    }
     if (spec.source.kind === "screen" || spec.source.kind === "tickers") {
-      if (!EQUITY_COLUMN_KEYS.has(column.key)) {
+      if (!column.formula && !column.from && !catalogColumnField(column) && !EQUITY_COLUMN_KEYS.has(column.key)) {
         errors.push(issue(`projection.columns.${index}.key`, "unknown-field", `Unknown screener field ${column.key}.`));
       }
       if (column.transform === "percent" && column.key.endsWith("Percent")) {
