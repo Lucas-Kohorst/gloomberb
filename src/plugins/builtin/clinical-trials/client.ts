@@ -1,8 +1,18 @@
 import { httpFetch } from "../../../utils/http-transport";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 
-const TRIALS_DISPLAY_CAP = 50;
 const DEFAULT_PAGE_SIZE = 25;
+/** Only the parts of a study the pane reads; a full record is about 16 KB. */
+const STUDY_FIELDS = [
+  "protocolSection.identificationModule",
+  "protocolSection.statusModule",
+  "protocolSection.sponsorCollaboratorsModule.leadSponsor",
+  "protocolSection.designModule.studyType",
+  "protocolSection.designModule.phases",
+  "protocolSection.designModule.enrollmentInfo",
+  "protocolSection.conditionsModule.conditions",
+  "protocolSection.descriptionModule.briefSummary",
+].join(",");
 const CLINICAL_TRIALS_API_BASE_URL = "https://clinicaltrials.gov/api/v2";
 const CLINICAL_TRIALS_STUDY_BASE_URL = "https://clinicaltrials.gov/study";
 
@@ -39,18 +49,31 @@ export interface ClinicalTrial {
   studyType: string;
   enrollment: number | null;
   startDate: Date | null;
-  startDatePrecision?: "year" | "month" | "day";
+  startDatePrecision?: DatePrecision;
+  /** The registry's date type: an actual date or the sponsor's estimate. */
+  startDateType?: TrialDateType;
+  /** When the last participant was examined for the primary outcome. */
+  primaryCompletionDate: Date | null;
+  primaryCompletionDatePrecision?: DatePrecision;
+  primaryCompletionDateType?: TrialDateType;
   completionDate: Date | null;
-  completionDatePrecision?: "year" | "month" | "day";
+  completionDatePrecision?: DatePrecision;
+  completionDateType?: TrialDateType;
   firstSubmitDate: Date | null;
+  /** When the registry first posted the study. */
+  firstPostDate: Date | null;
   /** Deep link to the study page for [o]pen. */
   url: string;
 }
 
+export type DatePrecision = "year" | "month" | "day";
+export type TrialDateType = "ACTUAL" | "ESTIMATED";
+
 /** A page of clinical trial results. */
 export interface ClinicalTrialsPage {
   trials: ClinicalTrial[];
-  total: number;
+  /** Opaque cursor for the next page; null on the last one. */
+  nextPageToken: string | null;
 }
 
 function asString(value: unknown): string | undefined {
@@ -71,7 +94,7 @@ function asCount(value: unknown): number | null {
   return null;
 }
 
-function datePrecision(value: unknown): "year" | "month" | "day" {
+function datePrecision(value: unknown): DatePrecision {
   const text = typeof value === "string" ? value.trim() : "";
   return /^\d{4}$/.test(text) ? "year" : /^\d{4}-\d{2}$/.test(text) ? "month" : "day";
 }
@@ -85,6 +108,19 @@ function asDate(value: unknown): Date | null {
 function moduleOf(record: Record<string, unknown>, key: string): Record<string, unknown> {
   const value = record[key];
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function dateType(value: unknown): TrialDateType | undefined {
+  return value === "ACTUAL" || value === "ESTIMATED" ? value : undefined;
+}
+
+/** A `{ date, type }` date struct, keeping the precision the registry gave. */
+function trialDate(struct: Record<string, unknown>) {
+  const date = asDate(struct.date);
+  return {
+    date,
+    ...(date ? { precision: datePrecision(struct.date), type: dateType(struct.type) } : {}),
+  };
 }
 
 /**
@@ -107,6 +143,9 @@ export function parseClinicalTrial(raw: unknown): ClinicalTrial | null {
   const description = moduleOf(protocol, "descriptionModule");
   const enrollmentInfo = moduleOf(design, "enrollmentInfo");
 
+  const start = trialDate(moduleOf(statusModule, "startDateStruct"));
+  const primaryCompletion = trialDate(moduleOf(statusModule, "primaryCompletionDateStruct"));
+  const completion = trialDate(moduleOf(statusModule, "completionDateStruct"));
   const briefTitle = asString(identification.briefTitle)
     ?? asString(identification.officialTitle)
     ?? nctId;
@@ -123,37 +162,32 @@ export function parseClinicalTrial(raw: unknown): ClinicalTrial | null {
     summary: asString(description.briefSummary) ?? "",
     studyType: asString(design.studyType) ?? "",
     enrollment: asCount(enrollmentInfo.count),
-    startDate: asDate(moduleOf(statusModule, "startDateStruct").date),
-    startDatePrecision: datePrecision(moduleOf(statusModule, "startDateStruct").date),
-    completionDate: asDate(moduleOf(statusModule, "completionDateStruct").date),
-    completionDatePrecision: datePrecision(moduleOf(statusModule, "completionDateStruct").date),
+    startDate: start.date,
+    startDatePrecision: start.precision,
+    startDateType: start.type,
+    primaryCompletionDate: primaryCompletion.date,
+    primaryCompletionDatePrecision: primaryCompletion.precision,
+    primaryCompletionDateType: primaryCompletion.type,
+    completionDate: completion.date,
+    completionDatePrecision: completion.precision,
+    completionDateType: completion.type,
     firstSubmitDate: asDate(statusModule.studyFirstSubmitDate),
+    firstPostDate: asDate(moduleOf(statusModule, "studyFirstPostDateStruct").date),
     url: `${CLINICAL_TRIALS_STUDY_BASE_URL}/${nctId}`,
   };
 }
 
-/** Parse a v2 `studies` response payload into a capped page. Pure: no network. */
-export function parseClinicalTrialsPage(
-  payload: unknown,
-  cap = TRIALS_DISPLAY_CAP,
-): ClinicalTrialsPage {
+/** Parse a v2 `studies` response payload into a page. Pure: no network. */
+export function parseClinicalTrialsPage(payload: unknown): ClinicalTrialsPage {
   const record = (payload && typeof payload === "object" ? payload : {}) as Record<
     string,
     unknown
   >;
   const studies = Array.isArray(record.studies) ? record.studies : [];
-  const trials: ClinicalTrial[] = [];
-  for (const raw of studies) {
-    const trial = parseClinicalTrial(raw);
-    if (!trial) continue;
-    trials.push(trial);
-    if (trials.length >= cap) break;
-  }
-  const total =
-    typeof record.totalCount === "number" && Number.isFinite(record.totalCount)
-      ? record.totalCount
-      : trials.length;
-  return { trials, total };
+  const trials = studies
+    .map((raw) => parseClinicalTrial(raw))
+    .filter((trial): trial is ClinicalTrial => trial !== null);
+  return { trials, nextPageToken: asString(record.nextPageToken) ?? null };
 }
 
 export interface StudiesQuery {
@@ -162,17 +196,26 @@ export interface StudiesQuery {
   /** Sponsor/company filter (`query.spons`). */
   sponsor?: string;
   pageSize?: number;
+  /** The previous page's `nextPageToken`; without it, the first page. */
+  pageToken?: string;
 }
 
-/** Build the v2 studies URL. Pure: no network, no API key. */
+/**
+ * Build the v2 studies URL. Pure: no network, no API key. The most recently
+ * posted studies come first, the order the pane lists them in, so each page
+ * continues the one before it.
+ */
 export function buildStudiesUrl(query: StudiesQuery = {}): string {
   const params = new URLSearchParams();
   params.set("format", "json");
   params.set("pageSize", String(query.pageSize ?? DEFAULT_PAGE_SIZE));
+  params.set("sort", "StudyFirstPostDate:desc");
+  params.set("fields", STUDY_FIELDS);
   const term = query.term?.trim();
   if (term) params.set("query.term", term);
   const sponsor = query.sponsor?.trim();
   if (sponsor) params.set("query.spons", sponsor);
+  if (query.pageToken) params.set("pageToken", query.pageToken);
   return `${CLINICAL_TRIALS_API_BASE_URL}/studies?${params.toString()}`;
 }
 
@@ -182,10 +225,7 @@ export class ClinicalTrialsClient {
    * The pane passes its search box as `term`; callers tracking one
    * company pass `sponsor` (mapped to `query.spons`).
    */
-  async listTrials(
-    query: { term?: string; sponsor?: string; pageSize?: number },
-    signal?: AbortSignal,
-  ): Promise<ClinicalTrialsPage> {
+  async listTrials(query: StudiesQuery, signal?: AbortSignal): Promise<ClinicalTrialsPage> {
     const response = await trialsFetch.fetch(buildStudiesUrl(query), { signal });
     if (!response.ok) {
       throw new Error(

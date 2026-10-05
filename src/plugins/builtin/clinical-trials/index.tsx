@@ -3,7 +3,8 @@ import { TrialsPane } from "./pane";
 import { CLINICAL_TRIALS_PANE_ID, CLINICAL_TRIALS_PLUGIN_ID } from "./types";
 
 function createTrialsPaneInstance(options?: PaneTemplateCreateOptions) {
-  const query = (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+  // A search, never a ticker: a symbol is not a sponsor name and would match unrelated text.
+  const query = (options?.arg ?? options?.values?.query ?? "").trim();
   const encoded = encodeURIComponent(query).replace(/%/g, "~");
   return {
     instanceId: query ? `trials:${encoded}` : "trials:latest",

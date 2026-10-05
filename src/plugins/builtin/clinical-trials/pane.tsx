@@ -1,35 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   FeedDataTableStackView,
   PaneStatusBody,
   QueryBar,
+  usePagedRows,
   usePaneStatusLinkFooter,
   useQueryBarSearch,
+  useTableLoadMore,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
   type FeedDataTableItem,
+  type PageRequest,
   type PaneFooterSegment,
   type PaneHint,
+  type RowPage,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import {
-  useAsyncResource,
-  useAutoRefresh,
   useDebouncedPluginPaneState,
   usePaneSettingValue,
   usePluginPaneState,
-  useUpdatedAgo,
 } from "../../../public/react";
 import type { PaneProps } from "../../../types/plugin";
-import { Box } from "../../../ui";
+import { Box, type ScrollBoxRenderable } from "../../../ui";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { ClinicalTrialsClient, type ClinicalTrial } from "./client";
+import { ClinicalTrialsClient, type ClinicalTrial, type DatePrecision, type TrialDateType } from "./client";
 import { CLINICAL_TRIALS_PANE_ID } from "./types";
 
-const EMPTY_ITEMS: ClinicalTrial[] = [];
-
 const SEARCH_DEBOUNCE_MS = 250;
-const DEFAULT_PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 50;
 
 function formatStatus(status: string): string {
   const lower = status.toLowerCase().replace(/_/g, " ");
@@ -38,20 +37,24 @@ function formatStatus(status: string): string {
 
 function formatPhase(phases: string[]): string {
   if (phases.length === 0) return "No phase";
+  if (phases.length === 1 && phases[0]!.toUpperCase() === "EARLY_PHASE1") return "Early phase 1";
   const numbers = phases
-    .map((phase) => phase.toUpperCase().replace("PHASE", "").trim())
+    .map((phase) => phase.toUpperCase().replace("EARLY_PHASE", "").replace("PHASE", "").trim())
     .filter(Boolean)
     .sort();
   return `Phase ${numbers.join("/")}`;
 }
 
-function formatDate(date: Date | null, precision: "year" | "month" | "day" = "day"): string {
-  if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return "—";
-  return date.toISOString().slice(0, precision === "year" ? 4 : precision === "month" ? 7 : 10);
+/** As precise as the registry gave it, marked when it is the sponsor's estimate. */
+function formatDate(date: Date | null, precision: DatePrecision = "day", type?: TrialDateType): string {
+  if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return "-";
+  const text = date.toISOString().slice(0, precision === "year" ? 4 : precision === "month" ? 7 : 10);
+  return type === "ESTIMATED" ? `${text} (est.)` : text;
 }
 
+/** When the study was posted: always past, so the list's time column can read it as an age. */
 function trialTimestamp(trial: ClinicalTrial): Date | null {
-  return trial.startDate ?? trial.firstSubmitDate;
+  return trial.firstPostDate ?? trial.firstSubmitDate;
 }
 
 function buildDetailMeta(trial: ClinicalTrial): string[] {
@@ -60,8 +63,10 @@ function buildDetailMeta(trial: ClinicalTrial): string[] {
     `${formatPhase(trial.phases)}${trial.studyType ? ` · ${trial.studyType.toLowerCase()}` : ""}`,
     trial.sponsorClass ? `${trial.sponsor} (${trial.sponsorClass})` : trial.sponsor,
     trial.conditions.length > 0 ? trial.conditions.join(", ") : "No conditions listed",
-    `Start ${formatDate(trial.startDate, trial.startDatePrecision)} · Completion ${formatDate(trial.completionDate, trial.completionDatePrecision)}`,
-    trial.enrollment != null ? `Enrollment: ${trial.enrollment}` : "Enrollment: —",
+    `Posted ${formatDate(trialTimestamp(trial))} · Start ${formatDate(trial.startDate, trial.startDatePrecision, trial.startDateType)}`,
+    `Primary completion ${formatDate(trial.primaryCompletionDate, trial.primaryCompletionDatePrecision, trial.primaryCompletionDateType)}`
+      + ` · Completion ${formatDate(trial.completionDate, trial.completionDatePrecision, trial.completionDateType)}`,
+    trial.enrollment != null ? `Enrollment: ${trial.enrollment}` : "Enrollment: -",
   ];
 }
 
@@ -85,15 +90,40 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
 
   const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  // The open study is what the pane shows, so a reload or a shared layout opens it again.
+  const [openItemId, setOpenItemId] = usePluginPaneState<string | null>("openItemId", null);
   const { active: searchFocused, focus: focusSearch, searchProps } = useQueryBarSearch();
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
-  const loader = useCallback(async () => {
-    const page = await client.listTrials({ term: query.trim() || undefined, pageSize: DEFAULT_PAGE_SIZE });
-    return page.trials;
-  }, [client, query]);
-  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
-  const trials = data ?? EMPTY_ITEMS;
+  // The registry pages by an opaque token, which the next page's offset keys.
+  // A new search makes a new loader and so starts over with no tokens.
+  const term = query.trim();
+  const loadPage = useMemo(() => {
+    const tokens = new Map<number, string>();
+    return async ({ offset, signal }: PageRequest): Promise<RowPage<ClinicalTrial>> => {
+      const pageToken = offset > 0 ? tokens.get(offset) : undefined;
+      if (offset > 0 && !pageToken) return { rows: [], hasMore: false };
+      const page = await client.listTrials({ term: term || undefined, pageSize: DEFAULT_PAGE_SIZE, pageToken }, signal);
+      const nextOffset = offset + page.trials.length;
+      if (page.nextPageToken) tokens.set(nextOffset, page.nextPageToken);
+      return { rows: page.trials, hasMore: !!page.nextPageToken, nextOffset };
+    };
+  }, [client, term]);
+  const studies = usePagedRows(loadPage, { getId: (trial) => trial.nctId, keepPreviousRows: true });
+  const trials = studies.rows;
+  const error = studies.error?.message ?? null;
+  const loadMore = useTableLoadMore(scrollRef, studies.hasMore && !openItemId, studies.loadMore);
+  // Scrolling asks for the next page, so a page that does not fill a tall
+  // pane asks for it once it is laid out.
+  const { hasMore, loadingMore, loadMore: loadNextPage } = studies;
+  useEffect(() => {
+    if (!hasMore || loadingMore || openItemId) return;
+    const timer = setTimeout(() => {
+      const box = scrollRef.current;
+      if (box?.viewport && box.scrollHeight > 0 && box.scrollHeight <= box.viewport.height) loadNextPage();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [hasMore, height, loadNextPage, loadingMore, openItemId, trials.length]);
 
   const selectedTrial = trials.find((item) => item.nctId === selectedId) ?? trials[0] ?? null;
   const selectedIdx = selectedTrial ? trials.indexOf(selectedTrial) : 0;
@@ -101,30 +131,29 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
     ? trials.find((trial) => trial.nctId === openItemId) ?? null
     : null;
   const detailTrial = openTrial ?? selectedTrial;
-  // A controlled open id is the pane's to drop once that study leaves the page.
+  // A restored open study can sit past the first page: page on until it
+  // arrives, and drop it only once every page is in without it.
   useEffect(() => {
-    if (openItemId && data && !openTrial) setOpenItemId(null);
-  }, [data, openItemId, openTrial]);
+    if (!openItemId || openTrial || studies.status !== "loaded" || studies.loadingMore) return;
+    if (studies.hasMore && !studies.moreError) studies.loadMore();
+    else setOpenItemId(null);
+  }, [openItemId, openTrial, setOpenItemId, studies]);
 
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery.trim());
     setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedId]);
+  }, [setOpenItemId, setQuery, setSelectedId]);
 
-  const loading = refreshing && trials.length === 0;
-  const updatedAgo = useUpdatedAgo(lastUpdated);
+  const loading = studies.loading && trials.length === 0;
   const items = useMemo(() => toFeedItems(trials), [trials]);
-  useAutoRefresh(lastUpdated, refresh);
-  usePaneRefreshKey(() => void refresh(), { focused, enabled: !searchFocused && !openItemId });
+  usePaneRefreshKey(studies.reload, { focused, enabled: !searchFocused && !openItemId });
 
   const detailUrl = detailTrial?.url || null;
-  const info = useMemo<PaneFooterSegment[]>(
-    () => (updatedAgo
-      ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
-      : []),
-    [updatedAgo],
-  );
+  const info = useMemo<PaneFooterSegment[]>(() => [
+    ...(studies.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
+    ...(studies.moreError ? [{ id: "more-error", parts: [{ text: studies.moreError.message, tone: "warning" as const }] }] : []),
+  ], [studies.loadingMore, studies.moreError]);
   const hints = useMemo<PaneHint[]>(
     () => (openItemId ? [] : [{ id: "search", key: "/", label: "search", onPress: focusSearch }]),
     [focusSearch, openItemId],
@@ -133,7 +162,7 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
     registrationId: CLINICAL_TRIALS_PANE_ID,
     focused,
     url: detailUrl,
-    loading: refreshing,
+    loading: studies.loading,
     error,
     info,
     hints,
@@ -185,9 +214,11 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
       openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={loadMore}
       sourceLabel="Phase"
       titleLabel="Status · Title · Sponsor"
-      emptyStateTitle={query.trim() ? `No trials match ${query.trim()}.` : "No trials loaded."}
+      emptyStateTitle={term ? `No trials match ${term}.` : "No trials loaded."}
       emptyStateHint="Press / to search…"
     />
   );
