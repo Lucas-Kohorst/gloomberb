@@ -196,7 +196,7 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | Shortcut | Function |
 |----------|----------|
 | `TOP` | The 20 top-ranked market stories |
-| `HM` | Market heatmap for large US stocks and ETFs |
+| `HM` | Market heatmap for large US stocks, ETFs, and the portfolio pane's selected list |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
 | `HILO` | Session new highs and new lows with 30s/1m/5m momentum |
 | `FLOW` | Unusual options activity: sweeps, blocks, and large premium; Vol/OI divides the contract's day volume by its latest reported open interest. Cloud records every print, for options flow alerts and the assistant |
