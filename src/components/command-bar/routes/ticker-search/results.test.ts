@@ -119,7 +119,7 @@ test("names the instrument class for the badge column", () => {
   expect(formatInstrumentBadge({ instrumentClass: "derivative", result: search("FUTURE") })).toBe("FUT");
   expect(formatInstrumentBadge({ instrumentClass: "other", result: search("INDEX") })).toBe("IDX");
   expect(formatInstrumentBadge({ instrumentClass: "other", result: search("CRYPTOCURRENCY") })).toBe("CUR");
-  expect(formatInstrumentBadge({ instrumentClass: "other", result: search("Limited Partnership") })).toBeUndefined();
+  expect(formatInstrumentBadge({ instrumentClass: "other", result: search("Unit") })).toBeUndefined();
 });
 
 
