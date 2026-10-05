@@ -12,7 +12,7 @@ export const attentionModule: PluginModule = {
     description: "Pro research attention: rankings, abnormal activity, sectors, countries and privacy-qualified hourly history.",
     keywords: ["attention", "trending", "research", "activity"], shortcut: { prefix: "ATTN", argKind: "text", argPlaceholder: "TICKER", argOptional: true },
     headless: attentionHeadless, createInstance: (_ctx, options) => ({ placement: "floating", settings: { window: attentionWindow(options?.values?.window), symbol: (options?.arg ?? options?.symbol)?.trim().toUpperCase() ?? "" } }) },
-    { id: "attention-trending-pane", paneId: "attention-trending", label: "Gloom Trending", description: "Compact daily research attention for a home workspace.", keywords: ["trending", "home"], createInstance: () => ({ placement: "floating" }) }],
+    { id: "attention-trending-pane", paneId: "attention-trending", label: "Gloom Trending", description: "Compact daily research attention for a home workspace.", keywords: ["trending", "home"], shortcut: { prefix: "TRND" }, createInstance: () => ({ placement: "floating" }) }],
   setup(ctx) { attentionCache.attach(ctx.persistence); },
   dispose() { attentionCache.reset(); },
 };

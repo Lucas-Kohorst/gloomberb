@@ -9,7 +9,7 @@ export const timeSalesModule: PluginModule = {
   paneTemplates: [
     { ...createTickerSurfacePaneTemplate({ id: "time-sales-tas", paneId: "time-sales", label: "Time and Sales",
       description: "Trade prints, observed VWAP and large prints.", keywords: ["tape", "trades", "sales", "prints", "tas"],
-      shortcut: "TAS", viewKey: "TAS", settings: () => ({ tab: "trades" }) }), headless: timeSalesHeadless },
+      shortcut: "TAPE", viewKey: "TAS", settings: () => ({ tab: "trades" }) }), headless: timeSalesHeadless },
     { ...createTickerSurfacePaneTemplate({ id: "time-sales-qr", paneId: "time-sales", label: "Quote Recap",
       description: "NBBO history: bid and ask with sizes, venues and spread.", keywords: ["nbbo", "quotes", "bid", "ask", "recap", "qr"],
       shortcut: "QR", viewKey: "QR", settings: () => ({ tab: "quotes" }) }), headless: timeSalesHeadless },

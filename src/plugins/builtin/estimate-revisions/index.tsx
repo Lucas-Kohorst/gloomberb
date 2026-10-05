@@ -56,8 +56,8 @@ export const estimateRevisionsModule: PluginModule = {
         label: "Estimate Revisions",
         description:
           "Consensus EPS changes, analyst revision counts, surprises and cited guidance.",
-        keywords: ["estimates", "revisions", "consensus", "em", "eeo"],
-        shortcut: "EM",
+        keywords: ["estimates", "revisions", "consensus", "erev", "eeo"],
+        shortcut: "EREV",
         shortcutAliases: ["EEO"],
         viewKey: "EM",
         settings: () => ({ tab: "revisions" }),

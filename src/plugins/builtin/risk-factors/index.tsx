@@ -58,7 +58,7 @@ export const riskFactorsModule: PluginModule = {
         "annual report",
         "item 1a",
       ],
-      shortcut: "RISK",
+      shortcut: "RFACT",
       publicShare: false,
     }),
   ],
