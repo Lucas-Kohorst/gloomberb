@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { NewsArticle } from "../../../../../news/types";
 import { mergeNewsArticle } from "../../../../../news/news-model";
 import { useLoadNewsStory } from "../../../../../news/hooks";
@@ -6,28 +6,41 @@ import { PaneStatusBody } from "../../../../../components";
 import { usePaneInstance } from "../../../../../state/app/context";
 import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateDef } from "../../../../../types/plugin";
 import { usePluginAppActions } from "../../../../runtime";
+import { usePersistedNewsArticles } from "../persisted-articles";
 import { NewsDetailView } from "./detail-view";
 import { useNewsArticleFooter } from "./footer";
 
 export const NEWS_STORY_PANE_ID = "news-story";
 const NEWS_STORY_TEMPLATE_ID = "news-story-pane";
+const NO_STORY: NewsArticle[] = [];
 
-const shownStories = new Map<string, NewsArticle>();
+/**
+ * Stories on their way from a list to the pane just opened for them. Once
+ * open, the pane keeps its own copy in pane state, so this only has to cover
+ * the hand-off and stays small.
+ */
+const MAX_HANDED_OFF_STORIES = 20;
+const handedOffStories = new Map<string, NewsArticle>();
 
-function rememberNewsStory(article: NewsArticle): void {
-  shownStories.set(article.id, article);
+function handOffNewsStory(article: NewsArticle): void {
+  handedOffStories.delete(article.id);
+  handedOffStories.set(article.id, article);
+  for (const id of handedOffStories.keys()) {
+    if (handedOffStories.size <= MAX_HANDED_OFF_STORIES) break;
+    handedOffStories.delete(id);
+  }
 }
 
-function shownStory(articleId: string): NewsArticle | null {
+function handedOffStory(articleId: string): NewsArticle | null {
   if (!articleId) return null;
-  return shownStories.get(articleId) ?? null;
+  return handedOffStories.get(articleId) ?? null;
 }
 
 export const openNewsStoryPane = (
   article: NewsArticle,
   createPaneFromTemplate: (templateId: string, options?: PaneTemplateCreateOptions) => void,
 ): void => {
-  rememberNewsStory(article);
+  handOffNewsStory(article);
   createPaneFromTemplate(NEWS_STORY_TEMPLATE_ID, {
     arg: article.id,
     values: { title: article.title },
@@ -66,13 +79,16 @@ export function createNewsStoryPaneTemplate(): PaneTemplateDef {
 export function NewsStoryPane({ focused, width }: PaneProps) {
   const articleId = usePaneInstance()?.params?.articleId ?? "";
   const loadNewsStory = useLoadNewsStory();
-  const [article, setArticle] = useState<NewsArticle | null>(() => shownStory(articleId));
+  const [loaded, setLoaded] = useState<NewsArticle | null>(() => handedOffStory(articleId));
+  // The pane keeps a copy of its story, so a relaunch or a shared layout shows
+  // it at once, including a story from an RSS feed that cannot be fetched by id.
+  const story = useMemo(() => (loaded?.id === articleId ? [loaded] : NO_STORY), [articleId, loaded]);
+  const kept = usePersistedNewsArticles("story", story);
+  const article = kept.find((entry) => entry.id === articleId) ?? null;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const known = shownStory(articleId);
-    setArticle(known);
     setError(null);
     if (!articleId) {
       setLoading(false);
@@ -81,24 +97,18 @@ export function NewsStoryPane({ focused, width }: PaneProps) {
     let active = true;
     setLoading(true);
     void loadNewsStory(articleId)
-      .then((loaded) => {
+      .then((story) => {
         if (!active) return;
-        if (loaded) {
-          setArticle((current) => {
-            if (current && current.id === loaded.id) return mergeNewsArticle(current, loaded);
-            return loaded;
-          });
-          setError(null);
-        } else if (!known) {
+        if (story) {
+          setLoaded((current) => (current?.id === story.id ? mergeNewsArticle(current, story) : story));
+        } else {
           setError("Story detail unavailable.");
         }
         setLoading(false);
       })
       .catch((cause: unknown) => {
         if (!active) return;
-        if (!known) {
-          setError(cause instanceof Error ? cause.message : "Story detail unavailable.");
-        }
+        setError(cause instanceof Error ? cause.message : "Story detail unavailable.");
         setLoading(false);
       });
     return () => {
@@ -106,6 +116,7 @@ export function NewsStoryPane({ focused, width }: PaneProps) {
     };
   }, [articleId, loadNewsStory]);
 
+  // A story already on screen stays readable when the refresh fails.
   useNewsArticleFooter({
     registrationId: "news-story",
     focused,

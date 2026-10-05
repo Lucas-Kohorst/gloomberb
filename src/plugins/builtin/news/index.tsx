@@ -7,7 +7,7 @@ import { useCallback } from "react";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { EmptyState, PaneStatusBody, QueryBar } from "../../../components";
 import { newsMuteSettingsDef, newsMutesApplyToFeed, useNewsMuteFilter } from "./wire/mutes";
-import { newsSearchEmptyCopy } from "./wire/filter-articles";
+import { newsListEmptyCopy } from "./wire/filter-articles";
 import { NEWS_LIST_SEARCH_PLACEHOLDER, useNewsListSearch, useNewsListSearchHint } from "./wire/news/list-search";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
@@ -113,9 +113,14 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     );
   }
 
-  const emptyCopy = newsSearchEmptyCopy(search.searchQuery, {
-    title: `No news for ${ticker.metadata.ticker}`,
-    hint: "Stories appear as sources publish them.",
+  const emptyCopy = newsListEmptyCopy({
+    query: search.searchQuery,
+    loadedCount: loaded.length,
+    unmutedCount: news.length,
+    fallback: {
+      title: `No news for ${ticker.metadata.ticker}`,
+      hint: "Stories appear as sources publish them.",
+    },
   });
 
   return (
