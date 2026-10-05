@@ -101,7 +101,7 @@ describe("ConnectionsPane", () => {
     });
     await renderSettled();
 
-    expect(testSetup.captureCharFrame()).toContain("← Back Quotes");
+    expect(testSetup.captureCharFrame()).toContain("← Back │ Quotes");
     expect(testSetup.captureCharFrame()).not.toContain("[s]ort");
     expect(testSetup.captureCharFrame()).not.toContain("[/] search");
   });

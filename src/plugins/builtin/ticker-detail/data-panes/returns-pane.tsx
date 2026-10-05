@@ -100,7 +100,7 @@ export function ReturnsPane({ focused, width, height }: PaneProps) {
     if (!symbol || !dataProvider) {
       setSourceRows([]);
       setStatus("error");
-      setError(symbol ? "Market data unavailable" : "Select an instrument first");
+      setError(symbol ? "Market data unavailable" : "Select an instrument");
       return;
     }
     const currentGeneration = ++generation.current;

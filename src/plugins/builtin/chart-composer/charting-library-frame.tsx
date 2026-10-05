@@ -285,7 +285,7 @@ export function ChartingLibraryFrame({
         <div role="status" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor, color: palette.textMuted }}>
           {status === "loading" ? "Loading chart…" : (
             <>
-              <span>Chart could not finish loading.</span>
+              Chart could not finish loading.
               <button type="button" onClick={() => setRetry((current) => current + 1)} style={{ cursor: "pointer", color: palette.text, background: "transparent", border: `1px solid ${palette.textMuted}`, padding: "4px 8px" }}>Retry</button>
             </>
           )}

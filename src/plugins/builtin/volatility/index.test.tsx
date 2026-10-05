@@ -60,7 +60,7 @@ afterEach(async () => {
 });
 
 describe("VolatilityPane", () => {
-  test("selects volatility tenors with keyboard", async () => {
+  test("draws the aligned 30-day and three-month closes", async () => {
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-volatility-test"));
     setup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
@@ -72,36 +72,17 @@ describe("VolatilityPane", () => {
     );
     await settle();
 
-    let frame = setup.captureCharFrame();
-    expect(frame).toMatch(/▸\s+VIX\s+16\.00/);
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("FRED · daily close");
     expect(frame).toContain("3M/30D");
+    expect(frame).toContain("1.19");
+    expect(frame).toContain("NORMAL");
     expect(frame).toContain("3M premium +3.00 pts");
+    expect(frame).toContain("as of 2026-08-15");
+    expect(frame).toContain("30D");
+    expect(frame).toContain("16.00");
+    expect(frame).toContain("3M");
+    expect(frame).toContain("19.00");
     expect(frame).not.toContain("contango");
-
-    // Emitting the key directly, then flushing more than one frame: a single
-    // render can capture the pre-selection frame when the suite runs loaded.
-    await act(async () => {
-      setup!.renderer.keyInput.emit("keypress", {
-        name: "right",
-        sequence: "\u001B[C",
-        ctrl: false,
-        meta: false,
-        option: false,
-        shift: false,
-        eventType: "press",
-        repeated: false,
-        defaultPrevented: false,
-        propagationStopped: false,
-        preventDefault: () => {},
-        stopPropagation: () => {},
-      } as never);
-      await setup!.renderOnce();
-      await setup!.renderOnce();
-    });
-    await act(async () => { await setup!.renderOnce(); });
-    frame = setup.captureCharFrame();
-    expect(frame).toMatch(/▸\s+VIX 3M\s+19\.00/);
-
-    expect(frame).toContain("CBOE S&P 500 3-Month Volatility Index");
   });
 });

@@ -247,7 +247,13 @@ function EquityScreenView({
   const [searchQuery, setSearchQuery] = useState("");
   const [criteriaSort, setCriteriaSort] = useState<ColumnSort | null>(null);
   const [savedSort, setSavedSort] = useState<ColumnSort | null>(null);
-  const fields = useAsyncResource((_force, signal) => fetchScreenFields(signal));
+  // The resource refetches when the loader identity changes. An inline function
+  // is new every render, so the design-gate mount never settles.
+  const loadFields = useCallback(
+    (_force: boolean, signal: AbortSignal) => fetchScreenFields(signal),
+    [],
+  );
+  const fields = useAsyncResource(loadFields);
   const savedLoader = useCallback(() => fetchSavedScreens(), [session.requestKey]);
   const saved = useAsyncResource(
     access.emailVerified && (mode === "saved" || saveForm) ? savedLoader : null,

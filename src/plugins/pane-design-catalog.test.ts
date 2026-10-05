@@ -29,9 +29,9 @@ const SETUP_FILENAMES = new Set(["index.ts", "index.tsx", "registration.ts"]);
 const SOURCE_EXT = /\.(ts|tsx)$/;
 const TEST_FILE = /\.(?:test|spec)\.(?:ts|tsx)$/;
 
-/** Real fetch-path calls. `prefetch(` / `refetch(` are not network. */
+/** Real fetch-path calls. `prefetch(` / `refetch(` are not network, and `getCurrentUser` is the cached session. */
 const NETWORK_RE =
-  /(?<!\w)fetch\s*\(|globalThis\.fetch\s*\(|apiClient\.|withConnectionRequest\s*\(|new\s+WebSocket\b|(?<!\w)WebSocket\s*\(/;
+  /(?<!\w)fetch\s*\(|globalThis\.fetch\s*\(|apiClient\.(?!getCurrentUser\b)|withConnectionRequest\s*\(|new\s+WebSocket\b|(?<!\w)WebSocket\s*\(/;
 /** registerConnectionSource plus helpers that wrap it. */
 const REGISTER_RE =
   /registerConnectionSource\s*\(|createChartSource\s*\(|createFeedSource\s*\(|createConnection\s*\(|createDocumentSource\s*\(/;
