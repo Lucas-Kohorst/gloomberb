@@ -6,7 +6,7 @@ import { useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
 import { usePluginPaneState } from "../../../runtime";
 import { PaneStatusBody, QueryBar, type SelectButtonOption } from "../../../../components";
 import { usePaneInstance, usePaneTitle } from "../../../../state/app/context";
-import { newsSearchEmptyCopy } from "./filter-articles";
+import { newsListEmptyCopy } from "./filter-articles";
 import { newsMutesApplyToFeed, useNewsMuteFilter } from "./mutes";
 import { useNewsArticleStack } from "./news/preset-pane";
 import {
@@ -110,10 +110,18 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const options = entry
     ? CODE_OPTIONS
     : [...CODE_OPTIONS, { value: code, label: code, description: "Unknown code", disabled: true }];
-  const emptyCopy = newsSearchEmptyCopy(entry ? searchQuery : "", {
+  const fallbackCopy = {
     title: entry ? `No ${entry.label} news yet` : `${code} is not an NI code`,
     hint: entry ? "Stories appear here as the wires publish them." : `Codes: ${VALID_CODES}`,
-  });
+  };
+  const emptyCopy = entry
+    ? newsListEmptyCopy({
+      query: searchQuery,
+      loadedCount: loaded.articles.length,
+      unmutedCount: articles.length,
+      fallback: fallbackCopy,
+    })
+    : fallbackCopy;
   const rootBefore = (
     <QueryBar
       width={width}

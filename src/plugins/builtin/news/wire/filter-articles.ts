@@ -26,13 +26,29 @@ export function filterNewsArticles<T extends NewsArticle>(
   });
 }
 
-export function newsSearchEmptyCopy(
-  query: string,
-  fallback: { title: string; hint: string },
-): { title: string; hint: string } {
-  if (!query.trim()) return fallback;
+/**
+ * The empty list's copy. The filter and the mutes only see the stories the
+ * list has loaded, so an empty result says so instead of claiming there is
+ * no such story at all.
+ */
+export function newsListEmptyCopy(options: {
+  query: string;
+  /** Stories the list has loaded, before mutes. */
+  loadedCount: number;
+  /** Loaded stories left once the mutes are applied. */
+  unmutedCount: number;
+  fallback: { title: string; hint: string };
+}): { title: string; hint: string } {
+  if (options.loadedCount === 0) return options.fallback;
+  if (options.unmutedCount === 0) {
+    return {
+      title: "Every loaded story is muted",
+      hint: "Muted Sources and Muted Keywords are in the pane settings.",
+    };
+  }
+  if (!options.query.trim()) return options.fallback;
   return {
-    title: "No matching articles.",
-    hint: "Clear the search.",
+    title: "No loaded story matches",
+    hint: "Clear the filter to scroll and load older stories.",
   };
 }

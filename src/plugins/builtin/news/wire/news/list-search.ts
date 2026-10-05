@@ -3,7 +3,8 @@ import { usePaneFooter, useQueryBarSearch } from "../../../../../components";
 import type { NewsArticle } from "../../../../../news/types";
 import { filterNewsArticles } from "../filter-articles";
 
-export const NEWS_LIST_SEARCH_PLACEHOLDER = "filter headlines, sources, tickers…";
+/** Only what the list has loaded is filtered; older stories load as the list scrolls. */
+export const NEWS_LIST_SEARCH_PLACEHOLDER = "filter loaded stories";
 
 export function useNewsListSearch<T extends NewsArticle>(articles: readonly T[]) {
   const [searchQuery, setSearchQuery] = useState("");
