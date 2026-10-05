@@ -466,7 +466,10 @@ function NativeStatusBar({
       {showTidyWindows && <NativeTidyWindows {...props} />}
       <Box flexGrow={1} minWidth={0} />
       <StatusBarSummary nativePaneChrome {...props} />
-      <PluginSlot name="status:widget" />
+      {/* Widgets keep their width; the layout tabs give way instead. */}
+      <Box flexShrink={0} flexDirection="row" alignItems="center">
+        <PluginSlot name="status:widget" />
+      </Box>
       <StatusBarFeedback nativePaneChrome {...props} />
     </Box>
   );
@@ -519,14 +522,18 @@ function StatusBarLayoutControl({
   | "layoutTabsWidth"
 > & { nativePaneChrome: boolean }) {
   if (!hasMultipleLayouts) return null;
+  // On the desktop and the web the strip is as wide as its tabs, gives way
+  // first when the bar runs out of room and scrolls inside, like the
+  // terminal's sized strip.
+  const shrink = nativePaneChrome ? { flexShrink: 1, minWidth: 0 } : { flexShrink: 0 };
   return (
     <Box
       paddingLeft={1}
-      flexShrink={0}
       flexDirection="row"
+      {...shrink}
       {...(nativePaneChrome ? { alignItems: "center", gap: 1 } : {})}
     >
-      <Box width={layoutTabsWidth} height={1}>
+      <Box height={1} {...(nativePaneChrome ? shrink : { width: layoutTabsWidth })}>
         <Tabs
           tabs={layoutTabItems}
           activeValue={activeLayoutValue}
