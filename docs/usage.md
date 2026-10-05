@@ -246,6 +246,8 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
 
+`HM` has a third tab, named for the list open in the portfolio pane (`PF`): the one last focused when there are several, your first portfolio when none is open. It sizes a portfolio's holdings by market value in the portfolio's currency, as `PF` shows it, and a watchlist's names by the square root of their market cap in your base currency, so a mega-cap does not hide the rest of a short list; tiles are colored by the day's move. A name without a position, quote, market cap or exchange rate gets the smallest tile and no figure, and past 160 names the smallest are left out, which the footer says. **Link to portfolio** in its settings switches the heatmap to that tab whenever the portfolio pane changes list. `3` opens the tab, and `[` / `]` step through all three.
+
 News rows credit the article's publisher and open its original URL. The managed
 news feed includes only articles whose publisher and original link can be
 verified. Custom RSS and Atom feeds use each item's source when supplied,

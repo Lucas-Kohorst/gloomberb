@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from "react";
 import type { MarketHeatmapAsset, MarketHeatmapUniverseId } from "../../../api-client/market-discovery";
 import { useAppSelector, usePaneStateValue } from "../../../state/app/context";
+import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { selectMarketCapitalization } from "../../../utils/market-capitalization";
+import { getSortValue, type ColumnContext } from "../portfolio-list/metrics";
 
 export const PORTFOLIO_HEATMAP_TAB = "portfolio";
 const MAX_PORTFOLIO_TILES = 160;
@@ -11,13 +12,12 @@ const MAX_PORTFOLIO_TILES = 160;
 export type HeatmapTabId = MarketHeatmapUniverseId | typeof PORTFOLIO_HEATMAP_TAB;
 
 export interface HeatmapBoardAsset extends MarketHeatmapAsset {
-  /** False when `size` is only there so the tile is drawn. The caption must not invent a market cap. */
+  /** False when the tile has no size of its own. The caption must not invent one. */
   showSize?: boolean;
   sizeCaption?: "Value";
-  /**
-   * Treemap area. Position value stays linear. Market cap uses the square root
-   * so one mega-cap does not hide the rest of a list. The caption still reads `size`.
-   */
+  /** The currency `size` is in, when it is not the quote's. */
+  sizeCurrency?: string;
+  /** Treemap area, when it is not `size` itself. */
   weight?: number;
 }
 
@@ -137,47 +137,51 @@ export function useLinkedHeatmapCollection(): { collectionId: string | null; sou
   };
 }
 
-function tileWeight(size: number, held: boolean): number {
-  return held ? size : Math.sqrt(size);
+const MARKET_VALUE_COLUMN: ColumnConfig = { id: "mkt_value", label: "Mkt Value", width: 10, align: "right" };
+const MARKET_CAP_COLUMN: ColumnConfig = { id: "market_cap", label: "Mkt Cap", width: 10, align: "right" };
+
+function positiveNumber(value: number | string | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function positionValue(ticker: TickerRecord, collectionId: string, price: number | null): number | null {
-  let total = 0;
-  let any = false;
-  for (const position of ticker.metadata.positions) {
-    if (position.portfolio !== collectionId || position.shares === 0) continue;
-    if (typeof position.marketValue === "number" && Number.isFinite(position.marketValue) && position.marketValue !== 0) {
-      total += Math.abs(position.marketValue);
-      any = true;
-      continue;
-    }
-    if (price != null && price > 0) {
-      total += Math.abs(position.shares) * price;
-      any = true;
-    }
-  }
-  return any && total > 0 ? total : null;
-}
-
+/**
+ * A portfolio's holdings are sized by market value, read as the portfolio pane
+ * reads its MKT VALUE column: lots, contract multipliers and price basis, in
+ * the portfolio's currency. A watchlist's names are sized by the square root
+ * of market cap in the base currency, so a mega-cap does not hide the rest of
+ * a short list. A name with no size (no position, no quote, no cap, no FX
+ * rate) gets the smallest tile and no caption. Past `MAX_PORTFOLIO_TILES`,
+ * the smallest names are left out and counted in `omitted`.
+ */
 export function buildPortfolioHeatmapAssets({
   tickers,
   financials,
   collectionId,
   kind,
+  currency,
+  exchangeRates,
 }: {
   tickers: readonly TickerRecord[];
   financials: ReadonlyMap<string, TickerFinancials>;
   collectionId: string;
   kind: "portfolio" | "watchlist";
-}): HeatmapBoardAsset[] {
+  /** The portfolio's totals currency, or the base currency for a watchlist. */
+  currency: string;
+  exchangeRates: Map<string, number>;
+}): { assets: HeatmapBoardAsset[]; omitted: number } {
+  const context: ColumnContext = {
+    activeTab: kind === "portfolio" ? collectionId : undefined,
+    baseCurrency: currency,
+    exchangeRates,
+    now: 0,
+  };
+  const sizeColumn = kind === "portfolio" ? MARKET_VALUE_COLUMN : MARKET_CAP_COLUMN;
   const measured: HeatmapBoardAsset[] = tickers.map((ticker) => {
     const symbol = ticker.metadata.ticker;
     const snapshot = financials.get(symbol);
     const quote = snapshot?.quote;
     const price = quote != null && Number.isFinite(quote.price) ? quote.price : null;
-    const cap = selectMarketCapitalization(quote, snapshot?.fundamentals);
-    const held = kind === "portfolio" ? positionValue(ticker, collectionId, price) : null;
-    const size = held ?? cap?.value ?? null;
+    const size = positiveNumber(getSortValue(sizeColumn, ticker, snapshot, context));
     const hasChange = quote != null && Number.isFinite(quote.changePercent);
     return {
       symbol,
@@ -187,12 +191,13 @@ export function buildPortfolioHeatmapAssets({
       changePercent: hasChange ? quote.changePercent : 0,
       hasChange,
       size,
-      weight: size != null && size > 0 ? tileWeight(size, held != null) : undefined,
+      weight: size == null ? undefined : kind === "portfolio" ? size : Math.sqrt(size),
       sizeKind: "market-cap",
-      sizeCaption: held != null ? "Value" : undefined,
-      showSize: size != null && size > 0,
+      sizeCaption: kind === "portfolio" ? "Value" : undefined,
+      sizeCurrency: currency,
+      showSize: size != null,
       volume: typeof quote?.volume === "number" && Number.isFinite(quote.volume) ? quote.volume : null,
-      currency: quote?.currency || cap?.currency || ticker.metadata.currency || "USD",
+      currency: quote?.currency || ticker.metadata.currency || currency,
       exchange: ticker.metadata.exchange || "",
       sector: ticker.metadata.sector ?? null,
       industry: ticker.metadata.industry ?? null,
@@ -201,23 +206,15 @@ export function buildPortfolioHeatmapAssets({
     };
   });
 
-  measured.sort((left, right) => {
-    const leftSize = left.size ?? 0;
-    const rightSize = right.size ?? 0;
-    if (leftSize === 0 && rightSize === 0) return left.symbol.localeCompare(right.symbol);
-    return rightSize - leftSize;
-  });
+  measured.sort((left, right) => (
+    (right.size ?? 0) - (left.size ?? 0) || left.symbol.localeCompare(right.symbol)
+  ));
   const kept = measured.slice(0, MAX_PORTFOLIO_TILES);
-  const positive = kept.flatMap((asset) => (asset.size != null && asset.size > 0 ? [asset.size] : []));
-  const floor = positive.length > 0 ? Math.min(...positive) : 1;
-  return kept.map((asset) => {
-    const hasSize = asset.size != null && asset.size > 0;
-    return hasSize ? asset : {
-      ...asset,
-      size: floor,
-      weight: tileWeight(floor, false),
-      showSize: false,
-      sizeCaption: undefined,
-    };
-  });
+  const sizes = kept.flatMap((asset) => (asset.size != null ? [asset.size] : []));
+  const floor = sizes.length > 0 ? Math.min(...sizes) : 1;
+  const floorWeight = kind === "portfolio" ? floor : Math.sqrt(floor);
+  return {
+    assets: kept.map((asset) => (asset.size != null ? asset : { ...asset, weight: floorWeight })),
+    omitted: measured.length - kept.length,
+  };
 }
