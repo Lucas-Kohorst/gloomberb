@@ -799,7 +799,11 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
  *
  * `script-src` allows inline because the app's bootstrap script carries the
  * session token inline; moving to a nonce is the follow-up that lets
- * 'unsafe-inline' drop. `frame-src` allows YouTube because TV embeds it.
+ * 'unsafe-inline' drop. `frame-src` allows this origin because Advanced
+ * Charts loads `/charting_library/sameorigin.html` in an iframe, plus YouTube
+ * because TV embeds it. The app shell keeps `frame-ancestors 'none'`. The
+ * chart frame document allows this origin, or `X-Frame-Options: DENY` on
+ * that response leaves the pane on "Chart could not finish loading."
  */
 const TRADINGVIEW_FRAME_ORIGINS = [
   "https://www.tradingview.com",
@@ -814,11 +818,18 @@ const APP_CSP = [
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
-  `frame-src https://www.youtube.com https://www.youtube-nocookie.com ${TRADINGVIEW_FRAME_ORIGINS.join(" ")}`,
+  `frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com ${TRADINGVIEW_FRAME_ORIGINS.join(" ")}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
 ].join("; ");
+
+const CHART_FRAME_CSP = APP_CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
+
+function isChartLibraryFrame(pathname: string): boolean {
+  return pathname === "/charting_library/sameorigin.html"
+    || pathname === "/charting_library/sameorigin";
+}
 
 async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
   const servedPath = assetPath ?? new URL(request.url).pathname;
@@ -828,15 +839,16 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
   if (shareHtml && response.status === 304) {
     response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
   }
+  const chartFrame = isChartLibraryFrame(servedPath);
   const headers = new Headers(response.headers);
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
-  headers.set("x-frame-options", "DENY");
+  headers.set("x-frame-options", chartFrame ? "SAMEORIGIN" : "DENY");
   headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
   headers.set("cross-origin-opener-policy", "same-origin");
   headers.set("cross-origin-resource-policy", "same-origin");
   headers.set("permissions-policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()");
-  headers.set("content-security-policy-report-only", APP_CSP);
+  headers.set("content-security-policy-report-only", chartFrame ? CHART_FRAME_CSP : APP_CSP);
   // SPA `not_found_handling` returns index.html 200 for missing files. A
   // module script that receives HTML throws "Failed to fetch dynamically
   // imported module" instead of a recoverable 404 after a deploy.

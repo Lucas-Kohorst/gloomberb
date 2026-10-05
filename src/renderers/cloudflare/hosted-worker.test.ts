@@ -1667,10 +1667,20 @@ describe("app security headers", () => {
   test("report-only CSP allows TradingView Advanced Chart iframes", async () => {
     const response = await serveAsset("/");
     const csp = response?.headers.get("content-security-policy-report-only") ?? "";
-    expect(csp).toContain("frame-src");
+    expect(csp).toContain("frame-src 'self'");
     expect(csp).toContain("https://www.tradingview.com");
     expect(csp).toContain("https://s3.tradingview.com");
     expect(csp).toContain("https://www.tradingview-widget.com");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  test("the chart library frame document can be framed by this origin", async () => {
+    for (const path of ["/charting_library/sameorigin.html", "/charting_library/sameorigin"]) {
+      const response = await serveAsset(path);
+      expect(response?.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+      const csp = response?.headers.get("content-security-policy-report-only") ?? "";
+      expect(csp).toContain("frame-ancestors 'self'");
+    }
   });
 
   test("only share documents ask crawlers to stay out", async () => {
