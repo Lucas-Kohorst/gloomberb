@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { isTypingChord, matchesKeyChord, parseKeyChord, type KeyChord } from "../../../../app/keybindings/chord";
 import { useShortcut, type KeyEventLike } from "../../../../react/input";
 import { useOptionalAppSelector } from "../../../../state/app/context";
-import { isPerPaneRefreshHint, type CombinedPaneFooter } from "./model";
+import type { CombinedPaneFooter } from "./model";
 
 const chordCache = new Map<string, KeyChord | null>();
 
@@ -39,9 +39,7 @@ export function resolvePaneFooterKey(
 ): (() => void) | null {
   const candidates: Array<{ key: string; press: () => void }> = [];
   for (const hint of [...footer.hints, ...footer.keys]) {
-    // `r` reloads every pane. A per-pane [r]efresh hint is not chrome, and it
-    // must not take the key from a visible hint that also uses `r`.
-    if (hint.disabled || !hint.onPress || isPerPaneRefreshHint(hint)) continue;
+    if (hint.disabled || !hint.onPress) continue;
     const onPress = hint.onPress;
     candidates.push({ key: hint.key, press: () => onPress() });
   }

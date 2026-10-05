@@ -51,28 +51,6 @@ export function unavailableText(thing: string): string {
   return tf("{thing} unavailable.", { thing });
 }
 
-const NO_DATA_PATTERN =
-  /no .{0,48}(data|history|chain|scores|filings|transcripts|news|options|holders|ratings|events|tweets|prices|peers)( found)?(\s+for\b|$)/i;
-
-/** True when the failure is an empty result, not a transport or provider crash. */
-function isNoDataError(error: string): boolean {
-  if (/\b(NO_DATA|NOT_FOUND)\b/.test(error)) return true;
-  if (/^no .+ available\.?$/i.test(error)) return true;
-  return NO_DATA_PATTERN.test(error);
-}
-
-/** A real failure's own sentence. Empty and no-data copy stay out of the short chip. */
-function footerFailureMessage(error: string | null | undefined): string | null {
-  const message = error?.trim();
-  if (!message || isNoDataError(message)) return null;
-  return message;
-}
-
-/** Short chip for callers that want one word instead of the failure sentence. */
-export function footerErrorChip(error: string | null | undefined): { text: string; tone: "warning" } | null {
-  return footerFailureMessage(error) ? { text: "unavailable", tone: "warning" } : null;
-}
-
 export interface PaneStatusBodyProps {
   loading?: boolean;
   error?: string | null;
