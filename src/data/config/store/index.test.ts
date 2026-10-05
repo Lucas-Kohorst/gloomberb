@@ -59,20 +59,20 @@ async function writeConfigJson(dataDir: string, config: Record<string, unknown>)
   await writeFile(join(dataDir, "config.json"), JSON.stringify(config), "utf-8");
 }
 
-test("recent commands survive a save and reload", async () => {
+test("recent panes survive a save and reload", async () => {
   const dataDir = await createTempConfigDir();
   const loaded = await loadConfig(dataDir);
   await saveConfig({
     ...loaded,
     recentCommands: [
-      { id: "theme", label: "Change Theme", arg: "amber" },
+      { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "AAPL" },
       { id: "pane-template:chart", label: "Chart" },
       { id: "blank-arg", label: "Blank", arg: "" },
       { id: "", label: "drop" },
     ],
   });
   expect((await loadConfig(dataDir)).recentCommands).toEqual([
-    { id: "theme", label: "Change Theme", arg: "amber" },
+    { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "AAPL" },
     { id: "pane-template:chart", label: "Chart" },
     { id: "blank-arg", label: "Blank" },
   ]);

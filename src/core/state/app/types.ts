@@ -1,5 +1,5 @@
 import type { BrokerAccount } from "../../../types/trading";
-import type { AppConfig, KeybindingsConfig, LayoutConfig, LayoutOrigin, OnboardingProgress, RecentCommand } from "../../../types/config";
+import type { AppConfig, KeybindingsConfig, LayoutConfig, LayoutOrigin, OnboardingProgress } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -69,7 +69,6 @@ export interface AppState {
   previousFocusedPaneId: string | null;
   paneState: Record<string, PaneRuntimeState>;
   recentTickers: string[];
-  recentCommands: RecentCommand[];
   commandBarOpen: boolean;
   commandBarQuery: string;
   commandBarLaunchRequest:

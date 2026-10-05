@@ -922,18 +922,20 @@ describe("update checks", () => {
 });
 
 describe("recent commands ring", () => {
-  test("records newest first, caps the ring, and promotes a repeat instead of duplicating it", () => {
+  // The ring lives in config: a pane run is followed by a layout save that
+  // writes the config as it stands, and a list kept beside it was lost.
+  test("records into config newest first, caps the ring, and promotes a repeat instead of duplicating it", () => {
     let next = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     for (let index = 0; index < RECENT_COMMANDS_LIMIT + 2; index += 1) {
       next = appReducer(next, { type: "RECORD_COMMAND", id: `cmd-${index}`, label: `Command ${index}` });
     }
-    expect(next.recentCommands).toHaveLength(RECENT_COMMANDS_LIMIT);
-    expect(next.recentCommands[0]?.id).toBe(`cmd-${RECENT_COMMANDS_LIMIT + 1}`);
-    expect(next.recentCommands.at(-1)?.id).toBe("cmd-2");
+    expect(next.config.recentCommands).toHaveLength(RECENT_COMMANDS_LIMIT);
+    expect(next.config.recentCommands[0]?.id).toBe(`cmd-${RECENT_COMMANDS_LIMIT + 1}`);
+    expect(next.config.recentCommands.at(-1)?.id).toBe("cmd-2");
 
     next = appReducer(next, { type: "RECORD_COMMAND", id: "cmd-2", label: "Command 2" });
-    expect(next.recentCommands[0]?.id).toBe("cmd-2");
-    expect(next.recentCommands.filter((entry) => entry.id === "cmd-2")).toHaveLength(1);
+    expect(next.config.recentCommands[0]?.id).toBe("cmd-2");
+    expect(next.config.recentCommands.filter((entry) => entry.id === "cmd-2")).toHaveLength(1);
   });
 
   test("keeps separate arguments for the same pane", () => {
@@ -950,12 +952,6 @@ describe("recent commands ring", () => {
       label: "Ticker News",
       arg: "  MSFT  ",
     });
-    expect(next.recentCommands.map((entry) => entry.arg)).toEqual(["MSFT", "AAPL"]);
-  });
-
-  test("restores recent commands from config", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    config.recentCommands = [{ id: "theme", label: "Change Theme", arg: "amber" }];
-    expect(createInitialState(config).recentCommands).toEqual(config.recentCommands);
+    expect(next.config.recentCommands.map((entry) => entry.arg)).toEqual(["MSFT", "AAPL"]);
   });
 });

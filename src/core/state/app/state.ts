@@ -129,15 +129,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, recentTickers: nextRecentTickers(state.recentTickers, action.symbol) };
 
     case "RECORD_COMMAND": {
+      // Kept in config, not beside it like the recent tickers: a pane run is
+      // followed by a layout save, which writes the config as it stands and
+      // would drop a list held anywhere else.
       const arg = action.arg?.trim();
-      return {
-        ...state,
-        recentCommands: nextRecentCommands(state.recentCommands, {
-          id: action.id,
-          label: action.label,
-          ...(arg ? { arg } : {}),
-        }),
-      };
+      const current = state.config.recentCommands ?? [];
+      const recentCommands = nextRecentCommands(current, {
+        id: action.id,
+        label: action.label,
+        ...(arg ? { arg } : {}),
+      });
+      return recentCommands === current ? state : { ...state, config: { ...state.config, recentCommands } };
     }
 
     case "SET_ACTIVE_PANEL": {
@@ -358,7 +360,6 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     previousFocusedPaneId: null,
     paneState,
     recentTickers: config.recentTickers,
-    recentCommands: config.recentCommands ?? [],
     commandBarOpen: false,
     commandBarQuery: "",
     commandBarLaunchRequest: null,

@@ -286,7 +286,7 @@ export function nextRecentTickers(current: string[], symbol: string | null): str
   return next;
 }
 
-/** Cap for the recently-executed command ring. */
+/** Cap for the recently run pane templates. */
 export const RECENT_COMMANDS_LIMIT = 10;
 
 function sameRecentCommandEntry(left: RecentCommand, right: RecentCommand | undefined): boolean {

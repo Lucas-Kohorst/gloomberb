@@ -204,8 +204,8 @@ export interface TelemetryConfig {
 }
 
 /**
- * One recently executed command-bar entry. `id` is a built-in command id or
- * `pane-template:<templateId>`. `label` is the text shown under Suggested.
+ * One recent command-bar run: `id` is `pane-template:<templateId>`, `label`
+ * its name when it ran, and `arg` a ticker it ran with (never free text).
  */
 export interface RecentCommand {
   id: string;
@@ -244,7 +244,7 @@ export interface AppConfig {
   valueFlashingEnabled: boolean;
   fontSize: number;
   recentTickers: string[];
-  /** Recently executed command-bar commands and pane templates, newest first. */
+  /** Pane templates recently run from the command bar, newest first. */
   recentCommands: RecentCommand[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;

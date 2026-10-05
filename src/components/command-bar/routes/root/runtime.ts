@@ -50,7 +50,7 @@ interface UseCommandBarRootRuntimeOptions {
     rawInput?: string,
   ): void | Promise<void>;
   getAvailablePaneShortcutTemplates(query: string): PaneTemplateDef[];
-  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  getRecentPaneTemplate?: (id: string, arg?: string) => PaneTemplateDef | undefined;
   getTickers(): AppState["tickers"];
   hasPaneSettings(paneId: string): boolean;
   localTickerSearchResultItems(query?: string, options?: { category?: string; limit?: number }): ResultItem[];

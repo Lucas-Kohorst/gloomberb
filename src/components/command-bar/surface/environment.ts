@@ -31,7 +31,6 @@ function useCommandBarAppState(): AppState {
   const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
   const layoutHistory = useAppSelector((state) => state.layoutHistory);
   const recentTickers = useAppSelector((state) => state.recentTickers);
-  const recentCommands = useAppSelector((state) => state.recentCommands);
   const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
   const commandBarQuery = useAppSelector((state) => state.commandBarQuery);
   const commandBarLaunchRequest = useAppSelector((state) => state.commandBarLaunchRequest);
@@ -48,7 +47,6 @@ function useCommandBarAppState(): AppState {
     focusedPaneId,
     layoutHistory,
     recentTickers,
-    recentCommands,
     commandBarOpen,
     commandBarQuery,
     commandBarLaunchRequest,
@@ -65,7 +63,6 @@ function useCommandBarAppState(): AppState {
     focusedPaneId,
     layoutHistory,
     paneState,
-    recentCommands,
     recentTickers,
     tickers,
     updateAvailable,

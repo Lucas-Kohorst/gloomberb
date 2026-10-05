@@ -218,8 +218,9 @@ export function CommandBar({
     return candidate ? mapTickerSearchCandidateToResultItem(candidate) : null;
   }, [mapTickerSearchCandidateToResultItem, state.tickers]);
   const getRecentPaneTemplate = useCallback(
-    (id: string) => pluginRegistry.paneTemplates.get(id),
-    [pluginRegistry],
+    (id: string, arg?: string) => getAvailablePaneTemplates(arg ? { arg } : undefined, { includePromptableTickerTemplates: true })
+      .find((template) => template.id === id),
+    [getAvailablePaneTemplates],
   );
 
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({

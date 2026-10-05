@@ -20,6 +20,7 @@ import {
   getAvailablePaneShortcutTemplatesForQuery,
   getAvailablePaneTemplatesForState,
   getPaneTemplateDisplayLabel,
+  recentPaneTemplateArg,
 } from "./items";
 import type { FormModalRequest } from "../../form-modal";
 import {
@@ -83,12 +84,12 @@ export function useCommandBarPaneTemplateActions({
   }), [activeCollectionId, activeTickerSymbol, config, focusedPaneId]);
 
   const recordPaneTemplate = useCallback((template: PaneTemplateDef, arg?: string) => {
-    const trimmed = arg?.trim();
+    const tickerArg = recentPaneTemplateArg(template, arg);
     dispatch({
       type: "RECORD_COMMAND",
       id: `pane-template:${template.id}`,
       label: getPaneTemplateDisplayLabel(template),
-      ...(trimmed ? { arg: trimmed } : {}),
+      ...(tickerArg ? { arg: tickerArg } : {}),
     });
   }, [dispatch]);
 

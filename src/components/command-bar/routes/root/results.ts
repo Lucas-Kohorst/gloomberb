@@ -13,6 +13,7 @@ import {
 } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import { isCollectionCommand } from "../../helpers";
+import { recentPaneTemplateArg } from "../../pane-templates/items";
 import { dedupeById } from "../../view-model";
 import type { ResultItem } from "../../list/model";
 import type { parseRootShortcutIntent } from "./shortcuts";
@@ -63,8 +64,8 @@ export interface RootResultModelOptions {
     rawInput?: string,
   ) => void | Promise<void>;
   getAvailablePaneShortcutTemplates: (query: string) => PaneTemplateDef[];
-  /** Looks a recorded `pane-template:<id>` entry back up so it can run again. */
-  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
+  /** Looks a recorded `pane-template:<id>` entry back up among the templates the bar offers now. */
+  getRecentPaneTemplate?: (id: string, arg?: string) => PaneTemplateDef | undefined;
   hasPaneSettings: (paneId: string) => boolean;
   localTickerSearchResultItems: (query?: string, options?: { category?: string; limit?: number }) => ResultItem[];
   nonShortcutPaneTemplateItems: (filterQuery?: string) => ResultItem[];
@@ -133,55 +134,50 @@ function buildBindKeyItem(
   };
 }
 
-const MAX_RECENT_TICKER_ROWS = 8;
+/** Kept short: the empty bar is still a browse list of everything below. */
+const MAX_RECENT_TICKER_ROWS = 4;
+const MAX_RECENT_PANE_ROWS = 4;
 
 function buildRecentResultItems(options: {
-  availableCommands: Command[];
   buildRecentTickerItem?: (symbol: string) => ResultItem | null;
   createPaneTemplateItem: (template: PaneTemplateDef, options?: PaneTemplateItemOptions) => ResultItem;
-  getRecentPaneTemplate?: (id: string) => PaneTemplateDef | undefined;
-  recentCommands: AppState["recentCommands"];
+  getRecentPaneTemplate?: (id: string, arg?: string) => PaneTemplateDef | undefined;
+  recentCommands: AppState["config"]["recentCommands"];
   recentTickers: string[];
-  runDirectCommand: (command: Command, arg: string) => void;
 }): ResultItem[] {
   const {
-    availableCommands,
     buildRecentTickerItem = () => null,
     createPaneTemplateItem,
     getRecentPaneTemplate = () => undefined,
     recentCommands,
     recentTickers,
-    runDirectCommand,
   } = options;
   const items: ResultItem[] = [];
-  for (const symbol of recentTickers.slice(0, MAX_RECENT_TICKER_ROWS)) {
+  for (const symbol of recentTickers) {
+    if (items.length >= MAX_RECENT_TICKER_ROWS) break;
     const item = buildRecentTickerItem(symbol);
     if (item) items.push({ ...item, category: "Suggested" });
   }
+  let paneRows = 0;
   for (const recent of recentCommands) {
-    const command = availableCommands.find((entry) => entry.id === recent.id);
-    if (command) {
-      items.push({
-        id: recent.arg ? `recent:command:${command.id}:${recent.arg}` : `recent:command:${command.id}`,
-        label: recent.label,
-        detail: recent.arg ? `${command.description} · ${recent.arg}` : command.description,
-        category: "Suggested",
-        kind: "command",
-        shortcutQuery: command.prefix || undefined,
-        searchText: recent.arg ? `${recent.label} ${recent.arg}` : recent.label,
-        action: () => runDirectCommand(command, recent.arg ?? ""),
-      });
-      continue;
-    }
+    if (paneRows >= MAX_RECENT_PANE_ROWS) break;
     if (!recent.id.startsWith("pane-template:")) continue;
-    const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
+    // Only a template the bar would offer now: its plugin enabled, and able
+    // to open for that argument.
+    const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length), recent.arg);
     if (!template) continue;
-    items.push({
-      ...createPaneTemplateItem(template, recent.arg ? { createOptions: { arg: recent.arg } } : undefined),
-      id: recent.arg ? `recent:${recent.id}:${recent.arg}` : `recent:${recent.id}`,
-      category: "Suggested",
-      ...(recent.arg ? { detail: recent.arg } : {}),
+    const arg = recentPaneTemplateArg(template, recent.arg);
+    const item = createPaneTemplateItem(template, {
+      showShortcut: true,
+      ...(arg ? { createOptions: { arg } } : {}),
     });
+    items.push({
+      ...item,
+      id: arg ? `recent:${recent.id}:${arg}` : `recent:${recent.id}`,
+      label: arg ? `${item.label} ${arg}` : item.label,
+      category: "Suggested",
+    });
+    paneRows += 1;
   }
   return items;
 }
@@ -313,13 +309,11 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   } else if (!rootQuery) {
     if (rootShortcutIntent.kind === "none") {
       items.push(...buildRecentResultItems({
-        availableCommands,
         buildRecentTickerItem,
         createPaneTemplateItem,
         getRecentPaneTemplate,
-        recentCommands: state.recentCommands ?? [],
+        recentCommands: state.config.recentCommands ?? [],
         recentTickers: state.recentTickers ?? [],
-        runDirectCommand,
       }));
     }
     items.push(...paneShortcutItems());
