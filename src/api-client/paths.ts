@@ -173,6 +173,54 @@ export function cloudCdsPath(params: CloudCdsParams = {}): string {
   return appendQuery("/cloud/credit/cds", search);
 }
 
+export interface CloudCdsHistoryParams {
+  issuer: string;
+  days?: number;
+}
+
+export function cloudCdsHistoryPath(params: CloudCdsHistoryParams): string {
+  const search = new URLSearchParams({ issuer: params.issuer.trim() });
+  if (params.days != null) search.set("days", String(params.days));
+  return appendQuery("/cloud/credit/cds/history", search);
+}
+
+export function cloudCreditBoardPath(board: "cdx" | "sovr", params: { days?: number } = {}): string {
+  const search = new URLSearchParams();
+  if (params.days != null) search.set("days", String(params.days));
+  return appendQuery(`/cloud/credit/${board}`, search);
+}
+
+export interface CloudJobsPostingsParams {
+  function?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+  includeClosed?: boolean;
+}
+
+export function cloudJobsPath(ticker: string, name?: string | null): string {
+  const search = new URLSearchParams();
+  if (name) search.set("name", name);
+  return appendQuery(`/cloud/jobs/${encodeURIComponent(normalizeIssuerResearchTicker(ticker))}`, search);
+}
+
+export function cloudJobsPostingsPath(ticker: string, params: CloudJobsPostingsParams = {}): string {
+  const search = new URLSearchParams();
+  if (params.function) search.set("function", params.function);
+  if (params.q) search.set("q", params.q);
+  if (params.limit != null) search.set("limit", String(params.limit));
+  if (params.offset != null) search.set("offset", String(params.offset));
+  if (params.includeClosed) search.set("includeClosed", "true");
+  return appendQuery(`/cloud/jobs/${encodeURIComponent(normalizeIssuerResearchTicker(ticker))}/postings`, search);
+}
+
+export function cloudJobsMoversPath(limit?: number, offset?: number): string {
+  const search = new URLSearchParams();
+  if (limit != null) search.set("limit", String(limit));
+  if (offset) search.set("offset", String(offset));
+  return appendQuery("/cloud/jobs", search);
+}
+
 export type CloudSecFilingsParams = {
   ticker: string;
   limit?: number;

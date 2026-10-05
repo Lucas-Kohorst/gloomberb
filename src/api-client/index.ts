@@ -1018,6 +1018,160 @@ class GloomApiClient {
     return this.data.getCloudCongressHouse(params);
   }
 
+  getCloudEstimateRevisions(...args: Parameters<CloudDataApi["getCloudEstimateRevisions"]>) {
+    return this.data.getCloudEstimateRevisions(...args);
+  }
+  getCloudEarningsCalendar(...args: Parameters<CloudDataApi["getCloudEarningsCalendar"]>) {
+    return this.data.getCloudEarningsCalendar(...args);
+  }
+  getCloudEarningsHistory(...args: Parameters<CloudDataApi["getCloudEarningsHistory"]>) {
+    return this.data.getCloudEarningsHistory(...args);
+  }
+  getCloudCotBoard(...args: Parameters<CloudDataApi["getCloudCotBoard"]>) {
+    return this.data.getCloudCotBoard(...args);
+  }
+  getCloudCotContract(...args: Parameters<CloudDataApi["getCloudCotContract"]>) {
+    return this.data.getCloudCotContract(...args);
+  }
+  getCloudHiring(...args: Parameters<CloudDataApi["getCloudHiring"]>) {
+    return this.data.getCloudHiring(...args);
+  }
+  getCloudAppRankHistory(...args: Parameters<CloudDataApi["getCloudAppRankHistory"]>) {
+    return this.data.getCloudAppRankHistory(...args);
+  }
+  getCloudAppAttention(...args: Parameters<CloudDataApi["getCloudAppAttention"]>) {
+    return this.data.getCloudAppAttention(...args);
+  }
+  getCloudCatalysts(...args: Parameters<CloudDataApi["getCloudCatalysts"]>) {
+    return this.data.getCloudCatalysts(...args);
+  }
+  getCloudCatalystChanges(...args: Parameters<CloudDataApi["getCloudCatalystChanges"]>) {
+    return this.data.getCloudCatalystChanges(...args);
+  }
+  getCloudCatalystEvent(...args: Parameters<CloudDataApi["getCloudCatalystEvent"]>) {
+    return this.data.getCloudCatalystEvent(...args);
+  }
+  getCloudCatalystStatus(...args: Parameters<CloudDataApi["getCloudCatalystStatus"]>) {
+    return this.data.getCloudCatalystStatus(...args);
+  }
+  getCloudCompanyKpis(...args: Parameters<CloudDataApi["getCloudCompanyKpis"]>) {
+    return this.data.getCloudCompanyKpis(...args);
+  }
+  getCloudCompanyGuidance(...args: Parameters<CloudDataApi["getCloudCompanyGuidance"]>) {
+    return this.data.getCloudCompanyGuidance(...args);
+  }
+  getCloudPerpsBoard(...args: Parameters<CloudDataApi["getCloudPerpsBoard"]>) {
+    return this.data.getCloudPerpsBoard(...args);
+  }
+  getCloudPerpsHistory(...args: Parameters<CloudDataApi["getCloudPerpsHistory"]>) {
+    return this.data.getCloudPerpsHistory(...args);
+  }
+  getCloudPerpsRankings(...args: Parameters<CloudDataApi["getCloudPerpsRankings"]>) {
+    return this.data.getCloudPerpsRankings(...args);
+  }
+  getCloudPerpsCompare(...args: Parameters<CloudDataApi["getCloudPerpsCompare"]>) {
+    return this.data.getCloudPerpsCompare(...args);
+  }
+  getCloudPerpsEquity(...args: Parameters<CloudDataApi["getCloudPerpsEquity"]>) {
+    return this.data.getCloudPerpsEquity(...args);
+  }
+  getCloudPerpsMarket(...args: Parameters<CloudDataApi["getCloudPerpsMarket"]>) {
+    return this.data.getCloudPerpsMarket(...args);
+  }
+  analyzeCloudExposure(...args: Parameters<CloudDataApi["analyzeCloudExposure"]>) {
+    return this.data.analyzeCloudExposure(...args);
+  }
+  getCloudExposureScenarios(...args: Parameters<CloudDataApi["getCloudExposureScenarios"]>) {
+    return this.data.getCloudExposureScenarios(...args);
+  }
+  getCloudSupplyChain(...args: Parameters<CloudDataApi["getCloudSupplyChain"]>) {
+    return this.data.getCloudSupplyChain(...args);
+  }
+  getCloudAwards(...args: Parameters<CloudDataApi["getCloudAwards"]>) {
+    return this.data.getCloudAwards(...args);
+  }
+  getCloudAward(...args: Parameters<CloudDataApi["getCloudAward"]>) {
+    return this.data.getCloudAward(...args);
+  }
+  getCloudSupplyGraph(...args: Parameters<CloudDataApi["getCloudSupplyGraph"]>) {
+    return this.data.getCloudSupplyGraph(...args);
+  }
+  getCloudSupplyPaths(...args: Parameters<CloudDataApi["getCloudSupplyPaths"]>) {
+    return this.data.getCloudSupplyPaths(...args);
+  }
+  getCloudDoeBoard(...args: Parameters<CloudDataApi["getCloudDoeBoard"]>) {
+    return this.data.getCloudDoeBoard(...args);
+  }
+  getCloudAttention(...args: Parameters<CloudDataApi["getCloudAttention"]>) {
+    return this.data.getCloudAttention(...args);
+  }
+  getCloudPowerBoard(...args: Parameters<CloudDataApi["getCloudPowerBoard"]>) {
+    return this.data.getCloudPowerBoard(...args);
+  }
+  getCloudPowerHistory(...args: Parameters<CloudDataApi["getCloudPowerHistory"]>) {
+    return this.data.getCloudPowerHistory(...args);
+  }
+  getCloudPowerProject(...args: Parameters<CloudDataApi["getCloudPowerProject"]>) {
+    return this.data.getCloudPowerProject(...args);
+  }
+  getCloudGpuBoard(...args: Parameters<CloudDataApi["getCloudGpuBoard"]>) {
+    return this.data.getCloudGpuBoard(...args);
+  }
+  getCloudGpuHistory(...args: Parameters<CloudDataApi["getCloudGpuHistory"]>) {
+    return this.data.getCloudGpuHistory(...args);
+  }
+  getCloudGpuEvents(...args: Parameters<CloudDataApi["getCloudGpuEvents"]>) {
+    return this.data.getCloudGpuEvents(...args);
+  }
+  getCloudCpiBoard(...args: Parameters<CloudDataApi["getCloudCpiBoard"]>) {
+    return this.data.getCloudCpiBoard(...args);
+  }
+  getCloudTape(...args: Parameters<CloudDataApi["getCloudTape"]>) {
+    return this.data.getCloudTape(...args);
+  }
+  getCloudCryptoMarkets(...args: Parameters<CloudDataApi["getCloudCryptoMarkets"]>) {
+    return this.data.getCloudCryptoMarkets(...args);
+  }
+  getCloudCentralBankRates(...args: Parameters<CloudDataApi["getCloudCentralBankRates"]>) {
+    return this.data.getCloudCentralBankRates(...args);
+  }
+  getCloudMoneyMarkets(...args: Parameters<CloudDataApi["getCloudMoneyMarkets"]>) {
+    return this.data.getCloudMoneyMarkets(...args);
+  }
+  getCloudDebtMaturities(...args: Parameters<CloudDataApi["getCloudDebtMaturities"]>) {
+    return this.data.getCloudDebtMaturities(...args);
+  }
+  getCloudRevenueBreakdown(...args: Parameters<CloudDataApi["getCloudRevenueBreakdown"]>) {
+    return this.data.getCloudRevenueBreakdown(...args);
+  }
+  getCloudShortVolume(...args: Parameters<CloudDataApi["getCloudShortVolume"]>) {
+    return this.data.getCloudShortVolume(...args);
+  }
+  getCloudRatePath(...args: Parameters<CloudDataApi["getCloudRatePath"]>) {
+    return this.data.getCloudRatePath(...args);
+  }
+  getCloudCdsHistory(...args: Parameters<CloudDataApi["getCloudCdsHistory"]>) {
+    return this.data.getCloudCdsHistory(...args);
+  }
+  getCloudCdxBoard(...args: Parameters<CloudDataApi["getCloudCdxBoard"]>) {
+    return this.data.getCloudCdxBoard(...args);
+  }
+  getCloudSovrBoard(...args: Parameters<CloudDataApi["getCloudSovrBoard"]>) {
+    return this.data.getCloudSovrBoard(...args);
+  }
+  getCloudJobs(...args: Parameters<CloudDataApi["getCloudJobs"]>) {
+    return this.data.getCloudJobs(...args);
+  }
+  getCloudJobsPostings(...args: Parameters<CloudDataApi["getCloudJobsPostings"]>) {
+    return this.data.getCloudJobsPostings(...args);
+  }
+  getCloudJobsMovers(...args: Parameters<CloudDataApi["getCloudJobsMovers"]>) {
+    return this.data.getCloudJobsMovers(...args);
+  }
+  creditDocuments<T>(path: string): Promise<T> {
+    return this.data.creditDocuments<T>(path);
+  }
+
   async getCloudEarningsCalls(
     params: CloudEarningsCallsParams = {},
   ): Promise<CloudEarningsCallListPayload> {
