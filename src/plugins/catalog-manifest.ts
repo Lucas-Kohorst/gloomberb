@@ -45,6 +45,7 @@ const EDITORIAL: Record<
   alerts: { categories: ["alerts"] },
   application: { categories: ["core"] },
   broker: { categories: ["broker"] },
+  "clinical-trials": { categories: ["research"] },
   "custom-view": { categories: ["data", "productivity"] },
   debug: { categories: ["developer"] },
   "fear-greed": { categories: ["markets", "sentiment"], icon: "plugin-icons/fear-greed.webp" },
