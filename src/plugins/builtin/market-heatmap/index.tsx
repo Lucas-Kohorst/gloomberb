@@ -17,20 +17,38 @@ import {
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
 import { useShortcut } from "../../../react/input";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { GloomPlugin, PaneProps, PaneSettingField } from "../../../types/plugin";
+import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePaneSettingValue } from "../../../state/app/context";
+import { useAppSelector, usePaneAppConfig, usePaneSettingValue } from "../../../state/app/context";
 import { usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
+import { useTickerFinancialsMap } from "../../../market-data/hooks";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { instrumentFromTicker } from "../../../market-data/request-types";
+import {
+  getCollectionTickersFromConfig,
+  getCollectionTypeFromConfig,
+} from "../portfolio-list/pane/data";
 import {
   MARKET_HEATMAP_UNIVERSES,
   fetchMarketHeatmap,
   resetMarketHeatmapCache,
-  type MarketHeatmapAsset,
   type MarketHeatmapUniverseId,
 } from "./data";
+import {
+  PORTFOLIO_HEATMAP_TAB,
+  buildPortfolioHeatmapAssets,
+  fallbackHeatmapCollectionId,
+  heatmapCollectionLabel,
+  heatmapFollowsCollection,
+  heatmapTabId,
+  isRemoteHeatmapUniverse,
+  useLinkedHeatmapCollection,
+  type HeatmapBoardAsset,
+} from "./portfolio";
 import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
 import {
   LIVE_STREAMING_QUICK_SETTING,
@@ -43,9 +61,24 @@ import {
   resolveScreenerQuoteFeedStatus,
 } from "../../../market-data/quotes/screener-live-quotes";
 
-const UNIVERSE_TABS = MARKET_HEATMAP_UNIVERSES.map((universe) => ({ label: universe.label, value: universe.id as string }));
-const NO_ASSETS: MarketHeatmapAsset[] = [];
+const NO_ASSETS: HeatmapBoardAsset[] = [];
+const EMPTY_TICKERS: TickerRecord[] = [];
 const EMPTY_TITLE = "No market heatmap data.";
+const EMPTY_PORTFOLIO_TITLE = "No symbols in this list.";
+
+function loadCollectionSnapshots(
+  tickers: readonly TickerRecord[],
+  collectionId: string | null,
+  kind: "portfolio" | "watchlist" | null,
+): void {
+  const coordinator = getSharedMarketDataCoordinator();
+  if (!coordinator || !collectionId) return;
+  const instrumentOptions = kind === "portfolio" ? { portfolioId: collectionId } : {};
+  for (const ticker of tickers) {
+    const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, instrumentOptions);
+    if (instrument) void coordinator.loadSnapshot(instrument).catch(() => {});
+  }
+}
 
 function formatMoneyCompact(value: number | null | undefined, currency: string): string {
   if (value == null) return "—";
@@ -53,13 +86,13 @@ function formatMoneyCompact(value: number | null | undefined, currency: string):
   return `${formatCompact(value)} ${currency}`;
 }
 
-function sizeLabel(asset: MarketHeatmapAsset): string | null {
-  if (asset.size == null) return null;
-  const label = asset.sizeKind === "net-assets" ? "Assets" : "Mkt";
+function sizeLabel(asset: HeatmapBoardAsset): string | null {
+  if (asset.showSize === false || asset.size == null) return null;
+  const label = asset.sizeCaption ?? (asset.sizeKind === "net-assets" ? "Assets" : "Mkt");
   return `${label} ${formatMoneyCompact(asset.size, asset.currency)}`;
 }
 
-function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<MarketHeatmapAsset>> {
+function buildItems(assets: HeatmapBoardAsset[]): Array<MetricTreemapItem<HeatmapBoardAsset>> {
   return assets.map((asset) => ({
     id: asset.symbol,
     label: asset.symbol,
@@ -80,9 +113,9 @@ function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<Marke
  * geometry.
  */
 function fitItemsToTiles(
-  items: Array<MetricTreemapItem<MarketHeatmapAsset>>,
+  items: Array<MetricTreemapItem<HeatmapBoardAsset>>,
   tiles: Array<{ item: { id: string }; width: number; height: number }>,
-): Array<MetricTreemapItem<MarketHeatmapAsset>> {
+): Array<MetricTreemapItem<HeatmapBoardAsset>> {
   const tileById = new Map(tiles.map((tile) => [tile.item.id, tile]));
   return items.map((item) => {
     const tile = tileById.get(item.id);
@@ -106,8 +139,35 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const liveStreaming = useLiveStreamingSetting();
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   // A pane setting, not private pane state, so the settings dialog can show it.
-  const [activeUniverse, setActiveUniverse] = usePaneSettingValue<MarketHeatmapUniverseId>("universe", "us-equity");
-  const [assets, setAssets] = useState<MarketHeatmapAsset[]>([]);
+  const [universeSetting, setActiveUniverse] = usePaneSettingValue<string>("universe", "us-equity");
+  const [linkPortfolio] = usePaneSettingValue<boolean>("linkPortfolio", false);
+  const activeUniverse = heatmapTabId(universeSetting);
+  const portfolioTab = activeUniverse === PORTFOLIO_HEATMAP_TAB;
+  const config = usePaneAppConfig();
+  const tickersBySymbol = useAppSelector((state) => state.tickers);
+  const linkedPortfolio = useLinkedHeatmapCollection();
+  const collectionId = linkedPortfolio.collectionId ?? fallbackHeatmapCollectionId(config);
+  const collectionKind = getCollectionTypeFromConfig(config, collectionId);
+  const portfolioLabel = heatmapCollectionLabel(config, collectionId);
+  const universeTabs = useMemo(() => [
+    ...MARKET_HEATMAP_UNIVERSES.map((universe) => ({ label: universe.label, value: universe.id })),
+    { label: portfolioLabel, value: PORTFOLIO_HEATMAP_TAB },
+  ], [portfolioLabel]);
+  const collectionTickers = useMemo(
+    () => (collectionId && collectionKind ? getCollectionTickersFromConfig(config, tickersBySymbol, collectionId) : EMPTY_TICKERS),
+    [collectionId, collectionKind, config, tickersBySymbol],
+  );
+  const financials = useTickerFinancialsMap(
+    portfolioTab || linkPortfolio ? collectionTickers : EMPTY_TICKERS,
+    collectionKind === "portfolio" && collectionId ? { portfolioId: collectionId } : {},
+  );
+  const portfolioAssets = useMemo(
+    () => (collectionId && collectionKind
+      ? buildPortfolioHeatmapAssets({ tickers: collectionTickers, financials, collectionId, kind: collectionKind })
+      : NO_ASSETS),
+    [collectionId, collectionKind, collectionTickers, financials],
+  );
+  const [assets, setAssets] = useState<HeatmapBoardAsset[]>([]);
   // The universe `assets` came from. A board is drawn only under its own tab,
   // so a switch never paints the previous universe's tiles.
   const [loadedUniverse, setLoadedUniverse] = useState<MarketHeatmapUniverseId | null>(null);
@@ -118,17 +178,18 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const [stale, setStale] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const fetchGenRef = useRef(0);
-  const boardAssets = loadedUniverse === activeUniverse ? assets : NO_ASSETS;
+  const seenCollection = useRef<string | null>(null);
+  const boardAssets = portfolioTab ? portfolioAssets : (loadedUniverse === activeUniverse ? assets : NO_ASSETS);
   const hasBoard = boardAssets.length > 0;
 
   const selectUniverse = useCallback((value: string) => {
-    setActiveUniverse(value as MarketHeatmapUniverseId);
+    setActiveUniverse(heatmapTabId(value));
     setSelectedSymbol(null);
   }, [setActiveUniverse]);
   // The pane's only partition: the desktop draws it in the title bar, which
   // gives the treemap the row the strip used to take.
   const tabsInHeader = usePaneHeaderTabs({
-    tabs: UNIVERSE_TABS,
+    tabs: universeTabs,
     activeValue: activeUniverse,
     onSelect: selectUniverse,
     focused,
@@ -204,8 +265,22 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
+    if (!isRemoteHeatmapUniverse(activeUniverse)) return;
     void loadUniverse(activeUniverse);
   }, [activeUniverse, loadUniverse]);
+
+  useEffect(() => {
+    const previous = seenCollection.current;
+    seenCollection.current = collectionId;
+    if (!heatmapFollowsCollection(linkPortfolio, previous, collectionId)) return;
+    setActiveUniverse(PORTFOLIO_HEATMAP_TAB);
+    setSelectedSymbol(null);
+  }, [collectionId, linkPortfolio, setActiveUniverse]);
+
+  useEffect(() => {
+    if (!portfolioTab && !linkPortfolio) return;
+    loadCollectionSnapshots(collectionTickers, collectionId, collectionKind);
+  }, [collectionId, collectionKind, collectionTickers, linkPortfolio, portfolioTab]);
 
   useEffect(() => {
     if (selectedSymbol && boardAssets.some((asset) => asset.symbol === selectedSymbol)) return;
@@ -213,24 +288,29 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   }, [boardAssets, selectedSymbol]);
 
   const refresh = useCallback(() => {
+    if (portfolioTab) {
+      loadCollectionSnapshots(collectionTickers, collectionId, collectionKind);
+      return;
+    }
+    if (!isRemoteHeatmapUniverse(activeUniverse)) return;
     void loadUniverse(activeUniverse, { forceRefresh: true });
-  }, [activeUniverse, loadUniverse]);
+  }, [activeUniverse, collectionId, collectionKind, collectionTickers, loadUniverse, portfolioTab]);
 
   const selectAdjacentUniverse = useCallback((direction: -1 | 1) => {
-    const index = MARKET_HEATMAP_UNIVERSES.findIndex((universe) => universe.id === activeUniverse);
-    const nextUniverse = MARKET_HEATMAP_UNIVERSES[Math.max(0, Math.min(MARKET_HEATMAP_UNIVERSES.length - 1, index + direction))];
-    if (nextUniverse && nextUniverse.id !== activeUniverse) {
-      setActiveUniverse(nextUniverse.id);
+    const index = universeTabs.findIndex((tab) => tab.value === activeUniverse);
+    const nextTab = universeTabs[Math.max(0, Math.min(universeTabs.length - 1, index + direction))];
+    if (nextTab && nextTab.value !== activeUniverse) {
+      setActiveUniverse(nextTab.value);
       setSelectedSymbol(null);
     }
-  }, [activeUniverse, setActiveUniverse]);
+  }, [activeUniverse, setActiveUniverse, universeTabs]);
 
   const selectUniverseAt = useCallback((index: number) => {
-    const universe = MARKET_HEATMAP_UNIVERSES[index];
-    if (!universe || universe.id === activeUniverse) return;
-    setActiveUniverse(universe.id);
+    const tab = universeTabs[index];
+    if (!tab || tab.value === activeUniverse) return;
+    setActiveUniverse(tab.value);
     setSelectedSymbol(null);
-  }, [activeUniverse, setActiveUniverse]);
+  }, [activeUniverse, setActiveUniverse, universeTabs]);
 
   const openSymbol = useCallback((symbol: string) => {
     pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
@@ -259,6 +339,12 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       event.preventDefault();
       event.stopPropagation();
       selectUniverseAt(1);
+      return;
+    }
+    if (isPlainKey(event, "3")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectUniverseAt(2);
       return;
     }
     if (isPlainKey(event, "[")) {
@@ -316,10 +402,10 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     }
   });
 
-  const updated = useUpdatedAgo(loadedUniverse === activeUniverse ? lastUpdated : null);
+  const updated = useUpdatedAgo(!portfolioTab && loadedUniverse === activeUniverse ? lastUpdated : null);
   useAutoRefresh(lastUpdated, refresh);
 
-  usePaneStatusFooter({ registrationId: "market-heatmap-retained", stale: hasBoard && stale });
+  usePaneStatusFooter({ registrationId: "market-heatmap-retained", stale: hasBoard && stale && !portfolioTab });
 
   usePaneFooter("market-heatmap", () => ({
     info: [
@@ -340,22 +426,22 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
         id: "updated",
         parts: [{ text: `updated ${updated}`, tone: "muted" as const }],
       }] : []),
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(!portfolioTab && loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       // Without a board the body carries the failure.
-      ...(loadError && hasBoard ? [{ id: "error", parts: [{ text: "refresh failed", tone: "warning" as const }] }] : []),
+      ...(!portfolioTab && loadError && hasBoard ? [{ id: "error", parts: [{ text: "refresh failed", tone: "warning" as const }] }] : []),
       ...(feedStatus ? [{
         id: "feed",
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
     ],
-  }), [feedStatus, hasBoard, loadError, loading, selectedAsset, updated]);
+  }), [feedStatus, hasBoard, loadError, loading, portfolioTab, selectedAsset, updated]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       {!tabsInHeader && (
         <Box height={1} paddingX={1}>
           <Tabs
-            tabs={UNIVERSE_TABS}
+            tabs={universeTabs}
             activeValue={activeUniverse}
             onSelect={selectUniverse}
             compact
@@ -367,11 +453,11 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       )}
 
       <PaneStatusBody
-        loading={loading && !hasBoard}
+        loading={!portfolioTab && loading && !hasBoard}
         loadingLabel={loadingText("market heatmap")}
-        error={hasBoard ? null : loadError}
+        error={portfolioTab || hasBoard ? null : loadError}
         empty={!hasBoard}
-        emptyTitle={EMPTY_TITLE}
+        emptyTitle={portfolioTab ? EMPTY_PORTFOLIO_TITLE : EMPTY_TITLE}
       >
         <MetricTreemapSurface
           items={displayItems}
@@ -380,7 +466,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
           selectedId={selectedSymbol}
           onSelect={(item) => setSelectedSymbol(item.data.symbol)}
           onActivate={(item) => openSymbol(item.data.symbol)}
-          emptyStateTitle={EMPTY_TITLE}
+          emptyStateTitle={portfolioTab ? EMPTY_PORTFOLIO_TITLE : EMPTY_TITLE}
         />
       </PaneStatusBody>
     </Box>
@@ -391,7 +477,7 @@ export const marketHeatmapPlugin: GloomPlugin = {
   id: "market-heatmap",
   name: "Market Heatmap",
   version: "1.0.0",
-  description: "Largest US stocks and ETFs, sized by market cap or assets and colored by daily move",
+  description: "Largest US stocks and ETFs, or the portfolio pane's list, sized by market cap or position and colored by daily move",
   toggleable: true,
   targets: ["cli", "tui", "desktop", "web"],
 
@@ -411,15 +497,27 @@ export const marketHeatmapPlugin: GloomPlugin = {
       quickSettings: [LIVE_STREAMING_QUICK_SETTING],
       settings: (context) => withLiveStreamingSetting({
         title: "Market Heatmap Settings",
-        fields: [{
-          key: "universe",
-          label: "Universe",
-          type: "select",
-          options: MARKET_HEATMAP_UNIVERSES.map((universe) => ({
-            value: universe.id,
-            label: universe.label,
-          })),
-        }],
+        values: { linkPortfolio: context.settings.linkPortfolio === true },
+        fields: [
+          {
+            key: "universe",
+            label: "Universe",
+            type: "select",
+            options: [
+              ...MARKET_HEATMAP_UNIVERSES.map((universe) => ({
+                value: universe.id,
+                label: universe.label,
+              })),
+              { value: PORTFOLIO_HEATMAP_TAB, label: "Portfolio" },
+            ],
+          },
+          {
+            key: "linkPortfolio",
+            label: "Link to portfolio",
+            type: "toggle",
+            description: "Follow the portfolio pane. Switching its list opens that list here.",
+          },
+        ] satisfies PaneSettingField[],
       }, context.settings),
     },
   ],
@@ -429,8 +527,8 @@ export const marketHeatmapPlugin: GloomPlugin = {
       id: "market-heatmap-pane",
       paneId: "market-heatmap",
       label: "Market Heatmap",
-      description: "Largest US stocks and ETFs, sized by market cap or assets and colored by daily move.",
-      keywords: ["heatmap", "market", "largest", "top", "stocks", "etf", "screener"],
+      description: "Largest US stocks and ETFs, or the portfolio pane's list, sized by market cap or position and colored by daily move.",
+      keywords: ["heatmap", "market", "largest", "top", "stocks", "etf", "portfolio", "watchlist", "screener"],
       shortcut: { prefix: "HM" },
     },
   ],
