@@ -30,7 +30,7 @@ export const mnaDealCache = createPluginCache<MnaDealPayload>({
   policy: { staleMs: 5 * 60_000, expireMs: 30 * 86_400_000 },
 });
 
-const UNAVAILABLE = "M&A deals are not available on this server yet.";
+export const MNA_DEALS_UNAVAILABLE = "M&A deals are not available on this server yet.";
 const STATUSES = new Set(["talks", "pending", "completed", "terminated"]);
 const CONSIDERATIONS = new Set(["cash", "stock", "mixed", "undisclosed"]);
 const EVENT_KINDS = new Set([
@@ -104,7 +104,7 @@ export async function fetchMnaDeals(
   try {
     return validateMnaDeals(await client.getCloudMnaDeals(params, { signal }));
   } catch (error) {
-    throw unavailableOnServer(error, UNAVAILABLE);
+    throw unavailableOnServer(error, MNA_DEALS_UNAVAILABLE);
   }
 }
 

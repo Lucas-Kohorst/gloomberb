@@ -13,7 +13,17 @@ import {
 } from "./api";
 import { thirteenFHeadless } from "./headless";
 import { ThirteenFTickerPane } from "./signals-pane";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
+import { shownIf } from "../shared/research-tab-availability";
 import { isKnownNonUsListing } from "../../../utils/sec";
+import { loadTickerHoldings } from "./signals";
+
+function loadThirteenFTab({ ticker, signal }: TickerResearchTabLoadContext): Promise<boolean> {
+  return shownIf(
+    () => loadTickerHoldings(ticker.metadata.ticker, 0, signal),
+    (holdings) => holdings.rows.length > 0 || holdings.holderCount > 0,
+  );
+}
 
 
 function queryFromOptions(options?: PaneTemplateCreateOptions): string {
@@ -34,6 +44,7 @@ export const thirteenFModule: PluginModule = {
       component: ThirteenFTickerPane,
       instruments: ["equity", "fund"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
+      load: loadThirteenFTab,
     });
   },
 

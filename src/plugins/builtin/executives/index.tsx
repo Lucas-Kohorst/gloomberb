@@ -1,9 +1,20 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { researchCanReadPro, shownIf } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   attachExecutivesPersistence,
+  loadProxyStatements,
   resetExecutivesPersistence,
 } from "./data";
+
+function loadExecTab({ symbol }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !researchCanReadPro()) return Promise.resolve(true);
+  return shownIf(
+    () => loadProxyStatements(symbol.toUpperCase()),
+    (result) => !!result.refreshError || (result.data?.proxies.length ?? 0) > 0,
+  );
+}
 import { EXECUTIVES_PANE_ID, ExecutivesPane, ExecutivesResearchTab } from "./pane";
 import { isKnownNonUsListing } from "../../../utils/sec";
 
@@ -20,6 +31,7 @@ export const executivesModule: PluginModule = {
       component: ExecutivesResearchTab,
       instruments: ["equity"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
+      load: loadExecTab,
     });
   },
 

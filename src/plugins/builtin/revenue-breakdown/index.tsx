@@ -1,7 +1,20 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { researchIsPro, shownIf } from "../shared/research-tab-availability";
+import { listingIdentity } from "../shared/ticker-request";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { isKnownNonUsListing } from "../../../utils/sec";
-import { revenueBreakdownCache } from "./client";
+import { loadRevenueBreakdown, NO_BREAKDOWN, revenueBreakdownCache } from "./client";
+
+function loadRevenueTab({ symbol, exchange }: TickerResearchTabLoadContext): Promise<boolean> {
+  const identity = listingIdentity(symbol, exchange);
+  if (!identity) return Promise.resolve(true);
+  return shownIf(
+    () => loadRevenueBreakdown(identity.symbol, "product", researchIsPro()),
+    (resource) => resource.payload.periods.length > 0 || resource.payload.rows.length > 0 || resource.payload.lockedRows > 0,
+    (error) => error instanceof Error && error.message === NO_BREAKDOWN,
+  );
+}
 import { revenueBreakdownHeadless } from "./headless";
 import {
   REVENUE_BREAKDOWN_PANE_ID,
@@ -19,6 +32,7 @@ export const revenueBreakdownModule: PluginModule = {
       component: RevenueResearchTab,
       instruments: ["equity"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
+      load: loadRevenueTab,
     });
   },
 

@@ -1,7 +1,18 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { shownIf } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { loadHolderData } from "./client";
 import { holdersHeadless } from "./headless";
 import { HoldersView } from "./pane";
+
+function loadHoldersTab({ symbol, exchange, marketData }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !marketData) return Promise.resolve(true);
+  return shownIf(
+    () => loadHolderData(marketData, symbol, exchange),
+    (data) => data.holders.length > 0,
+  );
+}
 
 
 export const holdersModule: PluginModule = {
@@ -12,6 +23,7 @@ export const holdersModule: PluginModule = {
       order: 42,
       component: HoldersView,
       instruments: ["equity"],
+      load: loadHoldersTab,
     });
   },
 

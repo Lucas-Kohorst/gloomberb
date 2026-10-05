@@ -1,7 +1,12 @@
+import { apiClient } from "../../../api-client";
+import type { AnalystResearchData } from "../../../types/financials";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
+import { researchEmailVerified, shownIf } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
+import { loadAnalystResearch } from "./client";
 import { CorporateActionsView } from "./corporate-actions-pane";
 import { EquityDiagnosticView } from "./equity-diagnostic-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
@@ -9,6 +14,55 @@ import { relativeValuationHeadless } from "./relative-valuation-headless";
 import { analystResearchHeadless } from "./analyst-headless";
 import { eventsHeadless } from "./events-headless";
 import { earningsEstimatesHeadless } from "./headless";
+
+function analystHasResearch(data: AnalystResearchData): boolean {
+  const target = data.priceTarget;
+  const priced = [target?.average, target?.median, target?.high, target?.low]
+    .some((value) => typeof value === "number" && Number.isFinite(value));
+  return priced
+    || data.recommendationRating != null
+    || data.recommendations.length > 0
+    || data.ratings.length > 0
+    || data.earningsEstimates.length > 0
+    || data.revenueEstimates.length > 0;
+}
+
+function loadAnalystTab({ symbol, exchange, marketData }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !marketData?.getAnalystResearch) return Promise.resolve(true);
+  return shownIf(() => loadAnalystResearch(marketData, symbol, exchange), analystHasResearch);
+}
+
+function loadDiagnosticTab({ symbol, exchange }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !researchEmailVerified()) return Promise.resolve(true);
+  return shownIf(
+    () => apiClient.getCloudEquityDiagnostic(symbol, exchange || undefined, "cache-first"),
+    (result) => {
+      if (result.status === "generating") return true;
+      if (result.status === "insufficient_data") return result.findings.length > 0 || result.summary.trim().length > 0;
+      return true;
+    },
+  );
+}
+
+function loadEventsTab({ symbol, exchange, marketData }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !marketData) return Promise.resolve(true);
+  const actions = marketData.getCorporateActions
+    ? marketData.getCorporateActions(symbol, exchange)
+    : Promise.reject(new Error("Corporate actions source unavailable"));
+  const estimates = marketData.getAnalystResearch
+    ? marketData.getAnalystResearch(symbol, exchange)
+    : Promise.resolve(null);
+  return Promise.allSettled([actions, estimates]).then(([actionsResult, estimatesResult]) => {
+    if (actionsResult.status === "rejected" || estimatesResult.status === "rejected") return true;
+    const corporate = actionsResult.value;
+    const research = estimatesResult.value;
+    return (corporate.dividends?.length ?? 0) > 0
+      || (corporate.splits?.length ?? 0) > 0
+      || (corporate.earnings?.length ?? 0) > 0
+      || (research?.earningsEstimates.length ?? 0) > 0
+      || (research?.revenueEstimates.length ?? 0) > 0;
+  });
+}
 
 
 function EarningsEstimatesPane(props: { focused: boolean; width: number; height: number }) {
@@ -29,6 +83,7 @@ export const researchModule: PluginModule = {
       order: 32,
       component: AnalystResearchView,
       instruments: ["equity"],
+      load: loadAnalystTab,
     });
     ctx.registerTickerResearchTab({
       id: "equity-diagnostic",
@@ -36,6 +91,7 @@ export const researchModule: PluginModule = {
       order: 33,
       component: EquityDiagnosticView,
       instruments: ["equity"],
+      load: loadDiagnosticTab,
     });
     ctx.registerTickerResearchTab({
       id: "corporate-actions",
@@ -43,6 +99,7 @@ export const researchModule: PluginModule = {
       order: 34,
       component: CorporateActionsView,
       instruments: ["equity", "fund"],
+      load: loadEventsTab,
     });
   },
 

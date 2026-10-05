@@ -1,6 +1,14 @@
 import { publicTickerBindingSymbol } from "../../../tickers/selection";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { resetJobsCache } from "./client";
+import { researchCanReadPro } from "../shared/research-tab-availability";
+import { fetchJobs, resetJobsCache } from "./client";
+
+async function loadJobsTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!researchCanReadPro()) return true;
+  const state = await fetchJobs(ticker.metadata.ticker, { name: ticker.metadata.name });
+  return state.kind !== "uncovered";
+}
 import { jobsHeadless } from "./headless";
 import { JOBS_PANE_ID, JobsPane, JobsResearchTab } from "./pane";
 
@@ -21,6 +29,7 @@ export const jobsModule: PluginModule = {
       order: 37,
       component: JobsResearchTab,
       instruments: ["equity"],
+      load: loadJobsTab,
     });
   },
 
