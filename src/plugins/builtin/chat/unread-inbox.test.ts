@@ -1,139 +1,115 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatChannel, ChatMessage } from "../../../api-client";
-import {
-  formatUnreadInboxRowLabel,
-  listUnreadInboxItems,
-  type UnreadInboxChannelState,
-} from "./unread-inbox";
+import type { ChatChannel, ChatMessage, ChatUserSummary } from "../../../api-client";
+import { listUnreadInboxItems, type UnreadInboxChannelState } from "./unread-inbox";
 
-const user = { id: "u1", username: "vince" };
+const me = { id: "u-me", username: "vince" };
 
-function message(overrides: Partial<ChatMessage> & Pick<ChatMessage, "id" | "content" | "createdAt">): ChatMessage {
+// User summaries as GET /chat/channels/:id/messages sends them for a private profile.
+function person(id: string, username: string): ChatUserSummary {
   return {
-    channelId: overrides.channelId ?? "everyone",
-    replyToId: null,
-    user: overrides.user ?? { id: "u2", username: "bob", displayName: "Bob" },
-    ...overrides,
+    id,
+    username,
+    displayName: username,
+    bio: null,
+    company: null,
+    title: null,
+    profilePublic: false,
+    acceptUnknownDms: false,
   };
 }
 
-function everyone(): ChatChannel {
-  return { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" };
+const bob = person("u-bob", "bob");
+const self = person(me.id, me.username);
+
+function message(id: string, channelId: string, minute: number, content: string, user = bob): ChatMessage {
+  return {
+    id,
+    channelId,
+    content,
+    replyToId: null,
+    createdAt: `2026-10-05T12:${String(minute).padStart(2, "0")}:00.000Z`,
+    user,
+  };
+}
+
+const CHANNELS: ChatChannel[] = [
+  { id: "everyone", name: "everyone", kind: "public", created_at: "2026-03-26T12:10:05.684Z" },
+  { id: "macro", name: "macro", kind: "public", created_at: "2026-05-09T16:04:55.408Z" },
+  { id: "options", name: "options", kind: "public", created_at: "2026-05-09T16:04:55.408Z" },
+  {
+    id: "dm:3f2a9c",
+    name: "bob",
+    kind: "direct",
+    created_at: "2026-05-27T10:30:03.712Z",
+    dmUser: bob,
+  },
+];
+
+function list(states: UnreadInboxChannelState[], user: typeof me | null = me) {
+  return listUnreadInboxItems({ channels: CHANNELS, states, user });
 }
 
 describe("listUnreadInboxItems", () => {
-  test("returns nothing when every channel is caught up", () => {
-    const states: UnreadInboxChannelState[] = [{
-      channelId: "everyone",
-      unreadCount: 0,
-      lastViewedMessageId: "m1",
-      messages: [message({ id: "m1", content: "hey @vince", createdAt: "2026-03-28T00:00:00.000Z" })],
-    }];
-    expect(listUnreadInboxItems({ channels: [everyone()], states, user })).toEqual([]);
+  test("keeps the account's counts and previews only messages after the read marker", () => {
+    const items = list([
+      {
+        channelId: "everyone",
+        unreadCount: 1,
+        lastViewedMessageId: "e1",
+        messages: [
+          message("e0", "everyone", 1, "read before the marker"),
+          message("e1", "everyone", 2, "the marker"),
+          message("e2", "everyone", 3, "after the marker"),
+          message("e3", "everyone", 4, "my own reply", self),
+        ],
+      },
+      {
+        // Read up to a message this device never cached: its cached messages
+        // may all be read already, so none is shown, but the count stays.
+        channelId: "macro",
+        unreadCount: 3,
+        lastViewedMessageId: "m-elsewhere",
+        messages: [message("m1", "macro", 9, "possibly read on another device")],
+      },
+      { channelId: "options", unreadCount: 0, lastViewedMessageId: "o1", messages: [] },
+      // Not one of the account's channels any more.
+      { channelId: "grp:left", unreadCount: 4, lastViewedMessageId: null, messages: [] },
+    ]);
+
+    expect(items.map((item) => [item.title, item.unreadCount, item.preview?.id ?? null])).toEqual([
+      ["#everyone", 1, "e2"],
+      ["#macro", 3, null],
+    ]);
+    expect(list([{ channelId: "everyone", unreadCount: 2, lastViewedMessageId: null, messages: [] }], null)).toEqual([]);
   });
 
-  test("lists unread mention messages newest first", () => {
-    const states: UnreadInboxChannelState[] = [{
-      channelId: "everyone",
-      unreadCount: 2,
-      lastViewedMessageId: "m0",
-      messages: [
-        message({ id: "m0", content: "old", createdAt: "2026-03-28T00:00:00.000Z" }),
-        message({ id: "m1", content: "pinging @vince first", createdAt: "2026-03-28T00:01:00.000Z" }),
-        message({ id: "m2", content: "pinging @vince again", createdAt: "2026-03-28T00:02:00.000Z" }),
-      ],
-    }];
-    const items = listUnreadInboxItems({ channels: [everyone()], states, user });
-    expect(items.map((item) => item.messageId)).toEqual(["m2", "m1"]);
-    expect(items[0]?.channelLabel).toBe("#everyone");
-    expect(formatUnreadInboxRowLabel(items[0]!)).toContain("@bob: pinging @vince again");
-  });
+  test("a mention of you is the preview over a later message, and the newest known activity leads", () => {
+    const items = list([
+      {
+        channelId: "everyone",
+        unreadCount: 2,
+        lastViewedMessageId: "e0",
+        messages: [
+          message("e0", "everyone", 1, "the marker"),
+          message("e1", "everyone", 2, "@vince what do you make of this?"),
+          message("e2", "everyone", 5, "later, and not to you"),
+        ],
+      },
+      {
+        channelId: "dm:3f2a9c",
+        unreadCount: 1,
+        lastViewedMessageId: "d0",
+        messages: [message("d0", "dm:3f2a9c", 1, "the marker"), message("d1", "dm:3f2a9c", 3, "lunch?")],
+      },
+      { channelId: "options", unreadCount: 7, lastViewedMessageId: "o-elsewhere", messages: [] },
+      { channelId: "macro", unreadCount: 2, lastViewedMessageId: "m-elsewhere", messages: [] },
+    ]);
 
-  test("prefers a mention over a later plain unread in the same channel", () => {
-    const states: UnreadInboxChannelState[] = [{
-      channelId: "everyone",
-      unreadCount: 2,
-      lastViewedMessageId: "m0",
-      messages: [
-        message({ id: "m0", content: "old", createdAt: "2026-03-28T00:00:00.000Z" }),
-        message({ id: "m1", content: "pinging @vince", createdAt: "2026-03-28T00:01:00.000Z" }),
-        message({ id: "m2", content: "later plain unread", createdAt: "2026-03-28T00:03:00.000Z" }),
-      ],
-    }];
-    const items = listUnreadInboxItems({ channels: [everyone()], states, user });
-    expect(items.map((item) => item.messageId)).toEqual(["m1"]);
-    expect(items.some((item) => item.preview.includes("later plain"))).toBe(false);
-  });
-
-  test("falls back to the latest unread when there is no mention", () => {
-    const states: UnreadInboxChannelState[] = [{
-      channelId: "everyone",
-      unreadCount: 2,
-      lastViewedMessageId: "m0",
-      messages: [
-        message({ id: "m0", content: "old", createdAt: "2026-03-28T00:00:00.000Z" }),
-        message({ id: "m1", content: "first unread", createdAt: "2026-03-28T00:01:00.000Z" }),
-        message({ id: "m2", content: "latest unread", createdAt: "2026-03-28T00:02:00.000Z" }),
-      ],
-    }];
-    const items = listUnreadInboxItems({ channels: [everyone()], states, user });
-    expect(items).toHaveLength(1);
-    expect(items[0]?.messageId).toBe("m2");
-    expect(items[0]?.preview).toBe("latest unread");
-  });
-
-  test("keeps a channel row when unread exists but messages are not cached", () => {
-    const states: UnreadInboxChannelState[] = [{
-      channelId: "everyone",
-      unreadCount: 3,
-      lastViewedMessageId: null,
-      messages: [],
-    }];
-    const items = listUnreadInboxItems({ channels: [everyone()], states, user });
-    expect(items).toEqual([expect.objectContaining({
-      id: "everyone:unread",
-      channelId: "everyone",
-      messageId: null,
-      unreadInChannel: 3,
-    })]);
-    expect(formatUnreadInboxRowLabel(items[0]!)).toBe("#everyone  3 unread");
-  });
-
-  test("orders mixed channels by the newest message", () => {
-    const dm: ChatChannel = {
-      id: "dm:bob",
-      name: "@bob",
-      kind: "direct",
-      created_at: "2026-05-27T10:30:03.712Z",
-      dmUser: { id: "u2", username: "bob", displayName: "Bob" },
-    };
-    const items = listUnreadInboxItems({
-      channels: [everyone(), dm],
-      user,
-      states: [
-        {
-          channelId: "everyone",
-          unreadCount: 1,
-          lastViewedMessageId: null,
-          messages: [message({
-            id: "pub-1",
-            content: "older @vince",
-            createdAt: "2026-03-28T00:00:00.000Z",
-          })],
-        },
-        {
-          channelId: "dm:bob",
-          unreadCount: 1,
-          lastViewedMessageId: null,
-          messages: [message({
-            id: "dm-1",
-            channelId: "dm:bob",
-            content: "private ping",
-            createdAt: "2026-05-27T10:31:00.000Z",
-          })],
-        },
-      ],
-    });
-    expect(items.map((item) => item.channelId)).toEqual(["dm:bob", "everyone"]);
+    expect(items.map((item) => [item.title, item.preview?.id ?? null, item.mentionsYou])).toEqual([
+      ["#everyone", "e1", true],
+      ["@bob", "d1", false],
+      ["#options", null, false],
+      ["#macro", null, false],
+    ]);
   });
 });

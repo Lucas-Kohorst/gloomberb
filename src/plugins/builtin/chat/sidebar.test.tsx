@@ -37,11 +37,14 @@ function createChannelPane(
   initialChannelId = "equities",
   onChannelChange?: (channelId: string) => void,
   width = 90,
+  /** Receives the pane's channel setter, to switch it from outside the view. */
+  exposeSetChannel?: (setChannel: (channelId: string) => void) => void,
 ) {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
 
   return function ChannelPane() {
     const [channelId, setChannelId] = useState(initialChannelId);
+    exposeSetChannel?.(setChannelId);
     return (
       <AppContext value={createStaticAppStore(state)}>
         <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
@@ -113,7 +116,10 @@ describe("ChatContent channel sidebar", () => {
     controller.refreshChannelMessages = async () => {};
     (controller as any).ensureChannelState("macro").unreadCount = 2;
     const changes: string[] = [];
-    const ChannelPane = createChannelPane(controller, "options", (channelId) => changes.push(channelId), 60);
+    let setChannelFromOutside: ((channelId: string) => void) | null = null;
+    const ChannelPane = createChannelPane(controller, "options", (channelId) => changes.push(channelId), 60, (setChannel) => {
+      setChannelFromOutside = setChannel;
+    });
 
     await act(async () => {
       await tui.render(<ChannelPane />, { width: 60, height: 12 });
@@ -152,6 +158,16 @@ describe("ChatContent channel sidebar", () => {
     await flushFrame();
     expect(tui.frame()).toContain("← Back");
     expect(changes.at(-1)).toBe("everyone");
+
+    // A channel opened from elsewhere (the unread list, a notification) is shown, not the list.
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    await flushFrame();
+    expect(tui.frame()).not.toContain("← Back");
+    await act(async () => {
+      setChannelFromOutside?.("crypto");
+    });
+    await flushFrame();
+    expect(tui.frame()).toContain("← Back");
   });
 
   test("selects a sidebar channel from a single text click", async () => {

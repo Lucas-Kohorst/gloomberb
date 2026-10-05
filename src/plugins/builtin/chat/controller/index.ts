@@ -159,11 +159,11 @@ export class ChatController {
     return this.view.getSnapshot(channelId);
   }
 
-  listUnreadInbox(limit?: number) {
+  /** Channels with unread messages, from the counts and messages already held; no request. */
+  listUnreadInbox() {
     return listUnreadInboxItems({
       channels: this.channelCatalog.getChannels(),
       user: this.session.user,
-      limit,
       states: [...this.storage.channelStates.entries()].map(([channelId, channel]) => ({
         channelId,
         unreadCount: channel.unreadCount,

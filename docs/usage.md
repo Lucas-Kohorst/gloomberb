@@ -475,6 +475,12 @@ An independent current bond quote must declare its own price basis. A percent-of
 
 Sign in with email and password, or pick `Log In with QR Code` from the command bar and scan the code with the Gloomberb mobile companion app to sign the terminal in without typing. The onboarding wizard offers the same QR option as the recommended path, with email and password as the alternative.
 
+## Chat
+
+`CHAT [channel]` opens a channel. When the pane is too narrow or short for the channel list beside it, the list and the open channel take turns: Back, Esc, Backspace, Left or the mouse back button return to the list, and Enter, Right or a click opens a channel. Pointing at a name shows that person's profile card if they made their profile public; a click keeps it open until Esc, a click outside it or a second click.
+
+The unread count in the status bar opens Unread Chat (also in the command bar): one row per channel with unread messages, and the count of a channel that mentions you in green. Counts are your account's, the same on every device. A row shows the latest unread message, one that mentions you first, only when the messages after the last one you read are already on this device, so a row can have a count and no message. Opening a row shows that channel in your chat pane; the list itself marks nothing read.
+
 ## Debt maturities
 
 `DDIS MSFT` opens the issuer's latest coherent principal maturity schedule. Maturities shows six relative fiscal buckets, including an open-ended Thereafter bucket, alongside the total and the shares due in the next twelve months and three years. Select a bucket for its exact amount and SEC fact. History shows the last ten years of annual filing cohorts; select an observation to inspect its filing. Filing shows currency, source concepts, interest expense, the borrowing-cost proxy when supported, and percentile coverage. `o` opens the selected filing.

@@ -318,6 +318,21 @@ export function ChatContent({
     setSelectedIdx,
   });
 
+  // The list's cursor switches channels as it moves. Any other switch (a
+  // notification, the unread list, a command) shows the channel it opened.
+  const listChannelRef = useRef<string | null>(null);
+  const onListChannelChange = useMemo(() => (
+    onChannelChange
+      ? (nextChannelId: string) => {
+        listChannelRef.current = nextChannelId;
+        onChannelChange(nextChannelId);
+      }
+      : undefined
+  ), [onChannelChange]);
+  useEffect(() => {
+    if (listChannelRef.current !== channelId) setChannelListOpen(false);
+  }, [channelId]);
+
   const {
     cycleChannel,
     expandDirectSection,
@@ -342,7 +357,7 @@ export function ChatContent({
     channelsLoading,
     focused,
     inputFocused,
-    onChannelChange,
+    onChannelChange: onListChannelChange,
     resetTranscriptSelection,
     channelListVisible,
   });
