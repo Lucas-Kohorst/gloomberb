@@ -13,9 +13,9 @@ import { NEWS_QUERY_PRESETS, parseNewsIndustryCode } from "./news/query-presets"
 /** Plugin id that owns the news settings in `config.pluginConfig`. */
 const NEWS_PLUGIN_ID = "news";
 
-/** Saved as `pluginConfig.news.newsMutedSources` — the picker writes string[]. */
+/** Saved as `pluginConfig.news.newsMutedSources`: the picker writes string[]. */
 export const NEWS_MUTED_SOURCES_KEY = "newsMutedSources";
-/** Saved as `pluginConfig.news.newsMutedKeywords` — the text field edits a comma-separated string. */
+/** Saved as `pluginConfig.news.newsMutedKeywords`: the text field edits a comma-separated string. */
 export const NEWS_MUTED_KEYWORDS_KEY = "newsMutedKeywords";
 
 /** Guard against a runaway saved value flooding every filter pass. */
@@ -228,7 +228,7 @@ function newsMuteSettingFields(
     {
       key: NEWS_MUTED_SOURCES_KEY,
       label: "Muted Sources",
-      description: "Hide stories from these publishers in feed lists. Top News and Breaking News still show them.",
+      description: "Hide these publishers' stories in News Feed, Topic News and Ticker News. Top News and Breaking News still show them.",
       type: "multi-select",
       storage: "plugin",
       options: collectNewsSourceOptions(articles, mutedSources),
@@ -236,7 +236,7 @@ function newsMuteSettingFields(
     {
       key: NEWS_MUTED_KEYWORDS_KEY,
       label: "Muted Keywords",
-      description: "Hide feed-list stories whose headline contains any of these, separated by commas.",
+      description: "Hide stories whose headline contains any of these, separated by commas, in News Feed, Topic News and Ticker News.",
       type: "text",
       storage: "plugin",
       placeholder: "crypto, earnings call",

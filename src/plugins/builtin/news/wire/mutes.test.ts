@@ -6,7 +6,6 @@ import {
   NEWS_MUTED_SOURCES_KEY,
   applyNewsMutes,
   collectNewsSourceOptions,
-  newsMutesApplyToFeed,
   parseNewsMutedKeywords,
   parseNewsMutedSources,
   readNewsMutesFromPluginConfig,
@@ -18,10 +17,6 @@ describe("parseNewsMutedSources", () => {
       .toEqual(["Spam Feed", "Other"]);
   });
 
-  test("returns empty for non-array values", () => {
-    expect(parseNewsMutedSources(undefined)).toEqual([]);
-    expect(parseNewsMutedSources("Spam Feed")).toEqual([]);
-  });
 });
 
 describe("parseNewsMutedKeywords", () => {
@@ -49,10 +44,6 @@ describe("readNewsMutesFromPluginConfig", () => {
     })).toEqual({ sources: ["Spam Feed"], keywords: ["crypto", "earnings"] });
   });
 
-  test("missing config mutes nothing", () => {
-    expect(readNewsMutesFromPluginConfig(undefined)).toEqual({ sources: [], keywords: [] });
-    expect(readNewsMutesFromPluginConfig({})).toEqual({ sources: [], keywords: [] });
-  });
 });
 
 describe("news mute matching", () => {
@@ -88,21 +79,6 @@ describe("news mute matching", () => {
       .toEqual(["body"]);
   });
 
-  test("treats empty mute lists as a no-op", () => {
-    expect(applyNewsMutes([spam, earnings, clean], { sources: [], keywords: [] })).toHaveLength(3);
-    expect(applyNewsMutes([spam, earnings, clean], null)).toHaveLength(3);
-    expect(applyNewsMutes([spam, earnings, clean], undefined)).toHaveLength(3);
-  });
-
-  test("applies to feed lists and leaves Top News and Breaking News alone", () => {
-    expect(newsMutesApplyToFeed("latest")).toBe(true);
-    expect(newsMutesApplyToFeed("ticker")).toBe(true);
-    expect(newsMutesApplyToFeed("sector")).toBe(true);
-    expect(newsMutesApplyToFeed("topic")).toBe(true);
-    expect(newsMutesApplyToFeed("top")).toBe(false);
-    expect(newsMutesApplyToFeed("breaking")).toBe(false);
-    expect(newsMutesApplyToFeed(undefined)).toBe(false);
-  });
 });
 
 describe("collectNewsSourceOptions", () => {

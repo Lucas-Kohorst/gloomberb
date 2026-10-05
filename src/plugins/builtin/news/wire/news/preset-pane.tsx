@@ -14,7 +14,7 @@ import {
 import { useNewsArticleFooter } from "./footer";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
-import { newsSearchEmptyCopy } from "../filter-articles";
+import { newsListEmptyCopy } from "../filter-articles";
 import { NEWS_LIST_SEARCH_PLACEHOLDER, useNewsListSearch, useNewsListSearchHint } from "./list-search";
 import { newsMutesApplyToFeed, useNewsMuteFilter } from "../mutes";
 import { usePopOutNewsArticle } from "./pop-out";
@@ -167,9 +167,11 @@ export function NewsPresetPane({
     refreshing: loading && persisted.length > 0,
     error,
   });
-  const emptyCopy = newsSearchEmptyCopy(searchQuery, {
-    title: emptyStateTitle,
-    hint: emptyStateHint,
+  const emptyCopy = newsListEmptyCopy({
+    query: searchQuery,
+    loadedCount: persisted.length,
+    unmutedCount: articles.length,
+    fallback: { title: emptyStateTitle, hint: emptyStateHint },
   });
 
   return (
