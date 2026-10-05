@@ -3,7 +3,6 @@ import type {
   AuthUser,
   ChatMessage,
   ChatNotification,
-  ChatPresence,
   CloudQuotePayload,
   QuoteStreamTarget,
   ScannerFeedEvent,
@@ -11,10 +10,8 @@ import type {
   TeamNotification,
 } from "./types";
 import {
-  isChatPresenceEvent,
   normalizeChatMessage,
   normalizeChatNotification,
-  normalizeChatPresence,
   normalizeTeamNotification,
 } from "./normalizers";
 import { debugLog } from "../utils/debug-log";
@@ -39,7 +36,7 @@ const cloudApiLog = debugLog.createLogger("cloud-api");
 
 type ChannelListener = (message: ChatMessage) => void;
 type ChatNotificationListener = (notification: ChatNotification) => void;
-type ChatPresenceListener = (presence: ChatPresence) => void;
+type ChatPresenceListener = (onlineCount: number) => void;
 type TeamNotificationListener = (notification: TeamNotification) => void;
 type CloudEventListener = (data: unknown) => void;
 type QuoteListener = (
@@ -554,10 +551,12 @@ export class CloudApiSocket {
       return;
     }
 
-    if (parsed?.type === "chat.presence" && isChatPresenceEvent(parsed)) {
-      const presence = normalizeChatPresence(parsed);
+    if (
+      parsed?.type === "chat.presence" &&
+      typeof parsed.onlineCount === "number"
+    ) {
       for (const listener of this.chatPresenceListeners) {
-        listener(presence);
+        listener(parsed.onlineCount);
       }
       return;
     }

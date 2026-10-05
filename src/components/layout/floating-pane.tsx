@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./pane/header";
-import { PaneHeaderAccessoryProvider } from "./pane/header-accessory";
 import { PaneHeaderTabsProvider, usePaneHeaderTabsHost } from "./pane/header-tabs";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane/footer";
 import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
@@ -96,8 +95,6 @@ export function FloatingPaneWrapper({
   const bodyFrame = resolvePaneBodyFrame({ height, nativePaneChrome, footerVisible: renderFooter, reserveFooter });
 
   return (
-    <PaneHeaderAccessoryProvider>
-    {(titleAccessory) => (
     <Box
       position="absolute"
       top={y}
@@ -133,8 +130,6 @@ export function FloatingPaneWrapper({
         tabs={headerTabs}
         bodyBackground={bg}
         topRule
-        titleAccessory={titleAccessory?.node}
-        titleAccessoryWidth={titleAccessory?.width}
         onHeaderMouseMove={onHeaderMouseMove}
         onHeaderMouseDown={onHeaderMouseDown}
         onHeaderMouseDrag={onHeaderMouseDrag}
@@ -178,7 +173,5 @@ export function FloatingPaneWrapper({
         </Box>
       )}
     </Box>
-    )}
-    </PaneHeaderAccessoryProvider>
   );
 }

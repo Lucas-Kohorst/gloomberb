@@ -55,8 +55,6 @@ export interface ChatControllerSnapshot {
   hasOlderMessages: boolean;
   hasSavedSession: boolean;
   onlineCount: number;
-  onlineUserIds: string[];
-  onlineUsernames: string[];
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
   draft: string;

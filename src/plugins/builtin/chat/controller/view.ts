@@ -18,8 +18,6 @@ interface ChatControllerViewOptions {
   isSessionChecked: () => boolean;
   hasSession: () => boolean;
   getOnlineCount: () => number;
-  getOnlineUserIds: () => string[];
-  getOnlineUsernames: () => string[];
   getUser: () => ChatControllerSnapshot["user"];
   getListenerSnapshot: (channelId: string) => ChatControllerSnapshot;
   getVisibleMessages: (channelId: string) => ChatMessage[];
@@ -73,8 +71,6 @@ export class ChatControllerView {
       hasOlderMessages: channel.messages.length > 0 && !channel.reachedOldestMessage,
       hasSavedSession: this.options.hasSession(),
       onlineCount: this.options.getOnlineCount(),
-      onlineUserIds: this.options.getOnlineUserIds(),
-      onlineUsernames: this.options.getOnlineUsernames(),
       user: this.options.getUser(),
       messages: this.options.getVisibleMessages(normalizedChannelId),
       draft: channel.draft,

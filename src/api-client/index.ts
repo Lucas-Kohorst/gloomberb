@@ -38,11 +38,6 @@ import type {
   PersistedAuthUser
 } from "./types";
 
-export {
-  emptyChatPresence,
-  mergeChatPresence,
-  normalizeChatPresence,
-} from "./normalizers";
 export { setCloudApiFetchTransport } from "./request";
 export { NoteConflictError } from "./notes";
 export { ThesisConflictError, ThesisGoalpostError } from "./theses";

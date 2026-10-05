@@ -1,7 +1,6 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from "react";
 import { PageStackView } from "../../../../components/ui";
-import { usePaneHeaderAccessory } from "../../../../components/layout/pane/header-accessory";
 import { t } from "../../../../i18n";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
@@ -12,8 +11,6 @@ import {
   estimateComposerHeight,
 } from "../layout";
 import { formatChatPaneTitle } from "../channel-labels";
-import { isSidebarChannelOnline } from "../peer-online";
-import { ChatTitlePresenceDot } from "../presence-dot";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,
@@ -144,8 +141,6 @@ export function ChatContent({
     loadingOlderMessages,
     messages,
     messagesError,
-    onlineUserIds,
-    onlineUsernames,
     replyTo,
     setReplyTo,
     user,
@@ -219,13 +214,6 @@ export function ChatContent({
   const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
   const activeChannel = useMemo(() => channels.find((channel) => channel.id === channelId), [channelId, channels]);
   const activeChannelTitle = useMemo(() => formatChatPaneTitle(activeChannel, channelId), [activeChannel, channelId]);
-  const presence = useMemo(() => ({
-    onlineUserIds,
-    onlineUsernames,
-    selfUserId: user?.id,
-    selfUsername: user?.username,
-  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
-  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
   const recentMentionSuggestions = useMemo(() => buildRecentMentionSuggestions({
     activeChannel,
     currentUserId: user?.id,
@@ -621,24 +609,12 @@ export function ChatContent({
   const chatLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
 
-  usePaneHeaderAccessory("chat-presence", () => {
-    if (!channelOnline) return null;
-    return {
-      width: nativePaneChrome ? 0 : 2,
-      node: <ChatTitlePresenceDot />,
-    };
-  }, [channelOnline, nativePaneChrome]);
-
   const channelSidebar = (
     <ChannelSidebar
       channels={channels}
       channelStates={channelStates}
       activeChannelId={sidebarFocused ? (sidebarHeaderCursor ? "" : sidebarCursorChannelId) : channelId}
       cursorHeaderKey={sidebarFocused ? sidebarHeaderCursor : null}
-      onlineUserIds={onlineUserIds}
-      onlineUsernames={onlineUsernames}
-      selfUserId={user?.id}
-      selfUsername={user?.username}
       width={stackedNav ? width : channelSidebarWidth}
       paneWidth={width}
       height={height}

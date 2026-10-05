@@ -4,9 +4,7 @@ import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from
 import { createStaticAppStore } from "../../../test-support/app-store";
 import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, findPaneInstance, type PaneInstanceConfig } from "../../../types/config";
-import { PaneHeader } from "../../../components/layout/pane/header";
-import { PaneHeaderAccessoryProvider } from "../../../components/layout/pane/header-accessory";
-import { Box, TextAttributes } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
@@ -123,65 +121,6 @@ describe("ChatContent channel sidebar", () => {
     expect(tui.frame()).not.toContain("← Chats");
     expect(tui.frame()).toContain("everyone");
     expect(tui.frame()).toContain("equities");
-  });
-
-  test("renders an online dot for a DM peer who is present", async () => {
-    const controller = createController({ sessionToken: "token-123" });
-    installServerChannels(controller, [
-      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
-      {
-        id: "dm:bob",
-        name: "bob",
-        kind: "direct",
-        created_at: "2026-05-09T00:00:00.000Z",
-        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
-      },
-    ]);
-    controller.applyPresence({
-      onlineCount: 1,
-      onlineUserIds: ["u2"],
-      onlineUsernames: ["bob"],
-      hasUserList: true,
-    });
-    controller.refreshChannels = async () => {};
-    controller.refreshChannelMessages = async () => {};
-
-    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
-    await act(async () => {
-      await tui.render((
-        <AppContext value={createStaticAppStore(state)}>
-          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
-            <PaneHeaderAccessoryProvider>
-              {(accessory) => (
-                <Box flexDirection="column" width={90} height={14}>
-                  <PaneHeader
-                    title="@bob"
-                    width={90}
-                    focused
-                    titleAccessory={accessory?.node}
-                    titleAccessoryWidth={accessory?.width ?? 0}
-                  />
-                  <ChatContent
-                    controller={controller}
-                    width={90}
-                    height={13}
-                    focused
-                    channelId="dm:bob"
-                    onChannelChange={() => {}}
-                  />
-                </Box>
-              )}
-            </PaneHeaderAccessoryProvider>
-          </PluginRenderProvider>
-        </AppContext>
-      ), { width: 90, height: 14 });
-    });
-    await flushFrame();
-
-    const headerLine = tui.frame().split("\n")[0] ?? "";
-    expect(headerLine).toContain("●");
-    expect(tui.frame()).toContain("●");
-    expect(tui.frame()).toContain("@bob");
   });
 
   test("selects a sidebar channel from a single text click", async () => {

@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { paneBg } from "../../../theme/colors";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./header";
-import { PaneHeaderAccessoryProvider } from "./header-accessory";
 import { PaneHeaderTabsProvider, usePaneHeaderTabsHost } from "./header-tabs";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./footer";
 import { paneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
@@ -71,8 +70,6 @@ export function PaneWrapper({
   });
 
   return (
-    <PaneHeaderAccessoryProvider>
-    {(titleAccessory) => (
     <Box
       flexDirection="column"
       width={width}
@@ -104,8 +101,6 @@ export function PaneWrapper({
           tabs={headerTabs}
           bodyBackground={bg}
           topRule={topRule}
-          titleAccessory={titleAccessory?.node}
-          titleAccessoryWidth={titleAccessory?.width}
           onHeaderMouseMove={onHeaderMouseMove}
           onHeaderMouseDown={onHeaderMouseDown}
           onHeaderMouseDrag={onHeaderMouseDrag}
@@ -125,7 +120,5 @@ export function PaneWrapper({
         />
       )}
     </Box>
-    )}
-    </PaneHeaderAccessoryProvider>
   );
 }

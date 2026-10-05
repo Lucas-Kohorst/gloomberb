@@ -2,7 +2,6 @@ import {
   normalizeChatChannel,
   normalizeChatMessage,
   normalizeChatMessages,
-  normalizeChatPresence,
   normalizeChatState,
 } from "./normalizers";
 import type { CloudApiSocket } from "./socket";
@@ -11,12 +10,11 @@ import type {
   ChatChannelState,
   ChatMessage,
   ChatNotification,
-  ChatPresence,
   ChatStateResponse,
 } from "./types";
 import type { CloudApiRequest } from "./request";
 type ChatNotificationListener = (notification: ChatNotification) => void;
-type ChatPresenceListener = (presence: ChatPresence) => void;
+type ChatPresenceListener = (onlineCount: number) => void;
 
 interface CloudChatApiOptions {
   request: CloudApiRequest;
@@ -32,8 +30,8 @@ export class CloudChatApi {
     return channels.map((channel) => normalizeChatChannel(channel));
   }
 
-  async getPresence(): Promise<ChatPresence> {
-    return normalizeChatPresence(await this.options.request<unknown>("/chat/presence"));
+  async getPresence(): Promise<{ onlineCount: number }> {
+    return this.options.request<{ onlineCount: number }>("/chat/presence");
   }
 
   async getState(): Promise<ChatStateResponse> {

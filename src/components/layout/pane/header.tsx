@@ -24,8 +24,6 @@ interface PaneHeaderProps {
   windowModeSelected?: boolean;
   floating?: boolean;
   locked?: boolean;
-  titleAccessory?: ReactNode;
-  titleAccessoryWidth?: number;
   showActions?: boolean;
   quickSettings?: PaneHeaderQuickSetting[];
   /** Desktop only: the pane's primary tab strip, drawn as title-bar tabs. */
@@ -107,8 +105,6 @@ export function PaneHeader({
   windowModeSelected = false,
   floating = false,
   locked = false,
-  titleAccessory,
-  titleAccessoryWidth = 0,
   showActions = false,
   quickSettings = [],
   tabs = null,
@@ -136,7 +132,6 @@ export function PaneHeader({
   const terminalQuickSettingsWidth = quickSettings.reduce((total) => total + displayWidth(" ⚡ "), 0)
     + displayWidth(lockText);
   const textColor = paneTitleText(visuallyFocused, floating);
-  const accessoryWidth = Math.max(0, Math.floor(titleAccessoryWidth));
   const topInset = topRule ? 1 : 0;
   const handleTerminalHeaderMouseDown = useCallback((event: any) => {
     capturePointerDrag(nativeRenderer, terminalHeaderRef.current);
@@ -201,7 +196,6 @@ export function PaneHeader({
             {title}
           </Text>
         </Box>
-        {titleAccessory}
         {tabs && (
           <Box
             data-gloom-role="pane-header-tabs"
@@ -295,10 +289,10 @@ export function PaneHeader({
     // Reserve 2 for corners, 1 for ─ after ┌, 1 for ─ before ┐
     const borderColor = visuallyFocused ? colors.borderFocused : colors.border;
     const innerWidth = Math.max(0, width - 4);
-    const contentWidth = PANE_HEADER_GRIP.length + terminalQuickSettingsWidth + closeText.length + actionText.length + accessoryWidth;
+    const contentWidth = PANE_HEADER_GRIP.length + terminalQuickSettingsWidth + closeText.length + actionText.length;
     const titleWidth = Math.max(0, innerWidth - contentWidth);
     const clippedTitle = truncateToDisplayWidth(title, titleWidth);
-    const fillLen = Math.max(0, innerWidth - PANE_HEADER_GRIP.length - displayWidth(clippedTitle) - accessoryWidth - terminalQuickSettingsWidth - actionText.length - closeText.length);
+    const fillLen = Math.max(0, innerWidth - PANE_HEADER_GRIP.length - displayWidth(clippedTitle) - terminalQuickSettingsWidth - actionText.length - closeText.length);
     const fill = "─".repeat(fillLen);
 
     return (
@@ -315,7 +309,6 @@ export function PaneHeader({
       >
         <Text fg={borderColor} selectable={false}>{"┌─"}</Text>
         <Text fg={textColor} selectable={false}>{`${PANE_HEADER_GRIP}${clippedTitle}`}</Text>
-        {titleAccessory}
         {quickSettings.map((setting) => (
           <TerminalPaneButton
             key={setting.key}
@@ -348,7 +341,7 @@ export function PaneHeader({
     );
   }
 
-  const titleWidth = Math.max(0, width - PANE_HEADER_GRIP.length - accessoryWidth - terminalQuickSettingsWidth - actionText.length - closeText.length);
+  const titleWidth = Math.max(0, width - PANE_HEADER_GRIP.length - terminalQuickSettingsWidth - actionText.length - closeText.length);
   const clippedTitle = truncateToDisplayWidth(title, titleWidth);
   const padding = " ".repeat(Math.max(0, titleWidth - displayWidth(clippedTitle)));
 
@@ -364,11 +357,9 @@ export function PaneHeader({
       onMouseDrag={onHeaderMouseDrag}
       onMouseDragEnd={onHeaderMouseDragEnd}
     >
-      <Box flexDirection="row" flexShrink={0}>
-        <Text fg={textColor} selectable={false}>{`${PANE_HEADER_GRIP}${clippedTitle}`}</Text>
-        {titleAccessory}
-        <Text fg={textColor} selectable={false}>{padding}</Text>
-      </Box>
+      <Text fg={textColor} selectable={false}>
+        {`${PANE_HEADER_GRIP}${clippedTitle}${padding}`}
+      </Text>
       {quickSettings.map((setting) => (
         <TerminalPaneButton
           key={setting.key}

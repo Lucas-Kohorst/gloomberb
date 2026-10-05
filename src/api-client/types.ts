@@ -20,14 +20,6 @@ export interface ChatUserSummary {
   profilePublic?: boolean;
   acceptUnknownDms?: boolean;
   portfolioAnalytics?: PublicPortfolioAnalytics | null;
-  online?: boolean;
-}
-
-export interface ChatPresence {
-  onlineCount: number;
-  onlineUserIds: string[];
-  onlineUsernames: string[];
-  hasUserList: boolean;
 }
 
 export interface ChatMessage {

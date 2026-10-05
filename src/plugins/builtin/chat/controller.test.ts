@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import {
   apiClient,
-  emptyChatPresence,
   type ChatChannel,
   type ChatMessage,
   type ChatNotification,
@@ -96,7 +95,7 @@ class TrackingPersistence extends MemoryPersistence {
 }
 
 beforeEach(() => {
-  apiClient.getChatPresence = async () => emptyChatPresence();
+  apiClient.getChatPresence = async () => ({ onlineCount: 0 });
   apiClient.getChatState = async () => ({
     channels: SERVER_CHAT_CHANNELS,
     onlineCount: 0,

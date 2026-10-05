@@ -999,8 +999,8 @@ describe("apiClient chat timestamps", () => {
     const seenPresence: number[] = [];
     const seenNotifications: string[] = [];
     const unsubscribePresence = apiClient.subscribeChatPresence(
-      (presence) => {
-        seenPresence.push(presence.onlineCount);
+      (onlineCount) => {
+        seenPresence.push(onlineCount);
       },
     );
     const unsubscribeNotifications = apiClient.subscribeChatNotifications(
