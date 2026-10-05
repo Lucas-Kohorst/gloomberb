@@ -17,6 +17,12 @@ import {
   customViewInstanceSettings,
   parseViewSpecOr,
 } from "../plugins/builtin/custom-view";
+import {
+  BRIEF_SECTIONS_SETTING,
+  parseBriefSections,
+  serializeBriefLayout,
+} from "../plugins/builtin/daily-brief/sections";
+import { DAILY_BRIEF_PANE_ID, DAILY_BRIEF_PLUGIN_ID, DAILY_BRIEF_TEMPLATE_ID } from "../plugins/builtin/daily-brief/wake";
 import { findPaneInstance, getPlacedPaneInstanceIds, type PaneInstanceConfig, resolvePaneInstance } from "../types/config";
 import type { DesktopWindowBridge } from "../types/desktop-window";
 import { applyJsonPatch } from "./json-patch";
@@ -391,6 +397,24 @@ export function createAppRemoteController({
         if (name) layout = updatePaneInstance(layout, instanceId, (entry: PaneInstanceConfig) => ({ ...entry, title: name }));
         pluginRegistry.updateLayout(layout);
         return getAfterMutationSummary({ affectedPaneIds: [instanceId] });
+      }
+      case "brief.update": {
+        if (input.sections == null || input.sections === "") throw new Error("Tables need a sections list.");
+        const parsed = parseBriefSections(input.sections);
+        if ("error" in parsed) throw new Error(parsed.error);
+        const requested = optionalString(input, "paneId");
+        const layoutConfig = getState().config.layout;
+        const named = requested ? resolvePaneInstance(layoutConfig, requested) : undefined;
+        if (named && named.paneId !== DAILY_BRIEF_PANE_ID) {
+          throw new Error(`Pane "${requested}" is not a daily brief.`);
+        }
+        await pluginRegistry.setConfigStates(DAILY_BRIEF_PLUGIN_ID, {
+          [BRIEF_SECTIONS_SETTING]: serializeBriefLayout(parsed.layout),
+        });
+        const target = named ?? layoutConfig.instances.find((entry) => entry.paneId === DAILY_BRIEF_PANE_ID);
+        if (target) pluginRegistry.focusPane(target.instanceId);
+        else await pluginRegistry.createPaneFromTemplateAsync(DAILY_BRIEF_TEMPLATE_ID);
+        return getAfterMutationSummary(target ? { affectedPaneIds: [target.instanceId] } : {});
       }
       case "pane.setState":
         dispatch({
