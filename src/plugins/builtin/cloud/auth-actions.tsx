@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Text } from "../../../ui";
-import { Button } from "../../../components";
+import { Button, EmptyState } from "../../../components";
+import { useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { usePluginAppActions } from "../../runtime";
 import { colors, hoverBg } from "../../../theme/colors";
 import { t } from "../../../i18n";
@@ -68,6 +69,22 @@ export function SignInWall({ action, needsVerification = false, hint }: SignInWa
       showSignup={!needsVerification}
     />
   );
+}
+
+export interface ProWallProps {
+  placement?: string;
+  title: string;
+  message?: string;
+  width?: number;
+  height?: number;
+  symbol?: string;
+  exchange?: string;
+}
+
+/** Signed-in pane body that needs Pro. The fork upgrade action opens the existing Cloud checkout. */
+export function ProWall({ title, message }: ProWallProps) {
+  const openUpgrade = useCloudUpgradeAction();
+  return <EmptyState title={title} message={message} onRetry={openUpgrade} />;
 }
 
 export function CloudAuthNotice({

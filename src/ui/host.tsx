@@ -397,6 +397,52 @@ export interface HostPopoverProps {
   label?: string;
 }
 
+interface HostQueryBarOption {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  selected: boolean;
+  hint?: string;
+}
+
+export interface HostQueryBarItem {
+  id: string;
+  kind: "select" | "multi" | "toggle" | "text";
+  label: string;
+  valueLabel: string;
+  narrowing: boolean;
+  inline?: boolean;
+  node?: ReactNode;
+  active?: boolean;
+  onActivate?(): void;
+  width?: number;
+  checked?: boolean;
+  options: HostQueryBarOption[];
+  onSelect(value: string): void;
+  onToggle(): void;
+  onReset(): void;
+}
+
+export interface HostQueryBarProps {
+  search?: {
+    node: ReactNode;
+    filled: boolean;
+    active: boolean;
+    onActivate(): void;
+    onClear(): void;
+  };
+  items: HostQueryBarItem[];
+  view?: {
+    value: string;
+    options: { value: string; label: string; hint?: string; disabled?: boolean }[];
+    onChange(value: string): void;
+  };
+  onClearAll?: () => void;
+  meta?: string;
+  openRequest?: { id: string; token: number } | null;
+}
+
 export interface UiHost {
   kind?: "opentui" | "desktop-web";
   capabilities?: {
@@ -441,6 +487,7 @@ export interface UiHost {
   Tabs?: ComponentType<HostTabsProps>;
   Checkbox?: ComponentType<HostCheckboxProps>;
   Popover?: ComponentType<HostPopoverProps>;
+  QueryBar?: ComponentType<HostQueryBarProps>;
   DataTable?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;
   colorFromHex?(hex: string): unknown;

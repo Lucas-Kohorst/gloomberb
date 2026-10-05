@@ -19,6 +19,9 @@ import {
 
 export const CLOUD_UPGRADE_URL = "https://gloom.sh/cloud?upgrade=pro";
 
+/** Footer and command-bar key that opens the Pro upgrade. */
+export const CLOUD_PLAN_KEY = "$";
+
 /**
  * The renderer host only exists inside React, so UI that uses it publishes an
  * opener here for the command bar, which runs outside the tree.

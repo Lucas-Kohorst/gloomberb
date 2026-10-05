@@ -58,6 +58,7 @@ export {
   usePaneTicker,
   useTickers,
 } from "./pane-hooks";
+export { usePaneInstance, usePaneStateValue } from "../state/app/context";
 
 // Keyboard handling for plugin panes; the renderer decides how events arrive.
 export { useShortcut } from "../react/input";
@@ -67,6 +68,11 @@ export { useAsyncResource } from "../react/async-resource";
 // Plugins that show network-backed data should use this instead of a
 // hardcoded setInterval so the user's refresh-interval setting is respected.
 export { useAutoRefresh } from "../plugins/builtin/shared/use-auto-refresh";
+export { useUpdatedAgo } from "../components/use-updated-ago";
+export { useAppVisible, usePaneVisible } from "../state/app/activity";
+
+/** Content-derived titles stay on the pane template name in this fork. */
+export function usePaneTitle(_title: string, _paneId?: string): void {}
 
 // Pane footer helpers: the standard status/link footer composition used by
 // every data-backed pane. External plugins need these to keep footer behavior

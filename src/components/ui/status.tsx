@@ -124,6 +124,20 @@ export function footerErrorChip(error: string | null | undefined): { text: strin
   return { text: "unavailable", tone: "warning" };
 }
 
+export interface NoticeProps {
+  children: ReactNode;
+  tone?: "muted" | "positive" | "warning" | "negative";
+}
+
+/** Inline feedback leaves the rest of the pane visible. */
+export function Notice({ children, tone = "warning" }: NoticeProps) {
+  return (
+    <Box data-gloom-status={tone === "negative" ? "error" : "notice"} data-gloom-ui="notice">
+      <Text fg={tone === "muted" ? colors.textDim : colors[tone]} wrapText>{children}</Text>
+    </Box>
+  );
+}
+
 export function EmptyState({ title, message, hint, fill = true, onRetry }: EmptyStateProps) {
   const hitRetry = usePaneRetry();
   const retryAction = onRetry ?? (hint && RETRY_HINT_PATTERN.test(hint) ? hitRetry : undefined);

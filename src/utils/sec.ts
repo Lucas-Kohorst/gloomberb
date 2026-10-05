@@ -43,3 +43,17 @@ export function isUsEquityTicker(ticker: TickerRecord | null | undefined): boole
     && currency === "USD"
     && exchangeCandidates.some((exchange) => isUsExchange(exchange));
 }
+
+const ROUTING_EXCHANGES = new Set(["SMART"]);
+
+/** True when saved metadata places the listing outside the US. A missing venue stays unknown. */
+export function isKnownNonUsListing(ticker: TickerRecord | null | undefined): boolean {
+  if (!ticker) return false;
+  const primaryContract = ticker.metadata.broker_contracts?.[0];
+  const currency = normalize(primaryContract?.currency ?? ticker.metadata.currency);
+  if (currency && currency !== "USD") return true;
+  const venues = [primaryContract?.primaryExchange, primaryContract?.exchange, ticker.metadata.exchange]
+    .map(normalize)
+    .filter((exchange) => exchange.length > 0 && !ROUTING_EXCHANGES.has(exchange));
+  return venues.length > 0 && !venues.some((exchange) => isUsExchange(exchange));
+}

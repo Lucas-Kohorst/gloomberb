@@ -31,3 +31,6 @@ export { RemoteImage } from "./remote-image";
 export { PageStackView } from "./page-stack-view";
 
 export { Spinner } from "./loading";
+export { PaneStatusBody } from "./status";
+export { StatGrid, statGridRows } from "./stat-grid";
+export type { StatItem } from "./stat-grid";

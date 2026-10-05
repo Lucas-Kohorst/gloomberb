@@ -108,7 +108,7 @@ export interface ChartResolveSources {
   ) => Promise<ResolvedSeries>;
 }
 
-const SERIES_COLORS = [
+export const SERIES_COLORS = [
   "#4dabf7",
   "#63e6be",
   "#f6c85f",

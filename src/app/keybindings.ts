@@ -136,3 +136,16 @@ export function matchesKeybinding(
 ): boolean {
   return keybindingSignature(binding) === keybindingSignature(event);
 }
+
+/** Form fields ask whether a chord is the toast action. This fork resolves that elsewhere. */
+export function useKeybindings(): Record<string, Keybinding | undefined> {
+  return {};
+}
+
+export function matchesKeybindingAction(
+  _keybindings: Record<string, Keybinding | undefined>,
+  _actionId: string,
+  _event: { name?: string },
+): boolean {
+  return false;
+}

@@ -8,6 +8,7 @@ export interface ZonedDateTimeParts {
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
+const dateKeyFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function formatter(timeZone: string): Intl.DateTimeFormat {
   let value = formatters.get(timeZone);
@@ -25,6 +26,15 @@ function formatter(timeZone: string): Intl.DateTimeFormat {
     formatters.set(timeZone, value);
   }
   return value;
+}
+
+export function zonedDateKey(utcMs: number, timeZone: string): string {
+  let value = dateKeyFormatters.get(timeZone);
+  if (!value) {
+    value = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dateKeyFormatters.set(timeZone, value);
+  }
+  return value.format(utcMs);
 }
 
 export function zonedDateTimeParts(utcMs: number, timeZone: string): ZonedDateTimeParts {

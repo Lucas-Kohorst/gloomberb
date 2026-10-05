@@ -5,6 +5,19 @@ import { colors } from "../../theme/colors";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
 import { remoteStringValue } from "../../remote/semantic-helpers";
 
+export function FieldLabel({ label, active = false, width }: {
+  label: string;
+  active?: boolean;
+  width?: number;
+  maxWidth?: number;
+}) {
+  return (
+    <Text width={width} fg={active ? colors.textBright : colors.textDim}>
+      {active ? `> ${label}` : `  ${label}`}
+    </Text>
+  );
+}
+
 export interface TextFieldProps {
   label?: string;
   value?: string;

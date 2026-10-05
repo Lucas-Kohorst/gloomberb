@@ -34,6 +34,16 @@ export function isCommitShortcut(event: KeyEventLike): boolean {
   return event.name === "return" || event.name === "enter";
 }
 
+/** Tab or Shift+Tab with no other modifier walks form fields. */
+export function isPlainTab(event: KeyEventLike): boolean {
+  return event.name === "tab" && !event.ctrl && !event.meta && !event.alt;
+}
+
+/** Ctrl+S or Cmd+S submits a form. Enter already belongs to the field. */
+export function isWorkflowSubmitShortcut(event: KeyEventLike): boolean {
+  return (event.ctrl || event.meta) && !event.alt && !event.shift && event.name === "s";
+}
+
 export function handleConfirmRouteShortcut({
   confirmCurrentRoute,
   currentRoute,

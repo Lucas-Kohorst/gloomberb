@@ -49,6 +49,11 @@ export function formatPercentRaw(value: number | undefined): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+export function formatPercentileRank(value: number | null | undefined, window?: string): string {
+  const rank = value == null || !Number.isFinite(value) ? "--" : value.toFixed(0);
+  return window ? `${rank} pctl ${window}` : `${rank} pctl`;
+}
+
 /**
  * Percent magnitude with no unit, for table columns whose header already reads
  * "%" (`52W%`, `CHG%`). Repeating the sign in every cell costs a display column

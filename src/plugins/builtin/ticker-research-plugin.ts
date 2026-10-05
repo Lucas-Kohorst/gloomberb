@@ -26,6 +26,27 @@ import { technicalSummaryModule } from "./technical-summary";
 import { thirteenFModule } from "./thirteenf";
 import { tickerDetailModule } from "./ticker-detail";
 import { trendAnalysisModule } from "./trend-analysis";
+import { awardsModule } from "./awards";
+import { backtestModule } from "./backtest";
+import { catalystsModule } from "./catalysts";
+import { companyAttentionModule } from "./company-attention";
+import { companyKpisModule } from "./company-kpis";
+import { creditDocumentsModule } from "./credit-documents";
+import { debtMaturitiesModule } from "./debt-maturities";
+import { earningsRippleModule } from "./earnings-ripple";
+import { estimateRevisionsModule } from "./estimate-revisions";
+import { exposureModule } from "./exposure";
+import { filingEventsModule } from "./filing-events";
+import { jobsModule } from "./jobs";
+import { macroDayModule } from "./macro-day";
+import { realizedVolModule } from "./realized-vol";
+import { revenueBreakdownModule } from "./revenue-breakdown";
+import { reverseDcfModule } from "./reverse-dcf";
+import { riskFactorsModule } from "./risk-factors";
+import { shortVolumeModule } from "./short-volume";
+import { supplyChainModule } from "./supply-chain";
+import { timeSalesModule } from "./time-sales";
+import { volSurfaceModule } from "./vol-surface";
 
 export const tickerResearchPlugin = composeBuiltinPlugin({
   id: "ticker-research",
@@ -61,5 +82,26 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     ivHistoryModule,
     socialMentionsModule,
     mnaModule,
+    volSurfaceModule,
+    realizedVolModule,
+    earningsRippleModule,
+    reverseDcfModule,
+    macroDayModule,
+    backtestModule,
+    timeSalesModule,
+    estimateRevisionsModule,
+    shortVolumeModule,
+    debtMaturitiesModule,
+    revenueBreakdownModule,
+    supplyChainModule,
+    creditDocumentsModule,
+    companyAttentionModule,
+    catalystsModule,
+    companyKpisModule,
+    awardsModule,
+    exposureModule,
+    riskFactorsModule,
+    filingEventsModule,
+    jobsModule,
   ],
 });

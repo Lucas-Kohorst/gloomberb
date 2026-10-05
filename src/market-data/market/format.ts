@@ -205,6 +205,21 @@ export function formatMarketQuantity(value: number | undefined, options: MarketF
   return formatVariableNumber(value, maxFractionDigits, options.maxWidth);
 }
 
+export function formatPriceObservation(
+  value: number,
+  options: Pick<MarketFormatOptions, "maxWidth" | "minimumFractionDigits"> = {},
+): string {
+  if (!Number.isFinite(value)) return "—";
+  return formatMarketPrice(value, {
+    maxWidth: options.maxWidth,
+    minimumFractionDigits: options.minimumFractionDigits,
+  });
+}
+
+export function marketPriceFractionDigitCeiling(value: number, context: AssetDisplayContext): number {
+  return getBasePriceMaxFractionDigits(resolveAssetDisplayKind(context), value);
+}
+
 export function formatMarketPrice(value: number | undefined, options: MarketFormatOptions = {}): string {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
   const kind = resolveAssetDisplayKind(options);

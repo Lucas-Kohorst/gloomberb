@@ -54,6 +54,38 @@ import { worldIndicesModule } from "./builtin/world-indices";
 import { worldVenueMapModule } from "./builtin/world-venue-map";
 import { yieldCurveModule } from "./builtin/yield-curve";
 import { notificationCenterPlugin } from "./builtin/notification-center";
+import { attentionModule } from "./builtin/attention";
+import { awardsModule } from "./builtin/awards";
+import { backtestModule } from "./builtin/backtest";
+import { bondCalculatorModule } from "./builtin/bond-calculator";
+import { catalystsModule } from "./builtin/catalysts";
+import { centralBankRatesModule } from "./builtin/central-bank-rates";
+import { companyAttentionModule } from "./builtin/company-attention";
+import { companyKpisModule } from "./builtin/company-kpis";
+import { cotModule } from "./builtin/cot";
+import { cpiModule } from "./builtin/cpi";
+import { creditBoardsModule } from "./builtin/credit-boards";
+import { creditDocumentsModule } from "./builtin/credit-documents";
+import { cryptoBoardModule } from "./builtin/crypto-board";
+import { debtMaturitiesModule } from "./builtin/debt-maturities";
+import { doeModule } from "./builtin/doe";
+import { earningsRippleModule } from "./builtin/earnings-ripple";
+import { estimateRevisionsModule } from "./builtin/estimate-revisions";
+import { exposureModule } from "./builtin/exposure";
+import { filingEventsModule } from "./builtin/filing-events";
+import { gpuModule } from "./builtin/gpu";
+import { jobsModule } from "./builtin/jobs";
+import { macroDayModule } from "./builtin/macro-day";
+import { perpsModule } from "./builtin/perps";
+import { powerModule } from "./builtin/power";
+import { realizedVolModule } from "./builtin/realized-vol";
+import { revenueBreakdownModule } from "./builtin/revenue-breakdown";
+import { reverseDcfModule } from "./builtin/reverse-dcf";
+import { riskFactorsModule } from "./builtin/risk-factors";
+import { shortVolumeModule } from "./builtin/short-volume";
+import { supplyChainModule } from "./builtin/supply-chain";
+import { timeSalesModule } from "./builtin/time-sales";
+import { volSurfaceModule } from "./builtin/vol-surface";
 
 const browserApplicationPlugin = composeBuiltinPlugin({
   id: "application",
@@ -91,6 +123,27 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     ivHistoryModule,
     socialMentionsModule,
     mnaModule,
+    volSurfaceModule,
+    realizedVolModule,
+    earningsRippleModule,
+    reverseDcfModule,
+    macroDayModule,
+    backtestModule,
+    timeSalesModule,
+    estimateRevisionsModule,
+    shortVolumeModule,
+    debtMaturitiesModule,
+    revenueBreakdownModule,
+    supplyChainModule,
+    creditDocumentsModule,
+    companyAttentionModule,
+    catalystsModule,
+    companyKpisModule,
+    awardsModule,
+    exposureModule,
+    riskFactorsModule,
+    filingEventsModule,
+    jobsModule,
   ],
 });
 
@@ -120,6 +173,13 @@ const browserMarketOverviewPlugin = composeBuiltinPlugin({
     futuresModule,
     futuresCurveModule,
     equityScreenerModule,
+    cotModule,
+    doeModule,
+    gpuModule,
+    attentionModule,
+    powerModule,
+    cryptoBoardModule,
+    perpsModule,
   ],
 });
 
@@ -152,6 +212,10 @@ const browserMacroPlugin = composeBuiltinPlugin({
     marketValuationModule,
     cdsModule,
     treasuryAuctionsModule,
+    cpiModule,
+    bondCalculatorModule,
+    centralBankRatesModule,
+    creditBoardsModule,
   ],
 });
 

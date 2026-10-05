@@ -24,6 +24,10 @@ export interface OptionCalcDraft {
   marketPrice: number;
 }
 
+export function updateOptionCalcDraft(current: OptionCalcDraft, patch: Partial<OptionCalcDraft>): OptionCalcDraft {
+  return { ...current, ...patch };
+}
+
 export const DEFAULT_OPTION_CALC_DRAFT: OptionCalcDraft = {
   symbol: "",
   side: "call",

@@ -84,8 +84,60 @@ export { getMessageComposerBlockHeight, MessageComposer } from "./ui/message-com
 export { NumberField, TextField } from "./ui/fields";
 export { SegmentedControl } from "./ui/toggle";
 export { SelectButton } from "./ui/select-button";
-export type { SelectButtonOption, SelectButtonProps } from "./ui/select-button";
+export type { SelectButtonOption, SelectButtonProps, SelectControl } from "./ui/select-button";
 export { Spinner } from "./ui/loading";
 export { RemoteImage } from "./ui";
 export { Tabs } from "./ui/tabs";
 export { usePaneTicker } from "../state/app/context";
+export { ActionRow } from "./ui/action-row";
+export { ButtonActionScope } from "./ui/action-scope";
+export {
+  Badge,
+  BulletList,
+  KeyValueRow,
+  Prose,
+  READING_WIDTH,
+  Section,
+  SectionHeading,
+} from "./ui/display";
+export { DetailScrollBody } from "./ui/detail-scroll-body";
+export { ExternalLink, ExternalLinkText, PaneLinkMenu } from "./ui/external-link";
+export { FieldGrid } from "./ui/field-grid";
+export type { GridField } from "./ui/field-grid";
+export { useFieldRing } from "./ui/field-ring";
+export { Icon } from "./ui/icon";
+export { PageStackView } from "./ui/page-stack-view";
+export { Popover } from "./ui/popover";
+export { QueryBar, useQueryBarSearch } from "./ui/query-bar";
+export type { QueryBarFilter, QueryBarView } from "./ui/query-bar";
+export { Notice } from "./ui/status";
+export { StatGrid, statGridRows } from "./ui/stat-grid";
+export type { StatItem } from "./ui/stat-grid";
+export {
+  ChartTableHeader,
+  chartTableChromeRows,
+  formatBpAxis,
+  formatPercentAxis,
+  spanAxisFormatter,
+  spanDigits,
+  useChartTableLayout,
+  useChartTableSelection,
+} from "./chart-table";
+export type { ChartStripSpec, ChartTableChart, ChartTableHeaderProps } from "./chart-table";
+export { CompositeChart } from "./chart/composite";
+export type { StaticChartOverlay } from "./chart/static";
+export { scalarPoint, staticSeries } from "./chart/static/series";
+export {
+  EMPTY_TABLE_CELL,
+  buildSectionedRows,
+  isSectionedItemRow,
+  renderSectionedRowHeader,
+} from "./data-table/sections";
+export type { SectionedRow } from "./data-table/sections";
+export { MarketBoardStack } from "./market-board";
+export { usePagedRows } from "./paged-rows";
+export type { PageRequest } from "./paged-rows";
+export { usePaneHeaderTabs } from "./layout/pane/header-tabs";
+export { usePaneMenuItems } from "./layout/pane/footer";
+export { usePaneStatusFooter, usePaneStatusLinkFooter } from "./layout/pane/status-footer";
+export { usePaneTabs } from "./layout/pane/pane-tabs";

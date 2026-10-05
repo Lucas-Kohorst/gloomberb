@@ -7,6 +7,7 @@ import {
   Tabs,
   useTableLoadMore,
 } from "../../../components";
+import type { SelectControl } from "../../../components/ui/select-button";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
 import { useInlineTickerOpener } from "../../../state/hooks/inline-tickers";
@@ -43,8 +44,10 @@ import {
   type TradeColumnId,
 } from "./model";
 import { MemberTradesDetail, TradeDetail } from "./detail";
+import { CongressFilterBar, type CongressFilters } from "./filters";
 import { useCongressTradesFooter } from "./footer";
 import { useCongressTradesKeyboard } from "./keyboard";
+import { useMineTickers } from "../shared/mine-tickers";
 import {
   renderCongressMemberCell,
   renderCongressTradeCell,
@@ -77,7 +80,22 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
+  const [filters, setFilters] = usePluginPaneState<CongressFilters>("filters", {});
+  const [mine, setMine] = usePluginPaneState("mine", false);
+  const mineTickers = useMineTickers();
+  const chamberControl = useRef<SelectControl | null>(null);
+  const sideControl = useRef<SelectControl | null>(null);
+  const ownerControl = useRef<SelectControl | null>(null);
+  const assetControl = useRef<SelectControl | null>(null);
+  const amountControl = useRef<SelectControl | null>(null);
   const fetchGenRef = useRef(0);
+  const congressQuery = {
+    chamber: filters.chamber ?? "all" as const,
+    side: filters.side,
+    owner: filters.owner,
+    assetType: filters.assetType,
+    minAmount: filters.minAmount,
+  };
 
   const load = useCallback((refresh = false) => {
     fetchGenRef.current += 1;
@@ -86,6 +104,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     setError(null);
     setLoadingMore(false);
     withConnectionRequest(CONGRESS_CONNECTION_ID, "house", () => apiClient.getCloudCongressHouse({
+      ...congressQuery,
       limit: CONGRESS_TRADE_LIMIT,
       filingLimit: CONGRESS_FILING_LIMIT,
       refresh,
@@ -103,7 +122,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setStatus("error");
       });
-  }, []);
+  }, [congressQuery.assetType, congressQuery.chamber, congressQuery.minAmount, congressQuery.owner, congressQuery.side]);
 
   const loadMore = useCallback(() => {
     if (!payload || loadingMore || status !== "loaded") return;
@@ -112,6 +131,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     const gen = fetchGenRef.current;
     setLoadingMore(true);
     withConnectionRequest(CONGRESS_CONNECTION_ID, "house", () => apiClient.getCloudCongressHouse({
+      ...congressQuery,
       ...nextRequest,
       limit: CONGRESS_TRADE_LIMIT,
       filingLimit: CONGRESS_FILING_LIMIT,
@@ -134,7 +154,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
         if (fetchGenRef.current !== gen) return;
         setLoadingMore(false);
       });
-  }, [loadingMore, payload, status]);
+  }, [congressQuery, loadingMore, payload, status]);
 
   const onTradeScroll = useTableLoadMore(
     tradeScrollRef,
@@ -154,9 +174,18 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
 
   const trades = payload?.trades ?? [];
   const members = payload?.members ?? [];
+  const visibleTrades = useMemo(
+    () => mine ? trades.filter((trade) => trade.ticker && mineTickers.has(trade.ticker.trim().toUpperCase())) : trades,
+    [mine, mineTickers, trades],
+  );
+  const visibleMembers = useMemo(() => {
+    if (!mine) return members;
+    const names = new Set(visibleTrades.map((trade) => `${trade.memberName}|${trade.stateDistrict}`));
+    return members.filter((member) => names.has(`${member.memberName}|${member.stateDistrict}`));
+  }, [members, mine, visibleTrades]);
   const query = searchQuery.trim().toLowerCase();
-  const tradeRows = useMemo(() => sortedTrades(trades.filter((trade) => !query || `${trade.ticker ?? ""} ${trade.memberName} ${trade.filingDate}`.toLowerCase().includes(query)), tradeSort), [query, trades, tradeSort]);
-  const memberRows = useMemo(() => sortedMembers(members.filter((member) => !query || `${member.memberName} ${member.id}`.toLowerCase().includes(query)), memberSort), [query, members, memberSort]);
+  const tradeRows = useMemo(() => sortedTrades(visibleTrades.filter((trade) => !query || `${trade.ticker ?? ""} ${trade.memberName} ${trade.filingDate}`.toLowerCase().includes(query)), tradeSort), [query, tradeSort, visibleTrades]);
+  const memberRows = useMemo(() => sortedMembers(visibleMembers.filter((member) => !query || `${member.memberName} ${member.id}`.toLowerCase().includes(query)), memberSort), [memberSort, query, visibleMembers]);
   const tradeColumns = useMemo(() => buildTradeColumns(), []);
   const memberColumns = useMemo(() => buildMemberColumns(), []);
   const selectedTradeIndex = selectedIndexById(tradeRows, selectedTradeId);
@@ -273,6 +302,27 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     : detailMember
       ? detailMember.memberName
       : undefined;
+  const filterBar = (
+    <CongressFilterBar
+      filters={filters}
+      onChange={setFilters}
+      mine={mine}
+      onMine={setMine}
+      width={width}
+      controls={{
+        chamber: chamberControl,
+        side: sideControl,
+        owner: ownerControl,
+        assetType: assetControl,
+        minAmount: amountControl,
+      }}
+    />
+  );
+  const filingsSubject = filters.chamber === "senate"
+    ? "Senate PTR filings"
+    : filters.chamber === "house"
+      ? "House PTR filings"
+      : "Congress PTR filings";
 
   const tabs = (
     <Box height={1}>
@@ -294,7 +344,8 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <PaneStatusBody loading={status === "loading"} error={error} subject="House PTR filings" />
+        {filterBar}
+        <PaneStatusBody loading={status === "loading"} error={error} subject={filingsSubject} />
       </Box>
     );
   }
@@ -322,8 +373,9 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           }}
           onRootKeyDown={handleRootKeyDown}
           onDetailKeyDown={handleDetailKeyDown}
+          rootBefore={filterBar}
           rootWidth={width}
-          rootHeight={Math.max(1, height - 1)}
+          rootHeight={Math.max(1, height - 2)}
           columns={tradeColumns}
           items={tradeRows}
           sortColumnId={tradeSort.columnId}
@@ -354,8 +406,9 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           }}
           onRootKeyDown={handleRootKeyDown}
           onDetailKeyDown={handleDetailKeyDown}
+          rootBefore={filterBar}
           rootWidth={width}
-          rootHeight={Math.max(1, height - 1)}
+          rootHeight={Math.max(1, height - 2)}
           columns={memberColumns}
           items={memberRows}
           sortColumnId={memberSort.columnId}

@@ -19,6 +19,18 @@ export function normalizeFieldOptions(
   }));
 }
 
+export function keysClearedByChange(
+  clearOnChange: string[] | undefined,
+  previous: unknown,
+  next: unknown,
+): string[] {
+  return clearOnChange && !Object.is(previous, next) ? clearOnChange : [];
+}
+
+export function getWorkflowSubmitLabel(route: CommandBarWorkflowRoute): string {
+  return route.submitLabel;
+}
+
 export function getVisibleWorkflowFields(
   fields: CommandBarWorkflowField[],
   values: Record<string, CommandBarFieldValue>,

@@ -460,7 +460,7 @@ type CloudCongressTradeSide = "BUY" | "SELL" | "EXCHANGE" | "OTHER";
 
 export interface CloudCongressTradePayload {
   id: string;
-  chamber: "house";
+  chamber: "house" | "senate";
   filingId: string;
   docId: string;
   memberName: string;
@@ -503,7 +503,7 @@ export interface CloudCongressMemberPayload {
 
 export interface CloudCongressHousePayload {
   asOf: string;
-  chamber: "house";
+  chamber: "all" | "house" | "senate";
   source: "house-clerk";
   year: number;
   indexUpdatedAt: string | null;

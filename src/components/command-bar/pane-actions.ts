@@ -28,6 +28,22 @@ interface CommandBarPaneActionsOptions {
   stateRef: { current: AppState };
 }
 
+export function showCollectionInPortfolioPane(
+  state: AppState,
+  dispatch: Dispatch<AppAction>,
+  collectionId: string,
+): void {
+  const targetPaneId = resolveFollowBindingInstance(
+    state.config.layout,
+    state.focusedPaneId,
+    (instance) => instance.paneId === "portfolio-list",
+  )?.instanceId
+    ?? findPrimaryPaneInstance(state.config.layout, "portfolio-list")?.instanceId
+    ?? null;
+  if (!targetPaneId) return;
+  dispatch({ type: "UPDATE_PANE_STATE", paneId: targetPaneId, patch: { collectionId } });
+}
+
 export function useCommandBarPaneActions({
   dispatch,
   pluginRegistry,

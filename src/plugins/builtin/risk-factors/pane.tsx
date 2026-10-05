@@ -1,0 +1,306 @@
+import { useCallback, useMemo, useState } from "react";
+import type {
+  CloudRiskNotePayload,
+} from "../../../api-client";
+import {
+  BulletList, EmptyState, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, Spinner, StatGrid,
+  usePaneFooter,
+  type PaneFooterSegment,
+  type PaneHint,
+} from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
+import { colors } from "../../../theme/colors";
+import {
+  Box,
+  ScrollBox,
+  Text,
+  useRendererHost,
+  useUiCapabilities,
+} from "../../../ui";
+import { isPermanentClientError } from "../../../api-client/errors";
+import { usePluginPaneState } from "../../runtime";
+import { useFilingYearReader } from "../shared/filing-year-reader";
+import { useProFeatureWall, type ProFeatureWallCopy, type ReadGuard } from "../shared/pro-feature-wall";
+import { useBoundTicker } from "../shared/ticker-request";
+import { loadRiskReport, loadRiskReports } from "./data";
+
+export const RISK_FACTORS_PANE_ID = "risk-factors";
+
+function noteFor(
+  notes: CloudRiskNotePayload[],
+  index: number,
+): string | undefined {
+  return notes.find((note) => note.index === index)?.text;
+}
+
+/** A risk heading, its group, and the model's line under it. */
+function RiskLine({
+  tag,
+  group,
+  heading,
+  note,
+  width,
+}: {
+  tag: string;
+  group: string | null;
+  heading: string;
+  note?: string;
+  width: number;
+}) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box height={1} flexDirection="row" gap={1} overflow="hidden">
+        <Text fg={colors.textBright}>{tag}</Text>
+        {group ? <Text fg={colors.textDim}>{group}</Text> : null}
+      </Box>
+      <Prose
+        text={heading}
+        width={width}
+        color={colors.text}
+      />
+      {note ? (
+        <Prose
+          text={note}
+          width={width}
+          color={colors.textDim}
+          prefix="  "
+        />
+      ) : null}
+    </Box>
+  );
+}
+
+const RISK_WALL: ProFeatureWallCopy = {
+  placement: "risk-wall",
+  action: "read risk factors",
+  title: "Risk factors are part of Gloom Cloud Pro.",
+  message: "Every 10-K's risk factors grouped by theme, with what was added, dropped or rewritten since the year before.",
+};
+
+interface RiskFactorsPaneProps {
+  focused: boolean;
+  width: number;
+  height: number;
+  /** Inside Ticker Research, whose own tab strip keeps h/l and the arrows. */
+  nested?: boolean;
+}
+
+export function RiskFactorsResearchTab(props: { focused: boolean; width: number; height: number }) {
+  return <RiskFactorsPane {...props} nested />;
+}
+
+export function RiskFactorsPane(props: RiskFactorsPaneProps) {
+  const { wall, guard } = useProFeatureWall(RISK_WALL, props);
+  return wall ?? <RiskFactorsReader {...props} guard={guard} />;
+}
+
+function RiskFactorsReader({
+  focused,
+  width,
+  nested = false,
+  guard,
+}: RiskFactorsPaneProps & { guard: ReadGuard }) {
+  const { symbol } = useBoundTicker();
+  const ticker = symbol ? symbol.toUpperCase() : null;
+  const nativePaneChrome = useUiCapabilities().nativePaneChrome === true;
+  const rendererHost = useRendererHost();
+
+  // The year is remembered with the pane; the ticker it was chosen on is the
+  // one the pane opened with, so a restored year applies to it.
+  const [selectedYear, setSelectedYear] = usePluginPaneState<number | null>("filingYear", null);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(ticker);
+  const listLoader = useCallback((force: boolean) => guard(loadRiskReports(ticker!, { force })), [guard, ticker]);
+  const list = useAsyncResource(ticker ? listLoader : null, { clearOnError: isPermanentClientError });
+  const years = useMemo(() => (list.data?.reports ?? []).map((entry) => entry.reportYear).sort((a, b) => b - a), [list.data]);
+  // Null follows the newest discovered filing; an explicit choice stays on that year.
+  const year = selectedTicker === ticker && selectedYear !== null
+    ? selectedYear : years[0] ?? null;
+  const reportLoader = useCallback((force: boolean) => guard(loadRiskReport(ticker!, year!, { force })), [guard, ticker, year]);
+  const detail = useAsyncResource(ticker && year !== null ? reportLoader : null, { clearOnError: isPermanentClientError });
+  const report = detail.data;
+  const listError = list.error ?? list.data?.refreshError ?? null;
+  const reportError = detail.error ?? report?.refreshError ?? null;
+  const refresh = useCallback(() => {
+    void list.reload();
+    if (year !== null) void detail.reload();
+  }, [list.reload, detail.reload, year]);
+  const openFiling = useCallback(() => {
+    if (report?.docUrl) void rendererHost.openExternal(report.docUrl);
+  }, [rendererHost, report]);
+  const selectYear = useCallback((next: number) => {
+    setSelectedTicker(ticker);
+    setSelectedYear(next);
+  }, [setSelectedYear, ticker]);
+  const { scrollRef, yearStrip, yearFilters, yearHint } = useFilingYearReader({
+    years,
+    year,
+    onSelectYear: selectYear,
+    tabForm: "10-K",
+    filterLabel: "10-K",
+    focused,
+    nested,
+    scope: "risk-factors",
+    documentKey: `${ticker}:${year}`,
+    refresh,
+  });
+
+  usePaneFooter(RISK_FACTORS_PANE_ID, () => {
+    const info: PaneFooterSegment[] = [];
+    if (list.loading || detail.loading)
+      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    if (listError) info.push({ id: "list-error", parts: [{ text: `Report list: ${listError}`, tone: "warning" }] });
+    if (reportError) info.push({ id: "report-error", parts: [{ text: `${year} report: ${reportError}`, tone: "warning" }] });
+    if ((listError || list.data?.stale) && list.data) {
+      info.push({ id: "list-stale", parts: [{ text: `List cached ${new Date(list.data.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
+    if ((reportError || report?.stale) && report) {
+      info.push({ id: "report-stale", parts: [{ text: `Report cached ${new Date(report.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
+    const hints: PaneHint[] = report?.docUrl
+      ? [{ id: "open", key: "o", label: "pen filing", onPress: openFiling }]
+      : [];
+    if (ticker && yearHint) hints.push(yearHint);
+    return { info, hints };
+  }, [list.loading, detail.loading, listError, reportError, list.data, report, year, openFiling, ticker, yearHint]);
+
+  const bodyWidth = Math.max(12, width - 2);
+  const proseWidth = Math.min(bodyWidth, READING_WIDTH);
+
+  if (!ticker) return <EmptyState title="Pick a ticker to see its risk factors." />;
+  if (!list.data && list.loading) return <PaneStatusBody loading align="center" loadingLabel="Loading risk factors..." />;
+  if (!list.data && listError && year === null) return <PaneStatusBody error={listError} errorTitle="Could not load risk reports." />;
+  if (year === null) return <EmptyState title={`No 10-K risk factors on file for ${ticker}.`} />;
+
+  const diff = report?.diff ?? null;
+  // A choice of years names the year in the tabs or the filter; a single
+  // report says which one it is here.
+  const meta = report
+    ? [
+        years.length > 1 ? null : `${report.reportYear} 10-K`,
+        `Filed ${report.filedAt?.slice(0, 10) || "unavailable"}`,
+        `updated ${report.updatedAt?.slice(0, 10) || "unavailable"}`,
+        diff ? null : "no prior year on file",
+      ].filter(Boolean).join(" · ")
+    : "";
+
+  return (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+    >
+      {yearStrip}
+      {(yearFilters.length > 0 || meta) && <QueryBar width={width} filters={yearFilters} meta={meta || undefined} />}
+      {report && diff ? (
+        <StatGrid width={width} items={[
+          { id: "new", label: "New", value: String(diff.added.length) },
+          { id: "dropped", label: "Dropped", value: String(diff.removed.length) },
+          { id: "reworded", label: "Reworded", value: String(diff.reworded.length) },
+        ]} />
+      ) : null}
+      <ScrollBox
+        ref={scrollRef}
+        flexGrow={1}
+        flexShrink={1}
+        flexBasis={0}
+        minHeight={0}
+        scrollY
+        paddingX={1}
+      >
+        {report ? (
+          <Box
+            flexDirection="column"
+            width={nativePaneChrome ? "100%" : bodyWidth}
+          >
+            {report.overview ? (
+              <Box flexDirection="column">
+                <SectionHeading
+                  title={diff ? "What the Changes Say" : "What Dominates"}
+                />
+                <BulletList items={report.overview.split("\n")} width={proseWidth} color={colors.text} />
+              </Box>
+            ) : null}
+            {diff ? (
+              <Box flexDirection="column">
+                <SectionHeading marginTop={report.overview ? 1 : 0} title="What Changed" />
+                {diff.added.length === 0 &&
+                diff.removed.length === 0 &&
+                diff.reworded.length === 0 ? (
+                  <Prose
+                    text="Every risk carried over with its text substantially unchanged."
+                    width={proseWidth}
+                    color={colors.textDim}
+                  />
+                ) : null}
+                {diff.added.map((index) => (
+                  <RiskLine
+                    key={`new-${index}`}
+                    tag="NEW"
+                    group={report.risks[index]?.group ?? null}
+                    heading={report.risks[index]?.heading ?? ""}
+                    note={noteFor(report.notes.added, index)}
+                    width={proseWidth}
+                  />
+                ))}
+                {diff.removed.map((risk, index) => (
+                  <RiskLine
+                    key={`dropped-${risk.heading}`}
+                    tag="DROPPED"
+                    group={risk.group}
+                    heading={risk.heading}
+                    note={noteFor(report.notes.removed, index)}
+                    width={proseWidth}
+                  />
+                ))}
+                {diff.reworded.map((item) => (
+                  <RiskLine
+                    key={`reworded-${item.index}`}
+                    tag={`${Math.round((1 - item.similarity) * 100)}% REWRITTEN`}
+                    group={report.risks[item.index]?.group ?? null}
+                    heading={report.risks[item.index]?.heading ?? ""}
+                    note={noteFor(report.notes.reworded, item.index)}
+                    width={proseWidth}
+                  />
+                ))}
+              </Box>
+            ) : report.notes.top.length > 0 ? (
+              <Box flexDirection="column">
+                <SectionHeading marginTop={report.overview ? 1 : 0} title="Most Specific to the Company" />
+                {report.notes.top.map((note) => (
+                  <RiskLine
+                    key={`top-${note.index}`}
+                    tag={String(note.index + 1).padStart(2, "0")}
+                    group={report.risks[note.index]?.group ?? null}
+                    heading={report.risks[note.index]?.heading ?? ""}
+                    note={note.text}
+                    width={proseWidth}
+                  />
+                ))}
+              </Box>
+            ) : null}
+            <Box flexDirection="column">
+              <SectionHeading marginTop={1} title="All Risk Factors" />
+              {report.risks.map((risk, index) => (
+                <Prose
+                  key={`${index}-${risk.heading}`}
+                  text={risk.heading}
+                  width={proseWidth}
+                  color={colors.text}
+                  prefix={`${String(index + 1).padStart(2, "0")} `}
+                />
+              ))}
+            </Box>
+
+          </Box>
+        ) : reportError ? (
+          <PaneStatusBody error={reportError} errorTitle={`Could not load ${year} risk report.`} />
+        ) : (
+          <Spinner label="Loading..." />
+        )}
+      </ScrollBox>
+    </Box>
+  );
+}

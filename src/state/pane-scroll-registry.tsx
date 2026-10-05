@@ -64,6 +64,11 @@ function clampScrollTop(scrollBox: ScrollBoxRenderable, target: number): number 
   return Math.max(0, Math.min(maxScrollTop, target));
 }
 
+export function scrollByLines(scrollBox: ScrollBoxRenderable, delta: number): void {
+  const target = scrollTargetByDelta(scrollBox, delta);
+  if (target != null) scrollBox.scrollTop = target;
+}
+
 function scrollTargetByDelta(scrollBox: ScrollBoxRenderable, delta: number): number | null {
   const target = clampScrollTop(scrollBox, scrollBox.scrollTop + delta);
   return target == null || target === scrollBox.scrollTop ? null : target;

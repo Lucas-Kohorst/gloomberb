@@ -216,3 +216,15 @@ export function usePaneHints(
     return hints && hints.length > 0 ? { hints } : null;
   }, deps);
 }
+
+/** Query bars register filter menus here. The fork footer has no pane menu slot, so the call is a no-op and the clickable filter row stays the control. */
+export function usePaneMenuItems(
+  _registrationId: string,
+  _factory: () => readonly unknown[] | null | undefined,
+  _deps: DependencyList,
+): void {}
+
+/** Chart tables keep arrow keys. This fork has no pane-arrow claim. */
+export function usePaneArrowsClaimed(): boolean {
+  return false;
+}

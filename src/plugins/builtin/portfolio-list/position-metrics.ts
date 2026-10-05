@@ -119,6 +119,26 @@ export function getPortfolioPositionMetrics(
   };
 }
 
+export function getPortfolioQuoteDisplay(
+  _metrics: PortfolioPositionMetrics,
+  quote: { price?: number | null } | null | undefined,
+): { price: number } | null {
+  const price = quote?.price;
+  return price != null && Number.isFinite(price) ? { price } : null;
+}
+
+export function resolvePortfolioMarketValue(
+  metrics: PortfolioPositionMetrics,
+  currentUnitPrice?: number | null,
+): { gross: number; net: number } | null {
+  const quoted = currentUnitPrice != null && Number.isFinite(currentUnitPrice) && metrics.totalPriceUnits !== 0
+    ? metrics.totalPriceUnits * currentUnitPrice
+    : null;
+  const net = quoted != null && Number.isFinite(quoted) ? quoted : resolveBrokerFallbackMarketValue(metrics);
+  if (net == null || !Number.isFinite(net)) return null;
+  return { gross: Math.abs(net), net };
+}
+
 export function resolveBrokerFallbackMarketValue(metrics: PortfolioPositionMetrics): number | null {
   if (metrics.hasBrokerMktValue) return metrics.brokerMktValue;
   if (metrics.brokerMarkPrice != null && metrics.totalPriceUnits !== 0) {

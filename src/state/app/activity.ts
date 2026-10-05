@@ -104,3 +104,12 @@ export function useAppActive(): boolean {
     () => true,
   );
 }
+
+/** Research panes gate polls on visibility. This fork uses window focus for that. */
+export function useAppVisible(): boolean {
+  return useAppActive();
+}
+
+export function usePaneVisible(): boolean {
+  return useAppActive();
+}

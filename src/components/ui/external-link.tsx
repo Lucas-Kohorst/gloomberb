@@ -1,8 +1,14 @@
+import type { ReactNode } from "react";
 import { Box, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 import { safeExternalUrl, openUrlCommand } from "../../utils/external-url";
 import { linkContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../../ui";
+
+/** Groups the links inside one detail so a later pane menu can list them. The fork footer has no menu slot, so this only keeps the children in place. */
+export function PaneLinkMenu({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
 
 export function openUrl(rawUrl: string) {
   const url = safeExternalUrl(rawUrl);

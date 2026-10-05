@@ -68,6 +68,15 @@ function useCommandBarAppState(): AppState {
   ]);
 }
 
+export function persistWorkflowConfig(state: AppState, nextConfig: AppState["config"]): void {
+  scheduleConfigSave(syncConfigActiveLayoutState(
+    nextConfig,
+    state.paneState,
+    state.focusedPaneId,
+    state.activePanel,
+  ));
+}
+
 export function useCommandBarEnvironment(pluginRegistry: PluginRegistry) {
   const dispatch = useAppDispatch();
   const state = useCommandBarAppState();

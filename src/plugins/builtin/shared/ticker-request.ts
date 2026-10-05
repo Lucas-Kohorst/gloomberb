@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app/context";
 import { debugLog } from "../../../utils/debug-log";
+import { parsePublicTickerKey } from "../../../utils/exchanges";
 
 const requestLog = debugLog.createLogger("ticker-request");
 
@@ -18,6 +19,14 @@ export type LoadState<T> = {
   loading: boolean;
   error: string | null;
 };
+
+/** Bare symbol and exchange behind a ticker key such as `AMD:XNAS`. */
+export function listingIdentity(key: string | null | undefined, savedExchange = ""): { symbol: string; exchange: string } | null {
+  const value = key?.trim();
+  if (!value) return null;
+  const parsed = parsePublicTickerKey(value);
+  return { symbol: parsed.symbol.toUpperCase(), exchange: parsed.exchange ?? savedExchange };
+}
 
 export function useBoundTicker() {
   const { symbol, ticker } = usePaneTicker();

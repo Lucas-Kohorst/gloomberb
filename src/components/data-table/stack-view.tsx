@@ -1,5 +1,6 @@
 import { useShortcut } from "../../react/input";
 import { type ReactNode } from "react";
+import { Box } from "../../ui";
 import {
   DataTableView,
   type DataTableKeyEvent,
@@ -17,6 +18,8 @@ export interface DataTableStackViewProps<
   detailContent: ReactNode;
   detailTitle?: string;
   onDetailKeyDown?: (event: DataTableKeyEvent) => boolean | void;
+  /** Drawn above the table and hidden with it when the detail page is open. */
+  rootBefore?: ReactNode;
 }
 
 export function DataTableStackView<
@@ -30,6 +33,7 @@ export function DataTableStackView<
   detailTitle,
   keyboardNavigation = true,
   onDetailKeyDown,
+  rootBefore,
   ...tableProps
 }: DataTableStackViewProps<T, C>) {
   useShortcut((event) => {
@@ -37,13 +41,23 @@ export function DataTableStackView<
     onDetailKeyDown?.(event);
   });
 
-  const rootContent = (
+  const tableHeight = rootBefore && tableProps.rootHeight != null
+    ? Math.max(1, tableProps.rootHeight - 1)
+    : tableProps.rootHeight;
+  const table = (
     <DataTableView<T, C>
       {...tableProps}
+      rootHeight={tableHeight}
       focused={focused && !detailOpen}
       keyboardNavigation={keyboardNavigation}
     />
   );
+  const rootContent = rootBefore ? (
+    <Box flexDirection="column" width={tableProps.rootWidth} height={tableProps.rootHeight}>
+      {rootBefore}
+      {table}
+    </Box>
+  ) : table;
 
   return (
     <PageStackView

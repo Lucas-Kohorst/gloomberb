@@ -36,6 +36,17 @@ export {
 export { upsertTickerFromSearchResult } from "./upsert";
 
 const OPTION_TYPES = new Set(["OPT", "OPTION", "OPTIONS"]);
+
+export class AmbiguousTickerError extends Error {
+  constructor(
+    readonly query: string,
+    readonly listings: readonly string[],
+    readonly listingNames: Readonly<Record<string, string>> = {},
+  ) {
+    super(`Multiple listings match ${query}. Choose an exchange in search or use ${listings.slice(0, 3).join(", ")}.`);
+    this.name = "AmbiguousTickerError";
+  }
+}
 const PREDICTION_SYMBOL_PREFIX = /^(POLY|KALSHI|PM):/i;
 
 function classifyTickerSearchInstrument(rawType: string | undefined, symbol: string) {

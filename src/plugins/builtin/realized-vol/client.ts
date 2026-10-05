@@ -1,0 +1,108 @@
+import { getSharedMarketDataCoordinator, MarketDataCoordinator, resolveEntryValue } from "../../../market-data/coordinator";
+import type { ChartRequest, InstrumentRef } from "../../../market-data/request-types";
+import type { QueryEntry } from "../../../market-data/result-types";
+import type { DataProvider } from "../../../types/data-provider";
+import type { PricePoint } from "../../../types/financials";
+import { createSurfaceDependencies, loadVolatilitySurface, type SurfaceLoaderDependencies } from "../vol-surface/client";
+import { projectCurrentAtmIv, type CurrentAtmIvSnapshot } from "./model";
+import { abortable, abortError } from "../../../utils/async-deadline";
+import { errorMessage } from "../../../utils/errors";
+
+export interface RealizedVolatilityDependencies {
+  loadChart(request: ChartRequest, options?: { forceRefresh?: boolean }): Promise<QueryEntry<PricePoint[]>>;
+  now?: () => number;
+}
+
+export function createRealizedVolatilityDependencies(marketData?: DataProvider): RealizedVolatilityDependencies {
+  const coordinator = marketData ? new MarketDataCoordinator(marketData) : getSharedMarketDataCoordinator();
+  return { loadChart: (request, options) => coordinator
+    ? coordinator.loadChart(request, options)
+    : Promise.reject(new Error("Market data coordinator unavailable")) };
+}
+
+export interface RealizedHistoryRequest {
+  instrument: InstrumentRef;
+  signal?: AbortSignal;
+  forceRefresh?: boolean;
+}
+
+export interface RealizedHistorySnapshot {
+  symbol: string;
+  /** Complete daily buffer. Projection owns warmup and visible lookback clipping. */
+  history: PricePoint[];
+  source: string | null;
+  stale: boolean;
+  error: string | null;
+  fetchedAt: number;
+}
+
+const CANCELLED = "Volatility history load was cancelled";
+
+export async function loadRealizedVolatilityHistory(
+  request: RealizedHistoryRequest,
+  dependencies: RealizedVolatilityDependencies = createRealizedVolatilityDependencies(),
+): Promise<RealizedHistorySnapshot> {
+  if (request.signal?.aborted) throw abortError(CANCELLED);
+  const now = dependencies.now?.() ?? Date.now();
+  const symbol = request.instrument.symbol.trim().toUpperCase();
+  try {
+    // 5Y supplies a 2Y cone plus 260-session warmup; range-only 5Y can be weekly.
+    const entry = await abortable(dependencies.loadChart({ instrument: request.instrument,
+      bufferRange: "5Y", granularity: "resolution", resolution: "1d" }, { forceRefresh: request.forceRefresh }), request.signal, CANCELLED);
+    if (request.signal?.aborted) throw abortError(CANCELLED);
+    const history = resolveEntryValue(entry) ?? [];
+    return { symbol, history, source: entry.source,
+      stale: !!entry.error || (entry.staleAt != null && entry.staleAt <= now),
+      error: entry.error?.message ?? (history.length === 0 ? "Daily price history unavailable" : null),
+      fetchedAt: entry.fetchedAt ?? now };
+  } catch (error) {
+    if (request.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw abortError(CANCELLED);
+    return { symbol, history: [], source: null, stale: false, error: errorMessage(error), fetchedAt: now };
+  }
+}
+
+export interface CurrentAtmIvRequest extends RealizedHistoryRequest {
+  spot: number;
+  spotAsOf?: string | number | null;
+}
+
+/**
+ * Re-read the current reference's own expiry at the live spot: that one chain
+ * is refetched and refitted, the catalogue comes from cache, and the other
+ * slices of the full load are not touched. When the refreshed slice cannot
+ * price an ATM level, the previous dated reference stands.
+ */
+export async function refreshCurrentAtmIv(
+  request: CurrentAtmIvRequest,
+  previous: CurrentAtmIvSnapshot,
+  dependencies: SurfaceLoaderDependencies = createSurfaceDependencies(),
+): Promise<CurrentAtmIvSnapshot> {
+  const reference = previous.reference;
+  if (!reference || !(request.spot > 0) || !Number.isFinite(request.spot)) return previous;
+  if (request.signal?.aborted) throw abortError(CANCELLED);
+  try {
+    const next = projectCurrentAtmIv(await loadVolatilitySurface({ ...request, forceRefresh: true, expiries: [reference.expiration],
+      settings: { ivSource: reference.ivSource } }, dependencies));
+    return next.reference?.expiration === reference.expiration ? { ...previous, reference: next.reference } : previous;
+  } catch (error) {
+    if (request.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw abortError(CANCELLED);
+    return previous;
+  }
+}
+
+/** Options are independent of daily history and use the existing surface chain cache. */
+export async function loadCurrentAtmIv(
+  request: CurrentAtmIvRequest,
+  dependencies: SurfaceLoaderDependencies = createSurfaceDependencies(),
+): Promise<CurrentAtmIvSnapshot> {
+  if (request.signal?.aborted) throw abortError(CANCELLED);
+  if (!(request.spot > 0) || !Number.isFinite(request.spot)) {
+    return { reference: null, error: "Current ATM IV needs a valid underlying quote", warnings: [] };
+  }
+  try {
+    return projectCurrentAtmIv(await loadVolatilitySurface(request, dependencies));
+  } catch (error) {
+    if (request.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw abortError(CANCELLED);
+    return { reference: null, error: errorMessage(error), warnings: [] };
+  }
+}

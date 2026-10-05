@@ -34,6 +34,24 @@ export interface NextSortPreferenceOptions<Id extends string> {
  * which direction a column opens in, and whether a third click clears the sort.
  * Both are expressed here as options so there is one cycle to reason about.
  */
+export interface HeaderSortOptions<Id extends string, Reset = SortPreference<Id>> {
+  firstDirection?: SortDirection | ((columnId: Id) => SortDirection);
+  resetTo?: Reset;
+}
+
+/** Header-click sort used by the upstream research tables. */
+export function nextHeaderSort<Id extends string, Reset extends SortPreference<string> = never>(
+  current: { readonly columnId: Id | null; readonly direction: SortDirection },
+  columnId: Id,
+  options: HeaderSortOptions<Id, Reset> = {},
+): { columnId: Id; direction: SortDirection } | NoInfer<Reset> {
+  const { firstDirection = "asc", resetTo } = options;
+  const first = typeof firstDirection === "function" ? firstDirection(columnId) : firstDirection;
+  if (current.columnId !== columnId) return { columnId, direction: first };
+  if (resetTo !== undefined && current.direction !== first) return resetTo;
+  return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
 export function nextSortPreference<Id extends string>(
   current: SortPreference<Id>,
   columnId: Id,

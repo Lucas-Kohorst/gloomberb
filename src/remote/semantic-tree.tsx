@@ -97,6 +97,16 @@ export function useRemoteUiRegistry(): RemoteUiRegistry | null {
   return useContext(RemoteUiRegistryContext);
 }
 
+const RemoteUiScopeContext = createContext<string | null>(null);
+
+export function RemoteUiScope({ scope, children }: { scope: string; children: ReactNode }) {
+  return <RemoteUiScopeContext value={scope}>{children}</RemoteUiScopeContext>;
+}
+
+export function useRemoteUiScope(): string | null {
+  return useContext(RemoteUiScopeContext);
+}
+
 export function useRemoteUiNode(registration: RemoteUiNodeRegistration | null | undefined): string | null {
   const registry = useRemoteUiRegistry();
   const generatedId = useId();

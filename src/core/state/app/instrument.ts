@@ -1,0 +1,77 @@
+import type { AppState } from "./types";
+import { findPaneInstance, type PaneBinding } from "../../../types/config";
+import type { BrokerContractRef, TickerListingRef } from "../../../types/instrument";
+import type { TickerRecord } from "../../../types/ticker";
+import { instrumentFromTicker, type InstrumentRef } from "../../../market-data/request-types";
+import { scopedBrokerContractIdentityKey } from "../../../utils/instrument-identity";
+import { isBrokerPortfolioId } from "../../../utils/broker-instances";
+import { searchContractKey } from "../../../tickers/search/identity";
+import { resolveCollectionForPane, resolveTickerForPane } from "./layout";
+
+type InstrumentState = Pick<AppState, "config" | "paneState" | "tickers">;
+
+export function hasAmbiguousTickerContracts(ticker: TickerRecord | null | undefined): boolean {
+  return new Set((ticker?.metadata.broker_contracts ?? []).map((brokerContract) => (
+    searchContractKey({ brokerContract, type: ticker?.metadata.assetCategory || "" })
+  )).filter(Boolean)).size > 1;
+}
+
+function fixedSelection(state: InstrumentState, paneId: string, seen = new Set<string>()): Extract<PaneBinding, { kind: "fixed" }> | undefined {
+  if (seen.has(paneId)) return undefined;
+  seen.add(paneId);
+  const pane = findPaneInstance(state.config.layout, paneId);
+  if (!pane) return undefined;
+  const cursor = state.paneState[paneId]?.cursorSymbol;
+  // A row cursor owns its own target, even in a pane with a fixed default.
+  if (typeof cursor === "string" && cursor.trim()) return undefined;
+  if (pane.binding?.kind === "fixed") return pane.binding;
+  return pane.binding?.kind === "follow" ? fixedSelection(state, pane.binding.sourceInstanceId, seen) : undefined;
+}
+
+export function resolveListingForPane(state: InstrumentState, paneId: string): TickerListingRef | undefined {
+  return fixedSelection(state, paneId)?.listing;
+}
+
+/** Resolve the same instrument for a pane, its followers and restored caches. */
+export function resolveInstrumentForPane(state: InstrumentState, paneId: string): InstrumentRef | null {
+  const symbol = resolveTickerForPane(state as AppState, paneId);
+  if (!symbol) return null;
+  const ticker = state.tickers.get(symbol);
+  const selection = fixedSelection(state, paneId);
+  const instrument = selection?.instrument;
+  if (instrument === null) return { symbol, exchange: selection?.listing?.exchange || ticker?.metadata.exchange || "", instrument: null };
+  if (instrument) return {
+    symbol,
+    exchange: selection?.listing?.exchange || instrument.exchange || ticker?.metadata.exchange || "",
+    brokerId: instrument.brokerId,
+    brokerInstanceId: instrument.brokerInstanceId,
+    instrument,
+  };
+  const collectionId = resolveCollectionForPane(state as AppState, paneId);
+  const portfolioId = collectionId && (
+    isBrokerPortfolioId(collectionId) || state.config.portfolios.some((portfolio) => portfolio.id === collectionId)
+    || ticker?.metadata.positions.some((position) => position.portfolio === collectionId)
+  ) ? collectionId : undefined;
+  if (!portfolioId && hasAmbiguousTickerContracts(ticker)) return null;
+  return instrumentFromTicker(ticker, symbol, { portfolioId });
+}
+
+/** A view of one contract, without changing the shared saved ticker record. */
+export function tickerForInstrument(ticker: TickerRecord | null, instrument: BrokerContractRef | null | undefined, listing?: TickerListingRef): TickerRecord | null {
+  if (!ticker || instrument === undefined) return null;
+  if (!instrument && !listing && !ticker.metadata.broker_contracts?.length) return ticker;
+  const key = instrument ? scopedBrokerContractIdentityKey(instrument) : null;
+  const positions = ticker.metadata.positions.filter((position) => {
+    const selected = instrumentFromTicker({ ...ticker, metadata: { ...ticker.metadata, positions: [position] } }, null, { portfolioId: position.portfolio });
+    return selected && (selected.instrument ? scopedBrokerContractIdentityKey(selected.instrument) : null) === key;
+  });
+  return { ...ticker, metadata: {
+    ...ticker.metadata,
+    name: listing?.name ?? ticker.metadata.name,
+    exchange: listing?.exchange ?? instrument?.exchange ?? ticker.metadata.exchange,
+    currency: listing?.currency ?? instrument?.currency ?? (listing ? "" : ticker.metadata.currency),
+    assetCategory: listing?.type ?? instrument?.secType ?? ticker.metadata.assetCategory,
+    broker_contracts: instrument ? [instrument] : [],
+    positions,
+  } };
+}

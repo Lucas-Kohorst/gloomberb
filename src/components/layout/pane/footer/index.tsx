@@ -44,6 +44,7 @@ export {
   usePaneFooter,
   usePaneFooterScopeActive,
   usePaneHints,
+  usePaneMenuItems,
 } from "./registration";
 
 function footerToneColor(part: PaneFooterPart): string {

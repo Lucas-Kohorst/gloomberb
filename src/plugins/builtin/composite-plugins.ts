@@ -42,6 +42,17 @@ import { treasuryAuctionsModule } from "./treasury-auctions";
 import { worldIndicesModule } from "./world-indices";
 import { worldVenueMapModule } from "./world-venue-map";
 import { yieldCurveModule } from "./yield-curve";
+import { attentionModule } from "./attention";
+import { bondCalculatorModule } from "./bond-calculator";
+import { centralBankRatesModule } from "./central-bank-rates";
+import { cotModule } from "./cot";
+import { cpiModule } from "./cpi";
+import { creditBoardsModule } from "./credit-boards";
+import { cryptoBoardModule } from "./crypto-board";
+import { doeModule } from "./doe";
+import { gpuModule } from "./gpu";
+import { perpsModule } from "./perps";
+import { powerModule } from "./power";
 import {
   attachValuationPersistence,
   resetValuationPersistence,
@@ -117,6 +128,13 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     futuresModule,
     futuresCurveModule,
     equityScreenerModule,
+    cotModule,
+    doeModule,
+    gpuModule,
+    attentionModule,
+    powerModule,
+    cryptoBoardModule,
+    perpsModule,
   ],
 });
 
@@ -143,5 +161,9 @@ export const macroPlugin = composeBuiltinPlugin({
     earningsCallsModule,
     ipoCalendarModule,
     tvModule,
+    cpiModule,
+    bondCalculatorModule,
+    centralBankRatesModule,
+    creditBoardsModule,
   ],
 });

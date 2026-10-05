@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PaneFooterSegment } from "../../../components";
-import { colors } from "../../../theme/colors";
+import { colors, priceColor } from "../../../theme/colors";
+import { formatPercentRaw } from "../../../utils/format";
 import type { MarketState, Quote } from "../../../types/financials";
 import { useAssetData } from "../../runtime";
 import { nextAutoRefreshDelayMs } from "./use-auto-refresh";
@@ -50,10 +51,20 @@ function mergeQuotes(previous: BoardQuoteMap, loaded: BoardQuoteMap): BoardQuote
  * paint instantly on open. Every load after it is a refresh the user asked for
  * (manually or on the poll interval) and bypasses those caches.
  */
-export function useQuoteBoard(symbols: string[], refreshIntervalMs: number): {
+export interface QuoteBoardOptions {
+  liveStreaming?: boolean;
+  visibleSymbols?: ReadonlySet<string> | null;
+  selectedSymbol?: string | null;
+  fallbackIntervalMs?: number;
+}
+
+export function useQuoteBoard(symbols: string[], refreshOrOptions: number | QuoteBoardOptions): {
   quotes: BoardQuoteMap;
   refresh: () => void;
 } {
+  const refreshIntervalMs = typeof refreshOrOptions === "number"
+    ? refreshOrOptions
+    : refreshOrOptions.fallbackIntervalMs ?? 60_000;
   const dataProvider = useAssetData();
   const [quotes, setQuotes] = useState<BoardQuoteMap>(new Map());
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -211,11 +222,60 @@ export function quoteBoardFooterInfo(status: QuoteBoardStatus): PaneFooterSegmen
   return info;
 }
 
-/**
- * Board session indicator: one glyph whose color carries the whole signal.
- * `marketStateDot` in `src/market-data/market/status.ts` encodes the state in
- * the glyph instead, which reads poorly in a one-cell column.
- */
+const TABLE_STREAM_OVERSCAN = 8;
+
+export const INITIAL_STREAM_RANGE = { start: 0, end: 40 };
+
+export function streamWindowRows<T>(
+  rows: readonly T[],
+  range: { start: number; end: number },
+  selected: T | undefined,
+): T[] {
+  const window = rows.slice(Math.max(0, range.start - TABLE_STREAM_OVERSCAN), range.end + TABLE_STREAM_OVERSCAN);
+  return selected !== undefined && !window.includes(selected) ? [...window, selected] : window;
+}
+
+export interface QuoteBoardCellFormat {
+  sessionText?: boolean;
+  formatPrice: (quote: Quote) => string;
+  formatChange: (quote: Quote) => string;
+}
+
+type QuoteBoardCellKind = "status" | "price" | "change" | "changePercent" | "time";
+
+function formatQuoteTime(ts: number | undefined): string {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function renderQuoteBoardCell(
+  kind: QuoteBoardCellKind,
+  state: BoardQuoteState | undefined,
+  format: QuoteBoardCellFormat,
+): { text: string; value?: number | string | null; color?: string } {
+  const quote = state?.quote;
+  const loading = !quote && (state?.loading ?? true);
+  if (loading) return { text: kind === "status" ? "" : "…", color: colors.textDim };
+  switch (kind) {
+    case "status": {
+      const dot = marketStatusDot(quote?.marketState);
+      return { text: dot.char, color: dot.color };
+    }
+    case "price":
+      if (!quote || !Number.isFinite(quote.price)) return { text: "—", color: colors.textDim };
+      return { text: format.formatPrice(quote), value: quote.price, color: state?.stale ? colors.textDim : undefined };
+    case "change":
+      if (!quote || !Number.isFinite(quote.change)) return { text: "—", color: colors.textDim };
+      return { text: format.formatChange(quote), color: priceColor(quote.change) };
+    case "changePercent":
+      if (!quote || !Number.isFinite(quote.changePercent)) return { text: "—", color: colors.textDim };
+      return { text: formatPercentRaw(quote.changePercent), value: quote.changePercent, color: priceColor(quote.changePercent) };
+    case "time":
+      return { text: formatQuoteTime(quote?.lastUpdated), color: colors.textDim };
+  }
+}
+
+/** One glyph whose color is the session. A letter in the cell would spend the column on a label. */
 export function marketStatusDot(state: MarketState | undefined): { char: string; color: string } {
   switch (state) {
     case "REGULAR":

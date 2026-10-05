@@ -1,10 +1,16 @@
-import { useCallback } from "react";
-import { Box, Text, TextAttributes, useUiHost } from "../../ui";
-import { type PromptContext, useDialog } from "../../ui/dialog";
+import { useCallback, useImperativeHandle, useRef, type Ref } from "react";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
-import { colors } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
+import { type PromptContext, useDialog } from "../../ui/dialog";
 import { ChoiceDialog } from "./choice-dialog";
-import { NativeSelect } from "./native-select";
+import { SelectField, openSelectField, type SelectFieldHandle } from "./select-field";
+import { Button } from "./button";
+import { WEB_CELL_WIDTH } from "../../theme/font-scale";
+
+export interface SelectControl {
+  open(): void;
+}
 
 export interface SelectButtonOption<T extends string = string> {
   value: T;
@@ -13,6 +19,8 @@ export interface SelectButtonOption<T extends string = string> {
   short?: string;
   description?: string;
   disabled?: boolean;
+  /** A key that picks this option, shown beside it where there is room (e.g. "1"). */
+  hint?: string;
 }
 
 export interface SelectButtonProps<T extends string = string> {
@@ -30,6 +38,16 @@ export interface SelectButtonProps<T extends string = string> {
    */
   emphasized?: boolean;
   idPrefix?: string;
+  showLabel?: boolean;
+  variant?: "inline" | "field";
+  width?: number;
+  onFocus?: () => void;
+  /**
+   * Opens the choices from the keyboard. Outside a QueryBar (whose filters are
+   * in the pane menu) the trigger has no key of its own, so a pane gives it a
+   * footer hint or form key that calls `open()`.
+   */
+  controlRef?: Ref<SelectControl>;
 }
 
 /**
@@ -47,17 +65,26 @@ export function SelectButton<T extends string = string>({
   disabled = false,
   emphasized = false,
   idPrefix,
+  showLabel = true,
+  variant = "inline",
+  width,
+  onFocus,
+  controlRef,
 }: SelectButtonProps<T>) {
-  const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const colors = useThemeColors();
+  const isDesktopWeb = useUiCapabilities().nativePaneChrome === true;
   const dialog = useDialog();
   const current = options.find((option) => option.value === value);
+  const selectFieldRef = useRef<SelectFieldHandle | null>(null);
 
   const selectValue = useCallback((next: unknown) => {
     const candidate = typeof next === "string" ? next : (next as { value?: string })?.value;
     const match = options.find((option) => option.value === candidate);
-    if (!match || match.disabled || match.value === value) return;
+    if (disabled || !match || match.disabled || match.value === value) return;
     onChange(match.value);
-  }, [onChange, options, value]);
+  }, [disabled, onChange, options, value]);
+  const selectValueRef = useRef(selectValue);
+  selectValueRef.current = selectValue;
 
   // Same parity as Button and Tabs: the control has to be drivable without a
   // mouse for remote control and UI automation.
@@ -76,6 +103,11 @@ export function SelectButton<T extends string = string>({
     event?.stopPropagation?.();
     event?.preventDefault?.();
     if (disabled) return;
+    onFocus?.();
+    if (isDesktopWeb) {
+      openSelectField(selectFieldRef.current);
+      return;
+    }
     void dialog.prompt<string>({
       closeOnClickOutside: true,
       content: (context: PromptContext<string>) => (
@@ -91,31 +123,36 @@ export function SelectButton<T extends string = string>({
           }))}
         />
       ),
-    }).then((next) => {
-      if (!next) return;
-      const match = options.find((option) => option.value === next);
-      if (match && !match.disabled) onChange(match.value);
-    }).catch(() => {});
-  }, [dialog, disabled, label, onChange, options, title, value]);
+    }).then((next) => selectValueRef.current(next)).catch(() => {});
+  }, [dialog, disabled, isDesktopWeb, label, onFocus, options, title, value]);
+
+  useImperativeHandle(controlRef, () => ({ open: openDialog }), [openDialog]);
 
   if (isDesktopWeb) {
     return (
       <Box flexDirection="row" alignItems="center" gap={1} id={idPrefix ? `${idPrefix}:select` : undefined}>
-        <Text fg={colors.textMuted}>{label}</Text>
-        <NativeSelect
-          variant="inline"
+        {showLabel && <Text fg={colors.textMuted}>{label}</Text>}
+        <SelectField
+          label={label}
+          variant={variant}
+          width={width === undefined ? undefined : width * WEB_CELL_WIDTH}
+          selectRef={(element) => { selectFieldRef.current = element; }}
+          onFocus={onFocus}
           value={value}
           options={options.map((option) => ({
             value: option.value,
             label: option.label,
             disabled: option.disabled,
           }))}
-          onChange={(next) => {
-            if (next !== value) onChange(next as T);
-          }}
+          disabled={disabled}
+          onChange={selectValue}
         />
       </Box>
     );
+  }
+
+  if (variant === "field") {
+    return <Button label={showLabel ? `${label}: ${current?.short ?? current?.label ?? ""}` : current?.short ?? current?.label ?? label} width={width} active={emphasized} disabled={disabled} onPress={openDialog} stopPropagation />;
   }
 
   return (
@@ -123,9 +160,10 @@ export function SelectButton<T extends string = string>({
       id={idPrefix ? `${idPrefix}:select` : undefined}
       height={1}
       flexDirection="row"
+      cursor={disabled ? "default" : "pointer"}
       onMouseDown={openDialog}
     >
-      <Text fg={colors.textMuted} onMouseDown={openDialog}>{`${label} `}</Text>
+      {showLabel && <Text fg={colors.textMuted} onMouseDown={openDialog}>{`${label} `}</Text>}
       <Text
         fg={disabled ? colors.textMuted : emphasized ? colors.textBright : colors.text}
         attributes={emphasized ? TextAttributes.BOLD : undefined}

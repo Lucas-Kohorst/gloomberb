@@ -1,9 +1,39 @@
 export type DisplayDateValue = Date | string | number | null | undefined;
 
+export { formatRelativeAge } from "./relative-time";
+
 export function parseDisplayDate(value: DisplayDateValue): Date | null {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+interface ShortDateOptions {
+  year?: "numeric" | "2-digit" | false;
+  day?: "numeric" | "2-digit";
+  utc?: boolean;
+  fallback?: string;
+}
+
+const shortDateFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** A month-name date such as "Jan 5, 2026". */
+export function formatShortDate(value: DisplayDateValue, options: ShortDateOptions = {}): string {
+  const date = parseDisplayDate(value);
+  if (!date) return options.fallback ?? "-";
+  const { year = "numeric", day = "numeric", utc = false } = options;
+  const key = `${year}:${day}:${utc}`;
+  let formatter = shortDateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day,
+      year: year || undefined,
+      timeZone: utc ? "UTC" : undefined,
+    });
+    shortDateFormatters.set(key, formatter);
+  }
+  return formatter.format(date);
 }
 
 export function formatRelativeTime(value: DisplayDateValue, now = Date.now(), fallback = "-"): string {
