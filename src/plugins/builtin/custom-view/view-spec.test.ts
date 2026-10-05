@@ -62,6 +62,45 @@ describe("view spec parsing", () => {
     expect(warned.valid).toBe(true);
     expect(warned.warnings.map((entry) => entry.code)).toEqual(["duplicate-key"]);
   });
+
+  test("a screen spec keeps screener fields and rejects an unknown column", () => {
+    const screen = {
+      source: {
+        kind: "screen",
+        definition: {
+          version: 1,
+          currency: "USD",
+          criteria: [{ field: "marketCap", op: "gte", value: 10_000_000_000 }],
+          sort: { field: "trailingPE", direction: "asc" },
+        },
+      },
+      projection: { columns: ["symbol", "trailingPE", "return1MPercent"] },
+    };
+    const parsed = parseViewSpecOr(screen);
+    expect("spec" in parsed).toBe(true);
+    if ("spec" in parsed) {
+      expect(parsed.spec.source).toMatchObject({ kind: "screen" });
+    }
+    const unknown = parseViewSpecOr({ ...screen, projection: { columns: ["dividend"] } });
+    expect("error" in unknown ? unknown.error : "").toContain("Unknown screener field dividend");
+    const broken = parseViewSpecOr({ source: { kind: "screen", definition: { version: 2 } } });
+    expect("error" in broken ? broken.error : "").toContain("Invalid screen definition");
+  });
+
+  test("ticker lists uppercase, dedupe, and warn when a percent field is scaled again", () => {
+    const spec = parseViewSpec({
+      source: { kind: "tickers", symbols: [" aapl ", "AAPL", "msft"] },
+      projection: { columns: [{ key: "return1MPercent", transform: "percent" }] },
+    });
+    expect(spec?.source).toEqual({ kind: "tickers", symbols: ["AAPL", "MSFT"] });
+    const warned = validateViewSpec(normalizeViewSpec({
+      source: { kind: "tickers", symbols: ["AAPL"] },
+      projection: { columns: [{ key: "return1MPercent", transform: "percent" }] },
+    }));
+    expect(warned.valid).toBe(true);
+    expect(warned.warnings.map((entry) => entry.code)).toContain("percent-points");
+    expect(parseViewSpec({ source: { kind: "tickers", symbols: [] } })).toBeNull();
+  });
 });
 
 describe("applyViewProjection", () => {
