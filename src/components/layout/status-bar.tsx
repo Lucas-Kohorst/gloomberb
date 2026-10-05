@@ -134,7 +134,7 @@ const openNewLayout = (event?: StatusBarEvent) => {
   openLayoutWorkflow("new-layout");
 };
 
-const terminalNewLayoutLabel = (): string => " + ";
+const TERMINAL_NEW_LAYOUT_LABEL = " + ";
 
 export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: string) => void } = {}) {
   const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
@@ -397,11 +397,16 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
 
   const claimedWidgetColumns = useClaimedStatusWidgetColumns();
   const tidyWindowsKey = actionKey("tidy-windows");
-  const leftWidth = 1
-    + (hasMultipleLayouts ? layoutTabsWidth : 0)
-    + (terminalNewLayoutLabel().length + 1)
+  const controlsWidth = (TERMINAL_NEW_LAYOUT_LABEL.length + 1)
     + (showTidyWindows ? terminalTidyWindowsLabel(tidyWindowsKey).length + 1 : 0);
   const feedbackWidth = displayWidth(t("Feedback")) + 1;
+  // In the terminal the tabs get what the row has left once New Layout, Tidy
+  // Windows, Feedback and the widgets' columns are counted, and scroll past
+  // that, so a long list of layouts never pushes those controls off screen.
+  const tabsWidth = nativePaneChrome
+    ? layoutTabsWidth
+    : Math.min(layoutTabsWidth, Math.max(0, termWidth - 1 - controlsWidth - feedbackWidth - STATUS_WIDGET_COLUMNS));
+  const leftWidth = 1 + (hasMultipleLayouts ? tabsWidth : 0) + controlsWidth;
   usePublishStatusWidgetRoom(statusBarVisible ? Math.max(0, termWidth - leftWidth - feedbackWidth) : 0);
 
   if (!statusBarVisible) return null;
@@ -415,7 +420,7 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
     hasMultipleLayouts,
     hoveredControl,
     layoutTabItems,
-    layoutTabsWidth,
+    layoutTabsWidth: tabsWidth,
     openChangelog: onOpenChangelog ? openChangelog : undefined,
     openLayoutContextMenu,
     // Feedback keeps the bottom-right corner; the version chip gives way first,
@@ -671,7 +676,7 @@ const NativeNewLayout = () => (
     <Button
       variant="plain"
       compact
-      label="New Layout"
+      label={t("New Layout")}
       displayLabel="+"
       title={t("New Layout")}
       onPress={() => openNewLayout()}
@@ -679,33 +684,37 @@ const NativeNewLayout = () => (
   </Box>
 );
 
-const TerminalNewLayout = ({
+/** A pressable pill on the terminal row, lit while the pointer is over it. */
+function TerminalStatusPill({
   hoveredControl,
+  id,
+  label,
+  onPress,
   setHoveredControl,
-}: Pick<StatusBarViewProps, "hoveredControl" | "setHoveredControl">) => {
+}: Pick<StatusBarViewProps, "hoveredControl" | "setHoveredControl"> & {
+  id: string;
+  label: string;
+  onPress: (event?: StatusBarEvent) => void;
+}) {
   const colors = useThemeColors();
-  const hovered = hoveredControl === "new-layout";
+  const hovered = hoveredControl === id;
   return (
     <Box paddingLeft={1} flexShrink={0} flexDirection="row">
       <Box
         backgroundColor={hovered ? hoverBg(colors) : colors.header}
-        cursor="pointer"
-        onMouseOver={() => setHoveredControl((current) => (current === "new-layout" ? current : "new-layout"))}
-        onMouseDown={openNewLayout}
+        onMouseOver={() => setHoveredControl((current) => (current === id ? current : id))}
+        onMouseOut={() => setHoveredControl((current) => (current === id ? null : current))}
+        onMouseDown={onPress}
       >
-        <Text
-          fg={colors.headerText}
-          role="button"
-          aria-label={t("New Layout")}
-          title={t("New Layout")}
-          style={{ cursor: "pointer" }}
-        >
-          {terminalNewLayoutLabel()}
-        </Text>
+        <Text fg={colors.headerText}>{label}</Text>
       </Box>
     </Box>
   );
-};
+}
+
+const TerminalNewLayout = (props: Pick<StatusBarViewProps, "hoveredControl" | "setHoveredControl">) => (
+  <TerminalStatusPill {...props} id="new-layout" label={TERMINAL_NEW_LAYOUT_LABEL} onPress={openNewLayout} />
+);
 
 function NativeTidyWindows({ handleTidyWindows, tidyWindowsKey }: Pick<StatusBarViewProps, "handleTidyWindows" | "tidyWindowsKey">) {
   return (
@@ -730,21 +739,10 @@ function terminalTidyWindowsLabel(key: string): string {
 
 function TerminalTidyWindows({
   handleTidyWindows,
-  hoveredControl,
-  setHoveredControl,
   tidyWindowsKey,
+  ...props
 }: Pick<StatusBarViewProps, "handleTidyWindows" | "hoveredControl" | "setHoveredControl" | "tidyWindowsKey">) {
-  const colors = useThemeColors();
-  const hovered = hoveredControl === "tidy-windows";
   return (
-    <Box paddingLeft={1} flexShrink={0} flexDirection="row">
-      <Box
-        backgroundColor={hovered ? hoverBg(colors) : colors.header}
-        onMouseOver={() => setHoveredControl((current) => (current === "tidy-windows" ? current : "tidy-windows"))}
-        onMouseDown={handleTidyWindows}
-      >
-        <Text fg={colors.headerText}>{terminalTidyWindowsLabel(tidyWindowsKey)}</Text>
-      </Box>
-    </Box>
+    <TerminalStatusPill {...props} id="tidy-windows" label={terminalTidyWindowsLabel(tidyWindowsKey)} onPress={handleTidyWindows} />
   );
 }
