@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getSharedMarketDataCoordinator, type MarketDataCoordinator } from "../../../market-data/coordinator";
 import type { SecFilingItem } from "../../../types/data-provider";
 import type {
@@ -91,41 +91,54 @@ export function selectLookupFilings(
 }
 
 type FocusListener = (accessionNumber: string) => void;
-const pendingFocus = new Map<string, string>();
-const focusListeners = new Map<string, Set<FocusListener>>();
+interface FocusRequest {
+  accessionNumber: string;
+  at: number;
+  /** Views told when the request was made; they must not take the copy left for the pane being created. */
+  told: Set<object>;
+}
+/** Long enough for the pane created for the request to mount; a stale one is dropped. */
+const PENDING_FOCUS_MS = 15_000;
+const pendingFocus = new Map<string, FocusRequest>();
+const focusListeners = new Map<string, Map<object, FocusListener>>();
 
 /**
  * Names the filing the SEC pane about to open for `symbol` should show. Pane
- * creation is async and may reuse an open pane, so the request waits here
- * until a pane on that symbol takes it.
+ * creation is async and may reuse an open pane, so views already on the
+ * symbol are told at once and the request also waits briefly for the pane
+ * being created. Another view on the same symbol (a Ticker Research tab)
+ * cannot take it away from that pane.
  */
 function requestSecFilingFocus(symbol: string, accessionNumber: string): void {
   const key = symbol.toUpperCase();
-  const listeners = focusListeners.get(key);
-  if (listeners && listeners.size > 0) {
-    for (const listener of listeners) listener(accessionNumber);
-    return;
-  }
-  pendingFocus.set(key, accessionNumber);
+  const listeners = focusListeners.get(key) ?? new Map<object, FocusListener>();
+  pendingFocus.set(key, { accessionNumber, at: Date.now(), told: new Set(listeners.keys()) });
+  for (const listener of listeners.values()) listener(accessionNumber);
 }
 
 export function useSecFilingFocusRequest(symbol: string | null | undefined, onFocus: FocusListener): void {
+  const [view] = useState(() => ({}));
   useEffect(() => {
     if (!symbol) return;
     const key = symbol.toUpperCase();
-    const listeners = focusListeners.get(key) ?? new Set<FocusListener>();
-    listeners.add(onFocus);
+    const listeners = focusListeners.get(key) ?? new Map<object, FocusListener>();
+    listeners.set(view, onFocus);
     focusListeners.set(key, listeners);
     const pending = pendingFocus.get(key);
-    if (pending) {
+    if (pending && !pending.told.has(view)) {
       pendingFocus.delete(key);
-      onFocus(pending);
+      if (Date.now() - pending.at < PENDING_FOCUS_MS) onFocus(pending.accessionNumber);
     }
     return () => {
-      listeners.delete(onFocus);
+      listeners.delete(view);
       if (listeners.size === 0) focusListeners.delete(key);
     };
-  }, [onFocus, symbol]);
+  }, [onFocus, symbol, view]);
+}
+
+export function resetSecFilingFocusRequests(): void {
+  pendingFocus.clear();
+  focusListeners.clear();
 }
 
 interface FilingSearchDeps {

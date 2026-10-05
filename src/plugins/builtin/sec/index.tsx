@@ -46,7 +46,7 @@ import {
   secReportedAcceptance,
 } from "./model";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
-import { createSecFilingSearchProvider, useSecFilingFocusRequest } from "./command-bar-search";
+import { createSecFilingSearchProvider, resetSecFilingFocusRequests, useSecFilingFocusRequest } from "./command-bar-search";
 
 export { secHeadless } from "./headless";
 
@@ -483,5 +483,8 @@ export const secModule: PluginModule = {
       instruments: ["equity"],
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
     });
+  },
+  dispose() {
+    resetSecFilingFocusRequests();
   },
 };
