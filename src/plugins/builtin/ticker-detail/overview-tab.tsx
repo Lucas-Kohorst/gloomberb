@@ -256,6 +256,7 @@ export function OverviewTab({
             height={10}
             focused={false}
             interactive={false}
+            advancedChart={false}
             series={[priceSeries]}
             panels={[{ id: "price" }]}
             axisWidth={8}

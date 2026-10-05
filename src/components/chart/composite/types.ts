@@ -149,6 +149,11 @@ export interface CompositeChartProps {
   height: number;
   focused?: boolean;
   interactive?: boolean;
+  /**
+   * Desktop and hosted web plot time series with TradingView. False keeps the
+   * canvas chart, for embeds such as the description overview.
+   */
+  advancedChart?: boolean;
   /** False keeps the hover cursor but removes pan, zoom, tools, and navigation keys. */
   navigable?: boolean;
   /** Overrides the unit-derived tick and cursor labels on both value axes. */

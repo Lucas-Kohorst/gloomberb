@@ -51,7 +51,9 @@ export function shouldUseDesktopAdvancedChart(input: {
   xAxis?: unknown;
   showTimeAxis?: boolean;
   formatAxisValue?: unknown;
+  advancedChart?: boolean;
 }): boolean {
+  if (input.advancedChart === false) return false;
   if (!tradingViewChartsEnabled()) return false;
   if (!input.isDesktopWeb || !input.hasPoints) return false;
   if (input.xAxis != null) return false;

@@ -1776,6 +1776,7 @@ export function CompositeChart({
   adoptedViewport,
   colors,
   interactive = true,
+  advancedChart = true,
   navigable = true,
   formatAxisValue,
   xAxis,
@@ -2278,6 +2279,7 @@ export function CompositeChart({
     xAxis,
     showTimeAxis,
     formatAxisValue,
+    advancedChart,
   })) {
     return (
       <DesktopAdvancedChart

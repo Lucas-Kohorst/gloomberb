@@ -157,6 +157,15 @@ describe("shouldUseDesktopAdvancedChart", () => {
     })).toBe(true);
   });
 
+  test("stays on the canvas when the caller opts out of the widget", () => {
+    expect(shouldUseDesktopAdvancedChart({
+      isDesktopWeb: true,
+      hasPoints: true,
+      showTimeAxis: true,
+      advancedChart: false,
+    })).toBe(false);
+  });
+
   test("stays on the canvas for scatter, category, and custom-axis panes", () => {
     expect(shouldUseDesktopAdvancedChart({
       isDesktopWeb: true,
