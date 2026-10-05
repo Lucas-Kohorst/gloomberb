@@ -38,6 +38,16 @@ describe("table layout", () => {
     expect(hasMeaningfulTableHorizontalOverflow(tableWidth, tableWidth - 1, 0)).toBe(true);
   });
 
+  test("keeps a dragged column at the width the drag locked", () => {
+    expect(tableColumnWidth({ width: 4, label: "SOURCE", lockWidth: true })).toBe(4);
+    expect(buildTableGridTemplateColumns([
+      { width: 10, lockWidth: true },
+      { width: 20, flexGrow: 1 },
+    ], true, 0)).toBe(
+      "minmax(calc(10 * var(--cell-w)), calc(10 * var(--cell-w))) minmax(calc(8 * var(--cell-w)), 20fr)",
+    );
+  });
+
   test("widens a column that cannot fit its own header plus the sort indicator", () => {
     expect(tableColumnWidth({ width: 4, label: "Time" })).toBe(6);
     expect(tableColumnWidth({ width: 4, label: "AS OF" })).toBe(7);

@@ -131,7 +131,7 @@ type PendingCdpCall = {
 const SHOT_MODE_CSS = [
   "[data-gloom-role='composite-chart-toolbar']",
   "[data-gloom-role='chart-series-quick-add']",
-  "[data-gloom-role='pane-close']",
+  "[data-gloom-role='pane-close'], [data-gloom-role='pane-restore']",
   "[data-gloom-role='resize-handle']",
 ].join(", ") + " { display: none !important; }\n"
   // The pane fills the viewport and has rounded corners. With the page painted

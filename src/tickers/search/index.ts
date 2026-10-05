@@ -292,15 +292,24 @@ async function resolveTickerSymbol(
     return { kind: "local", symbol: local.metadata.ticker, ticker: local };
   }
 
-  const providerItems = createProviderTickerSearchCandidates(
-    await searchProviderResults(dataProvider, symbol, searchContext),
-    tickers,
-  );
+  const providerResults = await searchProviderResults(dataProvider, symbol, searchContext);
+  const providerItems = createProviderTickerSearchCandidates(providerResults, tickers);
   const literalMatches = providerItems.filter((item) => normalizeTickerSymbol(item.symbol) === symbol);
   const matches = literalMatches.length ? literalMatches
     : providerItems.filter((item) => findExactTickerSearchMatch([item], symbol));
   let exactMatch = matches[0];
-  if (!exactMatch?.result) return null;
+  if (!exactMatch?.result) {
+    // Newer coins are listed as BASE<digits>-QUOTE (HYPE32196-USD). Wrapped
+    // symbols such as CBHYPE-USD can sort ahead of that row. A different base
+    // first is another coin, so the scan stops there.
+    const numericPair = findPrimaryNumericCryptoPair(providerResults, symbol);
+    if (!numericPair) return null;
+    return {
+      kind: "provider",
+      symbol: getSearchResultSymbol(numericPair),
+      result: numericPair,
+    };
+  }
 
   const contracts = new Set(matches.map((item) => item.contractKey).filter(Boolean));
   if (contracts.size > 1 || (contracts.size && matches.some((item) => !item.contractKey))) {
@@ -345,6 +354,54 @@ async function resolveTickerSymbol(
     symbol: exactMatch.symbol,
     result: exactMatch.result!,
   };
+}
+
+const CRYPTO_QUOTE_CURRENCIES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "BTC", "ETH"] as const;
+
+function parseCryptoPair(ticker: string): { base: string; quote: string } | null {
+  const normalized = ticker.trim().toUpperCase().replace(/[/\s]+/g, "-");
+  const dash = normalized.indexOf("-");
+  if (dash <= 0) return null;
+  const base = normalized.slice(0, dash);
+  const quote = normalized.slice(dash + 1);
+  if (!base || base === quote || !(CRYPTO_QUOTE_CURRENCIES as readonly string[]).includes(quote)) return null;
+  return { base, quote };
+}
+
+function findPrimaryNumericCryptoPair(
+  results: InstrumentSearchResult[],
+  query: string,
+): InstrumentSearchResult | null {
+  const parsed = parseCryptoPair(query);
+  if (!parsed) return null;
+  const pattern = new RegExp(`^${escapeRegex(parsed.base)}\\d+-${escapeRegex(parsed.quote)}$`);
+  for (const result of results) {
+    if (!isCryptoSearchResult(result)) continue;
+    const symbol = getSearchResultSymbol(result);
+    if (pattern.test(symbol)) return result;
+    if (!isWrappedCryptoListing(symbol, parsed)) return null;
+  }
+  return null;
+}
+
+function isCryptoSearchResult(result: InstrumentSearchResult): boolean {
+  return isCryptoInstrumentType(result.type)
+    || isCryptoInstrumentType(result.brokerContract?.secType)
+    || result.exchange.trim().toUpperCase() === "CCC";
+}
+
+/** Letter-prefixed wrapper of the same pair, such as CBHYPE-USD for HYPE-USD. */
+function isWrappedCryptoListing(symbol: string, pair: { base: string; quote: string }): boolean {
+  const listed = parseCryptoPair(symbol);
+  return !!listed
+    && listed.quote === pair.quote
+    && listed.base.length > pair.base.length
+    && listed.base.endsWith(pair.base)
+    && !/\d/.test(listed.base);
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function listingExchange(result: InstrumentSearchResult): string {

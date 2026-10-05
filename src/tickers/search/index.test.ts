@@ -128,6 +128,45 @@ describe("ticker-search utilities", () => {
     }
   });
 
+  test("resolves hype-usd onto the numbered Hyperliquid listing", async () => {
+    const hyperliquid = makeSearchResult("HYPE32196-USD", "Hyperliquid USD", { exchange: "CCC", type: "CRYPTOCURRENCY" });
+    const wrapped = makeSearchResult("CBHYPE-USD", "Coinbase Wrapped HYPE USD", { exchange: "CCC", type: "CRYPTOCURRENCY" });
+    const tokenized = makeSearchResult("QQQ39623-USD", "Invesco QQQ Trust Tokenized ETF (Hyperliquid) USD", { exchange: "CCC", type: "CRYPTOCURRENCY" });
+    for (const results of [[hyperliquid, tokenized], [wrapped, hyperliquid, tokenized]]) {
+      expect(await resolveTickerSearch({
+        query: "hype-usd", activeTicker: null, tickers: new Map(), dataProvider: makeDataProvider(results),
+      })).toMatchObject({
+        kind: "provider",
+        symbol: "HYPE32196-USD",
+        result: { name: "Hyperliquid USD", exchange: "CCC", type: "CRYPTOCURRENCY" },
+      });
+    }
+  });
+
+  test("keeps an exact crypto pair ahead of a numbered listing", async () => {
+    expect(await resolveTickerSearch({
+      query: "eth-usd",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("ETH-USD", "Ethereum USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+        makeSearchResult("ETH99999-USD", "Other ETH USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+      ]),
+    })).toMatchObject({ kind: "provider", symbol: "ETH-USD" });
+  });
+
+  test("does not map a crypto pair onto a later differently prefixed coin", async () => {
+    expect(await resolveTickerSearch({
+      query: "trump-usd",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("DJT31891-USD", "TrumpCoin USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+        makeSearchResult("TRUMP35336-USD", "OFFICIAL TRUMP USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+      ]),
+    })).toBeNull();
+  });
+
   test("prefers literal provider symbols without losing equity share-class aliases", async () => {
     const results = [makeSearchResult("SHIB/USD", "Shiba Inu", { type: "Digital Currency", exchange: "COINBASE PRO" }),
       makeSearchResult("SHIB-USD", "Shiba Inu", { type: "CRYPTOCURRENCY", exchange: "CCC", currency: "USD" })];

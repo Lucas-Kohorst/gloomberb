@@ -70,7 +70,7 @@
     {
       "id": "custom-view",
       "name": "Custom Views",
-      "description": "Tables built from any data function: columns, a filter, a sort. Made by the agent, shared with a team.",
+      "description": "A worksheet from a screen, a ticker list, or any data function. Columns, a filter, a sort. Built by Ask Gloom, shared with a team.",
       "categories": [
         "data",
         "productivity"

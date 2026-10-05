@@ -14,6 +14,11 @@ export interface HeatmapBoardAsset extends MarketHeatmapAsset {
   /** False when `size` is only there so the tile is drawn. The caption must not invent a market cap. */
   showSize?: boolean;
   sizeCaption?: "Value";
+  /**
+   * Treemap area. Position value stays linear. Market cap uses the square root
+   * so one mega-cap does not hide the rest of a list. The caption still reads `size`.
+   */
+  weight?: number;
 }
 
 export interface HeatmapPortfolioPane {
@@ -132,6 +137,10 @@ export function useLinkedHeatmapCollection(): { collectionId: string | null; sou
   };
 }
 
+function tileWeight(size: number, held: boolean): number {
+  return held ? size : Math.sqrt(size);
+}
+
 function positionValue(ticker: TickerRecord, collectionId: string, price: number | null): number | null {
   let total = 0;
   let any = false;
@@ -178,6 +187,7 @@ export function buildPortfolioHeatmapAssets({
       changePercent: hasChange ? quote.changePercent : 0,
       hasChange,
       size,
+      weight: size != null && size > 0 ? tileWeight(size, held != null) : undefined,
       sizeKind: "market-cap",
       sizeCaption: held != null ? "Value" : undefined,
       showSize: size != null && size > 0,
@@ -202,6 +212,12 @@ export function buildPortfolioHeatmapAssets({
   const floor = positive.length > 0 ? Math.min(...positive) : 1;
   return kept.map((asset) => {
     const hasSize = asset.size != null && asset.size > 0;
-    return hasSize ? asset : { ...asset, size: floor, showSize: false, sizeCaption: undefined };
+    return hasSize ? asset : {
+      ...asset,
+      size: floor,
+      weight: tileWeight(floor, false),
+      showSize: false,
+      sizeCaption: undefined,
+    };
   });
 }

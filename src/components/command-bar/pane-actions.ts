@@ -16,6 +16,7 @@ import type { PinTickerOptions } from "../../types/plugin";
 import { tickerInstrumentLabel } from "../../tickers/instrument-label";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import type { AppAction, AppState } from "../../state/app/context";
+import { layoutTickerTarget } from "../../layout/selected-ticker";
 import { recordFunctionOpen } from "../../telemetry/usage-counts";
 
 /** Points the portfolio pane the focus follows (or the main one) at a collection. */
@@ -61,7 +62,6 @@ export function useCommandBarPaneActions({
       )),
     };
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
-    dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
   }, [dispatch, stateRef]);
 
   const openFixedTickerPane = useCallback((symbol: string, options?: PinTickerOptions) => {
@@ -74,25 +74,54 @@ export function useCommandBarPaneActions({
     });
   }, [pluginRegistry]);
 
+  const pinFixedRoot = useCallback((paneId: string, symbol: string, options?: PinTickerOptions) => {
+    const currentState = stateRef.current;
+    const instrument = options?.instrument !== undefined
+      ? options.instrument
+      : instrumentFromTicker(currentState.tickers.get(symbol))?.instrument ?? undefined;
+    dispatch({
+      type: "UPDATE_LAYOUT",
+      layout: {
+        ...currentState.config.layout,
+        instances: currentState.config.layout.instances.map((instance) => (
+          instance.instanceId === paneId
+            ? {
+              ...instance,
+              binding: {
+                kind: "fixed" as const,
+                symbol,
+                ...(instrument !== undefined ? { instrument } : {}),
+                ...(options?.listing ? { listing: options.listing } : {}),
+              },
+            }
+            : instance
+        )),
+      },
+    });
+  }, [dispatch, stateRef]);
+
   const focusTicker = useCallback((symbol: string, options?: PinTickerOptions) => {
     const currentState = stateRef.current;
-    const focusedPane = currentState.focusedPaneId
-      ? findPaneInstance(currentState.config.layout, currentState.focusedPaneId)
-      : null;
-    if (options?.forceNewPane) {
+    const target = layoutTickerTarget(currentState, {
+      forceNewPane: options?.forceNewPane,
+      isTickerSource: (paneType) => pluginRegistry.panes.get(paneType)?.tickerSource === true,
+    });
+    if (target.kind === "open") {
       openFixedTickerPane(symbol, options);
       return;
     }
 
-    if (focusedPane?.paneId === TICKER_RESEARCH_PANE_ID) {
+    if (target.mode === "research") {
       // Opening a research pane is counted in pinTicker; retargeting one here is DES too.
       recordFunctionOpen({ shortcut: "DES", externalPluginId: null });
-      retargetTickerResearchPane(focusedPane.instanceId, symbol, options);
-      return;
+      retargetTickerResearchPane(target.rootInstanceId, symbol, options);
+    } else if (target.mode === "cursor") {
+      dispatch({ type: "UPDATE_PANE_STATE", paneId: target.rootInstanceId, patch: { cursorSymbol: symbol } });
+    } else {
+      pinFixedRoot(target.rootInstanceId, symbol, options);
     }
-
-    openFixedTickerPane(symbol, options);
-  }, [openFixedTickerPane, retargetTickerResearchPane, stateRef]);
+    if (!target.keepFocus) dispatch({ type: "FOCUS_PANE", paneId: target.rootInstanceId });
+  }, [dispatch, openFixedTickerPane, pinFixedRoot, pluginRegistry, retargetTickerResearchPane, stateRef]);
 
   const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
     pluginRegistry.updateLayout(nextLayout);

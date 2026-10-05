@@ -1,14 +1,22 @@
 import { resolveInstrumentForPane } from "../../core/state/app/instrument";
-import { resolveTickerForPane, type AppState } from "../../state/app/context";
+import type { AppState } from "../../state/app/context";
 import { t } from "../../i18n";
+import { LINKED_TICKER_MARK, selectedLayoutTicker } from "../../layout/selected-ticker";
 import { tickerInstrumentLabel } from "../../tickers/instrument-label";
 
-/** The focused pane's instrument, in the same words a pane title uses for a contract. */
+/**
+ * The layout's selected instrument, in the same words a pane title uses.
+ * A linked group wears the link mark and stays visible when the focused pane
+ * has no ticker of its own.
+ */
 export function activeCommandInstrumentLabel(state: AppState): string | null {
-  if (!state.focusedPaneId) return null;
-  const symbol = resolveTickerForPane(state, state.focusedPaneId);
-  if (!symbol) return null;
-  return tickerInstrumentLabel(symbol, resolveInstrumentForPane(state, state.focusedPaneId)?.instrument);
+  const selection = selectedLayoutTicker(state);
+  if (!selection) return null;
+  const label = tickerInstrumentLabel(
+    selection.symbol,
+    resolveInstrumentForPane(state, selection.rootInstanceId)?.instrument,
+  );
+  return selection.memberCount >= 2 ? `${LINKED_TICKER_MARK} ${label}` : label;
 }
 
 /** Root prompt text. A selected instrument stands in for the search hint. */
