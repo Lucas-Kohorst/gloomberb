@@ -31,6 +31,7 @@ describe("instrument class code", () => {
     ["Preferred Stock", "EQ"],
     ["Depositary Receipt", "EQ"],
     ["American Depositary Receipt", "EQ"],
+    ["Limited Partnership", "EQ"],
     ["STK", "EQ"],
     ["ETF", "ETF"],
     ["MUTUALFUND", null],

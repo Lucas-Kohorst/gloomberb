@@ -12,6 +12,7 @@ const KIND_BY_TYPE: Record<string, TickerInstrumentKind> = {
   DEPOSITARYRECEIPT: "equity",
   AMERICANDEPOSITARYRECEIPT: "equity",
   GLOBALDEPOSITARYRECEIPT: "equity",
+  LIMITEDPARTNERSHIP: "equity",
   REIT: "equity",
   PREFERREDSTOCK: "equity",
   ETF: "fund",
