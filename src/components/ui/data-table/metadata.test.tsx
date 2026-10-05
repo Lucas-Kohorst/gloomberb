@@ -12,13 +12,11 @@ const tui = createOpenTuiTestHarness();
 
 type Row = { id: string; name: string };
 
-const rows: Row[] = [
-  { id: "aapl", name: "Apple" },
-  { id: "msft", name: "Microsoft" },
-  { id: "nvda", name: "NVIDIA" },
-];
+// More rows than the 200 the snapshot used to list, so a selection past them
+// must still be published and selectable.
+const rows: Row[] = Array.from({ length: 250 }, (_, index) => ({ id: `row-${index}`, name: `Row ${index}` }));
 
-function Table({ selectedId }: { selectedId: string | null }) {
+function Table({ selectedId, onSelect }: { selectedId: string | null; onSelect: (index: number) => void }) {
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
@@ -34,21 +32,22 @@ function Table({ selectedId }: { selectedId: string | null }) {
       onBodyScrollActivity={() => {}}
       getItemKey={(row) => row.id}
       isSelected={(row) => row.id === selectedId}
-      onSelect={() => {}}
+      onSelect={(_row, index) => onSelect(index)}
       renderCell={(row) => ({ text: row.name })}
       emptyStateTitle="No rows."
     />
   );
 }
 
-async function tableMetadata(selectedId: string | null) {
+async function renderTable(selectedId: string | null) {
   const registry = createRemoteUiRegistry();
+  const selected: number[] = [];
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-table-metadata"));
   await tui.render(
     <RemoteUiRegistryProvider registry={registry}>
       <AppContext value={createStaticAppStore(state)}>
         <PaneInstanceProvider paneId="table-metadata">
-          <Table selectedId={selectedId} />
+          <Table selectedId={selectedId} onSelect={(index) => selected.push(index)} />
         </PaneInstanceProvider>
       </AppContext>
     </RemoteUiRegistryProvider>,
@@ -57,35 +56,31 @@ async function tableMetadata(selectedId: string | null) {
   await act(async () => {
     await tui.setup().renderOnce();
   });
-  return registry.snapshot().find((node) => node.role === "table")?.metadata;
+  const node = registry.snapshot().find((entry) => entry.role === "table");
+  return { registry, node, selected };
 }
 
 describe("DataTable remote metadata", () => {
-  test("publishes the row count and selected id without a rows array", async () => {
-    const metadata = await tableMetadata("msft");
+  test("publishes the row count and a selected key past the first 200 rows, without row objects", async () => {
+    const { node } = await renderTable("row-230");
 
-    expect(metadata).toEqual({
+    expect(node?.metadata).toEqual({
       paneInstanceId: "table-metadata",
       sortColumnId: "name",
       sortDirection: "desc",
       columns: [{ id: "name", label: "Name" }],
-      rowCount: 3,
-      selectedId: "msft",
+      rowCount: 250,
+      selectedId: "row-230",
     });
-    expect(metadata).not.toHaveProperty("rows");
   });
 
-  test("publishes a null selected id when no row is selected", async () => {
-    const metadata = await tableMetadata(null);
+  test("selects a row by the published selectedId", async () => {
+    const { registry, node, selected } = await renderTable("row-230");
+    const selectedId = node?.metadata?.selectedId;
 
-    expect(metadata).toEqual({
-      paneInstanceId: "table-metadata",
-      sortColumnId: "name",
-      sortDirection: "desc",
-      columns: [{ id: "name", label: "Name" }],
-      rowCount: 3,
-      selectedId: null,
-    });
-    expect(metadata).not.toHaveProperty("rows");
+    await registry.invoke(node!.id, "selectRow", { id: selectedId });
+    await registry.invoke(node!.id, "selectRow", { key: "row-3" });
+
+    expect(selected).toEqual([230, 3]);
   });
 });

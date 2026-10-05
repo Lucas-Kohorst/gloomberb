@@ -114,9 +114,9 @@ function resolveTableIndex<T, C extends DataTableColumn>(
   input: unknown,
   props: DataTableProps<T, C>,
 ): number {
-  return resolveRemoteItemIndex(input, props.items, {
-    key: (item, index) => props.getItemKey(item, index),
-  });
+  // `id` reads the same key the snapshot publishes as `selectedId`.
+  const key = (item: T, index: number) => props.getItemKey(item, index);
+  return resolveRemoteItemIndex(input, props.items, { id: key, key });
 }
 
 function firstSelectedId<T, C extends DataTableColumn>(props: DataTableProps<T, C>): string | null {
