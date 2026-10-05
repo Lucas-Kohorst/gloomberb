@@ -1,42 +1,60 @@
 import { describe, expect, test } from "bun:test";
-import { classifyInstrumentKind } from "./ranking";
-import { assetClassesForQuery, leadingAssetClassFilter, parseAssetClassQuery } from "./asset-classes";
+import { assetClassMarketSymbol, instrumentClassCode, parseAssetClassQuery } from "./asset-classes";
 
 describe("asset class query", () => {
-  test("a bare code opens the whole list and still names that symbol", () => {
-    expect(parseAssetClassQuery("eq")).toEqual({ code: "EQ", symbolQuery: "", showMenu: true });
-    expect(assetClassesForQuery("EQ").map((entry) => entry.code)).toEqual([
-      "EQ", "CUR", "OPT", "FUT", "IDX", "ETF",
-    ]);
-    expect(leadingAssetClassFilter("EQ")).toBeNull();
+  test("a class code filters only after a symbol or name", () => {
+    expect(parseAssetClassQuery("es fut")).toEqual({ code: "FUT", symbolQuery: "es" });
+    expect(parseAssetClassQuery("Vanguard Total ETF")).toEqual({ code: "ETF", symbolQuery: "Vanguard Total" });
+    // A code alone is a symbol (EQ) or a command (FUT, ETF), and a leading
+    // code is a command with its argument (ETF SPY opens ETF Filings).
+    for (const query of ["EQ", "FUT", "ETF", "ETF SPY", "FUT ES", "ES FUTURE"]) {
+      expect(parseAssetClassQuery(query)).toBeNull();
+    }
   });
 
-  test("a code plus a symbol searches the symbol inside that class", () => {
-    expect(parseAssetClassQuery("EQ BIRD")).toEqual({
-      code: "EQ",
-      symbolQuery: "BIRD",
-      showMenu: false,
-    });
-    expect(parseAssetClassQuery("EQ BIRD NASDAQ").symbolQuery).toBe("BIRD NASDAQ");
-    expect(leadingAssetClassFilter("EQ BIRD")).toBe("equity");
-    expect(leadingAssetClassFilter("EQ")).toBeNull();
-  });
-
-  test("a prefix lists the matching codes and a single letter does not", () => {
-    expect(assetClassesForQuery("ET").map((entry) => entry.code)).toEqual(["ETF"]);
-    expect(parseAssetClassQuery("E").showMenu).toBe(false);
-    expect(parseAssetClassQuery("BIRD").showMenu).toBe(false);
+  test("gives a bare symbol the market spelling of its class", () => {
+    const spell = (query: string) => assetClassMarketSymbol(parseAssetClassQuery(query)!);
+    expect(spell("ES FUT")).toBe("ES=F");
+    expect(spell("eurusd CUR")).toBe("EURUSD=X");
+    expect(spell("BTC CUR")).toBe("BTC-USD");
+    expect(spell("GSPC IDX")).toBe("^GSPC");
+    expect(spell("AAPL EQ")).toBeNull();
+    expect(spell("S&P 500 IDX")).toBeNull();
   });
 });
 
-describe("instrument class from a provider type", () => {
-  test("maps the six command-bar classes", () => {
-    expect(classifyInstrumentKind("EQUITY")).toBe("equity");
-    expect(classifyInstrumentKind("CURRENCY")).toBe("currency");
-    expect(classifyInstrumentKind("OPTION")).toBe("option");
-    expect(classifyInstrumentKind("FUTURE")).toBe("future");
-    expect(classifyInstrumentKind("INDEX")).toBe("index");
-    expect(classifyInstrumentKind("ETF")).toBe("etf");
-    expect(classifyInstrumentKind("MUTUALFUND")).toBe("fund");
+describe("instrument class code", () => {
+  // Types as Cloud search and the brokers send them.
+  test.each([
+    ["Common Stock", "EQ"],
+    ["EQUITY", "EQ"],
+    ["Preferred Stock", "EQ"],
+    ["Depositary Receipt", "EQ"],
+    ["American Depositary Receipt", "EQ"],
+    ["STK", "EQ"],
+    ["ETF", "ETF"],
+    ["MUTUALFUND", null],
+    ["Closed-end Fund", null],
+    ["CURRENCY", "CUR"],
+    ["CASH", "CUR"],
+    ["CRYPTOCURRENCY", "CUR"],
+    ["Digital Currency", "CUR"],
+    ["FUTURE", "FUT"],
+    ["CONTFUT", "FUT"],
+    ["INDEX", "IDX"],
+    ["IND", "IDX"],
+    ["OPT", "OPT"],
+    ["FOP", "OPT"],
+    ["Warrant", null],
+  ])("%s is %p", (instrumentType, code) => {
+    expect(instrumentClassCode({ instrumentType, symbol: "X" })).toBe(code as never);
+  });
+
+  test("an untyped row falls back to its listing syntax", () => {
+    expect(instrumentClassCode({ symbol: "ES=F" })).toBe("FUT");
+    expect(instrumentClassCode({ symbol: "EURUSD=X" })).toBe("CUR");
+    expect(instrumentClassCode({ symbol: "^GSPC" })).toBe("IDX");
+    expect(instrumentClassCode({ symbol: "BTC-USD", exchange: "CCC" })).toBe("CUR");
+    expect(instrumentClassCode({ symbol: "XYZ" })).toBeNull();
   });
 });

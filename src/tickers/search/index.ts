@@ -5,7 +5,7 @@ import { canonicalExchange, parsePublicTickerKey, publicTickerKey } from "../../
 import { getListingSymbol, tickerHasListingSuffix } from "../../sources/listing-symbols";
 import { parseOptionSymbol } from "../../utils/options";
 import { resolveCurrencyUnit } from "../../utils/currency-units";
-import { parseAssetClassQuery } from "./asset-classes";
+import { assetClassMarketSymbol, parseAssetClassQuery } from "./asset-classes";
 import { searchContractKey, searchInstrumentKey } from "./identity";
 import { tickerInstrumentLabel } from "../instrument-label";
 import {
@@ -208,7 +208,8 @@ export async function searchTickerCandidates({
     providerResults,
     localLimit,
     totalLimit,
-    includeOptionContracts,
+    // A search that hides contracts still shows them when asked: "AAPL OPT".
+    includeOptionContracts: includeOptionContracts || parseAssetClassQuery(query)?.code === "OPT",
   });
   return assemble(await searchProviderResults(
     dataProvider,
@@ -388,10 +389,15 @@ function searchResultPopularity(result: InstrumentSearchResult): number | undefi
 
 async function searchProviderResults(
   dataProvider: DataProvider,
-  query: string,
+  rawQuery: string,
   searchContext?: SearchRequestContext,
   onPartial?: (results: InstrumentSearchResult[]) => void,
 ): Promise<InstrumentSearchResult[]> {
+  // "ES FUT" looks up ES, and ES=F as well: the catalogue answers a bare root
+  // with stocks only. The ranking keeps the futures.
+  const assetClass = parseAssetClassQuery(rawQuery);
+  const query = assetClass?.symbolQuery ?? rawQuery;
+  const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
   // A Map rather than a list plus a seen set, because a later source can send
   // back a richer version of a symbol already recorded. Overwriting a key keeps
   // its original position, so an upgrade does not reorder the list.
@@ -404,13 +410,12 @@ async function searchProviderResults(
     }
   };
 
-  // "EQ BIRD" looks up BIRD. A lone "EQ" stays the symbol.
-  const parsedClass = parseAssetClassQuery(query);
-  const providerQuery = parsedClass.code && parsedClass.symbolQuery ? parsedClass.symbolQuery : query;
   // The variants are independent lookups of the same words, so they run
   // together. Awaited in turn they multiplied every per-source timeout by the
   // number of spellings tried.
-  await Promise.all(buildProviderSearchQueries(providerQuery).map(async (searchQuery) => {
+  const searchQueries = buildProviderSearchQueries(query);
+  if (marketSymbol && !searchQueries.includes(marketSymbol)) searchQueries.push(marketSymbol);
+  await Promise.all(searchQueries.map(async (searchQuery) => {
     try {
       const results = await dataProvider.search(searchQuery, {
         ...searchContext,
@@ -431,12 +436,12 @@ async function searchProviderResults(
 
   // Catalogues can omit exact market symbols or return a crypto pair from a
   // different venue. Verify the requested quote before accepting an alias.
-  const requested = parsePublicTickerKey(normalizeTickerSymbol(providerQuery));
+  const requested = parsePublicTickerKey(normalizeTickerSymbol(query));
   const possibleCryptoPair = /^[A-Z0-9]{1,15}-[A-Z]{3,5}$/.test(requested.symbol);
-  if ((isExplicitMarketSymbol(providerQuery) || possibleCryptoPair)
+  if ((isExplicitMarketSymbol(query) || possibleCryptoPair)
     && !findExactTickerSearchMatch([...byKey.values()].map((result) => ({
       label: getSearchResultSymbol(result), instrumentType: result.type, right: result.exchange,
-    })), providerQuery)) {
+    })), query)) {
     const { symbol, exchange } = requested;
     const marketType = /=F$/.test(symbol) ? "FUTURE"
       : /^(?:[A-Z]{3}(?:\/[A-Z]{3}|(?:[A-Z]{3})?=X))$/.test(symbol) ? "CURRENCY"
@@ -551,12 +556,12 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
 
   return items.map((item) => {
     if (item.saved || item.kind === "ticker") {
-      if (!isFundOrDerivativeClass(item.instrumentClass)) {
+      if (item.instrumentClass !== "fund" && item.instrumentClass !== "derivative") {
         assignedPrimaryListing = true;
       }
       return { ...item, category: "Saved" };
     }
-    if (isFundOrDerivativeClass(item.instrumentClass)) {
+    if (item.instrumentClass === "fund" || item.instrumentClass === "derivative") {
       return { ...item, category: "Funds & Derivatives" };
     }
     if (!assignedPrimaryListing) {
@@ -565,14 +570,6 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
     }
     return { ...item, category: "Other Listings" };
   }) as T[];
-}
-
-function isFundOrDerivativeClass(instrumentClass: TickerSearchCandidate["instrumentClass"]): boolean {
-  return instrumentClass === "fund"
-    || instrumentClass === "etf"
-    || instrumentClass === "derivative"
-    || instrumentClass === "option"
-    || instrumentClass === "future";
 }
 
 function limitTickerSearchCandidates<T extends TickerSearchCandidate>(

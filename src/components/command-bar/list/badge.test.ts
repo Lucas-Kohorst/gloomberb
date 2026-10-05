@@ -28,7 +28,6 @@ describe("command bar row badges", () => {
    */
   test("tags instruments by class, or by a short exchange code when the class is unknown", () => {
     expect(resolveRowBadge({ kind: "search", badge: "EQ", right: "NASDAQ" })).toEqual({ text: "EQ", tone: "instrument" });
-    expect(resolveRowBadge({ kind: "command", badge: "CUR" })).toEqual({ text: "CUR", tone: "instrument" });
     expect(resolveRowBadge({ kind: "ticker", right: "CCC" })).toEqual({ text: "CCC", tone: "instrument" });
     expect(badgeConsumesRight({ kind: "ticker", right: "CCC" })).toBe(true);
     expect(resolveRowBadge({ kind: "search", right: "Cboe Global" })).toBeNull();

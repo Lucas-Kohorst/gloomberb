@@ -1,91 +1,91 @@
+import { classifyInstrumentType, kindFromListingSyntax } from "../instrument-kind";
 import type { TickerSearchInstrumentClass } from "./types";
 
 /**
- * Command-bar class codes. The same letters are the badge on a matching
- * instrument. ETF and FUT also open panes; the class row fills the query
- * instead of replacing those commands.
+ * Class codes typed after a symbol or name, the way a terminal's market
+ * sector key follows a ticker: `ES FUT`, `EURUSD CUR`, `SPY ETF`. The same
+ * letters are the badge on a matching search row, so the list teaches them.
+ * A code on its own is never a filter: `EQ` is still Equillium, and `FUT` and
+ * `ETF` still open their panes.
  */
-const ASSET_CLASS_FILTERS = [
-  { code: "EQ", label: "Equity", instrumentClass: "equity" },
-  { code: "CUR", label: "Currency", instrumentClass: "currency" },
-  { code: "OPT", label: "Option", instrumentClass: "option" },
-  { code: "FUT", label: "Future", instrumentClass: "future" },
-  { code: "IDX", label: "Index", instrumentClass: "index" },
-  { code: "ETF", label: "Exchange-Traded Fund", instrumentClass: "etf" },
-] as const satisfies ReadonlyArray<{
-  code: string;
-  label: string;
-  instrumentClass: TickerSearchInstrumentClass;
-}>;
+const ASSET_CLASS_CODES = ["EQ", "CUR", "OPT", "FUT", "IDX", "ETF"] as const;
 
-export type AssetClassCode = (typeof ASSET_CLASS_FILTERS)[number]["code"];
-export type AssetClassFilter = (typeof ASSET_CLASS_FILTERS)[number];
+export type AssetClassCode = (typeof ASSET_CLASS_CODES)[number];
 
-const ASSET_CLASS_BY_CODE = new Map<string, AssetClassFilter>(
-  ASSET_CLASS_FILTERS.map((entry) => [entry.code, entry]),
-);
-
-export function isAssetClassCode(value: string | undefined): value is AssetClassCode {
-  return value !== undefined && ASSET_CLASS_BY_CODE.has(value.trim().toUpperCase());
-}
-
-export interface ParsedAssetClassQuery {
-  /** Class named by the first token, when that token is one of the codes. */
-  code: AssetClassCode | null;
-  /** Text after the class code. Empty when the query is only the code. */
+export interface AssetClassQuery {
+  code: AssetClassCode;
+  /** The symbol or name typed before the code. */
   symbolQuery: string;
-  /** The class list is on screen: the query is a code, or a prefix of one. */
-  showMenu: boolean;
 }
 
-export function parseAssetClassQuery(query: string): ParsedAssetClassQuery {
-  const trimmed = query.trim().replace(/\s+/g, " ");
-  if (!trimmed) return { code: null, symbolQuery: "", showMenu: false };
-
-  const upper = trimmed.toUpperCase();
-  const space = upper.indexOf(" ");
-  const first = space === -1 ? upper : upper.slice(0, space);
-  const rest = space === -1 ? "" : upper.slice(space + 1).trim();
-  const exact = ASSET_CLASS_BY_CODE.get(first);
-  if (exact) {
-    return { code: exact.code, symbolQuery: rest, showMenu: rest.length === 0 };
-  }
-  // One letter is still a symbol ("E"). Two or more that start a code open the list.
-  if (space !== -1 || first.length < 2) return { code: null, symbolQuery: "", showMenu: false };
-  const showMenu = ASSET_CLASS_FILTERS.some((entry) => entry.code.startsWith(first));
-  return { code: null, symbolQuery: "", showMenu };
+function isAssetClassCode(value: string): value is AssetClassCode {
+  return (ASSET_CLASS_CODES as readonly string[]).includes(value);
 }
 
-/** Rows for the class list. An exact code shows the whole catalog. A prefix shows the matches. */
-export function assetClassesForQuery(query: string): readonly AssetClassFilter[] {
-  const parsed = parseAssetClassQuery(query);
-  if (!parsed.showMenu) return [];
-  if (parsed.code) return ASSET_CLASS_FILTERS;
-  const upper = query.trim().toUpperCase();
-  return ASSET_CLASS_FILTERS.filter((entry) => entry.code.startsWith(upper));
-}
-
-export function assetClassSelectionIndex(query: string): number {
-  const rows = assetClassesForQuery(query);
-  const upper = query.trim().toUpperCase();
-  const exact = rows.findIndex((entry) => entry.code === upper);
-  return exact >= 0 ? exact : 0;
+/** The class a query ends with, when something comes before it. */
+export function parseAssetClassQuery(query: string): AssetClassQuery | null {
+  const tokens = query.trim().split(/\s+/);
+  if (tokens.length < 2) return null;
+  const code = tokens.at(-1)!.toUpperCase();
+  if (!isAssetClassCode(code)) return null;
+  return { code, symbolQuery: tokens.slice(0, -1).join(" ") };
 }
 
 /**
- * Class to keep when the query is a code plus a symbol. A bare code still
- * searches that symbol (EQ finds Equillium), so it does not filter.
+ * The market spelling a class gives a bare symbol: the catalogue answers `ES`
+ * with Eversource only, and `ES=F` with the E-mini future.
  */
-export function leadingAssetClassFilter(query: string): TickerSearchInstrumentClass | null {
-  const parsed = parseAssetClassQuery(query);
-  if (!parsed.code || !parsed.symbolQuery) return null;
-  return ASSET_CLASS_BY_CODE.get(parsed.code)?.instrumentClass ?? null;
+export function assetClassMarketSymbol(query: AssetClassQuery): string | null {
+  const symbol = query.symbolQuery.toUpperCase();
+  if (!/^[A-Z0-9]{1,10}$/.test(symbol)) return null;
+  switch (query.code) {
+    case "FUT":
+      return `${symbol}=F`;
+    case "IDX":
+      return `^${symbol}`;
+    case "CUR":
+      return /^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : `${symbol}-USD`;
+    default:
+      return null;
+  }
 }
 
-export function assetClassResultId(code: AssetClassCode): string {
-  return `asset-class:${code}`;
+function isExchangeTradedType(type: string): boolean {
+  const compact = type.toUpperCase().replace(/[^A-Z]/g, "");
+  return /\bET[FNP]\b/i.test(type) || compact.startsWith("EXCHANGETRADED");
 }
 
-export function isAssetClassResultId(id: string | undefined): boolean {
-  return id?.startsWith("asset-class:") === true;
+/**
+ * The class code of a search row: its type when the type names one, else its
+ * listing syntax (`=F`, `=X`, `^`, the crypto venue). Coins count as currency.
+ * A fund is ETF only when it trades on an exchange.
+ */
+export function instrumentClassCode(item: {
+  instrumentClass?: TickerSearchInstrumentClass;
+  instrumentType?: string | null;
+  symbol: string;
+  exchange?: string | null;
+}): AssetClassCode | null {
+  const type = item.instrumentType ?? "";
+  const kind = classifyInstrumentType(type) ?? kindFromListingSyntax(item.symbol, item.exchange ?? undefined);
+  switch (kind) {
+    case "equity":
+      return "EQ";
+    case "currency":
+    case "crypto":
+      return "CUR";
+    case "option":
+      return "OPT";
+    case "future":
+      return "FUT";
+    case "index":
+      return "IDX";
+    case "fund":
+      return isExchangeTradedType(type) ? "ETF" : null;
+    case "bond":
+    case "other":
+      return null;
+    default:
+      return item.instrumentClass === "equity" ? "EQ" : null;
+  }
 }

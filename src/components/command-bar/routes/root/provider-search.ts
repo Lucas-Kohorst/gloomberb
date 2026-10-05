@@ -3,7 +3,6 @@ import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
 import { searchTickerCandidates } from "../../../../tickers/search";
-import { parseAssetClassQuery } from "../../../../tickers/search/asset-classes";
 import {
   mergePlainRootTickerResults,
   mergeTickerSearchResultItems,
@@ -136,8 +135,6 @@ export function useRootProviderSearch(options: {
             publish(candidates);
           },
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
-          // The root bar hides option contracts unless the query is OPT <symbol>.
-          includeOptionContracts: parseAssetClassQuery(searchQuery).code === "OPT",
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
         writeTickerSearchCache(

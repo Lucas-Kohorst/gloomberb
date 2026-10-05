@@ -180,6 +180,36 @@ describe("ticker-search utilities", () => {
     expect(findExactTickerSearchMatch([{ label: "ES=F:CME" }], "ES=F:NYMEX")).toBeNull();
   });
 
+  test("a trailing class code keeps that class and also asks for its market spelling", async () => {
+    const asked: string[] = [];
+    const dataProvider = createTestDataProvider({
+      search: async (query) => {
+        asked.push(query);
+        if (query === "ES=F") return [makeSearchResult("ES=F", "E-Mini S&P 500 Dec 26", { exchange: "CME", type: "FUTURE" })];
+        return [
+          makeSearchResult("ES", "Eversource Energy", { exchange: "NYSE", type: "Common Stock" }),
+          makeSearchResult("ESR=F", "Euro Short-Term Rate Futures", { exchange: "CME", type: "FUTURE" }),
+        ];
+      },
+    });
+    const candidates = await searchTickerCandidates({ query: "ES FUT", tickers: new Map(), dataProvider, includeOptionContracts: false });
+    expect(asked).toContain("ES=F");
+    expect(asked).not.toContain("ES FUT");
+    expect(candidates.map((item) => item.symbol).sort()).toEqual(["ES=F", "ESR=F"]);
+
+    // The word ranking alone puts coins named "... BTC USD" ahead of BTC-USD.
+    const coins = buildTickerSearchCandidates({
+      query: "BTC CUR",
+      tickers: new Map(),
+      providerResults: [
+        makeSearchResult("PBTC-USD", "pTokens BTC USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+        makeSearchResult("BTC", "Grayscale Bitcoin Mini Trust ETF", { exchange: "ARCA", type: "ETF" }),
+        makeSearchResult("BTC-USD", "Bitcoin USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+      ],
+    });
+    expect(coins.map((item) => item.symbol)).toEqual(["BTC-USD", "PBTC-USD"]);
+  });
+
   test("resolves catalogue omissions through a quote for the exact market symbol only", async () => {
     const lookalike = makeSearchResult("ESF", "Eurotech", { exchange: "MTA" });
     const quoteCalls: string[] = [];
@@ -196,7 +226,7 @@ describe("ticker-search utilities", () => {
     });
     const candidates = await searchTickerCandidates({ query: "ES=F", tickers: new Map(), dataProvider });
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ symbol: "ES=F", instrumentClass: "future", result: { currency: "USD", exchange: "CME", type: "FUTURE" } });
+    expect(candidates[0]).toMatchObject({ symbol: "ES=F", instrumentClass: "derivative", result: { currency: "USD", exchange: "CME", type: "FUTURE" } });
     expect(quoteCalls).toEqual(["ES=F"]);
 
     for (const invalidQuote of [
@@ -483,22 +513,6 @@ describe("ticker-search utilities", () => {
     expect(firstSymbolFor("Apple XETRA")).toBe("APC");
     expect(firstSymbolFor("Apple NASDAQ")).toBe("AAPL");
     expect(firstSymbolFor("Apple ETF")).toBe("APLY");
-  });
-
-  test("keeps only the named class when a class code precedes the symbol", () => {
-    const results = buildTickerSearchCandidates({
-      query: "EQ BIRD",
-      tickers: new Map(),
-      providerResults: [
-        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
-        makeSearchResult("BIRD", "Allbirds ETF", { exchange: "ARCA", type: "ETF" }),
-        makeSearchResult("BIRDF", "Bird Fund", { exchange: "NASDAQ", type: "EQUITY" }),
-      ],
-      totalLimit: 8,
-    });
-    expect(results.map((item) => item.symbol)).toContain("BIRD");
-    expect(results.every((item) => item.instrumentClass === "equity")).toBe(true);
-    expect(results.some((item) => item.symbol === "BIRD" && item.exchangeLabel === "ARCA")).toBe(false);
   });
 
   test("uses provider ordering without assuming the canonical listing is on a US exchange", () => {

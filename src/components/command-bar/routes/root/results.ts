@@ -20,12 +20,6 @@ import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
 import { buildHelpArgumentItems } from "./help-items";
-import {
-  assetClassResultId,
-  assetClassSelectionIndex,
-  assetClassesForQuery,
-  parseAssetClassQuery,
-} from "../../../../tickers/search/asset-classes";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
@@ -81,8 +75,6 @@ export interface RootResultModelOptions {
   pluginInstallItem?: ResultItem | null;
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
-  /** Class rows fill `EQ ` so the next characters are the symbol. */
-  setRootQuery?: (query: string) => void;
   /**
    * Rows from plugin search providers, already ordered by provider priority.
    * Appended after the local matches so a late answer never moves the row the
@@ -137,27 +129,6 @@ function buildBindKeyItem(
   };
 }
 
-function buildAssetClassResultItems(
-  query: string,
-  setRootQuery?: (next: string) => void,
-): ResultItem[] {
-  const rows = assetClassesForQuery(query);
-  if (rows.length === 0) return [];
-  const selected = assetClassSelectionIndex(query);
-  return rows.map((entry, index) => ({
-    id: assetClassResultId(entry.code),
-    label: entry.label,
-    detail: "",
-    badge: entry.code,
-    category: "Asset Classes",
-    kind: "command" as const,
-    shortcutQuery: entry.code,
-    right: index === selected ? "Tab" : undefined,
-    searchText: `${entry.code} ${entry.label}`,
-    action: () => setRootQuery?.(`${entry.code} `),
-  }));
-}
-
 export function buildRootResultModel(options: RootResultModelOptions): RootResultModel {
   const {
     activeCollectionId,
@@ -184,7 +155,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     pluginInstallItem,
     rootQuery,
     rootShortcutIntent,
-    setRootQuery,
     providerResultItems = [],
     runDirectCommand,
     runSecurityDescriptionShortcut,
@@ -312,8 +282,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   }
 
   const shortcutClaimedQuery = rootShortcutIntent.kind !== "none";
-  const classQuery = parseAssetClassQuery(rootQuery);
-  const classOwnsListing = classQuery.showMenu || classQuery.code !== null;
   // Counted before the provider rows: they arrive whenever the network answers,
   // and an assist offer must not appear and vanish as they land.
   const matchCount = items.length;
@@ -325,7 +293,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   }
   // A resolved prefix means the user is speaking the command language, so
   // free-text providers stay out of the way.
-  if (!shortcutClaimedQuery && !classOwnsListing) {
+  if (!shortcutClaimedQuery) {
     items.push(...providerResultItems);
   }
 
@@ -334,7 +302,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // placeholder holds the rows from the start, and the root selection effect
   // follows rows by identity when the answer renumbers what sits below.
   const assistItems = assist
-    && !classOwnsListing
     && isAssistSectionVisible(
       assist,
       rootQuery,
@@ -347,10 +314,5 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // Added last, so everything above is built exactly as it would be without
   // it; its section sorts ahead of the rest.
   const installItems = pluginInstallItem ? [pluginInstallItem] : [];
-  const assetClassItems = buildAssetClassResultItems(rootQuery, setRootQuery);
-  if (classQuery.showMenu) initialIdx = assetClassSelectionIndex(rootQuery);
-  return {
-    items: dedupeById([...assetClassItems, ...installItems, ...assistItems, ...items]),
-    initialIdx,
-  };
+  return { items: dedupeById([...installItems, ...assistItems, ...items]), initialIdx };
 }

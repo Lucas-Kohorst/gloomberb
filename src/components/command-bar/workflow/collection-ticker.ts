@@ -17,10 +17,7 @@ function listingIdentity(ticker: TickerRecord): string | null {
   const metadata = ticker.metadata;
   // A shared root symbol and exchange cannot identify an option, future or bond.
   const instrumentKind = classifyInstrumentKind(metadata.assetCategory);
-  if ((metadata.assetCategory?.trim()
-    && instrumentKind !== "equity"
-    && instrumentKind !== "fund"
-    && instrumentKind !== "etf")
+  if ((metadata.assetCategory?.trim() && instrumentKind !== "equity" && instrumentKind !== "fund")
     || (metadata.broker_contracts ?? []).some((brokerContract) => searchContractKey({ brokerContract, type: metadata.assetCategory || "" }))) return null;
   const parsed = parsePublicTickerKey(metadata.ticker);
   let exchange = parsed.exchange ?? canonicalExchange(metadata.exchange);

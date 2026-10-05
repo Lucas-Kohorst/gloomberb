@@ -12,7 +12,6 @@ import type { ListScreenState, ResultItem } from "./list/model";
 import type { CommandBarRoute } from "./workflow/types";
 import type { CollectionCommandId } from "./helpers";
 import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-actions";
-import { isAssetClassResultId } from "../../tickers/search/asset-classes";
 import {
   acceptRootShortcutTabAction,
   buildImmediateRootSelection,
@@ -164,15 +163,6 @@ export function useCommandBarSelectionRuntime({
    * modal), which is the typed text running.
    */
   const acceptRootShortcutTab = useCallback((): boolean => {
-    const listState = visibleListStateRef.current;
-    if (listState?.kind === "root") {
-      const selected = listState.results[listState.selectedIdx];
-      const code = isAssetClassResultId(selected?.id) ? selected?.shortcutQuery?.trim() : "";
-      if (code) {
-        setRootQuery(`${code} `);
-        return true;
-      }
-    }
     const query = rootQueryRef.current;
     const accept = () => acceptRootShortcutTabAction({
       activeTickerSymbol,
@@ -217,7 +207,6 @@ export function useCommandBarSelectionRuntime({
     runSecurityDescriptionShortcut,
     setRootQuery,
     startThemePicker,
-    visibleListStateRef,
   ]);
 
   /**

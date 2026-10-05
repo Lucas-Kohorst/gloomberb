@@ -4,15 +4,10 @@ import type {
 } from "./types";
 import { getListingSymbol, tickerHasListingSuffix } from "../../sources/listing-symbols";
 import { canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
-import { leadingAssetClassFilter, parseAssetClassQuery } from "./asset-classes";
+import { assetClassMarketSymbol, instrumentClassCode, parseAssetClassQuery } from "./asset-classes";
 
-const ETF_TYPES = new Set(["ETF", "ETN", "ETP"]);
-const FUND_TYPES = new Set(["FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
-const OPTION_TYPES = new Set(["OPT", "OPTION", "OPTIONS"]);
-const FUTURE_TYPES = new Set(["FUT", "FUTURE", "FUTURES"]);
-const INDEX_TYPES = new Set(["INDEX", "INDX"]);
-const CURRENCY_TYPES = new Set(["CURRENCY", "CUR", "FX", "FOREX", "CASH"]);
-const DERIVATIVE_TYPES = new Set(["WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
+const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
+const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
 const EQUITY_TYPES = new Set(["STK", "STOCK", "EQUITY", "COMMONSTOCK", "COMMON STOCK", "ADR", "DEPOSITARY RECEIPT", "DEPOSITARYRECEIPT", "ORDINARYSHARES", "ORDINARY SHARES"]);
 const COMPANY_NAME_SUFFIXES = new Set([
   "AG",
@@ -58,18 +53,18 @@ const ASSET_HINT_MAP: Record<string, TickerSearchInstrumentClass> = {
   SHARE: "equity",
   SHARES: "equity",
   COMMON: "equity",
-  ETF: "etf",
-  ETN: "etf",
-  ETP: "etf",
+  ETF: "fund",
+  ETN: "fund",
+  ETP: "fund",
   FUND: "fund",
-  OPTION: "option",
-  OPTIONS: "option",
-  CALL: "option",
-  PUT: "option",
+  OPTION: "derivative",
+  OPTIONS: "derivative",
+  CALL: "derivative",
+  PUT: "derivative",
   WARRANT: "derivative",
   WARRANTS: "derivative",
-  FUTURE: "future",
-  FUTURES: "future",
+  FUTURE: "derivative",
+  FUTURES: "derivative",
 };
 
 const SAVED_MATCH_BONUS = 900;
@@ -89,8 +84,6 @@ interface SearchQueryIntent {
   companyQueryKey: string;
   exchangeHints: string[];
   assetPreference: TickerSearchInstrumentClass | null;
-  /** Set when a class code precedes a symbol. Mismatches are dropped, not just demoted. */
-  assetClassFilter: TickerSearchInstrumentClass | null;
 }
 
 export function findExactTickerSearchMatch<T extends Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>>(
@@ -171,12 +164,23 @@ function getTickerSearchListingKey(item: Pick<TickerSearchRankableItem, "label">
 
 export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "id" | "label" | "detail" | "kind" | "category" | "right"> & Partial<TickerSearchRankableItem>>(
   items: T[],
-  query: string,
+  rawQuery: string,
 ): T[] {
+  // A trailing class code ("ES FUT") keeps only rows of that class and ranks
+  // the words before it.
+  const assetClass = parseAssetClassQuery(rawQuery);
+  const query = assetClass?.symbolQuery ?? rawQuery;
   const intent = analyzeSearchQuery(query);
   if (!intent.normalizedQuery) return items;
 
-  const ranked = items
+  const ranked = (assetClass
+    ? items.filter((item) => instrumentClassCode({
+      instrumentClass: item.instrumentClass,
+      instrumentType: item.instrumentType,
+      symbol: item.symbol || item.label,
+      exchange: item.exchangeLabel || item.right,
+    }) === assetClass.code)
+    : items)
     .map((item, index) => {
       // A saved public key replaces its provider row during deduplication.
       // Score its exact bare symbol like that row, retaining the saved identity
@@ -247,7 +251,6 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
 
   const filtered = ranked.filter(({ item, textScore }) => {
     if (textScore <= 0) return false;
-    if (intent.assetClassFilter && (item.instrumentClass || "other") !== intent.assetClassFilter) return false;
     if (isExplicitMarketSymbol(query) && !isExplicitMarketSymbol(item.symbol || item.label)) return false;
     if (item.kind !== "search") return true;
     return !matchedLocalListings.has(getTickerSearchListingKey(item));
@@ -366,6 +369,13 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     seen.add(key);
     deduped.push(entry.item);
   }
+  // "BTC CUR" means BTC-USD, which the word ranking puts behind wrapped coins
+  // whose names contain "BTC".
+  const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
+  const marketIndex = marketSymbol
+    ? deduped.findIndex((item) => parsePublicTickerKey(item.symbol || item.label).symbol === marketSymbol)
+    : -1;
+  if (marketIndex > 0) deduped.unshift(...deduped.splice(marketIndex, 1));
   return deduped;
 }
 
@@ -414,24 +424,18 @@ export function buildSymbolAliases(symbol: string): string[] {
 export function classifyInstrumentKind(rawType?: string): TickerSearchInstrumentClass {
   const normalizedType = normalizeSearchText(rawType || "");
   if (!normalizedType) return "other";
-  if (INDEX_TYPES.has(normalizedType) || normalizedType.includes("INDEX")) return "index";
-  if (CURRENCY_TYPES.has(normalizedType)) return "currency";
-  if (ETF_TYPES.has(normalizedType) || normalizedType.includes("ETF") || normalizedType.includes("ETN") || normalizedType.includes("ETP")) return "etf";
-  if (FUND_TYPES.has(normalizedType) || normalizedType.includes("FUND")) return "fund";
-  if (OPTION_TYPES.has(normalizedType) || normalizedType.includes("OPTION")) return "option";
-  if (FUTURE_TYPES.has(normalizedType) || normalizedType.includes("FUTURE")) return "future";
-  if (DERIVATIVE_TYPES.has(normalizedType) || normalizedType.includes("WARRANT")) return "derivative";
+  if (FUND_TYPES.has(normalizedType)) return "fund";
+  if (DERIVATIVE_TYPES.has(normalizedType)) return "derivative";
   if (EQUITY_TYPES.has(normalizedType)) return "equity";
+  if (normalizedType.includes("ETF") || normalizedType.includes("FUND")) return "fund";
+  if (normalizedType.includes("OPT") || normalizedType.includes("FUT") || normalizedType.includes("WARRANT")) return "derivative";
   if (normalizedType.includes("EQUITY") || normalizedType.includes("STOCK") || normalizedType.includes("STK")) return "equity";
   return "other";
 }
 
 function analyzeSearchQuery(query: string): SearchQueryIntent {
-  // "EQ BIRD" scores BIRD. A lone "EQ" stays the symbol, so Equillium still matches.
-  const assetClassFilter = leadingAssetClassFilter(query);
-  const matchQuery = assetClassFilter ? parseAssetClassQuery(query).symbolQuery : query;
-  const normalizedQuery = normalizeSearchText(matchQuery);
-  const compactQuery = compactSearchText(matchQuery);
+  const normalizedQuery = normalizeSearchText(query);
+  const compactQuery = compactSearchText(query);
   const tokens = normalizedQuery.split(" ").filter(Boolean);
   const exchangeHints = Array.from(new Set(tokens.filter((token) => token in EXCHANGE_HINT_ALIASES)));
 
@@ -446,14 +450,13 @@ function analyzeSearchQuery(query: string): SearchQueryIntent {
   const companyQuery = companyTokens.join(" ");
 
   return {
-    rawQuery: matchQuery,
+    rawQuery: query,
     normalizedQuery,
     compactQuery,
     companyQuery,
     companyQueryKey: normalizeCompanyName(companyQuery),
     exchangeHints,
     assetPreference,
-    assetClassFilter,
   };
 }
 
@@ -552,8 +555,8 @@ function scoreAssetPreference(intent: SearchQueryIntent, instrumentClass?: Ticke
   const itemClass = instrumentClass || "other";
   if (!intent.assetPreference) {
     if (itemClass === "equity") return 400;
-    if (itemClass === "fund" || itemClass === "etf") return -250;
-    if (itemClass === "derivative" || itemClass === "option" || itemClass === "future") return -500;
+    if (itemClass === "fund") return -250;
+    if (itemClass === "derivative") return -500;
     return 0;
   }
 

@@ -415,7 +415,6 @@ export function CommandBar({
     rootQuery,
     rootSelectionNavigatedRef,
     rootShortcutIntent,
-    setRootQuery,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     setRootHoveredIdx,

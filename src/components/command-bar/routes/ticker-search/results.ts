@@ -4,6 +4,11 @@ import {
   findExactTickerSearchMatch,
   type TickerSearchCandidate,
 } from "../../../../tickers/search";
+import {
+  assetClassMarketSymbol,
+  instrumentClassCode,
+  parseAssetClassQuery,
+} from "../../../../tickers/search/asset-classes";
 import type { ResultItem } from "../../list/model";
 import { canonicalExchange, parsePublicTickerKey } from "../../../../utils/exchanges";
 import { isExplicitMarketSymbol } from "../../../../tickers/search/ranking";
@@ -31,30 +36,28 @@ function rawInstrumentType(candidate: Pick<TickerSearchCandidate, "result" | "ti
 }
 
 /**
- * Class tag for the badge column. An unclassified instrument gets none: the
- * row lifts its exchange code there instead when the code is short enough.
+ * Class tag for the badge column: the class code a query can end with (EQ,
+ * CUR, OPT, FUT, IDX, ETF), else FUND or DERIV. An unclassified instrument
+ * gets none: the row lifts its exchange code there instead when the code is
+ * short enough.
  */
 export function formatInstrumentBadge(
-  candidate: Pick<TickerSearchCandidate, "instrumentClass" | "result" | "ticker">,
+  candidate: Pick<TickerSearchCandidate, "instrumentClass" | "result" | "ticker">
+    & Partial<Pick<TickerSearchCandidate, "symbol" | "exchangeLabel">>,
 ): string | undefined {
+  const code = instrumentClassCode({
+    instrumentClass: candidate.instrumentClass,
+    instrumentType: rawInstrumentType(candidate),
+    symbol: candidate.symbol ?? candidate.result?.symbol ?? candidate.ticker?.metadata.ticker ?? "",
+    exchange: candidate.exchangeLabel ?? candidate.result?.exchange ?? candidate.ticker?.metadata.exchange,
+  });
+  if (code) return code;
   switch (candidate.instrumentClass) {
-    case "equity":
-      return "EQ";
-    case "currency":
-      return "CUR";
-    case "option":
-      return "OPT";
-    case "future":
-      return "FUT";
-    case "index":
-      return "IDX";
-    case "etf":
-      return "ETF";
     case "fund":
-      return /\bET[FNP]\b/i.test(rawInstrumentType(candidate)) ? "ETF" : "FUND";
+      return "FUND";
     case "derivative":
       return "DERIV";
-    case "other":
+    default:
       return undefined;
   }
 }
@@ -64,10 +67,15 @@ export function normalizeCommandTickerSearchText(value: string): string {
   return isExplicitMarketSymbol(normalized) ? normalized : normalized.replace(/[^A-Z0-9]+/g, "");
 }
 
-function isExactTickerResultMatch(item: ResultItem, query: string): boolean {
+function isExactTickerResultMatch(item: ResultItem, rawQuery: string): boolean {
   if (item.kind !== "ticker" && item.kind !== "search") return false;
-  return findExactTickerSearchMatch([item], query) != null
-    || parsePublicTickerKey(item.label).symbol === query.trim().toUpperCase();
+  // "ES FUT" names ES, and the future's own spelling ES=F.
+  const assetClass = parseAssetClassQuery(rawQuery);
+  const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
+  return [assetClass?.symbolQuery ?? rawQuery, ...(marketSymbol ? [marketSymbol] : [])].some((query) => (
+    findExactTickerSearchMatch([item], query) != null
+    || parsePublicTickerKey(item.label).symbol === query.trim().toUpperCase()
+  ));
 }
 
 export function mergeTickerSearchResultItems(
