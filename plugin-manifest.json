@@ -52,6 +52,22 @@
       }
     },
     {
+      "id": "clinical-trials",
+      "name": "Clinical Trials",
+      "description": "Track clinical trials from ClinicalTrials.gov. Search by condition, drug, or sponsor with phase and status.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "trials"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "custom-view",
       "name": "Custom Views",
       "description": "Tables built from any data function: columns, a filter, a sort. Made by the agent, shared with a team.",
@@ -196,6 +212,7 @@
           "news-breaking",
           "news-feed",
           "news-industry",
+          "news-story",
           "news-top",
           "ticker-news"
         ],
@@ -300,6 +317,7 @@
           "quote-monitor",
           "realized-vol",
           "relative-valuation",
+          "returns",
           "revenue-breakdown",
           "reverse-dcf",
           "risk-factors",

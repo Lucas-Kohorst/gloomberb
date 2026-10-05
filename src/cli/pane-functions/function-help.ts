@@ -79,6 +79,7 @@ const TABS = key("h/l", " tabs");
 const OPEN = key("Enter", " open");
 const SEARCH = key("/", "search");
 const OPEN_SOURCE = key("o", "pen source");
+const POP_OUT = key("p", "op out");
 const STEP = key("←/→", " step");
 const CHART_KEYS = [key("s", "eries"), key("i", "ndicators"), key("t", "imeframe"), key("f", "ormulas")];
 
@@ -167,6 +168,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: [key("t", " range")],
     data: QUOTES,
     bloomberg: ["HP"],
+  },
+  RETURN: {
+    summary: "Interval and cumulative price returns in a scrollable table, for a selectable range and granularity.",
+    usage: ["RETURN AAPL"],
+    keys: [key("/", "search")],
+    data: QUOTES,
+    bloomberg: [],
   },
   GR: {
     summary: "How two tickers move together: indexed prices, their ratio, rolling correlation, and a return regression with beta, alpha and R².",
@@ -576,35 +584,35 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
   TOP: {
     summary: "Curated stories ranked by importance across wires, publishers and X, with tickers and category. The pane to keep open when you only want what matters.",
     usage: ["TOP"],
-    keys: [OPEN, key("t", "icker")],
+    keys: [OPEN, SEARCH, POP_OUT, key("t", "icker")],
     data: NEWS,
     bloomberg: ["TOP"],
   },
   N: {
     summary: "Every story as it arrives, newest first, with source, tickers, sentiment and importance; filter by sentiment or minimum score.",
     usage: ["N"],
-    keys: [OPEN, key("t", "icker"), key("y", " share")],
+    keys: [OPEN, SEARCH, POP_OUT, key("t", "icker"), key("y", " share")],
     data: NEWS,
     bloomberg: ["N"],
   },
   CN: {
     summary: "Stories linked to the ticker, newest first.",
     usage: ["CN NVDA"],
-    keys: [OPEN, key("t", "icker")],
+    keys: [OPEN, SEARCH, POP_OUT, key("t", "icker")],
     data: NEWS,
     bloomberg: ["CN"],
   },
   NI: {
     summary: "Market news by topic code (MNA, CB, ENERGY, REG, CRYPTO, EARN, IPO) or sector.",
     usage: ["NI ENERGY"],
-    keys: [OPEN, key("t", "icker")],
+    keys: [OPEN, SEARCH, POP_OUT, key("t", "icker")],
     data: NEWS,
     bloomberg: ["NI"],
   },
   FIRST: {
     summary: "Stories flagged as breaking or urgent. Turn on Notifications in its pane settings to hear about new ones while the pane is closed.",
     usage: ["FIRST"],
-    keys: [OPEN, key("t", "icker")],
+    keys: [OPEN, SEARCH, POP_OUT, key("t", "icker")],
     data: NEWS,
     bloomberg: ["FIRST"],
   },
@@ -628,7 +636,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     summary: "Major indices grouped by region with last, change and session status: which markets are open and how they closed.",
     usage: ["WEI"],
     keys: [OPEN],
-    data: same("Delayed up to 15 minutes"),
+    data: same(DELAYED),
     bloomberg: ["WEI"],
   },
   BI: {
@@ -677,7 +685,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     summary: "Front-month futures across equity index, rates, energy, metals, agriculture, livestock and FX with last price and session change, grouped by sector.",
     usage: ["FUT"],
     keys: [SEARCH, OPEN],
-    data: same("Delayed, usually 10 minutes"),
+    data: same(DELAYED),
     bloomberg: ["GLCO"],
   },
   CTM: {
@@ -887,6 +895,20 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: [OPEN, OPEN_SOURCE],
     data: AS_FILED,
     bloomberg: ["CF"],
+  },
+  ETF: {
+    summary: "A US-listed fund's SEC filings: registration statements and prospectus updates, shareholder reports, N-CEN and N-PORT reports. Open any of them inline.",
+    usage: ["ETF SPY"],
+    keys: [OPEN, OPEN_SOURCE],
+    data: AS_FILED,
+    bloomberg: [],
+  },
+  TRIAL: {
+    summary: "Clinical studies by condition, drug, or sponsor, with status, phase, and enrollment. Open the study record.",
+    usage: ["TRIAL", "TRIAL semaglutide"],
+    keys: [SEARCH, OPEN],
+    data: same("As studies are posted"),
+    bloomberg: [],
   },
   HDS: {
     summary: "Institutional holders as a table (value, shares, change, percent held) or as an ownership treemap.",
