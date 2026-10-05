@@ -55,11 +55,6 @@ export function ResponsiveTickerBadgeText({
   };
   const renderUsernameToken = (username: string, value: string, tokenIndex: number) => {
     const user = userByUsername?.get(username.toLowerCase()) ?? null;
-    const activateUser = user ?? {
-      id: username.toLowerCase(),
-      username,
-      displayName: username,
-    };
     return (
       <Box
         key={`mention:${tokenIndex}:${username}`}
@@ -72,12 +67,13 @@ export function ResponsiveTickerBadgeText({
         onMouseOut={() => {
           if (user) onUserHoverEnd?.();
         }}
-        onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+        // Only a mention of someone the chat has a summary for has a card to open.
+        onMouseDown={user && onUserActivate ? (event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
           event.preventDefault?.();
           event.stopPropagation?.();
-          onUserActivate?.(activateUser);
-        }}
-        style={{ cursor: "pointer" }}
+          onUserActivate(user);
+        } : undefined}
+        style={user && onUserActivate ? { cursor: "pointer" } : undefined}
       >
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
           {value}

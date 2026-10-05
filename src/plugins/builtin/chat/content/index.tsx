@@ -263,19 +263,25 @@ export function ChatContent({
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    hoverProfilePopover,
     ownProfileConfigured,
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,
+    toggleProfilePopover,
   } = useChatProfilePopover(focused ? user?.id : undefined);
 
   const showUserProfilePopover = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
     showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
   }, [showProfilePopover, user?.id]);
 
-  const openUserProfile = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
-    showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id, pin: true });
-  }, [showProfilePopover, user?.id]);
+  const hoverUserProfile = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
+    hoverProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
+  }, [hoverProfilePopover, user?.id]);
+
+  const toggleUserProfile = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
+    toggleProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
+  }, [toggleProfilePopover, user?.id]);
 
   const openProfileSetup = useCallback(() => {
     closeProfilePopover();
@@ -296,7 +302,9 @@ export function ChatContent({
     if (previousEditingChannelIdRef.current === channelId) return;
     previousEditingChannelIdRef.current = channelId;
     setEditingMessage(null);
-  }, [channelId]);
+    // A card pinned in one channel does not follow into the next.
+    closeProfilePopover();
+  }, [channelId, closeProfilePopover]);
 
   const {
     moveMessageSelection,
@@ -722,8 +730,9 @@ export function ChatContent({
         scrollRef={scrollRef}
         selectedIdx={selectedIdx}
         setHoveredIdx={setHoveredIdx}
-        showProfilePopover={showUserProfilePopover}
-        openProfile={openUserProfile}
+        showProfilePopover={hoverUserProfile}
+        toggleProfilePopover={toggleUserProfile}
+        dismissProfilePopover={closeProfilePopover}
         stickyTranscript={stickyTranscript}
         user={user}
         userByUsername={userByUsername}
