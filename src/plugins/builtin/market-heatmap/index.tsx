@@ -96,7 +96,7 @@ function buildItems(assets: HeatmapBoardAsset[]): Array<MetricTreemapItem<Heatma
   return assets.map((asset) => ({
     id: asset.symbol,
     label: asset.symbol,
-    weight: asset.size ?? 0,
+    weight: asset.weight ?? asset.size ?? 0,
     colorValue: asset.hasChange ? asset.changePercent : null,
     // No change data is not a flat session; 0.00% would be a made-up number.
     primaryText: asset.hasChange ? formatPercentRaw(asset.changePercent) : "—",

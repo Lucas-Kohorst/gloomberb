@@ -104,8 +104,8 @@ test("portfolio tiles use position value and watchlist tiles use market cap", ()
     kind: "portfolio",
   });
   expect(portfolio.map((asset) => asset.symbol)).toEqual(["MSFT", "AAPL"]);
-  expect(portfolio[0]).toMatchObject({ size: 20_000, sizeCaption: "Value", showSize: true, hasChange: true });
-  expect(portfolio[1]).toMatchObject({ changePercent: -2, hasChange: true });
+  expect(portfolio[0]).toMatchObject({ size: 20_000, weight: 20_000, sizeCaption: "Value", showSize: true, hasChange: true });
+  expect(portfolio[1]).toMatchObject({ changePercent: -2, hasChange: true, weight: 5_000 });
 
   const listed = ticker("SPY", { watchlists: ["watchlist"] });
   const unquoted = ticker("IWM", { watchlists: ["watchlist"] });
@@ -120,5 +120,7 @@ test("portfolio tiles use position value and watchlist tiles use market cap", ()
     ["IWM", false, undefined],
   ]);
   expect(watchlist[0]?.size).toBe(400);
+  expect(watchlist[0]?.weight).toBe(20);
   expect(watchlist[1]?.size).toBe(400);
+  expect(watchlist[1]?.weight).toBe(20);
 });
