@@ -183,7 +183,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     // Desktop chat can hold a verified persisted session the shared client lost;
     // one refresh re-syncs both. Retrying on every auth flip caused a flicker loop.
     sessionRecoveryAttempted.current = true;
-    void chatController.refreshSession();
+    void chatController.refreshSession().catch(() => {});
   }, [sessionReady]);
 
   const [teamId, setTeamId] = useState<string | null>(null);

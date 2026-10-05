@@ -123,12 +123,7 @@ export async function refreshChatControllerSession({
   syncVerificationPolling,
 }: RefreshChatControllerSessionOptions): Promise<void> {
   session.sessionToken = apiClient.getSessionToken();
-  let apiSession: Awaited<ReturnType<typeof apiClient.getSession>>;
-  try {
-    apiSession = await apiClient.getSession();
-  } catch {
-    return;
-  }
+  const apiSession = await apiClient.getSession();
   if (!apiSession) {
     const persistedToken = apiClient.getSessionToken() || session.sessionToken;
     // A 200 with no user is what /auth/get-session returns when no cookie
