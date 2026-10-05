@@ -97,6 +97,10 @@ Chords use the accelerator grammar: `Ctrl`, `Cmd`, `Alt`, `Shift`, and `CmdOrCtr
 
 Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar prefixes are listed here for quick scanning.
 
+### Searching by asset class
+
+Text that no command claims searches symbols and names, and every result carries its class: `EQ` equity (receipts, preferred shares and partnership units included), `ETF` exchange-traded fund, `CUR` currency pair or coin, `FUT` future, `IDX` index, `OPT` option, and `FUND` or `DERIV` for other funds and derivatives. End a search with one of the first six to keep only that class, the way a market sector key follows a ticker: `ES FUT` finds the E-mini S&P 500 future rather than Eversource, `EURUSD CUR` the currency pair, `BTC CUR` the coin, `SPY ETF` the fund, `S&P 500 IDX` the index. For `FUT`, `CUR` and `IDX` a bare symbol is also looked up in its market spelling (`ES=F`, `EURUSD=X`, `BTC-USD`, `^GSPC`), which symbol search does not return for the bare letters. `AAPL OPT` lists option contracts when a connected broker returns them. A code on its own, or first, is not a filter: `EQ` searches that symbol, and `FUT` and `ETF SPY` open their panes. The filter works the same in ticker search (`` ` ``) and after `DES`.
+
 ### Company Research
 
 | Shortcut | Function |
@@ -425,6 +429,8 @@ In short DVD panes, the summary scrolls separately so cash history stays visible
 ## Plugins pane
 
 Open it with `PL` in the command bar. It lists what you have installed, what the registry offers, and, behind `b`, the built-in modules that can be switched off. Every row has a version and a status: `enabled`, `disabled`, `update` when the registry has something newer, `needs setup` when the plugin is missing a required setting, `errors (n)` when it has logged failures this session, and `failed` when it did not load at all, with the reason in the detail view.
+
+Plugin GitHub star counts are currently hidden. The marketplace keeps its curated ordering.
 
 | Key | Action |
 |-----|--------|

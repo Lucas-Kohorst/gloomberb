@@ -254,6 +254,7 @@ function WebDataTableRowInner<
       <div
         key={itemKey}
         data-gloom-role="data-table-section-header"
+        data-gloom-row-key={itemKey}
         data-selected={selected ? "true" : undefined}
         style={{
           ...baseRowStyle,
@@ -302,6 +303,7 @@ function WebDataTableRowInner<
       key={itemKey}
       ref={ref}
       data-gloom-role="data-table-row"
+      data-gloom-row-key={itemKey}
       data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       style={{
