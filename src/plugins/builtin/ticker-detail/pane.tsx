@@ -38,7 +38,9 @@ import { tickerQuoteFooterInfo } from "./quote-footer";
 import { ResearchTabKeysProvider, useResearchTabKeysHost } from "./research-tab-keys";
 import { ResearchTabNavigationProvider } from "./research-tab-navigation";
 import { usePluginAppActions } from "../../../public/react";
+import { useAssetData } from "../../runtime";
 import { resolveTickerInstrumentKind } from "../../../tickers/instrument-kind";
+import { offerResearchTabs, researchLoadsSettled, useResearchTabLoads } from "./research-tab-loads";
 
 const TICKER_RESEARCH_TAB_COMMIT_DELAY_MS = 120;
 /** A tab counts as viewed once it stays open this long, not when h/l passes over it. */
@@ -117,7 +119,8 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const { createPaneFromTemplate } = usePluginAppActions();
   const config = usePaneAppConfig();
   const paneInstance = usePaneInstance();
-  const { ticker, financials, error: instrumentError } = usePaneTicker();
+  const { symbol: boundSymbol, ticker, financials, error: instrumentError } = usePaneTicker();
+  const marketData = useAssetData();
   const liveStreaming = useLiveStreamingSetting();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   const streamingTargets = useMemo(() => (
@@ -195,10 +198,34 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
       })
       : TICKER_RESEARCH_BUILTIN_TABS
   ), [disabledPlugins, registry, tickerResearchTabsSnapshot]);
-  const allTabs = buildVisibleTickerResearchTabs(tickerResearchTabs, ticker, financials, {
+  const staticTabs = buildVisibleTickerResearchTabs(tickerResearchTabs, ticker, financials, {
     config,
     hasOptionsChain,
   });
+  const tickerKey = ticker ? `${boundSymbol ?? ""}\0${ticker.metadata.ticker}\0${ticker.metadata.exchange ?? ""}` : "";
+  const instrumentKind = resolveTickerInstrumentKind(ticker, financials);
+  const loadContext = ticker ? {
+    config,
+    ticker,
+    symbol: boundSymbol,
+    exchange: ticker.metadata.exchange ?? "",
+    financials,
+    hasOptionsChain,
+    instrumentKind,
+    marketData,
+  } : null;
+  const staticIds = new Set(staticTabs.map((tab) => tab.id));
+  const candidateTabs = tickerResearchTabs.filter((tab) => staticIds.has(tab.id));
+  const loadSnapshot = useResearchTabLoads(candidateTabs, tickerKey, loadContext);
+  const loadsSettled = researchLoadsSettled(candidateTabs, loadSnapshot, tickerKey);
+  const preferredTabId = paneSettings.hideTabs && staticTabs.some((tab) => tab.id === paneSettings.lockedTabId)
+    ? paneSettings.lockedTabId
+    : staticTabs.some((tab) => tab.id === activeTabId)
+      ? activeTabId
+      : (staticTabs[0]?.id ?? "overview");
+  const allTabs = offerResearchTabs(candidateTabs, loadSnapshot, tickerKey, preferredTabId)
+    .map((tab) => ({ id: tab.id, name: tab.name, order: tab.order }))
+    .sort((left, right) => left.order - right.order);
   const resolvedTabId = paneSettings.hideTabs
     ? resolveLockedTabId(paneSettings, allTabs)
     : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
@@ -242,7 +269,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     }
     setActiveTabId(tabId);
   }, [resolvedTabId, setActiveTabId, ticker]);
-  const { strip: tabStrip, rows: tabBarHeight } = usePaneTabs(!paneSettings.hideTabs && ticker ? {
+  const { strip: tabStrip, rows: tabBarHeight } = usePaneTabs(!paneSettings.hideTabs && ticker && loadsSettled ? {
     tabs: tabItems,
     activeValue: resolvedTabId,
     onSelect: selectResearchTab,
@@ -274,7 +301,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     } }];
   }, [companySymbol, createPaneFromTemplate, dialog, disabledPlugins, registry, tickerResearchTabsSnapshot]);
   usePaneMenuItems("ticker-research:go-to-tab", () => {
-    if (!showTabs || !dialog || tabItems.length < 2) return null;
+    if (!showTabs || !loadsSettled || !dialog || tabItems.length < 2) return null;
     return [{
       id: "go-to-tab",
       label: t("Go to Tab…"),
@@ -294,7 +321,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
         }).catch(() => {});
       },
     }];
-  }, [dialog, resolvedTabId, selectResearchTab, showTabs, tabItems]);
+  }, [dialog, loadsSettled, resolvedTabId, selectResearchTab, showTabs, tabItems]);
   // Which tabs people stay on. A pane pinned to one tab has no strip; opening
   // it is a function open, counted with those.
   useEffect(() => {

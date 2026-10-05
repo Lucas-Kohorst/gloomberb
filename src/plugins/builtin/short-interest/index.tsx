@@ -1,7 +1,11 @@
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
+import { shownIf } from "../shared/research-tab-availability";
+import { isKnownNonUsListing } from "../../../utils/sec";
 import {
   attachShortInterestHealth,
+  loadShortInterest,
   resetShortInterestHealth,
   SHORT_INTEREST_CONNECTION_ID,
 } from "./client";
@@ -10,7 +14,14 @@ import { ShortInterestResearchTab, ShortInterestSurface } from "./surface";
 import { shortWatchHeadless } from "./watch-headless";
 import { SHORT_WATCH_SCOPE_OPTIONS, ShortWatchPane } from "./watch-pane";
 import { followsWithoutFinraOverride, shortVolumeSettings } from "../short-volume";
-import { isKnownNonUsListing } from "../../../utils/sec";
+
+function loadShortInterestTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  return shownIf(
+    () => loadShortInterest(ticker.metadata.ticker),
+    (result) => result.records.length > 0 || result.cloudSessionRequired,
+    (error) => error instanceof Error && error.message.startsWith("No short interest data"),
+  );
+}
 
 
 let disposeConnection: (() => void) | null = null;
@@ -34,6 +45,7 @@ export const shortInterestModule: PluginModule = {
       component: ShortInterestResearchTab,
       instruments: ["equity"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
+      load: loadShortInterestTab,
     });
   },
 

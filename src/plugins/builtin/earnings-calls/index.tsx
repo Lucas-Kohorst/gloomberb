@@ -1,7 +1,22 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { attachEarningsCallsPersistence, resetEarningsCallsPersistence } from "./data";
-import { EarningsCallsPane, EARNINGS_CALLS_PANE_ID } from "./pane";
+import { researchCanReadPro, shownIf } from "../shared/research-tab-availability";
+import { attachEarningsCallsPersistence, loadEarningsCalls, resetEarningsCallsPersistence } from "./data";
+import { CALL_PAGE_SIZE, EarningsCallsPane, EARNINGS_CALLS_PANE_ID } from "./pane";
 import { earningsCallsHeadless } from "./headless";
+
+function loadCallsTab({ symbol }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !researchCanReadPro()) return Promise.resolve(true);
+  return shownIf(
+    () => loadEarningsCalls(symbol.toUpperCase(), { limit: CALL_PAGE_SIZE }),
+    (result) => result.calls.length > 0
+      || result.pending === true
+      || !!result.refreshError
+      || result.errorStatus === 401
+      || result.errorStatus === 402
+      || result.errorStatus === 403,
+  );
+}
 
 
 const description =
@@ -22,6 +37,7 @@ export const earningsCallsModule: PluginModule = {
       order: 34,
       component: EarningsCallsPane,
       instruments: ["equity"],
+      load: loadCallsTab,
     });
   },
 

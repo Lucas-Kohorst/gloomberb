@@ -1,10 +1,19 @@
+import type { TickerResearchTabLoadContext, TickerResearchTabProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { researchAccessKey, shownIf } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import { catalystCache, catalystDetailCache } from "./client";
+import { catalystCache, catalystDetailCache, loadCatalysts } from "./client";
 import { catalystsHeadless, litigationHeadless } from "./headless";
 import { CatalystsPane, CatalystView, LitigationPane } from "./pane";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
-import type { TickerResearchTabProps } from "../../../types/plugin";
+
+function loadCatalystsTab({ symbol, signal }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol) return Promise.resolve(true);
+  return shownIf(
+    () => loadCatalysts({ symbol, dateField: "any", limit: 100, offset: 0 }, researchAccessKey(), false, signal),
+    (resource) => resource.payload.events.length > 0 || (resource.payload.access?.lockedRows ?? 0) > 0,
+  );
+}
 
 function ResearchCatalysts(props: TickerResearchTabProps) {
   const { symbol } = usePaneTickerIdentity();
@@ -13,7 +22,7 @@ function ResearchCatalysts(props: TickerResearchTabProps) {
 export const catalystsModule: PluginModule = {
   setup(ctx) {
     for (const cache of [catalystCache, catalystDetailCache]) cache.attach(ctx.persistence);
-    ctx.registerTickerResearchTab({ id: "catalysts", name: "Catalysts", order: 35, component: ResearchCatalysts, instruments: ["equity"] });
+    ctx.registerTickerResearchTab({ id: "catalysts", name: "Catalysts", order: 35, component: ResearchCatalysts, instruments: ["equity"], load: loadCatalystsTab });
   },
   dispose() { catalystCache.reset(); catalystDetailCache.reset(); },
   panes: [

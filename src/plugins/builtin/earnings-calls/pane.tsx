@@ -126,7 +126,7 @@ const PRODUCE_POLL_MS = 15_000;
 /** How often to ask again while the server is still finding a company's calls. */
 const LOOKUP_POLL_MS = 20_000;
 /** Rows per list request. Scrolling to the end of the shelf asks for the next page. */
-const CALL_PAGE_SIZE = 50;
+export const CALL_PAGE_SIZE = 50;
 
 interface TickerLookup {
   ticker: string;

@@ -1,8 +1,18 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { mnaDealCache, mnaDealsCache } from "./client";
+import { researchIsPro, shownIf } from "../shared/research-tab-availability";
+import { loadMnaDeals, MNA_DEALS_UNAVAILABLE, mnaDealCache, mnaDealsCache } from "./client";
 import { mnaHeadless } from "./headless";
 import { MNA_PANE_ID } from "./model";
 import { MnaPane, MnaTickerTab } from "./pane";
+
+function loadMnaTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  return shownIf(
+    () => loadMnaDeals({ status: "all", symbol: ticker.metadata.ticker }, researchIsPro()),
+    (resource) => resource.payload.deals.length > 0,
+    (error) => error instanceof Error && error.message === MNA_DEALS_UNAVAILABLE,
+  );
+}
 
 export const mnaModule: PluginModule = {
   setup(ctx) {
@@ -14,6 +24,7 @@ export const mnaModule: PluginModule = {
       order: 36,
       component: MnaTickerTab,
       instruments: ["equity"],
+      load: loadMnaTab,
     });
   },
 

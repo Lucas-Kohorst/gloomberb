@@ -1,14 +1,23 @@
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { researchCanReadPro, shownIf } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   attachRiskFactorsPersistence,
+  loadRiskReports,
   resetRiskFactorsPersistence,
 } from "./data";
 import { riskFactorsHeadless } from "./headless";
-
-
 import { RISK_FACTORS_PANE_ID, RiskFactorsPane, RiskFactorsResearchTab } from "./pane";
 import { isKnownNonUsListing } from "../../../utils/sec";
+
+function loadRisksTab({ symbol }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol || !researchCanReadPro()) return Promise.resolve(true);
+  return shownIf(
+    () => loadRiskReports(symbol.toUpperCase()),
+    (result) => result.reports.length > 0,
+  );
+}
 
 const description =
   "The company's 10-K risk factors, and what was added, dropped, or rewritten since the prior year.";
@@ -23,6 +32,7 @@ export const riskFactorsModule: PluginModule = {
       component: RiskFactorsResearchTab,
       instruments: ["equity"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
+      load: loadRisksTab,
     });
   },
 

@@ -1,6 +1,10 @@
-import type { GloomPluginContext } from "../../../types/plugin";
+import { apiClient } from "../../../api-client";
+import type { GloomPluginContext, TickerResearchTabLoadContext } from "../../../types/plugin";
 import { canonicalExchange } from "../../../utils/exchanges";
+import { shownIf } from "../shared/research-tab-availability";
 import {
+  DEFAULT_TWEET_HOURS,
+  DEFAULT_TWEET_LIMIT,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
@@ -13,6 +17,20 @@ import {
 } from "./pane";
 import { isRecord } from "../../../utils/guards";
 
+function loadTweetsTab({ symbol }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol) return Promise.resolve(true);
+  return shownIf(
+    () => apiClient.getCloudTickerTweets({
+      ticker: symbol,
+      hours: DEFAULT_TWEET_HOURS,
+      limit: DEFAULT_TWEET_LIMIT,
+      offset: 0,
+      includeReplies: false,
+    }),
+    (result) => result.tweets.length > 0,
+  );
+}
+
 export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
   ctx.registerTickerResearchTab({
     id: "ticker-tweets",
@@ -24,6 +42,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
       const exchange = canonicalExchange(ticker.metadata.exchange);
       return !exchange || ["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "OTC", "PINK"].includes(exchange);
     },
+    load: loadTweetsTab,
   });
 
   ctx.registerPane({

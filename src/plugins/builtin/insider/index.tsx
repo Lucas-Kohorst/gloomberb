@@ -30,6 +30,8 @@ import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { SignInWall } from "../cloud/auth-actions";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
+import { entryShows } from "../shared/research-tab-availability";
 import { formatFilingFormLabel, renderFilingNotice } from "../sec/filing-display";
 import { useSecFilingContentCache } from "../sec/filing-content";
 import {
@@ -434,6 +436,14 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   );
 }
 
+async function loadInsiderTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  const coordinator = getSharedMarketDataCoordinator();
+  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+  if (!coordinator || !instrument) return true;
+  const entry = await coordinator.loadSecFilings({ instrument, count: SEC_FILING_SCAN_LIMIT });
+  return entryShows(entry, (filings) => filings.some((filing) => isInsiderForm(filing.form)));
+}
+
 export const insiderModule: PluginModule = {
   panes: [
     {
@@ -472,6 +482,7 @@ export const insiderModule: PluginModule = {
       component: InsiderView,
       instruments: ["equity"],
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
+      load: loadInsiderTab,
     });
   },
 };

@@ -279,6 +279,12 @@ header, with the detail's height.
   `["equity", "fund"]` for distributions and ownership), `isVisible` for
   narrower rules such as a US listing. Never ship a tab that opens on
   "not available for this instrument".
+- A tab with `load` prefetches the request it already reads when the ticker
+  is selected. The strip stays hidden until every prefetch has answered, then
+  appears once with the tabs that have data. The strip does not gain a tab
+  after it appears. A sign-in wall, an upgrade wall, or a failure the tab
+  can retry stays listed. Omit `load` when an empty tab is still useful (overview, chart,
+  notes). Do not mount every tab to find out.
 - `SegmentedControl` is a mode inside a form or dialog, not a tab strip.
 - Tabs and stacks compose: strip on top, stack below, strip stays while the
   detail is open.

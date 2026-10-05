@@ -1424,6 +1424,15 @@ ctx.registerTickerResearchTab({
 
 A tab that would open on an empty state for most tickers should not be visible for them: company filings are `["equity"]`, distributions and 13F ownership `["equity", "fund"]`.
 
+`load` prefetches the same request the tab reads. Ticker Research waits until every such prefetch has answered, then shows the strip once. Return `false` when this company has nothing for the tab, so it is left out. Return `true` when the tab should stay up for a sign-in wall, an upgrade wall, or a failure it can retry. The strip does not gain a tab after it appears. Omit `load` when an empty tab is still useful, such as a chart or notes.
+
+```typescript
+load: async ({ symbol, signal }) => {
+  const rows = await loadFilings(symbol, signal);
+  return rows.length > 0;
+},
+```
+
 ## Example: adding a Ticker Research tab
 
 The simplest plugin type. This adds a new tab to the Ticker Research pane:

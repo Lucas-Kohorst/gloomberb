@@ -1,12 +1,24 @@
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
+import { shownIf } from "../shared/research-tab-availability";
 import {
   attachDividendYieldHealth,
+  fetchDividendData,
   resetDividendYieldHealth,
   DIVIDENDS_CONNECTION_ID,
 } from "./client";
 import { DividendYieldPane } from "./pane";
 import { dividendYieldHeadless } from "./headless";
+
+function loadDividendsTab({ symbol, exchange, financials }: TickerResearchTabLoadContext): Promise<boolean> {
+  if (!symbol) return Promise.resolve(true);
+  return shownIf(
+    () => fetchDividendData(symbol, financials?.quote?.price ?? null, exchange, financials?.quote?.currency),
+    () => true,
+    (error) => error instanceof Error && error.message.startsWith("No dividend data found"),
+  );
+}
 
 function createDividendYieldModule({
   component = DividendYieldPane,
@@ -38,6 +50,7 @@ function createDividendYieldModule({
         order: 38,
         component,
         instruments: ["equity", "fund"],
+        load: loadDividendsTab,
       });
     },
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
@@ -32,6 +33,7 @@ import {
   useSecFilingContentCache,
 } from "./filing-content";
 import { usePaneStatusLinkFooter } from "../../../components/layout/pane/status-footer";
+import { entryShows } from "../shared/research-tab-availability";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { SignInWall } from "../cloud/auth-actions";
 import { ETF_FILING_FORMS, ETF_FORMS_SETTING, filterFilingsByForms, parseFormsSetting, SEC_FILING_FETCH_LIMIT } from "./forms";
@@ -424,6 +426,14 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
 }
 
+async function loadSecTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  const coordinator = getSharedMarketDataCoordinator();
+  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+  if (!coordinator || !instrument) return true;
+  const entry = await coordinator.loadSecFilings({ instrument, count: SEC_FILING_FETCH_LIMIT });
+  return entryShows(entry, (filings) => filings.length > 0);
+}
+
 export const secModule: PluginModule = {
   panes: [
     {
@@ -482,6 +492,7 @@ export const secModule: PluginModule = {
       component: SecView,
       instruments: ["equity"],
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
+      load: loadSecTab,
     });
   },
   dispose() {

@@ -456,6 +456,42 @@ describe("TickerResearchPane", () => {
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
   });
 
+  test("hides a research tab whose prefetch finds nothing", async () => {
+    const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
+    const register = (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab);
+    tickerDetailModule.setup?.({ registerTickerResearchTab: register } as never);
+    chartComposerModule.setup?.({
+      persistence: new MemoryPluginPersistence(),
+      registerTickerResearchTab: register,
+    } as never);
+    const stub = () => <text>stub</text>;
+    register({ id: "primed", name: "Primed", order: 12, component: stub, load: async () => true });
+    register({ id: "hollow", name: "Hollow", order: 13, component: stub, load: async () => false });
+    setSharedRegistryForTests({ tickerResearchTabs } as unknown as PluginRegistry);
+    setOptionsProvider(createProvider(false));
+
+    await tui.render(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={createTestTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await tui.setup().renderOnce();
+    });
+
+    const frame = tui.frame();
+    expect(frame).toContain("Overview");
+    expect(frame).toContain("Primed");
+    expect(frame).not.toContain("Hollow");
+  });
+
   test("shows SEC for US equities", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));

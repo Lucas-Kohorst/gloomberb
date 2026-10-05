@@ -10,7 +10,8 @@ import { newsMuteSettingsDef, newsMutesApplyToFeed, useNewsMuteFilter } from "./
 import { newsListEmptyCopy } from "./wire/filter-articles";
 import { NEWS_LIST_SEARCH_PLACEHOLDER, useNewsListSearch, useNewsListSearchHint } from "./wire/news/list-search";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
-import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
+import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import { newsWireModule } from "./wire";
 import { NewsDetailView, useNewsArticleDetail } from "./wire/news/detail-view";
 import {
@@ -180,6 +181,36 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
 }
 
+function loadNewsTab({ ticker, signal }: TickerResearchTabLoadContext): Promise<boolean> {
+  const service = getSharedNewsService();
+  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+  if (!service || !instrument) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    let dispose: (() => void) | undefined;
+    const finish = (available: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      resolve(available);
+      queueMicrotask(() => dispose?.());
+    };
+    const onAbort = () => finish(true);
+    dispose = service.watchQuery({
+      feed: "ticker",
+      ticker: instrument.symbol,
+      exchange: instrument.exchange,
+      tickerTier: "primary",
+      limit: NEWS_ITEM_LIMIT,
+    }, (state) => {
+      if (state.phase === "idle" || state.phase === "loading") return;
+      finish(state.phase === "error" || state.articles.length > 0);
+    });
+    if (signal.aborted) finish(true);
+    else signal.addEventListener("abort", onAbort);
+  });
+}
+
 export const tickerNewsModule: PluginModule = {
   panes: [
     {
@@ -216,6 +247,7 @@ export const tickerNewsModule: PluginModule = {
       name: "News",
       order: 40,
       component: TickerNewsView,
+      load: loadNewsTab,
     });
   },
 };

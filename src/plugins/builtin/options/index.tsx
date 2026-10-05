@@ -1,5 +1,8 @@
-import type { PaneSettingsDef, TickerResearchTabProps } from "../../../types/plugin";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { instrumentFromTicker } from "../../../market-data/request-types";
+import type { PaneSettingsDef, TickerResearchTabLoadContext, TickerResearchTabProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { entryShows } from "../shared/research-tab-availability";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import type { OptionsViewProps } from "./types";
 import { OptionsView } from "./view";
@@ -17,11 +20,22 @@ function OptionsPane(props: OptionsViewProps) {
 function OptionsResearchTab({ width, height, focused }: TickerResearchTabProps) {
   return <OptionsView width={width} height={height} focused={focused} ivRank nestedInTabs />;
 }
+
 import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../../../state/hooks/live-streaming";
 import { OPTION_FIELD_DEFS, resolveOptionFieldIds } from "./table";
+
+async function loadOptionsTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
+  const coordinator = getSharedMarketDataCoordinator();
+  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+  if (!coordinator || !instrument) return true;
+  const entry = await coordinator.loadOptions({ instrument });
+  return entryShows(entry, (chain) => (
+    chain.expirationDates.length > 0 || chain.calls.length > 0 || chain.puts.length > 0
+  ));
+}
 
 function optionsSettings(settings: Record<string, unknown>): PaneSettingsDef {
   return {
@@ -96,6 +110,7 @@ export const optionsModule: PluginModule = {
       component: OptionsResearchTab,
       instruments: ["equity", "fund", "index", "future", "option"],
       isVisible: ({ hasOptionsChain }) => hasOptionsChain,
+      load: loadOptionsTab,
     });
   },
 };

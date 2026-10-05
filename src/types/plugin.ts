@@ -559,6 +559,19 @@ interface TickerResearchTabVisibilityContext {
   instrumentKind: TickerInstrumentKind;
 }
 
+export interface TickerResearchTabLoadContext {
+  config: AppConfig;
+  ticker: TickerRecord;
+  /** The pane binding symbol, the same value `usePaneTicker` returns as `symbol`. */
+  symbol: string | null;
+  exchange: string;
+  financials: TickerFinancials | null | undefined;
+  hasOptionsChain: boolean;
+  instrumentKind: TickerInstrumentKind;
+  signal: AbortSignal;
+  marketData: DataProvider | null;
+}
+
 export interface TickerResearchTabDef {
   id: string;
   name: string;
@@ -571,6 +584,13 @@ export interface TickerResearchTabDef {
   instruments?: readonly TickerInstrumentKind[];
   /** Narrower checks than `instruments`: a US listing, an options chain, a connected broker. */
   isVisible?: (context: TickerResearchTabVisibilityContext) => boolean;
+  /**
+   * Prefetch this tab's data into the cache the tab reads. Return false when
+   * there is nothing to show so the strip omits the tab. Return true for a
+   * sign-in wall, an upgrade wall, or a failure the tab can retry. Omit for
+   * tabs that are useful while empty (overview, chart, notes).
+   */
+  load?: (context: TickerResearchTabLoadContext) => Promise<boolean>;
 }
 
 export interface KeyboardShortcut {
