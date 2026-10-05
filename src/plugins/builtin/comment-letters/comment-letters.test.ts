@@ -1,230 +1,173 @@
 import { describe, expect, test } from "bun:test";
-import { parseRootShortcutIntent } from "../../../components/command-bar/routes/root/shortcuts";
+import type { SecFilingItem } from "../../../types/data-provider";
 import {
-  buildCommentLettersUrl,
-  classifyConversation,
-  classifySeverity,
-  commentLetterRowsFromPayload,
-  filterCommentLetters,
-  isCommentLetterForm,
-  toCommentLetter,
+  buildLetterSearchUrl,
+  createCommentLettersLoader,
+  letterMarkup,
+  letterPlainText,
+  letterTopics,
+  parseFilerName,
+  parseLetterSearchPage,
+  parseTickerMatch,
+  tickerCandidate,
+  type IssuerFilingsLoader,
 } from "./client";
-import { commentLettersPlugin } from "./index";
-import { severityRank, severityTag, type CommentLetterFiling } from "./types";
+import type { CommentLetterIssuer, CommentLetterPage } from "./types";
 
-const eftsHit = (id: string, form: string, companyName: string, fileDate: string) => ({
+const hit = (id: string, form: string, displayName: string, fileDate: string) => ({
   _id: id,
-  _source: {
-    adsh: id.split(":")[0],
+  _source: { adsh: id.split(":")[0], form, root_forms: [form], file_date: fileDate, ciks: ["0001130713"], display_names: [displayName] },
+});
+
+const page = (hits: unknown[], total: { value: number; relation: string }) => ({ hits: { total, hits } });
+
+const signal = new AbortController().signal;
+
+describe("comment letter search results", () => {
+  test("keeps one row per filing, says who wrote it, and parses the filer", () => {
+    const parsed = parseLetterSearchPage(page([
+      hit("0001140361-26-032956:filename1.htm", "CORRESP", "BED BATH & BEYOND, INC.  (NXH, BBBYW)  (CIK 0001130713)", "2026-08-14"),
+      hit("0001140361-26-032956:filename2.htm", "CORRESP", "BED BATH & BEYOND, INC.  (NXH, BBBYW)  (CIK 0001130713)", "2026-08-14"),
+      hit("0000000000-26-007882:filename1.pdf", "UPLOAD", "KKR FS Income Trust  (CIK 0001930679)", "2026-08-11"),
+      hit("0000320193-26-000124:aapl-10k.htm", "10-K", "Apple Inc.  (AAPL)  (CIK 0000320193)", "2026-05-13"),
+    ], { value: 4, relation: "eq" }), 0);
+    expect(parsed.rows.map((row) => [row.accessionNumber, row.author])).toEqual([
+      ["0001140361-26-032956", "company"],
+      ["0000000000-26-007882", "staff"],
+    ]);
+    expect(parsed.rows[0]).toMatchObject({
+      companyName: "BED BATH & BEYOND, INC.",
+      tickers: ["NXH", "BBBYW"],
+      cik: "0001130713",
+      filingUrl: "https://www.sec.gov/Archives/edgar/data/1130713/0001140361-26-032956-index.htm",
+      primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/1130713/000114036126032956/filename1.htm",
+    });
+    expect(parsed.hasMore).toBe(false);
+  });
+
+  test("names without tickers or with their own parentheses stay names", () => {
+    expect(parseFilerName("KKR FS Income Trust  (CIK 0001930679)")).toEqual({ companyName: "KKR FS Income Trust", tickers: [] });
+    expect(parseFilerName("Acme (Holdings) Ltd  (CIK 0000000001)")).toEqual({ companyName: "Acme (Holdings) Ltd", tickers: [] });
+    expect(parseFilerName("Apple Inc.  (AAPL)  (CIK 0000320193)")).toEqual({ companyName: "Apple Inc.", tickers: ["AAPL"] });
+  });
+
+  test("pages by the hits returned, and stops at the search's 10,000-hit window", () => {
+    const hundred = Array.from({ length: 100 }, (_, index) =>
+      hit(`0000000000-26-${String(index).padStart(6, "0")}:filename1.pdf`, "UPLOAD", "Acme Corp  (CIK 0000000001)", "2026-08-01"));
+    const first = parseLetterSearchPage(page(hundred, { value: 10_000, relation: "gte" }), 0);
+    expect(first).toMatchObject({ hasMore: true, nextOffset: 100, windowLimited: false });
+
+    const last = parseLetterSearchPage(page(hundred, { value: 10_000, relation: "gte" }), 9_900);
+    expect(last).toMatchObject({ hasMore: false, nextOffset: null, windowLimited: true });
+
+    const exact = parseLetterSearchPage(page(hundred.slice(0, 40), { value: 140, relation: "eq" }), 100);
+    expect(exact).toMatchObject({ hasMore: false, windowLimited: false });
+
+    const url = new URL(buildLetterSearchUrl({ query: "revenue recognition", offset: 100 }));
+    expect(url.searchParams.get("q")).toBe("revenue recognition");
+    expect(url.searchParams.get("forms")).toBe("CORRESP,UPLOAD");
+    expect(url.searchParams.get("from")).toBe("100");
+    expect(new URL(buildLetterSearchUrl({ cik: "0000320193" })).searchParams.get("ciks")).toBe("0000320193");
+  });
+});
+
+describe("a ticker as the search", () => {
+  const suggestions = {
+    hits: {
+      hits: [
+        { _id: "2055491", _source: { entity: "Permuto Capital AAPL Trust I" } },
+        { _id: "320193", _source: { entity: "Apple Inc. (AAPL)", tickers: "AAPL" } },
+      ],
+    },
+  };
+
+  test("matches the company filed under exactly that ticker, not a name containing it", () => {
+    expect(parseTickerMatch(suggestions, "AAPL")).toEqual({ cik: "0000320193", ticker: "AAPL", name: "Apple Inc." });
+    expect(parseTickerMatch({ hits: { hits: [{ _id: "1067983", _source: { entity: "BERKSHIRE HATHAWAY INC (BRK-A, BRK-B)", tickers: "BRK-A, BRK-B" } }] } }, "BRK.B"))
+      .toMatchObject({ cik: "0001067983", ticker: "BRK-B" });
+    expect(parseTickerMatch({ hits: { hits: [suggestions.hits.hits[0]] } }, "AAPL")).toBeNull();
+    expect(tickerCandidate("aapl")).toBe("AAPL");
+    expect(tickerCandidate("revenue recognition")).toBeNull();
+  });
+
+  const apple: CommentLetterIssuer = { cik: "0000320193", ticker: "AAPL", name: "Apple Inc." };
+  const filing = (accessionNumber: string, form: string, filingDate: Date | string): SecFilingItem => ({
+    accessionNumber,
     form,
-    file_date: fileDate,
-    ciks: ["0000320193"],
-    display_names: [companyName],
-    file_description: "CORRESP correspondence",
-  },
-});
-
-const eftsPayload = (hits: ReturnType<typeof eftsHit>[]) => ({ hits: { hits } });
-
-const filing = (overrides: Partial<CommentLetterFiling> = {}): CommentLetterFiling => ({
-  accessionNumber: "0000320193-26-000123",
-  form: "CORRESP",
-  filingDate: new Date("2026-05-12T00:00:00Z"),
-  cik: "320193",
-  companyName: "Apple Inc.",
-  ticker: "AAPL",
-  filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000123-index.htm",
-  ...overrides,
-});
-
-describe("CLTR shortcut", () => {
-  test("is registered for an optional company or topic", () => {
-    const templates = commentLettersPlugin.paneTemplates ?? [];
-    const template = templates.find((entry) => entry.shortcut?.prefix === "CLTR");
-    expect(template?.shortcut).toMatchObject({
-      prefix: "CLTR",
-      argKind: "text",
-      argOptional: true,
-      argPlaceholder: "company or topic",
-    });
-
-    const intent = parseRootShortcutIntent({
-      query: "CLTR Apple",
-      commands: [],
-      paneTemplates: templates,
-      activeTicker: null,
-    });
-    expect(intent).toMatchObject({
-      source: "pane-template",
-      prefix: "CLTR",
-      kind: "complete",
-      argKind: "text",
-      argText: "Apple",
-    });
-    if (intent.kind === "none" || intent.source !== "pane-template") return;
-    expect(intent.template.id).toBe("comment-letters-pane");
-
-    const bare = parseRootShortcutIntent({
-      query: "CLTR",
-      commands: [],
-      paneTemplates: templates,
-      activeTicker: null,
-    });
-    expect(bare).toMatchObject({ prefix: "CLTR", kind: "partial", argText: "" });
-
-    expect(template?.createInstance?.({} as never, { arg: "Apple" })).toMatchObject({
-      title: "Comment Letters Apple",
-      settings: { query: "Apple" },
-    });
-    expect(template?.createInstance?.({} as never, {})).toMatchObject({
-      instanceId: "comment-letters:latest",
-      title: "Comment Letters",
-      settings: { query: "" },
-    });
+    filingDate: filingDate as Date,
+    cik: "0000320193",
+    companyName: "Apple Inc.",
+    filingUrl: `https://www.sec.gov/Archives/edgar/data/320193/${accessionNumber}-index.htm`,
   });
-});
+  const emptyPage = (): Omit<CommentLetterPage, "issuer"> => ({ rows: [], hasMore: false, nextOffset: null, windowLimited: false });
 
-describe("isCommentLetterForm", () => {
-  test("matches CORRESP and UPLOAD case-insensitively", () => {
-    expect(isCommentLetterForm("CORRESP")).toBe(true);
-    expect(isCommentLetterForm("upload")).toBe(true);
-    expect(isCommentLetterForm(" Upload ")).toBe(true);
-  });
+  function fakeClient(issuer: CommentLetterIssuer | null) {
+    const searches: Array<{ query?: string; cik?: string; offset?: number }> = [];
+    return {
+      searches,
+      client: {
+        resolveTicker: async () => issuer,
+        searchLetters: async (options: { query?: string; cik?: string; offset?: number }) => {
+          searches.push(options);
+          return emptyPage();
+        },
+      },
+    };
+  }
 
-  test("rejects other EDGAR forms", () => {
-    expect(isCommentLetterForm("10-K")).toBe(false);
-    expect(isCommentLetterForm("8-K")).toBe(false);
-    expect(isCommentLetterForm(undefined)).toBe(false);
-    expect(isCommentLetterForm("")).toBe(false);
-  });
-});
-
-describe("filterCommentLetters", () => {
-  test("keeps only CORRESP/UPLOAD rows", () => {
-    const kept = filterCommentLetters([
-      filing({ form: "CORRESP", accessionNumber: "a" }),
-      filing({ form: "10-K", accessionNumber: "b" }),
-      filing({ form: "UPLOAD", accessionNumber: "c" }),
+  test("lists the company's letters from its filing list, dates restored from cache included", async () => {
+    const { client, searches } = fakeClient(apple);
+    const issuerFilings: IssuerFilingsLoader = async () => ({
+      complete: true,
+      filings: [
+        filing("0000000000-24-005673", "UPLOAD", new Date("2024-05-16T00:00:00Z")),
+        filing("0000320193-24-000069", "10-Q", new Date("2024-05-03T00:00:00Z")),
+        filing("0000320193-24-000061", "CORRESP", "2024-04-29T00:00:00.000Z"),
+      ],
+    });
+    const result = await createCommentLettersLoader(client, "aapl", issuerFilings)({ offset: 0, signal, force: false });
+    expect(result.issuer).toEqual(apple);
+    expect(result.rows.map((row) => [row.form, row.author, row.filingDate.toISOString().slice(0, 10)])).toEqual([
+      ["UPLOAD", "staff", "2024-05-16"],
+      ["CORRESP", "company", "2024-04-29"],
     ]);
-    expect(kept.map((letter) => letter.accessionNumber)).toEqual(["a", "c"]);
+    expect(result.hasMore).toBe(false);
+    expect(searches).toEqual([]);
+  });
+
+  test("searches by CIK when the filing list is capped or unavailable, and as text when no company has the ticker", async () => {
+    for (const listed of [{ complete: false, filings: [] }, null]) {
+      const { client, searches } = fakeClient(apple);
+      const loader = createCommentLettersLoader(client, "AAPL", async () => listed);
+      await loader({ offset: 0, signal, force: false });
+      await loader({ offset: 100, signal, force: false });
+      expect(searches).toEqual([{ cik: "0000320193", offset: 0 }, { cik: "0000320193", offset: 100 }]);
+    }
+
+    const { client, searches } = fakeClient(null);
+    const result = await createCommentLettersLoader(client, "LOW", async () => {
+      throw new Error("no filing list for a word");
+    })({ offset: 0, signal, force: false });
+    expect(result.issuer).toBeNull();
+    expect(searches).toEqual([{ query: "LOW", offset: 0 }]);
   });
 });
 
-describe("classifySeverity", () => {
-  test("scores high-signal letters high", () => {
-    const assessment = classifySeverity(
-      "We believe the previously issued financial statements require restatement. " +
-        "The company is the subject of an investigation and has received a Wells notice.",
+describe("letter text", () => {
+  test("drops EDGAR's envelope and keeps a paragraph wrapped in the source as one line", () => {
+    const markup = letterMarkup("<DOCUMENT>\n<TYPE>CORRESP\n<SEQUENCE>1\n<FILENAME>filename1.htm\n<TEXT>\n<HTML><P>Cira\nCentre, 2929 Arch Street</P>\n<P>Dear Staff:</P></HTML>\n</TEXT>\n</DOCUMENT>");
+    expect(markup).toBe("<HTML><P>Cira Centre, 2929 Arch Street</P> <P>Dear Staff:</P></HTML>");
+    expect(letterMarkup("Plain text letter.\nSecond line.")).toBe("Plain text letter.\nSecond line.");
+  });
+});
+
+describe("letter topics", () => {
+  test("come from the letter's own words, markup and entities removed", () => {
+    const text = letterPlainText(
+      "<html><head><title>Restatement</title></head><body><p>Please revise your non&#8209;GAAP measures and the "
+      + "<b>revenue recognition</b> policy.</p><p>Management&#8217;s going concern assessment</p></body></html>",
     );
-    expect(assessment.level).toBe("high");
-    expect(assessment.reasons).toContain("restatement");
-    expect(assessment.reasons).toContain("investigation");
-  });
-
-  test("scores accounting-topic letters medium", () => {
-    const assessment = classifySeverity(
-      "Please describe your revenue recognition policy for multi-element arrangements " +
-        "and the related fair value measurements.",
-    );
-    expect(assessment.level).toBe("medium");
-  });
-
-  test("scores formatting nits low", () => {
-    const assessment = classifySeverity(
-      "Please revise the XBRL tagging on the cover page. Formatting only.",
-    );
-    expect(assessment.level).toBe("low");
-  });
-
-  test("never throws on empty text", () => {
-    expect(classifySeverity(null).level).toBe("low");
-    expect(classifySeverity("").reasons).toEqual(["no text"]);
-  });
-});
-
-describe("classifyConversation", () => {
-  test("keeps the worst single-letter level for short threads", () => {
-    const assessment = classifyConversation([
-      "Revenue recognition and fair value disclosures.",
-      "Internal controls and risk factors.",
-    ]);
-    expect(assessment.level).toBe("medium");
-    expect(assessment.reasons.some((reason) => reason.includes("round"))).toBe(false);
-  });
-
-  test("bumps the level when the exchange runs three or more rounds", () => {
-    const assessment = classifyConversation([
-      "Revenue recognition and fair value disclosures.",
-      "Internal controls and risk factors.",
-      "Related party and impairment disclosures.",
-    ]);
-    expect(assessment.level).toBe("high");
-    expect(assessment.reasons).toContain("3-round exchange");
-  });
-});
-
-describe("comment letter rows", () => {
-  test("turns a fixture payload into rows and drops other forms", () => {
-    const rows = commentLetterRowsFromPayload(eftsPayload([
-      eftsHit("0000320193-26-000123:aapl-corresp.htm", "CORRESP", "Apple Inc.", "2026-05-12"),
-      eftsHit("0000320193-26-000124:aapl-10k.htm", "10-K", "Apple Inc.", "2026-05-13"),
-      eftsHit("0000320193-26-000125:aapl-upload.htm", "upload", "Apple Inc.", "2026-05-14"),
-      eftsHit("0000320193-26-000126:aapl-8k.htm", "8-K", "Apple Inc.", "2026-05-15"),
-    ]));
-    expect(rows.map((row) => row.form)).toEqual(["CORRESP", "UPLOAD"]);
-    expect(rows[0]).toMatchObject({
-      company: "Apple Inc.",
-      filed: "2026-05-12",
-      severity: "low",
-      severityLabel: "LOW",
-    });
-    expect(rows.every((row) => row.url?.startsWith("https://www.sec.gov/"))).toBe(true);
-    expect(rows.some((row) => row.form === "10-K" || row.form === "8-K")).toBe(false);
-  });
-});
-
-describe("toCommentLetter", () => {
-  test("flags a single high signal in the description as medium", () => {
-    const letter = toCommentLetter(
-      filing({ primaryDocDescription: "CORRESP re: restatement of previously issued financials" }),
-    );
-    expect(letter.severity).toBe("medium");
-    expect(letter.severityReasons).toContain("restatement");
-  });
-
-  test("scores two high signals as high", () => {
-    const letter = toCommentLetter(
-      filing({ primaryDocDescription: "CORRESP re: restatement and fraud investigation" }),
-    );
-    expect(letter.severity).toBe("high");
-  });
-
-  test("falls back to low severity without description text", () => {
-    const letter = toCommentLetter(filing());
-    expect(letter.severity).toBe("low");
-  });
-});
-
-describe("buildCommentLettersUrl", () => {
-  test("pins the forms filter and clamps size", () => {
-    const url = buildCommentLettersUrl("Apple", 500);
-    expect(url).toContain("forms=CORRESP%2CUPLOAD");
-    expect(url).toContain("q=Apple");
-    expect(url).toContain("size=100");
-    expect(url).toContain("https://efts.sec.gov/LATEST/search-index");
-  });
-
-  test("omits q for blank queries", () => {
-    expect(buildCommentLettersUrl("", 50)).not.toContain("q=");
-  });
-});
-
-describe("severity helpers", () => {
-  test("orders low < medium < high", () => {
-    expect(severityRank("low")).toBeLessThan(severityRank("medium"));
-    expect(severityRank("medium")).toBeLessThan(severityRank("high"));
-    expect(severityTag("high")).toBe("HIGH");
-    expect(severityTag("medium")).toBe("MED");
-    expect(severityTag("low")).toBe("LOW");
+    expect(letterTopics(text)).toEqual(["going concern", "revenue recognition", "non-GAAP"]);
+    expect(letterTopics("We acknowledge the comments and will file the amendment.")).toEqual([]);
   });
 });

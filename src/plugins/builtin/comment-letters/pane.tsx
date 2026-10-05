@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
-  BulletList,
   DataTableStackView,
   DetailScrollBody,
   KeyValueRow,
+  Notice,
   PaneStatusBody,
   Prose,
   QueryBar,
-  Section,
+  usePagedRows,
+  usePaneNoticeFooter,
   usePaneStatusLinkFooter,
   useQueryBarSearch,
+  useTableLoadMore,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -18,118 +20,140 @@ import {
   type PaneHint,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
+import { getSharedMarketDataCoordinator, resolveEntryValue } from "../../../market-data/coordinator";
+import { useResolvedEntryValue, useSecFilingContent } from "../../../market-data/hooks";
+import { instrumentFromTicker } from "../../../market-data/request-types";
 import {
-  useAsyncResource,
-  useAutoRefresh,
   useDebouncedPluginPaneState,
   usePaneSettingValue,
+  usePaneTitle,
   usePluginPaneState,
-  useUpdatedAgo,
 } from "../../../public/react";
+import { extractFilingContent, PDF_FALLBACK_MESSAGE } from "../../../sources/sec-edgar/content";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, type ScrollBoxRenderable } from "../../../ui";
+import { Box, Text, type ScrollBoxRenderable } from "../../../ui";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { compareSortValues, nextHeaderSort, type SortPreference } from "../../../utils/sort-values";
-import { CommentLettersClient, toCommentLetterRow } from "./client";
-import { COMMENT_LETTERS_PANE_ID, type CommentLetterRow, type CommentLetterSeverity } from "./types";
+import { SEC_FILING_FETCH_LIMIT } from "../sec/forms";
+import {
+  createCommentLettersLoader,
+  isPdfLetter,
+  letterFilingItem,
+  letterMarkup,
+  letterPlainText,
+  letterTopics,
+  CommentLettersClient,
+  type IssuerFilingsLoader,
+} from "./client";
+import { COMMENT_LETTERS_PANE_ID, type CommentLetter } from "./types";
 
-const EMPTY_ROWS: CommentLetterRow[] = [];
 const SEARCH_DEBOUNCE_MS = 350;
-const LETTER_LIST_LIMIT = 50;
-const PLACEHOLDER_REASONS = new Set(["no flagged topics", "no text"]);
+/** How the filing text reader ends a document it cut short. */
+const TRUNCATION_MARK = /\s*\[truncated\]\s*$/;
 
-type ColumnId = "filed" | "form" | "severity" | "company" | "topic";
+type ColumnId = "filed" | "from" | "form" | "company" | "ticker";
 type LetterColumn = DataTableColumn & { id: ColumnId };
 
-const severityColor = (level: CommentLetterSeverity): string => {
-  if (level === "high") return colors.negative;
-  if (level === "medium") return colors.warning;
-  return colors.textMuted;
-};
+const AUTHOR_LABEL = { staff: "SEC staff", company: "Company" } as const;
 
-const letterColumns = (width: number): LetterColumn[] => {
-  const topic = width >= 72;
+function letterColumns(width: number, issuerView: boolean): LetterColumn[] {
   return [
     { id: "filed", label: "Filed", width: 10, align: "left" },
-    { id: "form", label: "Form", width: 8, align: "left" },
-    { id: "severity", label: "Severity", width: 8, align: "left" },
-    { id: "company", label: "Company", width: topic ? 24 : 16, align: "left", flexGrow: 1 },
-    ...(topic ? [{ id: "topic" as const, label: "Topic", width: 20, align: "left" as const, flexGrow: 2 }] : []),
+    { id: "from", label: "From", width: 9, align: "left" },
+    ...(width >= 64 || issuerView
+      ? [{ id: "form" as const, label: "Form", width: 7, align: "left" as const, ...(issuerView ? { flexGrow: 1 } : {}) }]
+      : []),
+    ...(issuerView ? [] : [
+      { id: "company" as const, label: "Company", width: 16, align: "left" as const, flexGrow: 1 },
+      ...(width >= 52 ? [{ id: "ticker" as const, label: "Ticker", width: 6, align: "left" as const }] : []),
+    ]),
   ];
+}
+
+const formatDate = (date: Date): string =>
+  Number.isNaN(date.getTime()) ? "-" : date.toISOString().slice(0, 10);
+
+const companyLabel = (letter: CommentLetter): string =>
+  letter.companyName || `CIK ${Number(letter.cik)}`;
+
+// The issuer list is the one the SEC pane reads, through the same cache.
+const loadIssuerFilings: IssuerFilingsLoader = async (ticker, force) => {
+  const coordinator = getSharedMarketDataCoordinator();
+  const instrument = instrumentFromTicker(null, ticker);
+  if (!coordinator || !instrument) return null;
+  const entry = await coordinator.loadSecFilings({ instrument, count: SEC_FILING_FETCH_LIMIT }, { forceRefresh: force });
+  const filings = resolveEntryValue(entry);
+  if (!filings || entry.error) return null;
+  return { filings, complete: filings.length < SEC_FILING_FETCH_LIMIT };
 };
 
-const sortValue = (row: CommentLetterRow, columnId: ColumnId): string | number | null => {
-  switch (columnId) {
-    case "filed":
-      return row.filedAt || null;
-    case "form":
-      return row.form;
-    case "severity":
-      return row.score;
-    case "company":
-      return row.company;
-    case "topic":
-      return row.topic || null;
-  }
-};
+/** What the open letter says, read through the SEC filing content the SEC pane uses. */
+function useLetterText(letter: CommentLetter | null) {
+  const pdf = !!letter && isPdfLetter(letter);
+  const target = useMemo(() => (letter && !pdf ? letterFilingItem(letter) : null), [letter, pdf]);
+  const entry = useSecFilingContent(target);
+  const raw = useResolvedEntryValue(entry);
+  return useMemo(() => {
+    if (!letter) return { text: null, topics: null, loading: false, error: null };
+    if (pdf) return { text: PDF_FALLBACK_MESSAGE, topics: null, loading: false, error: null };
+    const loading = !entry || entry.phase === "idle" || entry.phase === "loading" || (entry.phase === "refreshing" && raw == null);
+    const error = entry?.error && entry.error.reasonCode !== "NO_DATA" ? entry.error.message : null;
+    if (!raw) return { text: null, topics: null, loading, error };
+    const text = extractFilingContent(letterMarkup(raw), "", { form: letter.form, sourceUrl: letter.primaryDocumentUrl });
+    return { text, topics: text ? letterTopics(letterPlainText(raw)) : null, loading: false, error: null };
+  }, [entry, letter, pdf, raw]);
+}
 
-const sortRows = (rows: CommentLetterRow[], sort: SortPreference<ColumnId>): CommentLetterRow[] => {
-  if (!sort.columnId) return rows;
-  const columnId = sort.columnId;
-  return [...rows].sort((left, right) =>
-    compareSortValues(sortValue(left, columnId), sortValue(right, columnId), sort.direction));
-};
-
-const firstSortDirection = (columnId: ColumnId) =>
-  columnId === "filed" || columnId === "severity" ? "desc" as const : "asc" as const;
-
-export const CommentLettersPane = ({ width, height, focused }: PaneProps) => {
+export function CommentLettersPane({ width, height, focused }: PaneProps) {
   const client = useMemo(() => new CommentLettersClient(), []);
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
   const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortPreference<ColumnId>>({ columnId: "filed", direction: "desc" });
+  // The open letter is what the pane shows, so a reload or a shared layout opens it again.
+  const [openItemId, setOpenItemId] = usePluginPaneState<string | null>("openItemId", null);
   const { active: searchFocused, focus: focusSearch, searchProps } = useQueryBarSearch();
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
-  const loader = useCallback(async () => {
-    const letters = await client.listCommentLetters({ query: query.trim(), count: LETTER_LIST_LIMIT });
-    return letters.map(toCommentLetterRow);
-  }, [client, query]);
-  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
-  const letters = data ?? EMPTY_ROWS;
-  const rows = useMemo(() => sortRows(letters, sort), [letters, sort]);
-  const columns = useMemo(() => letterColumns(width), [width]);
+  const term = query.trim();
+  // The search can change after the pane opens; the title follows it.
+  usePaneTitle(term ? `Comment Letters ${term}` : "Comment Letters");
+  const loadPage = useMemo(() => createCommentLettersLoader(client, term, loadIssuerFilings), [client, term]);
+  const letters = usePagedRows(loadPage, { getId: (letter) => letter.id, keepPreviousRows: true });
+  const rows = letters.rows;
+  const issuer = letters.pages[0]?.issuer ?? null;
+  const windowLimited = letters.pages[letters.pages.length - 1]?.windowLimited ?? false;
+  const loadMore = useTableLoadMore(scrollRef, letters.hasMore && !openItemId, letters.loadMore);
+  const columns = useMemo(() => letterColumns(width, !!issuer), [issuer, width]);
 
   const selected = rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
   const openLetter = openItemId ? rows.find((row) => row.id === openItemId) ?? null : null;
-  const detailLetter = openLetter ?? selected;
-  // A stored open id is dropped once that letter leaves the loaded page.
+  // A restored open letter can sit past the first page: page on until it
+  // arrives, and drop it only once every page is in without it.
   useEffect(() => {
-    if (openItemId && data && !openLetter) setOpenItemId(null);
-  }, [data, openItemId, openLetter]);
+    if (!openItemId || openLetter || letters.status !== "loaded" || letters.loadingMore) return;
+    if (letters.hasMore && !letters.moreError) letters.loadMore();
+    else setOpenItemId(null);
+  }, [letters, openItemId, openLetter, setOpenItemId]);
 
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery.trim());
     setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedId]);
+  }, [setOpenItemId, setQuery, setSelectedId]);
 
-  const loading = refreshing && letters.length === 0;
-  const updatedAgo = useUpdatedAgo(lastUpdated);
-  useAutoRefresh(lastUpdated, refresh);
-  usePaneRefreshKey(() => void refresh(), { focused, enabled: !searchFocused && !openItemId });
+  const letterText = useLetterText(openLetter);
+  const loading = letters.loading && rows.length === 0;
+  const error = letters.error?.message ?? null;
+  usePaneRefreshKey(letters.reload, { focused, enabled: !searchFocused && !openItemId });
 
-  const detailUrl = detailLetter?.url || null;
-  const info = useMemo<PaneFooterSegment[]>(
-    () => (updatedAgo
-      ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
-      : []),
-    [updatedAgo],
-  );
+  const linkLetter = openLetter ?? selected;
+  const detailUrl = linkLetter ? linkLetter.primaryDocumentUrl ?? linkLetter.filingUrl : null;
+  const info = useMemo<PaneFooterSegment[]>(() => [
+    ...(letters.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
+    ...(letters.moreError ? [{ id: "more-error", parts: [{ text: letters.moreError.message, tone: "warning" as const }] }] : []),
+  ], [letters.loadingMore, letters.moreError]);
   const hints = useMemo<PaneHint[]>(
     () => (openItemId ? [] : [{ id: "search", key: "/", label: "search", onPress: focusSearch }]),
     [focusSearch, openItemId],
@@ -138,11 +162,21 @@ export const CommentLettersPane = ({ width, height, focused }: PaneProps) => {
     registrationId: COMMENT_LETTERS_PANE_ID,
     focused,
     url: detailUrl,
-    loading: refreshing,
-    error,
+    label: "letter",
+    loading: letters.loading || (!!openLetter && letterText.loading),
+    error: openLetter ? letterText.error : rows.length > 0 ? error : null,
     info,
     hints,
     showOpenHint: !!detailUrl,
+  });
+  usePaneNoticeFooter({
+    registrationId: `${COMMENT_LETTERS_PANE_ID}:window`,
+    notices: windowLimited
+      ? ["The SEC's full-text search lists only the first 10,000 matches. Narrow the search to reach older letters."]
+      : [],
+    focused,
+    enabled: !openLetter,
+    title: "Comment letters",
   });
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
@@ -154,28 +188,18 @@ export const CommentLettersPane = ({ width, height, focused }: PaneProps) => {
     return false;
   }, [focusSearch]);
 
-  const handleHeaderClick = useCallback((columnId: string) => {
-    if (!columns.some((column) => column.id === columnId)) return;
-    setSort((current) => nextHeaderSort(current, columnId as ColumnId, { firstDirection: firstSortDirection }));
-  }, [columns]);
-
-  const renderCell = useCallback((row: CommentLetterRow, column: LetterColumn): DataTableCell => {
+  const renderCell = useCallback((letter: CommentLetter, column: LetterColumn): DataTableCell => {
     switch (column.id) {
       case "filed":
-        return { text: row.filed || "—", value: row.filedAt ? new Date(row.filedAt) : null, color: colors.textMuted };
+        return { text: formatDate(letter.filingDate), value: letter.filingDate, color: colors.textMuted };
+      case "from":
+        return { text: AUTHOR_LABEL[letter.author], color: letter.author === "staff" ? colors.textBright : colors.text };
       case "form":
-        return { text: row.form, color: colors.textBright };
-      case "severity":
-        return {
-          text: row.severityLabel,
-          value: row.score,
-          color: severityColor(row.severity),
-          keepColorWhenSelected: true,
-        };
+        return { text: letter.form, color: colors.textDim };
       case "company":
-        return { text: row.company, color: colors.text };
-      case "topic":
-        return { text: row.topic || "—", color: colors.textDim };
+        return { text: companyLabel(letter), color: colors.text };
+      case "ticker":
+        return { text: letter.tickers[0] ?? "", color: colors.textDim };
     }
   }, []);
 
@@ -185,71 +209,87 @@ export const CommentLettersPane = ({ width, height, focused }: PaneProps) => {
       search={{
         value: query,
         onChange: updateQuery,
-        placeholder: "company or topic",
+        placeholder: "words or a ticker",
         focused: focused && !openItemId,
         debounceMs: SEARCH_DEBOUNCE_MS,
         normalizeValue: (value) => value.trim(),
         ...searchProps,
       }}
+      meta={issuer ? `${issuer.name} · CIK ${Number(issuer.cik)}` : undefined}
     />
   );
 
-  if (loading || (error && letters.length === 0)) {
+  if (loading || (error && rows.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {searchBar}
-        <PaneStatusBody loading={loading} error={error} subject="comment letters" />
+        <PaneStatusBody loading={loading} error={error} subject="comment letters" errorTitle="Comment letters unavailable." />
       </Box>
     );
   }
 
   const detailWidth = Math.max(0, width - 2);
-  const signals = (openLetter?.reasons ?? []).filter((reason) => !PLACEHOLDER_REASONS.has(reason));
   const detail = openLetter ? (
     <DetailScrollBody ref={detailScrollRef} resetScrollKey={openLetter.id}>
       <Box flexDirection="column">
-        <KeyValueRow label="Filed" value={openLetter.filed || "—"} width={detailWidth} />
-        <KeyValueRow label="Severity" value={`${openLetter.severityLabel} · ${openLetter.score}`} width={detailWidth} />
-        <KeyValueRow label="CIK" value={openLetter.cik} width={detailWidth} />
-        {openLetter.topic ? <Prose text={openLetter.topic} width={detailWidth} /> : null}
-        {signals.length > 0 ? (
-          <Section title="Signals" width={detailWidth}>
-            <BulletList items={signals} width={detailWidth} />
-          </Section>
+        <KeyValueRow label="Filed" value={formatDate(openLetter.filingDate)} width={detailWidth} />
+        <KeyValueRow label="From" value={`${AUTHOR_LABEL[openLetter.author]} (${openLetter.form})`} width={detailWidth} />
+        <KeyValueRow label="CIK" value={String(Number(openLetter.cik))} width={detailWidth} />
+        <KeyValueRow label="Accession" value={openLetter.accessionNumber} width={detailWidth} />
+        {letterText.topics && letterText.topics.length > 0 ? (
+          <KeyValueRow label="Mentions" value={letterText.topics.join(", ")} width={detailWidth} />
         ) : null}
+        <Box height={1} />
+        {letterText.text ? (
+          <>
+            {letterText.text.replace(TRUNCATION_MARK, "").split("\n").map((paragraph, index) => (
+              paragraph.trim()
+                ? <Prose key={index} text={paragraph} width={detailWidth} figures={false} />
+                : <Box key={index} height={1} />
+            ))}
+            {TRUNCATION_MARK.test(letterText.text) ? (
+              <Notice tone="muted">The letter continues past this preview; o opens all of it.</Notice>
+            ) : null}
+          </>
+        ) : (
+          <Text fg={colors.textDim}>
+            {letterText.loading ? "Loading the letter..." : letterText.error ? "The letter's text is unavailable." : "This letter has no readable text."}
+          </Text>
+        )}
       </Box>
     </DetailScrollBody>
   ) : null;
 
   return (
-    <DataTableStackView<CommentLetterRow, LetterColumn>
+    <DataTableStackView<CommentLetter, LetterColumn>
       focused={focused && !searchFocused}
       detailOpen={!!openLetter}
       onBack={() => setOpenItemId(null)}
       detailContent={detail}
-      detailTitle={openLetter ? `${openLetter.form} · ${openLetter.company}` : undefined}
+      detailTitle={openLetter ? `${companyLabel(openLetter)}${openLetter.tickers[0] ? ` (${openLetter.tickers[0]})` : ""}` : undefined}
       detailScrollRef={detailScrollRef}
       rootBefore={searchBar}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
       items={rows}
-      getItemKey={(row) => row.id}
+      getItemKey={(letter) => letter.id}
       renderCell={renderCell}
       selection={{
         kind: "id",
         selectedId: selected?.id ?? null,
-        getId: (row) => row.id,
+        getId: (letter) => letter.id,
         onChange: (id) => setSelectedId(id),
       }}
-      onActivate={(row) => setOpenItemId(row.id)}
+      onActivate={(letter) => setOpenItemId(letter.id)}
       onRootKeyDown={handleRootKeyDown}
-      sortColumnId={sort.columnId}
-      sortDirection={sort.direction}
-      onHeaderClick={handleHeaderClick}
+      sortColumnId={null}
+      sortDirection="desc"
+      scrollRef={scrollRef}
+      onBodyScrollActivity={loadMore}
       selectedTextOverridesCellColor
-      emptyStateTitle={query.trim() ? `No comment letters match ${query.trim()}.` : "No recent comment letters."}
+      emptyStateTitle={issuer ? `No comment letters for ${issuer.name}.` : term ? `No comment letters match ${term}.` : "No comment letters."}
       emptyStateHint="Press / to search…"
     />
   );
-};
+}

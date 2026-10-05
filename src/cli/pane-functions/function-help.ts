@@ -910,8 +910,8 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: [],
   },
   CLTR: {
-    summary: "Staff comment letters and company responses, with a severity tag. Search by company or topic and open the filing.",
-    usage: ["CLTR", "CLTR revenue recognition"],
+    summary: "SEC staff comment letters and company responses, newest first. Search their text, or type a ticker for one company's letters, and open a letter to read it.",
+    usage: ["CLTR", "CLTR revenue recognition", "CLTR AAPL"],
     keys: [SEARCH, OPEN],
     data: AS_FILED,
     bloomberg: [],

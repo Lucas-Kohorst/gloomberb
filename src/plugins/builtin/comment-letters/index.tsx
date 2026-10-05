@@ -3,6 +3,8 @@ import { CommentLettersPane } from "./pane";
 import { COMMENT_LETTERS_PANE_ID, COMMENT_LETTERS_PLUGIN_ID } from "./types";
 
 const createCommentLettersPaneInstance = (options?: PaneTemplateCreateOptions) => {
+  // A ticker on its own lists that company's letters, so a ticker the pane
+  // is opened for is the search.
   const query = (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
   const encoded = encodeURIComponent(query).replace(/%/g, "~");
   return {
@@ -19,11 +21,13 @@ export const commentLettersPlugin: GloomPlugin = {
   name: "SEC Comment Letters",
   version: "1.0.0",
   description:
-    "SEC comment letters (CORRESP and UPLOAD). Search by company or topic.",
+    "SEC staff comment letters and company responses (CORRESP and UPLOAD). Search their text or list a company's letters by ticker.",
   toggleable: true,
 
-  // One JSON endpoint over HTTPS, so every renderer. EDGAR sends no CORS
-  // headers, which is why the host is declared: the web app proxies it.
+  // EDGAR full-text search is one JSON endpoint over HTTPS, so every
+  // renderer. It sends no CORS headers, which is why the host is declared:
+  // the web app proxies it. A company's filing list and a letter's text come
+  // from the SEC filings service the SEC pane uses.
   targets: ["cli", "tui", "desktop", "web"],
   hosts: ["efts.sec.gov"],
 
@@ -46,7 +50,7 @@ export const commentLettersPlugin: GloomPlugin = {
       paneId: COMMENT_LETTERS_PANE_ID,
       label: "SEC Comment Letters",
       description:
-        "SEC comment letters, forms CORRESP and UPLOAD, by company or topic.",
+        "SEC staff comment letters and company responses (CORRESP, UPLOAD): search their text, or a ticker for one company's letters.",
       keywords: [
         "comment",
         "letters",
@@ -55,12 +59,12 @@ export const commentLettersPlugin: GloomPlugin = {
         "sec",
         "edgar",
         "correspondence",
-        "company",
-        "topic",
+        "staff",
+        "response",
       ],
       shortcut: {
         prefix: "CLTR",
-        argPlaceholder: "company or topic",
+        argPlaceholder: "words or ticker",
         argKind: "text",
         argOptional: true,
       },
