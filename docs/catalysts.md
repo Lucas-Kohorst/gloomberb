@@ -34,3 +34,7 @@ gloomberb fn CATL --event EVENT_ID --json
 ```
 
 Structured output preserves event IDs, revision IDs, primary URLs, evidence, all three source dates, observed timestamps, parties, confidence, coverage and preview access metadata. `limit` and `offset` page through the server dataset; `complete` is false for previews and partial pages.
+
+## Clinical trial search (TRIAL)
+
+`TRIAL` searches the public ClinicalTrials.gov registry directly, every sponsor class, not only the studies the catalyst calendar collects. The search box matches any part of a study record (condition, drug, sponsor, title), the registry's own search; it is not matched to tickers, so a company is found by its name, and a ticker typed as a search matches text, not the company. Studies are listed by the date the registry first posted them, newest first, and more load as you scroll until the registry has no more. Each study shows the dates as precise as the registry gives them (a month for many estimates), and `(est.)` marks a date the sponsor estimates rather than one that happened. Primary completion is when the last participant was examined for the primary outcome; neither it nor completion is a results, readout or approval date, and estimates move. `o` opens the study's registry page.
