@@ -1,42 +1,59 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, TextAttributes } from "../../../../ui";
+import { TextAttributes } from "../../../../ui";
 import {
-  Button,
   DataTableView,
   QueryBar,
   loadingText,
   unavailableText,
+  usePaneNoticeFooter,
   usePaneStatusFooter,
   useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
   type PaneHint,
 } from "../../../../components";
-import { CHART_RESOLUTIONS, type TimeRange } from "../../../../time-series/range";
+import { usePaneRefreshKey } from "../../../../components/data-table/table-pane";
+import { CHART_RESOLUTIONS } from "../../../../time-series/range";
 import {
-  CHART_RESOLUTION_STEP_MS,
-  DEFAULT_CHART_RESOLUTION_SUPPORT,
   getChartResolutionLabel,
-  getSupportedChartResolutionsForViewport,
+  type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../../../time-series/resolution";
+import { fetchHistoryResult, InvalidHistoryResultError } from "../../../../sources/history-result";
+import { historyCoverageNotice } from "../../../../sources/history-coverage";
+import { historyRetentionNotice, isHistoryRetentionError } from "../../../../sources/history-retention";
+import { cleanFloat32Price, historyPriceDecimals } from "../../../../cli/history-rows";
+import { formatPriceObservation, quoteFormatOptions } from "../../../../market-data/market/format";
+import { usePaneTicker } from "../../../../state/app/context";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
-import { formatNumber, formatPercent } from "../../../../utils/format";
+import { formatPercent } from "../../../../utils/format";
+import { publicTickerKey } from "../../../../utils/exchanges";
+import { priceHistoryIntegrityNotice } from "../../../../utils/price-history-integrity";
 import { compareSortValues, nextHeaderSort, type SortDirection } from "../../../../utils/sort-values";
 import { useAssetData, usePluginPaneState } from "../../../runtime";
 import { useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
-import { buildReturnRows, filterPricePointsByWindow, type ReturnRow } from "./returns-model";
+import {
+  availableReturnResolutions,
+  buildReturnRows,
+  effectiveReturnResolution,
+  endsAtLatestBar,
+  latestBarTime,
+  RETURN_RANGES,
+  returnLookbackMs,
+  returnSupportRange,
+  returnVisibleFrom,
+  type ReturnRange,
+  type ReturnRow,
+} from "./returns-model";
 
 type ReturnColumnId = "time" | "price" | "intervalChange" | "intervalPercent" | "cumulativeChange" | "cumulativePercent";
 type ReturnColumn = DataTableColumn & { id: ReturnColumnId };
-type ReturnRange = "6H" | "1D" | "5D" | TimeRange;
 
-const RETURN_RANGES: readonly ReturnRange[] = ["6H", "1D", "5D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 const INTERVAL_OPTIONS = CHART_RESOLUTIONS.filter((value): value is ManualChartResolution => value !== "auto");
 const SEARCH_MIN_ROWS = 8;
-const REFRESH_WIDTH = 7;
+const NO_SUPPORT: readonly ChartResolutionSupport[] = [];
 
 const COLUMNS: ReturnColumn[] = [
   { id: "time", label: "TIME", width: 16, align: "left" },
@@ -51,60 +68,9 @@ interface ReturnSeries {
   points: PricePoint[];
   visibleFrom: number;
   visibleTo: number;
-}
-
-function supportRange(range: ReturnRange): TimeRange {
-  switch (range) {
-    case "6H":
-    case "1D":
-      return "1D";
-    case "5D":
-      return "1W";
-    default:
-      return range;
-  }
-}
-
-function startForRange(range: ReturnRange, now: Date): Date {
-  const start = new Date(now);
-  switch (range) {
-    case "6H":
-      start.setHours(start.getHours() - 6);
-      break;
-    case "1D":
-      start.setDate(start.getDate() - 1);
-      break;
-    case "5D":
-      start.setDate(start.getDate() - 5);
-      break;
-    case "1W":
-      start.setDate(start.getDate() - 7);
-      break;
-    case "1M":
-      start.setMonth(start.getMonth() - 1);
-      break;
-    case "3M":
-      start.setMonth(start.getMonth() - 3);
-      break;
-    case "6M":
-      start.setMonth(start.getMonth() - 6);
-      break;
-    case "1Y":
-      start.setFullYear(start.getFullYear() - 1);
-      break;
-    case "5Y":
-      start.setFullYear(start.getFullYear() - 5);
-      break;
-    case "ALL":
-      start.setFullYear(start.getFullYear() - 50);
-      break;
-  }
-  return start;
-}
-
-function precedingIntervalStart(start: Date, resolution: ManualChartResolution): Date {
-  const duration = resolution === "1mo" ? 31 * 24 * 60 * 60_000 : CHART_RESOLUTION_STEP_MS[resolution];
-  return new Date(start.getTime() - duration);
+  coverageStart?: string;
+  range: ReturnRange;
+  resolution: ManualChartResolution;
 }
 
 function formatDateTime(date: Date): string {
@@ -113,12 +79,29 @@ function formatDateTime(date: Date): string {
   return hasTime ? iso.slice(0, 16).replace("T", " ") : iso.slice(0, 10);
 }
 
-function formatMaybeNumber(value: number | null): string {
-  return value == null ? "—" : formatNumber(value, 2);
+/** Every price and dollar change at one decimal count, so the columns line up. */
+function returnPriceDecimals(rows: readonly ReturnRow[], assetCategory?: string): number {
+  return historyPriceDecimals(rows.flatMap((row) => row.price === null ? [] : [{
+    date: "",
+    open: null,
+    high: null,
+    low: null,
+    close: cleanFloat32Price(row.price),
+    volume: null,
+  }]), assetCategory);
+}
+
+function formatMaybePrice(value: number | null, decimals: number, width: number): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return formatPriceObservation(Number(value.toFixed(Math.min(20, decimals))), { minimumFractionDigits: decimals, maxWidth: width });
+}
+
+function exportPrice(value: number | null, decimals: number): number | null {
+  return value === null || !Number.isFinite(value) ? null : Number(value.toFixed(Math.min(20, decimals)));
 }
 
 function formatMaybePercent(value: number | null): string {
-  return value == null ? "—" : formatPercent(value);
+  return value === null ? "-" : formatPercent(value);
 }
 
 function sortValue(row: ReturnRow, id: ReturnColumnId): number | null {
@@ -138,87 +121,103 @@ function sortValue(row: ReturnRow, id: ReturnColumnId): number | null {
   }
 }
 
-function renderReturnCell(row: ReturnRow, column: ReturnColumn): DataTableCell {
-  switch (column.id) {
-    case "time":
-      return { text: formatDateTime(new Date(row.timestamp)), value: new Date(row.timestamp).toISOString(), color: colors.textDim };
-    case "price":
-      return { text: formatMaybeNumber(row.price), value: row.price, color: colors.textBright, attributes: TextAttributes.BOLD };
-    case "intervalChange":
-      return { text: formatMaybeNumber(row.intervalChange), value: row.intervalChange, color: priceColor(row.intervalChange ?? 0) };
-    case "intervalPercent":
-      return { text: formatMaybePercent(row.intervalPercent), value: row.intervalPercent == null ? null : row.intervalPercent * 100, color: priceColor(row.intervalPercent ?? 0) };
-    case "cumulativeChange":
-      return { text: formatMaybeNumber(row.cumulativeChange), value: row.cumulativeChange, color: priceColor(row.cumulativeChange) };
-    case "cumulativePercent":
-      return { text: formatMaybePercent(row.cumulativePercent), value: row.cumulativePercent == null ? null : row.cumulativePercent * 100, color: priceColor(row.cumulativePercent ?? 0) };
-  }
+function historyErrorMessage(error: unknown, resolution: ManualChartResolution): Error {
+  const label = getChartResolutionLabel(resolution);
+  if (isHistoryRetentionError(error)) return new Error(historyRetentionNotice(error.retention, label, null));
+  // The source answered at another cadence than asked: those bars are not this interval's returns.
+  if (error instanceof InvalidHistoryResultError) return new Error(`${label} bars are unavailable for this ticker`);
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 export function ReturnsPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
-  const { symbol, exchange } = useBoundTicker();
+  const { symbol, exchange, ticker } = useBoundTicker();
   const [range, setRange] = usePluginPaneState<ReturnRange>("range", "5D");
   const [resolution, setResolution] = usePluginPaneState<ManualChartResolution>("interval", "1h");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ columnId: ReturnColumnId; direction: SortDirection }>({ columnId: "time", direction: "desc" });
-  const [availableResolutions, setAvailableResolutions] = useState<ReadonlySet<ManualChartResolution>>(() => new Set(INTERVAL_OPTIONS));
   const { active: searchActive, focus: focusSearch, blur: blurSearch, searchProps } = useQueryBarSearch();
+
+  // What the source serves, and how far back each interval reaches. The loader
+  // waits for it, so a range the chosen interval cannot cover is never requested.
+  const supportRequest = useMemo(() => Promise.resolve(
+    symbol && dataProvider?.getChartResolutionSupport
+      ? dataProvider.getChartResolutionSupport(symbol, exchange)
+      : NO_SUPPORT,
+  ).catch(() => NO_SUPPORT), [dataProvider, exchange, symbol]);
+  const [support, setSupport] = useState<readonly ChartResolutionSupport[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setSupport(null);
+    void supportRequest.then((value) => { if (!cancelled) setSupport(value); });
+    return () => { cancelled = true; };
+  }, [supportRequest]);
+  const availableResolutions = useMemo(
+    () => new Set(availableReturnResolutions(range, support ?? NO_SUPPORT)),
+    [range, support],
+  );
+  // The chosen interval stays saved; a range it cannot cover shows the nearest
+  // coarser one until the range allows it again.
+  const shownResolution = support ? effectiveReturnResolution(range, resolution, support) : resolution;
 
   const loader = useCallback(async (nextSymbol: string, nextExchange: string, forceRefresh: boolean): Promise<ReturnSeries> => {
     if (!dataProvider) throw new Error("Market data unavailable");
-    const end = new Date();
-    const start = startForRange(range, end);
-    const from = precedingIntervalStart(start, resolution);
+    const sourceSupport = await supportRequest;
+    const interval = effectiveReturnResolution(range, resolution, sourceSupport);
+    const now = Date.now();
+    const visibleFrom = returnVisibleFrom(range, interval, now);
+    const start = new Date(visibleFrom - returnLookbackMs(range, interval, sourceSupport));
+    const end = new Date(now);
     const context = forceRefresh ? { cacheMode: "refresh" as const } : undefined;
-    const points = dataProvider.getDetailedPriceHistory
-      ? await dataProvider.getDetailedPriceHistory(nextSymbol, nextExchange, from, end, resolution, context)
-      : dataProvider.getPriceHistoryForResolution
-        ? await dataProvider.getPriceHistoryForResolution(nextSymbol, nextExchange, supportRange(range), resolution, context)
-        : await dataProvider.getPriceHistory(nextSymbol, nextExchange, supportRange(range), context);
-    return {
-      points: filterPricePointsByWindow(points, from.getTime(), end.getTime()),
-      visibleFrom: start.getTime(),
-      visibleTo: end.getTime(),
-    };
-  }, [dataProvider, range, resolution]);
-  const { data, loading, error, reload } = useTickerRequest(loader, symbol, exchange);
-
-  const resolutionSupport = useMemo(() => {
-    if (!dataProvider?.getChartResolutionSupport) return [];
+    let result;
     try {
-      return dataProvider.getChartResolutionSupport(symbol ?? "", exchange);
-    } catch {
-      return [];
+      // Exact bounds first, then the interval's range history, as charts do
+      // when a source keeps no bars for the exact window.
+      result = await fetchHistoryResult(dataProvider, nextSymbol, nextExchange, { kind: "detail", start, end, interval }, context);
+      if (!result?.points.length) {
+        result = await fetchHistoryResult(dataProvider, nextSymbol, nextExchange, { kind: "resolution", range: returnSupportRange(range), resolution: interval }, context) ?? result;
+      }
+    } catch (error) {
+      throw historyErrorMessage(error, interval);
     }
-  }, [dataProvider, exchange, symbol]);
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.resolve(resolutionSupport).then((support) => {
-      if (cancelled) return;
-      const available = getSupportedChartResolutionsForViewport(
-        supportRange(range),
-        support.length > 0 ? support : DEFAULT_CHART_RESOLUTION_SUPPORT,
-      );
-      setAvailableResolutions(new Set(available));
-      if (!available.includes(resolution)) setResolution(available.at(-1) ?? "1d");
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
+    if (!result) throw new Error("Price history unavailable");
+    const latest = latestBarTime(result.points);
+    return {
+      points: result.points,
+      // A closed market leaves a short window ending now without bars, so it
+      // ends at the latest bar instead.
+      visibleFrom: endsAtLatestBar(range) && latest !== null ? returnVisibleFrom(range, interval, latest) : visibleFrom,
+      visibleTo: now,
+      ...(result.coverageStart ? { coverageStart: result.coverageStart } : {}),
+      range,
+      resolution: interval,
     };
-  }, [range, resolution, resolutionSupport, setResolution]);
+  }, [dataProvider, range, resolution, supportRequest]);
+  const { data, loading, error, reload } = useTickerRequest(loader, symbol, exchange);
+  usePaneRefreshKey(reload, { focused: focused && !searchActive });
 
+  const returnRows = useMemo(
+    () => data ? buildReturnRows(data.points, data.visibleFrom, data.visibleTo) : [],
+    [data],
+  );
   const table = useMemo(() => {
-    const built = buildReturnRows(data?.points ?? [], data?.visibleFrom)
-      .filter((row) => !data || row.timestamp <= data.visibleTo);
-    const searchable = built.length >= SEARCH_MIN_ROWS;
+    const searchable = returnRows.length >= SEARCH_MIN_ROWS;
     const needle = searchable ? query.trim().toLowerCase() : "";
     const rows = (needle
-      ? built.filter((row) => formatDateTime(new Date(row.timestamp)).toLowerCase().includes(needle))
-      : built.slice()
+      ? returnRows.filter((row) => formatDateTime(new Date(row.timestamp)).toLowerCase().includes(needle))
+      : returnRows.slice()
     ).sort((left, right) => compareSortValues(sortValue(left, sort.columnId), sortValue(right, sort.columnId), sort.direction));
     return { rows, searchable };
-  }, [data, query, sort]);
+  }, [query, returnRows, sort]);
+  // The quote knows the instrument type even when the saved ticker does not,
+  // so prices take the same decimals as Historical Prices.
+  const { financials } = usePaneTicker();
+  const assetCategory = quoteFormatOptions(
+    financials?.quote,
+    ticker?.metadata.assetCategory,
+    financials?.quoteMetadata?.instrumentType,
+  ).assetCategory;
+  const priceDecimals = useMemo(() => returnPriceDecimals(returnRows, assetCategory), [assetCategory, returnRows]);
 
   useEffect(() => {
     if (table.searchable) return;
@@ -231,9 +230,35 @@ export function ReturnsPane({ focused, width, height }: PaneProps) {
   ), [focusSearch, table.searchable]);
   usePaneStatusFooter({ registrationId: "returns", loading, error, hints });
 
+  const integrityNotice = priceHistoryIntegrityNotice(returnRows.filter((row) => row.inconsistent).length);
+  const coverageNotice = data ? historyCoverageNotice(data.coverageStart, data.visibleFrom) : null;
+  usePaneNoticeFooter({
+    registrationId: "returns:notices",
+    notices: [coverageNotice, integrityNotice].filter((notice): notice is string => !!notice),
+    focused,
+    title: "Price history data",
+  });
+
   const chooseSort = useCallback((id: string) => {
     setSort((current) => nextHeaderSort(current, id as ReturnColumnId, { firstDirection: "desc" }));
   }, []);
+
+  const renderCell = useCallback((row: ReturnRow, column: ReturnColumn): DataTableCell => {
+    switch (column.id) {
+      case "time":
+        return { text: formatDateTime(new Date(row.timestamp)), value: new Date(row.timestamp).toISOString(), color: colors.textDim };
+      case "price":
+        return { text: formatMaybePrice(row.price, priceDecimals, column.width), value: exportPrice(row.price, priceDecimals), color: colors.textBright, attributes: TextAttributes.BOLD };
+      case "intervalChange":
+        return { text: formatMaybePrice(row.intervalChange, priceDecimals, column.width), value: exportPrice(row.intervalChange, priceDecimals), color: priceColor(row.intervalChange ?? 0) };
+      case "intervalPercent":
+        return { text: formatMaybePercent(row.intervalPercent), value: row.intervalPercent === null ? null : row.intervalPercent * 100, color: priceColor(row.intervalPercent ?? 0) };
+      case "cumulativeChange":
+        return { text: formatMaybePrice(row.cumulativeChange, priceDecimals, column.width), value: exportPrice(row.cumulativeChange, priceDecimals), color: priceColor(row.cumulativeChange ?? 0) };
+      case "cumulativePercent":
+        return { text: formatMaybePercent(row.cumulativePercent), value: row.cumulativePercent === null ? null : row.cumulativePercent * 100, color: priceColor(row.cumulativePercent ?? 0) };
+    }
+  }, [priceDecimals]);
 
   return (
     <DataTableView<ReturnRow, ReturnColumn>
@@ -247,47 +272,55 @@ export function ReturnsPane({ focused, width, height }: PaneProps) {
       sortDirection={sort.direction}
       onHeaderClick={chooseSort}
       getItemKey={(row) => row.key}
-      renderCell={renderReturnCell}
+      renderCell={renderCell}
       selectedTextOverridesCellColor
       rootBefore={(
-        <Box flexDirection="row" width={width} height={1} flexShrink={0}>
-          <QueryBar
-            width={Math.max(1, width - REFRESH_WIDTH - 1)}
-            search={table.searchable ? {
-              value: query,
-              onChange: setQuery,
-              placeholder: "date or time",
-              focused,
-              ...searchProps,
-            } : undefined}
-            filters={[{
-              id: "range",
-              label: "Range",
-              value: range,
-              options: RETURN_RANGES.map((value) => ({ value, label: value })),
-              onChange: setRange,
-            }, {
-              id: "interval",
-              label: "Interval",
-              value: resolution,
-              options: INTERVAL_OPTIONS.map((value) => ({
-                value,
-                label: getChartResolutionLabel(value),
-                disabled: !availableResolutions.has(value),
-              })),
-              onChange: setResolution,
-            }]}
-          />
-          <Button label="Refresh" variant="plain" compact width={REFRESH_WIDTH} onPress={reload} />
-        </Box>
+        <QueryBar
+          width={width}
+          search={table.searchable ? {
+            value: query,
+            onChange: setQuery,
+            placeholder: "date or time",
+            focused,
+            ...searchProps,
+          } : undefined}
+          filters={[{
+            id: "range",
+            label: "Range",
+            value: range,
+            options: RETURN_RANGES.map((value) => ({ value, label: value })),
+            onChange: setRange,
+          }, {
+            id: "interval",
+            label: "Interval",
+            value: shownResolution,
+            options: INTERVAL_OPTIONS.map((value) => ({
+              value,
+              label: getChartResolutionLabel(value),
+              disabled: support !== null && !availableResolutions.has(value),
+            })),
+            onChange: setResolution,
+          }]}
+        />
       )}
+      getExportMetadata={() => [
+        ["Ticker", symbol ? publicTickerKey(symbol, exchange) : ""],
+        ["Range", data?.range ?? range],
+        ["Interval", getChartResolutionLabel(data?.resolution ?? shownResolution)],
+        ["Window", data ? `after ${new Date(data.visibleFrom).toISOString()} through ${new Date(data.visibleTo).toISOString()}` : ""],
+        ["Time zone", "UTC, bar open"],
+        ["Basis", "Price returns of bar closes; dividends are not included"],
+        ...(coverageNotice ? [["Coverage", coverageNotice]] : []),
+        ...(integrityNotice ? [["Warning", integrityNotice]] : []),
+        ...(error ? [["Error", error]] : []),
+      ]}
       emptyStateTitle={error
         ? unavailableText("Returns")
         : loading
           ? loadingText("returns")
           : query.trim()
             ? "No matching times"
-            : "No return observations in this window"}
+            : "No bars in this window"}
       emptyStateHint={error ?? undefined}
     />
   );
