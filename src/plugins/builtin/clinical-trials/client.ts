@@ -43,6 +43,11 @@ function asCount(value: unknown): number | null {
   return null;
 }
 
+function datePrecision(value: unknown): "year" | "month" | "day" {
+  const text = typeof value === "string" ? value.trim() : "";
+  return /^\d{4}$/.test(text) ? "year" : /^\d{4}-\d{2}$/.test(text) ? "month" : "day";
+}
+
 function asDate(value: unknown): Date | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
   const date = new Date(value);
@@ -91,7 +96,9 @@ export function parseClinicalTrial(raw: unknown): ClinicalTrial | null {
     studyType: asString(design.studyType) ?? "",
     enrollment: asCount(enrollmentInfo.count),
     startDate: asDate(moduleOf(statusModule, "startDateStruct").date),
+    startDatePrecision: datePrecision(moduleOf(statusModule, "startDateStruct").date),
     completionDate: asDate(moduleOf(statusModule, "completionDateStruct").date),
+    completionDatePrecision: datePrecision(moduleOf(statusModule, "completionDateStruct").date),
     firstSubmitDate: asDate(statusModule.studyFirstSubmitDate),
     url: `${CLINICAL_TRIALS_STUDY_BASE_URL}/${nctId}`,
   };

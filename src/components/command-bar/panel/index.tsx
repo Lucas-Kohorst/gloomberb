@@ -15,6 +15,8 @@ import {
 import { useThemeColors } from "../../../theme/theme-context";
 import { t } from "../../../i18n";
 import type { ListScreenState } from "../list/model";
+import { COMMAND_BAR_LISTBOX_ID, resolveCommandBarActiveOptionId } from "../list/view";
+import { isMultiSelectPickerRoute } from "../multi-select-picker";
 import { CommandBarPanelBody } from "./body";
 import { NATIVE_COMMAND_SURFACE, nativeCommandSurfaceBorder } from "./native-surface";
 import { publishCommandBarPrompt } from "./prompt-binding";
@@ -108,6 +110,10 @@ export function CommandBarPanel({
     }
   }, [listBodyHeight, nativeListScrollRef, selectedScrollRowIndex, visibleListState?.kind, visibleListState?.query]);
 
+  const listboxShowing = !!visibleListState && !themePickerActive && !isMultiSelectPickerRoute(currentRoute);
+  const activeOptionId = listboxShowing && visibleListState
+    ? resolveCommandBarActiveOptionId(nativeListRows, visibleListState.selectedIdx)
+    : null;
   // The header prompt is the bar's input while a list screen is showing. A
   // workflow owns its own fields, so it publishes nothing and the prompt goes
   // quiet rather than taking focus from them.
@@ -122,8 +128,10 @@ export function CommandBarPanel({
       placeholder: resolvePromptPlaceholder(visibleListState),
       ghostSuffix: visibleListState.kind === "root" ? rootGhostSuffix : null,
       onQueryChange,
+      listboxId: listboxShowing ? COMMAND_BAR_LISTBOX_ID : null,
+      activeOptionId,
     });
-  }, [onQueryChange, rootGhostSuffix, visibleListState]);
+  }, [activeOptionId, listboxShowing, onQueryChange, rootGhostSuffix, visibleListState]);
   useLayoutEffect(() => () => publishCommandBarPrompt(null), []);
 
   useLayoutEffect(() => {

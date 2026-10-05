@@ -9,6 +9,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { useShortcut } from "../../../react/input";
 import type { InlineField } from "../kelly-sizer/fields";
 import { InlineFieldView, MetricLine, truncateText } from "../kelly-sizer/view";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import {
   OPTIONS_CALCULATOR_PANE_ID,
   describeDraftProblem,
@@ -72,6 +73,14 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
   const problem = describeDraftProblem(draft);
 
   const setSide = useCallback((side: OptionSide) => updateDraft({ side }), [updateDraft]);
+  const editSelectedField = useCallback(() => {
+    setActiveFieldId(fields[selectedIndex]?.id ?? null);
+  }, [fields, selectedIndex]);
+  const editHints = useMemo(
+    () => [{ id: "edit", key: "e", label: "dit", onPress: editSelectedField }],
+    [editSelectedField],
+  );
+  usePaneFooterHintBindings(focused, editHints);
   const moveFieldFocus = useCallback((offset: -1 | 1) => {
     const nextIndex = activeFieldId
       ? (selectedIndex + offset + fields.length) % fields.length
@@ -102,7 +111,7 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
       event.preventDefault();
       event.stopPropagation();
       setSide(event.name === "left" ? "call" : "put");
-    } else if (isPlainKey(event, "enter", "return", "e")) {
+    } else if (isPlainKey(event, "enter", "return")) {
       event.preventDefault();
       event.stopPropagation();
       setActiveFieldId(fields[selectedIndex]?.id ?? null);
@@ -120,7 +129,8 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
       : implied.note
         ? [{ id: "iv", parts: [{ text: implied.note, tone: "warning" as const }] }]
         : [],
-  }), [implied.note, problem]);
+    hints: editHints,
+  }), [editHints, implied.note, problem]);
 
   const columns = width >= 78 ? 3 : width >= 42 ? 2 : 1;
   const fieldWidth = Math.max(12, Math.min(26, Math.floor((width - 2) / columns)));

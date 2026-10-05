@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Button,
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   useExternalLinkFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
@@ -13,10 +13,11 @@ import { useShortcut } from "../../../react/input";
 import { colors, priceColor } from "../../../theme/colors";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
+import { paneSearchHint } from "../shared/pane-footer";
 import { loadingErrorFooterInfo } from "../shared/table-pane";
 import { getCachedIpoCalendar, loadIpoCalendar } from "./cache";
 import {
@@ -50,10 +51,15 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<IPOSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(initialCache?.fetchedAt ?? null);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker, company, or exchange",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim(),
+  });
   const fetchGenRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
@@ -110,20 +116,6 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
 
   const loading = status === "loading" && records.length === 0;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
-
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-
-  const updateSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    setSelectedTicker(null);
-  }, []);
-
   const refresh = useCallback(() => {
     void load(true);
   }, [load]);
@@ -133,38 +125,28 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    if (listSearch.searchFocused) return false;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
       return true;
     }
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
     return false;
-  }, [focusSearch, refresh]);
+  }, [listSearch.handleSearchKey, listSearch.searchFocused, refresh]);
 
   const handleActivate = useCallback((record: IPORecord) => {
     pinTicker(record.ticker, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused) return;
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      refresh();
-    }
-  }, { allowEditable: true, enabled: focused });
+    if (!focused || listSearch.searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    refresh();
+  }, { enabled: focused && !listSearch.searchFocused });
 
   const selectedRecord = useMemo(
     () => sorted.find((record) => record.ticker === selectedTicker) ?? null,
@@ -179,25 +161,22 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       ? [{ id: "partial", parts: [{ text: "PARTIAL", tone: "warning" as const, bold: true }] }]
       : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
-    ...(searchQuery ? [{
-      id: "search",
-      parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }],
-    }] : []),
-  ], [error, records.length, searchQuery, stale, status]);
+  ], [error, records.length, stale, status]);
 
   const footerHints = useMemo(
     () => [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
     ],
-    [focusSearch, refresh],
+    [listSearch.focusSearch, listSearch.searchFocused],
   );
 
   useExternalLinkFooter({
     registrationId: IPO_CALENDAR_PANE_ID,
-    focused,
+    focused: focused && !listSearch.searchFocused,
     url: selectedRecord ? stockAnalysisUrl(selectedRecord.ticker) : null,
     source: "stockanalysis.com",
     info: footerInfo,
+    showHint: !listSearch.searchFocused,
     hints: footerHints,
   });
 
@@ -258,20 +237,10 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={searchQuery}
-      focused={focused}
-      active={searchFocused}
+    <PaneListChrome
       width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="ticker, company, or exchange"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateSearch}
+      focused={focused}
+      search={listSearch.search}
     />
   );
 
@@ -299,7 +268,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableView<IPORecord, IPOColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       rootBefore={rootBefore}
       rootWidth={width}
       rootHeight={height}

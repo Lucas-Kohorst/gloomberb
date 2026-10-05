@@ -21,6 +21,7 @@ import {
   type NotificationLogEntry,
 } from "../../../notifications/notification-log";
 import { chatController } from "../chat/controller";
+import { requestNotificationCenterFilter } from "./filter";
 import { NotificationCenterPane } from "./index";
 
 const WIDTH = 96;
@@ -218,5 +219,56 @@ describe("NotificationCenterPane mark all read", () => {
     expect(frame).toContain("Read");
     expect(frame).not.toContain("New");
     expect(chatController.totalUnreadCount()).toBe(0);
+  });
+
+  test("a team filter hides other sources until mark all read clears the team row", async () => {
+    configureNotificationLog({ get: () => [], set: () => {} });
+    appendNotificationLog({ title: "AAPL", body: "Broke out of the range" }, "alerts", Date.now());
+    appendNotificationLog({
+      title: "ADJ · Adjacent",
+      body: "Invited you",
+      refId: "team:n1",
+    }, "team", Date.now() + 1);
+
+    testSetup = await testRender(<Harness />, { width: WIDTH, height: HEIGHT });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("Broke out of the range");
+    expect(testSetup.captureCharFrame()).toContain("Invited you");
+
+    await act(async () => {
+      requestNotificationCenterFilter("team");
+    });
+    await renderSettled();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Team");
+    expect(frame).toContain("Invited you");
+    expect(frame).not.toContain("Broke out of the range");
+    expect(getNotificationLog().find((entry) => entry.refId === "team:n1")?.read).toBe(false);
+
+    await act(async () => {
+      testSetup!.renderer.keyInput.emit("keypress", {
+        name: "m",
+        ctrl: false,
+        meta: false,
+        option: false,
+        shift: false,
+        eventType: "press",
+        repeated: false,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushNotificationLog();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Read");
+    expect(frame).not.toContain("New");
+    expect(getNotificationLog().find((entry) => entry.refId === "team:n1")?.read).toBe(true);
   });
 });

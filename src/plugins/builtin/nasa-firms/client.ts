@@ -146,6 +146,7 @@ export async function parseFirmsCsvIncremental(
     firstPaint?: number;
     yieldEvery?: number;
     onPartial?: (detections: FireDetection[]) => void;
+    signal?: AbortSignal;
   } = {},
 ): Promise<FireDetection[]> {
   const cap = options.cap ?? FIRMS_DISPLAY_CAP;
@@ -158,6 +159,7 @@ export async function parseFirmsCsvIncremental(
   const detections: FireDetection[] = [];
   let painted = false;
   for (let i = 1; i < lines.length; i++) {
+    options.signal?.throwIfAborted();
     const detection = parseCsvDetection(header, lines[i]!);
     if (detection) {
       detections.push(detection);
@@ -215,19 +217,19 @@ export class FirmsClient {
   async getFiresByCountry(
     countryCode: string,
     days: number,
-    options?: { onPartial?: (detections: FireDetection[]) => void },
+    options?: { onPartial?: (detections: FireDetection[]) => void; signal?: AbortSignal },
   ): Promise<FirePage> {
     return withConnectionRequest(NASA_FIRMS_CONNECTION_ID, "fetch", async () => {
       const key = this.requireKey();
       const url = `${NASA_FIRMS_API_BASE_URL}/country/csv/${encodeURIComponent(key)}/${encodeURIComponent(countryCode)}/${days}`;
-      const response = await firmsFetch.fetch(url);
+      const response = await firmsFetch.fetch(url, { signal: options?.signal });
       if (!response.ok) {
         throw new Error(
           `NASA FIRMS request failed: ${response.status} ${response.statusText}`,
         );
       }
       const csv = await response.text();
-      const detections = await parseFirmsCsvIncremental(csv, { onPartial: options?.onPartial });
+      const detections = await parseFirmsCsvIncremental(csv, { onPartial: options?.onPartial, signal: options?.signal });
       return { detections, total: detections.length };
     });
   }
@@ -240,19 +242,19 @@ export class FirmsClient {
   async getFiresByArea(
     bbox: string,
     days: number,
-    options?: { onPartial?: (detections: FireDetection[]) => void },
+    options?: { onPartial?: (detections: FireDetection[]) => void; signal?: AbortSignal },
   ): Promise<FirePage> {
     return withConnectionRequest(NASA_FIRMS_CONNECTION_ID, "fetch", async () => {
       const key = this.requireKey();
       const url = `${NASA_FIRMS_API_BASE_URL}/area/csv/${encodeURIComponent(key)}/${bbox}/${days}`;
-      const response = await firmsFetch.fetch(url);
+      const response = await firmsFetch.fetch(url, { signal: options?.signal });
       if (!response.ok) {
         throw new Error(
           `NASA FIRMS request failed: ${response.status} ${response.statusText}`,
         );
       }
       const csv = await response.text();
-      const detections = await parseFirmsCsvIncremental(csv, { onPartial: options?.onPartial });
+      const detections = await parseFirmsCsvIncremental(csv, { onPartial: options?.onPartial, signal: options?.signal });
       return { detections, total: detections.length };
     });
   }
@@ -269,11 +271,12 @@ export async function loadFires(
   query: string,
   days: number = DEFAULT_DAYS,
   onPartial?: (detections: FireDetection[]) => void,
+  signal?: AbortSignal,
 ): Promise<FirePage> {
   const normalized = query.trim();
   if (!normalized) return { detections: [], total: 0 };
   if (normalized.includes(",")) {
-    return client.getFiresByArea(normalized, days, { onPartial });
+    return client.getFiresByArea(normalized, days, { onPartial, signal });
   }
-  return client.getFiresByCountry(normalized.toUpperCase(), days, { onPartial });
+  return client.getFiresByCountry(normalized.toUpperCase(), days, { onPartial, signal });
 }

@@ -21,7 +21,7 @@ import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
 import { createPluginTeamState } from "../team-state";
 import { createAlert as createAlertHandler } from "../builtin/alerts/alert-registry";
-import { registerByokKnownService } from "../builtin/byok/services";
+import { registerByokKnownService } from "../../data/config/byok-legacy";
 import type { PluginEvents } from "../event-bus";
 import type { PluginItems, RegistryContributions } from "./contributions";
 import {
@@ -50,6 +50,8 @@ export interface RegistryPluginContextOptions {
   getTicker: (symbol: string) => TickerRecord | null;
   getConfig: () => import("../../types/config").AppConfig;
   getApiKey: (serviceId: string) => string | undefined;
+  grantApiKeyAccess: (pluginId: string, serviceId: string) => void;
+  revokeApiKeyAccess: (pluginId: string, serviceId: string) => void;
   getResumeState: <T = unknown>(key: string, schemaVersion?: number) => T | null;
   setResumeState: (key: string, value: unknown, schemaVersion?: number) => void;
   deleteResumeState: (key: string) => void;
@@ -104,6 +106,8 @@ export function createRegistryPluginContext({
   getTicker,
   getConfig,
   getApiKey,
+  grantApiKeyAccess,
+  revokeApiKeyAccess,
   getResumeState,
   setResumeState,
   deleteResumeState,
@@ -169,8 +173,13 @@ export function createRegistryPluginContext({
         ...service,
         pluginId,
       });
-      items.eventDisposers.push(dispose);
-      return dispose;
+      grantApiKeyAccess(pluginId, service.id);
+      const withdraw = () => {
+        revokeApiKeyAccess(pluginId, service.id);
+        dispose();
+      };
+      items.eventDisposers.push(withdraw);
+      return withdraw;
     },
     registerChartSeriesCatalog: (provider) => (
       contributions.registerChartSeriesCatalog(pluginId, provider, items)

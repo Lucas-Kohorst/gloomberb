@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CompositeChart } from "../../../components/chart/composite";
+import { ChartStats } from "../../../components/chart/stats";
 import { ExternalLinkText } from "../../../components/ui";
 import { blendHex, colors } from "../../../theme/colors";
 import { Box, Text } from "../../../ui";
@@ -27,7 +28,7 @@ export function IndicatorDetail({
   const indicator = view.indicator;
   const levels = indicator.input.kind === "ratio" ? indicator.input.levels : undefined;
   const [userViewport, setUserViewport] = useState<{ start: Date; end: Date } | null>(null);
-  const chartWidth = Math.max(24, width - 2);
+  const chartWidth = Math.max(1, width - 2);
   const AXIS_WIDTH = 8;
   // Give a tall pane a taller plot instead of leaving the space empty below.
   const chartHeight = Math.max(8, Math.min(26, height - 16));
@@ -110,32 +111,18 @@ export function IndicatorDetail({
       <Box flexDirection="column" gap={0}>
         {levels && view.current.numeratorBillions != null
           && view.current.denominatorBillions != null ? (
-          <Box flexDirection="row" height={1} overflow="hidden">
-            <Text fg={colors.textDim}>{`${levels.numeratorLabel} `}</Text>
-            <Text fg={colors.textBright}>{formatTrillions(view.current.numeratorBillions)}</Text>
-            <Text fg={colors.textDim}>{`  ${levels.denominatorLabel} `}</Text>
-            <Text fg={colors.textBright}>{formatTrillions(view.current.denominatorBillions)}</Text>
-            {view.vintageLabel ? (
-              <Text fg={colors.textDim}>{`  ${view.vintageLabel}`}</Text>
-            ) : null}
-          </Box>
+          <ChartStats width={chartWidth} items={[
+            { label: levels.numeratorLabel, value: formatTrillions(view.current.numeratorBillions), color: colors.textBright },
+            { label: levels.denominatorLabel, value: formatTrillions(view.current.denominatorBillions), color: colors.textBright },
+            ...(view.vintageLabel ? [{ label: "", value: view.vintageLabel, color: colors.textDim }] : []),
+          ]} />
         ) : null}
-        <Box flexDirection="row" height={1} overflow="hidden">
-          <Text fg={colors.textDim}>1Y ago </Text>
-          <Text fg={colors.text}>
-            {view.ratioOneYearAgo == null ? "--" : indicator.formatValue(view.ratioOneYearAgo)}
-          </Text>
-          <Text fg={colors.textDim}>{"  mean "}</Text>
-          <Text fg={colors.text}>{indicator.formatValue(view.mean)}</Text>
-          <Text fg={colors.textDim}>{"  ATH "}</Text>
-          <Text fg={colors.text}>
-            {`${indicator.formatValue(view.allTimeHigh.ratio)} ${view.allTimeHigh.date}`}
-          </Text>
-          <Text fg={colors.textDim}>{"  ATL "}</Text>
-          <Text fg={colors.text}>
-            {`${indicator.formatValue(view.allTimeLow.ratio)} ${view.allTimeLow.date}`}
-          </Text>
-        </Box>
+        <ChartStats width={chartWidth} items={[
+          { label: "1Y ago", value: view.ratioOneYearAgo == null ? "--" : indicator.formatValue(view.ratioOneYearAgo) },
+          { label: "mean", value: indicator.formatValue(view.mean) },
+          { label: "ATH", value: `${indicator.formatValue(view.allTimeHigh.ratio)} ${view.allTimeHigh.date}` },
+          { label: "ATL", value: `${indicator.formatValue(view.allTimeLow.ratio)} ${view.allTimeLow.date}` },
+        ]} />
       </Box>
 
       <Box flexDirection="column" gap={1} width={Math.max(1, width - 2)}>

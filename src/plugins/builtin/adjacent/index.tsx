@@ -14,9 +14,9 @@ import {
   resolveAdjacentApiKey,
   resetAdjacentPersistence,
   setSharedAdjacentApiKeyResolver,
+  setSharedAdjacentUserApiKey,
 } from "./client";
-import { useAppSelector } from "../../../state/app/context";
-import { byokKeysConfigSelector } from "../account-management/ai-providers";
+import { readProcessEnv } from "../../../utils/process-env";
 import { AdjacentPane } from "./pane";
 import { createAdjacentNewsCapability } from "./news";
 import { createAdjacentCatalogSearchProvider, openAdjacentCatalogSearch } from "./command-bar-search";
@@ -48,9 +48,7 @@ function getOrCreateClient(apiKey: string | null): AdjacentClient {
  */
 function useAdjacentClient(): AdjacentClient {
   const [pluginKey] = usePluginConfigState<string>(ADJACENT_API_KEY_CONFIG, "");
-  const byokKeys = useAppSelector(byokKeysConfigSelector);
-  const apiKey = byokKeys.find((entry) => entry.serviceId === "adjacent")?.apiKey?.trim()
-    || pluginKey?.trim()
+  const apiKey = pluginKey?.trim()
     || resolveAdjacentApiKey()
     || "";
   const client = useMemo(
@@ -134,25 +132,6 @@ const adjacentMarketsModule: PluginModule = {
       },
     },
     {
-      id: "adjacent-markets-pane",
-      paneId: "adjacent",
-      label: "Adjacent Markets",
-      description:
-        "Search Adjacent prediction-market catalogs as a list (ticker, title, venue, status). Pricing and venue stats stay on PM.",
-      keywords: ["adjacent", "markets", "catalog", "kalshi", "polymarket", "search", "list"],
-      category: "Data",
-      canCreate: () => true,
-      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
-        const query = (options?.arg ?? "").trim();
-        return {
-          placement: "floating",
-          ...(query
-            ? { params: { query }, settings: { defaultTabId: "markets", query }, title: query }
-            : { settings: { defaultTabId: "markets" } }),
-        };
-      },
-    },
-    {
       id: "cftc-filings-pane",
       paneId: "adjacent",
       label: "CFTC Filings",
@@ -191,7 +170,7 @@ const adjacentMarketsModule: PluginModule = {
       paneId: "adjacent",
       label: "Weather",
       description:
-        "Open Adjacent climate and weather markets. Chart TWC with G WX:LAX:high and NWS first-final CLI with G NWS:KNYC:high.",
+        "Chart TWC with G WX:LAX:high and NWS first-final CLI with G NWS:KNYC:high.",
       keywords: [
         "weather",
         "climate",
@@ -208,7 +187,7 @@ const adjacentMarketsModule: PluginModule = {
       ],
       category: "Data",
       shortcut: { prefix: "WX" },
-      createInstance: () => ({ placement: "floating", settings: { defaultTabId: "markets" } }),
+      createInstance: () => ({ placement: "floating", settings: { defaultTabId: "indices" } }),
     },
   ],
 
@@ -228,6 +207,9 @@ const adjacentMarketsModule: PluginModule = {
       ?? ctx.configState?.get<string>(ADJACENT_API_KEY_CONFIG)
       ?? null
     ));
+    setSharedAdjacentUserApiKey(
+      ctx.getApiKey("adjacent") ?? readProcessEnv("ADJACENT_API_KEY") ?? null,
+    );
     adjacentClient = getSharedAdjacentClient();
     void adjacentClient.getIndices().then((payload) => {
       rememberAdjacentIndexTickers(
@@ -262,9 +244,8 @@ const adjacentMarketsModule: PluginModule = {
     ctx.registerCommand({
       id: "adjacent-markets-search",
       label: "Search Adjacent",
-      description:
-        "Search Adjacent catalogs (markets, indices, rates) and open an Adjacent list. Venue pricing stays on PM.",
-      keywords: ["adjacent", "search", "markets", "indices", "rates", "catalog", "kalshi", "polymarket"],
+      description: "Search Adjacent indices and rates and open the matching list.",
+      keywords: ["adjacent", "search", "indices", "rates", "catalog"],
       category: "data",
       shortcut: "ADJ",
       shortcutArg: {

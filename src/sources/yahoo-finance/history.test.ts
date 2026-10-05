@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { TIME_RANGES } from "../../time-series/range";
 import { getPresetResolution } from "../../time-series/resolution";
+import { YahooFinanceClient } from "../yahoo-finance";
+import type { YahooHttpClient } from "./http";
 import {
   getYahooChartRangeParams,
   loadYahooPriceHistory,
@@ -33,6 +35,28 @@ describe("Yahoo chart history", () => {
       { date: new Date("2026-07-06T00:00:00.000Z"), open: 100, high: 104, low: 99, close: 103, volume: 30 },
       { date: new Date("2026-07-06T04:00:00.000Z"), open: 103, high: 105, low: 102, close: 104, volume: 30 },
     ]);
+  });
+
+  test("keeps winter four-hour equity bars inside the extended session without shifting futures", async () => {
+    const start = Date.parse("2026-01-12T09:00:00Z"); // 04:00 New York, not 03:00.
+    const fetchChart = async () => ({
+      meta: { currency: "USD" },
+      history: Array.from({ length: 5 }, (_, hour) => ({
+        date: new Date(start + hour * 3_600_000),
+        open: 100 + hour, high: 102 + hour, low: 99 + hour, close: 101 + hour, volume: 10,
+      })),
+    });
+    const equity = await loadYahooPriceHistoryForResolution({
+      ticker: "NVDA", exchange: "NASDAQ", resolution: "4h", fetchChart,
+    });
+    expect(equity.map((bar) => bar.date.toISOString())).toEqual([
+      "2026-01-12T09:00:00.000Z", "2026-01-12T13:00:00.000Z",
+    ]);
+    expect(equity[0]).toMatchObject({ open: 100, high: 105, low: 99, close: 104, volume: 40 });
+    const futures = await loadYahooPriceHistoryForResolution({
+      ticker: "ES=F", exchange: "NASDAQ", resolution: "4h", fetchChart,
+    });
+    expect(futures[0]!.date.toISOString()).toBe("2026-01-12T08:00:00.000Z");
   });
 
   test("repairs an isolated intraday wick without dropping the bar", async () => {
@@ -101,5 +125,30 @@ describe("Yahoo chart history", () => {
       },
     });
     expect(requested).toEqual({ range: "5y", interval: "1wk" });
+  });
+
+  test("asks Yahoo for pre and post prints on intraday history only", async () => {
+    const urls: string[] = [];
+    const http = {
+      fetchJson: async (url: string) => {
+        urls.push(url);
+        return {
+          chart: {
+            result: [{
+              meta: { currency: "USD" },
+              timestamp: [1_781_000_000],
+              indicators: { quote: [{ open: [10], high: [11], low: [9], close: [10.5], volume: [100] }] },
+            }],
+          },
+        };
+      },
+    } as YahooHttpClient;
+    const client = new YahooFinanceClient(http);
+    await client.getPriceHistoryForResolution("HOOD", "NASDAQ", "1D", "1m");
+    await client.getPriceHistoryForResolution("HOOD", "NASDAQ", "1Y", "1d");
+    expect(urls[0]).toContain("interval=1m");
+    expect(urls[0]).toContain("includePrePost=true");
+    expect(urls[1]).toContain("interval=1d");
+    expect(urls[1]).toContain("includePrePost=false");
   });
 });

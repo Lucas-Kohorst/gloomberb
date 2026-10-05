@@ -30,6 +30,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
         onMouseOver={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
         onMouseDown={(event: any) => openAuth(openCommandBar, "login", event)}
+        data-gloom-interactive="true"
       >
         <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}>{` ${t("Log In")} `}</Text>
       </Box>
@@ -41,6 +42,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
             onMouseOver={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
             onMouseDown={(event: any) => openAuth(openCommandBar, "signup", event)}
+            data-gloom-interactive="true"
           >
             <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}>{` ${t("Sign Up")} `}</Text>
           </Box>

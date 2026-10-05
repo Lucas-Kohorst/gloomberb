@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DialogHostProvider, type DialogApi } from "../../../ui/dialog";
+import { inertOutside, modalSiblingKeepList } from "../../../ui/inert";
 import { blendHex } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 
@@ -39,6 +40,8 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
   const [dialogState, setDialogState] = useState<DialogState | null>(null);
   const dialogStateRef = useRef<DialogState | null>(null);
   const dialogElementRef = useRef<HTMLDivElement | null>(null);
+  const backdropElementRef = useRef<HTMLDivElement | null>(null);
+  const restoreInertRef = useRef<(() => void) | null>(null);
   const dialogBorder = blendHex(colors.border, colors.borderFocused, 0.18);
   const dialogBg = blendHex(colors.panel, colors.bg, 0.12);
 
@@ -46,6 +49,10 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
     const current = dialogStateRef.current;
     if (!current) return;
     dialogStateRef.current = null;
+    // Lift inert now, not on the next commit: the focus restore below runs
+    // first and cannot land on an element that is still inert.
+    restoreInertRef.current?.();
+    restoreInertRef.current = null;
     setDialogState(null);
     current.resolve(value);
     queueMicrotask(() => {
@@ -70,6 +77,21 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
       setDialogState(next);
     });
   }, []);
+
+  // aria-modal alone only asks assistive technology to ignore the workspace;
+  // inert actually removes it from the tab order, pointer, and the a11y tree.
+  useLayoutEffect(() => {
+    if (!dialogState) return;
+    const backdrop = backdropElementRef.current;
+    const root = backdrop?.parentElement;
+    if (!backdrop || !root) return;
+    const restore = inertOutside(root, [backdrop, ...modalSiblingKeepList(root)]);
+    restoreInertRef.current = restore;
+    return () => {
+      restore();
+      if (restoreInertRef.current === restore) restoreInertRef.current = null;
+    };
+  }, [dialogState?.id]);
 
   useEffect(() => {
     if (!dialogState) return;
@@ -145,6 +167,7 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
       {children}
       {dialogState && (
         <div
+          ref={backdropElementRef}
           className="gloom-dialog-backdrop"
           onMouseDown={(event) => {
             if (

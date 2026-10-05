@@ -65,6 +65,7 @@ function toFeedItems(
       eyebrow: transcript.form,
       title: transcript.title,
       timestamp: transcript.date || null,
+      timestampKind: "date",
       detailTitle: transcript.title,
       detailMeta: meta,
       detailBody,
@@ -82,7 +83,8 @@ function toTranscriptArticle(transcript: EarningsTranscript): NewsArticle {
     title: transcript.title,
     url: transcript.url ?? "",
     source: transcript.company ?? transcript.form ?? "Earnings Transcript",
-    publishedAt: transcript.date ? new Date(transcript.date) : new Date(0),
+    publishedAt: transcript.date ? new Date(transcript.date) : new Date(Number.NaN),
+    publishedAtKind: "date",
     summary: transcript.body ? transcript.body.slice(0, 280) : undefined,
     topic: "earnings",
     topics: ["earnings", "transcript"],
@@ -144,7 +146,7 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
   const [transcripts, setTranscripts] = useState<EarningsTranscript[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedTranscriptId, setSelectedTranscriptId] = useDebouncedPluginPaneState<string | null>("selectedTranscriptId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -188,15 +190,6 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && transcripts.length === 0;
   useOpenTranscriptContent(openItemId, transcripts, setTranscripts);
-  const selectedTranscript = openItemId
-    ? transcripts.find((t) => t.id === openItemId) ?? null
-    : null;
-
-  useEffect(() => {
-    if (transcripts.length > 0 && selectedIdx >= transcripts.length) {
-      setSelectedIdx(Math.max(0, transcripts.length - 1));
-    }
-  }, [transcripts.length, selectedIdx, setSelectedIdx]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -207,13 +200,17 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
   }, []);
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
-    setSelectedIdx(0);
+    setSelectedTranscriptId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery, setSelectedTranscriptId]);
   const popOut = usePopOutNewsArticle(() => setOpenItemId(null));
+  const selectedTranscript = transcripts.find((transcript) => transcript.id === selectedTranscriptId)
+    ?? transcripts[0]
+    ?? null;
+  const activeSelectionId = selectedTranscript?.id ?? null;
   const activeTranscript = openItemId
-    ? transcripts.find((t) => t.id === openItemId) ?? transcripts[selectedIdx] ?? null
-    : transcripts[selectedIdx] ?? null;
+    ? transcripts.find((transcript) => transcript.id === openItemId) ?? selectedTranscript
+    : selectedTranscript;
   const popOutSelected = useCallback(() => {
     if (!activeTranscript) return;
     popOut(toTranscriptArticle(activeTranscript));
@@ -250,12 +247,12 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const openUrl = !error ? selectedTranscript?.url ?? null : null;
+  const openUrl = !error ? activeTranscript?.url ?? null : null;
   usePaneStatusLinkFooter({
     registrationId: EARNINGS_TRANSCRIPTS_PANE_ID,
     focused,
     url: openUrl,
-    source: selectedTranscript?.form,
+    source: activeTranscript?.form,
     label: "transcript",
     loading,
     error,
@@ -345,8 +342,8 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={toFeedItems(transcripts, openItemId ?? undefined)}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={activeSelectionId}
+      onSelect={(index) => setSelectedTranscriptId(transcripts[index]?.id ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       onPopOut={(item) => {
@@ -371,7 +368,10 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
   const [transcripts, setTranscripts] = useState<EarningsTranscript[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedTranscriptId, setSelectedTranscriptId] = useDebouncedPluginPaneState<string | null>(
+    `tickerSelectedTranscriptId:${symbol ?? "none"}`,
+    null,
+  );
   const [openItemId, setOpenItemId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -394,16 +394,19 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
   }, [symbol]);
 
   useOpenTranscriptContent(openItemId, transcripts, setTranscripts);
-  const selectedTranscript = openItemId
-    ? transcripts.find((t) => t.id === openItemId) ?? null
-    : null;
-  const openUrl = !error ? selectedTranscript?.url ?? null : null;
+  const selectedRow = transcripts.find((transcript) => transcript.id === selectedTranscriptId)
+    ?? transcripts[0]
+    ?? null;
+  const activeTranscript = (openItemId
+    ? transcripts.find((transcript) => transcript.id === openItemId)
+    : null) ?? selectedRow;
+  const openUrl = !error ? activeTranscript?.url ?? null : null;
 
   usePaneStatusLinkFooter({
     registrationId: "earnings-transcripts-tab",
     focused,
     url: openUrl,
-    source: selectedTranscript?.form,
+    source: activeTranscript?.form,
     label: "transcript",
     loading,
     error,
@@ -429,8 +432,8 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
       height={height}
       focused={focused}
       items={toFeedItems(transcripts, openItemId ?? undefined)}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedRow?.id ?? null}
+      onSelect={(index) => setSelectedTranscriptId(transcripts[index]?.id ?? null)}
       onOpenItemIdChange={setOpenItemId}
       sourceLabel="Form"
       titleLabel="Transcript"

@@ -3,7 +3,6 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 import { AccountManagementPane } from "../account-management/pane";
-import { createByokManageCommand } from "../byok/commands";
 import { chatController } from "../chat/controller";
 import {
   buildDmCommandResults,
@@ -254,8 +253,8 @@ const accountModule: PluginModule = {
     id: "account-management-pane",
     paneId: "account-management",
     label: "Account Management",
-    description: "Manage Gloom Cloud profile, display (theme, font, size), AI providers, API keys, password, and public portfolio sharing",
-    keywords: ["account", "profile", "cloud", "acm", "password", "settings", "ai", "provider", "ollama", "openrouter", "anthropic", "openai", "theme", "font", "display", "keys", "byok", "api"],
+    description: "Manage Gloom Cloud profile, display (theme, font, size), password, and public portfolio sharing",
+    keywords: ["account", "profile", "cloud", "acm", "password", "settings", "theme", "font", "display"],
     shortcut: { prefix: "ACM" },
     createInstance: () => ({ placement: "floating" }),
   }],
@@ -265,7 +264,6 @@ const accountModule: PluginModule = {
   setup: (ctx) => {
     registerCloudAuthCommands(ctx);
     registerCloudUpgradeCommand(ctx);
-    ctx.registerCommand(createByokManageCommand((paneId) => ctx.showPane(paneId)));
   },
 };
 

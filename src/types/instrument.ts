@@ -35,4 +35,8 @@ export interface InstrumentSearchResult {
   currency?: string;
   primaryExchange?: string;
   brokerContract?: BrokerContractRef;
+  /** Session volume when the search hit included one. */
+  volume?: number;
+  /** Average volume when the search hit included one. */
+  averageVolume?: number;
 }

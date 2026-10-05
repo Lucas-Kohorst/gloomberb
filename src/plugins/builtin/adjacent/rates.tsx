@@ -22,7 +22,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/format";
-import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
+import { CompositeChart } from "../../../components/chart/composite";
 import {
   applySortPreference,
   nextSortPreference,
@@ -35,6 +35,10 @@ import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { openUrl } from "../../../components/ui/external-link";
 import { graphFooterHint, useGraphChartPopOut } from "../shared/graph-pop-out";
 import { paneSearchHint } from "../shared/pane-footer";
+import { ChartRangeTabs } from "../../../components/chart/range-tabs";
+import type { TimeRange } from "../../../components/chart/core/types";
+import { ADJACENT_DEFAULT_PRICE_RANGE, adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
+import { adjacentLevelSeries } from "./series";
 import type { AdjacentClient } from "./client";
 import { adjacentCatalogHaystack } from "./command-bar-search";
 import { filterAdjacentRows } from "./search";
@@ -131,16 +135,7 @@ function RateChart({
     [prices],
   );
   const series = useMemo(
-    () => pricePointsToResolvedSeries(pricePoints, {
-      id: `ADJ:${rateId}`,
-      label: name,
-      color: colors.borderFocused,
-      unit: "index",
-      unitGroup: "level",
-      style: "area",
-      panelId: "price",
-      providerId: "adjacent",
-    }),
+    () => adjacentLevelSeries(pricePoints, { id: `ADJ:${rateId}`, label: name }),
     [name, pricePoints, rateId],
   );
   if (pricePoints.length === 0) {
@@ -174,6 +169,8 @@ function RateChart({
         panels={[{ id: "price" }]}
         axisWidth={8}
         showLegend={false}
+        formatValue={(value) => value.toFixed(2)}
+        formatAxisValue={(value) => value.toFixed(2)}
       />
     </Box>
   );
@@ -209,6 +206,14 @@ function RateDetail({
   });
   const [prices, setPrices] = useState<AdjacentIndexPricePoint[]>([]);
   const [pricesLoading, setPricesLoading] = useState(false);
+  // Adjacent serves one hour of buckets over 30 days and one day over 90, so
+  // the public tier can only honestly enable 1D through 3M.
+  const [range, setRange] = useState<TimeRange>(ADJACENT_DEFAULT_PRICE_RANGE);
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+  const rangeChoices = useMemo(
+    () => adjacentRangeSupport(tier).map((value) => ({ value })),
+    [tier],
+  );
   const priceGenRef = useRef(0);
   const sortedSources = useMemo(
     () => applySortPreference(sourceMarkets, sort, sourceSortValue),
@@ -219,7 +224,7 @@ function RateDetail({
     priceGenRef.current += 1;
     const gen = priceGenRef.current;
     setPricesLoading(true);
-    client.getRatePrices(rate.id)
+    client.getRatePrices(rate.id, adjacentPriceWindow(range, tier))
       .then((response) => {
         if (priceGenRef.current !== gen) return;
         setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
@@ -230,7 +235,7 @@ function RateDetail({
         setPrices([]);
         setPricesLoading(false);
       });
-  }, [client, rate.id]);
+  }, [client, range, rate.id, tier]);
 
   useEffect(() => {
     if (sortedSources.length === 0) {
@@ -261,6 +266,14 @@ function RateDetail({
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
+        <Box paddingX={1}>
+          <ChartRangeTabs
+            choices={rangeChoices}
+            value={range}
+            onSelect={setRange}
+            focused={focused}
+          />
+        </Box>
         {pricesLoading && prices.length === 0 ? (
           <Box flexGrow={1} justifyContent="center" alignItems="center">
             <Spinner label="Loading..." />
@@ -271,7 +284,7 @@ function RateDetail({
             rateId={rate.id}
             name={rate.name}
             width={width}
-            height={contentHeight - 1}
+            height={contentHeight - 2}
             focused={focused}
           />
         )}
@@ -562,11 +575,18 @@ export function AdjacentRatesPane({
   const poll = useFeedPollInterval();
   useAutoRefresh(status === "loaded" ? lastUpdated : null, load, poll.intervalMinutes);
 
+  // Without a user-owned key the rate history is on Adjacent's public tier,
+  // which caps out at 3M. That is auth state, so it belongs in the footer.
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+
   usePaneFooter("adjacent-rates", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ...(tier === "public"
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     trailingInfo: [poll.segment],
     hints: [
@@ -574,7 +594,7 @@ export function AdjacentRatesPane({
       paneSearchHint(focusSearch),
       ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
     ],
-  }), [detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, updatedAgo]);
+  }), [detailOpen, error, focusSearch, graphSelected, poll.segment, rateUrl, selectedRate, status, tier, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

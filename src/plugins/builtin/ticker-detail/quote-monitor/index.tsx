@@ -7,18 +7,20 @@ import type { TickerRecord } from "../../../../types/ticker";
 import type { ChartRequest, InstrumentRef } from "../../../../market-data/request-types";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../../market-data/request-types";
 import { getSharedMarketDataCoordinator } from "../../../../market-data/coordinator";
-import { buildChartKey, buildQuoteKey } from "../../../../market-data/selectors";
+import { buildChartKey, buildQuoteKey, resolveEntryData } from "../../../../market-data/selectors";
 import { DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS, useChartQueries } from "../../../../market-data/hooks";
 import { useAppSelector, usePaneInstance, usePaneTicker } from "../../../../state/app/context";
 import { useLiveQuoteEntries } from "../../../../state/hooks/quote-streaming";
 import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
 import { colors } from "../../../../theme/colors";
-import { EmptyState } from "../../../../components";
+import { EmptyState, usePaneFooter } from "../../../../components";
 import { getQuoteMonitorPaneSettings } from "../settings";
 import { useShortcut } from "../../../../react/input";
 import { isPlainKey } from "../../../../utils/keyboard";
 import { QuoteMonitorCard } from "./card";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
+import { usePaneFooterHintBindings } from "../../shared/pane-footer";
+import { hasDelayedQuote, useDelayedQuotesFooter } from "../../shared/cloud-upgrade";
 
 interface BoardEntry {
   symbol: string;
@@ -136,11 +138,28 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   const openTicker = useCallback((nextSymbol: string) => {
     pinTicker(nextSymbol, { paneType: TICKER_RESEARCH_PANE_ID, floating: true });
   }, [pinTicker]);
+  const openSettings = useCallback(() => {
+    openPaneSettings(paneId);
+  }, [openPaneSettings, paneId]);
+  usePaneFooter("quote-monitor", () => ({
+    hints: [{ id: "settings", key: "s", label: "ettings", onPress: openSettings }],
+  }), [openSettings]);
+  usePaneFooterHintBindings(focused, [{ id: "settings", key: "s", label: "ettings", onPress: openSettings }]);
+  const anyQuoteDelayed = hasDelayedQuote(boardEntries.map((entry) => (
+    (entry.quoteKey ? resolveEntryData(quoteEntries.get(entry.quoteKey) ?? null) : null)
+      ?? financialsBySymbol.get(entry.symbol)?.quote
+  )));
+  useDelayedQuotesFooter({
+    registrationId: "quote-monitor-access",
+    delayed: anyQuoteDelayed,
+    focused,
+    shortcutScope: "quote-monitor:upgrade",
+  });
   useShortcut((event) => {
     if (!focused || event.targetEditable || !isPlainKey(event, "t")) return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    openPaneSettings(paneId);
+    openSettings();
   }, { allowEditable: true, enabled: focused });
 
   if (symbols.length === 0) {

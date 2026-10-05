@@ -67,6 +67,28 @@ test("folds a plain query's symbol hits into one capped Instruments section behi
   expect(merged.find((item) => item.id === "search:NVDA.MX")?.right).toBe("Equity BMV");
 });
 
+test("keeps each exchange of an exact symbol in the exact-match section", () => {
+  const pane: ResultItem = {
+    id: "pane:news",
+    label: "News",
+    detail: "",
+    category: "Panes",
+    kind: "action",
+    action: () => {},
+  };
+  const exchanges = ["IDX", "NASDAQ", "LSE", "IEX", "TSXV"];
+  const providerItems = [
+    resultItem("goto:BIRD", "BIRD", "IDX"),
+    ...exchanges.map((exchange) => resultItem(`search:BIRD:${exchange}`, "BIRD", exchange, "search")),
+    resultItem("search:BIRDF", "BIRDF", "NASDAQ", "search"),
+  ];
+
+  const merged = mergePlainRootTickerResults("bird", providerItems, [pane]);
+
+  expect(merged.filter((item) => item.category === "Exact Match").map((item) => item.right)).toEqual(exchanges);
+  expect(merged.some((item) => item.label === "BIRDF")).toBe(false);
+});
+
 /**
  * The class tag is what the eye sorts instruments by, so the mapping from a
  * provider's type strings has to stay put: an exchange-traded fund is not a
@@ -75,6 +97,11 @@ test("folds a plain query's symbol hits into one capped Instruments section behi
 test("names the instrument class for the badge column", () => {
   const search = (type: string) => ({ providerId: "yahoo", symbol: "X", name: "X", exchange: "NYQ", type });
   expect(formatInstrumentBadge({ instrumentClass: "equity" })).toBe("EQ");
+  expect(formatInstrumentBadge({ instrumentClass: "currency" })).toBe("CUR");
+  expect(formatInstrumentBadge({ instrumentClass: "option" })).toBe("OPT");
+  expect(formatInstrumentBadge({ instrumentClass: "future" })).toBe("FUT");
+  expect(formatInstrumentBadge({ instrumentClass: "index" })).toBe("IDX");
+  expect(formatInstrumentBadge({ instrumentClass: "etf" })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("ETF") })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("ETN") })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "fund", result: search("MUTUALFUND") })).toBe("FUND");

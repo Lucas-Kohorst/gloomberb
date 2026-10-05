@@ -7,7 +7,6 @@ import type {
   AdjacentIndexSleeve,
   AdjacentMarket,
   AdjacentMarketRow,
-  AdjacentMarketSortColumnId,
   AdjacentMarketsResponse,
   AdjacentNewsArticle,
   AdjacentPlatform,
@@ -18,6 +17,7 @@ import type {
   AdjacentRateRow,
   AdjacentSimilarMarket,
 } from "./types";
+import { ntiTeamForRateId } from "./nti-teams";
 import type { NewsArticle } from "../../../types/news-source";
 import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import type { PricePoint } from "../../../types/financials";
@@ -92,9 +92,10 @@ export function adjacentRateSortValue(
 }
 
 export function normalizeAdjacentRate(rate: AdjacentRate): AdjacentRateRow {
+  const team = ntiTeamForRateId(rate.rate_id);
   return {
     id: rate.rate_id,
-    name: rate.name,
+    name: team ? `${team} · ${rate.name}` : rate.name,
     value: rate.latest_price ?? null,
     spread: rate.spread ?? null,
     change1d: rate.price_change_1d ?? null,
@@ -123,27 +124,6 @@ export function normalizeAdjacentMarket(market: AdjacentMarket): AdjacentMarketR
     subtitle: market.subtitle,
     description: market.description,
   };
-}
-
-export function adjacentMarketSortValue(
-  row: AdjacentMarketRow,
-  columnId: AdjacentMarketSortColumnId,
-): string | number | null {
-  switch (columnId) {
-    case "ticker":
-      return row.ticker;
-    case "title":
-      return row.title;
-    case "platform":
-      return row.platform;
-    case "status":
-      return row.status;
-    case "ends": {
-      if (!row.endsAt) return null;
-      const ts = new Date(row.endsAt).getTime();
-      return Number.isFinite(ts) ? ts : null;
-    }
-  }
 }
 
 export function normalizeAdjacentPriceHistory(
@@ -250,7 +230,7 @@ export function parseAdjacentNewsArticle(value: unknown): AdjacentNewsArticle | 
     title,
     url,
     source: stringField(record, "source") || "Adjacent Press",
-    summary: stringField(record, "summary"),
+    summary: stringField(record, "summary", "via_market_question"),
     published_at: stringField(record, "published_at", "published_date") || "",
     image: stringField(record, "image", "image_url"),
     author: stringField(record, "author"),

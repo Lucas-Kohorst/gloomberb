@@ -8,6 +8,7 @@ import {
   Tabs,
   usePaneFooter,
 } from "../../../components";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
 import type { PaneProps } from "../../../types/plugin";
 import { useFxRatesMap, useTickerFinancials, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { formatCurrency } from "../../../utils/format";
@@ -399,18 +400,24 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
     }
   }, { enabled: focused });
 
+  const footerHints = useMemo(() => [
+    { id: "search", key: "/", label: "search", onPress: focusTickerSearch },
+    { id: "sensitivity", key: "s", label: showSensitivity ? "ensitivity off" : "ensitivity", onPress: toggleSensitivity },
+    { id: "edit", key: "e", label: "dit", onPress: () => activateInput(editableFields[safeSelectedFieldIndex]?.id ?? null) },
+  ], [activateInput, editableFields, focusTickerSearch, safeSelectedFieldIndex, showSensitivity, toggleSensitivity]);
+
   usePaneFooter(KELLY_PANE_ID, () => ({
     info: result.warnings.length > 0
       ? [{ id: "warning", parts: [{ text: result.warnings[0]!, tone: "warning" as const }] }]
       : result.clipReasons.length > 0
         ? [{ id: "clip", parts: [{ text: `clip ${result.clipReasons.join(", ")}`, tone: "muted" as const }] }]
         : [],
-    hints: [
-      { id: "search", key: "/", label: "search", onPress: focusTickerSearch },
-      { id: "sensitivity", key: "s", label: showSensitivity ? "ensitivity off" : "ensitivity", onPress: toggleSensitivity },
-      { id: "edit", key: "e", label: "dit", onPress: () => activateInput(editableFields[safeSelectedFieldIndex]?.id ?? null) },
-    ],
-  }), [activateInput, editableFields, focusTickerSearch, result.clipReasons, result.warnings, safeSelectedFieldIndex, showSensitivity, toggleSensitivity]);
+    hints: footerHints,
+  }), [footerHints, result.clipReasons, result.warnings]);
+  usePaneFooterHintBindings(
+    focused && !commandBarOpen && !tickerSearchActive && !activeInputId,
+    footerHints,
+  );
 
   const portfolioTabs = useMemo(
     () => listAnalyticsCollections(config).map((collection) => ({ label: collection.name, value: collection.id })),

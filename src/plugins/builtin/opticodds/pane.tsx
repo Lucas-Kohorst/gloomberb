@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   useExternalLinkFooter,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableKeyEvent,
@@ -13,10 +14,11 @@ import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginPaneState } from "../../runtime";
 import { loadOpticOdds } from "./client";
+import { oddsBoardRequestQuery, resolveOddsScope } from "./query";
 import {
   buildOddsColumns,
   formatAmerican,
@@ -27,18 +29,20 @@ import {
   type OddsColumn,
   type OddsSortPreference,
 } from "./model";
-import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { loadingErrorFooterInfo } from "../shared/table-pane";
 import { OPTICODDS_PANE_ID, type OddsRow } from "./types";
-
-const SEARCH_DEBOUNCE_MS = 250;
 
 export function OpticOddsPane({ focused, width, height }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? ""));
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: query,
+    onQueryChange: setQuery,
+    placeholder: "league, team, or fixture",
+    normalizeValue: (value) => value.trim(),
+  });
   const [rows, setRows] = useState<OddsRow[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -71,84 +75,65 @@ export function OpticOddsPane({ focused, width, height }: PaneProps) {
       });
   }, []);
 
+  const requestQuery = oddsBoardRequestQuery(query);
   useEffect(() => {
-    const delay = query.trim() ? SEARCH_DEBOUNCE_MS : 0;
-    const timer = setTimeout(() => load(query), delay);
-    return () => clearTimeout(timer);
-  }, [load, query]);
+    load(requestQuery);
+  }, [load, requestQuery]);
 
   useEffect(() => () => {
     abortRef.current?.abort();
   }, []);
 
   const columns = useMemo(() => buildOddsColumns(), []);
-  const sorted = useMemo(() => sortOddsRows(rows, sort), [rows, sort]);
+  const visibleRows = useMemo(() => {
+    const text = resolveOddsScope(query).text ?? "";
+    if (!text) return rows;
+    return rows.filter((row) => (
+      `${row.matchup} ${row.selection} ${row.sportsbook} ${row.fixtureId}`.toLowerCase().includes(text)
+    ));
+  }, [query, rows]);
+  const sorted = useMemo(() => sortOddsRows(visibleRows, sort), [sort, visibleRows]);
 
   useEffect(() => {
     if (selectedId && sorted.some((row) => row.id === selectedId)) return;
     setSelectedId(sorted[0]?.id ?? null);
   }, [selectedId, sorted]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-  const updateQuery = useCallback((next: string) => {
-    setQuery(next);
-    setSelectedId(null);
-  }, [setQuery]);
   const refresh = useCallback(() => {
-    load(query);
-  }, [load, query]);
+    load(requestQuery);
+  }, [load, requestQuery]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSort((current) => nextOddsSort(current, columnId));
   }, []);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
       return true;
     }
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
     return false;
-  }, [focusSearch, refresh]);
+  }, [listSearch.handleSearchKey, refresh]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      refresh();
-    }
-  }, { allowEditable: true, enabled: focused });
+    if (!focused || listSearch.searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    refresh();
+  }, { allowEditable: true, enabled: focused && !listSearch.searchFocused });
 
   const selected = sorted.find((row) => row.id === selectedId) ?? null;
   const loading = status === "loading" && rows.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const searchHint = useMemo(
-    () => [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
-    [focusSearch],
+    () => [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
+    [listSearch.focusSearch, listSearch.searchFocused],
   );
-  usePaneFooterHintBindings(focused && !searchFocused, searchHint);
   const footerInfo = useMemo(() => [
-    ...(status === "loaded"
-      ? [{ id: "live", parts: [{ text: "live", tone: "value" as const }] }]
-      : []),
     ...(updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : []),
@@ -157,7 +142,7 @@ export function OpticOddsPane({ focused, width, height }: PaneProps) {
 
   useExternalLinkFooter({
     registrationId: OPTICODDS_PANE_ID,
-    focused,
+    focused: focused && !listSearch.searchFocused,
     url: error ? null : selected?.url,
     source: selected?.sportsbook,
     label: "book",
@@ -188,21 +173,7 @@ export function OpticOddsPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="league, team, or fixture"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused} search={listSearch.search} />
   );
 
   if (loading) {
@@ -229,7 +200,7 @@ export function OpticOddsPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableView<OddsRow, OddsColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       rootBefore={rootBefore}
       rootWidth={width}
       rootHeight={height}

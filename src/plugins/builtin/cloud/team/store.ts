@@ -6,7 +6,14 @@ import {
   type TeamUpdatedEvent,
 } from "../../../../api-client";
 import type { AppNotificationDelivery, AppNotificationRequest, PluginPersistence } from "../../../../types/plugin";
-import { describeTeamNotification, findTeam, teamIdFromChannelId } from "./model";
+import { appendNotificationLog, markNotificationLogReadByRef } from "../../../../notifications/notification-log";
+import {
+  describeTeamNotification,
+  findTeam,
+  teamIdFromChannelId,
+  teamNotificationRefId,
+} from "./model";
+import { teamSessionReady } from "./session";
 
 export interface TeamStoreSnapshot {
   /** Teams the signed-in person belongs to, sorted by name. */
@@ -32,6 +39,8 @@ type Notifier = (request: AppNotificationRequest) => AppNotificationDelivery | v
 const FOCUS_STATE_KEY = "team-focus";
 const NOTIFICATION_STATE_KEY = "team-notifications";
 const COLLAPSED_STATE_KEY = "team-collapsed-channels";
+const DISMISSED_STATE_KEY = "team-dismissed-notifications";
+const DISMISSED_LIMIT = 500;
 
 interface TeamNotificationActions {
   openTeamChannel?: (teamId: string) => void;
@@ -60,6 +69,7 @@ const EMPTY: TeamStoreSnapshot = {
 /** The slice of the API client the store uses, so tests can hand in a fake. */
 export type TeamStoreClient = Pick<
   typeof apiClient,
+  | "isSignedIn"
   | "isVerified"
   | "subscribeCurrentUser"
   | "subscribeTeamNotifications"
@@ -81,6 +91,11 @@ export class TeamStore {
   private disposers: Array<() => void> = [];
   private refreshPromise: Promise<void> | null = null;
   private started = false;
+  /**
+   * Cards this device already read. The server keeps resending a card until
+   * the delivery ack lands, so without this a failed ack revives it as unread.
+   */
+  private dismissed = new Set<string>();
 
   getSnapshot(): TeamStoreSnapshot {
     return this.snapshot;
@@ -98,9 +113,12 @@ export class TeamStore {
     const focus = persistence.getState<TeamStoreSnapshot["focus"]>(FOCUS_STATE_KEY);
     const notifications = persistence.getState<TeamNotification[]>(NOTIFICATION_STATE_KEY);
     const collapsed = persistence.getState<string[]>(COLLAPSED_STATE_KEY);
+    const dismissed = persistence.getState<string[]>(DISMISSED_STATE_KEY);
+    this.dismissed = new Set(Array.isArray(dismissed) ? dismissed.filter((id) => typeof id === "string") : []);
     this.update({
       focus: focus ?? "all",
-      notifications: Array.isArray(notifications) ? notifications : [],
+      notifications: (Array.isArray(notifications) ? notifications : [])
+        .filter((entry) => !this.dismissed.has(entry.id)),
       collapsedTeams: new Set(Array.isArray(collapsed) ? collapsed : []),
     });
   }
@@ -115,9 +133,15 @@ export class TeamStore {
     if (this.started) return;
     this.started = true;
     const syncAuth = () => {
-      if (this.client.isVerified()) {
+      // isVerified() misses a Pro cache that dropped emailVerified. The fake
+      // client used in tests has no plan, so only the real client gets that pass.
+      const ready = this.client.isVerified() || (this.client === apiClient && teamSessionReady());
+      if (ready) {
         void this.refresh();
-      } else if (this.snapshot.loaded || this.snapshot.teams.length > 0) {
+      } else if (
+        (this.snapshot.loaded || this.snapshot.teams.length > 0)
+        && !this.client.isSignedIn()
+      ) {
         this.update({ ...EMPTY, focus: this.snapshot.focus, collapsedTeams: this.snapshot.collapsedTeams });
       }
     };
@@ -232,6 +256,10 @@ export class TeamStore {
           error: null,
         });
         this.persistNotifications();
+        if (notifications) {
+          this.rememberInNotificationCenter(this.snapshot.notifications);
+          this.retryDeliveryAcks(notifications);
+        }
       } catch (error) {
         this.update({
           loading: false,
@@ -248,9 +276,15 @@ export class TeamStore {
   /** Marks cards handled and tells the server so they stop coming back. */
   async dismissNotifications(ids: readonly string[]): Promise<void> {
     if (ids.length === 0) return;
+    const dismissed = this.snapshot.notifications.filter((entry) => ids.includes(entry.id));
     const remaining = this.snapshot.notifications.filter((entry) => !ids.includes(entry.id));
     this.update({ notifications: remaining });
     this.persistNotifications();
+    this.rememberDismissed(ids);
+    // Pending cards are the unread badge. Marking one read removes it from
+    // that list, but the notification log keeps the same card as history.
+    this.rememberInNotificationCenter(dismissed);
+    markNotificationLogReadByRef(dismissed.map((entry) => teamNotificationRefId(entry.id)));
     try {
       await this.client.markChatNotificationsDelivered([...ids]);
     } catch {
@@ -266,14 +300,20 @@ export class TeamStore {
   }
 
   private receive(notification: TeamNotification): void {
+    if (this.dismissed.has(notification.id)) {
+      this.retryDeliveryAcks([notification]);
+      return;
+    }
     this.update({ notifications: this.mergeNotifications([notification]) });
     this.persistNotifications();
     if (notification.type === "team-joined" || notification.type === "team-invite") {
       void this.refresh();
     }
+    this.rememberInNotificationCenter([notification]);
     const { title, body } = describeTeamNotification(notification);
     const action = this.actionFor(notification);
     this.notifier?.({
+      refId: teamNotificationRefId(notification.id),
       title,
       body,
       type: "info",
@@ -299,9 +339,41 @@ export class TeamStore {
     return null;
   }
 
+  private rememberInNotificationCenter(notifications: readonly TeamNotification[]): void {
+    for (const notification of notifications) {
+      const { title, body } = describeTeamNotification(notification);
+      const at = Date.parse(notification.createdAt);
+      appendNotificationLog({
+        title,
+        body,
+        type: "info",
+        refId: teamNotificationRefId(notification.id),
+      }, "team", Number.isFinite(at) ? at : Date.now());
+    }
+  }
+
+  private rememberDismissed(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.dismissed.delete(id);
+      this.dismissed.add(id);
+    }
+    const kept = [...this.dismissed].slice(-DISMISSED_LIMIT);
+    this.dismissed = new Set(kept);
+    this.persistence?.setState(DISMISSED_STATE_KEY, kept);
+  }
+
+  private retryDeliveryAcks(incoming: readonly TeamNotification[]): void {
+    const stale = incoming.filter((entry) => this.dismissed.has(entry.id)).map((entry) => entry.id);
+    if (stale.length === 0) return;
+    markNotificationLogReadByRef(stale.map(teamNotificationRefId));
+    void this.client.markChatNotificationsDelivered(stale).catch(() => {});
+  }
+
   private mergeNotifications(incoming: readonly TeamNotification[]): TeamNotification[] {
     const byId = new Map(this.snapshot.notifications.map((entry) => [entry.id, entry]));
-    for (const entry of incoming) byId.set(entry.id, entry);
+    for (const entry of incoming) {
+      if (!this.dismissed.has(entry.id)) byId.set(entry.id, entry);
+    }
     return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-100);
   }
 

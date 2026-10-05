@@ -158,14 +158,14 @@ describe("buildAssistCommandInventory", () => {
       paneTemplates: [
         paneTemplate({
           id: "weather-pane",
-          label: "Weather",
-          description: "Browse Weather Company climate.",
+          label: "Climate Markets",
+          description: "Open Adjacent climate and weather markets.",
           keywords: ["weather", "climate", "nws", "kalshi"],
           shortcut: { prefix: "WX" },
         }),
       ],
     });
-    expect(inventory[0]?.description).toContain("Browse Weather Company climate.");
+    expect(inventory[0]?.description).toContain("Open Adjacent climate and weather markets.");
     expect(inventory[0]?.description).toContain("climate");
     expect(inventory[0]?.description).toContain("nws");
   });
@@ -270,7 +270,7 @@ describe("assist catalog coverage", () => {
     }
   });
 
-  test("splits KEYS (BYOK) from BIND/KB (keybindings) and prefixes Team and X Feed", () => {
+  test("maps BIND/KB (keybindings) and prefixes Team and X Feed", () => {
     const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
     const keybindings = paneTemplates.find((template) => template.id === "keybindings-pane");
     const team = paneTemplates.find((template) => template.id === "team-pane");
@@ -302,18 +302,9 @@ describe("assist catalog coverage", () => {
 
     const inventory = buildAssistCommandInventory({
       commands: [],
-      pluginCommands: [{
-        id: "byok-manage-keys",
-        label: "Manage API Keys",
-        description: "Open BYOK settings to add, edit, or test API keys.",
-        keywords: ["byok", "api"],
-        category: "config",
-        shortcut: "KEYS",
-        execute: () => {},
-      }],
+      pluginCommands: [],
       paneTemplates,
     });
-    expect(inventory.find((entry) => entry.prefix === "KEYS")?.name).toBe("Manage API Keys");
     expect(inventory.find((entry) => entry.prefix === "BIND")?.name).toBe("Key Bindings");
     expect(inventory.find((entry) => entry.prefix === "TEAM")?.name).toBe("Team");
   });
@@ -336,23 +327,5 @@ describe("assist catalog coverage", () => {
       `Assist unique prefixes (${unique.length}) exceed ASSIST_COMMAND_INVENTORY_LIMIT (${ASSIST_COMMAND_INVENTORY_LIMIT}). Raise the cap or keep deep rows in search providers.`,
     ).toBeLessThanOrEqual(ASSIST_COMMAND_INVENTORY_LIMIT);
     expect(capped.map((entry) => entry.prefix)).toEqual(unique.map((entry) => entry.prefix));
-  });
-
-  test("keeps both options calculators in the assist inventory with distinct prefixes", () => {
-    const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
-    // OVME is owned by exactly one pane: the Godel-parity options-calc.
-    // A second template reusing the prefix would silently drop one of the two
-    // options calculators from the assist inventory.
-    const ovmeTemplates = paneTemplates.filter((template) => template.shortcut?.prefix === "OVME");
-    expect(ovmeTemplates.map((template) => template.paneId)).toEqual(["options-calc"]);
-
-    const calculator = paneTemplates.find((template) => template.paneId === "options-calculator");
-    expect(calculator?.shortcut?.prefix).toBeTruthy();
-    expect(calculator?.shortcut?.prefix).not.toBe("OVME");
-
-    const inventory = buildAssistCommandInventory({ commands: [], pluginCommands: [], paneTemplates });
-    const prefixes = new Set(inventory.map((entry) => entry.prefix));
-    expect(prefixes.has("OVME")).toBe(true);
-    expect(prefixes.has(calculator?.shortcut?.prefix ?? "")).toBe(true);
   });
 });

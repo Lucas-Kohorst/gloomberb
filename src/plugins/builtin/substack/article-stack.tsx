@@ -28,6 +28,7 @@ export function SubstackArticleStack({
   detailContent,
   activePublication,
   activeFeedState,
+  searchQuery,
   sortedRows,
   sort,
   columns,
@@ -50,6 +51,7 @@ export function SubstackArticleStack({
   detailContent: ReactNode;
   activePublication: SubstackPublication | null;
   activeFeedState: ActiveFeedState;
+  searchQuery: string;
   sortedRows: SubstackArticleSummary[];
   sort: { columnId: SubstackSortColumnId; direction: SubstackSortDirection };
   columns: SubstackColumn[];
@@ -126,8 +128,10 @@ export function SubstackArticleStack({
       onHeaderClick={onHeaderClick}
       getItemKey={(article) => article.id}
       renderCell={renderCell}
-      emptyStateTitle={activeFeedState.loading ? "Loading articles..." : activeFeedState.error ?? "No Substack posts"}
-      emptyStateHint={activePublication ? activePublication.name : "Authenticated reader feed"}
+      emptyStateTitle={searchQuery.trim() ? "No matching articles." : "No Substack posts."}
+      emptyStateHint={searchQuery.trim()
+        ? "Clear the search or try another title or publication."
+        : "Choose another publication or press r to retry."}
     />
   );
 }

@@ -23,6 +23,10 @@ function quoteTrend(value: number | null | undefined): PriceSparklineTrend {
   return value > 0 ? "positive" : "negative";
 }
 
+function hasDisplayPrice(quote: Quote | null | undefined): quote is Quote {
+  return Number.isFinite(getActiveQuoteDisplay(quote)?.price);
+}
+
 /** A mistyped ticker and a broken provider are not the same problem. */
 const UNKNOWN_SYMBOL_REASONS = new Set(["NOT_FOUND", "BAD_MAPPING"]);
 
@@ -75,7 +79,12 @@ export function QuoteMonitorCard({
   onOpen: (symbol: string) => void;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
-  const quote = resolveEntryData(quoteEntry) ?? cachedFinancials?.quote;
+  const entryQuote = resolveEntryData(quoteEntry);
+  const quote = hasDisplayPrice(entryQuote)
+    ? entryQuote
+    : hasDisplayPrice(cachedFinancials?.quote)
+      ? cachedFinancials?.quote
+      : entryQuote ?? cachedFinancials?.quote;
   const queriedPriceHistory = resolveEntryData(chartEntry);
   const priceHistory = queriedPriceHistory && queriedPriceHistory.length >= 2
     ? queriedPriceHistory
@@ -85,7 +94,9 @@ export function QuoteMonitorCard({
     [quote],
   );
   const flashDirection = useQuoteFlashDirection(flashFinancials, valueFlashingEnabled);
-  const display = getActiveQuoteDisplay(quote);
+  // A quote without a usable price shows the loading/unavailable line rather
+  // than a card of placeholder dashes.
+  const display = hasDisplayPrice(quote) ? getActiveQuoteDisplay(quote) : null;
   const quoteStatus = resolveQuoteStatus(quoteEntry, symbol);
   const quoteFailed = quoteStatus.failed && !!display;
   const changeColor = quoteFailed ? colors.textDim : priceColor(display?.change ?? 0);

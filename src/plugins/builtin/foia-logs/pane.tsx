@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -21,9 +22,10 @@ import { FoiaLogsClient } from "./client";
 import {
   FOIA_LOGS_PLUGIN_ID,
   type FoiaLogEntry,
-  type FoiaLogPage,
   type FoiaSignal,
 } from "./types";
+
+const EMPTY_ITEMS: FoiaLogEntry[] = [];
 
 const SEARCH_DEBOUNCE_MS = 400;
 const REFRESH_INTERVAL_MINUTES = 60;
@@ -41,11 +43,11 @@ function formatTime(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function entryTime(entry: FoiaLogEntry): Date {
+function entryTime(entry: FoiaLogEntry): Date | null {
   for (const date of [entry.closedDate, entry.dateReceived, entry.dateOfRequest]) {
     if (date.getTime() > 0) return date;
   }
-  return entry.dateOfRequest;
+  return null;
 }
 
 const SIGNAL_EXPLAIN: Record<FoiaSignal, string> = {
@@ -74,9 +76,6 @@ function buildDetailBody(entry: FoiaLogEntry): string {
     "Request description:",
     entry.description || "No description published.",
   ];
-  if (entry.disposition) {
-    lines.push("", `**Final disposition:** ${entry.disposition}`);
-  }
   lines.push(
     "",
     "A 7(A) withholding is a signal, not a finding — read the request description before drawing conclusions.",
@@ -92,6 +91,7 @@ function toFeedItems(entries: FoiaLogEntry[]): FeedDataTableItem[] {
       ? entry.description.replace(/\s+/g, " ").trim()
       : `FOIA request ${entry.requestId}`,
     timestamp: entryTime(entry),
+    timestampKind: "date",
     detailTitle: `FOIA request ${entry.requestId}`,
     detailMeta: buildDetailMeta(entry),
     detailBody: buildDetailBody(entry),
@@ -104,111 +104,40 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
-  const [entries, setEntries] = useState<FoiaLogEntry[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal) => {
+    const page = await client.searchLogs(query, { signal });
+    return page.entries;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(query.trim() ? loader : null);
+  const entries = data ?? EMPTY_ITEMS;
 
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (nextQuery: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      if (!nextQuery.trim()) {
-        setEntries([]);
-        setStatus("loaded");
-        setError(null);
-        return;
-      }
-      setStatus("loading");
-      setError(null);
-      void client
-        .searchLogs(nextQuery, { signal: controller.signal })
-        .then((page: FoiaLogPage) => {
-          if (abortRef.current !== controller) return;
-          setEntries(page.entries);
-          setStatus("loaded");
-          setLastUpdated(Date.now());
-        })
-        .catch((loadError) => {
-          if (abortRef.current !== controller) return;
-          if (loadError instanceof Error && loadError.name === "AbortError") return;
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setEntries([]);
-          setStatus("error");
-        });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (entries.length > 0 && selectedIdx >= entries.length) {
-      setSelectedIdx(Math.max(0, entries.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, entries.length]);
-
-  const selectedEntry = entries[selectedIdx] ?? null;
+  const selectedEntry = entries.find((item) => item.id === selectedId) ?? entries[0] ?? null;
   const openEntry = openItemId
     ? entries.find((entry) => entry.id === openItemId) ?? null
     : null;
   const detailEntry = openEntry ?? selectedEntry;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery);
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
-  const refresh = useCallback(() => {
-    load(query);
-  }, [load, query]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company or ticker",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        updateQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -216,30 +145,28 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused });
 
-  const loading = status === "loading" && entries.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const loading = refreshing && entries.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(entries), [entries]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
+  useAutoRefresh(
+    lastUpdated,
     refresh, poll.intervalMinutes,
   );
 
   usePaneStatusLinkFooter({
     registrationId: FOIA_LOGS_PLUGIN_ID,
     focused,
-    url: error ? null : detailEntry?.url ?? null,
-    source: detailEntry ? `source CSV · ${detailEntry.sourceMonth}` : undefined,
-    label: "source",
-    loading,
+    url: detailEntry?.url ?? null,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : [],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detailEntry?.url,
+    showOpenHint: !!detailEntry?.url,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -254,12 +181,7 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -268,51 +190,18 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, refresh],
+    [focusSearch, handleSearchKey, refresh],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company or ticker"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={trimSearchValue}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && entries.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching FOIA logs for ${query.trim()}...`
-                : "Loading FOIA logs..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && entries.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="FOIA logs unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="FOIA logs" onRetry={refresh} />
       </Box>
     );
   }
@@ -324,8 +213,9 @@ export function FoiaLogsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedEntry?.id ?? null}
+      onSelect={(index) => setSelectedId(entries[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Signal"

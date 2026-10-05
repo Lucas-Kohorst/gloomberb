@@ -36,6 +36,13 @@ function getBasePaneDisplayTitle(
       ?? t(paneDef.name);
   }
 
+  if (instance.paneId === "chart-composer") {
+    const selected = instance.settings?.advancedChartPrimary;
+    if (selected && typeof selected === "object" && "ticker" in selected && "ownerSymbol" in selected && selected.ticker !== selected.ownerSymbol && "name" in selected && typeof selected.name === "string" && selected.name.trim()) {
+      return `G ${selected.name.trim()}`;
+    }
+  }
+
   if (instance.title) return instance.title;
 
   if (instance.paneId === "portfolio-list") {

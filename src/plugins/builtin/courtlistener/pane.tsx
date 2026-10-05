@@ -1,11 +1,11 @@
-import { Box, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { Box, type ScrollBoxRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useTableLoadMore,
   useUpdatedAgo,
   type FeedDataTableItem,
@@ -24,6 +24,8 @@ import {
   type Lawsuit,
 } from "./types";
 
+const trimSearchValue = (value: string) => value.trim();
+
 const SEARCH_DEBOUNCE_MS = 250;
 const REFRESH_INTERVAL_MINUTES = 15;
 
@@ -37,6 +39,7 @@ function toFeedItems(lawsuits: Lawsuit[]): FeedDataTableItem[] {
     eyebrow: lawsuit.courtCitation || lawsuit.court || "Court",
     title: lawsuit.caseName,
     timestamp: lawsuit.dateFiled.getTime() === 0 ? null : lawsuit.dateFiled,
+    timestampKind: "date",
     detailTitle: lawsuit.caseName,
     detailMeta: [
       lawsuit.court || "Unknown court",
@@ -46,17 +49,8 @@ function toFeedItems(lawsuits: Lawsuit[]): FeedDataTableItem[] {
       ...(lawsuit.status ? [lawsuit.status] : []),
       lawsuit.kind === "docket" ? "PACER docket" : `Cited ${lawsuit.citeCount} time${lawsuit.citeCount === 1 ? "" : "s"}`,
     ],
-    detailBody: [
-      `Court: ${lawsuit.court || "—"}`,
-      `Filed: ${formatFiled(lawsuit.dateFiled)}`,
-      `Docket: ${lawsuit.docketNumber || "—"}`,
-      `Judge: ${lawsuit.judge || "—"}`,
-      `Status: ${lawsuit.status || "—"}`,
-      "",
-      "Excerpt:",
-      lawsuit.snippet || "No excerpt available.",
-      ...(lawsuit.downloadUrl ? ["", lawsuit.downloadUrl] : []),
-    ].join("\n"),
+    detailBody: lawsuit.snippet || "No excerpt available.",
+    detailNote: lawsuit.downloadUrl || null,
   }));
 }
 
@@ -66,21 +60,19 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
   const [lawsuits, setLawsuits] = useState<Lawsuit[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
+  const requestQueryRef = useRef(query);
   const abortRef = useRef<AbortController | null>(null);
   const moreAbortRef = useRef<AbortController | null>(null);
 
@@ -91,31 +83,34 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
       moreAbortRef.current = null;
       const controller = new AbortController();
       abortRef.current = controller;
+      if (requestQueryRef.current !== value) {
+        requestQueryRef.current = value;
+        setLawsuits([]);
+        setLastUpdated(null);
+      }
       setStatus("loading");
       setError(null);
       setLoadMoreError(null);
       setNextUrl(null);
       setLoadingMore(false);
       void client
-        .searchLawsuits(value)
+        .searchLawsuits(value, { signal: controller.signal })
         .then((page) => {
-          if (abortRef.current !== controller) return;
+          if (abortRef.current !== controller || controller.signal.aborted) return;
           setLawsuits(page.lawsuits);
           setNextUrl(page.next);
-          setSelectedIdx(0);
           setStatus("loaded");
           setLastUpdated(Date.now());
         })
         .catch((loadError) => {
-          if (abortRef.current !== controller) return;
+          if (abortRef.current !== controller || controller.signal.aborted) return;
           if (loadError instanceof Error && loadError.name === "AbortError") return;
           setError(loadError instanceof Error ? loadError.message : String(loadError));
-          setLawsuits([]);
           setNextUrl(null);
           setStatus("error");
         });
     },
-    [client, setSelectedIdx],
+    [client],
   );
 
   const loadMore = useCallback(() => {
@@ -129,7 +124,11 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
         if (moreAbortRef.current !== controller) return;
         setLawsuits((current) => {
           const seen = new Set(current.map((lawsuit) => lawsuit.id));
-          const extra = page.lawsuits.filter((lawsuit) => !seen.has(lawsuit.id));
+          const extra = page.lawsuits.filter((lawsuit) => {
+            if (seen.has(lawsuit.id)) return false;
+            seen.add(lawsuit.id);
+            return true;
+          });
           return extra.length === 0 ? current : [...current, ...extra];
         });
         setNextUrl(page.next);
@@ -154,10 +153,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   );
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      load(query);
-    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
+    load(query);
   }, [load, query]);
 
   useEffect(
@@ -169,36 +165,33 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     [],
   );
 
-  const selected = lawsuits[selectedIdx] ?? null;
+  const selected = lawsuits.find((item) => item.id === selectedId) ?? lawsuits[0] ?? null;
   const openLawsuit = openItemId
     ? lawsuits.find((lawsuit) => lawsuit.id === openItemId) ?? null
     : null;
   const activeLawsuit = openLawsuit ?? selected;
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
   const updateQuery = useCallback(
     (nextQuery: string) => {
       setQuery(nextQuery.trim());
-      setSelectedIdx(0);
+      setSelectedId(null);
       setOpenItemId(null);
     },
-    [setQuery, setSelectedIdx],
+    [setQuery, setSelectedId],
   );
+
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company or case, e.g. Kalshi",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut(
     (event) => {
       if (!focused || openItemId || searchFocused || event.targetEditable) return;
-      if (isPlainKey(event, "/")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        focusSearch();
-      }
       if (isPlainKey(event, "r")) {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -209,11 +202,11 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
   );
 
   const loading = status === "loading";
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   const items = useMemo(() => toFeedItems(lawsuits), [lawsuits]);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" ? lastUpdated : null,
+  useAutoRefresh(
+    lastUpdated,
     () => load(query), poll.intervalMinutes,
   );
 
@@ -221,21 +214,19 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
     registrationId: COURTLISTENER_PLUGIN_ID,
     focused,
     url: activeLawsuit?.url || activeLawsuit?.downloadUrl || null,
-    source: activeLawsuit?.courtCitation || activeLawsuit?.court,
-    label: "opinion",
     loading: loading || loadingMore,
     error,
     info: [
-      ...(loadMoreError ? [{ id: "load-more-error", parts: [{ text: `More results: ${loadMoreError}`, tone: "warning" as const }] }] : []),
+      ...(loadMoreError && !openItemId ? [{ id: "load-more-error", parts: [{ text: `More results: ${loadMoreError}`, tone: "warning" as const }] }] : []),
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !!activeLawsuit?.url,
+    showOpenHint: !!(activeLawsuit?.url || activeLawsuit?.downloadUrl),
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      ...(loadMoreError ? [{ id: "retry-page", key: "t", label: "try again", onPress: loadMore }] : []),
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
+      ...(loadMoreError && !openItemId ? [{ id: "retry-page", key: "t", label: "try again", onPress: loadMore }] : []),
     ],
   });
 
@@ -253,12 +244,7 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
         focusSearch();
         return true;
       }
-      if (event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (handleSearchKey(event)) return true;
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -267,51 +253,18 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, load, query],
+    [focusSearch, handleSearchKey, load, query],
   );
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company or case, e.g. Kalshi"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading && lawsuits.length === 0) {
+  if ((loading || error) && lawsuits.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner
-            label={
-              query.trim()
-                ? `Searching dockets for ${query.trim()}...`
-                : "Loading recent dockets..."
-            }
-          />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && lawsuits.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Lawsuits unavailable." message={error} />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="Lawsuits" onRetry={() => load(query)} />
       </Box>
     );
   }
@@ -323,8 +276,9 @@ export function CourtListenerPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selected?.id ?? null}
+      onSelect={(index) => setSelectedId(lawsuits[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Court"

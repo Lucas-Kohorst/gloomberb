@@ -11,7 +11,6 @@ import {
   initElectrobunBackend,
   setElectrobunRemoteRequestHandler,
 } from "./backend-rpc";
-import { installElectrobunAiHost } from "./ai-host";
 import { installFocusScopeRelease } from "./host/focus-scope";
 import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
 import { installElectrobunConfigStoreHost } from "./config-host";
@@ -147,7 +146,6 @@ async function boot() {
     : undefined;
   enableUiYield();
   enableStartupNetworkDeferral();
-  installElectrobunAiHost();
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <ElectrobunErrorBoundary>

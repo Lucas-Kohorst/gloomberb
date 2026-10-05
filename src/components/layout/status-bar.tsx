@@ -471,9 +471,8 @@ function VersionChip({
         onMouseDown={openChangelog}
         {...(nativePaneChrome && openChangelog ? { "data-gloom-interactive": "true" } : {})}
         style={openChangelog ? { cursor: "pointer" } : undefined}
-      >
-        {label}
-      </Text>
+        content={label}
+      />
     </Box>
   );
 }

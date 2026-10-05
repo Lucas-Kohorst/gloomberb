@@ -1,3 +1,4 @@
+import { resolveExchangeTimeZone } from "../../utils/exchanges";
 import type { TimeRange } from "../../time-series/range";
 import {
   DEFAULT_CHART_RESOLUTION_SUPPORT,
@@ -112,7 +113,10 @@ export async function loadYahooPriceHistoryForResolution({
       const repaired = isIntradayResolution(sourceResolution)
         ? repairIsolatedIntradayOhlcOutliers(history)
         : history;
-      return resolution === "4h" ? aggregateTo4h(repaired) : repaired;
+      const equityTimeZone = !symbol.endsWith("=F") && resolveExchangeTimeZone(exchange) === "America/New_York"
+        ? "America/New_York"
+        : undefined;
+      return resolution === "4h" ? aggregateTo4h(repaired, equityTimeZone) : repaired;
     } catch (err) {
       lastError = err;
     }

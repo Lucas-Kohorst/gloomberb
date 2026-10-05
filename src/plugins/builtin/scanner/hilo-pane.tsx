@@ -1,7 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, TextAttributes } from "../../../ui";
 import {
   DataTableView,
+  PaneListChrome,
+  usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -14,6 +17,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { ScannerHiloExtreme } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { paneSearchHint } from "../shared/pane-footer";
 import { ScannerDeniedState } from "./denied";
 import { useHiloFeed, useScannerStatusFooter } from "./feed";
 import { HiloBars } from "./hilo-bars";
@@ -22,8 +26,8 @@ import { filterHiloRows, type HiloMinPrice, type HiloSort } from "./hilo-model";
 
 type Side = "lows" | "highs";
 
-function rowKey(row: ScannerHiloExtreme, index: number): string {
-  return `${row.symbol}:${row.at}:${index}`;
+function hiloRowId(row: ScannerHiloExtreme): string {
+  return `${row.symbol}:${row.at}:${row.price}`;
 }
 
 const BARS_HEIGHT = 4;
@@ -81,15 +85,28 @@ function HiloPane({ focused, width, height }: PaneProps) {
   const [activeSide, setActiveSide] = useState<Side>("lows");
   const [selected, setSelected] = useState<Record<Side, string | null>>({ lows: null, highs: null });
   const [tableSort, setTableSort] = useState<SortPreference<string>>({ columnId: null, direction: "desc" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    enabled: !feed.denied,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "symbol",
+  });
 
-  const lows = useMemo(
-    () => filterHiloRows(feed.payload?.lows, minPrice, sort),
-    [feed.payload?.lows, minPrice, sort],
-  );
-  const highs = useMemo(
-    () => filterHiloRows(feed.payload?.highs, minPrice, sort),
-    [feed.payload?.highs, minPrice, sort],
-  );
+  const needle = searchQuery.trim().toLowerCase();
+  const lows = useMemo(() => {
+    const filtered = filterHiloRows(feed.payload?.lows, minPrice, sort);
+    return needle.length === 0
+      ? filtered
+      : filtered.filter((row) => row.symbol.toLowerCase().includes(needle));
+  }, [feed.payload?.lows, minPrice, needle, sort]);
+  const highs = useMemo(() => {
+    const filtered = filterHiloRows(feed.payload?.highs, minPrice, sort);
+    return needle.length === 0
+      ? filtered
+      : filtered.filter((row) => row.symbol.toLowerCase().includes(needle));
+  }, [feed.payload?.highs, minPrice, needle, sort]);
   const sortRows = useCallback((rows: ScannerHiloExtreme[]) => (
     applySortPreference(rows, tableSort, (row, columnId) => {
       switch (columnId) {
@@ -112,28 +129,48 @@ function HiloPane({ focused, width, height }: PaneProps) {
     }));
   }, []);
 
-  useScannerStatusFooter("hilo", feed, focused);
+  useEffect(() => {
+    setSelected((current) => {
+      const lowsId = current.lows && sortedLows.some((row) => hiloRowId(row) === current.lows)
+        ? current.lows
+        : sortedLows[0] ? hiloRowId(sortedLows[0]) : null;
+      const highsId = current.highs && sortedHighs.some((row) => hiloRowId(row) === current.highs)
+        ? current.highs
+        : sortedHighs[0] ? hiloRowId(sortedHighs[0]) : null;
+      if (lowsId === current.lows && highsId === current.highs) return current;
+      return { lows: lowsId, highs: highsId };
+    });
+  }, [sortedHighs, sortedLows]);
+
+  useScannerStatusFooter("hilo", feed, focused && !listSearch.searchFocused);
+  usePaneFooter("scanner-hilo-search", () => (
+    feed.denied ? null : {
+      hints: [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
+    }
+  ), [feed.denied, listSearch.focusSearch, listSearch.searchFocused]);
 
   const split = width >= SPLIT_MIN_WIDTH;
   const showBars = height >= BARS_MIN_HEIGHT;
   // One cell of gutter keeps the two cursors from reading as a single wide row.
   const tableWidth = split ? Math.max(12, Math.floor((width - 1) / 2)) : Math.max(12, width);
-  const tableHeight = Math.max(2, height - (showBars ? BARS_HEIGHT : 0));
+  const tableHeight = Math.max(2, height - (showBars ? BARS_HEIGHT : 0) - 1);
   const columns = useMemo(() => buildColumns(tableWidth), [tableWidth]);
 
-  const handleSelect = useCallback((side: Side, row: ScannerHiloExtreme, index: number) => {
+  const handleSelect = useCallback((side: Side, row: ScannerHiloExtreme) => {
     setActiveSide(side);
-    setSelected((current) => ({ ...current, [side]: rowKey(row, index) }));
+    const id = hiloRowId(row);
+    setSelected((current) => (current[side] === id ? current : { ...current, [side]: id }));
     selectTicker(row.symbol);
   }, [selectTicker]);
 
   const handleSideSwitchKey = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (event.name !== "left" && event.name !== "right") return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     setActiveSide(event.name === "left" ? "lows" : "highs");
     return true;
-  }, []);
+  }, [listSearch.handleSearchKey]);
 
   if (feed.denied) {
     return <ScannerDeniedState reason={feed.deniedReason} />;
@@ -141,14 +178,14 @@ function HiloPane({ focused, width, height }: PaneProps) {
 
   const renderTable = (side: Side, rows: ScannerHiloExtreme[]) => (
     <DataTableView<ScannerHiloExtreme>
-      focused={focused && activeSide === side}
+      focused={focused && !listSearch.searchFocused && activeSide === side}
       selection={{
         kind: "id",
         selectedId: selected[side],
-        // The feed can report the same symbol more than once, so rows need a key
-        // of their own instead of the ticker.
-        getId: rowKey,
-        onChange: (_id, row, index) => handleSelect(side, row, index),
+        // The feed can report the same symbol more than once. Index is omitted
+        // so a sort does not move the selection onto a different symbol.
+        getId: (row) => hiloRowId(row),
+        onChange: (_id, row) => handleSelect(side, row),
       }}
       onRootKeyDown={handleSideSwitchKey}
       rootWidth={tableWidth}
@@ -158,17 +195,18 @@ function HiloPane({ focused, width, height }: PaneProps) {
       sortColumnId={tableSort.columnId}
       sortDirection={tableSort.direction}
       onHeaderClick={handleHeaderClick}
-      getItemKey={rowKey}
+      getItemKey={(row) => hiloRowId(row)}
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={(row, column, _index, rowState) => renderCell(side, row, column, rowState)}
       emptyContent={feed.payload ? undefined : <ScannerWaitingState />}
-      emptyStateTitle="Nothing above the price filter yet."
+      emptyStateTitle={needle.length > 0 ? "No symbols match." : "Nothing above the price filter yet."}
     />
   );
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       {showBars && <HiloBars windows={feed.payload?.windows} width={width} />}
+      <PaneListChrome width={width} focused={focused} search={listSearch.search} />
       <Box flexDirection="row" flexGrow={1} overflow="hidden">
         {split ? (
           <>

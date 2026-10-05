@@ -17,6 +17,7 @@ import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
+import { CompanyPickerHost } from "./plugins/builtin/cloud/company-picker";
 import { SignInGate } from "./components/sign-in-gate";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
@@ -487,7 +488,9 @@ function AppInner({
               requireAccount={requireAccount}
               onComplete={onOnboardingComplete}
             />
-          ) : null}
+          ) : (
+            <CompanyPickerHost pluginRegistry={pluginRegistry} />
+          )}
           {signInGateActive ? <SignInGate /> : null}
           {state.commandBarOpen && (
             <CommandBar

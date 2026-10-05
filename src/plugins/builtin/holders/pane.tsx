@@ -3,6 +3,7 @@ import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   LoadingState,
+  PaneListChrome,
   TickerEmptyState,
   Tabs,
   usePaneFooter,
@@ -37,6 +38,8 @@ import { HoldersTreemap } from "./treemap";
 import type { HolderColumn, HolderRow, SortPreference, ViewMode } from "./types";
 import { loadHolder13FMatches, type Holder13FMatch } from "./thirteenf-match";
 import { reportTickerRequestError } from "../shared/ticker-request";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 
 export function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { nativePaneChrome } = useUiCapabilities();
@@ -51,6 +54,16 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
   const [fundMatches, setFundMatches] = useState<Map<string, Holder13FMatch>>(() => new Map());
   const [fundMatching, setFundMatching] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "holder name",
+  });
+  useEffect(() => {
+    setSearchQuery("");
+  }, [symbol]);
   const fetchGenRef = useRef(0);
   const fundMatchAbortRef = useRef<AbortController | null>(null);
 
@@ -59,7 +72,13 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
   const marketCap = financials?.quote?.currency && financials.quote.currency !== currency ? undefined : quoteMarketCap;
   const exchange = ticker?.metadata.exchange ?? "";
   const rows = useMemo(() => buildRows(data), [data]);
-  const sortedRows = useMemo(() => sortRows(rows, sortPreference, marketCap), [marketCap, rows, sortPreference]);
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query.length === 0
+      ? rows
+      : rows.filter((row) => row.name.toLowerCase().includes(query));
+  }, [rows, searchQuery]);
+  const sortedRows = useMemo(() => sortRows(filteredRows, sortPreference, marketCap), [filteredRows, marketCap, sortPreference]);
   const columns = useMemo(() => buildColumns(), []);
   const selectedIdx = selectedId
     ? sortedRows.findIndex((row) => row.id === selectedId)
@@ -162,6 +181,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
   }, [loadHolders]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -181,7 +201,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       return true;
     }
     return false;
-  }, [openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
+  }, [listSearch.handleSearchKey, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
   useShortcut((event) => {
     if (!focused || viewMode !== "chart") return;
@@ -266,12 +286,18 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
         ...(fundMatching ? [{ id: "fund-matching", parts: [{ text: "13F matching", tone: "muted" as const }] }] : []),
       ],
       hints: [
+        paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
         { id: "view", key: "s", label: "witch", onPress: toggleView },
         // `f` is the filter key in sibling panes, so opening a fund uses `o`.
         ...(selectedFundMatch ? [{ id: "fund", key: "o", label: "pen 13F", onPress: () => openFundDetail(selectedRow) }] : []),
       ],
     };
-  }, [data?.asOf, fundMatching, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
+  }, [data?.asOf, fundMatching, listSearch.focusSearch, listSearch.searchFocused, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
+  usePaneFooterHintBindings(focused && !listSearch.searchFocused, [
+    paneSearchHint(listSearch.focusSearch),
+    { id: "view", key: "s", label: "witch", onPress: toggleView },
+    ...(selectedFundMatch ? [{ id: "fund", key: "o", label: "pen 13F", onPress: () => openFundDetail(selectedRow) }] : []),
+  ]);
 
   // Both views share one status; the treemap must not claim "no chartable
   // values" while the request is still in flight or the pane has no ticker.
@@ -280,7 +306,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
     : loading
       ? "Loading holders..."
       : error ?? (sortedRows.length === 0 ? "No holders available" : null);
-  const chartHeight = Math.max(1, height - 1 - (nativePaneChrome ? 1 : 0));
+  const chartHeight = Math.max(1, height - 2 - (nativePaneChrome ? 1 : 0));
 
   if (!symbol) return <TickerEmptyState kind="holders" symbol={null} detail="holder filings" />;
   if (loading && sortedRows.length === 0) return <LoadingState title="Loading holders..." />;
@@ -303,10 +329,15 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           focused={focused}
         />
       </Box>
+      <PaneListChrome
+        width={width}
+        focused={focused}
+        search={listSearch.search}
+      />
 
       {viewMode === "table" ? (
         <DataTableView<HolderRow, HolderColumn>
-          focused={focused}
+          focused={focused && !listSearch.searchFocused}
           selection={{
             kind: "id",
             selectedId,

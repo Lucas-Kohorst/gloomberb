@@ -237,7 +237,12 @@ export interface ChartSurfaceProps extends BoxProps {
   nativeBitmapsEnabled?: boolean;
 }
 export interface TradingViewChartProps extends BoxProps {
-  /** TradingView symbol, such as NASDAQ:AAPL or FRED:CPIAUCSL. */
+  onPrimarySymbolChange?: (symbol: {
+    ticker: string;
+    name: string;
+    source?: import("../time-series/types").ChartSeriesSource;
+  }) => void;
+  /** Symbol the charting-library datafeed resolves. */
   symbol: string;
   /** TradingView interval token. Default D. */
   interval?: string;
@@ -245,6 +250,13 @@ export interface TradingViewChartProps extends BoxProps {
   timezone?: string;
   compareSymbols?: readonly string[];
   backgroundColor?: string;
+  /** Candles for price series. A line for probability, macro, and other single-value series. */
+  chartStyle?: "candles" | "heikinashi" | "line" | "step";
+  hasVolume?: boolean;
+  /** Percentage rebases unlike series onto one axis. Percent, temperature, and precip stay linear. */
+  priceScale?: "normal" | "percentage";
+  /** Our bars. The widget asks this object for history instead of TradingView's tape. */
+  feed?: import("../plugins/builtin/chart-composer/charting-library-feed").LibraryDatafeed;
 }
 
 export interface LightweightChartProps extends BoxProps {
@@ -265,6 +277,16 @@ export interface LightweightChartProps extends BoxProps {
   vectors?: readonly ChartVectorShape[] | null;
   armedTool?: ChartToolKind | null;
   timeZone?: string;
+  /**
+   * The legend strip already reads out hovered values, so the floating
+   * readout would only repeat it while the crosshair moves.
+   */
+  showCrosshairTooltip?: boolean;
+  /**
+   * Reports the crosshair's date to the composite scene, so the legend strip
+   * and the custom chrome follow the native renderer's cursor.
+   */
+  onCursorDateChange?: (date: Date | null) => void;
 }
 
 /** The trackpad gesture that produced a viewport change. */

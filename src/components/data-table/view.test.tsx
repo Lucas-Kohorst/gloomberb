@@ -196,6 +196,44 @@ async function emitKeypressBatch(events: Array<{
 }
 
 describe("DataTableView", () => {
+  test.each([false, true])("preserves row identity during a pending keyboard selection (activate=%s)", async (activate) => {
+    const changes: string[] = [];
+    const opened: string[] = [];
+    let replaceRows!: (next: Row[]) => void;
+    function LiveHarness() {
+      const [items, setItems] = useState(rows.slice(1));
+      const [selectedId, setSelectedId] = useState("first");
+      replaceRows = setItems;
+      const state = createInitialState(createDefaultConfig("/tmp/gloomberb-table-live"));
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PaneInstanceProvider paneId="live-table">
+            <DataTableView<Row, Column>
+              focused
+              items={items}
+              columns={columns}
+              selection={{ kind: "id", selectedId, getId: (row) => row.id,
+                onChange: (id) => { changes.push(id); setSelectedId(id); } }}
+              onActivate={(row) => { opened.push(row.id); }}
+              getItemKey={(row) => row.id}
+              renderCell={(row) => ({ text: row.title })}
+              emptyStateTitle="No rows"
+            />
+          </PaneInstanceProvider>
+        </AppContext>
+      );
+    }
+    testSetup = await testRender(<LiveHarness />, { width: 40, height: 8 });
+    await renderSettled();
+    await emitKeypress({ name: "down", sequence: "\u001B[B" });
+    await act(async () => { replaceRows([rows[3]!, rows[1]!, rows[2]!]); });
+    await renderSettled();
+    if (activate) await emitKeypress({ name: "enter", sequence: "\r" });
+    await act(async () => { await Bun.sleep(180); });
+    expect(changes).toEqual(["second"]);
+    expect(opened).toEqual(activate ? ["second"] : []);
+  });
+
   test("owns row keyboard navigation and skips section headers", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
 

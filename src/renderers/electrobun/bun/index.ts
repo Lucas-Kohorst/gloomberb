@@ -57,6 +57,7 @@ import { initializeDesktopBackend } from "./desktop/initialization";
 import { getPluginsDir, watchPluginsDir } from "../../../plugins/loader";
 import { mkdirSync } from "fs";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
+import { applyMacosDockIcon } from "./desktop/macos-dock-icon";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
 import {
   desktopTitleBarStyle,
@@ -237,6 +238,7 @@ function syncActiveLayout(
 function setCurrentConfig(nextConfig: AppConfig): void {
   currentConfig = syncActiveLayout(nextConfig);
   syncConfigAccessors();
+  applyMacosDockIcon(currentConfig.theme);
 }
 
 function sendUpdateProgress(rpc: DesktopRpc, progress: UpdateProgress): void {

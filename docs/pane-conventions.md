@@ -1,0 +1,447 @@
+# Pane conventions
+
+Every product area is a pane built from the same kit, so a user who learned
+one pane has learned them all. New work drifts in the same ways each time: a
+button row in the body, a fixed footer label, a row count, a list that stops
+at page one, a warning paragraph above a chart, a title repeated in the body.
+This file says what the app does instead. [PLUGINS.md](../PLUGINS.md) has
+the APIs.
+
+## 1. Anatomy
+
+**App chrome** (the shell's, never a pane's): the header holds the command
+bar prompt, update notices and the market summary; the status bar at the
+bottom holds layout tabs, Tidy Windows, the version chip and the
+`status:widget` slot. A plugin puts a widget there only for app-wide state
+that matters outside its pane (unread count, account verification). Pane data
+never goes there.
+
+**Pane chrome**, one per instance:
+
+- Header: the title (pane def, template `createInstance`, or `usePaneTitle`
+  for content-derived titles). The only place the pane names itself. Quick
+  settings (`quickSettings`, `zap` icon) sit beside it; the `...` menu opens
+  settings, lock, share, close.
+- Body: content only. Tabs, tables, details, forms, charts.
+- Header zone: the top of the body, in this order and nothing else: the
+  `QueryBar` (search, filters, view), then a `StatGrid` of summary figures,
+  then content. On the desktop the title-bar tab takes the colour of whatever
+  sits under it, so the tab, the bar and the figures read as one surface.
+  No loose text lines, blank rows or button rows above or between them.
+- Footer, registered with `usePaneFooter`: `info` on the left (changing
+  status), `hints` on the right (pane actions with their keys, visible only
+  while focused). When AGENTS.md says "pane status bar" it means this footer.
+
+## 2. Where does it go
+
+| You have | It goes | Use |
+|---|---|---|
+| A pane action (add, edit, open source, sync, save search) | Footer hint | `usePaneFooter({ hints })` |
+| Changing status (loading, error, live/delayed, stale, updated 2m ago, saving) | Footer info | `usePaneStatusFooter`, `loadingErrorFooterInfo` |
+| Summary figures for the whole pane or an open detail (VWAP, spread, percentile, range) | Header zone, under the query bar | `StatGrid` |
+| A control that changes what the pane shows (range, window, scope, level) | Query bar, never a cycling footer hint | `QueryBar` |
+| Non-blocking data limitation (missing period, fallback dates, partial source) | One amber `⚠` in the footer, `!` or click opens details | `usePaneNoticeFooter` |
+| Nothing can render yet (first load, hard failure, no data) | Body, replacing content | `PaneStatusBody` |
+| No ticker, no selection, empty result | Body | `EmptyState` |
+| Refresh failed but last data exists | Keep the data, failure in footer info | `loading={loading && !data}`, `error={!data ? error : null}` |
+| Limitation on content still worth reading | Inline beside that content | `Notice` |
+| Account state blocks the pane (signed out, unverified, plan) | Body | `SignInWall` (`cloud/auth-actions.tsx`) |
+| Plan gating that only degrades the pane (delayed data, upgrade hint) | Footer, shared wording | `useCloudAccessFooter` (`shared/cloud-upgrade.ts`) |
+| Retry, upgrade, or start button on an empty or failed state | Inside that state | `PaneStatusBody`/`EmptyState` `actions` |
+| An operation finished (saved, exported, failed) | Toast | `notify` |
+| Destructive or irreversible decision | Dialog | `ConfirmDialog`, `tone: "danger"` |
+| Per-instance configuration | Pane settings via the `...` menu | `settings` on the pane def, `usePaneSettingValue` |
+| Methodology, assumptions, how to use the pane | `docs/*.md` | never body text or an info button |
+
+Nowhere: a row count as its own line, in the footer, in a tab label, or as "showing N of M";
+the pane's own name; fixed labels; generic key hints (`j/k`, `Enter to open`,
+`r to refresh`); explanatory paragraphs; the data provider.
+
+**The data provider is invisible.** Never show which vendor or internal
+route served the data: no `provider:gloomberb-cloud`, `gloomberb-cloud`,
+raw feed names or `entry.source` values
+in a footer, status line, header meta, table column, legend, tooltip or
+headless report column. Say what the data is instead: `real-time`,
+`15m delayed`, `settlement`, `daily closes`, `trade closes since …`, `as of`
+date, `stale`. `QueryEntry.source` and `providerId` are for routing, caches
+and tests, never for display. Two things are not providers and may appear:
+the user's own account or imported source (a broker account, a statement
+file), and the official publisher of a statistic in a detail view or its
+`o` link (a FRED series id, BIS, CFTC report type, SEC form). Gloom Cloud is
+named only for account and plan state (sign in, verify, upgrade), never as
+the origin of a number. The one count the kit draws is the
+`Label (n)` of a sectioned table header, and that is the kit's, not yours.
+
+## 3. Footer
+
+- `usePaneFooter(registrationId, factory, deps)` returns `{ order?, info?, hints? }`;
+  several registrations in one pane merge by `order`, then id. Wrappers:
+  `usePaneStatusFooter` (loading, error, stale), `usePaneStatusLinkFooter` (plus an
+  `o` hint opening the current item's URL), `usePaneNoticeFooter` (warnings).
+- Info is what changes. If a segment reads the same on every render of every
+  instance, delete it.
+- Hints are actions with keys. `{ key: "a", label: "dd" }` renders `[a]dd`,
+  `{ key: "Ctrl+S", label: "save" }` renders `[Ctrl+S]save`. Every hint is
+  clickable. Hints follow the selection: a different array when a row is
+  selected, a detail is open, a tab changes. A hint with no target is omitted
+  or `disabled`, never a no-op.
+- `r` refreshes every pane. No per-pane refresh hint (PR #589). Built-in
+  panes bind it with `usePaneRefreshKey(reload, { focused })`, or with
+  `handleRefreshKey` inside a table's key handler.
+- Tabs scope the footer: wrap each tab body in `PaneFooterScope active`, and
+  pass `enabled: false` to wrappers for mounted but inactive views.
+- Forms leave the footer alone. When the form shows Save and Cancel, the
+  footer does not repeat them; Enter submits, Esc cancels. It keeps `saving`
+  and the last result message.
+- No toolbars in the body. A row of buttons above a table is a set of footer
+  hints. Query controls are the exception: search, filters and sort go in one
+  `QueryBar` in `rootBefore` (chart range and interval pickers sit above the
+  plot). A body `Button` belongs only to a form (Save, Cancel) or to an empty
+  or failed state's `actions`; never full width, never beside a heading. A
+  toggle that acts on click looks like one (`Checkbox`, a query bar toggle).
+
+## 4. Information density
+
+- Say each thing once. The header names the pane; the body does not. A
+  detail's `detailTitle` names the item; the detail body starts with metadata
+  or content. If the footer leads with the ticker, its freshness segment
+  (`15m delayed · 14:47 UTC`) does not repeat it.
+- Units, dates and failures stay in context: currency and as-of beside the
+  value, a failed input as a footer warning or a chart gap, not a paragraph.
+- No standing explanations; docs are linked from README and Help.
+- No count lines. The table shows the rows; scrolling shows the rest.
+- Summary figures are a `StatGrid`, not stacked `KeyValueRow`s or `Text`
+  lines: a short label, the value, muted `detail` (percentile, date,
+  window). Drop sample sizes ("252 obs"), dates the footer already carries,
+  and anything the title, the active tab or the selected row shows.
+- Compact controls: `Button compact` with `displayLabel`, `Tabs dense` in
+  narrow panes, `KeyValueRow`, `Badge` for a state word.
+- Empty states are one line plus an optional `hint`.
+
+## 5. Lists and tables
+
+Table header labels are uppercased by the kit; write them in any case.
+Section headings read in title case, bright and bold: the kit capitalises
+lower-case words, so write acronyms in capitals and never a whole heading in
+capitals. Pass `onHeaderClick` only when the table sorts (without it headers
+are not interactive), and `selection={{ kind: "none" }}` for a static table.
+Never build a table from padded `Text` rows: the kit gives the header band,
+gutters and fill to the footer.
+
+Pick by interaction: `DataTableView` (sortable columns, cursor, Enter opens),
+`DataTableStackView` (same, detail in the pane), `FeedDataTableStackView`
+(dated items with read state), `TickerListTableView` (the user's own
+columns), `ListView` (short single-column choice), `ActionRow` (summary row
+with one action or a disclosure), `buildSectionedRows` (grouped rows). Every
+table has `columns`, `items`, `getItemKey`, `renderCell`, a `selection`, and
+`onActivate`; header clicks sort; `tableExport: true` on the pane def adds
+CSV. A table that colors its cells passes `selectedTextOverridesCellColor`
+so the selected row reads in the selection color without each cell checking
+`rowState.selected`; a cell whose tone must survive the selection sets
+`keepColorWhenSelected`. Custom `content` still takes its colors from
+`rowState`.
+
+**Table + detail.** `DataTableStackView` is the "list, then open one" shape:
+Enter or click calls `onActivate`, the pane sets the open item, the stack
+shows `← Back` plus `detailTitle` and the detail. Esc, Backspace, the mouse
+back button or clicking Back pops it. Rules:
+
+- The open item is keyed by a stable id (symbol + date, accession, id),
+  never an index, and lives in `usePluginPaneState` with the selected row so
+  a reload or a shared layout lands on the same row.
+- Footer hints change when the detail is open; notice footers describing the
+  list get `enabled: !detailOpen`.
+- `prefetchDetail` warms the cache once the cursor rests; it never mutates.
+- A detail read as text sits in a `DetailScrollBody` whose ref is the
+  stack's `detailScrollRef`, so j/k step it a line at a time and the next
+  item starts at the top.
+- A detail the user reads and comes back from is the stack, not a dialog or
+  a floating pane. A new pane (`pinTicker`, `createPaneFromTemplate`) is for
+  something kept beside the list.
+
+**Long lists.** A paged or cursored source appends on scroll and never shows
+page numbers or a Load more button. An offset-paged source loads through
+`usePagedRows(loadPage, { getId })`, whose loader takes `{ offset, signal,
+force }` and returns `{ rows, hasMore, nextOffset }`. It aborts and ignores
+superseded requests, appends by id, keeps what is loaded when a page fails,
+and starts over when the loader changes (a new query, sort or filter); the
+pane changes `resetScrollKey` with it. Its `loadMore` goes to
+`useTableLoadMore(scrollRef, hasMore && !detailOpen, loadMore)` in
+`onBodyScrollActivity`, which fires within 8 rows of the end. The footer
+shows `loading more` while a page is in flight. Restoring a persisted open
+item past the first page expands to that page first. Client-side "reveal
+more of what is loaded" uses the same scroll helper.
+
+## 5b. A chart over a table
+
+The pane that shows figures, a chart and the rows behind it (daily short
+volume, credit spreads, a futures curve, a CDS spread) has one layout, built
+with `ChartTableHeader` in the table's `rootBefore`. Never split rows between
+a chart and a table by hand.
+
+**Order.** Query bar, figures (`StatGrid`), chart, table. Range and window
+controls go in the query bar and govern the chart and the table together.
+
+**The chart says what it plots.** The legend row is the caption: each series
+is named in the table's words (`Short %`, `US HY OAS`, `5Y spread`) and shows
+its value, the latest one until the cursor moves. Units live in the axis
+labels. No loose title line above a chart, no `yAxisLabel` row, no unnamed
+single line. A chart that follows the selected row names that row. When the
+legend runs short of width, a curve's caption gives way before any series
+name does.
+
+**The chart earns its rows.** It shows what the table cannot: a trend, a
+curve's shape, how a level moved (look-back curves, trails). The table adds
+what the chart cannot: dates, events, per-row detail. When every table row is
+just a point of the chart, give the table a change column or fold the chart
+into an inline bar column instead of drawing the same numbers twice. Two
+points are not a trend: below three, leave the band to the table.
+
+**One selection.** The table's selected row is the chart's cursor (a time
+series), the chart's series (a board of instruments) or the curve's point.
+`useChartTableSelection` wires it: Left and Right step through time from the
+table in the direction the chart reads, whatever the sort; hovering the chart
+previews without moving the selection; clicking it selects the nearest row.
+From a row with no point on the chart, Left and Right step to the nearest row
+that has one. Inside this layout the chart takes no keys of its own and is
+never `navigable`. In a tabbed pane a focused tab strip keeps Left and Right;
+Up and Down still move the table's selection and the chart follows it.
+
+**Every size.** `chartTableLayout` decides, so every pane shrinks and grows
+the same way:
+
+| Pane body | Figures | Band | Table |
+|---|---|---|---|
+| Room for the chart (six rows: legend, four plot rows, axis) and the table's header plus four rows | up to a quarter of the body, trimmed from the end | the chart, 40% of what the figures leave, or all the rows a short table does not need | the rest; all its rows when they fit |
+| Less room, but the whole table fits with four rows to spare | up to a quarter of the body | a compact chart in the spare rows | all its rows |
+| Too short for either | one row | one row: `● label` sparkline value | the rest |
+| Shorter still, or narrower than 24 columns | one row | none | the rest |
+
+- The table keeps its header and four rows (all of them when it has fewer)
+  at every size; the chart gives way first, then the second row of figures.
+- Figures are listed most important first; the ones at the end go when rows
+  run short, and the strip leaves out what the remaining figures already say.
+- A short table never leaves a blank band: the chart grows into its spare rows.
+- Custom charts (curves, scatters) pass their own `minRows` and a `strip`;
+  content with a natural height (a few bars) passes `maxRows` and the table
+  takes the rest.
+- Pass the table's columns (`tableColumns`) so a horizontal scrollbar row is
+  counted and never hides the last row. A `MarketBoardStack` fits its columns
+  to the width, so its `rootBefore` can be a function that receives them.
+- The desktop uses the same rows for the band and lets the table fill below.
+
+**Axis.** Tick labels never repeat and take their decimals from the plotted
+range (`formatBpAxis`, `formatPercentAxis`, `spanAxisFormatter`). A daily
+series shorter than two weeks still spans two weeks, so the axis reads days.
+
+**Loading and failure.** While a separate history request loads, the band
+holds its rows (`loading`) so the table does not jump, and figures that come
+with the history hold their place with `--`. A chart that follows the
+selected row keeps its band on a row without history and says so (`empty`),
+so moving through the table never makes it jump. A failed history is a footer
+notice and the band collapses; the table stays.
+
+**Export.** The table exports what it shows. A column left out only to save
+room (a quote time every row shares) goes into `getExportMetadata`; a column
+drawn only as graphics (an inline bar) is left out of the CSV by itself.
+Numbers export as numbers: a right-aligned column whose cells all read as one
+unit (`+1.25%`, `1.20B`, `$12.50`, `21.4x`, `12bp`) writes bare numbers and
+names the unit in its header, and dashes become empty cells. Give a cell
+`value` when the text rounds or shortens what it shows (compact volumes, a
+date without its year, a time of day): the full number in the unit the cell
+shows (3.45 for `+3.45%`), or an ISO date.
+
+**Details.** A stack detail that shows a chart and a table uses the same
+header, with the detail's height.
+
+## 6. Tabs
+
+- `Tabs` is the only tab strip: controlled, mouse, `h`/`l` and arrows while
+  focused, `underline` for pane sections, `pill` for layout tabs, `bare`.
+  A pane's primary strip is `usePaneTabs` (above any early return): the
+  desktop draws it in the pane title bar and `strip` is null; the terminal
+  draws `strip` as the first row of the body. Subtract `rows`. Never in the
+  footer. Register `null` while a sign-in wall or any state makes every tab
+  show the same thing.
+- A strip inside content that already has a title-bar strip (a Ticker
+  Research tab, a stack detail) becomes a `QueryBar` view (`usePaneTabs`
+  with `queryBarWidth`) or inline filter on the desktop; the terminal keeps
+  its `Tabs` row.
+- The active tab is `usePluginPaneState`. A user-configurable tab set is a
+  pane setting, with `hideTabs` for panes locked to one view.
+- Content, one of two ways: one body reloaded per tab when tabs are views
+  over the same data (market movers), or lazy mount and keep mounted with
+  `visible={false}` plus `PaneFooterScope` when tabs are different surfaces
+  (Ticker Research). Never mount every tab up front.
+- Labels are translated nouns.
+- A Ticker Research tab is shown only for tickers it can have data for:
+  `instruments` on the tab def (`["equity"]` for company filings,
+  `["equity", "fund"]` for distributions and ownership), `isVisible` for
+  narrower rules such as a US listing. Never ship a tab that opens on
+  "not available for this instrument".
+- `SegmentedControl` is a mode inside a form or dialog, not a tab strip.
+- Tabs and stacks compose: strip on top, stack below, strip stays while the
+  detail is open.
+
+## 6b. Query bar, menus, detail header
+
+- `QueryBar` is the one row above a list: `search`, `filters` and one `view`.
+  A `select` filter takes a `defaultValue` when it narrows (the chip shows a
+  reset while it differs); omit it when it picks what is shown. `inline` for
+  four or fewer short exclusive options, `multi`, `toggle`, `text` for a second
+  field. One terminal row; on the desktop it scrolls sideways when narrow.
+  Status never goes in the bar; units and as-of context may use `meta`.
+- `useQueryBarSearch()` holds whether the search owns the keyboard; spread its
+  `searchProps` into `search`. The bar already binds `/`, so a pane binds it
+  again only to add a condition.
+- A stack detail whose content starts with a `QueryBar` gets Back and the item
+  title as the bar's first segments automatically; do not add a second row.
+- Every menu, dropdown and pop-up list is `MenuPopover`/`Menu` in the kit
+  `Popover`. No positioned boxes, no native `<select>`.
+- Calculators and sizers: mode switches in the `QueryBar` (inline filters),
+  inputs in a `FieldGrid`. Icon-only actions are `IconButton`s from the shared
+  icon set. A long strip of choices above content (expiries, chart ranges) is
+  an inline filter in the bar, not a raw `Tabs` row; `Tabs` stays for a
+  pane's primary strip and for section switches inside content.
+- On the desktop, pane headers, query bars, detail bars and table header rows
+  share one chrome height (`chromeRowPx()`, `--chrome-h`). Tables and details
+  fill to the pane footer; do not size them with terminal row arithmetic.
+
+## 7. Tabs with forms
+
+- Kit fields only: `TextField`, `NumberField`, `SelectButton`, `Checkbox`,
+  `SegmentedControl`, `MultiSelectDialogButton`, each with a `label`. A raw
+  `Input` is not a field.
+- One `activeField` names the focused input; Tab and Shift+Tab (and `j`/`k`
+  outside a text input) move the ring; a click focuses. `useFieldRing` is
+  that ring, with Enter and Space actions and scroll into view. Pass the
+  field's `active` to `TextField` (and `labelWidth` for a label column beside
+  it), or use `FieldLabel`, so the terminal marks it; the desktop's focus ring
+  already does. Capture input while a text field is focused so global
+  shortcuts do not eat typing.
+- Submit lives with the form: `Save` (`variant="primary"`) and `Cancel`
+  (`secondary`) on one row at the bottom of the section they save. Enter in
+  any field submits, Esc cancels. Several forms in several tabs means one
+  Save per form, never one global Save. `Ctrl+S` in the footer is optional,
+  for the primary form only, and never replaces the button.
+- `saving` in footer info while in flight; the last result as a footer
+  segment with `positive` or `negative` tone. A `Notice` under the form only
+  for a field error the user must fix.
+- Fixed metadata (email, plan, visibility) is body, not footer.
+- A reactive form whose result updates as the user types (Kelly sizer) has no
+  Save; drafts persist with `usePluginPaneState`.
+- Destructive actions ask with `confirmDialog` (a `ConfirmDialog`) from a
+  `variant="danger"` button or a footer hint, never a bare button that acts
+  on first press.
+- A form inside a stack detail follows the same rules; Back is the navigation
+  Cancel and the footer goes empty while editing.
+
+## 8. Sidebars, loading, input
+
+- A list of conversations, channels or documents beside the selected one is
+  `PaneSidebar` on the left (`PaneSidebarRow`, `PaneSidebarAction`,
+  `ActionRow` section headers), width persisted and drag-resizable,
+  `shouldShowPaneSidebar` deciding whether the pane is big enough. Sidebar
+  when the user switches items many times a session; stack when they open
+  one, read, and go back.
+- Loading: `useAsyncResource` + `useAutoRefresh` + `useUpdatedAgo`, seeded
+  from `createPluginCache`. First load shows `loadingText(subject)`, a hard
+  failure `unavailableText(subject)` plus the message; once data exists a
+  refresh never blanks it. Start `loading` at `true` when the first frame
+  would otherwise claim an empty result. `useAutoRefresh` follows the
+  configured interval; pass `{ intervalMs }` only for data that moves
+  faster (a delayed curve in session). Live quotes go through
+  `gloomberb/quotes` and `LIVE_STREAMING_QUICK_SETTING`. Fetching lives in
+  `client.ts`, projection in `view.ts`/`model.ts`, shared with the `headless`
+  definition.
+- Live data: gate timers, polls and streams on `usePaneVisible()` (app
+  visible and pane not covered), not on focus; `useAppVisible()` is for work
+  that must continue while the pane is covered. A covered pane keeps its
+  quote subscriptions at the off-screen cadence instead of dropping them.
+  `useTickerFinancialsMap` is passive and only moves while another pane
+  streams the symbol; a pane showing a price uses `useLiveTickerFinancials`
+  or `useLiveTickerFinancialsMap` (`visible: false` for totals and weights).
+  A pane that only needs the symbol uses `usePaneTickerIdentity`, not
+  `usePaneTicker`, which re-renders on every tick. Tables fed by ticks keep
+  `renderCell` stable (read data through refs) and pass `getRowVersion`, so
+  one symbol's tick redraws one row.
+- Everything interactive works by mouse and keyboard through the kit.
+  Pane-local keys are single unmodified letters declared as hints, and a
+  hint is the binding: the footer presses it while the pane is focused, so
+  do not bind a hinted key again (if a handler must, it calls
+  `preventDefault()` when it acts). Reserved: `j`/`k`/arrows move, Enter
+  opens, Esc/Backspace back, `r` refresh, `Shift+R` refresh all, `!`
+  warnings, `o` open source, `/` search, `.` pane menu, Tab/Shift+Tab next
+  pane or field, `h`/`l` tabs, `?` help, F1 the pane's help card, `` ` `` ticker search, `q` quit (terminal),
+  `u` install update, `$` Pro upgrade, Ctrl+P command bar. `q`, `u`, `r`,
+  `Shift+R`, `?` and `` ` `` reach the app before any pane. Table keys go
+  through `onRootKeyDown` and `onDetailKeyDown` (return `true` when handled);
+  global shortcuts through `registerShortcut` so Help lists them.
+- The pane menu (`.`, Shift+F10, the `...` button) is where the keyboard
+  finds everything: it lists the footer hints with their keys, what kit
+  controls add (table sort, query-bar filters, tab add/close/move, empty-state
+  actions), quick settings and the pane actions. An action with no key of its
+  own goes there with `usePaneMenuItems`, never in a body button row. Set a
+  hint's `title` when its key is not the action's first letter. A pane that
+  shows one ticker sets `tickerFollower` on its `PaneDef`, and the menu gains
+  "Link to" each visible list or scanner and "Unlink from" the one it follows;
+  the title then reads `OPX NVDA  ⧉ Linked to Watchlist`. Such a pane changes
+  ticker while mounted, so it keys its view by symbol and keeps saved
+  per-ticker choices (expiry, strike) per symbol.
+- One component renders in the terminal, the desktop app and the web. Import
+  only `gloomberb/ui`, `gloomberb/components`, `gloomberb/react`; detect the
+  target with `getCurrentPluginTarget()`, not `window` or `location`. Never
+  draw chrome with cell characters on the desktop (bars, chevrons, markers);
+  `useUiCapabilities().nativePaneChrome` tells the renderers apart, and
+  `jobs/share-bars.tsx` and `sectors/move-bar.tsx` show the terminal-only
+  branch for a bar. Prefer `flexGrow`/`flexBasis={0}`/`overflow="hidden"`
+  to hard heights; subtract the tab strip and `rootBefore` rows before passing
+  `rootHeight`.
+
+## 9. Checklist for a new pane or tab
+
+1. The title is the only place the pane names itself; the body starts with the header zone (query bar, figures) or content.
+2. Every pane action is a footer hint with a key (or a `usePaneMenuItems` entry) and works by mouse; no button row in the body; nothing is mouse-only.
+3. Footer info is changing state only: no labels, counts, generic hints, `r`.
+4. Warnings via `usePaneNoticeFooter`; blocking states via `PaneStatusBody`/`EmptyState`; refresh failures keep the last data.
+5. Lists use the kit tables; details open in the stack, keyed by a stable id, persisted with `usePluginPaneState`.
+6. Paged sources load more on scroll, abort stale pages, reset on a new query.
+7. Tabs use `Tabs`, persist the active tab, scope their footers, mount lazily.
+8. Forms use kit fields, one Save per form at its bottom, Enter/Esc, busy and result in the footer, destructive actions confirmed.
+9. Per-instance configuration is a pane setting; important toggles are `quickSettings`.
+10. Methodology and usage text is in `docs/`.
+11. Data panes have a `headless` definition; fetching is in `client.ts`.
+12. No `@opentui`, Electrobun or DOM imports; no cell-drawn chrome on the desktop.
+13. A missing repeated pattern went into the kit with its callers migrated, not into the pane.
+14. On the desktop tables and charts fill with flex, not terminal row arithmetic; nothing ends in a dead band above the footer.
+15. A chart with a table uses `ChartTableHeader`: named series, one shared selection, `chartTableLayout` at every size, no repeated numbers.
+
+## Reference implementations
+
+All under `src/plugins/builtin/` unless noted.
+
+| Pattern | File |
+|---|---|
+| Table + stack, persisted open item | `earnings/index.tsx` |
+| Feed stack with read state, restore past page one | `sec/index.tsx` |
+| Load more on scroll, abort, dedupe, density comments | `research-search/pane.tsx` |
+| Paged shelf with keyed first-page identity | `jobs/pane.tsx`, `jobs/pages.ts` |
+| Tabs, lazy mount, `PaneFooterScope`, `hideTabs`, header tabs | `ticker-detail/pane.tsx` |
+| Query bar: search, selects, toggle, header tabs | `cot/pane.tsx`, `congress-trades/filters.tsx` |
+| Query bar: multi, text field, inline, view | `research-search/pane.tsx` |
+| Query bar + stat grid over a table, per-tab figures | `time-sales/pane.tsx` |
+| Tabs as a query over one table | `market-movers/index.tsx` |
+| Tabs with forms, Save per form, Ctrl+S | `account-management/pane.tsx`, `footer.ts` |
+| Form in a stack detail, empty footer while editing | `broker-manager/detail.tsx`, `footer.ts` |
+| Hints that follow selection and tab | `congress-trades/footer.ts` |
+| Notice footer beside status footer | `dividend-yield/pane.tsx` |
+| Failure in footer, not repeated in the empty body | `cds/pane.tsx` |
+| Sidebar + content | `chat/sidebar.tsx`, `cloud/askg/sidebar.tsx` |
+| Footer model and rendering | `src/components/layout/pane/footer/` |
+| Status, notice, empty state | `src/components/ui/status.tsx` |
+| Load-more helpers | `src/components/table-view-shared.tsx`, `src/components/paged-rows.ts` |
+| Stack | `src/components/data-table/stack-view.tsx`, `ui/page-stack-view.tsx` |
+| Figures, chart and table, selection drives the cursor | `short-volume/pane.tsx` |
+| Board whose chart follows the selected row | `credit-conditions/index.tsx` |
+| Chart over table layout, strip, selection | `src/components/chart-table/` |
+| Rationale in prose | `docs/research-data.md` intro, `PLUGINS.md` UI guidelines |

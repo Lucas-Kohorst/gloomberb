@@ -3,7 +3,7 @@ import {
   createLocalTickerSearchCandidates,
   type TickerSearchCandidate,
 } from "../../../../tickers/search";
-import { compactSearchText, parseTickerListingQuery } from "../../../../tickers/search/ranking";
+import { compactSearchText, listingVenueKey, parseTickerListingQuery } from "../../../../tickers/search/ranking";
 import type { ResultItem } from "../../list/model";
 
 export const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
@@ -38,6 +38,16 @@ export function formatInstrumentBadge(
   switch (candidate.instrumentClass) {
     case "equity":
       return "EQ";
+    case "currency":
+      return "CUR";
+    case "option":
+      return "OPT";
+    case "future":
+      return "FUT";
+    case "index":
+      return "IDX";
+    case "etf":
+      return "ETF";
     case "fund":
       return /\bET[FNP]\b/i.test(rawInstrumentType(candidate)) ? "ETF" : "FUND";
     case "derivative":
@@ -46,6 +56,10 @@ export function formatInstrumentBadge(
       return "PM";
     case "other":
       return undefined;
+    default: {
+      const _exhaustive: never = candidate.instrumentClass;
+      return _exhaustive;
+    }
   }
 }
 
@@ -94,10 +108,9 @@ function isInstrumentItem(item: ResultItem): boolean {
 }
 
 /**
- * Fold symbol-search rows into a plain root query's list. An exact symbol hit
- * is promoted ahead of everything; the rest collapse into one Instruments
- * section with one row per symbol, since the listing split of the DES route
- * is noise next to panes and commands. Info rows ("no matches", "search
+ * Fold symbol-search rows into a plain root query's list. Every exchange of
+ * an exact symbol stays, so BIRD on IDX and BIRD on NASDAQ are both rows.
+ * Looser hits stay one row per symbol. Info rows ("no matches", "search
  * failed") are dropped: the instruments are an extra here, never the answer.
  */
 export function mergePlainRootTickerResults(
@@ -105,13 +118,24 @@ export function mergePlainRootTickerResults(
   providerItems: ResultItem[],
   rootItems: ResultItem[],
 ): ResultItem[] {
-  const seenSymbols = new Set<string>();
+  const seenExactVenues = new Set<string>();
+  const seenLooseSymbols = new Set<string>();
+  const symbolsWithExact = new Set<string>();
   const instruments: ResultItem[] = [];
   for (const item of providerItems) {
     if (!isInstrumentItem(item)) continue;
     const symbol = item.label.trim().toUpperCase();
-    if (seenSymbols.has(symbol)) continue;
-    seenSymbols.add(symbol);
+    const exact = isExactTickerResultMatch(item, query);
+    if (exact) {
+      const key = `${symbol}|${listingVenueKey(item.right)}`;
+      if (seenExactVenues.has(key)) continue;
+      seenExactVenues.add(key);
+      symbolsWithExact.add(symbol);
+    } else if (symbolsWithExact.has(symbol) || seenLooseSymbols.has(symbol)) {
+      continue;
+    } else {
+      seenLooseSymbols.add(symbol);
+    }
     instruments.push(item);
     if (instruments.length >= ROOT_INSTRUMENTS_LIMIT) break;
   }

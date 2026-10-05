@@ -134,7 +134,7 @@ export function DeviceSignInPanel({
         </>
       )}
       {spacious && <Box height={1} />}
-      <Box height={1}>
+      <Box height={1} role={snapshot.phase === "denied" || snapshot.phase === "error" ? "alert" : "status"}>
         <Text fg={status.color}>{status.text}</Text>
       </Box>
     </Box>

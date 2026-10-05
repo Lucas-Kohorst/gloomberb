@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { TradingViewChartProps, LightweightChartProps, UiHost } from "../../../ui/host";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { UiHost } from "../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { WebDataTable } from "./data-table";
 import {
@@ -22,19 +22,7 @@ import { WebScrollBox } from "./host/scroll-box";
 import { cleanDomProps, commonStyle } from "./host/style";
 import { WebAsciiText, WebSpan, WebStrong, WebText, WebUnderline } from "./host/text";
 import { WebTabs } from "./host/tabs";
-
-const TradingViewChart = lazy(() => import("./host/tradingview-chart")
-  .then((module) => ({ default: module.WebTradingViewChart })));
-const LightweightChart = lazy(() => import("./host/lightweight-chart")
-  .then((module) => ({ default: module.WebLightweightChart })));
-
-function WebTradingViewChart(props: TradingViewChartProps) {
-  return <Suspense fallback={null}><TradingViewChart {...props} /></Suspense>;
-}
-
-function WebLightweightChart(props: LightweightChartProps) {
-  return <Suspense fallback={null}><LightweightChart {...props} /></Suspense>;
-}
+import { WebTradingViewChart } from "./host/tradingview-chart";
 
 function currentDesktopPlatform(): string {
   const navigatorWithUserAgentData = navigator as Navigator & {
@@ -109,7 +97,6 @@ export function createDomUiHost(
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
     TradingViewChart: WebTradingViewChart,
-    LightweightChart: WebLightweightChart,
     ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
       const imageSrc = typeof src === "string" ? src.trim() : "";
       const [failed, setFailed] = useState(false);

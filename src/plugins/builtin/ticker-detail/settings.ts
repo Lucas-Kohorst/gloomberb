@@ -202,6 +202,40 @@ export function buildQuoteMonitorSettingsDef(): PaneSettingsDef {
   };
 }
 
+/** Tabs kept in the strip; every other visible tab lives behind MORE. */
+export const TICKER_RESEARCH_CORE_TAB_IDS: ReadonlySet<string> = new Set([
+  "overview",
+  "financials",
+  "chart",
+  "options",
+  "news",
+  "holders",
+  "sec",
+]);
+
+export const TICKER_RESEARCH_MORE_TAB_VALUE = "__more__";
+
+export interface TickerResearchTabStrip {
+  /** Tabs rendered inline, including the active long-tail tab when it lives behind MORE. */
+  inline: TickerResearchTabSummary[];
+  overflow: TickerResearchTabSummary[];
+}
+
+export function splitTickerResearchTabStrip(
+  tabs: readonly TickerResearchTabSummary[],
+  activeTabId: string | null,
+): TickerResearchTabStrip {
+  const core = tabs.filter((tab) => TICKER_RESEARCH_CORE_TAB_IDS.has(tab.id));
+  const overflow = tabs.filter((tab) => !TICKER_RESEARCH_CORE_TAB_IDS.has(tab.id));
+  // A one-item menu is more friction than the tab it hides.
+  if (overflow.length < 2) return { inline: [...tabs], overflow: [] };
+  const activeOverflowTab = overflow.find((tab) => tab.id === activeTabId);
+  return {
+    inline: activeOverflowTab ? [...core, activeOverflowTab] : core,
+    overflow,
+  };
+}
+
 export function buildVisibleTickerResearchTabs(
   pluginTabs: TickerResearchTabDef[],
   ticker: TickerRecord | null,

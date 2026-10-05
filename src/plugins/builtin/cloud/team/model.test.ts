@@ -37,7 +37,7 @@ function team(overrides: Partial<TeamSummary>): TeamSummary {
 describe("team markers", () => {
   test("prefix and label use the short name", () => {
     expect(teamPrefix(team({}))).toBe("MD·");
-    expect(teamLabel(team({}))).toBe("MD· Macro Desk");
+    expect(teamLabel(team({}))).toBe("MD · Macro Desk");
   });
 
   test("channel ids round-trip", () => {
@@ -100,7 +100,7 @@ describe("notifications", () => {
       },
     };
     expect(describeTeamNotification(invite)).toEqual({
-      title: "MD· Macro Desk",
+      title: "MD · Macro Desk",
       body: "@vince invited you to Macro Desk. Run TEAM to accept.",
     });
 

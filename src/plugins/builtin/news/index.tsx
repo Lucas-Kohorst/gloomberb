@@ -6,7 +6,7 @@ import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { EmptyState } from "../../../components";
+import { EmptyState, PaneListChrome } from "../../../components";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
 import type { NewsArticle } from "../../../news/types";
 import { newsWireModule } from "./wire";
@@ -20,6 +20,7 @@ import {
   type NewsSortPreference,
 } from "./wire/news/table";
 import { useNewsArticleFooter } from "./wire/news/footer";
+import { newsListSearchEmptyCopy, useNewsListSearch } from "./wire/news/list-search";
 import { useCopyShareLink, newsArticleSharePayload } from "../shared/article-share";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
@@ -101,11 +102,18 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     newsState.articles,
   );
   const news = equityNews ? tickerNews : relatedArticles;
+  const {
+    searchQuery,
+    searchFocused,
+    filteredArticles,
+    search,
+    handleRootKeyDown,
+  } = useNewsListSearch(news, { registrationId: "ticker-news", focused });
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const { savedArticleIds, toggleArticleSaved } = useNewsSavedState();
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(newsQuery, newsState);
   const loadNewsStory = useLoadNewsStory();
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(news, loadNewsStory);
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(filteredArticles, loadNewsStory);
   const loading = equityNews
     ? newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0)
     : relatedLoading && news.length === 0;
@@ -127,7 +135,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   const detailWithSummary = detailArticle && !detailArticle.summary && fetchedSummary
     ? { ...detailArticle, summary: fetchedSummary }
     : detailArticle;
-  const selectedArticle = news.find((article) => article.id === selectedArticleId) ?? null;
+  const selectedArticle = filteredArticles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailWithSummary ?? selectedArticle;
   const copyShareLink = useCopyShareLink();
   const shareArticle = readableArticle
@@ -136,7 +144,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
 
   useNewsArticleFooter({
     registrationId: "news",
-    focused,
+    focused: focused && !searchFocused,
     article: readableArticle,
     loading: loading && news.length > 0,
     error,
@@ -178,10 +186,15 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     );
   }
 
+  const emptyCopy = newsListSearchEmptyCopy(searchQuery, {
+    title: `No news for ${ticker.metadata.ticker}`,
+    hint: "Stories appear as sources publish them.",
+  });
+
   return (
     <NewsArticleStackView
-      articles={news}
-      focused={focused}
+      articles={filteredArticles}
+      focused={focused && !searchFocused}
       width={width}
       rootHeight={height}
       readArticleIds={readArticleIds}
@@ -207,16 +220,20 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       )}
       detailTitle={detailWithSummary?.title}
       columns={["time", "source", "title", "categories", "sentiment"]}
+      rootBefore={(
+        <PaneListChrome width={width} focused={focused} search={search} />
+      )}
+      onRootKeyDown={handleRootKeyDown}
       emptyContent={newsTableStatusContent({
         loading,
         error,
         subject: "News",
-        ticker: ticker.metadata.ticker,
-        emptyTitle: `No news for ${ticker.metadata.ticker}`,
-        emptyMessage: "Stories appear as sources publish them.",
+        ticker: searchQuery.trim() ? undefined : ticker.metadata.ticker,
+        emptyTitle: emptyCopy.title,
+        emptyMessage: emptyCopy.hint,
       })}
-      emptyStateTitle={`No news for ${ticker.metadata.ticker}`}
-      emptyStateHint="Stories appear as sources publish them."
+      emptyStateTitle={emptyCopy.title}
+      emptyStateHint={emptyCopy.hint}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
       onPopOut={() => popOutArticle(readableArticle)}

@@ -1,6 +1,7 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
+import { usePaneFooterHintBindings } from "../../shared/pane-footer";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { usePaneStateValue, usePaneTicker } from "../../../../state/app/context";
 import {
@@ -15,6 +16,7 @@ import {
 import { colors, priceColor } from "../../../../theme/colors";
 import type { FinancialStatement } from "../../../../types/financials";
 import { padTo } from "../../../../utils/format";
+import { compareSortValues, nextSortPreference, type SortPreference } from "../../../../utils/sort-values";
 import {
   FINANCIAL_COL_W,
   FINANCIAL_LABEL_W,
@@ -33,8 +35,8 @@ import {
   resolveFinancialPeriod,
   resolveFinancialPeriodOption,
   resolveFinancialSubTabKey,
-  semanticGrowthValue,
   statementMetricValue,
+  semanticGrowthValue,
   type FinancialPeriod,
   type FinancialTableRow,
 } from "./model";
@@ -43,6 +45,57 @@ type FinancialTableColumn = DataTableColumn & (
   | { id: "metric"; kind: "metric" }
   | { id: string; kind: "statement"; statement: FinancialStatement }
 );
+
+interface FinancialRowNode {
+  row: FinancialTableRow;
+  children: FinancialRowNode[];
+}
+
+function sortFinancialRows(
+  rows: readonly FinancialTableRow[],
+  column: FinancialTableColumn | undefined,
+  direction: "asc" | "desc",
+): FinancialTableRow[] {
+  if (!column) return [...rows];
+
+  // Rebuild the flattened rows as a tree so sorting never separates children
+  // from the group that explains their place in the statement.
+  const roots: FinancialRowNode[] = [];
+  const groupsByDepth = new Map<number, FinancialRowNode>();
+  for (const row of rows) {
+    const parent = row.depth === 0 ? null : groupsByDepth.get(row.depth - 1) ?? null;
+    const node: FinancialRowNode = { row, children: [] };
+    (parent?.children ?? roots).push(node);
+    for (const depth of groupsByDepth.keys()) {
+      if (depth >= row.depth) groupsByDepth.delete(depth);
+    }
+    if (row.kind === "group") groupsByDepth.set(row.depth, node);
+  }
+
+  const sortNodes = (siblings: FinancialRowNode[]) => {
+    siblings.sort((left, right) => {
+      const sortValue = (node: FinancialRowNode): string | number | undefined => {
+        const row = node.row;
+        if (column.kind === "metric") return row.kind === "group" ? row.label : row.unitLabel;
+        if (row.kind === "group") {
+          return row.summaryKey
+            ? column.statement[row.summaryKey] as number | undefined
+            : undefined;
+        }
+        return statementMetricValue(row, column.statement);
+      };
+      return compareSortValues(sortValue(left), sortValue(right), direction);
+    });
+    for (const node of siblings) sortNodes(node.children);
+  };
+  sortNodes(roots);
+
+  const flatten = (nodes: readonly FinancialRowNode[]): FinancialTableRow[] => nodes.flatMap((node) => [
+    node.row,
+    ...flatten(node.children),
+  ]);
+  return flatten(roots);
+}
 
 const EMPTY_STATEMENTS: FinancialStatement[] = [];
 
@@ -99,6 +152,7 @@ export function ResolvedFinancialsTab({
     () => new Set(collectDefaultCollapsedGroupIds(FINANCIAL_SUB_TABS.flatMap((tab) => tab.rows))),
   );
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<SortPreference>({ columnId: null, direction: "asc" });
   const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const { nativePaneChrome } = useUiCapabilities();
@@ -153,51 +207,41 @@ export function ResolvedFinancialsTab({
     });
   }, [currentGroupIds]);
 
-  // The active section and period are already the visible tab selections, so the
-  // footer only carries what the controls cannot show.
-  usePaneFooter("financials", () => ({
-    info: [],
-    hints: [
-      ...FINANCIAL_SUB_TABS.map((tab, index) => ({
-        id: `section-${tab.key}`,
-        key: String(index + 1),
-        label: ` ${tab.name}`,
-        disabled: !financials,
-        onPress: () => setSubTabIdx(index),
-      })),
-      {
-        id: "period",
-        key: "p",
-        label: "eriod",
-        disabled: !hasAnnualStatements && !hasQuarterlyStatements,
-        onPress: togglePeriod,
-      },
-      {
-        id: "expand-groups",
-        key: "e",
-        label: "xpand",
-        disabled: !hasCollapsedCurrentGroup,
-        onPress: expandCurrentGroups,
-      },
-      {
-        id: "collapse-groups",
-        key: "c",
-        label: "ollapse",
-        disabled: !hasExpandedCurrentGroup,
-        onPress: collapseCurrentGroups,
-      },
-    ],
-  }), [
+  // Section and period are already visible in the table header. Only actions
+  // that cannot be inferred from those controls belong in the footer.
+  const footerHints = useMemo(() => [
+    {
+      id: "period",
+      key: "p",
+      label: "eriod",
+      disabled: !hasAnnualStatements && !hasQuarterlyStatements,
+      onPress: togglePeriod,
+    },
+    {
+      id: "expand-groups",
+      key: "e",
+      label: "xpand",
+      disabled: !hasCollapsedCurrentGroup,
+      onPress: expandCurrentGroups,
+    },
+    {
+      id: "collapse-groups",
+      key: "c",
+      label: "ollapse",
+      disabled: !hasExpandedCurrentGroup,
+      onPress: collapseCurrentGroups,
+    },
+  ], [
     collapseCurrentGroups,
     expandCurrentGroups,
-    financials,
     hasAnnualStatements,
     hasCollapsedCurrentGroup,
     hasExpandedCurrentGroup,
     hasQuarterlyStatements,
-    setSubTabIdx,
     togglePeriod,
   ]);
+  usePaneFooterHintBindings(focused, footerHints);
+  usePaneFooter("financials", () => ({ info: [], hints: footerHints }), [footerHints]);
 
   const syncHeaderScroll = useCallback(() => {
     const body = bodyScrollRef.current;
@@ -209,25 +253,10 @@ export function ResolvedFinancialsTab({
 
   useShortcut((event) => {
     if (!focused) return;
+    if (event.defaultPrevented || event.propagationStopped) return;
     if (event.ctrl || event.meta || event.alt || event.super || event.targetEditable) return;
     const keyName = event.name || event.key || event.sequence;
-    if (keyName === "p") {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePeriod();
-    } else if (keyName === "e" && hasCollapsedCurrentGroup) {
-      event.preventDefault();
-      event.stopPropagation();
-      expandCurrentGroups();
-    } else if (keyName === "c" && hasExpandedCurrentGroup) {
-      event.preventDefault();
-      event.stopPropagation();
-      collapseCurrentGroups();
-    } else if (keyName === "1" || keyName === "2" || keyName === "3") {
-      event.preventDefault();
-      event.stopPropagation();
-      setSubTabIdx(Number(keyName) - 1);
-    } else if (allowArrowSubTabNavigation && keyName === "left") {
+    if (allowArrowSubTabNavigation && keyName === "left") {
       event.preventDefault();
       event.stopPropagation();
       selectAdjacentSubTab(-1);
@@ -288,6 +317,11 @@ export function ResolvedFinancialsTab({
   const rows = useMemo(
     () => buildFinancialRows(subTab.rows, displayStatements, collapsedGroups),
     [collapsedGroups, displayStatements, subTab.rows],
+  );
+  const activeSortColumn = columns.find((column) => column.id === sortPreference.columnId);
+  const sortedRows = useMemo(
+    () => sortFinancialRows(rows, activeSortColumn, sortPreference.direction),
+    [activeSortColumn, rows, sortPreference.direction],
   );
   useEffect(() => {
     if (rows.length === 0) {
@@ -396,7 +430,7 @@ export function ResolvedFinancialsTab({
         headerScrollId={headerScrollId}
         bodyScrollId={bodyScrollId}
         columns={columns}
-        items={rows}
+        items={sortedRows}
         selection={{
           kind: "id",
           selectedId: selectedRowId,
@@ -408,10 +442,13 @@ export function ResolvedFinancialsTab({
             }
           },
         }}
-        sortColumnId={null}
-        sortDirection="desc"
-        // STOP: statement line items keep GAAP grouping; sorting would flatten sections.
-        onHeaderClick={() => {}}
+        sortColumnId={activeSortColumn?.id ?? null}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+          current,
+          columnId,
+          { defaultDirection: columnId === "metric" ? "asc" : "desc" },
+        ))}
         getItemKey={(row) => row.id}
         getRowRevision={(row) => row.kind === "group" ? `${row.id}:${row.expanded}` : row.id}
         onActivate={(row) => {

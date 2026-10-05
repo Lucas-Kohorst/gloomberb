@@ -17,6 +17,10 @@ export interface CommandBarPromptBinding {
   /** Completion drawn after the typed text on the root screen, e.g. the ticker after "QQ". */
   ghostSuffix: string | null;
   onQueryChange: (query: string) => void;
+  /** The results listbox the prompt drives, or null when none is showing. */
+  listboxId: string | null;
+  /** The highlighted option inside `listboxId`, for aria-activedescendant. */
+  activeOptionId: string | null;
 }
 
 let binding: CommandBarPromptBinding | null = null;
@@ -29,7 +33,9 @@ function sameBinding(a: CommandBarPromptBinding | null, b: CommandBarPromptBindi
     && a.query === b.query
     && a.placeholder === b.placeholder
     && a.ghostSuffix === b.ghostSuffix
-    && a.onQueryChange === b.onQueryChange;
+    && a.onQueryChange === b.onQueryChange
+    && a.listboxId === b.listboxId
+    && a.activeOptionId === b.activeOptionId;
 }
 
 export function publishCommandBarPrompt(next: CommandBarPromptBinding | null): void {

@@ -13,6 +13,14 @@ import type {
   PersistedAuthUser,
 } from "./types";
 
+/** Private calendar subscription (`/account/calendar-feed`). Not an API key. */
+export interface CalendarFeed {
+  url: string;
+  createdAt: string;
+  /** Last time a calendar app read the feed, to the hour. */
+  lastFetchedAt: string | null;
+}
+
 type CloudApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 
 interface CloudAuthApiOptions {
@@ -124,7 +132,15 @@ export class CloudAuthApi {
       });
       if (credentialChanged()) return this.getSession();
       const user = result?.user ?? null;
-      this.options.setCurrentUser(user);
+      if (user) {
+        this.options.setCurrentUser(user);
+      } else if (!this.options.hasSessionCredential()) {
+        // No cookie/token on this client — treat an empty answer as signed out.
+        this.options.setCurrentUser(null);
+      }
+      // When a credential exists but the server returned no user, the cookie may
+      // not have reached the server (desktop webview). Keep the cached identity
+      // so verified surfaces such as Teams do not flicker empty on every refresh.
       return user;
     } catch (error) {
       if (credentialChanged()) return this.getSession();
@@ -233,6 +249,33 @@ export class CloudAuthApi {
         revokeOtherSessions: false,
       }),
     });
+  }
+
+  /** The private calendar feed link, or null until it is first created. */
+  async getCalendarFeed(): Promise<CalendarFeed | null> {
+    const result = await this.options.request<{ feed: CalendarFeed | null }>(
+      "/account/calendar-feed",
+      { method: "GET" },
+    );
+    return result.feed;
+  }
+
+  /** The calendar feed link, created on first use. */
+  async ensureCalendarFeed(): Promise<CalendarFeed> {
+    const result = await this.options.request<{ feed: CalendarFeed }>(
+      "/account/calendar-feed",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    return result.feed;
+  }
+
+  /** A new calendar feed link; the old one stops working. */
+  async rotateCalendarFeed(): Promise<CalendarFeed> {
+    const result = await this.options.request<{ feed: CalendarFeed }>(
+      "/account/calendar-feed/rotate",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    return result.feed;
   }
 
   async deleteAccount(): Promise<void> {

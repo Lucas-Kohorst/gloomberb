@@ -1,5 +1,6 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 import type { SortDirection } from "../../../utils/sort-values";
+import { compareChangelogSemver } from "./entries";
 
 export type ChangelogColumnId = "date" | "version" | "title";
 
@@ -9,7 +10,7 @@ export interface ChangelogSortPreference {
 }
 
 export const DEFAULT_CHANGELOG_SORT: ChangelogSortPreference = {
-  columnId: "date",
+  columnId: "version",
   direction: "desc",
 };
 
@@ -42,7 +43,7 @@ function compareReleaseValue(
     case "date":
       return releaseDateValue(left) - releaseDateValue(right);
     case "version":
-      return compareText(left.version, right.version);
+      return compareChangelogSemver(left, right);
     case "title":
       return compareText(left.title, right.title);
   }

@@ -1,14 +1,15 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
-  EmptyState,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
+  PaneListChrome,
+  usePaneListSearch,
+  PaneStatusBody,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -23,9 +24,13 @@ import {
   type OpenPayment,
 } from "./types";
 
+const EMPTY_ITEMS: OpenPayment[] = [];
+
 const SEARCH_DEBOUNCE_MS = 250;
 // The underlying data publishes once a year; hourly refresh is plenty.
 const REFRESH_INTERVAL_MINUTES = 60;
+
+const trimSearchValue = (value: string) => value.trim();
 
 function formatMoney(amount: number | null): string {
   if (amount == null) return "—";
@@ -58,19 +63,15 @@ function buildDetailMeta(payment: OpenPayment): string[] {
   const kind = [payment.nature, payment.form].filter(Boolean).join(" · ");
   if (kind) meta.push(kind);
   const place = [payment.recipientCity, payment.recipientState].filter(Boolean).join(", ");
-  const when = formatDate(payment.date);
-  meta.push(place ? `${place} on ${when}` : when);
+  const when = payment.date ? formatDate(payment.date) : "";
+  const placeAndDate = [place, when].filter(Boolean).join(" · ");
+  if (placeAndDate) meta.push(placeAndDate);
   return meta;
 }
 
 function buildDetailBody(payment: OpenPayment): string {
   const lines = [
-    `Amount: ${formatMoney(payment.amount)}`,
-    `Company: ${payment.companyName || "—"}`,
-    payment.npi
-      ? `Recipient: ${payment.recipientName || "—"} (NPI ${payment.npi})`
-      : `Recipient: ${payment.recipientName || "—"}`,
-    `Nature: ${payment.nature || "—"}`,
+    payment.npi ? `NPI: ${payment.npi}` : undefined,
     payment.productName
       ? `Product: ${payment.productName}${payment.productCategory ? ` (${payment.productCategory})` : ""}`
       : undefined,
@@ -86,6 +87,7 @@ function toFeedItems(payments: OpenPayment[]): FeedDataTableItem[] {
     eyebrow: recipientEyebrow(payment),
     title: paymentTitle(payment),
     timestamp: payment.date,
+    timestampKind: "date",
     detailTitle: payment.recipientName
       ? `${payment.recipientName} · ${formatMoney(payment.amount)}`
       : formatMoney(payment.amount),
@@ -98,87 +100,43 @@ export function OpenPaymentsPane({ width, height, focused }: PaneProps) {
   const client = useMemo(() => new OpenPaymentsClient(), []);
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? "").trim());
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-  const [payments, setPayments] = useState<OpenPayment[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const requestRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal) => {
+    const page = await client.listPayments({ searchQuery: query, signal });
+    return page.payments;
+  }, [client, query]);
+  const { data, loading: refreshing, error, updatedAt: lastUpdated, reload: refresh } = useAsyncResource(loader);
+  const payments = data ?? EMPTY_ITEMS;
 
-  const load = useCallback((nextQuery: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const requestId = ++requestRef.current;
-    setStatus("loading");
-    setError(null);
-    void client.listPayments({ searchQuery: nextQuery, signal: controller.signal })
-      .then((page) => {
-        if (requestRef.current !== requestId || controller.signal.aborted) return;
-        setPayments(page.payments);
-        setSelectedIdx(0);
-        setStatus("loaded");
-        setLastUpdated(Date.now());
-      })
-      .catch((loadError) => {
-        if (requestRef.current !== requestId || controller.signal.aborted) return;
-        setPayments([]);
-        setStatus("error");
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-      });
-  }, [client, setSelectedIdx]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => load(query), query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timeoutId);
-  }, [load, query]);
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const selectedPayment = payments[selectedIdx] ?? null;
-  const detailPayment = openItemId
-    ? payments.find((payment) => payment.id === openItemId) ?? selectedPayment
-    : selectedPayment;
-
-  const loading = status === "loading" && payments.length === 0;
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
+  const selectedPayment = payments.find((item) => item.id === selectedId) ?? payments[0] ?? null;
+  const loading = refreshing && payments.length === 0;
+  const updatedAgo = useUpdatedAgo(lastUpdated);
+  const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
+  useAutoRefresh(lastUpdated, refresh, poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(payments), [payments]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
   const updateQuery = useCallback((value: string) => {
     setQuery(value.trim());
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery, setSelectedId]);
+
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "company, physician, NPI, or state",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-      }
-      return;
-    }
-    if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
+    if (!focused || openItemId || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      load(query);
+      refresh();
     }
   }, { allowEditable: true, enabled: focused });
 
@@ -186,7 +144,7 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
     registrationId: OPEN_PAYMENTS_PLUGIN_ID,
     focused,
     url: null,
-    loading,
+    loading: refreshing,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
@@ -194,7 +152,7 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: false,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
@@ -208,56 +166,25 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (handleSearchKey(event)) return true;
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      load(query);
+      refresh();
       return true;
     }
     return false;
-  }, [focusSearch, load, query]);
+  }, [focusSearch, handleSearchKey, refresh]);
 
   const rootBefore = (
-    <InputSearchBar
-      value={query}
-      focused={focused && !openItemId}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="company, physician, NPI, or state"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim()}
-      onFocus={focusSearch}
-      onBlur={() => setSearchFocused(false)}
-      onNavigateDown={() => setSearchFocused(false)}
-      onQueryChange={updateQuery}
-    />
+    <PaneListChrome width={width} focused={focused && !openItemId} search={search} />
   );
 
-  if (loading) {
+  if (loading || (error && payments.length === 0)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={query.trim() ? `Searching payments for ${query.trim()}...` : "Loading payments..."} />
-        </Box>
-      </Box>
-    );
-  }
-  if (error && payments.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <EmptyState title="Payments unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={loading} error={error} subject="Payments" onRetry={refresh} />
       </Box>
     );
   }
@@ -269,8 +196,9 @@ const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", def
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={selectedPayment?.id ?? null}
+      onSelect={(index) => setSelectedId(payments[index]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Recipient"

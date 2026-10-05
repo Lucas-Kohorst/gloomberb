@@ -103,7 +103,7 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
   const [entries, setEntries] = useState<SanctionsEntry[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedEntryId, setSelectedEntryId] = useDebouncedPluginPaneState<string | null>("selectedEntryId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const requestRef = useRef(0);
@@ -120,17 +120,15 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
       .then((page) => {
         if (requestRef.current !== requestId || controller.signal.aborted) return;
         setEntries(page.entries);
-        setSelectedIdx(0);
         setStatus("loaded");
         setLastUpdated(Date.now());
       })
       .catch((loadError) => {
         if (requestRef.current !== requestId || controller.signal.aborted) return;
-        setEntries([]);
         setStatus("error");
         setError(loadError instanceof Error ? loadError.message : String(loadError));
       });
-  }, [client, setSelectedIdx]);
+  }, [client]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => load(query), query ? SEARCH_DEBOUNCE_MS : 0);
@@ -143,7 +141,8 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), REFRESH_INTERVAL_MINUTES);
   const items = useMemo(() => toFeedItems(entries), [entries]);
 
-  const selectedEntry = entries[selectedIdx] ?? null;
+  const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) ?? entries[0] ?? null;
+  const activeSelectionId = selectedEntry?.id ?? null;
   const detailEntry = openItemId
     ? entries.find((entry) => entry.id === openItemId) ?? selectedEntry
     : selectedEntry;
@@ -154,9 +153,12 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
   }, []);
   const updateQuery = useCallback((value: string) => {
     setQuery(value.trim());
-    setSelectedIdx(0);
+    setSelectedEntryId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+    setEntries([]);
+    setStatus("loading");
+    setError(null);
+  }, [setQuery, setSelectedEntryId]);
 
   useShortcut((event) => {
     if (!focused || openItemId) return;
@@ -268,8 +270,8 @@ function SanctionsPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
+      selectedItemId={activeSelectionId}
+      onSelect={(index) => setSelectedEntryId(entries[index]?.id ?? null)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Type"

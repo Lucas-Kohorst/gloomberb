@@ -42,6 +42,7 @@ function makeProvider(mode: "ok" | "fail") {
 }
 
 let breakProvider: () => void = () => {};
+const pinned: string[] = [];
 
 function Harness() {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-wei-pane-test"));
@@ -49,7 +50,10 @@ function Harness() {
   breakProvider = () => setMode("fail");
   const runtime = useMemo(() => {
     const provider = makeProvider(mode);
-    return { getMarketData: () => provider } as unknown as PluginRuntimeAccess;
+    return {
+      getMarketData: () => provider,
+      pinTicker: (symbol: string) => { pinned.push(symbol); },
+    } as unknown as PluginRuntimeAccess;
   }, [mode]);
 
   return (
@@ -72,6 +76,7 @@ function Harness() {
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 afterEach(async () => {
+  pinned.length = 0;
   if (!testSetup) return;
   await act(async () => {
     testSetup!.renderer.destroy();
@@ -87,6 +92,35 @@ async function settle() {
 }
 
 describe("WorldIndicesPane", () => {
+  test("search filters whole regions and returns keyboard activation to the filtered table", async () => {
+    testSetup = await testRender(<Harness />, { width: 80, height: 24 });
+    await settle();
+    await act(async () => { testSetup!.mockInput.pressKey("/"); });
+    await settle();
+    await act(async () => {
+      for (const character of "asia") testSetup!.mockInput.pressKey(character);
+    });
+    await act(async () => { await Bun.sleep(120); });
+    await settle();
+    expect(testSetup.captureCharFrame()).toContain("Asia-Pacific");
+    expect(testSetup.captureCharFrame()).not.toContain("Americas");
+    expect(testSetup.captureCharFrame()).not.toContain("SPX");
+    await act(async () => { testSetup!.mockInput.pressArrow("down"); });
+    await settle();
+    await act(async () => { testSetup!.mockInput.pressEnter(); });
+    await settle();
+    expect(pinned).toEqual(["^N225"]);
+    await act(async () => { testSetup!.mockInput.pressKey("/"); });
+    await settle();
+    await act(async () => {
+      testSetup!.mockInput.pressEscape();
+      await Bun.sleep(50);
+    });
+    await settle();
+    expect(testSetup.captureCharFrame()).toContain("Americas");
+    expect(testSetup.captureCharFrame()).toContain("SPX");
+  });
+
   test("renders regions and prices from the shared quote board", async () => {
     testSetup = await testRender(<Harness />, { width: 80, height: 24 });
     await settle();

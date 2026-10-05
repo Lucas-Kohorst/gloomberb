@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataTableView,
   EmptyState,
+  PaneListChrome,
   Spinner,
   Tabs,
   type DataTableCell,
@@ -16,7 +17,8 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
 import { usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { usePaneStatusFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 import { fetchMarketHalts } from "./client";
 import {
   DEFAULT_HALT_SORT,
@@ -52,6 +54,13 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
   const [filter, setFilter] = useState<HaltFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<HaltSortPreference>(DEFAULT_HALT_SORT);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "symbol, company, or reason",
+  });
   const [now, setNow] = useState(() => Date.now());
   const fetchGenRef = useRef(0);
 
@@ -84,10 +93,16 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const rows = useMemo(
-    () => sortHalts(filterHalts(records, filter, now), sortPreference, now),
-    [filter, now, records, sortPreference],
-  );
+  const rows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = filterHalts(records, filter, now);
+    const searched = query.length === 0
+      ? filtered
+      : filtered.filter((row) => `${row.symbol} ${row.company} ${row.market} ${row.reason} ${row.reasonCode}`
+        .toLowerCase()
+        .includes(query));
+    return sortHalts(searched, sortPreference, now);
+  }, [filter, now, records, searchQuery, sortPreference]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -107,6 +122,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
   }, [pinTicker]);
 
   const handlePaneKey = useCallback((event: DataTableKeyEvent): boolean => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -126,7 +142,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [cycleFilter, cycleSort, refresh]);
+  }, [cycleFilter, cycleSort, listSearch.handleSearchKey, refresh]);
 
   useShortcut((event) => {
     if (event.targetEditable || event.defaultPrevented || event.propagationStopped) return;
@@ -140,9 +156,10 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     loading: status === "loading",
     error,
     hints: [
-      { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
+      { id: "filter", key: "f", label: "ilter", onPress: cycleFilter, disabled: listSearch.searchFocused },
     ],
-    focused,
+    focused: focused && !listSearch.searchFocused,
   });
 
   const renderCell = useCallback((
@@ -231,10 +248,15 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
-      <DataTableView<HaltRecord, HaltColumn>
+      <PaneListChrome
+        width={width}
         focused={focused}
+        search={listSearch.search}
+      />
+      <DataTableView<HaltRecord, HaltColumn>
+        focused={focused && !listSearch.searchFocused}
         rootWidth={width}
-        rootHeight={Math.max(1, height - 1)}
+        rootHeight={Math.max(1, height - 2)}
         selection={{
           kind: "id",
           selectedId,

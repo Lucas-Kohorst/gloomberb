@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import {
   DataTableView,
+  PaneListChrome,
   StaticChartSurface,
   usePaneFooter,
   usePaneTicker,
@@ -13,6 +14,8 @@ import { resolveChartPalette } from "../../../components/chart/core/palette";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
+import { paneSearchHint, usePaneFooterHintBindings } from "../shared/pane-footer";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 import { fetchDividendData, type DividendData } from "./client";
 import {
   buildDividendColumns,
@@ -201,7 +204,18 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   const [error, setError] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<DividendSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "date or currency",
+  });
   const fetchGenRef = useRef(0);
+
+  useEffect(() => {
+    setSearchQuery("");
+  }, [symbol]);
 
   const load = useCallback(async (sym: string, price: number | null, listingExchange = "") => {
     fetchGenRef.current += 1;
@@ -243,7 +257,9 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
 
   usePaneFooter("dividend-yield", () => ({
     info: loadingErrorFooterInfo(loading, error),
-  }), [error, loading]);
+    hints: [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
+  }), [error, listSearch.focusSearch, listSearch.searchFocused, loading]);
+  usePaneFooterHintBindings(focused && !listSearch.searchFocused, [paneSearchHint(listSearch.focusSearch)]);
 
   const payments = data?.payments ?? [];
   const eps = financials?.fundamentals?.eps;
@@ -252,7 +268,13 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
     ? { ...data.metrics, payoutRatio: data.metrics.trailingRate / eps }
     : data?.metrics;
   const rows = useMemo(() => toDividendRows(payments), [payments]);
-  const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query.length === 0
+      ? rows
+      : rows.filter((row) => `${row.exDate} ${row.amount} ${row.currency}`.toLowerCase().includes(query));
+  }, [rows, searchQuery]);
+  const sortedRows = useMemo(() => sortRows(filteredRows, sortPreference), [filteredRows, sortPreference]);
   const columns = useMemo(() => buildDividendColumns(), []);
   const chartPoints = useMemo(
     () => buildYieldChartPoints(payments, data?.price ?? quotePrice, data?.history ?? []),
@@ -261,17 +283,18 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   const metricRowCount = width - 2 >= MIN_METRIC_COLUMN_WIDTH * 2 ? 5 : 10;
   const showChart = chartPoints.length >= 2;
   const chartHeight = showChart
-    ? Math.max(12, Math.min(22, Math.floor((height - metricRowCount) * 0.45)))
+    ? Math.max(12, Math.min(22, Math.floor((height - metricRowCount - 1) * 0.45)))
     : 0;
-  const tableHeight = Math.max(8, height - metricRowCount - (showChart ? chartHeight + 1 : 0));
+  const tableHeight = Math.max(8, height - metricRowCount - (showChart ? chartHeight + 1 : 0) - 1);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
     return handleRefreshKey(event, refresh, { stopPropagation: true });
-  }, [refresh]);
+  }, [listSearch.handleSearchKey, refresh]);
 
   const emptyTitle = !symbol
     ? "No ticker selected."
@@ -290,9 +313,14 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
           chartPoints={chartPoints}
         />
       ) : null}
+      <PaneListChrome
+        width={width}
+        focused={focused}
+        search={listSearch.search}
+      />
       <Box flexGrow={1} minHeight={8}>
         <DataTableView<DividendRow, DividendColumn>
-          focused={focused}
+          focused={focused && !listSearch.searchFocused}
           selection={{
             kind: "index",
             selectedIndex: sortedRows.length === 0 ? null : Math.min(selectedIdx, sortedRows.length - 1),

@@ -13,7 +13,7 @@ export function PaneTabHeader({
   tabs,
   activeValue,
   onSelect,
-  scrollable = false,
+  scrollable = true,
 }: {
   width: number;
   focused: boolean;

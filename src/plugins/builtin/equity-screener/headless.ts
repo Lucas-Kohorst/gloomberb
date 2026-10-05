@@ -1,0 +1,97 @@
+import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import {
+  NUMERIC_FIELDS,
+  type NumericField,
+} from "../../../api-client/equity-screener";
+import { fetchScreen, screenerClientFrom } from "./client";
+import {
+  DEFAULT_SCREEN,
+  formatScreenValue,
+  metricDate,
+  parseScreenDefinition,
+  SHORT_LABELS,
+} from "./model";
+
+export const equityScreenerHeadless: HeadlessPaneDefinition<"bundle"> = {
+  shape: "bundle",
+  argument: { kind: "none" },
+  options: [
+    {
+      key: "definition",
+      type: "string",
+      description: "Version 1 JSON screen criteria and sort definition.",
+    },
+    {
+      key: "metric",
+      type: "enum",
+      description:
+        "Metric to display with its source date and covered-universe rank.",
+      values: NUMERIC_FIELDS.map((value) => ({ value })),
+      defaultValue: "marketCap",
+    },
+  ],
+  describe: "Equity screener",
+  async load(args, ctx) {
+    const definition = args.options.definition
+      ? parseScreenDefinition(JSON.parse(String(args.options.definition)))
+      : DEFAULT_SCREEN;
+    const data = await fetchScreen(definition, null, ctx.signal, screenerClientFrom(ctx.apiClient));
+    const requested = String(args.options.metric ?? "marketCap");
+    const metric = (NUMERIC_FIELDS as readonly string[]).includes(requested)
+      ? requested as NumericField
+      : "marketCap";
+    // Payload status also counts ordinary per-field sparsity; only generation
+    // warnings are failures, and more pages are not an error.
+    const result = {
+      complete: !data.nextCursor && data.warnings.length === 0,
+      errors: data.warnings,
+      sections: [
+        {
+          title: "Matching equities",
+          columns: [
+            { key: "symbol", header: "Symbol" },
+            { key: "exchange", header: "Exchange" },
+            { key: "name", header: "Name" },
+            { key: "value", header: SHORT_LABELS[metric], align: "right" as const },
+            { key: "unit", header: "Unit" },
+            { key: "percentile", header: "Covered pctl", align: "right" as const },
+            { key: "asOf", header: "As of" },
+            { key: "state", header: "State" },
+          ],
+          rows: data.rows.map((row) => {
+            const observation = row.metrics[metric];
+            const stamp = metricDate(observation);
+            return {
+              symbol: row.symbol,
+              exchange: row.exchange,
+              name: row.name,
+              value: formatScreenValue(metric, observation.value),
+              unit: observation.unit,
+              percentile:
+                observation.percentile.value == null
+                  ? null
+                  : Math.round(observation.percentile.value),
+              asOf: stamp.collected ? `${stamp.text} (collected)` : stamp.text,
+              state: observation.state,
+            };
+          }),
+        },
+      ],
+      // Per-row metric provenance stays out: 100 annotated rows overflow tool results.
+      metadata: {
+        snapshot: data.snapshot,
+        definition: data.definition,
+        matched: data.universe.matched,
+        covered: data.universe.covered,
+        returned: data.rows.length,
+        hasMore: !!data.nextCursor,
+        notices: data.nextCursor
+          ? [
+              `Top ${data.rows.length} of ${data.universe.matched} matches; narrow the criteria to see the rest.`,
+            ]
+          : [],
+      },
+    };
+    return result;
+  },
+};

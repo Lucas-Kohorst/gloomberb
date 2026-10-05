@@ -243,35 +243,58 @@ function patchablePriceSeries(spec: ChartSpec): ChartSeriesSpec[] | null {
   return patchable.length > 0 ? patchable : null;
 }
 
+/** Live quote fields the legend strip reads without rebuilding the series. */
+interface LiveQuoteChangePatch {
+  latestChangePercent: number | undefined;
+  latestChange: number | undefined;
+  previousClose: number | undefined;
+}
+
 function applyLastBarPatch(
   seriesList: readonly ResolvedSeries[] | undefined,
   seriesId: string,
   lastTime: number,
   fieldId: string,
   price: PricePoint,
-  latestChangePercent: number | undefined,
+  changePatch: LiveQuoteChangePatch,
 ): ResolvedSeries[] | undefined {
   if (!seriesList) return undefined;
   let changed = false;
   const next = seriesList.map((entry) => {
     if (entry.id !== seriesId) return entry;
     const last = entry.points.at(-1);
-    const nextChange = finiteNumber(latestChangePercent)
-      ? latestChangePercent
+    const nextPercent = finiteNumber(changePatch.latestChangePercent)
+      ? changePatch.latestChangePercent
       : entry.latestChangePercent;
+    const nextChange = finiteNumber(changePatch.latestChange)
+      ? changePatch.latestChange
+      : entry.latestChange;
+    const nextPreviousClose = finiteNumber(changePatch.previousClose)
+      ? changePatch.previousClose
+      : entry.previousClose;
+    const changeUnchanged = nextPercent === entry.latestChangePercent
+      && nextChange === entry.latestChange
+      && nextPreviousClose === entry.previousClose;
     if (last == null || last.date.getTime() !== lastTime) {
-      if (nextChange === entry.latestChangePercent) return entry;
+      if (changeUnchanged) return entry;
       changed = true;
-      return { ...entry, latestChangePercent: nextChange };
+      return {
+        ...entry,
+        latestChangePercent: nextPercent,
+        latestChange: nextChange,
+        previousClose: nextPreviousClose,
+      };
     }
     const nextPoint = withLivePrice(last, price, fieldId);
-    if (lastBarUnchanged(last, nextPoint) && nextChange === entry.latestChangePercent) {
+    if (lastBarUnchanged(last, nextPoint) && changeUnchanged) {
       return entry;
     }
     changed = true;
     return {
       ...entry,
-      latestChangePercent: nextChange,
+      latestChangePercent: nextPercent,
+      latestChange: nextChange,
+      previousClose: nextPreviousClose,
       points: [...entry.points.slice(0, -1), nextPoint],
     };
   });
@@ -321,16 +344,18 @@ export function patchResolvedChartWithLiveQuotes(
     const nextPrice = extended.at(-1);
     if (!nextPrice) return null;
     const lastTime = last.date.getTime();
-    const latestChangePercent = finiteNumber(quote.changePercent)
-      ? quote.changePercent
-      : undefined;
+    const changePatch = {
+      latestChangePercent: finiteNumber(quote.changePercent) ? quote.changePercent : undefined,
+      latestChange: finiteNumber(quote.change) ? quote.change : undefined,
+      previousClose: finiteNumber(quote.previousClose) ? quote.previousClose : undefined,
+    };
     const series = applyLastBarPatch(
       next.series,
       seriesSpec.id,
       lastTime,
       fieldId,
       nextPrice,
-      latestChangePercent,
+      changePatch,
     );
     const bufferedSeries = applyLastBarPatch(
       next.bufferedSeries,
@@ -338,7 +363,7 @@ export function patchResolvedChartWithLiveQuotes(
       lastTime,
       fieldId,
       nextPrice,
-      latestChangePercent,
+      changePatch,
     );
     const legendSeries = applyLastBarPatch(
       next.legendSeries,
@@ -346,7 +371,7 @@ export function patchResolvedChartWithLiveQuotes(
       lastTime,
       fieldId,
       nextPrice,
-      latestChangePercent,
+      changePatch,
     );
     const timelineSeries = applyLastBarPatch(
       next.timelineSeries,
@@ -354,7 +379,7 @@ export function patchResolvedChartWithLiveQuotes(
       lastTime,
       fieldId,
       nextPrice,
-      latestChangePercent,
+      changePatch,
     );
     if (
       series === next.series

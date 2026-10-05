@@ -16,6 +16,7 @@ import {
   selectPaneFooterHints,
   type CombinedPaneFooter,
   type PaneFooterRegistration,
+  type PaneFooterSegment,
   type PaneHint,
 } from "./model";
 import { useAppLanguage } from "../../../../i18n/react";
@@ -102,13 +103,39 @@ export function PaneFooterProvider({
 export function PaneFooterScope({
   active,
   children,
+  onHintsChange,
 }: {
   active: boolean;
   children: ReactNode;
+  /** Reports the scope's enabled hints so a parent can avoid binding the same keys. */
+  onHintsChange?: (hints: readonly PaneHint[]) => void;
 }) {
-  const context = useContext(PaneFooterContext);
+  const parentContext = useContext(PaneFooterContext);
+  const context = active ? parentContext : null;
+  const onHintsChangeRef = useRef(onHintsChange);
+  onHintsChangeRef.current = onHintsChange;
+  const observed = !!onHintsChange;
+  const value = useMemo<PaneFooterContextValue | null>(() => {
+    if (!context || !observed) return context;
+    const hintsById = new Map<string, PaneHint[]>();
+    const emit = () => {
+      onHintsChangeRef.current?.([...hintsById.values()].flat().filter((hint) => !hint.disabled));
+    };
+    return {
+      register(registrationId, registration) {
+        context.register(registrationId, registration);
+        if (registration?.hints?.length) hintsById.set(registrationId, registration.hints);
+        else hintsById.delete(registrationId);
+        emit();
+      },
+      unregister(registrationId) {
+        context.unregister(registrationId);
+        if (hintsById.delete(registrationId)) emit();
+      },
+    };
+  }, [context, observed]);
   return (
-    <PaneFooterContext.Provider value={active ? context : null}>
+    <PaneFooterContext.Provider value={value}>
       {children}
     </PaneFooterContext.Provider>
   );
@@ -122,10 +149,12 @@ export function usePaneFooter(
   const language = useAppLanguage();
   const context = useContext(PaneFooterContext);
   const previousRegistrationRef = useRef<PaneFooterRegistration | null>(null);
+  const latestRegistrationRef = useRef<PaneFooterRegistration | null>(null);
 
   usePaneFooterRegistrationEffect(() => {
     return () => {
       previousRegistrationRef.current = null;
+      latestRegistrationRef.current = null;
       context?.unregister(registrationId);
     };
   }, [context, registrationId]);
@@ -133,9 +162,46 @@ export function usePaneFooter(
   usePaneFooterRegistrationEffect(() => {
     if (!context) return;
     const nextRegistration = factory() ?? null;
+    latestRegistrationRef.current = nextRegistration;
     if (samePaneFooterRegistration(previousRegistrationRef.current, nextRegistration)) return;
     previousRegistrationRef.current = nextRegistration;
-    context.register(registrationId, nextRegistration);
+    if (!nextRegistration) {
+      context.register(registrationId, null);
+      return;
+    }
+    // Keep visual registrations stable while pointer/remote actions follow the
+    // current item. Comparing handler identities instead would loop for inline callbacks.
+    const bindSegments = (key: "info" | "trailingInfo"): PaneFooterSegment[] | undefined => (
+      nextRegistration[key]?.map((segment) => {
+        const current = () => latestRegistrationRef.current?.[key]?.find((entry) => entry.id === segment.id);
+        return {
+          ...segment,
+          onPress: segment.onPress ? () => {
+            const next = current();
+            if (!next?.disabled) next?.onPress?.();
+          } : undefined,
+          menu: segment.menu ? {
+            ...segment.menu,
+            onSelect: (value) => {
+              const next = current();
+              if (!next?.disabled) next?.menu?.onSelect(value);
+            },
+          } : undefined,
+        };
+      })
+    );
+    context.register(registrationId, {
+      ...nextRegistration,
+      info: bindSegments("info"),
+      trailingInfo: bindSegments("trailingInfo"),
+      hints: nextRegistration.hints?.map((hint) => ({
+        ...hint,
+        onPress: hint.onPress ? (event) => {
+          const current = latestRegistrationRef.current?.hints?.find((entry) => entry.id === hint.id);
+          if (!current?.disabled) current?.onPress?.(event);
+        } : undefined,
+      })),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context, language, registrationId, ...deps]);
 }

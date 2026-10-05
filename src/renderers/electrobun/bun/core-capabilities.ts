@@ -1,27 +1,12 @@
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import {
-  AI_RUNNER_CAPABILITY_ID,
   BROKER_CAPABILITY_ID,
   NOTES_FILES_CAPABILITY_ID,
   type CapabilityOperation,
   type PluginCapability,
 } from "../../../capabilities";
 import type { AppServices } from "../../../core/app-services";
-import {
-  isAiProviderId,
-  type AiProviderId,
-} from "../../../plugins/builtin/ai/providers";
-import { createPiAiHost } from "../../../plugins/builtin/ai/pi";
-import {
-  isAiRunCancelled,
-  type AiConversationMessage,
-  type AiRuntimeAuthType,
-} from "../../../plugins/builtin/ai/runner";
-import {
-  normalizeAiAgentHistory,
-  type AiAgentHistoryMessage,
-} from "../../../plugins/builtin/ai/agent-history";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 import { NotesFiles } from "../../../plugins/builtin/notes/files";
@@ -288,155 +273,8 @@ function createNotesFilesCapability(): PluginCapability {
   };
 }
 
-function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapability {
-  const aiHost = createPiAiHost({
-    appKind: "desktop",
-    dataDir: options.getConfig().dataDir,
-  });
-  const requireProviderId = (value: unknown): AiProviderId => {
-    const providerId = requireString(value, "AI provider");
-    if (!isAiProviderId(providerId)) {
-      throw new Error(`Unknown AI provider: ${providerId}`);
-    }
-    return providerId;
-  };
-  const requireKnownProvider = (value: unknown): AiProviderId => {
-    const providerId = requireProviderId(value);
-    if (aiHost.hasProvider && !aiHost.hasProvider(providerId)) {
-      throw new Error(`Unknown AI provider: ${providerId}`);
-    }
-    return providerId;
-  };
-  const optionalAuthType = (value: unknown): AiRuntimeAuthType | undefined => {
-    if (value === undefined || value === null || value === "") return undefined;
-    if (value === "oauth" || value === "api_key") return value;
-    throw new Error(`Unknown AI authentication method: ${String(value)}`);
-  };
-  const optionalMessages = (value: unknown): AiConversationMessage[] | undefined => {
-    if (value === undefined || value === null) return undefined;
-    if (!Array.isArray(value)) throw new Error("AI conversation messages must be an array.");
-    return value.map((message, index) => {
-      if (!message || typeof message !== "object") {
-        throw new Error(`AI conversation message ${index + 1} is invalid.`);
-      }
-      const role = (message as { role?: unknown }).role;
-      const content = (message as { content?: unknown }).content;
-      if ((role !== "user" && role !== "assistant") || typeof content !== "string") {
-        throw new Error(`AI conversation message ${index + 1} is invalid.`);
-      }
-      return { role, content };
-    });
-  };
-  const optionalAgentMessages = (value: unknown): AiAgentHistoryMessage[] | undefined => {
-    if (value === undefined || value === null) return undefined;
-    if (!Array.isArray(value)) throw new Error("AI agent messages must be an array.");
-    const messages = normalizeAiAgentHistory(value);
-    if (messages.length !== value.length) {
-      throw new Error("AI agent message history is invalid.");
-    }
-    return messages;
-  };
-
-  return {
-    id: AI_RUNNER_CAPABILITY_ID,
-    kind: "ai-runner",
-    name: "AI Runner",
-    operations: {
-      getCatalog: op(async () => aiHost.getCatalog?.() ?? { providers: [], accounts: [], models: [] }),
-      connectProvider: stream(async (input: any, emit) => {
-        const providerId = requireKnownProvider(input.providerId);
-        const authType = optionalAuthType(input.authType);
-        if (!aiHost.connect) throw new Error("In-app AI sign-in is unavailable.");
-        let disposed = false;
-        aiHost.connect(providerId, authType, (event) => {
-          if (!disposed) emit({ kind: "account-auth", event });
-        }).then((catalog) => {
-          if (!disposed) emit({ kind: "account-connected", catalog });
-        }).catch((error) => {
-          if (!disposed) emit({
-            kind: "account-error",
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-        return () => {
-          disposed = true;
-        };
-      }),
-      disconnectProvider: op(async (input: any) => {
-        const providerId = requireKnownProvider(input.providerId);
-        if (!aiHost.disconnect) throw new Error("In-app AI account disconnection is unavailable.");
-        return aiHost.disconnect(providerId);
-      }, "action"),
-      checkProviderStatus: op(async (input: any) => {
-        const providerId = requireKnownProvider(input.providerId);
-        if (!aiHost.checkStatus) {
-          throw new Error("AI provider status checks are unavailable.");
-        }
-        return aiHost.checkStatus(providerId);
-      }),
-      run: stream(async (input: any, emit) => {
-        const providerId = requireKnownProvider(input.providerId);
-        const prompt = requireString(input.prompt, "AI prompt");
-        const messages = optionalMessages(input.messages);
-        const agentMessages = optionalAgentMessages(input.agentMessages);
-        let completedAgentMessages: AiAgentHistoryMessage[] | undefined;
-        const modelId = optionalString(input.modelId);
-        const providerStatus = await aiHost.checkStatus?.(providerId);
-        if (providerStatus && !providerStatus.authenticated) {
-          throw new Error(
-            providerStatus.message
-              ?? `${providerId} is not connected.`,
-          );
-        }
-
-        let disposed = false;
-        const controller = aiHost.run({
-          providerId,
-          prompt,
-          messages,
-          agentMessages,
-          modelId: modelId ?? undefined,
-          outputMode: input.outputMode === "structured" || input.outputMode === "screener"
-            ? input.outputMode
-            : "plain",
-          onChunk: (output) => {
-            if (!disposed) emit({ kind: "chunk", output });
-          },
-          onThinking: (output) => {
-            if (!disposed) emit({ kind: "thinking", output });
-          },
-          onAgentMessages: (nextMessages) => {
-            completedAgentMessages = nextMessages;
-          },
-        });
-
-        controller.done.then((output) => {
-          if (!disposed) emit({
-            kind: "done",
-            output,
-            ...(completedAgentMessages ? { agentMessages: completedAgentMessages } : {}),
-          });
-        }).catch((error) => {
-          if (disposed) return;
-          if (isAiRunCancelled(error)) {
-            emit({ kind: "cancelled" });
-            return;
-          }
-          emit({ kind: "error", error: error instanceof Error ? error.message : String(error) });
-        });
-
-        return () => {
-          disposed = true;
-          controller.cancel();
-        };
-      }),
-    },
-  };
-}
-
 export function registerElectrobunCoreCapabilities(options: CoreCapabilityOptions): void {
   const registry = options.getServices().pluginRegistry.capabilities;
   registry.register(DESKTOP_CORE_PLUGIN_ID, createBrokerCapability(options));
   registry.register(DESKTOP_CORE_PLUGIN_ID, createNotesFilesCapability());
-  registry.register(DESKTOP_CORE_PLUGIN_ID, createAiRunnerCapability(options));
 }

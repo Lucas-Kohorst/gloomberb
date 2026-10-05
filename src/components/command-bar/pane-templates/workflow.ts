@@ -85,10 +85,12 @@ export function useCommandBarPaneTemplateActions({
   }), [activeCollectionId, activeTickerSymbol, config, focusedPaneId]);
 
   const openPaneTemplateWorkflow = useCallback((template: PaneTemplateDef, options?: { arg?: string }) => {
+    const arg = options?.arg?.trim();
     dispatch({
       type: "RECORD_COMMAND",
       id: `pane-template:${template.id}`,
       label: getPaneTemplateDisplayLabel(template),
+      ...(arg ? { arg } : {}),
     });
     openWorkflowRoute(buildPaneTemplateWorkflowRoute({
       activeTicker: activeTickerSymbol,
@@ -101,10 +103,12 @@ export function useCommandBarPaneTemplateActions({
     template: PaneTemplateDef,
     createOptions?: PaneTemplateCreateOptions,
   ) => {
+    const arg = createOptions?.arg?.trim();
     dispatch({
       type: "RECORD_COMMAND",
       id: `pane-template:${template.id}`,
       label: getPaneTemplateDisplayLabel(template),
+      ...(arg ? { arg } : {}),
     });
     try {
       await pluginRegistry.createPaneFromTemplateAsyncFn(template.id, createOptions);

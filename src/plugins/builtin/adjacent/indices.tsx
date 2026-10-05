@@ -25,10 +25,10 @@ import {
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw, formatSignedPercentValue } from "../../../utils/format";
-import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
+import { CompositeChart } from "../../../components/chart/composite";
 import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
-import { searchRelatedNews } from "../news/wire/article-search";
 import { adjacentCatalogHaystack } from "./command-bar-search";
+import { prefetchAdjacentIndexDetail } from "./detail-preload";
 import { filterAdjacentRows } from "./search";
 import type { NewsArticle } from "../../../news/types";
 import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../state/app/context";
@@ -43,6 +43,9 @@ import { getSharedRegistry } from "../../registry";
 import { predictionTickerRecord } from "../../prediction-markets/collection-watchlist";
 import { openUrl } from "../../../components/ui/external-link";
 import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import { ChartRangeTabs } from "../../../components/chart/range-tabs";
+import type { TimeRange } from "../../../components/chart/core/types";
+import { ADJACENT_DEFAULT_PRICE_RANGE, adjacentPriceTier, adjacentPriceWindow, adjacentRangeSupport } from "./price-window";
 import {
   applySortPreference,
   nextSortPreference,
@@ -57,10 +60,18 @@ import type { TableShareColumn } from "../../../shares/payload";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import { useNewsReadState } from "../news/wire/read-state";
 import type { AdjacentClient } from "./client";
+import {
+  filingKindLabel,
+  filingListTimestamp,
+  formatFilingDay,
+} from "./filings-format";
+import { adjacentLevelSeries } from "./series";
 import type {
   AdjacentConstituent,
   AdjacentIndexPricePoint,
   AdjacentIndexRow,
+  CftcFiling,
+  CftcFilingDetail,
 } from "./types";
 import {
   adjacentIndexSortValue,
@@ -71,6 +82,7 @@ import {
   mergeIndexConstituents,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
+  normalizeAdjacentNewsArticle,
   adjacentIndexPricesToPricePoints,
   type AdjacentIndexSortColumnId,
 } from "./normalize";
@@ -80,7 +92,9 @@ import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { paneSearchHint } from "../shared/pane-footer";
 
 export type AdjacentTab = "indices" | "rates";
-export type IndexDetailTab = "overview" | "chart" | "news";
+export type IndexDetailTab = "overview" | "chart" | "news" | "filings";
+
+type SliceStatus = "loading" | "ready" | "error";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -169,6 +183,38 @@ function constituentSortValue(row: AdjacentConstituent, columnId: ConstituentCol
   }
 }
 
+function filingReaderArticle(filing: CftcFiling, detail: CftcFilingDetail | null): NewsArticle {
+  const label = filingKindLabel(filing);
+  return {
+    id: `cftc:${filing.id}`,
+    title: filing.title,
+    url: detail?.sourceUrl ?? "",
+    source: filing.orgCode || "CFTC",
+    publishedAt: filingListTimestamp(filing),
+    publishedAtKind: "date",
+    summary: [label, filing.status].filter(Boolean).join(" · "),
+    topic: "filing",
+    topics: ["filing", "cftc", filing.feed],
+    sectors: [],
+    categories: ["CFTC", label],
+    tickers: [],
+    scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+    isBreaking: false,
+    isDeveloping: false,
+    importance: 0,
+    origin: "cftc",
+    body: detail?.markdown,
+  };
+}
+
+function DetailPending({ label }: { label: string }) {
+  return (
+    <Box flexGrow={1} justifyContent="center" alignItems="center">
+      <Spinner label={label} />
+    </Box>
+  );
+}
+
 function toIndexNewsItems(articles: NewsArticle[]): FeedDataTableItem[] {
   return articles.map((article) => {
     const published = article.publishedAt
@@ -209,8 +255,11 @@ function IndexDetail({
   const [constituents, setConstituents] = useState<AdjacentConstituent[]>([]);
   const [prices, setPrices] = useState<AdjacentIndexPricePoint[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [filings, setFilings] = useState<CftcFiling[]>([]);
+  const [constituentsStatus, setConstituentsStatus] = useState<SliceStatus>("loading");
+  const [pricesStatus, setPricesStatus] = useState<SliceStatus>("loading");
+  const [newsStatus, setNewsStatus] = useState<SliceStatus>("loading");
+  const [filingsStatus, setFilingsStatus] = useState<SliceStatus>("loading");
   const [selectedConstituentId, setSelectedConstituentId] = useState<string | null>(null);
   const [constituentSort, setConstituentSort] = useState<SortPreference<ConstituentColumnId>>({
     columnId: "weight",
@@ -221,47 +270,95 @@ function IndexDetail({
   const [newsSearchFocused, setNewsSearchFocused] = useState(false);
   const [newsFocusToken, setNewsFocusToken] = useState(0);
   const newsSearchRef = useRef<import("../../../ui").InputRenderable | null>(null);
-  const genRef = useRef(0);
-  const [reloadNonce, setReloadNonce] = useState(0);
+  const [selectedFilingId, setSelectedFilingId] = useState<string | null>(null);
+  const [filingSort, setFilingSort] = useState<SortPreference<"day" | "org" | "title">>({
+    columnId: "day",
+    direction: "desc",
+  });
+  const [reload, setReload] = useState({ constituents: 0, news: 0, filings: 0, prices: 0 });
+  // Public Adjacent history only reaches 3M (1h buckets over 30 days, 1d over
+  // 90), so the chart offers just the ranges that tier can serve.
+  const [range, setRange] = useState<TimeRange>(ADJACENT_DEFAULT_PRICE_RANGE);
+  const tier = useMemo(() => adjacentPriceTier(client), [client]);
+  const rangeChoices = useMemo(
+    () => adjacentRangeSupport(tier).map((value) => ({ value })),
+    [tier],
+  );
   const popOutArticle = usePopOutNewsArticle();
   const { readArticleIds, markArticleRead } = useNewsReadState();
 
-  const reloadDetail = useCallback(() => {
-    setReloadNonce((value) => value + 1);
+  const bump = useCallback((slice: "constituents" | "news" | "filings" | "prices") => {
+    setReload((current) => ({ ...current, [slice]: current[slice] + 1 }));
   }, []);
+  useEffect(() => {
+    setConstituents([]);
+    setPrices([]);
+    setNews([]);
+    setFilings([]);
+    setSelectedFilingId(null);
+    setConstituentsStatus("loading");
+    setPricesStatus("loading");
+    setNewsStatus("loading");
+    setFilingsStatus(client.isPublic ? "ready" : "loading");
+  }, [client.isPublic, index.id]);
 
   useEffect(() => {
-    genRef.current += 1;
-    const gen = genRef.current;
-    setLoading(true);
-    setError(null);
+    let cancelled = false;
+    setConstituentsStatus("loading");
+    void Promise.all([
+      client.getIndexConstituents(index.id),
+      client.getIndex(index.id).catch(() => null),
+    ]).then(([page, detail]) => {
+      if (cancelled) return;
+      setConstituents(mergeIndexConstituents(page.data ?? [], detail?.sleeves));
+      setConstituentsStatus("ready");
+    }).catch(() => {
+      if (!cancelled) setConstituentsStatus("error");
+    });
+    return () => { cancelled = true; };
+  }, [client, index.id, reload.constituents]);
 
-    const load = async () => {
-      const constituentsTask = Promise.all([
-        client.getIndexConstituents(index.id),
-        client.getIndex(index.id).catch(() => null),
-      ]).then(([constituents, detail]) => {
-        if (genRef.current !== gen) return;
-        setConstituents(mergeIndexConstituents(constituents.data ?? [], detail?.sleeves));
-      });
-      const pricesTask = client.getIndexPrices(index.id).then((response) => {
-        if (genRef.current !== gen) return;
-        setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
-      });
-      const newsTask = searchRelatedNews(index.name).then((articles) => {
-        if (genRef.current !== gen) return;
-        setNews(articles);
-      });
+  useEffect(() => {
+    let cancelled = false;
+    setNewsStatus("loading");
+    void client.getIndexNews(index.id).then((response) => {
+      if (cancelled) return;
+      setNews((response.news ?? []).map(normalizeAdjacentNewsArticle));
+      setNewsStatus("ready");
+    }).catch(() => {
+      if (!cancelled) setNewsStatus("error");
+    });
+    return () => { cancelled = true; };
+  }, [client, index.id, reload.news]);
 
-      const settled = await Promise.allSettled([constituentsTask, pricesTask, newsTask]);
-      if (genRef.current !== gen) return;
-      setLoading(false);
-      if (settled.every((entry) => entry.status === "rejected")) {
-        setError("Index detail unavailable.");
-      }
-    };
-    void load();
-  }, [client, index.id, index.name, reloadNonce]);
+  useEffect(() => {
+    if (client.isPublic) return;
+    let cancelled = false;
+    setFilingsStatus("loading");
+    void client.getIndexFilings(index.id).then((page) => {
+      if (cancelled) return;
+      setFilings(page.filings);
+      setFilingsStatus("ready");
+    }).catch(() => {
+      if (!cancelled) setFilingsStatus("error");
+    });
+    return () => { cancelled = true; };
+  }, [client, index.id, reload.filings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPricesStatus("loading");
+    void client.getIndexPrices(index.id, adjacentPriceWindow(range, tier)).then((response) => {
+      if (cancelled) return;
+      setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
+      setPricesStatus("ready");
+    }).catch(() => {
+      if (cancelled) return;
+      setPrices([]);
+      setPricesStatus("error");
+    });
+    return () => { cancelled = true; };
+  }, [client, index.id, range, reload.prices, tier]);
 
   const sortedConstituents = useMemo(
     () => applySortPreference(constituents, constituentSort, constituentSortValue),
@@ -272,6 +369,17 @@ function IndexDetail({
     [news, newsQuery],
   );
   const newsItems = useMemo(() => toIndexNewsItems(visibleNews), [visibleNews]);
+  const sortedFilings = useMemo(
+    () => applySortPreference(filings, filingSort, (row, columnId) => {
+      switch (columnId) {
+        case "day": return filingListTimestamp(row).getTime();
+        case "org": return row.orgCode;
+        case "title": return row.title;
+      }
+    }),
+    [filingSort, filings],
+  );
+  const selectedFiling = sortedFilings.find((filing) => String(filing.id) === selectedFilingId) ?? sortedFilings[0] ?? null;
   const selectedConstituent = sortedConstituents.find((row) => row.market_id === selectedConstituentId) ?? null;
   const popOutChart = useGraphChartPopOut();
   const { navigateTicker } = usePluginTickerActions();
@@ -318,7 +426,56 @@ function IndexDetail({
   }, [onOpenIndex, openPredictionConstituent, openSymbol, selectedConstituent]);
 
   const selectedArticle = visibleNews[selectedNewsIdx] ?? null;
+  const openSelectedFiling = useCallback((filing: CftcFiling) => {
+    void client.getFilingDetail(filing.id).then((detail) => {
+      const article = filingReaderArticle(filing, detail);
+      if (article.url) {
+        void openUrl(article.url);
+        return;
+      }
+      popOutArticle(article);
+    }).catch(() => {
+      popOutArticle(filingReaderArticle(filing, null));
+    });
+  }, [client, popOutArticle]);
+  const tabLoading = detailTab === "overview"
+    ? constituentsStatus === "loading"
+    : detailTab === "chart"
+      ? pricesStatus === "loading"
+      : detailTab === "news"
+        ? newsStatus === "loading"
+        : filingsStatus === "loading" && !client.isPublic;
+  const tabError = detailTab === "overview"
+    ? constituentsStatus === "error"
+    : detailTab === "chart"
+      ? pricesStatus === "error"
+      : detailTab === "news"
+        ? newsStatus === "error"
+        : filingsStatus === "error";
   const detailHints = useMemo(() => {
+    if (detailTab === "filings") {
+      return [
+        ...(selectedFiling
+          ? [{
+            id: "open",
+            key: "o",
+            label: "pen",
+            onPress: () => openSelectedFiling(selectedFiling),
+          }, {
+            id: "pop-out",
+            key: "p",
+            label: "op out",
+            onPress: () => {
+              void client.getFilingDetail(selectedFiling.id).then((detail) => {
+                popOutArticle(filingReaderArticle(selectedFiling, detail));
+              }).catch(() => {
+                popOutArticle(filingReaderArticle(selectedFiling, null));
+              });
+            },
+          }]
+          : []),
+      ];
+    }
     if (detailTab === "news") {
       return [
         ...(selectedArticle?.url
@@ -349,28 +506,26 @@ function IndexDetail({
       { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
       { id: "open", key: "o", label: "pen", onPress: openTarget },
     ];
-  }, [detailTab, graphExpression, graphTarget, markArticleRead, openTarget, popOutArticle, selectedArticle]);
+  }, [detailTab, graphExpression, graphTarget, markArticleRead, openSelectedFiling, openTarget, popOutArticle, selectedArticle, selectedFiling]);
   usePaneFooter("adjacent-indices-detail", () => ({
     info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(tabLoading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(tabError ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(tier === "public"
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     hints: detailHints,
-  }), [detailHints, error, loading]);
+  }), [detailHints, tabError, tabLoading, tier]);
   usePaneFooterHintBindings(focused, detailHints);
   useShortcut((event) => {
     if (!focused || event.targetEditable || !isPlainKey(event, "r")) return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    if (detailTab === "news") {
-      setLoading(true);
-      void searchRelatedNews(index.name).then((articles) => {
-        setNews(articles);
-        setLoading(false);
-      }).catch(() => setLoading(false));
-      return;
-    }
-    reloadDetail();
+    if (detailTab === "news") bump("news");
+    else if (detailTab === "filings") bump("filings");
+    else if (detailTab === "chart") bump("prices");
+    else bump("constituents");
   }, { enabled: focused });
 
   useEffect(() => {
@@ -383,6 +538,16 @@ function IndexDetail({
     }
   }, [selectedConstituentId, sortedConstituents]);
 
+  useEffect(() => {
+    if (sortedFilings.length === 0) {
+      setSelectedFilingId(null);
+      return;
+    }
+    if (!selectedFilingId || !sortedFilings.some((row) => String(row.id) === selectedFilingId)) {
+      setSelectedFilingId(String(sortedFilings[0]!.id));
+    }
+  }, [selectedFilingId, sortedFilings]);
+
   const tabs = (
     <PaneTabHeader
       width={width}
@@ -391,33 +556,12 @@ function IndexDetail({
         { label: "Overview", value: "overview" },
         { label: "Chart", value: "chart" },
         { label: "News", value: "news" },
+        { label: "Filings", value: "filings" },
       ]}
       activeValue={detailTab}
       onSelect={(v) => onDetailTabChange(v as IndexDetailTab)}
     />
   );
-
-  if (loading && constituents.length === 0 && prices.length === 0 && news.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {tabs}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label="Loading..." />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {tabs}
-        <PaneBodyPad>
-          <EmptyState title="Error loading index data." message={error} hint="Press r to retry." />
-        </PaneBodyPad>
-      </Box>
-    );
-  }
 
   const contentHeight = Math.max(4, height - 1);
 
@@ -446,6 +590,13 @@ function IndexDetail({
               </Box>
             )}
           </Box>
+          {constituentsStatus === "loading" && sortedConstituents.length === 0 ? (
+            <DetailPending label="Loading constituents..." />
+          ) : constituentsStatus === "error" && sortedConstituents.length === 0 ? (
+            <Box flexGrow={1} justifyContent="center" alignItems="center">
+              <EmptyState title="Constituents unavailable." hint="Press r to retry." />
+            </Box>
+          ) : (
           <DataTableView<AdjacentConstituent, ConstituentColumn>
             focused={focused}
             rootWidth={width}
@@ -487,19 +638,45 @@ function IndexDetail({
             }}
             emptyStateTitle="No constituent data."
           />
+          )}
         </Box>
       )}
       {detailTab === "chart" && (
-        <IndexChart
-          prices={prices}
-          ticker={index.ticker}
-          indexId={index.id}
-          width={width}
-          height={contentHeight}
-          focused={focused}
-        />
+        <Box flexDirection="column" flexGrow={1} minHeight={0}>
+          <Box paddingX={1}>
+            <ChartRangeTabs
+              choices={rangeChoices}
+              value={range}
+              onSelect={setRange}
+              focused={focused}
+            />
+          </Box>
+          {pricesStatus === "loading" && prices.length === 0 ? (
+            <DetailPending label="Loading chart..." />
+          ) : pricesStatus === "error" && prices.length === 0 ? (
+            <Box flexGrow={1} justifyContent="center" alignItems="center">
+              <EmptyState title="Price history unavailable." hint="Press r to retry." />
+            </Box>
+          ) : (
+          <IndexChart
+            prices={prices}
+            ticker={index.ticker}
+            indexId={index.id}
+            width={width}
+            height={Math.max(6, contentHeight - 1)}
+            focused={focused}
+          />
+          )}
+        </Box>
       )}
       {detailTab === "news" && (
+        newsStatus === "loading" && news.length === 0 ? (
+          <DetailPending label="Loading news..." />
+        ) : newsStatus === "error" && news.length === 0 ? (
+          <Box flexGrow={1} justifyContent="center" alignItems="center">
+            <EmptyState title="Related news unavailable." hint="Press r to retry." />
+          </Box>
+        ) : (
         <FeedDataTableStackView
           width={width}
           height={contentHeight}
@@ -539,6 +716,65 @@ function IndexDetail({
           }}
           emptyStateTitle={newsQuery.trim() ? "No matching articles." : "No related news."}
         />
+        )
+      )}
+      {detailTab === "filings" && (
+        client.isPublic ? (
+          <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
+            <EmptyState
+              title="Related filings need an Adjacent API key."
+              hint="Press k to add a key. Public index routes do not include filings."
+            />
+          </Box>
+        ) : filingsStatus === "loading" && filings.length === 0 ? (
+          <DetailPending label="Loading filings..." />
+        ) : filingsStatus === "error" && filings.length === 0 ? (
+          <Box flexGrow={1} justifyContent="center" alignItems="center">
+            <EmptyState title="Related filings unavailable." hint="Press r to retry." />
+          </Box>
+        ) : (
+          <DataTableView<CftcFiling, DataTableColumn>
+            focused={focused}
+            rootWidth={width}
+            rootHeight={contentHeight}
+            selection={{
+              kind: "id",
+              selectedId: selectedFiling ? String(selectedFiling.id) : null,
+              getId: (row) => String(row.id),
+              onChange: setSelectedFilingId,
+            }}
+            columns={[
+              { id: "day", label: "DAY", width: 8, align: "left" },
+              { id: "org", label: "ORG", width: 6, align: "left" },
+              { id: "title", label: "FILING", width: 12, align: "left", flexGrow: 1 },
+            ]}
+            items={sortedFilings}
+            sortColumnId={filingSort.columnId}
+            sortDirection={filingSort.direction}
+            onHeaderClick={(columnId) => {
+              const next = columnId as "day" | "org" | "title";
+              setFilingSort((current) => nextSortPreference(current, next, {
+                defaultDirection: next === "day" ? "desc" : "asc",
+              }));
+            }}
+            getItemKey={(row) => String(row.id)}
+            onActivate={(row) => openSelectedFiling(row)}
+            renderCell={(row, column, _index, rowState) => {
+              const sel = rowState.selected ? colors.selectedText : undefined;
+              switch (column.id) {
+                case "day":
+                  return { text: formatFilingDay(filingListTimestamp(row)) ?? "—", color: sel ?? colors.textDim };
+                case "org":
+                  return { text: row.orgCode || "—", color: sel ?? colors.textDim };
+                case "title":
+                  return { text: row.title, color: sel ?? colors.text };
+                default:
+                  return { text: "" };
+              }
+            }}
+            emptyStateTitle="No related filings."
+          />
+        )
       )}
     </Box>
   );
@@ -564,16 +800,7 @@ function IndexChart({
     [prices],
   );
   const series = useMemo(
-    () => pricePointsToResolvedSeries(pricePoints, {
-      id: `ADJ:${indexId}`,
-      label: ticker,
-      color: colors.borderFocused,
-      unit: "index",
-      unitGroup: "level",
-      style: "area",
-      panelId: "price",
-      providerId: "adjacent",
-    }),
+    () => adjacentLevelSeries(pricePoints, { id: `ADJ:${indexId}`, label: ticker }),
     [indexId, pricePoints, ticker],
   );
 
@@ -614,6 +841,8 @@ function IndexChart({
         panels={[{ id: "price" }]}
         axisWidth={8}
         showLegend={false}
+        formatValue={(value) => value.toFixed(1)}
+        formatAxisValue={(value) => value.toFixed(1)}
       />
     </Box>
   );
@@ -698,6 +927,12 @@ export function AdjacentIndicesPane({
       setSelectedId(visibleIndices[0]!.id);
     }
   }, [selectedId, visibleIndices]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const timer = setTimeout(() => prefetchAdjacentIndexDetail(client, selectedId), 80);
+    return () => clearTimeout(timer);
+  }, [client, selectedId]);
 
   useEffect(() => {
     if (seededRef.current || !seedQuery || indices.length === 0) return;

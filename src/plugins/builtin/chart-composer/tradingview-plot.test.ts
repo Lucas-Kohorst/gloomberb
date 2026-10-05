@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { buildBoundChartPreset, buildComparisonChartPreset, buildCustomChartPreset, buildFundamentalChartPreset, buildIntradayPriceChartPreset, buildPriceChartPreset } from "./presets";
 import {
   resolveTradingViewPlot,
-  tradingViewEmbedSrc,
   tradingViewIntervalForSpec,
   tradingViewPublicChartUrl,
   tradingViewSymbolForSecurity,
@@ -19,6 +18,27 @@ describe("tradingViewSymbolForSecurity", () => {
 
   test("leaves a listing without an exchange for TradingView to resolve", () => {
     expect(tradingViewSymbolForSecurity({ symbol: "AAPL" })).toBe("AAPL");
+    expect(tradingViewSymbolForSecurity({ symbol: "SPX" })).toBe("SP:SPX");
+    expect(tradingViewSymbolForSecurity({ symbol: "SPX", exchange: "INDEX" })).toBe("SP:SPX");
+    expect(tradingViewSymbolForSecurity({ symbol: "SPX", exchange: "LSE" })).toBe("LSE:SPX");
+  });
+
+  test("does not emit a Yahoo continuous future as a widget symbol", () => {
+    const symbols = [
+      tradingViewSymbolForSecurity({ symbol: "MGE=F" }),
+      tradingViewSymbolForSecurity({ symbol: "MGE=F", exchange: "CBT" }),
+      tradingViewSymbolForSecurity({ symbol: "ES=F" }),
+      tradingViewSymbolForSecurity({ symbol: "CL=F" }),
+      tradingViewSymbolForSecurity({ symbol: "GC=F" }),
+      tradingViewSymbolForSecurity({ symbol: "ZN=F", exchange: "CBT" }),
+      tradingViewSymbolForSecurity({ symbol: "ZM=F", exchange: "CBT" }),
+      tradingViewSymbolForSecurity({ symbol: "ZZZ=F" }),
+    ];
+    for (const symbol of symbols) {
+      expect(symbol).toBe("");
+      expect(symbol).not.toBe("MGE=F");
+      expect(symbol).not.toBe("CBOT:MGE1!");
+    }
   });
 
   test("charts a crypto pair as a Binance spot price, not market cap", () => {
@@ -57,6 +77,18 @@ describe("resolveTradingViewPlot", () => {
       compareSymbols: ["NASDAQ:MSFT"],
       interval: "D",
     });
+  });
+
+  test("keeps Yahoo continuous futures on our own series", () => {
+    const plots = [
+      resolveTradingViewPlot(buildPriceChartPreset("MGE=F")),
+      resolveTradingViewPlot(buildCustomChartPreset("FUT:ES")),
+      resolveTradingViewPlot(buildPriceChartPreset("ZZZ=F")),
+    ];
+    const widgetSymbols = plots.flatMap((plot) => plot.kind === "widget" ? [plot.symbol] : []);
+    expect(plots).toEqual([{ kind: "unmapped" }, { kind: "unmapped" }, { kind: "unmapped" }]);
+    expect(widgetSymbols).not.toContain("MGE=F");
+    expect(widgetSymbols).not.toContain("CBOT:MGE1!");
   });
 
   test("maps a FRED series", () => {
@@ -106,26 +138,8 @@ describe("resolveTradingViewPlot", () => {
 describe("tradingViewIntervalForSpec", () => {
   test("uses the range preset when AUTO is on", () => {
     expect(tradingViewIntervalForSpec({ viewport: { range: "1D", resolution: "auto" } })).toBe("1");
+    expect(tradingViewIntervalForSpec({ viewport: { range: "1M", resolution: "auto" } })).toBe("240");
     expect(tradingViewIntervalForSpec({ viewport: { range: "1Y", resolution: "auto" } })).toBe("D");
-  });
-});
-
-describe("tradingViewEmbedSrc", () => {
-  test("embeds symbol, interval, and drawings chrome", () => {
-    const src = tradingViewEmbedSrc({
-      kind: "widget",
-      symbol: "NASDAQ:AAPL",
-      compareSymbols: [],
-      interval: "D",
-      timezone: "America/New_York",
-    }, { theme: "dark", backgroundColor: "#16140f" });
-    expect(src.startsWith("https://www.tradingview.com/embed-widget/advanced-chart/?locale=en#")).toBe(true);
-    const config = JSON.parse(decodeURIComponent(src.slice(src.indexOf("#") + 1))) as Record<string, unknown>;
-    expect(config.symbol).toBe("NASDAQ:AAPL");
-    expect(config.interval).toBe("D");
-    expect(config.hide_side_toolbar).toBe(false);
-    expect(config.hide_volume).toBe(true);
-    expect(config.hide_top_toolbar).toBe(false);
   });
 });
 

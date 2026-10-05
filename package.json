@@ -31,7 +31,8 @@
     "./plugins": "./src/plugins/helpers.ts"
   },
   "bin": {
-    "gloomberb": "bin/gloomberb"
+    "gloomberb": "bin/gloomberb",
+    "gloom": "bin/gloom"
   },
   "files": [
     "bin",
@@ -112,14 +113,12 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.81.1",
-    "@earendil-works/pi-ai": "0.81.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentui/core": "^0.3.2",
     "@opentui/react": "^0.3.2",
     "@tanstack/react-virtual": "^3.14.2",
     "hls.js": "1.6.13",
     "jimp": "1.6.1",
-    "lightweight-charts": "^5.2.1",
     "qrcode-generator": "^2.0.4",
     "react": "19.2.7",
     "react-dom": "19.2.7",

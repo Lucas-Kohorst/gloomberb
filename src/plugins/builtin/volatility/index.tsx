@@ -3,7 +3,6 @@ import { Box, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import {
-  Button,
   EmptyState,
   Spinner,
   StaticChartSurface,
@@ -12,7 +11,6 @@ import {
   type PaneFooterSegment,
 } from "../../../components";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { ListView } from "../../../components/ui/list-view";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { PaneProps } from "../../../types/plugin";
@@ -75,7 +73,6 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   const [loading, setLoading] = useState(!initial);
   const [stale, setStale] = useState(initial?.stale ?? false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const generation = useRef(0);
 
@@ -112,26 +109,17 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       reload();
-    } else if (isPlainKey(event, "left") || isPlainKey(event, "up") || isPlainKey(event, "k")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelected((value) => Math.max(0, value - 1));
-    } else if (isPlainKey(event, "right") || isPlainKey(event, "down") || isPlainKey(event, "j")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelected((value) => Math.min(1, value + 1));
     } else return;
   }, { allowEditable: true, enabled: focused });
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const errorChip = footerErrorChip(error);
     return [
-    ...(data ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
   ];
-  }, [data, error, loading, stale]);
+  }, [error, loading, stale]);
   usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (!data && loading) {
@@ -149,7 +137,6 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     );
   }
 
-  const selectedMetric = data.metrics[selected] ?? data.metrics[0]!;
   const termStateLabel = data.termState === "partial" ? "PARTIAL" : data.termState.toUpperCase();
   return (
     <Box flexDirection="column" width={width} height={height} paddingBottom={1}>
@@ -159,21 +146,6 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
             <Text fg={termColor(data.termState)} attributes={TextAttributes.BOLD}>{formatValue(data.ratio)}</Text>
             <Text fg={termColor(data.termState)} attributes={TextAttributes.BOLD}>{`  ${termStateLabel}`}</Text>
             <Text fg={colors.textDim}>{`  ${slopeLabel(data.slope)}  as of ${data.termDate ?? "--"}`}</Text>
-          </Box>
-          <Box marginTop={1} paddingX={1}><Text fg={colors.textDim}>{selectedMetric.title}</Text></Box>
-          <Box height={2}>
-            <ListView
-              items={data.metrics.map((metric) => ({
-                id: metric.seriesId,
-                label: metric.label,
-                detail: `${formatValue(metric.value)}   ${metric.tenor} · ${metric.date ?? "--"}`,
-              }))}
-              selectedIndex={selected}
-              onSelect={setSelected}
-              height={2}
-              surface="plain"
-              remoteLabel="Volatility tenors"
-            />
           </Box>
           <TermChart data={data} width={width} height={Math.floor(height * 0.35)} />
     </Box>

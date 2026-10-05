@@ -1,10 +1,14 @@
 Stack: Bun + OpenTUI
 
-Git remotes — work on the fork ONLY:
-- `fork` (Lucas-Kohorst/gloomberb) is the only remote to push to, branch from, and open PRs against. All work lands here.
-- `origin` (gloom-sh/gloomberb) is upstream and read-only for us. We have `pull` access only — no push, no merge. Never open, merge, or close PRs there.
-- Never target upstream `main` with a PR. Pull from `origin/main` when we want its changes, but land everything on the fork's integration branch.
-- The hosted Cloudflare stack (`src/renderers/cloudflare/`, `wrangler.jsonc`, the `cloud:*` scripts) exists only on the fork. Do not assume upstream has it.
+Git remotes:
+- `gloomsh` is `gloom-sh/gloomberb`. `origin` and `fork` are both `Lucas-Kohorst/gloomberb`. Feature branches start from `gloomsh/main`, not from fork `main` and not from `origin/main`.
+- For a feature, fetch `gloomsh` and add a worktree: `git fetch gloomsh main` then `git worktree add -b feat/<slug> ../gloom-<slug> gloomsh/main`. One worktree is one feature. Commit only that feature.
+- Push the feature branch to `fork`. Open the PR against `gloom-sh/gloomberb` `main` (`gh pr create --repo gloom-sh/gloomberb`). Do not open it against fork `main`. Do not merge it. Their maintainer merges it.
+- The feature branch does not carry the TradingView charting overlay, `hosted-worker.ts`, the KV namespace id, or the `terminal.kohor.st` route. Those stay on the deploy branch.
+- The deploy branch is what runs at `terminal.kohor.st`. It is `gloomsh/main`, plus the TradingView overlay, plus that route. Until the cutover, the branch name is `deploy/upstream`. After the cutover, fork `main` is that branch. Do not merge `gloomsh/main` or a feature branch into the current divergent fork `main`.
+- When a feature commit exists, merge that feature branch into the deploy branch so the deploy picks up the feature and keeps TradingView. Do not merge the deploy branch into the feature branch.
+- To take their new commits, `git fetch gloomsh` and merge `gloomsh/main` into the deploy branch only. Keep the charting overlay. Deploy the deploy branch. A merge to that branch does not update `terminal.kohor.st` until the worker deploy runs.
+- Do not push to `gloomsh`. Both trees already have `src/renderers/cloudflare/`. The deploy branch uses their worker entry.
 
 Tests:
 - Be selective: add or keep a test only when it protects behavior that is easy to break and hard to catch in review.

@@ -1,13 +1,15 @@
 /**
  * Mandatory sign-in for the hosted browser terminal.
  *
- * The app mounts and runs behind a dark scrim so the workspace is visible while
- * the panel is up, but nothing behind it is reachable: the panel cannot be
- * dismissed, the scrim swallows the pointer, and every app shortcut is held.
+ * The app mounts and runs behind an opaque scrim. Anonymous hosted sessions
+ * still load public delayed quotes, so a dimmed see-through workspace would
+ * show ticking prices that read as a live, signed-in terminal. Nothing behind
+ * it is reachable: the panel cannot be dismissed, the scrim swallows the
+ * pointer, and every app shortcut is held.
  * The gate closes by itself, because both sign-in paths install a session that
  * `usePlanAccess` observes.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { useAppLanguage } from "../i18n/react";
 import { AuthForm, authFormTitle } from "../plugins/builtin/cloud/auth-form";
@@ -19,7 +21,8 @@ import {
 import { DeviceSignInPanel } from "../plugins/builtin/cloud/device-signin-dialog";
 import { useShortcut, useViewport } from "../react/input";
 import { useThemeColors } from "../theme/theme-context";
-import { Box, Text } from "../ui";
+import { Box, Text, useUiHost } from "../ui";
+import { inertOutside, modalSiblingKeepList } from "../ui/inert";
 import { isPlainKey } from "../utils/keyboard";
 import { Button } from "./ui";
 import { DialogFrame, modalSurfaceStyle } from "./ui/frame";
@@ -77,10 +80,27 @@ function GateQrPanel({ height }: { height: number }) {
   return <DeviceSignInPanel snapshot={snapshot} height={height} />;
 }
 
+/**
+ * The scrim already swallows the pointer and `HoldAppInput` the keys, but the
+ * workspace behind it is still in the tab order and the accessibility tree.
+ * Inert takes it out of both, like a native modal dialog.
+ */
+function useInertWorkspaceBehindGate(enabled: boolean) {
+  useLayoutEffect(() => {
+    if (!enabled || typeof document === "undefined") return;
+    const gate = document.querySelector('[data-gloom-role="sign-in-gate"]');
+    if (!gate) return;
+    const root = document.getElementById("root") ?? document.body;
+    return inertOutside(root, [gate, ...modalSiblingKeepList(root)]);
+  }, [enabled]);
+}
+
 export function SignInGate() {
   useAppLanguage();
   const colors = useThemeColors();
   const viewport = useViewport();
+  const dom = useUiHost().kind === "desktop-web";
+  useInertWorkspaceBehindGate(dom);
   const [showQr, setShowQr] = useState(false);
   const [mode, setMode] = useState<AccountMode>(() => (
     typeof window === "undefined" ? "signup" : accountModeFromSearch(window.location.search)
@@ -105,10 +125,11 @@ export function SignInGate() {
         width: "100%",
         height: "100%",
         padding: 24,
-        backgroundColor: `color-mix(in srgb, ${colors.bg} 82%, transparent)`,
+        backgroundColor: colors.bg,
         boxSizing: "border-box",
       }}
       data-gloom-role="sign-in-gate"
+      {...(dom ? { role: "dialog", "aria-modal": "true", "aria-label": title } : {})}
     >
       <Box flexDirection="column" style={modalSurfaceStyle(colors, { padding: 0 })}>
         <DialogFrame title={title}>

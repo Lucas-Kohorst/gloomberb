@@ -188,9 +188,11 @@ function clampPositions(
   const dataSpan = Math.max(frame.dataEndPosition - frame.dataStartPosition, 0);
   const maximumSpan = Math.max(dataSpan * (1 + paddingRatio), frame.minimumSpanPositions);
   const span = clamp(range.end - range.start, frame.minimumSpanPositions, maximumSpan);
-  let start = Math.max(range.start, frame.dataStartPosition - span * paddingRatio);
-  // The newest observation is the hard edge: nothing lies beyond it yet.
-  start = Math.min(start, frame.dataEndPosition - span);
+  const pad = span * paddingRatio;
+  let start = Math.max(range.start, frame.dataStartPosition - pad);
+  // The same slack sits after the last print. A window that already holds
+  // every observation can still slide; padding 0 keeps that print on the edge.
+  start = Math.min(start, frame.dataEndPosition + pad - span);
   return { start, end: start + span };
 }
 

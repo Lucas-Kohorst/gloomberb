@@ -258,4 +258,30 @@ describe("ticker data root shortcuts", () => {
       }
     }
   });
+
+  test("N, NOT, and NOTE resolve exactly instead of by leading letters", () => {
+    const templates: PaneTemplateDef[] = [
+      { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "", shortcut: { prefix: "N" } },
+      { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "", shortcut: { prefix: "NI" } },
+      { id: "notification-center-pane", paneId: "notification-center", label: "Notifications", description: "", shortcut: { prefix: "NOT" } },
+      {
+        id: "new-quick-notes-pane",
+        paneId: "quick-notes",
+        label: "Notes",
+        description: "",
+        shortcut: { prefix: "NOTE", argPlaceholder: "search", argKind: "text", argOptional: true },
+      },
+    ];
+    const resolve = (query: string) => {
+      const intent = parseRootShortcutIntent({ query, commands: [], pluginCommands: [], paneTemplates: templates, activeTicker: null });
+      return intent.kind !== "none" && intent.source === "pane-template" ? intent.template.id : null;
+    };
+    expect(resolve("n")).toBe("news-feed-pane");
+    expect(resolve("NOT")).toBe("notification-center-pane");
+    expect(resolve("NOTE")).toBe("new-quick-notes-pane");
+    expect(resolve("NOTE earnings")).toBe("new-quick-notes-pane");
+    expect(resolve("NO")).toBeNull();
+    expect(resolve("N AAPL")).toBeNull();
+    expect(resolve("NOT E")).toBeNull();
+  });
 });

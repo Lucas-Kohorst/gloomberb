@@ -13,7 +13,6 @@ import type {
   TickerAction,
   TickerResearchTabDef,
 } from "../../types/plugin";
-import { dropQueuedAgentPromptFragment, dropQueuedAgentTool } from "../builtin/ai/runner";
 import { normalizeRegisteredPane, type LoosePaneDef } from "../runtime/normalize-pane";
 
 export interface ContextMenuProviderEntry {
@@ -54,6 +53,16 @@ function setUnique<T>(map: Map<string, T>, id: string, value: T): void {
   map.set(id, value);
 }
 
+class PaneTemplateMap extends Map<string, PaneTemplateDef> {
+  override get(id: string): PaneTemplateDef | undefined {
+    return super.get(id) ?? (id === "graph-price-pane" ? super.get("chart-composer-pane") : undefined);
+  }
+
+  override has(id: string): boolean {
+    return this.get(id) !== undefined;
+  }
+}
+
 export class RegistryContributions {
   readonly pluginItems = new Map<string, PluginItems>();
   readonly commandOwners = new Map<string, string>();
@@ -69,7 +78,7 @@ export class RegistryContributions {
   readonly tickerResearchTabOwners = new Map<string, string>();
 
   readonly panesMap = new Map<string, PaneDef>();
-  readonly paneTemplatesMap = new Map<string, PaneTemplateDef>();
+  readonly paneTemplatesMap = new PaneTemplateMap();
   readonly commandsMap = new Map<string, CommandDef>();
   readonly commandBarSearchProvidersMap = new Map<string, CommandBarSearchProvider>();
   readonly documentSearchProvidersMap = new Map<string, DocumentSearchProvider>();
@@ -274,8 +283,6 @@ export class RegistryContributions {
     }
     for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
     for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
-    for (const toolName of items.agentTools) dropQueuedAgentTool(toolName);
-    for (const fragment of items.agentPromptFragments) dropQueuedAgentPromptFragment(fragment);
     let disposeError: unknown;
     for (const dispose of [...items.eventDisposers, ...items.capabilityDisposers, ...items.newsQueryWatchDisposers]) {
       try {

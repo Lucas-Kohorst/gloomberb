@@ -3,7 +3,7 @@ import {
   DataTableView,
   EmptyState,
   InputSearchBar,
-  SegmentedControl,
+  ChartRangeTabs,
   Spinner,
   nextStackSortPreference,
   sortStackItems,
@@ -266,11 +266,8 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     if (selected.observationStale) {
       info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });
     }
-    if (normalizedQuery) {
-      info.push({ id: "filter", parts: [{ text: `filter: ${normalizedQuery}`, tone: "value" }] });
-    }
     return info;
-  }, [normalizedQuery, selected]);
+  }, [selected]);
 
   usePaneStatusFooter({
     registrationId: "market-valuation",
@@ -349,11 +346,12 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
 
   const detail = (
     <Box flexDirection="column" flexGrow={1} width={detailWidth} overflow="hidden">
-      <Box flexDirection="row" height={1} paddingX={1} overflow="hidden" justifyContent="flex-end">
-        <SegmentedControl
-          options={RANGE_OPTIONS}
+      <Box height={1} paddingX={1}>
+        <ChartRangeTabs
+          choices={RANGE_OPTIONS}
           value={range}
-          onChange={(value) => setRange(value as ValuationRangeId)}
+          onSelect={setRange}
+          focused={focused && !searchFocused}
         />
       </Box>
       <ScrollBox flexGrow={1} scrollY focusable={false}>

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, InputSearchBar, usePaneFooter, type DataTableKeyEvent } from "../../../components";
-import { type InputRenderable } from "../../../ui";
+import { DataTableView, PaneListChrome, usePaneFooter, usePaneListSearch, type DataTableKeyEvent } from "../../../components";
 import {
   buildColumnVisibilityField,
   resolveVisibleColumns,
@@ -11,7 +10,7 @@ import type { EarningsEvent } from "../../../types/data-provider";
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
-import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
 import { paneSearchHint } from "../shared/pane-footer";
 import type { PaneSettingsContext, PaneSettingsDef } from "../../../types/plugin";
@@ -41,6 +40,10 @@ import {
   type EarningsColumnId,
 } from "./table";
 
+function earningsSelectionId(event: EarningsEvent): string {
+  return `${event.symbol}:${event.earningsDate.getTime()}`;
+}
+
 function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
@@ -51,15 +54,18 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<SortPreference<EarningsColumnId>>({
     columnId: null,
     direction: "asc",
   });
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker or company",
+  });
   const requestIdRef = useRef(0);
 
   const tickers = useAppSelector((state) => state.tickers);
@@ -95,9 +101,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     () => rows.filter((row): row is EarningsEventDisplayRow => row.kind === "event"),
     [rows],
   );
-  const eventCount = eventRows.length;
-  const activeEventIdx = eventCount > 0 ? Math.min(Math.max(selectedIdx, 0), eventCount - 1) : -1;
-  const selectedRowIndex = rows.findIndex((row) => row.kind === "event" && row.eventIdx === activeEventIdx);
   const columns = useMemo(
     () => resolveVisibleColumns(
       buildEarningsColumns(),
@@ -150,34 +153,25 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    if (eventCount > 0 && selectedIdx >= eventCount) {
-      setSelectedIdx(eventCount - 1);
-    }
-  }, [eventCount, selectedIdx, setSelectedIdx]);
+    if (selectedEventId && eventRows.some((row) => earningsSelectionId(row.event) === selectedEventId)) return;
+    const first = eventRows[0];
+    setSelectedEventId(first ? earningsSelectionId(first.event) : null);
+  }, [eventRows, selectedEventId]);
 
   const openEvent = useCallback((event: EarningsEvent) => {
     navigateTicker(event.symbol);
   }, [navigateTicker]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((value) => value + 1);
-  }, []);
-
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
+    if (listSearch.searchFocused) return false;
     if (event.name === "r") {
       event.preventDefault?.();
       reload(true);
       return true;
     }
     return false;
-  }, [focusSearch, reload]);
+  }, [listSearch.handleSearchKey, listSearch.searchFocused, reload]);
 
   const renderCell = useCallback((
     row: EarningsDisplayRow,
@@ -197,18 +191,19 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
-      paneSearchHint(focusSearch),
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
     ],
-  }), [error, focusSearch, loading, reload, stale]);
+  }), [error, listSearch.focusSearch, listSearch.searchFocused, loading, stale]);
 
   return (
     <DataTableView<EarningsDisplayRow, EarningsColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       selection={{
-        kind: "index",
-        selectedIndex: selectedRowIndex,
-        onChange: (_index, row) => {
-          if (row.kind === "event") setSelectedIdx(row.eventIdx);
+        kind: "id",
+        selectedId: selectedEventId,
+        getId: (row) => row.kind === "event" ? earningsSelectionId(row.event) : row.key,
+        onChange: (_id, row) => {
+          if (row.kind === "event") setSelectedEventId(earningsSelectionId(row.event));
         },
       }}
       isNavigable={(row) => row.kind === "event"}
@@ -218,7 +213,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       onRootKeyDown={handleTableKeyDown}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={<InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or company" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
+      rootBefore={<PaneListChrome width={width} focused={focused} search={listSearch.search} />}
       columns={columns}
       items={rows}
       sortColumnId={sortPreference.columnId}

@@ -80,6 +80,7 @@ export function setupTopNewsNotifications(ctx: GloomPluginContext): () => void {
       body: extraCount > 0 ? `${headline.title} (+${extraCount} more)` : headline.title,
       type: "info",
       desktop: "always",
+      refId: `top-news:${headline.id}`,
       duration: TOP_NEWS_TOAST_DURATION_MS,
       action: {
         label: "Open",

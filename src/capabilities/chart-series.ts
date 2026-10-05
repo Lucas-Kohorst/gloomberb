@@ -202,7 +202,8 @@ function resolvedOutput(value: unknown): ResolvedSeries {
   const input = object(value, "resolve output");
   onlyKeys(input, "resolve output", [
     "id", "label", "color", "unit", "unitGroup", "nativeFrequency", "timestampMode", "dataShape", "style", "transform",
-    "axis", "panelId", "interpolation", "timeBasis", "latestChangePercent", "points", "warning", "hidden", "valueRange",
+    "axis", "panelId", "interpolation", "timeBasis", "latestChange", "latestChangePercent", "previousClose",
+    "points", "warning", "hidden", "valueRange",
   ]);
   if (!Array.isArray(input.points)) fail("resolve output points", "expected an array.");
   if (input.points.length > MAX_CHART_SERIES_POINTS) {
@@ -247,7 +248,13 @@ function resolvedOutput(value: unknown): ResolvedSeries {
       },
     } : {}),
     ...(input.latestChangePercent !== undefined
-      ? { latestChangePercent: finiteNumber(input.latestChangePercent, "resolve output latest change") as number }
+      ? { latestChangePercent: finiteNumber(input.latestChangePercent, "resolve output latest change percent") as number }
+      : {}),
+    ...(input.latestChange !== undefined
+      ? { latestChange: finiteNumber(input.latestChange, "resolve output latest change") as number }
+      : {}),
+    ...(input.previousClose !== undefined
+      ? { previousClose: finiteNumber(input.previousClose, "resolve output previous close") as number }
       : {}),
     points: input.points.map(point),
     ...(valueRange ? { valueRange } : {}),

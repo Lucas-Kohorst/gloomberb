@@ -3,8 +3,9 @@ import {
   DataTableStackView,
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
+  usePaneListSearch,
   usePaneTicker,
   type DataTableCell,
   type DataTableKeyEvent,
@@ -12,7 +13,7 @@ import {
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
@@ -175,9 +176,13 @@ export function CdsPane({
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused: focused && !issuerQuery && !detailOpen,
+    enabled: !issuerQuery,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "issuer",
+  });
   const generation = useRef(0);
   // Held in a ref so an inline loader prop cannot turn every render into a fetch.
   const loadActivityRef = useRef(loadActivity);
@@ -228,6 +233,11 @@ export function CdsPane({
     setDetailOpen(false);
   }, [issuerQuery, issuers, selectedIssuerKey]);
 
+  useEffect(() => {
+    if (selectedTradeId && visibleTrades.some((trade) => trade.id === selectedTradeId)) return;
+    setSelectedTradeId(visibleTrades[0]?.id ?? null);
+  }, [selectedTradeId, visibleTrades]);
+
   const cycleTradeSort = useCallback((step: 1 | -1) => {
     setTradeSort((current) => {
       const next = cycleSortPreference<TradeColumnId>(TRADE_SORT_COLUMN_IDS, current, step);
@@ -256,25 +266,20 @@ export function CdsPane({
     }
     return false;
   }, [load]);
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((value) => value + 1);
-  }, []);
   const handleIssuerKey = useCallback(
     (event: DataTableKeyEvent) => {
-      if (!detailOpen && isPlainKey(event, "/", "s")) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
+      if (!detailOpen && listSearch.handleSearchKey(event)) return true;
+      if (listSearch.searchFocused) return false;
       return handleKey(event, cycleIssuerSort);
     },
-    [cycleIssuerSort, detailOpen, focusSearch, handleKey],
+    [cycleIssuerSort, detailOpen, handleKey, listSearch.handleSearchKey, listSearch.searchFocused],
   );
   const handleTradeKey = useCallback(
-    (event: DataTableKeyEvent) => handleKey(event, cycleTradeSort),
-    [cycleTradeSort, handleKey],
+    (event: DataTableKeyEvent) => {
+      if (listSearch.searchFocused) return false;
+      return handleKey(event, cycleTradeSort);
+    },
+    [cycleTradeSort, handleKey, listSearch.searchFocused],
   );
 
   const asOfLabel = formatAsOf(activity?.asOf ?? null);
@@ -287,24 +292,14 @@ export function CdsPane({
     loading: status === "loading",
     error,
     info: footerInfo,
-    focused,
+    focused: focused && !listSearch.searchFocused,
     hints: [
-      ...(!issuerQuery ? [paneSearchHint(focusSearch)] : []),
+      ...(!issuerQuery ? [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })] : []),
     ],
   });
 
   useShortcut((event) => {
-    if (!focused) return;
-    if (searchFocused) {
-      if (isPlainKey(event, "escape")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setSearchFocused(false);
-        setSearchQuery("");
-      }
-      return;
-    }
-    if (event.targetEditable) return;
+    if (!focused || listSearch.searchFocused || event.targetEditable) return;
     // The tables own r/[ ] when they are mounted; this covers the
     // loading/error empty states which render no table.
     if (!activity && isPlainKey(event, "r")) {
@@ -312,7 +307,7 @@ export function CdsPane({
       event.preventDefault?.();
       load();
     }
-  }, { allowEditable: true, enabled: focused });
+  }, { enabled: focused && !listSearch.searchFocused });
 
   if (status === "loading" && !activity) {
     return (
@@ -360,7 +355,7 @@ export function CdsPane({
   const issuerColumns = buildIssuerColumns();
   return (
     <DataTableStackView<CdsIssuerSummary, IssuerColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       detailOpen={detailOpen && !!selectedSummary}
       onBack={() => setDetailOpen(false)}
       detailTitle={selectedSummary?.issuer}
@@ -380,19 +375,10 @@ export function CdsPane({
       rootWidth={width}
       rootHeight={height}
       rootBefore={(
-        <InputSearchBar
-          value={searchQuery}
-          focused={focused && !detailOpen}
-          active={searchFocused}
+        <PaneListChrome
           width={width}
-          focusToken={searchFocusToken}
-          inputRef={searchInputRef}
-          placeholder="issuer"
-          debounceMs={80}
-          onFocus={focusSearch}
-          onBlur={() => setSearchFocused(false)}
-          onNavigateDown={() => setSearchFocused(false)}
-          onQueryChange={setSearchQuery}
+          focused={focused && !detailOpen}
+          search={listSearch.search}
         />
       )}
       selection={{
@@ -402,6 +388,7 @@ export function CdsPane({
         onChange: (id) => setSelectedIssuerKey(id),
       }}
       onActivate={(row) => {
+        listSearch.blurSearch();
         setSelectedIssuerKey(row.key);
         setSelectedTradeId(null);
         setDetailOpen(true);

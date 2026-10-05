@@ -29,7 +29,7 @@ const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
 const RANGE_PRESET_RESOLUTION: Record<TimeRange, ManualChartResolution> = {
   "1D": "1m",
   "1W": "5m",
-  "1M": "15m",
+  "1M": "4h",
   "3M": "1h",
   "6M": "1d",
   "1Y": "1d",
@@ -284,7 +284,11 @@ export function chartResolutionTabChoices(
 
 export function chartRangeTabChoices(
   support: readonly ChartResolutionSupport[] | undefined,
+  rangeSupport?: readonly TimeRange[],
 ): Array<{ range: TimeRange; enabled: boolean }> {
+  if (rangeSupport !== undefined) {
+    return TIME_RANGES.map((range) => ({ range, enabled: rangeSupport.includes(range) }));
+  }
   const effectiveSupport = effectiveChartResolutionSupport(support);
   return TIME_RANGES.map((range) => ({
     range,

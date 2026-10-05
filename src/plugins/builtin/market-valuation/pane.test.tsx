@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useReducer } from "react";
 import { PaneFooterProvider } from "../../../components/layout/pane/footer";
 import {
   attachValuationPersistence,
@@ -9,6 +9,7 @@ import {
 import { testRender } from "../../../renderers/opentui/test-utils";
 import {
   AppContext,
+  appReducer,
   createInitialState,
   PaneInstanceProvider,
 } from "../../../state/app/context";
@@ -17,6 +18,7 @@ import { cloneLayout, createDefaultConfig } from "../../../types/config";
 import { MarketValuationPane, shouldPersistSelection } from "./pane";
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+let currentSettings: Record<string, unknown> | undefined;
 
 function obs(values: Array<[string, number]>) {
   return values.map(([date, value]) => ({ date, value }));
@@ -111,8 +113,10 @@ async function renderPane(settings: Record<string, unknown> = {}, width = 128) {
     layout,
     layouts: [{ name: "Default", layout: cloneLayout(layout) }],
   });
-  setup = await testRender(
-    <AppContext value={{ state, dispatch: () => {} }}>
+  function Harness() {
+    const [current, dispatch] = useReducer(appReducer, state);
+    currentSettings = current.config.layout.instances.find((pane) => pane.instanceId === TEST_PANE_ID)?.settings;
+    return <AppContext value={{ state: current, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PaneFooterProvider>
           {() => (
@@ -126,9 +130,11 @@ async function renderPane(settings: Record<string, unknown> = {}, width = 128) {
           )}
         </PaneFooterProvider>
       </PaneInstanceProvider>
-    </AppContext>,
-    { width, height: 40 },
-  );
+    </AppContext>;
+  }
+  await act(async () => {
+    setup = await testRender(<Harness />, { width, height: 40 });
+  });
   await settle();
   return setup.captureCharFrame();
 }
@@ -160,18 +166,34 @@ describe("MarketValuationPane", () => {
     expect(frame).toContain("329%");
   });
 
-  test("wide panes put the list beside the detail, narrow ones stack it", async () => {
-    const split = await renderPane({}, 128);
-    // In the split the chart shares a line with the list rows.
-    expect(split).toMatch(/Buffett.*\n/);
-    const stacked = await renderPane({}, 92);
-    expect(stacked).toContain("Buffett");
-    expect(stacked).toContain("Cap / M2");
+  test("narrow panes retain the chart statistics instead of clipping the end of the row", async () => {
+    const frame = await renderPane({}, 24);
+    expect(frame).toContain("ATH");
+    expect(frame).toContain("ATL");
+    expect(frame).toContain("2024-01-02");
+    expect(frame).toContain("2026-06-15");
   });
 
-  test("the filter narrows the list without blanking the detail", async () => {
-    const frame = await renderPane();
-    expect(frame).toContain("filter indicators");
+  test("range numbers and clicks change history while numbers typed in search do not", async () => {
+    await renderPane({ range: "25Y" });
+    await act(async () => { setup!.mockInput.pressKey("3"); });
+    await settle();
+    expect(currentSettings?.range).toBe("ALL");
+    await act(async () => { setup!.mockInput.pressArrow("left"); });
+    await settle();
+    expect(currentSettings?.range).toBe("ALL");
+    await act(async () => { setup!.mockInput.pressKey("/"); });
+    await settle();
+    await act(async () => { setup!.mockInput.pressKey("2"); });
+    await act(async () => { await Bun.sleep(100); });
+    await settle();
+    expect(currentSettings?.range).toBe("ALL");
+    const lines = setup!.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("1:10Y"));
+    expect(row).toBeGreaterThanOrEqual(0);
+    await act(async () => { await setup!.mockMouse.click(lines[row]!.indexOf("1:10Y"), row); });
+    await settle();
+    expect(currentSettings?.range).toBe("10Y");
   });
 
   test("a yield reads cheap when it is high, unlike a price ratio", async () => {

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, Text } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
 import {
   EmptyState,
   InputSearchBar,
   Spinner,
   usePaneTicker,
+  usePaneListSearch,
   useUpdatedAgo,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
@@ -102,10 +103,6 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
     normalizeCboeMarket(storedMarket),
   );
 
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
-
   const [book, setBook] = useState<CboeBook | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +111,22 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
 
   const effectiveSymbol = (query.trim() || boundSymbol || "").trim().toUpperCase();
   const normalizedMarket = normalizeCboeMarket(market);
+
+  const updateQuery = useCallback(
+    (nextQuery: string) => {
+      setQuery(nextQuery.toUpperCase());
+    },
+    [setQuery],
+  );
+  const listSearch = usePaneListSearch({
+    focused,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "Ticker, e.g. AAPL",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim().toUpperCase(),
+  });
+  const { searchFocused } = listSearch;
 
   const load = useCallback(
     (symbol: string, nextMarket: CboeMarket) => {
@@ -179,39 +192,11 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
     setMarket((current) => nextMarket(normalizeCboeMarket(current)));
   }, [setMarket]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-  const updateQuery = useCallback(
-    (nextQuery: string) => {
-      setQuery(nextQuery.toUpperCase());
-    },
-    [setQuery],
-  );
-
   useShortcut(
     (event) => {
       if (!focused) return;
-      if (searchFocused) {
-        if (isPlainKey(event, "escape")) {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          setSearchFocused(false);
-          updateQuery("");
-        }
-        return;
-      }
+      if (searchFocused) return;
       if (event.targetEditable) return;
-      if (isPlainKey(event, "/")) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        focusSearch();
-        return;
-      }
       if (isPlainKey(event, "r")) {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -224,7 +209,7 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
         cycleMarket();
       }
     },
-    { allowEditable: true, enabled: focused },
+    { enabled: focused && !searchFocused },
   );
 
   const loading = status === "loading" && !book;
@@ -260,27 +245,27 @@ export function CboeBookPane({ paneId, focused, width, height }: PaneProps) {
     trailingInfo: [...pollFooterTrailingInfo(true, poll.segment)],
     showOpenHint: !!pageUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: listSearch.focusSearch },
       { id: "market", key: "m", label: "arket", onPress: cycleMarket },
     ],
   });
 
   const searchBar = (
-    <InputSearchBar
-      value={query}
-      focused={focused}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="Ticker, e.g. AAPL"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(value) => value.trim().toUpperCase()}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={updateQuery}
-    />
+        <InputSearchBar
+          value={listSearch.search.value}
+          focused={focused}
+          active={listSearch.search.active}
+          width={width}
+          focusToken={listSearch.search.focusToken ?? 0}
+          inputRef={listSearch.search.inputRef}
+          placeholder={listSearch.search.placeholder ?? "Ticker, e.g. AAPL"}
+          debounceMs={listSearch.search.debounceMs ?? SEARCH_DEBOUNCE_MS}
+          normalizeValue={listSearch.search.normalizeValue}
+          onFocus={listSearch.search.onFocus}
+          onBlur={listSearch.search.onBlur}
+          onNavigateDown={listSearch.search.onNavigateDown}
+          onQueryChange={listSearch.search.onQueryChange}
+        />
   );
 
   if (!effectiveSymbol) {

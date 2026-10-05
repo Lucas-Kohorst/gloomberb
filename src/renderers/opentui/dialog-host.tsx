@@ -111,6 +111,17 @@ function DialogLayer({
   const maxHeight = typeof style.maxHeight === "number"
     ? Math.max(1, Math.min(style.maxHeight, viewportHeight))
     : viewportHeight;
+  const paddingX = typeof style.paddingX === "number" ? style.paddingX : 2;
+  const paddingY = typeof style.paddingY === "number" ? style.paddingY : 1;
+  const borderInset = style.border === false ? 0 : 2;
+  const contentSize = {
+    width: Math.max(1, Math.min(width, maxWidth)
+      - (typeof style.paddingLeft === "number" ? style.paddingLeft : paddingX)
+      - (typeof style.paddingRight === "number" ? style.paddingRight : paddingX) - borderInset),
+    height: Math.max(1, maxHeight
+      - (typeof style.paddingTop === "number" ? style.paddingTop : paddingY)
+      - (typeof style.paddingBottom === "number" ? style.paddingBottom : paddingY) - borderInset),
+  };
   const closeOnEscape = dialog.closeOnEscape ?? containerOptions.closeOnEscape ?? true;
   const closeOnClickOutside = dialog.closeOnClickOutside
     ?? containerOptions.closeOnClickOutside
@@ -181,6 +192,7 @@ function DialogLayer({
             dialogId={dialog.id}
             dismiss={context.dismiss}
             keyboardEnabled={isTopmost}
+            contentSize={contentSize}
           >
             {renderDialogContent(dialog.content, context)}
           </DialogHostProvider>

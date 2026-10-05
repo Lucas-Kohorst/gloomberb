@@ -9,7 +9,6 @@ import {
   pickHostedConfigBackupText,
   serializeHostedConfigBackup,
 } from "../../../data/config/hosted-file-ops";
-import { writeHostedByokKeys } from "../../../plugins/builtin/byok/hosted-persist";
 import { isPublicShareLocation } from "../../../plugins/builtin/shared/share-link";
 import { createDefaultConfig, type AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
@@ -31,7 +30,6 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
     if (isPublicShareLocation()) return;
     if (isHostedClient()) {
       writeHostedUserConfig(config);
-      writeHostedByokKeys(config);
       getHostedConfigSnapshotPusher().schedule(config);
       // Worker config.save is a no-op. Posting the whole workspace still
       // encodeRpcValue's it on the main thread and can stall Disconnect.
@@ -52,7 +50,6 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
       const next = createDefaultConfig(dataDir);
       next.onboardingComplete = true;
       writeHostedUserConfig(next);
-      writeHostedByokKeys(next);
       await pusher.flushForced(next);
       return;
     }
@@ -73,7 +70,6 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
       const raw = await pickHostedConfigBackupText();
       const imported = parseHostedConfigBackup(raw, dataDir);
       writeHostedUserConfig(imported);
-      writeHostedByokKeys(imported);
       getHostedConfigSnapshotPusher().schedule(imported);
       return imported;
     }

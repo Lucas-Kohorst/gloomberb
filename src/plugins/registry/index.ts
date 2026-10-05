@@ -67,9 +67,7 @@ import {
 } from "./shared";
 import { RegistryResumeStateListeners } from "./plugin-state";
 import { cloudSyncController } from "../../sync/controller";
-import { queueAgentPromptFragment, queueAgentTool } from "../builtin/ai/runner";
 import { isReservedBuiltinPluginId } from "../ownership";
-import { resolveApiKey } from "../builtin/byok/store";
 import { redactConfigForRemote } from "../../remote/redact-config";
 import { resolvePluginEntryFile } from "../loader";
 import { existsSync } from "fs";
@@ -516,7 +514,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
   }
 
   getPaneTemplatePluginId(templateId: string): string | undefined {
-    return this.contributions.paneTemplateOwners.get(templateId);
+    return this.contributions.paneTemplateOwners.get(templateId)
+      ?? (templateId === "graph-price-pane" ? this.contributions.paneTemplateOwners.get("chart-composer-pane") : undefined);
   }
 
   getShortcutPluginId(shortcutId: string): string | undefined {
@@ -559,6 +558,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getTicker: (symbol) => this.getTickerFn(symbol),
       getConfig: () => this.configForPlugin(pluginId),
       getApiKey: (serviceId: string) => this.resolveApiKeyForPlugin(pluginId, serviceId),
+      grantApiKeyAccess: (targetPluginId, serviceId) => this.grantApiKeyAccess(targetPluginId, serviceId),
+      revokeApiKeyAccess: (targetPluginId, serviceId) => this.revokeApiKeyAccess(targetPluginId, serviceId),
       getResumeState: (key, schemaVersion) => this.getResumeState(pluginId, key, schemaVersion),
       setResumeState: (key, value, schemaVersion) => this.setResumeState(pluginId, key, value, schemaVersion),
       deleteResumeState: (key) => this.deleteResumeState(pluginId, key),
@@ -587,11 +588,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
       notify: (notification) => this.notifyFn({ ...notification, source: pluginId }),
       registerAgentTool: (tool) => {
         items.agentTools.push(tool.name);
-        queueAgentTool(tool);
       },
       registerAgentPromptFragment: (fragment) => {
         items.agentPromptFragments.push(fragment);
-        queueAgentPromptFragment(fragment);
       },
     });
   }
@@ -614,23 +613,18 @@ export class PluginRegistry implements PluginRuntimeAccess {
   }
 
   /**
-   * Resolve a BYOK or environment-backed API key for a plugin.
+   * Resolve an API key for a plugin.
    *
-   * - An explicit host-issued grant always wins.
-   * - External (user-installed, marketplace/GitHub-ref) plugins are untrusted
-   *   code: without a grant they get no key at all, closing the "any plugin
-   *   resolves any service's key" disclosure (audit plugin-lifecycle-006).
-   * - Bundled first-party plugins keep resolving keys as before.
+   * The BYOK vault is gone, so there is no stored key to resolve and no
+   * host-issued grant that can hand one out. Plugins fall back to their own
+   * environment variables; grants stay tracked so a future vault can reuse
+   * them without another audit pass.
    */
   private resolveApiKeyForPlugin(pluginId: string, serviceId: string): string | undefined {
-    if (this.apiKeyAccessGrants.get(pluginId)?.has(serviceId)) {
-      return resolveApiKey(this.getConfigFn(), serviceId);
-    }
     if (this.externalPluginEntryFiles.has(pluginId)) {
       this.registryLog.debug("Denied API-key resolution for external plugin", { pluginId, serviceId });
-      return undefined;
     }
-    return resolveApiKey(this.getConfigFn(), serviceId);
+    return undefined;
   }
 
   /**

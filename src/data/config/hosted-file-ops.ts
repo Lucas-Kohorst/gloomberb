@@ -7,7 +7,7 @@ import { hostedTickerStorageKey } from "./hosted-ticker-persist";
 import { hostedNotesStorageKey } from "./hosted-notes-persist";
 import { hostedPluginStateStorageKey } from "./hosted-plugin-state-persist";
 import { hostedSessionStorageKey } from "./hosted-session-persist";
-import { hostedByokStorageKey } from "../../plugins/builtin/byok/hosted-persist";
+import { hostedByokStorageKey } from "./byok-legacy";
 
 export const HOSTED_CONFIG_BACKUP_FILENAME = "gloomberb-config-backup.json";
 

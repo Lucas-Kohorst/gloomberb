@@ -13,13 +13,14 @@ import {
   getPresetResolution,
   getSupportMaxRange,
   intersectChartResolutionSupport,
+  isRangePresetSupported,
   isIntradayResolution,
   normalizeChartResolutionSupport,
   TIME_RANGE_ORDER,
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "./resolution";
-import type { TimeRange } from "./range";
+import { TIME_RANGES, type TimeRange } from "./range";
 import type { DataProvider, MarketDataRequestContext } from "../types/data-provider";
 import type { CorporateActionsData, Quote, TickerFinancials } from "../types/financials";
 import type { FredSeriesLoadResult, FredSeriesRequest } from "../data/fred-series";
@@ -76,10 +77,26 @@ export interface UniversalSeriesLoadResult {
   warning?: string;
 }
 
+export interface UniversalSeriesLoadRequest {
+  range: TimeRange;
+  start?: number | null;
+  end?: number | null;
+}
+
+export interface UniversalSeriesSupport {
+  ranges: readonly TimeRange[];
+  resolutions?: readonly ChartResolutionSupport[];
+  accessTier?: "public" | "keyed";
+}
+
 export interface ChartResolveSources {
   dataProvider: DataProvider | null;
   loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
-  loadUniversalSeries?: (source: UniversalSeriesSource) => Promise<UniversalSeriesLoadResult>;
+  loadUniversalSeries?: (
+    source: UniversalSeriesSource,
+    request?: UniversalSeriesLoadRequest,
+  ) => Promise<UniversalSeriesLoadResult>;
+  universalSeriesSupport?: (source: UniversalSeriesSource) => UniversalSeriesSupport | undefined;
   now?: Date;
   /** Latest streamed quote per security identity, layered over snapshot data. */
   quoteOverrides?: ReadonlyMap<string, Quote>;
@@ -701,6 +718,12 @@ function baseSecuritySeries(
   const latestChangePercent = marketField && field.unit.startsWith("currency")
     ? financials.quote?.changePercent
     : undefined;
+  const latestChange = marketField && field.unit.startsWith("currency")
+    ? financials.quote?.change
+    : undefined;
+  const previousClose = marketField && field.unit.startsWith("currency")
+    ? financials.quote?.previousClose
+    : undefined;
   return {
     id: spec.id,
     label: seriesSpecLabel(spec, `${symbol} ${field.shortLabel}`),
@@ -728,6 +751,12 @@ function baseSecuritySeries(
       : undefined,
     latestChangePercent: typeof latestChangePercent === "number" && Number.isFinite(latestChangePercent)
       ? latestChangePercent
+      : undefined,
+    latestChange: typeof latestChange === "number" && Number.isFinite(latestChange)
+      ? latestChange
+      : undefined,
+    previousClose: typeof previousClose === "number" && Number.isFinite(previousClose)
+      ? previousClose
       : undefined,
     points,
   };
@@ -984,6 +1013,22 @@ function applyStudyPresentationTransforms(
   });
 }
 
+function intersectTimeRangeSupport(
+  lists: ReadonlyArray<readonly TimeRange[]>,
+  sharedSupport: readonly ChartResolutionSupport[],
+): TimeRange[] {
+  const [first, ...rest] = lists;
+  if (!first) return [];
+  let ranges = first.filter((range) => rest.every((list) => list.includes(range)));
+  if (sharedSupport.length > 0) {
+    const presets = new Set(
+      TIME_RANGES.filter((range) => isRangePresetSupported(range, sharedSupport)),
+    );
+    ranges = ranges.filter((range) => presets.has(range));
+  }
+  return ranges;
+}
+
 export async function resolveChartSpecData(
   spec: ChartSpec,
   sources: ChartResolveSources,
@@ -1185,14 +1230,28 @@ export async function resolveChartSpecData(
     return pending;
   };
 
+  const universalRequest: UniversalSeriesLoadRequest = {
+    range: spec.viewport.range,
+    start: requestVisibleBounds.start,
+    end: requestVisibleBounds.end,
+  };
+  const universalDay = (value: number | null | undefined): string => (
+    value === null || value === undefined ? "open" : String(Math.floor(value / DAY_MS))
+  );
   const loadUniversalSeries = (source: UniversalSeriesSource): Promise<UniversalSeriesLoadResult> => {
     if (!sources.loadUniversalSeries) {
       throw new Error(`Chart data source "${source.kind}" is not available.`);
     }
-    const cacheKey = JSON.stringify(Object.entries(source).sort(([left], [right]) => left.localeCompare(right)));
+    const sourceKey = JSON.stringify(Object.entries(source).sort(([left], [right]) => left.localeCompare(right)));
+    const cacheKey = [
+      sourceKey,
+      universalRequest.range,
+      universalDay(universalRequest.start),
+      universalDay(universalRequest.end),
+    ].join("|");
     let pending = cache.universalSeriesByKey.get(cacheKey);
     if (!pending) {
-      pending = sources.loadUniversalSeries(source);
+      pending = sources.loadUniversalSeries(source, universalRequest);
       cache.universalSeriesByKey.set(cacheKey, pending);
     }
     return pending;
@@ -1427,13 +1486,39 @@ export async function resolveChartSpecData(
     }
   }
 
+  const adjacentSupports: UniversalSeriesSupport[] = [];
+  if (sources.universalSeriesSupport) {
+    for (const seriesSpec of spec.series) {
+      if (!visibleSeriesIds.has(seriesSpec.id)) continue;
+      if (seriesSpec.source.kind !== "adjacent-index") continue;
+      const support = sources.universalSeriesSupport(seriesSpec.source);
+      if (support) adjacentSupports.push(support);
+    }
+  }
+  const rangeSupport = adjacentSupports.length > 0
+    ? intersectTimeRangeSupport(adjacentSupports.map((entry) => entry.ranges), sharedSupport)
+    : [];
+  const accessTier: "public" | "keyed" | undefined = adjacentSupports.length > 0
+    ? (adjacentSupports.some((entry) => entry.accessTier === "public") ? "public" : "keyed")
+    : undefined;
+  const adjacentResolutions = adjacentSupports.flatMap((entry) => (
+    entry.resolutions && entry.resolutions.length > 0 ? [entry.resolutions] : []
+  ));
+  const resolutionSupport = adjacentResolutions.length > 0
+    ? intersectChartResolutionSupport([
+      ...adjacentResolutions,
+      ...(sharedSupport.length > 0 ? [sharedSupport] : []),
+    ])
+    : sharedSupport;
   const exposeViewport = hasExplicitWindow || spec.viewport.maxPoints === undefined;
   const viewport = exposeViewport && bounds.start !== null && bounds.end !== null
     ? { start: new Date(bounds.start), end: new Date(bounds.end) }
     : undefined;
   return {
     series: resolved,
-    ...(sharedSupport.length > 0 ? { resolutionSupport: sharedSupport } : {}),
+    ...(resolutionSupport.length > 0 ? { resolutionSupport } : {}),
+    ...(rangeSupport.length > 0 ? { rangeSupport } : {}),
+    ...(accessTier ? { accessTier } : {}),
     legendSeries,
     ...(spec.viewport.maxPoints === undefined ? { bufferedSeries } : {}),
     ...(marketTimelineSeries.length > 0 ? { timelineSeries: marketTimelineSeries } : {}),

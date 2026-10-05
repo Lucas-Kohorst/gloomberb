@@ -1,7 +1,6 @@
 import { isHostedWebClient } from "../../../shared/hosted-api";
 import { httpFetch } from "../../../utils/http-transport";
 import { readProcessEnv } from "../../../utils/process-env";
-import { fetchByokViaProxy } from "../byok/request";
 import { withConnectionRequest } from "../connections/register";
 import { fixtureSearchParams, oddsSearchParams, resolveOddsScope } from "./query";
 import {
@@ -19,6 +18,35 @@ export function setOpticOddsApiKeyResolver(resolver: () => string | undefined): 
 
 export function resolveOpticOddsApiKey(): string | undefined {
   return resolveApiKey()?.trim() || readProcessEnv("OPTICODDS_API_KEY");
+}
+
+async function outboundProxyGet(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ ok: boolean; status: number; body: string }> {
+  let response: Response;
+  try {
+    response = await fetch("/api/proxy/outbound", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, headers, method: "GET" }),
+    });
+  } catch {
+    throw new Error("Could not reach the proxy server. Check your network connection and try again.");
+  }
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(errorBody?.error ?? `Proxy request failed (${response.status}).`);
+  }
+  const result = await response.json().catch(() => null) as {
+    ok?: boolean;
+    status?: number;
+    body?: string;
+    error?: string;
+  } | null;
+  if (!result) throw new Error("The proxy returned an unexpected response.");
+  if (result.error && !result.ok && result.status == null) throw new Error(result.error);
+  return { ok: result.ok ?? false, status: result.status ?? 0, body: result.body ?? "" };
 }
 
 function apiErrorMessage(status: number, body: string): string {
@@ -41,7 +69,7 @@ async function opticGet(path: string, params: URLSearchParams, key: string, sign
     "X-Api-Key": key,
   };
   if (isHostedWebClient()) {
-    const proxied = await fetchByokViaProxy(url, headers);
+    const proxied = await outboundProxyGet(url, headers);
     if (!proxied.ok) throw new Error(apiErrorMessage(proxied.status, proxied.body));
     return JSON.parse(proxied.body) as unknown;
   }

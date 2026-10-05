@@ -10,6 +10,7 @@ import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
 import type { CommandBarCategoryPriorities } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
+import { parseAssetClassQuery } from "../../../../tickers/search/asset-classes";
 import { normalizeCommandTickerSearchText } from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { buildRootResultModel, type RootResultModel } from "./results";
@@ -86,6 +87,7 @@ interface UseCommandBarRootRuntimeOptions {
   rootShortcutIntent: ShortcutIntent;
   runDirectCommand(command: Command, arg: string): void;
   runSecurityDescriptionShortcut(query?: string): void | Promise<void>;
+  setRootQuery?: (query: string) => void;
   setRootHoveredIdx: Dispatch<SetStateAction<number | null>>;
   setRootSelectedIdx: Dispatch<SetStateAction<number>>;
   skipTickerSearchDebounceRef: RefObject<boolean>;
@@ -140,6 +142,7 @@ export function useCommandBarRootRuntime({
   rootShortcutIntent,
   runDirectCommand,
   runSecurityDescriptionShortcut,
+  setRootQuery,
   setRootHoveredIdx,
   setRootSelectedIdx,
   skipTickerSearchDebounceRef,
@@ -212,6 +215,7 @@ export function useCommandBarRootRuntime({
     providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
+    setRootQuery,
     state,
     tickerActionItems,
     onOpenPluginMarketplace,
@@ -244,6 +248,7 @@ export function useCommandBarRootRuntime({
     providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
+    setRootQuery,
     state,
     tickerActionItems,
     onOpenPluginMarketplace,
@@ -253,15 +258,20 @@ export function useCommandBarRootRuntime({
     ? activeMatch.arg
     : null;
   // Free text that no prefix claims also goes to symbol search, so "nvidia"
-  // finds NVDA without the backtick. Skipped when a local row already carries
-  // that exact name, since an "Exact Match" symbol would otherwise outrank it.
+  // finds NVDA without the backtick. A class code is a filter, so "ETF SPY"
+  // and bare "FUT" still search even though those prefixes also open panes.
+  // Skipped when a local row already carries that exact name, since an
+  // "Exact Match" symbol would otherwise outrank it.
   const rootPlainTickerSearchArg = useMemo(() => {
-    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    const classOwnsListing = parseAssetClassQuery(rootQuery).code !== null;
+    if (currentRoute || activeMatch) return null;
+    if (!classOwnsListing && rootShortcutIntent.kind !== "none") return null;
     const trimmed = rootQuery.trim();
     if (trimmed.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
     const hasExactLocalRow = rootResultModel.items.some((item) => (
-      item.kind !== "ticker"
+      !item.id.startsWith("asset-class:")
+      && item.kind !== "ticker"
       && item.kind !== "search"
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
     ));

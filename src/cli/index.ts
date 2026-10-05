@@ -22,7 +22,6 @@ import { overviewCliCommands } from "./commands/overview";
 import { remoteCliCommand } from "./commands/remote";
 import { createSystemCliCommands } from "./commands/system";
 import {
-  aiCliCommand,
   brokerCliCommand,
   ibkrCliCommand,
   rssCliCommand,
@@ -267,7 +266,6 @@ function createCoreCliCommands(
     ...createSystemCliCommands(allCommands),
     brokerCliCommand,
     ibkrCliCommand,
-    aiCliCommand,
     rssCliCommand,
   ];
   return commands;

@@ -20,6 +20,8 @@ type PageOptions = {
 
 const ELECTROBUN_VIEW_DIR = join(process.cwd(), "src", "renderers", "electrobun", "view");
 const SHARE_VIEW_DIR = join(process.cwd(), "src", "renderers", "share");
+const MARK_SVG = join(process.cwd(), "src", "assets", "gloomberb-mark.svg");
+const MARK_ICO = join(process.cwd(), "src", "assets", "gloomberb-mark.ico");
 const COMMON_ALIAS_RULES: AliasRule[] = [
   ["notes-files", "notes-files.ts"],
   ["./files", "plugins/builtin/notes/index.tsx", "notes-files.ts"],
@@ -38,6 +40,7 @@ export function electrobunViewPath(...parts: string[]): string {
 export async function writeElectrobunViewPage(options: PageOptions): Promise<string> {
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle(options);
   const htmlPath = join(options.outdir, "index.html");
+  await copyFile(MARK_SVG, join(options.outdir, "favicon.svg"));
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     stylesheet,
@@ -50,7 +53,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    // youtubei.js / hls.js / lightweight-charts are dynamic imports. Without
+    // youtubei.js / hls.js are dynamic imports. Without
     // splitting Bun inlines them into web-main.js and Portfolio pays for TV.
     splitting: true,
     extraAliasRules: [
@@ -59,13 +62,13 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
       ...(options.extraAliasRules ?? []),
     ],
   });
-  await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
+  await writeWebAppIcons(options.outdir);
   const hashedEntryPath = await hashJsEntrypoint(
     join(options.outdir, entrySrc.replace(/^\.\//, "")),
     "web-main",
   );
   // Split chunks still `import from "./web-main.js"`. Hashing the entry
-  // would 404 those dynamic imports (DES Chart, LWC, youtubei).
+  // would 404 those dynamic imports (DES Chart, youtubei).
   await rewriteSplitChunkEntryImports(
     options.outdir,
     entrySrc.replace(/^\.\//, ""),
@@ -85,6 +88,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     stylesheet,
     entrySrc: absoluteEntrySrc,
     faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
+    installIcons: true,
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\nwindow.__GLOOM_ROBINHOOD_BROWSER_SRC = ${JSON.stringify(robinhoodBrowserSrc)};\n${options.bootstrapScript}`,
   }));
   return htmlPath;
@@ -143,7 +147,11 @@ export async function writeSharePage(options: {
     define: {
       "process.env.NODE_ENV": "\"production\"",
       __GLOOMBERB_API_URL__: options.sameOriginApi ? "location.origin" : JSON.stringify(""),
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
+    // Same native stubs as the web client. Without them the share bundle
+    // parses the terminal kitty encoder and the browser build fails.
+    plugins: [electrobunViewAliasPlugin("gloomberb-share-renderer")],
   });
   if (!result.success) {
     const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
@@ -153,6 +161,7 @@ export async function writeSharePage(options: {
   if (!entry) throw new Error("Share page build did not produce a JavaScript entrypoint");
   const hashedEntryPath = await hashJsEntrypoint(entry.path, "share-main");
 
+  await copyFile(MARK_SVG, join(options.outdir, "favicon.svg"));
   const htmlPath = join(options.outdir, "share.html");
   await writeFile(htmlPath, renderSharePageHtml({
     title: options.title,
@@ -267,6 +276,9 @@ async function buildElectrobunViewBundle({
       // The webview has no `process`, so the cloud endpoint override the terminal
       // already reads from the environment is baked in at build time.
       __GLOOMBERB_API_URL__: JSON.stringify(process.env.GLOOMBERB_API_URL ?? ""),
+      // Same story for the chart backend: the view reads this compile-time
+      // constant, the terminal reads GLOOM_CHART_BACKEND from the process env.
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
     plugins: [electrobunViewAliasPlugin(pluginName, extraAliasRules)],
   });
@@ -286,6 +298,40 @@ async function buildElectrobunViewBundle({
   };
 }
 
+function iconLinks(faviconHref: string, installIcons: boolean): string {
+  const links = [
+    ...(installIcons ? [`<link rel="icon" href="${toRootAbsoluteAssetUrl("favicon.ico")}" sizes="any" />`] : []),
+    `<link rel="icon" type="image/svg+xml" href="${faviconHref}" />`,
+    ...(installIcons
+      ? [
+        `<link rel="manifest" href="${toRootAbsoluteAssetUrl("manifest.webmanifest")}" />`,
+        `<link rel="apple-touch-icon" href="${toRootAbsoluteAssetUrl("app-icon-256.png")}" />`,
+      ]
+      : []),
+  ];
+  return links.join("\n    ");
+}
+
+export async function writeWebAppIcons(outdir: string): Promise<void> {
+  await copyFile(MARK_SVG, join(outdir, "favicon.svg"));
+  await copyFile(MARK_ICO, join(outdir, "favicon.ico"));
+  await copyFile(join(process.cwd(), "icon.iconset", "icon_256x256.png"), join(outdir, "app-icon-256.png"));
+  await copyFile(join(process.cwd(), "icon.iconset", "icon_512x512.png"), join(outdir, "app-icon-512.png"));
+  await writeFile(join(outdir, "manifest.webmanifest"), `${JSON.stringify({
+    name: "Gloomberb",
+    short_name: "Gloomberb",
+    description: "An open-source financial terminal.",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    background_color: "#272a34",
+    icons: [
+      { src: "/app-icon-256.png", sizes: "256x256", type: "image/png" },
+      { src: "/app-icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+  }, null, 2)}\n`);
+}
+
 function renderElectrobunViewHtml({
   title,
   loadingText,
@@ -293,13 +339,14 @@ function renderElectrobunViewHtml({
   bootstrapScript,
   entrySrc,
   faviconHref = "favicon.svg",
-}: PageOptions & { stylesheet: string; entrySrc: string; faviconHref?: string }): string {
+  installIcons = false,
+}: PageOptions & { stylesheet: string; entrySrc: string; faviconHref?: string; installIcons?: boolean }): string {
   return `<!doctype html>
 <html lang="en" autocomplete="off">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
+    ${iconLinks(faviconHref, installIcons)}
     <title>${title}</title>
     <style>${stylesheet}</style>
   </head>

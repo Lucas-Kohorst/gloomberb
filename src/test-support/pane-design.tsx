@@ -248,15 +248,6 @@ export function sourceHasClickableHeaderSort(source: string): boolean {
 }
 
 /**
- * Search is registered through `paneSearchHint(...)` or an explicit search
- * hint with `onPress`.
- */
-export function sourceHasBoundTableFooterHints(source: string): boolean {
-  if (/paneSearchHint\s*\(/.test(source)) return true;
-  return /id:\s*["']search["']/.test(source) && /onPress\s*:/.test(source);
-}
-
-/**
  * AGENTS.md: footers carry changing status plus bound action hints —
  * no "N results" tallies.
  */

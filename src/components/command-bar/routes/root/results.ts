@@ -20,6 +20,12 @@ import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
 import { looksLikeCatalogTickerQuery } from "../../../../plugins/builtin/chart-composer/catalog-inventory";
+import {
+  assetClassResultId,
+  assetClassSelectionIndex,
+  assetClassesForQuery,
+  parseAssetClassQuery,
+} from "../../../../tickers/search/asset-classes";
 import { buildPluginFallbackItem, buildRelatedPaneItems } from "./indexed-results";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
@@ -79,6 +85,8 @@ export interface RootResultModelOptions {
   pluginCommandResultItems: (command: CommandDef, shortcutArg: string) => ResultItem[];
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
+  /** Writes the root query. Class rows fill `EQ ` so the next characters are the symbol. */
+  setRootQuery?: (query: string) => void;
   /**
    * Rows from plugin search providers, already ordered by provider priority.
    * Appended after the local matches so a late answer never moves the row the
@@ -130,6 +138,44 @@ function dedupeCatalogBrowseActions(items: ResultItem[], query: string): ResultI
 }
 
 /**
+ * A pane template that shares its prefix with a command (HELP, TEAM, TWIT)
+ * opens the same pane, and typing the prefix always runs the command. Listing
+ * both shows the same entry twice, so the command row wins.
+ */
+function buildAssetClassResultItems(
+  query: string,
+  setRootQuery?: (next: string) => void,
+): ResultItem[] {
+  const rows = assetClassesForQuery(query);
+  if (rows.length === 0) return [];
+  const selected = assetClassSelectionIndex(query);
+  return rows.map((entry, index) => ({
+    id: assetClassResultId(entry.code),
+    label: entry.label,
+    detail: "",
+    badge: entry.code,
+    category: "Asset Classes",
+    kind: "command" as const,
+    shortcutQuery: entry.code,
+    right: index === selected ? "Tab" : undefined,
+    searchText: `${entry.code} ${entry.label}`,
+    action: () => setRootQuery?.(`${entry.code} `),
+  }));
+}
+
+function dropShadowedPaneTemplateRows(items: ResultItem[]): ResultItem[] {
+  const commandPrefixes = new Set(items
+    .filter((item) => item.kind === "command" && item.shortcutQuery)
+    .map((item) => item.shortcutQuery!.trim().toUpperCase()));
+  if (commandPrefixes.size === 0) return items;
+  return items.filter((item) => !(
+    item.id.startsWith("pane-template:")
+    && item.shortcutQuery
+    && commandPrefixes.has(item.shortcutQuery.trim().toUpperCase())
+  ));
+}
+
+/**
  * Rows of recently used tickers and commands shown only when the bar opens
  * empty (the `!rootQuery` branch), so recents can never leak into a typed or
  * prefix-routed query. Ticker rows go through the normal ticker-search execute
@@ -171,13 +217,13 @@ function buildRecentResultItems(options: {
     const command = availableCommands.find((entry) => entry.id === recent.id);
     if (command) {
       items.push({
-        id: `recent:command:${command.id}`,
+        id: recent.arg ? `recent:command:${command.id}:${recent.arg}` : `recent:command:${command.id}`,
         label: recent.label,
-        detail: command.description,
+        detail: recent.arg ? `${command.description} · ${recent.arg}` : command.description,
         category: "Suggested",
         kind: "command",
         shortcutQuery: command.prefix || undefined,
-        searchText: recent.label,
+        searchText: recent.arg ? `${recent.label} ${recent.arg}` : recent.label,
         action: () => runDirectCommand(command, recent.arg ?? ""),
       });
       continue;
@@ -195,9 +241,10 @@ function buildRecentResultItems(options: {
       const template = getRecentPaneTemplate(recent.id.slice("pane-template:".length));
       if (!template) continue;
       items.push({
-        ...createPaneTemplateItem(template),
-        id: `recent:${recent.id}`,
+        ...createPaneTemplateItem(template, recent.arg ? { createOptions: { arg: recent.arg } } : undefined),
+        id: recent.arg ? `recent:${recent.id}:${recent.arg}` : `recent:${recent.id}`,
         category: "Suggested",
+        ...(recent.arg ? { detail: recent.arg } : {}),
       });
     }
   }
@@ -276,6 +323,8 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   const match = matchPrefix(rootQuery, availableCommands);
   let initialIdx = 0;
   const shortcutOwnsQuery = shortcutClaimsQuery(rootShortcutIntent);
+  const classQuery = parseAssetClassQuery(rootQuery);
+  const classOwnsListing = classQuery.showMenu || classQuery.code !== null;
   const collectFreeTextMatches = (): ResultItem[] => {
     const commandItems = availableCommands
       .map((command) => commandToItem(command))
@@ -327,10 +376,13 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       }))
       : [shortcutItem];
     const relatedTemplateItems = rootQuery.trim().toUpperCase() === rootShortcutIntent.prefix
-      ? paneShortcutItems({
-        filterQuery: rootQuery,
-        includePromptableTickerTemplates: true,
-      }).map((item) => ({ ...item, category: "Panes" }))
+      ? paneShortcutItems({ includePromptableTickerTemplates: true })
+        .filter((item) => {
+          const itemPrefix = (item.shortcutQuery || item.right || "").trim().toUpperCase();
+          // MAP extends MA. "Market Heatmap" does not, even though the name contains "ma".
+          return itemPrefix.startsWith(rootShortcutIntent.prefix) && itemPrefix !== rootShortcutIntent.prefix;
+        })
+        .map((item) => ({ ...item, category: "Panes" }))
       : [];
     items.push(...templateItems, ...relatedTemplateItems);
     if (!shortcutOwnsQuery) items.push(...collectFreeTextMatches());
@@ -396,7 +448,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   const matchCount = items.length;
   // A prefix that owns the query is command language, so free-text providers
   // stay out of the way. Short text prefixes ("AI safety") keep searching.
-  if (!shortcutOwnsQuery) {
+  if (!shortcutOwnsQuery && !classOwnsListing) {
     const queryLabel = rootQuery.trim().toLowerCase();
     const exactLocalLabel = queryLabel.length > 0 && items.some((item) => (
       item.label.trim().toLowerCase() === queryLabel
@@ -404,7 +456,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...(exactLocalLabel
       ? providerResultItems.filter((item) => !item.id.startsWith("twitter-search:"))
       : providerResultItems));
-  } else if (rootShortcutIntent.kind !== "none" && (
+  } else if (!classOwnsListing && rootShortcutIntent.kind !== "none" && (
     rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR"
   )) {
     items.push(...providerResultItems.filter((item) => item.id.startsWith("chart-series:")));
@@ -413,6 +465,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   if (
     rootQuery.trim()
     && !shortcutOwnsQuery
+    && !classOwnsListing
     && items.length === 0
     && providerResultItems.length === 0
     && onOpenPluginMarketplace
@@ -426,6 +479,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // placeholder holds the rows from the start, and the root selection effect
   // follows rows by identity when the answer renumbers what sits below.
   const assistItems = assist
+    && !classOwnsListing
     && isAssistSectionVisible(
       assist,
       rootQuery,
@@ -447,8 +501,13 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     if (assistLeads) initialIdx = assistItems.length;
   }
 
+  const assetClassItems = buildAssetClassResultItems(rootQuery, options.setRootQuery);
+  if (classQuery.showMenu) initialIdx = assetClassSelectionIndex(rootQuery);
+
   return {
-    items: dedupeCatalogBrowseActions(dedupeById([...assistItems, ...items]), rootQuery),
+    items: dropShadowedPaneTemplateRows(
+      dedupeCatalogBrowseActions(dedupeById([...assetClassItems, ...assistItems, ...items]), rootQuery),
+    ),
     initialIdx,
   };
 }

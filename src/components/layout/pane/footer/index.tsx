@@ -1,15 +1,18 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import { useCallback, useRef, useState } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
-import { ShortcutHint } from "../../../ui/shortcut-hint";
+import { ShortcutHint, shortcutHintDisplayText } from "../../../ui/shortcut-hint";
+import { Button } from "../../../ui/button";
+import { ChoiceDialog } from "../../../ui/choice-dialog";
 import {
-  packFooterHintRows,
+  layoutPaneFooterActions,
   PANE_FOOTER_HINT_GAP,
   totalHintsWidth,
   measurePaneFooterHintRows,
+  totalFooterInfoWidth,
 } from "./hint-layout";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
-import { useOptionalDialog } from "../../../../ui/dialog";
+import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
 import {
   EMPTY_FOOTER,
   hasPaneFooterContent,
@@ -162,17 +165,6 @@ function SegmentView({ segment }: { segment: PaneFooterSegment }) {
   return chip;
 }
 
-function segmentTextLength(segment: PaneFooterSegment): number {
-  return segment.parts.reduce((total, part, index) => total + (index > 0 ? 1 : 0) + part.text.length, 0);
-}
-
-function totalTrailingInfoWidth(segments: PaneFooterSegment[]): number {
-  if (segments.length === 0) return 0;
-  return segments.reduce((total, segment, index) => {
-    return total + (index > 0 ? 1 : 0) + segmentTextLength(segment);
-  }, 0);
-}
-
 function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
   useRemoteUiNode({
     role: "pane-hint",
@@ -290,6 +282,27 @@ function HintRow({
   );
 }
 
+function FooterOverflowMenu({ hints, width, label }: { hints: PaneHint[]; width: number; label: string }) {
+  const dialog = useOptionalDialog();
+  const open = async () => {
+    if (!dialog) return;
+    const selected = await dialog.prompt<string>({
+      closeOnClickOutside: true,
+      content: (context: PromptContext<string>) => <ChoiceDialog
+        {...context}
+        title="Pane actions"
+        choices={hints.map((hint, index) => ({
+          id: String(index),
+          label: shortcutHintDisplayText(hint.key, hint.label),
+          disabled: !hint.onPress,
+        }))}
+      />,
+    }).catch(() => null);
+    if (selected !== null && selected !== "") hints[Number(selected)]?.onPress?.();
+  };
+  return <Button label={label} width={width} variant="ghost" onPress={() => { void open(); }} />;
+}
+
 function FooterContent({
   footer,
   focused,
@@ -310,22 +323,24 @@ function FooterContent({
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
   const availableWidth = width && width > 0 ? Math.floor(width) : null;
+  const terminalLayout = !nativePaneChrome && availableWidth !== null
+    ? layoutPaneFooterActions({ ...footer, hints: visibleHints }, availableWidth)
+    : null;
   const trailingGap = hasHints && hasTrailingInfo ? 1 : 0;
   const trailingWidth = hasTrailingInfo
-    ? Math.min(availableWidth ?? totalTrailingInfoWidth(trailingInfo), totalTrailingInfoWidth(trailingInfo))
+    ? terminalLayout?.trailingWidth ?? Math.min(availableWidth ?? totalFooterInfoWidth(trailingInfo), totalFooterInfoWidth(trailingInfo))
     : 0;
-  const hintRows = nativePaneChrome || availableWidth == null
-    ? (hasHints ? [visibleHints] : [])
-    : packFooterHintRows(visibleHints, Math.max(1, availableWidth - trailingWidth - trailingGap));
+  const hintRows = terminalLayout?.rows ?? (hasHints ? [visibleHints] : []);
   const primaryHints = hintRows[0] ?? [];
-  const overflowHints = hintRows.slice(1).flat();
+  const secondRowHints = hintRows[1] ?? [];
+  const overflowHints = terminalLayout?.overflow ?? [];
   const primaryHintsWidth = primaryHints.length > 0
     ? Math.min(availableWidth ?? totalHintsWidth(primaryHints), totalHintsWidth(primaryHints))
     : 0;
   const rightWidth = primaryHintsWidth + trailingWidth + trailingGap;
   const MIN_INFO_WIDTH = 10;
   const infoWidth = availableWidth !== null && hasInfo
-    ? Math.max(MIN_INFO_WIDTH, availableWidth - rightWidth)
+    ? terminalLayout?.infoWidth ?? Math.max(MIN_INFO_WIDTH, availableWidth - rightWidth)
     : undefined;
   const rowCount = nativePaneChrome ? 1 : Math.max(1, hintRows.length);
 
@@ -363,15 +378,20 @@ function FooterContent({
             <TrailingSegments
               segments={trailingInfo}
               width={availableWidth !== null ? trailingWidth : undefined}
-              marginLeft={hasHints ? 1 : 0}
+              marginLeft={primaryHints.length > 0 ? 1 : 0}
             />
           </>
         )}
       </Box>
-      {!nativePaneChrome && overflowHints.length > 0 && (
+      {!nativePaneChrome && hintRows.length > 1 && (
         <Box height={1} flexDirection="row" justifyContent="flex-end" overflow="hidden">
           <Box flexGrow={1} />
-          <HintRow hints={overflowHints} nativePaneChrome={false} />
+          <HintRow hints={secondRowHints} nativePaneChrome={false} />
+          {overflowHints.length > 0 && terminalLayout ? (
+            <Box marginLeft={secondRowHints.length > 0 ? PANE_FOOTER_HINT_GAP : 0} flexShrink={0}>
+              <FooterOverflowMenu hints={overflowHints} width={terminalLayout.moreWidth} label={terminalLayout.moreLabel} />
+            </Box>
+          ) : null}
         </Box>
       )}
     </Box>

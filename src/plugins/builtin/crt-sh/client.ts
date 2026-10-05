@@ -66,6 +66,7 @@ export async function parseCertificateRecords(
     firstPaint?: number;
     yieldEvery?: number;
     onPartial?: (records: CertificateRecord[]) => void;
+    signal?: AbortSignal;
   } = {},
 ): Promise<{ records: CertificateRecord[]; total: number }> {
   if (!Array.isArray(payload)) return { records: [], total: 0 };
@@ -76,6 +77,7 @@ export async function parseCertificateRecords(
   const seen = new Set<number>();
   let painted = false;
   for (let i = 0; i < payload.length; i++) {
+    options.signal?.throwIfAborted();
     const record = parseRecord(payload[i]);
     if (record && !seen.has(record.id)) {
       seen.add(record.id);
@@ -95,15 +97,16 @@ export class CrtShClient {
   async searchCertificates(
     domain: string,
     onPartial?: (records: CertificateRecord[]) => void,
+    signal?: AbortSignal,
   ): Promise<CertSearchPage> {
     return withConnectionRequest(CRT_SH_CONNECTION_ID, "fetch", async () => {
       const query = domain.trim();
       const url = `${CRT_SH_API_BASE_URL}/?q=${encodeURIComponent(query)}&output=json`;
-      const response = await crtFetch.fetch(url);
+      const response = await crtFetch.fetch(url, { signal });
       if (!response.ok) {
         throw new Error(`crt.sh request failed: ${response.status} ${response.statusText}`);
       }
-      const parsed = await parseCertificateRecords(await response.json(), { onPartial });
+      const parsed = await parseCertificateRecords(await response.json(), { onPartial, signal });
       return { records: parsed.records, total: parsed.total, uniqueDomains: [] };
     });
   }

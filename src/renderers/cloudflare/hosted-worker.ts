@@ -92,8 +92,7 @@ export default {
       return handleShareRequest(request, env, url);
     }
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
-    if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
-    if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
+    if (url.pathname === "/api/proxy/outbound") return handleOutboundProxyRequest(request, env, url);
     if (url.pathname.startsWith(KALSHI_PROXY_PATH)) return handleKalshiProxyRequest(request, env, url);
     if (
       url.pathname === KEYED_DATA_PATH
@@ -910,45 +909,12 @@ function assetsRequest(request: Request, assetPath?: string): Request {
   return new Request(new URL(assetPath, request.url), { method: "GET", headers });
 }
 
-/**
- * Returns which BYOK service keys are configured as Cloudflare Worker secrets
- * (environment variables), without revealing the key values.
- *
- * Keys are set via `wrangler secret put ADJACENT_API_KEY` etc.
- */
-async function handleByokKeysRequest(request: Request, env: Env): Promise<Response> {
-  if (request.method !== "GET") {
-    return Response.json({ error: "Method not allowed." }, { status: 405 });
-  }
-
-  const resolved = await resolveSessionUser(request, env);
-  if (!resolved.user) {
-    return Response.json({ error: "Authentication required." }, { status: 401 });
-  }
-
-  const knownEnvVars = [
-    "ADJACENT_API_KEY",
-    "HYPERLIQUID_API_KEY",
-    "SEC_EDGAR_EMAIL",
-  ];
-
-  const configured: Array<{ serviceId: string; envVar: string }> = [];
-  for (const envVar of knownEnvVars) {
-    if (env[envVar as keyof Env]) {
-      const serviceId = envVar.toLowerCase().replace(/_api_key$|_email$/, "").replace(/_/g, "-");
-      configured.push({ serviceId, envVar });
-    }
-  }
-
-  return Response.json({ configured });
-}
-
-const BYOK_PROXY_TIMEOUT_MS = 10_000;
-const BYOK_MAX_BODY_BYTES = 1_000_000;
-const BYOK_MAX_REDIRECTS = 3;
+const PROXY_TIMEOUT_MS = 10_000;
+const PROXY_MAX_BODY_BYTES = 1_000_000;
+const PROXY_MAX_REDIRECTS = 3;
 
 /** Caller-supplied values for these would let the proxy spoof its own hop. */
-const BYOK_BLOCKED_REQUEST_HEADERS = new Set([
+const PROXY_BLOCKED_REQUEST_HEADERS = new Set([
   "cookie",
   "host",
   "connection",
@@ -965,7 +931,7 @@ const BYOK_BLOCKED_REQUEST_HEADERS = new Set([
 ]);
 
 /** Reflecting these to the browser would leak upstream credentials. */
-const BYOK_BLOCKED_RESPONSE_HEADERS = new Set([
+const PROXY_BLOCKED_RESPONSE_HEADERS = new Set([
   "set-cookie",
   "set-cookie2",
   "www-authenticate",
@@ -976,9 +942,9 @@ const BYOK_BLOCKED_RESPONSE_HEADERS = new Set([
   "upgrade",
 ]);
 
-type ByokTarget = { url: URL } | { error: string; errorType: string };
+type ProxyTarget = { url: URL } | { error: string; errorType: string };
 
-function validateByokTarget(raw: string): ByokTarget {
+function validateProxyTarget(raw: string): ProxyTarget {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -995,7 +961,7 @@ function validateByokTarget(raw: string): ByokTarget {
 }
 
 /**
- * Server-side proxy for BYOK custom API test requests. On the hosted web
+ * Server-side proxy for outbound API requests. On the hosted web
  * client, a direct browser fetch to an arbitrary third-party URL is blocked
  * by CORS. This endpoint runs the fetch on the worker so it succeeds
  * regardless of the target's CORS headers, and returns a classified error
@@ -1005,7 +971,7 @@ function validateByokTarget(raw: string): ByokTarget {
  * without both, this route is an open proxy that would let anyone launder
  * arbitrary traffic through this worker.
  */
-async function handleByokProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
+async function handleOutboundProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed." }, { status: 405 });
   }
@@ -1015,14 +981,14 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
 
   const token = readSessionCookie(request);
   if (!token) {
-    return Response.json({ error: "Sign in to test custom API keys." }, { status: 401 });
+    return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
   const session = await gloomFetch(env, "/auth/get-session", { token });
   const sessionBody = session.ok
     ? await session.json().catch(() => null) as { user?: unknown } | null
     : null;
   if (!sessionBody?.user) {
-    return Response.json({ error: "Sign in to test custom API keys." }, { status: 401 });
+    return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
 
   let body: { url?: string; headers?: Record<string, string>; method?: string };
@@ -1037,13 +1003,13 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
     return Response.json({ ok: false, error: "No API URL provided.", errorType: "bad-request" });
   }
 
-  const target = validateByokTarget(targetUrl);
+  const target = validateProxyTarget(targetUrl);
   if ("error" in target) return Response.json({ ok: false, ...target });
 
   const method = (body.method ?? "GET").toUpperCase();
   const headers = new Headers();
   for (const [key, value] of Object.entries(body.headers ?? {})) {
-    if (BYOK_BLOCKED_REQUEST_HEADERS.has(key.toLowerCase())) continue;
+    if (PROXY_BLOCKED_REQUEST_HEADERS.has(key.toLowerCase())) continue;
     headers.set(key, value);
   }
   if (!headers.has("Accept")) {
@@ -1058,15 +1024,15 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
       method,
       headers,
       redirect: "manual",
-      signal: AbortSignal.timeout(BYOK_PROXY_TIMEOUT_MS),
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
     for (let hop = 0; response.status >= 300 && response.status < 400; hop += 1) {
       const location = response.headers.get("location");
       if (!location) break;
-      if (hop >= BYOK_MAX_REDIRECTS) {
+      if (hop >= PROXY_MAX_REDIRECTS) {
         return Response.json({ ok: false, error: "Too many redirects.", errorType: "network" });
       }
-      const next = validateByokTarget(new URL(location, current).toString());
+      const next = validateProxyTarget(new URL(location, current).toString());
       if ("error" in next) return Response.json({ ok: false, ...next });
       if (next.url.origin !== current.origin) {
         return Response.json({ ok: false, error: "Redirects to a different origin are not allowed. Use the final API URL directly.", errorType: "blocked-target" });
@@ -1076,24 +1042,24 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
         method,
         headers,
         redirect: "manual",
-        signal: AbortSignal.timeout(BYOK_PROXY_TIMEOUT_MS),
+        signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
       });
     }
 
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
-      if (BYOK_BLOCKED_RESPONSE_HEADERS.has(key.toLowerCase())) return;
+      if (PROXY_BLOCKED_RESPONSE_HEADERS.has(key.toLowerCase())) return;
       responseHeaders[key] = value;
     });
     const rawBody = await response.text();
-    const truncated = rawBody.length > BYOK_MAX_BODY_BYTES;
+    const truncated = rawBody.length > PROXY_MAX_BODY_BYTES;
     return Response.json({
       ok: response.ok,
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
       contentType: response.headers.get("content-type") ?? "",
-      body: truncated ? rawBody.slice(0, BYOK_MAX_BODY_BYTES) : rawBody,
+      body: truncated ? rawBody.slice(0, PROXY_MAX_BODY_BYTES) : rawBody,
       truncated,
     });
   } catch (error) {

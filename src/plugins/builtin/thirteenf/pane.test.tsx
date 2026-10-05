@@ -218,7 +218,7 @@ describe("ThirteenFPane", () => {
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderFrames(2);
 
-    expect(testSetup!.captureCharFrame()).toContain("Back Beta Capital");
+    expect(testSetup!.captureCharFrame()).toContain("← Back │ Beta Capital");
     expect(
       latestState?.paneState[PANE_ID]?.pluginState?.thirteenf?.selectedId,
     ).toBeUndefined();
@@ -276,7 +276,7 @@ describe("ThirteenFPane", () => {
     ]);
     await renderFrames(2);
 
-    expect(testSetup!.captureCharFrame()).toContain("Back Gamma Capital");
+    expect(testSetup!.captureCharFrame()).toContain("← Back │ Gamma Capital");
     expect(
       latestState?.paneState[PANE_ID]?.pluginState?.thirteenf?.selectedId,
     ).toBeUndefined();
@@ -296,7 +296,7 @@ describe("ThirteenFPane", () => {
     await renderFrames(6);
 
     const detailFrame = testSetup!.captureCharFrame();
-    expect(detailFrame).toContain("Back 2026-03-31 filing");
+    expect(detailFrame).toContain("← Back │ 2026-03-31");
     expect(detailFrame).toContain("Accession");
     expect(detailFrame).toContain("0000000001-26-000001");
     expect(detailFrame).toContain("Apple Inc.");
@@ -341,7 +341,7 @@ describe("ThirteenFPane", () => {
     const filingsFrame = testSetup!.captureCharFrame();
     expect(filingsFrame).toContain("PERIOD");
     expect(filingsFrame).toContain("13F-HR/A");
-    expect(filingsFrame).toContain("Back Alpha Capital");
+    expect(filingsFrame).toContain("← Back │ Alpha Capital");
     expect(filingsFrame).not.toContain("Accession");
   });
 });

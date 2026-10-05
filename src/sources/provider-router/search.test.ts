@@ -146,6 +146,33 @@ describe("provider search racing", () => {
     expect(fallbackCalls).toBe(1);
   });
 
+  test("a richer row keeps volume reported only on the other source", async () => {
+    const partials: InstrumentSearchResult[][] = [];
+    const routes = makeRoutes({
+      brokers: [broker("ibkr", [result("BIRD", {
+        name: "Allbirds",
+        brokerContract: { brokerId: "ibkr" } as never,
+      })], 30)],
+      providers: [provider("yahoo", [result("BIRD", {
+        name: "B",
+        volume: 5_000,
+        averageVolume: 4_000,
+      })])],
+    });
+
+    await routes.search("bird", {
+      preferBroker: true,
+      interactive: true,
+      onPartial: (items) => partials.push(items),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const last = partials.at(-1)?.[0];
+    expect(last?.volume).toBe(5_000);
+    expect(last?.averageVolume).toBe(4_000);
+    expect(last?.brokerContract).toBeDefined();
+  });
+
   test("a failing broker leaves the provider result intact", async () => {
     const routes = makeRoutes({
       brokers: [broker("dead", null)],

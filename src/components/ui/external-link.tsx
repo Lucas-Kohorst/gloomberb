@@ -17,8 +17,12 @@ export function openUrl(rawUrl: string) {
   if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
     const command = openUrlCommand(url);
     if (!command) return;
-    const child = Bun.spawn(command, { stdio: ["ignore", "ignore", "ignore"] });
-    child.unref();
+    try {
+      const child = Bun.spawn(command, { stdio: ["ignore", "ignore", "ignore"] });
+      child.unref();
+    } catch {
+      // Spawning throws when the opener is not installed, such as xdg-open on minimal Linux.
+    }
   }
 }
 

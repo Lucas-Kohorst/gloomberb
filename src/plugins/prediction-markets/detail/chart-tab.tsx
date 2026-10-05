@@ -48,6 +48,7 @@ export function PredictionMarketChartTab({
         loading={loading}
         range={historyRange}
         onRangeSelect={onHistoryRangeChange}
+        marketKey={summary.key}
       />
       <Box height={1}>
         <Text fg={colors.textDim}>{formatRangeMove(detail, summary)}</Text>

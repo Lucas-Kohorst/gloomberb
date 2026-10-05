@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, useRendererHost, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
 import {
   PaneListChrome,
   paneListChromeRows,
   PaneStatusBody,
   useTableLoadMore,
+  usePaneListSearch,
   type DataTableKeyEvent,
-  type PaneListSearchProps,
 } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -104,9 +104,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const [detailOpen, setDetailOpen] = usePluginPaneState<boolean>("detailOpen", false);
   const [sort, setSort] = useState<{ columnId: SubstackSortColumnId; direction: SubstackSortDirection }>(paneSettings.sort);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !!auth,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: SUBSTACK_LIST_SEARCH_PLACEHOLDER,
+  });
   const { readArticleIds, markArticleRead } = useSubstackReadState();
   const homeFetchGenRef = useRef(0);
   const publicationFetchGenRef = useRef<Record<string, number>>({});
@@ -359,7 +362,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
           [article.id]: {
             data: entry.data,
             loading: false,
-            error: null,
+            error: entry.refreshError ?? null,
             fetchedAt: entry.fetchedAt,
             stale: entry.stale,
           },
@@ -438,14 +441,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     setDetailOpen(false);
   }, [createPaneFromTemplate, selectedArticle, setDetailOpen]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
     setActiveTab(SUBSTACK_FEED_TAB_ID);
@@ -482,14 +477,8 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       popOutArticle();
       return true;
     }
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    return false;
-  }, [focusSearch, openSelectedArticle, popOutArticle, refreshActive]);
+    return handleSearchKey(event);
+  }, [handleSearchKey, openSelectedArticle, popOutArticle, refreshActive]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "j", "down")) {
@@ -549,21 +538,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     openSelectedArticle,
     popOutArticle,
     focusSearch,
-    refreshActive,
   });
-
-  const search: PaneListSearchProps = {
-    value: searchQuery,
-    active: searchFocused,
-    focusToken: searchFocusToken,
-    inputRef: searchInputRef,
-    placeholder: SUBSTACK_LIST_SEARCH_PLACEHOLDER,
-    debounceMs: 80,
-    onFocus: focusSearch,
-    onBlur: blurSearch,
-    onNavigateDown: blurSearch,
-    onQueryChange: setSearchQuery,
-  };
 
   if (!auth) {
     return (
@@ -595,6 +570,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       <SubstackFeedTabs
+        width={width}
         subscriptions={subscriptions}
         activeTab={activeTab}
         focused={focused && !searchFocused}
@@ -608,9 +584,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
         search={search}
       >
         <PaneStatusBody
-          loading={home.loading && !home.data}
-          error={!home.data ? home.error : null}
-          subject="Substack"
+          loading={!detailOpen && activeFeedState.loading && !activeFeedState.data?.length}
+          error={!detailOpen && !activeFeedState.data?.length ? activeFeedState.error : null}
+          subject={activePublication?.name ?? "Substack"}
           onRetry={refreshActive}
         >
           <SubstackArticleStack
@@ -637,6 +613,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
             sortedRows={visibleRows}
             activePublication={activePublication}
             activeFeedState={activeFeedState}
+            searchQuery={searchQuery}
             sort={sort}
             onHeaderClick={handleHeaderClick}
           />

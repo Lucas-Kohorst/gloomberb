@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { TextAttributes } from "../../../../ui";
+import { Box, Text, TextAttributes } from "../../../../ui";
 import {
   DataTableView,
   loadingText,
   unavailableText,
   usePaneFooter,
+  ChartRangeTabs,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -24,7 +25,7 @@ import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
 } from "../../../runtime";
-import { loadingErrorFooterInfo, useClampSelectedIndex } from "../../shared/table-pane";
+import { loadingErrorFooterInfo } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 
 type HistoryColumnId = "date" | "open" | "high" | "low" | "close" | "change" | "changePercent" | "volume";
@@ -59,17 +60,17 @@ function formatMaybeCompact(value: number | undefined): string {
 
 export function buildHistoricalPriceRows(points: PricePoint[]): HistoricalPriceRow[] {
   const sorted = points
-    .flatMap((point, sourceIndex) => {
+    .flatMap((point) => {
       const date = pricePointDate(point);
-      return date ? [{ point, date, sourceIndex }] : [];
+      return date ? [{ point, date }] : [];
     })
     .sort((left, right) => left.date.getTime() - right.date.getTime());
   return sorted.map((entry, index) => {
     const previous = sorted[index - 1]?.point;
-    const { point, date, sourceIndex } = entry;
+    const { point, date } = entry;
     const change = previous ? point.close - previous.close : null;
     return {
-      key: `${date.toISOString()}:${sourceIndex}`,
+      key: date.toISOString(),
       point,
       date: formatDateTime(date),
       change,
@@ -100,7 +101,10 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { symbol, exchange } = useBoundTicker();
   const [range, setRange] = usePluginPaneState<TimeRange>("range", "1Y");
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedRowKey, setSelectedRowKey] = useDebouncedPluginPaneState<string | null>(
+    `selectedPriceRow:${symbol}:${exchange}:${range}`,
+    null,
+  );
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider) throw new Error("Market data unavailable");
     return dataProvider.getPriceHistory(
@@ -132,10 +136,8 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
     },
   ), [data, sortPreference]);
   const columns = useMemo(() => buildHistoryColumns(), []);
-  const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
+  const activeSelectedRowKey = rows.find((row) => row.key === selectedRowKey)?.key ?? rows[0]?.key ?? null;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
-
-  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "r") {
@@ -179,26 +181,34 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   }, []);
 
   usePaneFooter("historical-prices", () => ({
-    info: [
-      { id: "range", parts: [{ text: range, tone: "muted" as const }] },
-      ...loadingErrorFooterInfo(loading, error),
-    ],
+    info: loadingErrorFooterInfo(loading, error),
     hints: [
       { id: "range", key: "t", label: "oggle range", onPress: cycleRange },
     ],
-  }), [cycleRange, error, loading, range, reload]);
+  }), [cycleRange, error, loading]);
 
   return (
     <DataTableView<HistoricalPriceRow, HistoryColumn>
       focused={focused}
       selection={{
-        kind: "index",
-        selectedIndex: boundedSelectedIdx,
-        onChange: (index) => setSelectedIdx(index),
+        kind: "id",
+        selectedId: activeSelectedRowKey,
+        getId: (row) => row.key,
+        onChange: (id) => setSelectedRowKey(id),
       }}
       onRootKeyDown={handleKeyDown}
       rootWidth={width}
       rootHeight={height}
+      rootBefore={(
+        <Box height={1} paddingX={1}>
+          <ChartRangeTabs
+            choices={TIME_RANGES.map((value) => ({ value }))}
+            value={range}
+            onSelect={setRange}
+            focused={focused}
+          />
+        </Box>
+      )}
       columns={columns}
       items={rows}
       sortColumnId={sortPreference.columnId}

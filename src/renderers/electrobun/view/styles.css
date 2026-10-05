@@ -37,7 +37,19 @@ body {
 * { box-sizing: border-box; }
 #root > * { height: 100%; min-height: 100%; }
 input, textarea, button { font: inherit; }
+.gloom-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  color: inherit;
+  line-height: inherit;
+  text-align: inherit;
+}
 [data-gloom-role="desktop-button"]:focus-visible,
+[data-gloom-role="data-table-header-cell"]:focus-visible,
+[role="button"]:focus-visible,
 [data-gloom-role="data-table-header-cell"] > button:focus-visible,
 [data-gloom-role="data-table-row"]:focus-visible {
   outline: 2px solid var(--gloom-border-focused, currentColor);
@@ -133,14 +145,12 @@ body.gloom-col-resizing * {
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
   background-color: var(--gloom-hover-bg) !important;
 }
+[data-gloom-role="data-table-header-cell"]:hover {
+  background-color: var(--gloom-hover-bg) !important;
+}
 [data-gloom-role="data-table-row"][data-selected="true"] {
   z-index: 1;
   outline: none;
-  box-shadow: none;
-}
-[data-gloom-role="data-table-row"][data-selected="true"],
-[data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"] {
-  background-color: color-mix(in srgb, var(--gloom-selected) 28%, var(--gloom-bg)) !important;
 }
 [data-gloom-role="data-table-row"][data-roll-in="true"]:not([data-selected="true"]) {
   animation: gloom-row-roll-in 700ms ease-out;
@@ -471,13 +481,21 @@ body.gloom-dragging {
   cursor: pointer;
 }
 [data-gloom-role="pane-suggestions"] {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  row-gap: 8px;
 }
 [data-gloom-role="pane-suggestion"] {
   flex-shrink: 0;
   align-items: center;
   white-space: nowrap;
+  border-radius: 4px;
+}
+[data-gloom-role="pane-suggestion"]:hover {
+  background-color: var(--gloom-hover-bg);
 }
 [data-gloom-role="pane-body"] {
   overflow: clip;
@@ -542,8 +560,9 @@ body.gloom-dragging {
   height: auto !important;
 }
 [data-gloom-role="pane-footer"] {
-  /* 8px padding-block + 1px top border. Border-box without that extra 1px
-     leaves a 17px content box that shears 18px line boxes. */
+  /* 4px top + 10px bottom + 1px border-top. A one-cell bar sits the hint
+     glyphs on the pane's overflow clip. Keep the 15px in
+     NATIVE_PANE_FOOTER_EXTRA_PX so the chart stops above this bar. */
   position: relative;
   z-index: 13;
   /* The bottom resize handle sits on this edge. Let it take clicks in the
@@ -551,10 +570,11 @@ body.gloom-dragging {
   pointer-events: none;
   flex: 0 0 auto !important;
   height: auto !important;
-  min-height: calc(var(--cell-h) + 9px) !important;
-  max-height: calc((var(--cell-h) + 9px) * 2) !important;
+  min-height: calc(var(--cell-h) + 15px) !important;
+  max-height: calc((var(--cell-h) + 15px) * 2) !important;
   align-items: center;
-  padding-block: 4px;
+  padding-top: 4px;
+  padding-bottom: 10px;
   box-sizing: border-box;
   border-top: 1px solid color-mix(in srgb, var(--pane-footer-border-color, var(--gloom-border)) 72%, transparent);
   font-size: 11.5px;
@@ -593,6 +613,10 @@ body.gloom-dragging {
 [data-gloom-role="pane-hint"] {
   width: auto !important;
   min-width: 0 !important;
+  border-radius: 4px;
+}
+[data-gloom-role="pane-hint"]:hover {
+  background-color: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
 }
 [data-gloom-role="pane-float-toggle"],
 [data-gloom-role="pane-action"],
@@ -601,9 +625,23 @@ body.gloom-dragging {
   padding-inline: 4px;
   min-width: 28px;
 }
+[data-gloom-role="pane-hint"]:focus-visible,
+[data-gloom-role="pane-float-toggle"]:focus-visible,
+[data-gloom-role="pane-action"]:focus-visible,
+[data-gloom-role="pane-close"]:focus-visible {
+  outline: 1px solid var(--gloom-border-focused, #ffffff);
+  outline-offset: -1px;
+}
 [data-gloom-role="resize-handle"] {
   color: var(--pane-border-color, var(--gloom-border));
   pointer-events: auto;
+  /* A column flex item's min-width:auto stretches an absolute handle across
+     the pane, so a drag on the plot resizes the window instead of panning. */
+  position: absolute !important;
+  flex: none !important;
+  align-self: flex-start !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
 }
 [data-gloom-role="resize-handle"][data-corner="top-left"],
 [data-gloom-role="resize-handle"][data-corner="bottom-right"] {
@@ -646,11 +684,23 @@ body.gloom-dragging {
   height: 10px !important;
   z-index: 12;
 }
-[data-gloom-role="resize-handle"][data-corner="left"],
-[data-gloom-role="resize-handle"][data-corner="right"] {
+[data-gloom-role="resize-handle"][data-corner="left"] {
+  left: 0 !important;
+  right: auto !important;
   top: 14px !important;
   bottom: 14px !important;
   width: 10px !important;
+  max-width: 10px !important;
+  height: auto !important;
+  z-index: 12;
+}
+[data-gloom-role="resize-handle"][data-corner="right"] {
+  left: auto !important;
+  right: 0 !important;
+  top: 14px !important;
+  bottom: 14px !important;
+  width: 10px !important;
+  max-width: 10px !important;
   height: auto !important;
   z-index: 12;
 }
@@ -803,13 +853,18 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
 [data-gloom-role="tab-close"]:hover {
   background: color-mix(in srgb, var(--gloom-text-bright) 10%, transparent);
 }
-[data-gloom-scrollbar-x],
-[data-gloom-scrollbar-y] {
-  scrollbar-color: transparent transparent;
-  scrollbar-width: thin;
-}
-[data-gloom-scrollbar-active="true"] {
-  scrollbar-color: color-mix(in srgb, var(--gloom-text) 26%, transparent) transparent;
+/* WebKit paints scrollbar-width and ::-webkit-scrollbar as two tracks. */
+@supports not selector(::-webkit-scrollbar) {
+  [data-gloom-scrollbar-x],
+  [data-gloom-scrollbar-y] {
+    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+  }
+  [data-gloom-scrollbar-x]:hover,
+  [data-gloom-scrollbar-y]:hover,
+  [data-gloom-scrollbar-active="true"] {
+    scrollbar-color: color-mix(in srgb, var(--gloom-text) 26%, transparent) transparent;
+  }
 }
 [data-gloom-scrollbar-x]::-webkit-scrollbar,
 [data-gloom-scrollbar-y]::-webkit-scrollbar {
@@ -830,11 +885,10 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
   background: transparent;
   background-clip: content-box;
 }
+[data-gloom-scrollbar-x]:hover::-webkit-scrollbar-thumb,
+[data-gloom-scrollbar-y]:hover::-webkit-scrollbar-thumb,
 [data-gloom-scrollbar-x]::-webkit-scrollbar-thumb:hover,
-[data-gloom-scrollbar-y]::-webkit-scrollbar-thumb:hover {
-  background: transparent;
-  background-clip: content-box;
-}
+[data-gloom-scrollbar-y]::-webkit-scrollbar-thumb:hover,
 [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb,
 [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--gloom-text) 24%, transparent);

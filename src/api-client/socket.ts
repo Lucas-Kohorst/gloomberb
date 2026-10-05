@@ -111,6 +111,8 @@ export class CloudApiSocket {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelayMs = 1000;
+  /** Set when the server rejected this credential; cleared when the credential or user changes. */
+  private authRejected = false;
 
   private readonly channelListeners = new Map<string, Set<ChannelListener>>();
   private readonly chatNotificationListeners = new Set<ChatNotificationListener>();
@@ -133,6 +135,7 @@ export class CloudApiSocket {
   ) {}
 
   syncAuthState(options: { reconnect?: boolean } = {}): void {
+    if (options.reconnect) this.authRejected = false;
     if (!this.shouldKeepSocketOpen()) {
       this.teardown();
       return;
@@ -424,6 +427,7 @@ export class CloudApiSocket {
         return;
       }
       this.delegate.markCurrentUserUnverified();
+      this.authRejected = true;
       if (this.quoteTargets.size > 0 || this.scannerListeners.size > 0) {
         return;
       }
@@ -522,7 +526,8 @@ export class CloudApiSocket {
 
   private shouldKeepSocketOpen(): boolean {
     if (this.quoteTargets.size > 0 || this.scannerListeners.size > 0) return true;
-    return this.delegate.hasSessionCredential()
+    return !this.authRejected
+      && this.delegate.hasSessionCredential()
       && this.delegate.hasVerifiedUser()
       && (
         this.channelListeners.size > 0

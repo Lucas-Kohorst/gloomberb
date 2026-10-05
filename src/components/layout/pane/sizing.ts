@@ -4,9 +4,20 @@ const PANE_FOOTER_ROWS = 1;
 /** Native/web title bars are taller than one terminal cell so they stay grab-able. */
 export const NATIVE_PANE_HEADER_HEIGHT_PX = 28;
 const NATIVE_PANE_HEADER_CELL_HEIGHT = 18;
+/**
+ * 4px top padding, 10px bottom padding, 1px border-top. The pane window clips
+ * overflow, and a one-cell footer leaves hint glyphs on that edge.
+ * Must stay in sync with `[data-gloom-role="pane-footer"]` in styles.css.
+ */
+export const NATIVE_PANE_FOOTER_EXTRA_PX = 15;
 
 export function resolveNativePaneHeaderRows(cellHeightPx = NATIVE_PANE_HEADER_CELL_HEIGHT): number {
   return NATIVE_PANE_HEADER_HEIGHT_PX / Math.max(1, cellHeightPx);
+}
+
+export function resolveNativePaneFooterRows(cellHeightPx = NATIVE_PANE_HEADER_CELL_HEIGHT): number {
+  const cell = Math.max(1, cellHeightPx);
+  return (cell + NATIVE_PANE_FOOTER_EXTRA_PX) / cell;
 }
 
 const NATIVE_PANE_BODY_LAYOUT_PROPS = {
@@ -40,7 +51,7 @@ function resolvePaneBodyHeight({
   const normalizedHeight = nativePaneChrome ? finiteHeight : Math.max(1, Math.floor(finiteHeight));
   const resolvedFooterRows = Math.max(1, footerRows);
   const usedFooterRows = nativePaneChrome
-    ? footerVisible ? PANE_FOOTER_ROWS : 0
+    ? footerVisible ? resolveNativePaneFooterRows() : 0
     : reserveFooter ? resolvedFooterRows : 0;
   return Math.max(1, normalizedHeight - headerRows - usedFooterRows);
 }

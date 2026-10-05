@@ -54,6 +54,7 @@ export function PredictionMarketOverviewView({
         focused={focused}
         range={historyRange}
         onRangeSelect={onHistoryRangeChange}
+        marketKey={summary.key}
       />
       <SummaryLink
         url={summary.url}

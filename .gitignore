@@ -53,8 +53,20 @@ paseo.json
 *~
 
 # Agent / Factory session dumps (do not commit)
-session-ses_*.md
+session-*.md
 /ses_*.md
+
+# Impeccable critique/live output
+.impeccable/
+
+# Accidental repo-root self-symlink; the CLI lives at bin/gloom
+/gloom
+
+# skills CLI copies into every agent folder; keep only .agents/skills
+.claude/skills/
+.grok/skills/
+.hermes/skills/
+/skills/
 
 # Compound engineering local scratch (experiment logs, worktrees)
 .context/

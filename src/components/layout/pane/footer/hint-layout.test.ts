@@ -1,75 +1,49 @@
 import { describe, expect, test } from "bun:test";
-import { measurePaneFooterHintRows, packFooterHintRows, totalHintsWidth } from "./hint-layout";
+import { layoutPaneFooterActions, measurePaneFooterHintRows, totalHintsWidth } from "./hint-layout";
 import type { CombinedPaneFooter, PaneHint } from "./model";
 
-function hint(id: string, key: string, label: string): PaneHint {
-  return { id, key, label };
-}
+const hints: PaneHint[] = [
+  { id: "search", key: "/", label: "search" },
+  { id: "open", key: "o", label: "pen" },
+  { id: "pop-out", key: "p", label: "op out" },
+  { id: "share", key: "s", label: "hare" },
+  { id: "archive", key: "a", label: "rchive" },
+  { id: "bookmark", key: "b", label: "ookmark" },
+];
+const footer: CombinedPaneFooter = {
+  info: [{ id: "loading", parts: [{ text: "loading" }] }],
+  trailingInfo: [{ id: "poll", parts: [{ text: "poll 1m" }] }],
+  hints,
+};
 
-describe("packFooterHintRows", () => {
-  test("keeps a short hint row on one line", () => {
-    const hints = [hint("refresh", "r", "efresh"), hint("open", "o", "pen")];
-    expect(packFooterHintRows(hints, 40)).toEqual([hints]);
+describe("footer action layout", () => {
+  test("reserves status and polling space and keeps overflow reachable without exceeding two rows", () => {
+    for (const width of [16, 24, 32, 42, 80]) {
+      const layout = layoutPaneFooterActions(footer, width);
+      const firstWidth = totalHintsWidth(layout.rows[0]!);
+      const rightWidth = firstWidth + layout.trailingWidth + (firstWidth && layout.trailingWidth ? 1 : 0);
+      expect(layout.infoWidth + rightWidth + (rightWidth ? 1 : 0)).toBeLessThanOrEqual(width);
+      const second = layout.rows[1] ?? [];
+      expect(totalHintsWidth(second) + (layout.overflow.length ? layout.moreWidth + (second.length ? 1 : 0) : 0))
+        .toBeLessThanOrEqual(width);
+      expect([...layout.rows.flat(), ...layout.overflow]).toEqual(hints);
+      expect(layout.rows.length).toBeLessThanOrEqual(2);
+    }
+    expect(layoutPaneFooterActions(footer, 24).overflow.length).toBeGreaterThan(0);
+    expect(layoutPaneFooterActions(footer, 80).overflow).toEqual([]);
   });
 
-  test("wraps extra hints onto a second row instead of clipping", () => {
-    const hints = [
-      hint("series", "s", "eries"),
-      hint("window", "w", "indow"),
-      hint("mode", "m", "ode"),
-      hint("log", "l", "og"),
-      hint("res", "r", "es"),
-      hint("range", "1-8", "range"),
-      hint("reload", "Shift+R", "reload"),
-      hint("share", "s", "hare"),
-    ];
-    const width = 42;
-    expect(totalHintsWidth(hints)).toBeGreaterThan(width);
-    const rows = packFooterHintRows(hints, width);
-    expect(rows.length).toBe(2);
-    expect(rows.flat().map((item) => item.id)).toEqual(hints.map((item) => item.id));
-    expect(totalHintsWidth(rows[0]!)).toBeLessThanOrEqual(width);
-  });
-});
-
-describe("measurePaneFooterHintRows", () => {
-  test("native chrome stays one layout row because CSS wraps", () => {
-    const footer: CombinedPaneFooter = {
-      info: [],
-      trailingInfo: [],
-      hints: [hint("share", "s", "hare"), hint("reload", "Shift+R", "reload")],
-    };
-    expect(measurePaneFooterHintRows(footer, 8, { focused: true, nativePaneChrome: true })).toBe(1);
+  test("measures Unicode actions in terminal cells, including the gap between actions", () => {
+    expect(totalHintsWidth([
+      { id: "one", key: "o", label: "中文" },
+      { id: "two", key: "c", label: "e\u0301" },
+    ])).toBe(12);
   });
 
-  test("keeps one reserved row when hints still fit", () => {
-    const footer: CombinedPaneFooter = {
-      info: [],
-      trailingInfo: [],
-      hints: [hint("refresh", "r", "efresh"), hint("open", "o", "pen")],
-    };
-    expect(measurePaneFooterHintRows(footer, 40, { focused: true })).toBe(1);
-    expect(measurePaneFooterHintRows(footer, 40, { focused: false })).toBe(1);
-  });
-
-  test("reserves wrap rows even when unfocused so focusing does not shift body height", () => {
-    const footer: CombinedPaneFooter = {
-      info: [],
-      trailingInfo: [],
-      hints: [
-        hint("series", "s", "eries"),
-        hint("window", "w", "indow"),
-        hint("mode", "m", "ode"),
-        hint("log", "l", "og"),
-        hint("res", "r", "es"),
-        hint("range", "1-8", "range"),
-        hint("reload", "Shift+R", "reload"),
-        hint("share", "s", "hare"),
-      ],
-    };
-    const focusedRows = measurePaneFooterHintRows(footer, 42, { focused: true });
-    const unfocusedRows = measurePaneFooterHintRows(footer, 42, { focused: false });
-    expect(focusedRows).toBe(2);
-    expect(unfocusedRows).toBe(focusedRows);
+  test("reserves the same height when inactive and leaves native wrapping to CSS", () => {
+    expect(measurePaneFooterHintRows(footer, 24, { focused: true })).toBe(2);
+    expect(measurePaneFooterHintRows(footer, 24, { focused: false })).toBe(2);
+    expect(measurePaneFooterHintRows(footer, 24, { nativePaneChrome: true })).toBe(1);
+    expect(measurePaneFooterHintRows(footer, 80)).toBe(1);
   });
 });

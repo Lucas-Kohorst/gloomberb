@@ -4,11 +4,14 @@ import {
   electrobunViewPath,
   writeElectrobunViewPage,
 } from "../src/renderers/electrobun/view/build-assets";
+import { copyChartingLibrary } from "./copy-charting-library";
 
 const outdir = join(process.cwd(), "dist", "electrobun-view");
 
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
+
+await copyChartingLibrary(outdir);
 
 await writeElectrobunViewPage({
   entrypoint: electrobunViewPath("main.tsx"),

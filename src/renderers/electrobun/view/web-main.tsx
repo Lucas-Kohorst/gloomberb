@@ -9,7 +9,6 @@ import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import { initElectrobunBackend } from "./backend-rpc";
-import { installElectrobunAiHost } from "./ai-host";
 import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
 import { installPersistenceLifecycle } from "./persistence-lifecycle";
 import { installElectrobunConfigStoreHost } from "./config-host";
@@ -28,7 +27,6 @@ import { createElectrobunAppServices } from "./app-services";
 import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
-import { hydrateHostedByokConfig, initHostedByokCrypto } from "../../../plugins/builtin/byok/hosted-persist";
 import { isPublicShareLocation } from "../../../plugins/builtin/shared/share-link";
 import {
   getHostedConfigUserId,
@@ -148,17 +146,11 @@ async function boot(): Promise<void> {
   }
   if (isHosted) {
     const publicShare = isPublicShareLocation();
-    // User config is saved with BYOK keys stripped. Apply it first, then overlay
-    // the local key store so that blob cannot wipe an attached key.
     if (!publicShare) {
       hydrateHostedUserConfig(init.config);
       restoreHostedLocalWorkspaceExtras();
-    }
-    await initHostedByokCrypto();
-    hydrateHostedByokConfig(init.config);
-    if (!publicShare) {
       // Cloud overlay is persist:false after first paint (useCloudSyncRuntime).
-      // Session identity and hosted-local config/BYOK stay pre-paint.
+      // Session identity and hosted-local config stay pre-paint.
       // schedule() strips raw API keys before the snapshot leaves the device.
       getHostedConfigSnapshotPusher().schedule(init.config);
     }
@@ -166,7 +158,6 @@ async function boot(): Promise<void> {
   window.__GLOOM_CLOUD_DEGRADED = degraded;
   enableStartupNetworkDeferral();
   enableUiYield();
-  installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
   setCustomThemes(isHosted ? {} : init.customThemes ?? {});
   let startupNotice = init.themeNotice?.missingThemeId

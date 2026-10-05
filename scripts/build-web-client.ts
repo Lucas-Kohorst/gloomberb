@@ -6,12 +6,14 @@ import {
   writeSharePage,
   writeWebClientPage,
 } from "../src/renderers/electrobun/view/build-assets";
+import { copyChartingLibrary } from "./copy-charting-library";
 
 const outdir = join(process.cwd(), "dist", "web-client");
 const hosted = process.env.GLOOMBERB_CLOUD_HOSTED === "1";
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await writeFile(join(outdir, ".assetsignore"), "*.map\n");
+await copyChartingLibrary(outdir);
 
 await writeWebClientPage({
   entrypoint: electrobunViewPath("web-main.tsx"),

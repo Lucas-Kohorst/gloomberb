@@ -6,6 +6,7 @@ import {
   filterCatalogRows,
   listStaticCatalogInventory,
   looksLikeCatalogTickerQuery,
+  parseCatalogQuery,
 } from "./catalog-inventory";
 import { defillamaSeriesCatalog } from "../defillama/catalog";
 import { fredSeriesCatalog } from "../econ/fred-series-map";
@@ -83,6 +84,37 @@ describe("data catalog inventory", () => {
     expect(resolved.some((row) => row.expression === "AAPL:price")).toBe(true);
     expect(resolved.every((row) => !row.needsTicker && row.label.startsWith("AAPL"))).toBe(true);
     expect(filterCatalogRows(resolved, "securities", "AAPL").some((row) => row.expression === "AAPL:close")).toBe(true);
+  });
+
+  test("ticker:valuation keeps that symbol's multiples and the macro valuation set", () => {
+    expect(parseCatalogQuery("dkng:valuation")).toEqual({ text: "dkng", filter: "valuation" });
+    expect(parseCatalogQuery("DKNG:Valuations")).toEqual({ text: "DKNG", filter: "valuation" });
+    expect(parseCatalogQuery("brk.b:securities")).toEqual({ text: "brk.b", filter: "securities" });
+    expect(parseCatalogQuery("FRED:CPIAUCSL")).toEqual({ text: "FRED:CPIAUCSL", filter: null });
+    expect(parseCatalogQuery("DKNG:close")).toEqual({ text: "DKNG:close", filter: null });
+    expect(parseCatalogQuery("life expectancy")).toEqual({ text: "life expectancy", filter: null });
+
+    const dkng = catalogRowsForResolvedInstruments([{ symbol: "DKNG", name: "DraftKings Inc." }]);
+    const valuation = filterCatalogRows(dkng, "valuation", "dkng");
+    expect(valuation.map((row) => row.expression).sort()).toEqual([
+      "DKNG:dividendYield",
+      "DKNG:earningsYield",
+      "DKNG:evEbitda",
+      "DKNG:evSales",
+      "DKNG:forwardPE",
+      "DKNG:pegRatio",
+      "DKNG:priceFcf",
+      "DKNG:priceSales",
+      "DKNG:trailingPE",
+    ]);
+    expect(valuation.every((row) => row.kind === "Valuation" && row.sourceId === "security")).toBe(true);
+
+    const catalog = listStaticCatalogInventory();
+    const tab = filterCatalogRows(catalog, "valuation", "");
+    expect(tab.some((row) => row.expression === "TICKER:trailingPE" && row.kind === "Valuation")).toBe(true);
+    expect(tab.some((row) => row.sourceId === "valuation")).toBe(true);
+    expect(tab.some((row) => row.expression === "TICKER:close" || row.expression === "TICKER:eps")).toBe(false);
+    expect(filterCatalogRows(catalog, "securities", "").some((row) => row.expression === "TICKER:trailingPE")).toBe(true);
   });
 
   test("empty copy covers loading and query misses without a retry hint", () => {

@@ -4,6 +4,15 @@ import { colors } from "../theme/colors";
 import { useAppInputCapture } from "../state/app/input-capture";
 import { useShortcut } from "../react/input";
 import { isPlainArrowDown, stopSearchFocusNavigation } from "../utils/search-focus-navigation";
+import { t, tf } from "../i18n";
+
+/** Placeholders are hints like "title or source", which do not name the field on their own. */
+function searchInputLabel(placeholder: string): string {
+  const hint = placeholder.trim().replace(/(\.\.\.|…)$/, "").trim();
+  if (!hint) return t("Search");
+  if (/^(search|filter|find)\b/i.test(hint)) return hint;
+  return tf("Search {hint}", { hint });
+}
 
 export function InputSearchBar({
   value,
@@ -13,6 +22,7 @@ export function InputSearchBar({
   focusToken,
   inputRef,
   placeholder,
+  label,
   debounceMs,
   glyph = "/",
   normalizeValue = identity,
@@ -28,6 +38,8 @@ export function InputSearchBar({
   focusToken: number;
   inputRef: RefObject<InputRenderable | null>;
   placeholder: string;
+  /** Accessible name for the field; derived from the placeholder when omitted. */
+  label?: string;
   debounceMs: number;
   /** Leading marker; override when a pane shows more than one field. */
   glyph?: string;
@@ -111,6 +123,7 @@ export function InputSearchBar({
         value={draft}
         focused={focused && active}
         placeholder={placeholder}
+        aria-label={label ?? searchInputLabel(placeholder)}
         placeholderColor={colors.textDim}
         textColor={colors.text}
         focusedTextColor={colors.text}

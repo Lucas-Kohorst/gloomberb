@@ -55,10 +55,23 @@ interface TickerSearchCandidateOptions {
   isinQuery?: string | null;
 }
 
+function isTickerToken(value: string): boolean {
+  return /^[A-Z0-9^][A-Z0-9.^_=/-]{0,31}$/.test(value);
+}
+
+/** A listing query (`NYSE:BLK`, `BLK US`) counts. A period does not. */
+function isTickerQuery(value: string): boolean {
+  if (isTickerToken(value)) return true;
+  const symbol = parseTickerListingQuery(value).symbol.trim();
+  if (symbol && isTickerToken(symbol)) return true;
+  return /[A-Z0-9]/.test(value);
+}
+
 export function normalizeTickerInput(activeTicker: string | null, arg?: string): string | null {
-  const explicitTicker = arg?.trim().toUpperCase();
-  if (explicitTicker) return explicitTicker;
-  return activeTicker;
+  const explicitTicker = arg?.trim().toUpperCase() ?? "";
+  if (explicitTicker) return isTickerQuery(explicitTicker) ? explicitTicker : null;
+  const active = activeTicker?.trim().toUpperCase() ?? "";
+  return active && isTickerQuery(active) ? active : null;
 }
 
 export function createLocalTickerSearchCandidates(
@@ -125,9 +138,91 @@ function createProviderTickerSearchCandidates(
         symbol,
       ),
       searchAliases: buildSearchResultAliases(result, options.isinQuery),
+      ...listingActivityFields(result),
       result,
     }];
   });
+}
+
+function listingActivityFields(result: InstrumentSearchResult): { volume?: number; averageVolume?: number } {
+  const volume = nonNegativeActivity(result.volume);
+  const averageVolume = nonNegativeActivity(result.averageVolume);
+  return {
+    ...(volume != null ? { volume } : {}),
+    ...(averageVolume != null ? { averageVolume } : {}),
+  };
+}
+
+function nonNegativeActivity(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+const EXACT_SYMBOL_QUERY = /^[A-Z0-9.]{1,8}$/;
+const ACTIVITY_QUOTE_LIMIT = 5;
+const ACTIVITY_QUOTE_TIMEOUT_MS = 800;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
+ * Yahoo's search payload has no volume. For a symbol with two or more venues,
+ * one quote batch supplies session volume so the ranker can put the active
+ * listing first. A name query never reaches this.
+ */
+async function enrichExactMatchActivity(
+  dataProvider: DataProvider,
+  query: string,
+  results: InstrumentSearchResult[],
+): Promise<InstrumentSearchResult[]> {
+  const symbol = query.trim().toUpperCase();
+  if (!EXACT_SYMBOL_QUERY.test(symbol) || !dataProvider.getQuotesBatch) return results;
+  const targets = results
+    .map((result, index) => ({ result, index }))
+    .filter(({ result }) => result.symbol.trim().toUpperCase() === symbol)
+    .slice(0, ACTIVITY_QUOTE_LIMIT);
+  if (targets.length < 2) return results;
+  if (targets.every(({ result }) => (
+    nonNegativeActivity(result.volume) != null || nonNegativeActivity(result.averageVolume) != null
+  ))) {
+    return results;
+  }
+  const batch = await withTimeout(
+    dataProvider.getQuotesBatch(targets.map(({ result }) => ({
+      symbol: result.symbol,
+      exchange: result.exchange,
+    }))),
+    ACTIVITY_QUOTE_TIMEOUT_MS,
+  );
+  if (!batch) return results;
+  let changed = false;
+  const next = results.slice();
+  for (let offset = 0; offset < targets.length; offset += 1) {
+    const quote = batch[offset]?.quote;
+    const volume = nonNegativeActivity(quote?.volume);
+    const averageVolume = nonNegativeActivity(quote?.averageVolume);
+    if (volume == null && averageVolume == null) continue;
+    const current = targets[offset]!.result;
+    next[targets[offset]!.index] = {
+      ...current,
+      ...(volume != null ? { volume } : {}),
+      ...(averageVolume != null ? { averageVolume } : {}),
+    };
+    changed = true;
+  }
+  return changed ? next : results;
 }
 
 export async function searchTickerCandidates({
@@ -158,12 +253,27 @@ export async function searchTickerCandidates({
     totalLimit,
     includeOptionContracts,
   });
-  return assemble(await searchProviderResults(
+  let latestPartial = 0;
+  let sawPartial = false;
+  const providerResults = await searchProviderResults(
     dataProvider,
     query,
     searchContext,
-    onPartial ? (results) => onPartial(assemble(results)) : undefined,
-  ));
+    onPartial
+      ? (results) => {
+        sawPartial = true;
+        const ticket = ++latestPartial;
+        void enrichExactMatchActivity(dataProvider, query, results).then((enriched) => {
+          if (ticket !== latestPartial) return;
+          onPartial(assemble(enriched));
+        });
+      }
+      : undefined,
+  );
+  // A later venue already owns the painted list. The returned first batch is
+  // what callers use when nothing partial arrived.
+  if (sawPartial) return assemble(providerResults);
+  return assemble(await enrichExactMatchActivity(dataProvider, query, providerResults));
 }
 
 export function buildTickerSearchCandidates({
@@ -434,12 +544,12 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
 
   return items.map((item) => {
     if (item.saved || item.kind === "ticker") {
-      if (item.instrumentClass !== "fund" && item.instrumentClass !== "derivative") {
+      if (!isFundsOrDerivativesClass(item.instrumentClass)) {
         assignedPrimaryListing = true;
       }
       return { ...item, category: "Saved" };
     }
-    if (item.instrumentClass === "fund" || item.instrumentClass === "derivative") {
+    if (isFundsOrDerivativesClass(item.instrumentClass)) {
       return { ...item, category: "Funds & Derivatives" };
     }
     if (!assignedPrimaryListing) {
@@ -448,6 +558,14 @@ function assignTickerSearchCategories<T extends TickerSearchCandidate>(items: T[
     }
     return { ...item, category: "Other Listings" };
   }) as T[];
+}
+
+function isFundsOrDerivativesClass(instrumentClass: TickerSearchCandidate["instrumentClass"]): boolean {
+  return instrumentClass === "fund"
+    || instrumentClass === "etf"
+    || instrumentClass === "derivative"
+    || instrumentClass === "option"
+    || instrumentClass === "future";
 }
 
 function limitTickerSearchCandidates<T extends TickerSearchCandidate>(

@@ -10,6 +10,7 @@ import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import { registerConnectionSource } from "../connections/register";
+import { tradingViewChartsEnabled } from "../../../components/chart/backend";
 import { TRADINGVIEW_CONNECTION_ID } from "./tradingview-plot";
 import {
   CHART_COMPOSER_TEMPLATE_ID,
@@ -37,6 +38,7 @@ import {
   buildBoundChartPreset,
   buildValuationChartPreset,
   chartSeriesLabel,
+  parseSeriesExpression,
 } from "./presets";
 import { buildChartComposerPaneSettingsDef } from "./settings";
 import { buildDataCatalogPaneSettingsDef } from "./catalog-settings";
@@ -124,7 +126,7 @@ function securityTemplate({
   build,
 }: {
   id: string;
-  prefix: "GP" | "GIP" | "CMP" | "GF" | "GE";
+  prefix: "GIP" | "CMP" | "GF" | "GE";
   label: string;
   description: string;
   argKind: "ticker" | "ticker-list";
@@ -186,11 +188,20 @@ const chartComposerTemplates: PaneTemplateDef[] = [
           ...(viewport ? { viewport } : {}),
         });
       }
-      const expression = options?.arg?.trim() || options?.values?.series?.trim() || context.activeTicker || "";
-      return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
+      const expression = options?.arg?.trim() || options?.values?.series?.trim()
+        || options?.symbol?.trim() || options?.ticker?.metadata.ticker
+        || options?.values?.tickers?.trim() || context.activeTicker || "";
+      const parsed = parseSeriesExpression(expression);
+      const spec = parsed?.kind === "security" && parsed.fieldId === "market.ohlcv" && !parsed.transform
+        ? buildBoundChartPreset(publicTickerKey(parsed.symbol, parsed.exchange))
+        : buildCustomChartPreset(expression, context.activeTicker);
+      return instanceFor(spec, "G");
     },
     publicShare: {
       serialize: ({ pane }) => {
+        const selected = pane.settings?.advancedChartPrimary;
+        // A replacement lives in the library snapshot, not the authored share spec.
+        if (isRecord(selected) && selected.ticker !== selected.ownerSymbol) return null;
         const spec = parseChartSpec(pane.settings?.[CHART_SPEC_SETTING_KEY]);
         if (!spec) return null;
         const drawings = parseChartDrawings(pane.settings?.[CHART_DRAWINGS_SETTING_KEY]);
@@ -234,7 +245,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Browse chart series: securities, options, crypto, DefiLlama TVL/fees/revenue, FRED, treasuries, and futures.",
+    description: "Browse chart series: securities, options, crypto, DefiLlama TVL/fees/revenue, FRED, treasuries, futures, and valuation multiples.",
     keywords: [
       "catalog",
       "series",
@@ -248,6 +259,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "tvl",
       "options",
       "option",
+      "valuation",
     ],
     shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
     canCreate: () => true,
@@ -270,15 +282,6 @@ const chartComposerTemplates: PaneTemplateDef[] = [
         : null,
     },
   },
-  securityTemplate({
-    id: "graph-price-pane",
-    prefix: "GP",
-    label: "Graph Price",
-    description: "Open a price chart for a ticker.",
-    argKind: "ticker",
-    minimumSymbols: 1,
-    build: (symbols) => buildBoundChartPreset(symbols[0]!),
-  }),
   securityTemplate({
     id: "graph-intraday-price-pane",
     prefix: "GIP",
@@ -355,14 +358,18 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
-    disposeTradingViewConnection = registerConnectionSource({
-      id: TRADINGVIEW_CONNECTION_ID,
-      name: "TradingView",
-      kind: "asset-data",
-      pluginId: "ticker-research",
-      authRequired: false,
-      priority: 200,
-    });
+    // GLOOM_CHART_BACKEND=custom never mounts the charting library, so there
+    // is no live TradingView integration to inventory.
+    if (tradingViewChartsEnabled()) {
+      disposeTradingViewConnection = registerConnectionSource({
+        id: TRADINGVIEW_CONNECTION_ID,
+        name: "TradingView",
+        kind: "asset-data",
+        pluginId: "ticker-research",
+        authRequired: false,
+        priority: 200,
+      });
+    }
   },
   dispose() {
     disposeTradingViewConnection?.();

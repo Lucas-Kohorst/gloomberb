@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, type InputRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
-  InputSearchBar,
-  Tabs,
+  PaneListChrome,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -12,12 +11,10 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
-import { useShortcut } from "../../../react/input";
-import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useOptionalAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { usePluginAppActions } from "../../runtime";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import { type PromptContext, useDialog } from "../../../ui/dialog";
 import {
@@ -31,6 +28,7 @@ import {
   filterCatalogRows,
   listStaticCatalogInventory,
   looksLikeCatalogTickerQuery,
+  parseCatalogQuery,
   type CatalogFilterId,
   type CatalogSeriesRow,
 } from "./catalog-inventory";
@@ -84,19 +82,32 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const { createPaneFromTemplate } = usePluginAppActions();
   const dialog = useDialog();
   const [seedQuery] = usePaneSettingValue("query", "");
-  const [searchQuery, setSearchQuery] = useState(seedQuery);
-  const [filter, setFilter] = useState<CatalogFilterId>("all");
+  const seededQuery = parseCatalogQuery(seedQuery);
+  const [searchQuery, setSearchQuery] = useState(seededQuery.filter ? seededQuery.text : seedQuery);
+  const [filter, setFilter] = useState<CatalogFilterId>(seededQuery.filter ?? "all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<CatalogSortPreference>(DEFAULT_SORT);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "series, source, or expression",
+  });
+  const { searchFocused } = listSearch;
   const disabledPlugins = useOptionalAppSelector((state) => state.config.disabledPlugins, EMPTY_DISABLED);
   const disabledSources = useOptionalAppSelector((state) => state.config.disabledSources ?? EMPTY_DISABLED, EMPTY_DISABLED);
 
-  const tickerQuery = looksLikeCatalogTickerQuery(searchQuery);
+  const parsedQuery = parseCatalogQuery(searchQuery);
+  const activeFilter = parsedQuery.filter ?? filter;
+  const lookupQuery = parsedQuery.text;
+
+  useEffect(() => {
+    if (parsedQuery.filter) setFilter(parsedQuery.filter);
+  }, [parsedQuery.filter]);
+
+  const tickerQuery = looksLikeCatalogTickerQuery(lookupQuery);
   const { instruments, loading: universeLoading } = useCatalogUniverse(
-    tickerQuery ? searchQuery : "",
+    tickerQuery ? lookupQuery : "",
   );
   const loading = tickerQuery && universeLoading;
   const emptyCopy = catalogEmptyCopy(loading, searchQuery);
@@ -106,21 +117,21 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     const staticRows = listStaticCatalogInventory(instruments, catalogs);
     const resolvedRows = tickerQuery
       ? catalogRowsForResolvedInstruments(
-        instruments.filter((instrument) => catalogInstrumentMatchesQuery(instrument, searchQuery)),
+        instruments.filter((instrument) => catalogInstrumentMatchesQuery(instrument, lookupQuery)),
       )
       : [];
     const merged = new Map<string, CatalogSeriesRow>();
     for (const entry of [...resolvedRows, ...staticRows]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
-    const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
+    const filtered = filterCatalogRows([...merged.values()], activeFilter, lookupQuery);
     const direction = sortPreference.direction;
     const columnId = sortPreference.columnId;
     return [...filtered].sort((left, right) => (
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [disabledPlugins, disabledSources, filter, instruments, searchQuery, sortPreference, tickerQuery]);
+  }, [activeFilter, disabledPlugins, disabledSources, instruments, lookupQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -134,14 +145,6 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const selectedUrl = selectedRow?.url ?? null;
 
   const columns = useMemo(() => buildColumns(), []);
-
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
 
   const chartSelected = useCallback(async (row: CatalogSeriesRow | null) => {
     if (!row) return;
@@ -172,39 +175,17 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     createPaneFromTemplate(CHART_COMPOSER_TEMPLATE_ID, { arg: row.expression });
   }, [createPaneFromTemplate, dialog]);
 
-  useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-    }
-  }, { enabled: focused && !searchFocused });
-
-  useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "g") && selectedRow) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      chartSelected(selectedRow);
-    }
-  }, { enabled: focused && !searchFocused && !!selectedRow });
-
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
+    if (searchFocused) return false;
     if (event.name === "g" && selectedRow) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      chartSelected(selectedRow);
+      void chartSelected(selectedRow);
       return true;
     }
     return false;
-  }, [chartSelected, focusSearch, selectedRow]);
+  }, [chartSelected, listSearch.handleSearchKey, searchFocused, selectedRow]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -212,11 +193,11 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   ) => {
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
-      focusSearch();
+      listSearch.focusSearch();
       return true;
     }
     return handleTableKeyDown(event);
-  }, [focusSearch, handleTableKeyDown]);
+  }, [handleTableKeyDown, listSearch.focusSearch]);
 
   const renderCell = useCallback((
     row: CatalogSeriesRow,
@@ -239,17 +220,34 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
 
   usePaneStatusLinkFooter({
     registrationId: DATA_CATALOG_PANE_ID,
-    focused,
+    focused: focused && !searchFocused,
     url: selectedUrl,
     source: selectedUrl ? selectedRow?.source : null,
     label: "source",
     loading,
     hints: [
-      { id: "graph", key: "g", label: "raph", onPress: () => chartSelected(selectedRow), disabled: !selectedRow },
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      {
+        id: "graph",
+        key: "g",
+        label: "raph",
+        onPress: () => { void chartSelected(selectedRow); },
+        disabled: !selectedRow || searchFocused,
+      },
+      paneSearchHint(listSearch.focusSearch, { disabled: searchFocused }),
     ],
-    showOpenHint: !!selectedUrl,
+    showOpenHint: !!selectedUrl && !searchFocused,
   });
+
+  const selectFilter = useCallback((value: string) => {
+    const next = value as CatalogFilterId;
+    setFilter(next);
+    setSearchQuery((current) => {
+      const split = parseCatalogQuery(current);
+      if (!split.filter) return current;
+      if (next === "all" || !split.text) return split.text;
+      return `${split.text}:${next}`;
+    });
+  }, []);
 
   const tabs = useMemo(
     () => CATALOG_FILTERS.map((entry) => ({ label: entry.label, value: entry.id })),
@@ -262,29 +260,14 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       rootBefore={(
-        <Box flexDirection="column">
-          <InputSearchBar
-            value={searchQuery}
-            focused={focused}
-            active={searchFocused}
-            width={width}
-            focusToken={searchFocusToken}
-            inputRef={searchInputRef}
-            placeholder="series, source, or expression"
-            debounceMs={80}
-            onFocus={focusSearch}
-            onBlur={blurSearch}
-            onNavigateDown={blurSearch}
-            onQueryChange={setSearchQuery}
-          />
-          <Tabs
-            tabs={tabs}
-            activeValue={filter}
-            onSelect={(value) => setFilter(value as CatalogFilterId)}
-            focused={focused && !searchFocused}
-            compact
-          />
-        </Box>
+        <PaneListChrome
+          width={width}
+          focused={focused}
+          tabs={tabs}
+          activeValue={activeFilter}
+          onSelect={selectFilter}
+          search={listSearch.search}
+        />
       )}
       selection={{
         kind: "id",

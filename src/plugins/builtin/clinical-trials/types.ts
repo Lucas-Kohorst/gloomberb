@@ -23,7 +23,9 @@ export interface ClinicalTrial {
   studyType: string;
   enrollment: number | null;
   startDate: Date | null;
+  startDatePrecision?: "year" | "month" | "day";
   completionDate: Date | null;
+  completionDatePrecision?: "year" | "month" | "day";
   firstSubmitDate: Date | null;
   /** Deep link to the study page for [o]pen. */
   url: string;

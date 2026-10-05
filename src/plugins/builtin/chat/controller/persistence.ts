@@ -51,6 +51,18 @@ export function normalizeSessionUser(user: PersistedAuthUser | null | undefined)
     : null;
 }
 
+/** Rehydrate the shared api client from chat's persisted session user. */
+export function persistedAuthUserFromChatSession(user: ChatSessionUser): PersistedAuthUser {
+  return {
+    id: user.id,
+    username: user.username,
+    emailVerified: user.emailVerified,
+    plan: user.plan,
+    trialEndsAt: user.trialEndsAt ?? null,
+    effectivePlan: user.effectivePlan,
+  };
+}
+
 export function hydratePersistedChannelState({
   channelId,
   channel,

@@ -1,3 +1,4 @@
+import { libraryDataDefaults } from "./charting-library-options";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TradingViewChart, useUiCapabilities, useUiHost } from "../../../ui";
 import {
@@ -14,6 +15,7 @@ import {
   type MultiSelectDialogButtonHandle,
 } from "../../../components/ui";
 import { CompositeChart, type CompositeAdoptedViewport } from "../../../components/chart/composite";
+import { tradingViewChartsEnabled } from "../../../components/chart/backend";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
 import type { ChartSeriesSource, ChartSpec, ResolvedSeries } from "../../../time-series/types";
@@ -23,10 +25,16 @@ import {
   type ManualChartResolution,
 } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
+import { useAssetData, useCapabilityInvoker } from "../../runtime";
+import { createResolvedChartSources } from "../../chart-sources";
+import { barFromPoint, createSpecLibraryFeed, libraryChartFromSpec } from "./charting-library-feed";
 import { defaultChartSeriesPresentation, resolveChartDisplayTimeZone } from "../../../time-series/spec";
-import { chartSeriesSourceKey } from "../../../capabilities";
+import { chartSeriesSourceKey, createChartSeriesResolver } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
+import { ChartDataHeader } from "./chart-data-header";
+import { selectChartHeader } from "./chart-header";
+import { useChartPriceLevels, usePriceLevelPrompt } from "./price-level-state";
 import {
   useAppDispatch,
   usePaneInstanceId,
@@ -66,6 +74,7 @@ import {
   setPairStudies,
   appendCompareTicker,
   rebindChartSecuritySymbol,
+  replacePrimaryChartSource,
   setChartDisplayTimeZone,
   toggleMainPanelAutoScale,
   toggleMainPanelPercentScale,
@@ -92,9 +101,9 @@ import {
 } from "./range-sync";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import {
-  resolveTradingViewPlot,
+  tradingViewIntervalForSpec,
   tradingViewPublicChartUrl,
-  type TradingViewWidgetPlot,
+  tradingViewSymbolForSecurity,
 } from "./tradingview-plot";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { usePublicShare } from "../shared/public-share";
@@ -162,19 +171,107 @@ function isPriceStudyTarget(spec: ChartSpec): boolean {
 }
 
 function DesktopTradingViewComposer({
-  plot,
+  spec,
   focused,
   width,
   height,
   footerId,
+  onCapture,
+  liveWhenUnfocused = true,
 }: {
-  plot: TradingViewWidgetPlot;
+  spec: ChartSpec;
   focused: boolean;
   width: number;
   height: number;
   footerId: string;
+  onCapture?: (capturing: boolean) => void;
+  liveWhenUnfocused?: boolean;
 }) {
-  const openUrl = tradingViewPublicChartUrl(plot.symbol);
+  const dataProvider = useAssetData();
+  const capabilityInvoker = useCapabilityInvoker();
+  const sources = useMemo(
+    () => createResolvedChartSources(dataProvider, createChartSeriesResolver(capabilityInvoker)),
+    [capabilityInvoker, dataProvider],
+  );
+  const authoredModel = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  const authoredOwnerSymbol = authoredModel?.symbol ?? "";
+  const [selectedPrimary, setSelectedPrimary] = usePaneSettingValue<{
+    ownerSymbol: string; ticker: string; name: string; source?: ChartSeriesSource;
+  } | null>("advancedChartPrimary", null);
+  const primaryReplaced = !!authoredModel
+    && selectedPrimary?.ownerSymbol === authoredOwnerSymbol
+    && selectedPrimary.ticker !== authoredOwnerSymbol;
+  const effectiveSpec = useMemo(() => primaryReplaced
+    ? selectedPrimary.source
+      ? replacePrimaryChartSource(spec, selectedPrimary.source, selectedPrimary.name)
+      : rebindChartSecuritySymbol(spec, authoredOwnerSymbol, selectedPrimary.ticker)
+    : spec, [authoredOwnerSymbol, primaryReplaced, selectedPrimary, spec]);
+  const model = useMemo(() => libraryChartFromSpec(effectiveSpec), [effectiveSpec]);
+  const rememberPrimary = useCallback((selected: { ticker: string; name: string; source?: ChartSeriesSource }) => {
+    if (!authoredModel) return;
+    setSelectedPrimary((current) => current?.ownerSymbol === authoredOwnerSymbol
+      && current.ticker === selected.ticker
+      && current.name === selected.name
+      && JSON.stringify(current.source) === JSON.stringify(selected.source)
+      ? current
+      : { ownerSymbol: authoredOwnerSymbol, ...selected });
+  }, [authoredModel, authoredOwnerSymbol, setSelectedPrimary]);
+  const sourcesRef = useRef(sources);
+  sourcesRef.current = sources;
+  const directoryRef = useRef(model?.directory ?? new Map());
+  directoryRef.current = model?.directory ?? directoryRef.current;
+  const library = useMemo(() => createSpecLibraryFeed({
+    getSources: () => sourcesRef.current,
+    getDirectory: () => directoryRef.current,
+    timezone: model?.timezone,
+  }), [model?.timezone]);
+  const primary = model ? model.directory.get(model.symbol) : undefined;
+  const publicSymbol = primary?.kind === "security"
+    ? tradingViewSymbolForSecurity(primary.instrument)
+    : "";
+  const openUrl = publicSymbol ? tradingViewPublicChartUrl(publicSymbol) : null;
+  const liveStreaming = useLiveStreamingSetting();
+  const dialogOpen = useDialogState((state) => state.isOpen);
+  // The library draws our bars. This resolution still feeds the quote header and price alerts.
+  const resolution = useResolvedChartSpec(effectiveSpec, {
+    liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
+  });
+  const primaryPoints = resolution.series[0]?.points ?? [];
+  const defaults = libraryDataDefaults(primaryPoints);
+  const displayStyle = model?.chartStyle === "step"
+    ? "step"
+    : model?.chartStyle === "candles"
+      ? defaults.chartStyle
+      : "line";
+  const latestPoint = primaryPoints.at(-1);
+  const publishedInterval = tradingViewIntervalForSpec(effectiveSpec);
+  useEffect(() => {
+    if (!model || !latestPoint) return;
+    const bar = barFromPoint(latestPoint);
+    if (bar) library.feed.publish?.(model.symbol, bar, publishedInterval);
+  }, [latestPoint, library, model, publishedInterval]);
+  const { listing, levels, listed, edit, alertAtLevel } = useChartPriceLevels(effectiveSpec);
+  const baseSeriesIds = useMemo(() => new Set(effectiveSpec.series.map((series) => series.id)), [effectiveSpec.series]);
+  const header = useMemo(
+    () => selectChartHeader({
+      series: resolution.bufferedSeries ?? resolution.series,
+      baseSeriesIds,
+      levels: listed,
+      includeLevels: true,
+      includeOhlc: false,
+      includeVolume: false,
+    }),
+    [baseSeriesIds, listed, resolution.bufferedSeries, resolution.series],
+  );
+  usePriceLevelPrompt({
+    listing,
+    levels,
+    edit,
+    alertAtLevel,
+    currentPrice: header.close,
+    enabled: focused && listing !== null && !dialogOpen,
+    onCapture,
+  });
   useExternalLinkFooter({
     registrationId: footerId,
     focused,
@@ -190,15 +287,27 @@ function DesktopTradingViewComposer({
       data-gloom-role="tradingview-composer"
       style={{ touchAction: "none", overscrollBehavior: "none" }}
     >
-      <TradingViewChart
-        flexGrow={1}
-        minHeight={4}
-        symbol={plot.symbol}
-        interval={plot.interval}
-        timezone={plot.timezone}
-        compareSymbols={plot.compareSymbols}
-        backgroundColor={colors.panel}
-      />
+      <ChartDataHeader text={header.text} width={width} />
+      {model && (!resolution.loading || primaryPoints.length > 0) ? (
+        <TradingViewChart
+          flexGrow={1}
+          minHeight={4}
+          symbol={model.symbol}
+          interval={defaults.chartStyle === "heikinashi" && effectiveSpec.viewport.resolution === "auto" ? "240" : model.interval}
+          timezone={model.timezone}
+          compareSymbols={model.compares}
+          chartStyle={displayStyle}
+          hasVolume={defaults.hasVolume}
+          priceScale={model.priceScale}
+          backgroundColor={colors.panel}
+          feed={library.feed}
+          onPrimarySymbolChange={rememberPrimary}
+        />
+      ) : (
+        <Text fg={colors.textMuted}>
+          {model ? "Loading chart data…" : "Chart data is unavailable"}
+        </Text>
+      )}
     </Box>
   );
 }
@@ -214,15 +323,17 @@ function ChartComposerSurface({
   liveWhenUnfocused = true,
 }: ChartComposerSurfaceProps) {
   const ui = useUiHost();
-  const plot = useMemo(() => resolveTradingViewPlot(spec), [spec]);
-  if (ui.kind === "desktop-web" && plot.kind === "widget") {
+  const libraryChart = useMemo(() => libraryChartFromSpec(spec), [spec]);
+  if (ui.kind === "desktop-web" && libraryChart && tradingViewChartsEnabled()) {
     return (
       <DesktopTradingViewComposer
-        plot={plot}
+        spec={spec}
         focused={focused}
         width={width}
         height={height}
         footerId={footerId}
+        onCapture={onCapture}
+        liveWhenUnfocused={liveWhenUnfocused}
       />
     );
   }
@@ -347,8 +458,8 @@ function GloomCanvasComposer({
     [resolutionChoices],
   );
   const rangeChoices = useMemo(
-    () => chartRangeTabChoices(resolution.resolutionSupport),
-    [resolution.resolutionSupport],
+    () => chartRangeTabChoices(resolution.resolutionSupport, resolution.rangeSupport),
+    [resolution.resolutionSupport, resolution.rangeSupport],
   );
   const rangeTabs = useMemo(
     () => rangeChoices.map((choice, index) => ({
@@ -366,6 +477,14 @@ function GloomCanvasComposer({
   const selectedPairStudies = getSelectedPairStudies(spec);
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
+  const { listing, levels, drawn, edit, alertAtLevel } = useChartPriceLevels(spec);
+  const header = useMemo(
+    () => selectChartHeader({
+      series: resolution.bufferedSeries ?? resolution.series,
+      baseSeriesIds,
+    }),
+    [baseSeriesIds, resolution.bufferedSeries, resolution.series],
+  );
   // Hidden series are never loaded, so the resolver has nothing to report for
   // them. Without a placeholder they vanish from the legend entirely and the
   // only way back is the series dialog.
@@ -448,6 +567,15 @@ function GloomCanvasComposer({
   /** The plot keeps its pointer unless something modal is actually covering it. */
   const surfacePointerInteractive = !dialogOpen && !modalCaptured;
   const shortcutActive = focused && surfaceInteractive;
+  usePriceLevelPrompt({
+    listing,
+    levels,
+    edit,
+    alertAtLevel,
+    currentPrice: header.close,
+    enabled: shortcutActive && listing !== null,
+    onCapture: (captured) => setInteractionCaptured("level", captured),
+  });
   const activatePane = useCallback(() => {
     if (!focused) dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch, focused, paneId]);
@@ -812,6 +940,9 @@ function GloomCanvasComposer({
     info: [
       ...(resolution.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(resolution.errors[0] ? [{ id: "error", parts: [{ text: resolution.errors[0], tone: "warning" as const }] }] : []),
+      ...(resolution.accessTier === "public"
+        ? [{ id: "adjacent-access", parts: [{ text: "public · 3M max", tone: "muted" as const }] }]
+        : []),
     ],
     hints: [
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
@@ -910,6 +1041,7 @@ function GloomCanvasComposer({
           />
         </Box>
       </Box>
+      <ChartDataHeader text={header.text} width={width} />
       <MultiSelectDialogButton
         ref={indicatorsDialogRef}
         label="Indicators"
@@ -949,11 +1081,11 @@ function GloomCanvasComposer({
           viewportResetKey={authoredViewportKey}
           adoptedViewport={adoptedViewport}
           width={Math.max(1, width)}
-          height={Math.max(4, height - 1)}
+          height={Math.max(4, height - 1 - (header.text ? 1 : 0))}
           focused={focused}
+          priceLevels={drawn}
           interactive={surfacePointerInteractive}
           allowHistoricalBackfill
-          showLatestChangePercent={!spec.viewport.dateWindow && spec.viewport.range === "1D"}
           timeZone={displayTimeZone}
           onViewportChange={handleChartViewportChange}
           onActivate={activatePane}

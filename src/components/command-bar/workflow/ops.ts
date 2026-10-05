@@ -156,8 +156,12 @@ async function resolvePaneTemplateOptions(
 
   let resolvedOptions = options;
   if (template.shortcut?.argPlaceholder === "ticker") {
+    const explicit = resolvedOptions?.symbol ?? resolvedOptions?.arg;
+    if (!explicit?.trim() && template.shortcut.argOptional) {
+      return { context: baseContext, resolvedOptions };
+    }
     const resolvedTicker = await resolveTickerInputOrThrow(
-      resolvedOptions?.symbol ?? resolvedOptions?.arg,
+      explicit,
       baseContext.activeTicker,
       baseContext.activeCollectionId,
       deps,

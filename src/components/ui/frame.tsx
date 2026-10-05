@@ -65,7 +65,7 @@ export function DialogFrame({
   return (
     <Box flexDirection="column">
       <Box height={1} flexDirection="row" alignItems="center">
-        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</Text>
+        <Text fg={colors.text} attributes={TextAttributes.BOLD} height={1} flexShrink={1} overflow="hidden" wrapText={false}>{title}</Text>
         {closeDialog && (
           // Adjacent, not cornered: the frame cannot know the content width, and
           // a stretched close cell would poke past narrow dialogs' content area.

@@ -24,16 +24,18 @@ export function useAccountManagementFooter({
 }) {
   const language = useAppLanguage();
   const footerHints = useMemo<PaneHint[]>(() => (
-    activeTab === "ai" || activeTab === "byok" || activeTab === "keys" || activeTab === "teams"
+    activeTab === "teams" || activeTab === "calendar"
       ? []
       : [{ id: "save", key: "s", label: "ave", onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession }]
   ), [activeTab, busy, hasSession, language, saveProfile]);
 
-  usePaneFooter("account-management", () => ({
-    info: [
-      ...(busy ? [{ id: "busy", parts: [{ text: t("saving"), tone: "muted" as const }] }] : []),
-      ...(message ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const }] }] : []),
-    ],
-    hints: footerHints,
-  }), [busy, footerHints, language, message]);
+  usePaneFooter("account-management", () => (
+    activeTab === "calendar" ? null : {
+      info: [
+        ...(busy ? [{ id: "busy", parts: [{ text: t("saving"), tone: "muted" as const }] }] : []),
+        ...(message ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const }] }] : []),
+      ],
+      hints: footerHints,
+    }
+  ), [activeTab, busy, footerHints, language, message]);
 }

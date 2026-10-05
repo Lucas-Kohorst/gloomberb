@@ -22,6 +22,7 @@ interface DialogContextValue {
   /** The active dialog layer's dismiss; DialogFrame falls back to it for its close affordance. */
   dismiss?: () => void;
   keyboardEnabled: boolean;
+  contentSize?: { width: number; height: number };
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -32,6 +33,7 @@ export function DialogHostProvider({
   dialogId,
   dismiss,
   keyboardEnabled = true,
+  contentSize,
   children,
 }: {
   dialog: DialogApi;
@@ -39,10 +41,11 @@ export function DialogHostProvider({
   dialogId?: string;
   dismiss?: () => void;
   keyboardEnabled?: boolean;
+  contentSize?: { width: number; height: number };
   children: ReactNode;
 }) {
   return (
-    <DialogContext value={{ dialog, isOpen, dialogId, dismiss, keyboardEnabled }}>
+    <DialogContext value={{ dialog, isOpen, dialogId, dismiss, keyboardEnabled, contentSize }}>
       {children}
     </DialogContext>
   );
@@ -67,6 +70,11 @@ export function useDialogState<T>(selector: (state: { isOpen: boolean }) => T): 
 /** The active dialog layer's dismiss, or undefined outside an open dialog layer. */
 export function useDialogDismiss(): (() => void) | undefined {
   return useContext(DialogContext)?.dismiss;
+}
+
+/** Available content cells supplied by the terminal dialog host. */
+export function useDialogContentSize(): { width: number; height: number } | undefined {
+  return useContext(DialogContext)?.contentSize;
 }
 
 export function useDialogKeyboard(

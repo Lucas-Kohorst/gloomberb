@@ -26,3 +26,14 @@ describe("crt.sh parse cap", () => {
     expect(parsed.total).toBe(20);
   });
 });
+
+test("certificate parsing stops when canceled after an early paint", async () => {
+  const controller = new AbortController();
+  const rows = Array.from({ length: 10 }, (_, id) => ({ id, common_name: `${id}.example` }));
+  await expect(parseCertificateRecords(rows, {
+    firstPaint: 2,
+    yieldEvery: 1,
+    signal: controller.signal,
+    onPartial: () => controller.abort(),
+  })).rejects.toThrow();
+});

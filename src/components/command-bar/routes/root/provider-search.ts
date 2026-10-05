@@ -3,6 +3,7 @@ import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
 import { searchTickerCandidates } from "../../../../tickers/search";
+import { parseAssetClassQuery } from "../../../../tickers/search/asset-classes";
 import {
   mergePlainRootTickerResults,
   mergeTickerSearchResultItems,
@@ -118,6 +119,7 @@ export function useRootProviderSearch(options: {
           ));
           setRootProviderResultsQuery(searchQuery);
         };
+        let sawPartial = false;
         const combined = await searchTickerCandidates({
           query: searchQuery,
           tickers,
@@ -128,15 +130,24 @@ export function useRootProviderSearch(options: {
             brokerId: activeSearchPortfolio?.brokerId,
             brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
           },
-          // A broker that answers after the cloud upgrades the rows in place
-          // rather than being dropped because the list was already drawn.
+          // A later exchange or a broker that answers after the cloud upgrades
+          // the rows in place. The first snapshot must not paint over that.
           onPartial: (candidates) => {
             if (requestId !== rootSearchRequestIdRef.current) return;
+            sawPartial = true;
+            writeTickerSearchCache(
+              searchQuery,
+              candidates,
+              activeSearchPortfolio?.brokerId,
+              activeSearchPortfolio?.brokerInstanceId,
+            );
             publish(candidates);
           },
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
+          // The root bar hides option contracts unless the query is OPT <symbol>.
+          includeOptionContracts: parseAssetClassQuery(searchQuery).code === "OPT",
         });
-        if (requestId !== rootSearchRequestIdRef.current) return;
+        if (requestId !== rootSearchRequestIdRef.current || sawPartial) return;
         writeTickerSearchCache(
           searchQuery,
           combined,

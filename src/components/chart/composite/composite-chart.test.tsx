@@ -284,7 +284,7 @@ describe("CompositeChart", () => {
     expect(capturedSurfaceProps!.bitmaps).toBeNull();
   });
 
-  test("shows the regular-session move beside the latest intraday value", async () => {
+  test("reads out the last value, the move, and the window high/low on the legend strip", async () => {
     testSetup = await testRender(
       <CompositeChart
         width={60}
@@ -294,15 +294,41 @@ describe("CompositeChart", () => {
           latestChangePercent: 10.65,
         }]}
         panels={[{ id: "main" }]}
-        showLatestChangePercent
       />,
       { width: 62, height: 14 },
     );
 
     await act(async () => testSetup!.renderOnce());
 
-    expect(testSetup.captureCharFrame()).toContain("ACME Price $110 +10.65%");
+    expect(testSetup.captureCharFrame()).toContain(
+      "ACME Price $110  +10.65%  H $110  L $100",
+    );
   });
+
+  test("ellipsizes a long series name before it clips the numbers", async () => {
+    testSetup = await testRender(
+      <CompositeChart
+        width={50}
+        height={12}
+        series={[{
+          ...series("price", "main", "left", "USD", [100, 103, 101]),
+          label: "A very long index name that nobody needs",
+        }]}
+        panels={[{ id: "main" }]}
+        cursorDate={new Date("2025-01-02T00:00:00.000Z")}
+      />,
+      { width: 52, height: 14 },
+    );
+
+    await act(async () => testSetup!.renderOnce());
+
+    const legend = testSetup.captureCharFrame()
+      .split("\n")
+      .find((line) => line.includes("..."));
+    expect(legend).toBeDefined();
+    expect(legend).toContain("$103  +$3  +3.00%");
+  });
+
 
   test("holds a lower panel's rows while its series has no observations in view", async () => {
     const price: ResolvedSeries = {

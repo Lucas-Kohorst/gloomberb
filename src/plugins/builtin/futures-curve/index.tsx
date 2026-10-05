@@ -1,0 +1,47 @@
+import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
+import { FUTURES_CURVE_CONNECTION_ID, futuresCurveCache } from "./client";
+import { futuresCurveHeadless } from "./headless";
+import { CURVE_HORIZONS, CURVE_ROOTS, DEFAULT_CURVE_HORIZON, normalizeCurveRoot } from "./model";
+import { FuturesCurvePane } from "./pane";
+
+let disposeConnection: (() => void) | null = null;
+
+export const futuresCurveModule: PluginModule = {
+  panes: [{ id: "futures-curve", name: "Futures Curve", icon: "F", component: FuturesCurvePane,
+    defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 98, height: 30 },
+    tableExport: true, headless: futuresCurveHeadless,
+    settings: (context) => ({ title: "Futures Curve Settings",
+      values: { root: context.settings.root ?? context.pane.params?.root ?? "ES", horizon: context.settings.horizon ?? DEFAULT_CURVE_HORIZON },
+      fields: [
+        { key: "root", label: "Contract root", type: "select", options: CURVE_ROOTS },
+        { key: "horizon", label: "Chart horizon", type: "select", options: [...CURVE_HORIZONS] },
+      ],
+    }),
+  }],
+  paneTemplates: [{ id: "futures-curve-pane", paneId: "futures-curve", label: "Futures Curve",
+    description: "Listed futures contracts, historical curves, roll yield and open interest including VIX futures.",
+    keywords: ["ctm", "futures", "curve", "contango", "backwardation", "roll", "vix"],
+    shortcut: { prefix: "CTM", argKind: "text", argPlaceholder: "root", argOptional: true },
+    headless: futuresCurveHeadless,
+    createInstance: (context, options) => {
+      const input = options?.arg?.trim();
+      const root = input ? normalizeCurveRoot(input) : normalizeCurveRoot(context.activeTicker) ?? "ES";
+      return { title: `CTM ${root ?? input}`, params: { root: root ?? input ?? "ES" }, placement: "floating" };
+    },
+  }],
+  setup(ctx) {
+    futuresCurveCache.attach(ctx.persistence);
+    disposeConnection = registerConnectionSource({
+      id: FUTURES_CURVE_CONNECTION_ID,
+      name: "Gloom Cloud Futures Curve",
+      kind: "api",
+      pluginId: "market-overview",
+    });
+  },
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+    futuresCurveCache.reset();
+  },
+};

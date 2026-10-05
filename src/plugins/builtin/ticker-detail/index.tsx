@@ -4,9 +4,11 @@ import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { FinancialAnalysisPane } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
+import { ReturnsPane } from "./data-panes/returns-pane";
 import { TickerResearchPane } from "./pane";
 import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
 import { QuoteMonitorPane } from "./quote-monitor";
+import { tickerResearchTabPopOutTemplate } from "./tab-pop-out";
 import {
   buildQuoteMonitorSettingsDef,
   buildQuoteMonitorPaneTitle,
@@ -71,6 +73,16 @@ export const tickerDetailModule: PluginModule = {
       defaultFloatingSize: { width: 92, height: 26 },
       tableExport: true,
     },
+    {
+      id: "returns",
+      name: "Returns",
+      icon: "R",
+      component: ReturnsPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 28 },
+      tableExport: true,
+    },
   ],
   paneTemplates: [
     {
@@ -79,7 +91,7 @@ export const tickerDetailModule: PluginModule = {
       label: "Ticker Research",
       description: "Open another research pane for the selected ticker or current collection",
       keywords: ["new", "ticker", "research", "detail", "pane", "inspector"],
-      shortcut: { prefix: "T", argPlaceholder: "ticker", argKind: "ticker" },
+      shortcut: { prefix: "TR", argPlaceholder: "ticker", argKind: "ticker" },
       canCreate: (context) => context.activeTicker !== null || context.activeCollectionId !== null,
       createInstance: (context) => (
         context.activeTicker
@@ -98,6 +110,7 @@ export const tickerDetailModule: PluginModule = {
           : null,
       },
     },
+    tickerResearchTabPopOutTemplate,
     {
       id: "quote-monitor-pane",
       paneId: "quote-monitor",
@@ -137,6 +150,16 @@ export const tickerDetailModule: PluginModule = {
           : null;
       },
     },
+    createTickerSurfacePaneTemplate({
+      id: "returns-pane",
+      paneId: "returns",
+      label: "Returns",
+      description: "Inspect interval and cumulative price returns over a selectable range and granularity.",
+      keywords: ["returns", "return", "performance", "change", "interval", "granularity"],
+      shortcut: "RETURN",
+      publicShare: true,
+      titlePrefix: "RETURN",
+    }),
     createTickerSurfacePaneTemplate({
       id: "historical-prices-pane",
       paneId: "historical-prices",

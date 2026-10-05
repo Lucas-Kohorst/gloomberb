@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataTableView } from "../../../components";
-import { useShortcut } from "../../../react/input";
-import { isPlainKey } from "../../../utils/keyboard";
+import { DataTableView, PaneListChrome, usePaneListSearch, usePaneFooter } from "../../../components";
 import {
   buildColumnVisibilityField,
   resolveVisibleColumns,
@@ -14,6 +12,7 @@ import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { useQuoteBoard } from "../shared/use-quote-board";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion, resolveIndexEntries } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
+import { paneSearchHint } from "../shared/pane-footer";
 import { createPublicPaneShare } from "../shared/public-pane";
 import {
   buildFlatRows,
@@ -48,8 +47,22 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
   );
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<WorldIndexSortPreference>(DEFAULT_SORT_PREFERENCE);
+  const [query, setQuery] = useState("");
+  const { search, searchFocused, focusSearch } = usePaneListSearch({
+    focused,
+    value: query,
+    onQueryChange: setQuery,
+    placeholder: "ticker, name or region",
+  });
+  const filteredEntries = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return entries.filter((entry) => (
+      `${entry.symbol} ${entry.shortName} ${entry.name} ${REGION_LABELS[entry.region]}`
+        .toLowerCase().includes(needle)
+    ));
+  }, [entries, query]);
 
-  const indicesByRegion = useMemo(() => getIndicesByRegion(entries), [entries]);
+  const indicesByRegion = useMemo(() => getIndicesByRegion(filteredEntries), [filteredEntries]);
   const flatRows = useMemo(
     () => buildFlatRows(indicesByRegion, sortPreference, quotes),
     [indicesByRegion, quotes, sortPreference],
@@ -102,11 +115,12 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     return renderWorldIndexCell(row, column, rowState, quotes, { sessionText });
   }, [quotes, sessionText]);
 
-  useWorldIndicesFooter(quotes, refresh, focused);
+  useWorldIndicesFooter(quotes, refresh, focused && !searchFocused);
+  usePaneFooter("world-indices:search", () => ({ hints: [paneSearchHint(focusSearch)] }), [focusSearch]);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       selection={{
         kind: "id",
         selectedId: selectedSymbol,
@@ -119,6 +133,8 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
       onActivate={(_row, index) => openSelected(index)}
       rootWidth={width}
       rootHeight={height}
+      rootBefore={<PaneListChrome width={width} focused={focused} search={search} />}
+      resetScrollKey={query}
       columns={columns}
       items={dataProvider ? flatRows : []}
       sortColumnId={sortPreference.columnId}
@@ -135,7 +151,8 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
         ? { text: REGION_LABELS[row.region] }
         : null}
       renderCell={renderCell}
-      emptyStateTitle="No market data provider connected."
+      emptyStateTitle={!dataProvider ? "No market data provider connected." : "No matching indices."}
+      emptyStateHint={dataProvider ? "Clear search or try another ticker, name or region." : undefined}
     />
   );
 }

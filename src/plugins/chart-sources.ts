@@ -1,8 +1,18 @@
 import { loadFredSeriesPayload } from "../data/fred-load";
 import { loadCachedFredSeries, type FredSeriesRequest } from "../data/fred-series";
-import type { ChartResolveSources, UniversalSeriesLoadResult } from "../time-series/resolve";
+import type {
+  ChartResolveSources,
+  UniversalSeriesLoadRequest,
+  UniversalSeriesLoadResult,
+  UniversalSeriesSupport,
+} from "../time-series/resolve";
 import type { UniversalSeriesSource } from "../time-series/types";
 import { getSharedAdjacentClient } from "./builtin/adjacent/client";
+import {
+  adjacentPriceTier,
+  adjacentRangeSupport,
+  adjacentResolutionSupport,
+} from "./builtin/adjacent/price-window";
 import { loadAdjacentChartSeries } from "./builtin/adjacent/series";
 import { loadBenchmarkSeries } from "./builtin/llm-stats/chart-series";
 import { loadPollSeries } from "./builtin/polls/chart-series";
@@ -22,15 +32,29 @@ async function loadFred(request: FredSeriesRequest) {
   );
 }
 
-export function loadUniversalChartSeries(source: UniversalSeriesSource): Promise<UniversalSeriesLoadResult> {
+export function loadUniversalChartSeries(
+  source: UniversalSeriesSource,
+  request?: UniversalSeriesLoadRequest,
+): Promise<UniversalSeriesLoadResult> {
   switch (source.kind) {
-    case "adjacent-index": return loadAdjacentChartSeries(getSharedAdjacentClient(), source.indexId);
+    case "adjacent-index": return loadAdjacentChartSeries(getSharedAdjacentClient(), source.indexId, request);
     case "benchmark": return loadBenchmarkSeries(source.selector, source.metric);
     case "poll": return loadPollSeries(source.subject, source.choice);
     case "weather": return loadWeatherSeries(source.provider, source.stationId, source.metric);
     case "owid": return loadOwidSeries(source.slug, source.entity);
     case "prediction-market": return loadPredictionMarketSeries(source.venue, source.marketId);
   }
+}
+
+/** Ranges and bar sizes the Adjacent tier behind the shared client can serve. */
+export function adjacentSeriesSupport(source: UniversalSeriesSource): UniversalSeriesSupport | undefined {
+  if (source.kind !== "adjacent-index") return undefined;
+  const tier = adjacentPriceTier(getSharedAdjacentClient());
+  return {
+    ranges: adjacentRangeSupport(tier),
+    resolutions: adjacentResolutionSupport(tier),
+    accessTier: tier,
+  };
 }
 
 /** The same source adapters back interactive charts and headless reports. */
@@ -42,6 +66,7 @@ export function createResolvedChartSources(
     dataProvider,
     loadFredSeries: loadFred,
     loadUniversalSeries: loadUniversalChartSeries,
+    universalSeriesSupport: adjacentSeriesSupport,
     resolveCapabilitySeries: (source, viewport, spec) => {
       // Hosted clients disable capability invocation; public built-ins share
       // the same local adapter with CLI and native charts.

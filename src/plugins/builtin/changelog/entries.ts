@@ -876,10 +876,40 @@ export function bundledChangelogReleases(): ChangelogRelease[] {
   return [...HOSTED_CHANGELOG_RELEASES];
 }
 
+export function changelogReleaseVersion(release: Pick<ChangelogRelease, "tagName" | "version">): string {
+  return (release.version || release.tagName).trim().replace(/^v/i, "");
+}
+
+/** Negative when `left` is an older semver than `right`. A leading `v` is ignored. */
+export function compareChangelogSemver(
+  left: Pick<ChangelogRelease, "tagName" | "version">,
+  right: Pick<ChangelogRelease, "tagName" | "version">,
+): number {
+  const leftParts = semverParts(changelogReleaseVersion(left));
+  const rightParts = semverParts(changelogReleaseVersion(right));
+  const length = Math.max(leftParts.length, rightParts.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function semverParts(version: string): number[] {
+  return version.split(".").map((part) => {
+    const match = /^\d+/.exec(part);
+    return match ? Number(match[0]) : 0;
+  });
+}
+
 export function mergeChangelogReleases(
   local: ChangelogRelease[],
   remote: ChangelogRelease[],
 ): ChangelogRelease[] {
   const seen = new Set(local.map((release) => release.tagName));
-  return [...local, ...remote.filter((release) => !seen.has(release.tagName))];
+  const merged = [...local, ...remote.filter((release) => !seen.has(release.tagName))];
+  // Publish time is not version order. Upstream v0.11.3 was published after this
+  // fork's v0.13.12, and a date sort parked 0.11.x inside the 0.13 list.
+  merged.sort((left, right) => compareChangelogSemver(right, left));
+  return merged;
 }

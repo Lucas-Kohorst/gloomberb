@@ -54,6 +54,32 @@ describe("adjacent normalize", () => {
     expect(row.change1d).toBe(1.25);
   });
 
+  test("prefixes NTI team rates with the official team name", () => {
+    expect(normalizeAdjacentRate({
+      rate_id: "nti_ari_win_27",
+      name: "Win total 8.5+ 2027",
+      latest_price: 50,
+    }).name).toBe("Arizona Cardinals · Win total 8.5+ 2027");
+    expect(normalizeAdjacentRate({
+      rate_id: "nti_mv_kc_conf_27",
+      name: "Conference 2027",
+      latest_price: 50,
+    }).name).toBe("Kansas City Chiefs · Conference 2027");
+  });
+
+  test("keeps the raw name byte-for-byte when the rate id carries no team", () => {
+    expect(normalizeAdjacentRate({
+      rate_id: "nti_zzz_win_27",
+      name: "Win total 8.5+ 2027",
+      latest_price: 50,
+    }).name).toBe("Win total 8.5+ 2027");
+    expect(normalizeAdjacentRate({
+      rate_id: "house",
+      name: "Democrat House",
+      latest_price: 50,
+    }).name).toBe("Democrat House");
+  });
+
   test("sorts rates by 1d change descending", () => {
     const house = normalizeAdjacentRate({
       rate_id: "house",

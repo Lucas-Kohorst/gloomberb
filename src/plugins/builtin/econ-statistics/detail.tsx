@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CompositeChart } from "../../../components/chart/composite";
+import { ChartStats } from "../../../components/chart/stats";
 import { ExternalLinkText } from "../../../components/ui";
 import { blendHex, colors } from "../../../theme/colors";
 import type { ResolvedSeries } from "../../../time-series/types";
@@ -67,7 +68,7 @@ export function StatDetail({
 }) {
   const stat = view.stat;
   const [userViewport, setUserViewport] = useState<{ start: Date; end: Date } | null>(null);
-  const chartWidth = Math.max(24, width - 2);
+  const chartWidth = Math.max(1, width - 2);
   const chartHeight = Math.max(8, Math.min(26, height - 14));
   const visible = view.visible;
 
@@ -109,6 +110,7 @@ export function StatDetail({
           viewportResetKey={`${stat.id}:${view.range}`}
           onViewportChange={setUserViewport}
           formatValue={(value) => stat.formatValue(value)}
+          formatAxisValue={(value) => stat.formatValue(value)}
           emptyMessage="Not enough chart data"
         />
       ) : (
@@ -118,25 +120,14 @@ export function StatDetail({
       )}
 
       <Box flexDirection="column" gap={0}>
-        <Box flexDirection="row" height={1} overflow="hidden">
-          <Text fg={colors.textDim}>1Y ago </Text>
-          <Text fg={colors.text}>
-            {view.yearAgo ? stat.formatValue(view.yearAgo.value) : "--"}
-          </Text>
-          <Text fg={colors.textDim}>{"  mean "}</Text>
-          <Text fg={colors.text}>{stat.formatValue(view.mean)}</Text>
-          <Text fg={colors.textDim}>{"  %ile "}</Text>
-          <Text fg={colors.textBright}>{formatNumber(view.percentile, 0)}</Text>
-        </Box>
-        <Box flexDirection="row" height={1} overflow="hidden">
-          <Text fg={colors.textDim}>High </Text>
-          <Text fg={colors.text}>{`${stat.formatValue(view.high.value)} ${view.high.date}`}</Text>
-          <Text fg={colors.textDim}>{"  Low "}</Text>
-          <Text fg={colors.text}>{`${stat.formatValue(view.low.value)} ${view.low.date}`}</Text>
-        </Box>
-        <Box flexDirection="row" height={1} overflow="hidden">
-          <Text fg={colors.textDim}>{`${categoryLabel(stat.category)} · FRED ${stat.seriesId}`}</Text>
-        </Box>
+        <ChartStats width={chartWidth} items={[
+          { label: "1Y ago", value: view.yearAgo ? stat.formatValue(view.yearAgo.value) : "--" },
+          { label: "mean", value: stat.formatValue(view.mean) },
+          { label: "%ile", value: formatNumber(view.percentile, 0), color: colors.textBright },
+          { label: "High", value: `${stat.formatValue(view.high.value)} ${view.high.date}` },
+          { label: "Low", value: `${stat.formatValue(view.low.value)} ${view.low.date}` },
+          { label: categoryLabel(stat.category), value: `FRED ${stat.seriesId}`, color: colors.textDim },
+        ]} />
       </Box>
 
       <Box flexDirection="column" gap={1} width={Math.max(1, width - 2)}>

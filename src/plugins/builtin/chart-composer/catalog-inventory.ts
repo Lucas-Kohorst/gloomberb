@@ -104,6 +104,43 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<string> | null> = {
   owid: new Set(["owid"]),
 };
 
+/** Suffixes accepted in `TICKER:valuation` catalog queries. */
+const CATALOG_QUERY_FILTERS: Readonly<Record<string, CatalogFilterId>> = {
+  all: "all",
+  securities: "securities",
+  security: "securities",
+  equity: "securities",
+  equities: "securities",
+  options: "options",
+  option: "options",
+  crypto: "crypto",
+  fred: "fred",
+  futures: "futures",
+  future: "futures",
+  valuation: "valuation",
+  valuations: "valuation",
+  owid: "owid",
+};
+
+export interface ParsedCatalogQuery {
+  text: string;
+  filter: CatalogFilterId | null;
+}
+
+/**
+ * `dkng:valuation` is a ticker plus a catalog tab, not a series expression.
+ * Unknown suffixes (`FRED:CPIAUCSL`, `DKNG:close`) stay intact.
+ */
+export function parseCatalogQuery(query: string): ParsedCatalogQuery {
+  const trimmed = query.trim();
+  const match = /^([A-Za-z0-9.^/_-]{1,32}):([A-Za-z]+)$/.exec(trimmed);
+  const [, symbol, suffix] = match ?? [];
+  if (!symbol || !suffix) return { text: trimmed, filter: null };
+  const filter = CATALOG_QUERY_FILTERS[suffix.toLowerCase()] ?? null;
+  if (!filter) return { text: trimmed, filter: null };
+  return { text: symbol, filter };
+}
+
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "BTC-USD", name: "Bitcoin" },
   { symbol: "ETH-USD", name: "Ethereum" },
@@ -457,14 +494,22 @@ function matchesCatalogQuery(entry: CatalogSeriesRow, query: string): boolean {
   return normalized.split(/\s+/).every((token) => entry.searchText.includes(token));
 }
 
+function matchesCatalogFilter(entry: CatalogSeriesRow, filter: CatalogFilterId): boolean {
+  const sources = FILTER_SOURCES[filter];
+  if (!sources) return true;
+  if (sources.has(entry.sourceId)) return true;
+  // Per-ticker multiples (P/E, EV/EBITDA, yields) are security fields whose
+  // kind is Valuation. The valuation tab is not only the macro CAPE set.
+  return filter === "valuation" && entry.kind === "Valuation";
+}
+
 export function filterCatalogRows(
   rows: readonly CatalogSeriesRow[],
   filter: CatalogFilterId,
   query: string,
 ): CatalogSeriesRow[] {
-  const sources = FILTER_SOURCES[filter];
   return rows.filter((entry) => (
-    (sources ? sources.has(entry.sourceId) : true)
+    matchesCatalogFilter(entry, filter)
     && matchesCatalogQuery(entry, query)
   ));
 }

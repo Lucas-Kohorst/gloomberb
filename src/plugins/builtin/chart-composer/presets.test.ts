@@ -31,6 +31,7 @@ import {
   parseSeriesExpression,
   parseStudyExpression,
   rebindChartSecuritySymbol,
+  replacePrimaryChartSource,
   resolveChartFieldAlias,
   setBuiltinStudies,
   setChartDisplayTimeZone,
@@ -338,6 +339,13 @@ describe("chart composer expressions", () => {
       unitGroup: "probability",
       valueRange: { min: 0, max: 100 },
     });
+  });
+
+  test("opens ADJ-only presets on the 1M range the public tier can serve", () => {
+    expect(buildCustomChartPreset("ADJ:adjacent-djt").viewport.range).toBe("1M");
+    expect(buildPriceChartPreset("red").viewport.range).toBe("1M");
+    expect(buildCustomChartPreset("AAPL:price").viewport.range).toBe("5Y");
+    expect(buildCustomChartPreset("OWID:life-expectancy:USA").viewport.range).toBe("ALL");
   });
 
   test("plots dividend history from G AAPL:div and G AAPL:dvd", () => {
@@ -746,6 +754,47 @@ describe("chart composer presets and formulas", () => {
         timestampMode: "available-at",
       },
     });
+  });
+
+  test("replaces the primary chart source with compatible presentation defaults", () => {
+    const authored = buildPriceChartPreset("AAPL");
+    const secondary = buildCustomChartPreset("MSFT:revenue").series[0]!;
+    const customized = {
+      ...authored,
+      viewport: { range: "3M" as const, resolution: "1h" as const },
+      series: [
+        { ...authored.series[0]!, style: "line" as const, transform: "percent" as const, label: "AAPL" },
+        secondary,
+      ],
+    };
+    const replaced = replacePrimaryChartSource(
+      customized,
+      { kind: "prediction-market", venue: "kalshi", marketId: "KXTEST" },
+      "Example market",
+    );
+
+    expect(replaced.viewport).toEqual({ range: "3M", resolution: "1h" });
+    expect(replaced.series[0]).toMatchObject({
+      source: { kind: "prediction-market", venue: "kalshi", marketId: "KXTEST" },
+      label: "Example market",
+      style: "step",
+      transform: "raw",
+      interpolation: "step-after",
+    });
+    expect(replaced.series[1]).toEqual(secondary);
+
+    const rawSecurity = replacePrimaryChartSource(authored, {
+      kind: "security",
+      instrument: { symbol: "NVDA", exchange: "NASDAQ" },
+      fieldId: "market.ohlcv",
+    }, "NVIDIA");
+    expect(rawSecurity.series[0]).toMatchObject({ style: "candles", interpolation: "none", transform: "raw" });
+    const scalarSecurity = replacePrimaryChartSource(authored, {
+      kind: "security",
+      instrument: { symbol: "NVDA", exchange: "NASDAQ" },
+      fieldId: "market.close",
+    }, "NVIDIA");
+    expect(scalarSecurity.series[0]).toMatchObject({ style: "area", interpolation: "none", transform: "raw" });
   });
 
   test("rebinds followed research symbols without resetting authored chart state", () => {

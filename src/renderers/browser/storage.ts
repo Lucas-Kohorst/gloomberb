@@ -21,10 +21,10 @@ import {
 } from "../../data/config/hosted-user-persist";
 import { normalizeLoadedConfig } from "../../data/config/store/normalize";
 import {
+  BYOK_API_KEYS_CONFIG_KEY,
+  BYOK_PLUGIN_ID,
   hostedByokStorageKey,
-  writeHostedByokKeys,
-} from "../../plugins/builtin/byok/hosted-persist";
-import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
+} from "../../data/config/byok-legacy";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -89,9 +89,6 @@ export function initializeBrowserPersistenceIdentity(
       loaded.onboardingProgress = undefined;
       if (!hasStoredValue(storage, hostedUserConfigStorageKey(migrationUserId))) {
         writeHostedUserConfig(loaded, migrationUserId);
-      }
-      if (!hasStoredValue(storage, hostedByokStorageKey(migrationUserId))) {
-        writeHostedByokKeys(loaded, migrationUserId);
       }
       const keys = loaded.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY];
       if (!isRecord(keys) || !Array.isArray(keys.keys) || keys.keys.length === 0

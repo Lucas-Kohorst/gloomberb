@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   fixtureSearchParams,
+  oddsBoardRequestQuery,
   oddsSearchParams,
   resolveOddsScope,
   scopeHasRequiredFilter,
@@ -41,5 +42,16 @@ describe("resolveOddsScope", () => {
 
   test("refuses an odds request with no fixture", () => {
     expect(() => oddsSearchParams(["", "  "])).toThrow(/fixture_id/);
+  });
+});
+
+describe("oddsBoardRequestQuery", () => {
+  test("reloads for a league, sport, or fixture and not for a team word", () => {
+    expect(oddsBoardRequestQuery("")).toBe("");
+    expect(oddsBoardRequestQuery("nba")).toBe("nba");
+    expect(oddsBoardRequestQuery("Premier League")).toBe("Premier League");
+    expect(oddsBoardRequestQuery("202609250580A50A")).toBe("202609250580A50A");
+    expect(oddsBoardRequestQuery("lakers")).toBe("");
+    expect(oddsBoardRequestQuery("  team  ")).toBe("");
   });
 });

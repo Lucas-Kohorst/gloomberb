@@ -16,6 +16,7 @@ export interface PaneListSearchProps {
   focusToken: number;
   inputRef: RefObject<InputRenderable | null>;
   placeholder: string;
+  label?: string;
   debounceMs?: number;
   glyph?: string;
   width?: number;
@@ -149,7 +150,7 @@ function PaneListChromeHeader({
         tabs={tabs}
         activeValue={activeValue ?? null}
         onSelect={onSelect}
-        scrollable={tabScrollable ?? false}
+        scrollable={tabScrollable ?? true}
       />
     )
   ) : null;
@@ -194,6 +195,7 @@ function PaneListSearchRow({
       focusToken={search.focusToken}
       inputRef={search.inputRef}
       placeholder={search.placeholder}
+      label={search.label}
       debounceMs={search.debounceMs ?? 80}
       glyph={search.glyph}
       normalizeValue={search.normalizeValue}

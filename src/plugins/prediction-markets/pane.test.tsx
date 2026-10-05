@@ -367,7 +367,7 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Kalshi primary rule");
-    expect(frame).toContain("\u2190 Back Will the Fed cut rates?");
+    expect(frame).toContain("\u2190 Back │ Will the Fed cut rates?");
     expect(frame.match(/Will the Fed cut rates\?/g) ?? []).toHaveLength(1);
     expect(frame).not.toContain("[/] search");
     expect(frame).not.toContain("[w]atch");

@@ -1,4 +1,4 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiCapabilities } from "../../ui";
 import { useCallback, useState } from "react";
 import { useThemeColors } from "../../theme/theme-context";
 import { tf } from "../../i18n";
@@ -15,7 +15,7 @@ export interface PaneSuggestion {
 const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
   "ticker-research": [
     { templateId: "chart-composer-pane", label: "Chart", shortcut: "G", needsTicker: true },
-    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+    { templateId: "news-feed-pane", label: "News Feed", shortcut: "N" },
     { templateId: "sec-pane", label: "SEC", shortcut: "SEC", needsTicker: true },
     { templateId: "options-pane", label: "Options", shortcut: "OMON", needsTicker: true },
     { templateId: "earnings-calendar-pane", label: "Earnings", shortcut: "ERN", needsTicker: true },
@@ -27,20 +27,15 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
     { templateId: "market-movers-pane", label: "Movers", shortcut: "MOST" },
   ],
   "chart-composer": [
-    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+    { templateId: "news-feed-pane", label: "News Feed", shortcut: "N" },
     { templateId: "sec-pane", label: "SEC", shortcut: "SEC", needsTicker: true },
     { templateId: "earnings-calendar-pane", label: "Earnings", shortcut: "ERN", needsTicker: true },
-    { templateId: "new-ticker-detail-pane", label: "Ticker", shortcut: "T", needsTicker: true },
+    { templateId: "new-ticker-detail-pane", label: "Ticker", shortcut: "TR", needsTicker: true },
   ],
   "llm-stats": [
     { templateId: "chart-composer-pane", label: "Chart", shortcut: "G", needsTicker: true },
     { templateId: "new-quick-notes-pane", label: "Notes", shortcut: "NOTE" },
     { templateId: "new-chat-pane", label: "Chat", shortcut: "CHAT" },
-  ],
-  weather: [
-    { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
-    { templateId: "prediction-markets-pane", label: "PM", shortcut: "PM" },
-    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
   ],
   polls: [
     { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
@@ -49,14 +44,14 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
   ],
   owid: [
     { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
-    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+    { templateId: "news-feed-pane", label: "News Feed", shortcut: "N" },
     { templateId: "new-quick-notes-pane", label: "Notes", shortcut: "NOTE" },
   ],
 };
 
 const DEFAULT_SUGGESTIONS: PaneSuggestion[] = [
   { templateId: "chart-composer-pane", label: "Chart", shortcut: "G", needsTicker: true },
-  { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+  { templateId: "news-feed-pane", label: "News Feed", shortcut: "N" },
   { templateId: "market-movers-pane", label: "Movers", shortcut: "MOST" },
   { templateId: "connections-pane", label: "Connections", shortcut: "CONN" },
   { templateId: "changelog-pane", label: "Changelog", shortcut: "CHG" },
@@ -75,6 +70,7 @@ export function PaneSuggestions({
   tickerSymbol: string | null;
 }) {
   const colors = useThemeColors();
+  const { nativePaneChrome = false } = useUiCapabilities();
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const suggestions = getPaneSuggestions(paneId);
 
@@ -93,7 +89,15 @@ export function PaneSuggestions({
   const shortcutFg = colors.textMuted;
 
   return (
-    <Box flexDirection="row" alignItems="center" gap={2} data-gloom-role="pane-suggestions">
+    <Box
+      flexDirection="row"
+      flexWrap={nativePaneChrome ? "wrap" : undefined}
+      alignItems="center"
+      justifyContent={nativePaneChrome ? "center" : undefined}
+      gap={2}
+      width={nativePaneChrome ? "100%" : undefined}
+      data-gloom-role="pane-suggestions"
+    >
       {suggestions.map((suggestion, idx) => {
         const hovered = hoveredIdx === idx;
         return (

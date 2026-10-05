@@ -1,11 +1,15 @@
 /** @jsxImportSource react */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatChartLegendValue } from "../../components/chart/composite/format";
+import { tradingViewChartsEnabled } from "../../components/chart/backend";
+import { ChartingLibraryFrame } from "../../plugins/builtin/chart-composer/charting-library-frame";
 import {
-  resolveTradingViewPlot,
-  tradingViewEmbedSrc,
-} from "../../plugins/builtin/chart-composer/tradingview-plot";
-import type { ChartSharePayload, ChartShareSeries } from "../../shares/payload";
+  createResolvedSeriesLibraryFeed,
+  type ResolvedLibraryModel,
+  type ResolvedLibrarySeries,
+} from "../../plugins/builtin/chart-composer/charting-library-feed";
+import type { ChartSharePayload, ChartSharePoint, ChartShareSeries } from "../../shares/payload";
+import type { TimeSeriesPoint } from "../../time-series/types";
 import {
   formatShareChange,
   formatShareRange,
@@ -24,6 +28,102 @@ const CHART_PALETTE = {
 
 const STUDY_PANEL_HEIGHT_PX = 150;
 
+const SHARE_LIBRARY_INTERVALS = [
+  [90_000, "1"],
+  [360_000, "5"],
+  [1_200_000, "15"],
+  [2_400_000, "30"],
+  [3_000_000, "45"],
+  [5_400_000, "60"],
+  [18_000_000, "240"],
+  [172_800_000, "D"],
+  [1_209_600_000, "W"],
+] as const;
+
+type ShareLibraryInterval = typeof SHARE_LIBRARY_INTERVALS[number][1] | "M";
+
+function finiteShareNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function shareClose(point: ChartSharePoint): number | undefined {
+  return finiteShareNumber(point.c) ?? finiteShareNumber(point.v);
+}
+
+function shareLibraryStyle(style: ChartShareSeries["style"]): string {
+  return style === "candles" || style === "ohlc" || style === "hlc" ? style : "line";
+}
+
+function hasLibraryPrice(series: ChartShareSeries): boolean {
+  return series.points.some((point) => shareClose(point) !== undefined && Number.isFinite(point.t));
+}
+
+function polylineValues(series: ChartShareSeries): Array<{ t: number; v: number }> {
+  return series.points.flatMap((point) => {
+    const value = point.v ?? point.c;
+    return typeof value === "number" && Number.isFinite(value) && Number.isFinite(point.t)
+      ? [{ t: point.t, v: value }]
+      : [];
+  });
+}
+
+export function shareLibraryInterval(timesMs: readonly number[]): ShareLibraryInterval {
+  const times = timesMs.filter((time) => Number.isFinite(time)).sort((left, right) => left - right);
+  const gaps: number[] = [];
+  for (let index = 1; index < times.length; index += 1) {
+    const gap = times[index]! - times[index - 1]!;
+    if (gap > 0) gaps.push(gap);
+  }
+  if (gaps.length === 0) return "D";
+  gaps.sort((left, right) => left - right);
+  const middle = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 === 1 ? gaps[middle]! : (gaps[middle - 1]! + gaps[middle]!) / 2;
+  for (const [maxGapMs, interval] of SHARE_LIBRARY_INTERVALS) {
+    if (median <= maxGapMs) return interval;
+  }
+  return "M";
+}
+
+export function shareLibrarySeries(series: readonly ChartShareSeries[]): ResolvedLibrarySeries[] {
+  const plotted: ResolvedLibrarySeries[] = [];
+  for (const entry of series) {
+    const points: TimeSeriesPoint[] = [];
+    for (const point of entry.points) {
+      const close = shareClose(point);
+      if (close === undefined || !Number.isFinite(point.t)) continue;
+      const open = finiteShareNumber(point.o);
+      const high = finiteShareNumber(point.h);
+      const low = finiteShareNumber(point.l);
+      points.push({
+        date: new Date(point.t),
+        observedAt: new Date(point.t),
+        value: close,
+        close,
+        ...(open === undefined ? {} : { open }),
+        ...(high === undefined ? {} : { high }),
+        ...(low === undefined ? {} : { low }),
+      });
+    }
+    if (points.length === 0) continue;
+    plotted.push({
+      id: entry.id,
+      label: entry.label,
+      style: shareLibraryStyle(entry.style),
+      ...(entry.unit ? { unit: entry.unit } : {}),
+      points,
+    });
+  }
+  return plotted;
+}
+
+export function shareLegendSeries(
+  series: readonly ChartShareSeries[],
+  drawn: "library" | "polyline",
+): ChartShareSeries[] {
+  if (drawn === "polyline") return series.filter((entry) => polylineValues(entry).length >= 2);
+  return series.filter(hasLibraryPrice);
+}
+
 function formatShareValue(series: ChartShareSeries, value: number): string {
   return formatChartLegendValue(value, series.unit ?? "");
 }
@@ -35,32 +135,39 @@ function changeTone(change: string | null): "pos" | "neg" | undefined {
   return undefined;
 }
 
-function TradingViewSharePlot({ payload }: { payload: ChartSharePayload }) {
-  const plot = payload.spec ? resolveTradingViewPlot(payload.spec) : { kind: "unmapped" as const };
-  if (plot.kind !== "widget") return null;
-  const src = tradingViewEmbedSrc(plot, {
-    theme: "dark",
-    backgroundColor: CHART_PALETTE.background,
-  });
+function LibrarySharePlot({
+  payload,
+  onError,
+}: {
+  payload: ChartSharePayload;
+  onError: () => void;
+}) {
+  const plotted = useMemo(() => shareLibrarySeries(payload.series), [payload.series]);
+  const handle = useRef(createResolvedSeriesLibraryFeed());
+  const [model, setModel] = useState<ResolvedLibraryModel | null>(null);
+  useEffect(() => {
+    handle.current.setSeries(plotted);
+    const next = handle.current.model();
+    setModel(next.symbol ? next : null);
+  }, [plotted]);
+  if (!model) return null;
   return (
-    <iframe
-      title={`${plot.symbol} TradingView chart`}
-      src={src}
-      allow="clipboard-write; fullscreen"
-      referrerPolicy="origin-when-cross-origin"
-      className="share-panel-canvas"
-      style={{ border: 0, width: "100%", height: "100%", minHeight: 420, backgroundColor: CHART_PALETTE.background }}
+    <ChartingLibraryFrame
+      symbol={model.symbol}
+      interval={shareLibraryInterval(plotted[0]?.points.map((point) => point.date.getTime()) ?? [])}
+      timezone="Etc/UTC"
+      compares={model.compares}
+      chartStyle={model.chartStyle}
+      priceScale={model.priceScale}
+      backgroundColor={CHART_PALETTE.background}
+      feed={handle.current.feed}
+      onError={onError}
     />
   );
 }
 
 function polylineForSeries(series: ChartShareSeries, width: number, height: number): string | null {
-  const values = series.points.flatMap((point) => {
-    const value = point.v ?? point.c;
-    return typeof value === "number" && Number.isFinite(value) && Number.isFinite(point.t)
-      ? [{ t: point.t, v: value }]
-      : [];
-  });
+  const values = polylineValues(series);
   if (values.length < 2) return null;
   const minT = Math.min(...values.map((point) => point.t));
   const maxT = Math.max(...values.map((point) => point.t));
@@ -156,14 +263,23 @@ export function ChartShareView({
 }) {
   const span = useMemo(() => payloadTimeSpan(payload), [payload]);
   const windowLabel = span ? formatShareSpan(span.startMs, span.endMs) : null;
-  const plot = payload.spec ? resolveTradingViewPlot(payload.spec) : { kind: "unmapped" as const };
-
+  const [libraryFailed, setLibraryFailed] = useState(false);
   const panels = useMemo(() => payload.panels.map((panel, index) => ({
     panel,
     series: payload.series.filter((entry) => entry.panelId === panel.id),
     fill: index === 0,
     heightPx: STUDY_PANEL_HEIGHT_PX,
   })).filter((entry) => entry.series.length > 0), [payload.panels, payload.series]);
+  const libraryMode = tradingViewChartsEnabled()
+    && !libraryFailed
+    && shareLibrarySeries(payload.series).length > 0;
+  const legendSeries = useMemo(
+    () => shareLegendSeries(
+      libraryMode ? payload.series : panels.flatMap((panel) => panel.series),
+      libraryMode ? "library" : "polyline",
+    ),
+    [libraryMode, panels, payload.series],
+  );
 
   const captured = formatShareTimestamp(payload.capturedAt);
   const footer = [
@@ -182,10 +298,10 @@ export function ChartShareView({
     >
       <div className="share-chart-frame">
         <div className="share-chart">
-          {payload.series.length > 0 ? (
+          {legendSeries.length > 0 ? (
             <div className="share-legend">
               <ul>
-                {payload.series.map((entry) => {
+                {legendSeries.map((entry) => {
                   const stats = seriesShareStats(entry);
                   if (!stats) {
                     const name = shareLegendName(entry.label, payload.title);
@@ -212,9 +328,9 @@ export function ChartShareView({
             </div>
           ) : null}
 
-          {plot.kind === "widget" ? (
+          {libraryMode ? (
             <div className="share-panels">
-              <TradingViewSharePlot payload={payload} />
+              <LibrarySharePlot payload={payload} onError={() => setLibraryFailed(true)} />
             </div>
           ) : panels.length > 0 ? (
             <div className="share-panels">

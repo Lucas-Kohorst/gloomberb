@@ -116,14 +116,23 @@ describe("universal series resolution", () => {
       }),
       loadUniversalSeries: async (source): Promise<UniversalSeriesLoadResult> => {
         switch (source.kind) {
-          case "adjacent-index": return {
-            points: [
-              { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 55, provenance: { providerId: "adjacent", quality: "reported" } },
-              { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 60, provenance: { providerId: "adjacent", quality: "reported" } },
-            ],
-            unit: "index",
-            unitGroup: "level",
-          };
+          case "adjacent-index": {
+            // ADJ presets open on a 1M range, so the fixture must sit inside that window.
+            const dates = [
+              new Date(Date.now() - 25 * 86_400_000),
+              new Date(Date.now() - 5 * 86_400_000),
+            ];
+            return {
+              points: dates.map((date, index) => ({
+                date,
+                observedAt: date,
+                value: index === 0 ? 55 : 60,
+                provenance: { providerId: "adjacent", quality: "reported" },
+              })),
+              unit: "index",
+              unitGroup: "level",
+            };
+          }
           case "benchmark": return {
             points: [
               { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" } },
@@ -259,5 +268,71 @@ describe("universal series resolution", () => {
     expect(pm.series[0]?.unit).toBe("%");
     expect(pm.series[0]?.unitGroup).toBe("probability");
     expect(pm.series[0]?.valueRange).toEqual({ min: 0, max: 100 });
+  });
+
+  test("reports the visible adjacent source's range support, tier, and resolutions", async () => {
+    const spec: ChartSpec = buildCustomChartPreset("ADJ:adjacent-djt");
+    const requestedRanges: Array<string | undefined> = [];
+    const publicSupport = {
+      ranges: ["1D", "1W", "1M", "3M"] as const,
+      resolutions: [
+        { resolution: "1h", maxRange: "1M" },
+        { resolution: "1d", maxRange: "3M" },
+      ] as const,
+      accessTier: "public" as const,
+    };
+    const result = await resolveChartSpecData(spec, makeSources({
+      universalSeriesSupport: () => publicSupport,
+      loadUniversalSeries: async (source, request) => {
+        requestedRanges.push(request?.range);
+        return makeSources().loadUniversalSeries!(source);
+      },
+    }));
+
+    expect(result.rangeSupport).toEqual(["1D", "1W", "1M", "3M"]);
+    expect(result.accessTier).toBe("public");
+    expect(result.resolutionSupport).toEqual([
+      { resolution: "1h", maxRange: "1M" },
+      { resolution: "1d", maxRange: "3M" },
+    ]);
+    expect(requestedRanges).toEqual(["1M"]);
+
+    const bare = await resolveChartSpecData(spec, makeSources());
+    expect(bare.rangeSupport).toBeUndefined();
+    expect(bare.accessTier).toBeUndefined();
+    expect(bare.resolutionSupport).toBeUndefined();
+  });
+
+  test("intersects range and resolution support across visible adjacent sources", async () => {
+    const spec: ChartSpec = buildCustomChartPreset("ADJ:adjacent-djt, ADJ:house");
+    const supports = [
+      {
+        ranges: ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"] as const,
+        resolutions: [
+          { resolution: "1h", maxRange: "1M" },
+          { resolution: "1d", maxRange: "ALL" },
+        ] as const,
+        accessTier: "keyed" as const,
+      },
+      {
+        ranges: ["1D", "1W", "1M", "3M"] as const,
+        resolutions: [
+          { resolution: "1h", maxRange: "1M" },
+          { resolution: "1d", maxRange: "3M" },
+        ] as const,
+        accessTier: "public" as const,
+      },
+    ] as const;
+    let call = 0;
+    const result = await resolveChartSpecData(spec, makeSources({
+      universalSeriesSupport: () => supports[Math.min(call++, supports.length - 1)]!,
+    }));
+
+    expect(result.accessTier).toBe("public");
+    expect(result.rangeSupport).toEqual(["1D", "1W", "1M", "3M"]);
+    expect(result.resolutionSupport).toEqual([
+      { resolution: "1h", maxRange: "1M" },
+      { resolution: "1d", maxRange: "3M" },
+    ]);
   });
 });

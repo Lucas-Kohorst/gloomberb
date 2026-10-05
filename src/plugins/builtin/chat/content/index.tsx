@@ -38,6 +38,7 @@ import {
 import { buildChatUserByUsername } from "./user-map";
 import { useChatComposerRuntime } from "./composer-runtime";
 import { useChatMessageSelection } from "./selection-runtime";
+import { usePaneFooterHintBindings } from "../../shared/pane-footer";
 import type { ChatMessage } from "../../../../api-client";
 import { NewDmDialog } from "./new-dm-dialog";
 import { usePluginAppActions } from "../../../runtime";
@@ -624,6 +625,19 @@ export function ChatContent({
     openSelectedProfile,
   });
 
+  const footerHints = useMemo(() => [
+    { id: "search", key: "/", label: "search", onPress: openSearch },
+    ...(
+      !inputFocused
+      && (
+        (selectedIdx >= 0 && selectedIdx < visibleMessages.length)
+        || (activeChannel?.kind === "direct" && !!activeChannel.dmUser)
+      )
+        ? [{ id: "profile", key: "p", label: "rofile", onPress: () => { openSelectedProfile(); } }]
+        : []
+    ),
+  ], [activeChannel, inputFocused, openSearch, openSelectedProfile, selectedIdx, visibleMessages.length]);
+
   usePaneFooter("chat", () => {
     const info: PaneFooterSegment[] = [];
     if (loading) {
@@ -640,35 +654,22 @@ export function ChatContent({
     }
     return {
       info,
-      hints: [
-        { id: "search", key: "/", label: "search", onPress: openSearch },
-        ...(
-          !inputFocused
-          && (
-            (selectedIdx >= 0 && selectedIdx < visibleMessages.length)
-            || (activeChannel?.kind === "direct" && !!activeChannel.dmUser)
-          )
-            ? [{ id: "profile", key: "p", label: "rofile", onPress: () => { openSelectedProfile(); } }]
-            : []
-        ),
-      ],
+      hints: footerHints,
     };
   }, [
-    activeChannel,
     canSend,
-    inputFocused,
+    footerHints,
     loadFailed,
     loading,
-    openSearch,
-    openSelectedProfile,
-    retryMessages,
     searching,
-    selectedIdx,
-    showChannelSidebar,
-    stackedConversationOpen,
     user,
     visibleMessages.length,
   ]);
+
+  usePaneFooterHintBindings(
+    focused && !commandBarOpen && !inputFocused && !searchFocused,
+    footerHints,
+  );
 
   usePaneHeaderAccessory("chat-presence", () => {
     if (!channelOnline) return null;

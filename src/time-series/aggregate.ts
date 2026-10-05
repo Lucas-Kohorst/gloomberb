@@ -2,16 +2,18 @@ import type { PricePoint } from "../types/financials";
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
-function bucketStartMs(timestampMs: number): number {
-  return Math.floor(timestampMs / FOUR_HOURS_MS) * FOUR_HOURS_MS;
-}
-
-/**
- * Buckets anchor to the UTC epoch (continuous-market convention) for every
- * source. Equity bars are intentionally not re-anchored to the exchange
- * session open; no session metadata exists at this seam.
- */
-export function aggregateTo4h(points: readonly PricePoint[]): PricePoint[] {
+/** An exchange timezone keeps four-hour equity candles aligned across DST. */
+export function aggregateTo4h(points: readonly PricePoint[], timeZone?: string): PricePoint[] {
+  const clock = timeZone ? new Intl.DateTimeFormat("en-US", {
+    timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }) : null;
+  const bucketStartMs = (timestampMs: number): number => {
+    if (!clock) return Math.floor(timestampMs / FOUR_HOURS_MS) * FOUR_HOURS_MS;
+    const parts = clock.formatToParts(timestampMs);
+    const hour = Number(parts.find((part) => part.type === "hour")!.value);
+    const minute = Number(parts.find((part) => part.type === "minute")!.value);
+    return Math.floor(timestampMs / 60_000) * 60_000 - ((hour * 60 + minute) % 240) * 60_000;
+  };
   if (points.length === 0) return [];
   const buckets = new Map<number, PricePoint[]>();
   for (const point of points) {

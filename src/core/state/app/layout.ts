@@ -50,7 +50,9 @@ function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceCo
     };
   }
   if (instance.paneId === TICKER_RESEARCH_PANE_ID) {
-    return { activeTabId: "overview" };
+    const configured = instance.settings?.defaultTabId;
+    const defaultTabId = typeof configured === "string" ? configured.trim() : "";
+    return { activeTabId: defaultTabId || "overview" };
   }
   return {};
 }
@@ -118,6 +120,10 @@ function getPaneState(state: Pick<AppState, "paneState">, paneId: string): PaneR
   return state.paneState[paneId] ?? {};
 }
 
+function isCursorSymbol(value: string): boolean {
+  return /^[A-Z0-9^][A-Z0-9.^_=/-]{0,31}$/.test(value.trim().toUpperCase());
+}
+
 /**
  * Any pane that publishes `cursorSymbol` in its pane state is a ticker source; every other pane
  * resolves through its binding, so follow chains keep working across source types.
@@ -128,7 +134,7 @@ export function resolveTickerForPane(state: AppState, paneId: string, seen = new
   const instance = findPaneInstance(state.config.layout, paneId);
   if (!instance) return null;
   const cursorSymbol = getPaneState(state, paneId).cursorSymbol;
-  if (typeof cursorSymbol === "string" && cursorSymbol.trim()) return cursorSymbol;
+  if (typeof cursorSymbol === "string" && isCursorSymbol(cursorSymbol)) return cursorSymbol.trim().toUpperCase();
   return resolveTickerFromBinding(state, instance.binding, seen);
 }
 
@@ -201,16 +207,18 @@ function sameRecentCommandEntry(left: RecentCommand, right: RecentCommand | unde
 }
 
 /**
- * MRU ring of recently executed command-bar entries, newest first. An entry
- * already in the ring is promoted instead of duplicated; re-running a recent
- * command therefore puts it back on top.
+ * MRU ring of recently executed command-bar entries, newest first. The same
+ * id with the same argument is promoted instead of duplicated, so two tickers
+ * opened in one pane both stay in the ring.
  */
 export function nextRecentCommands(
   current: readonly RecentCommand[],
   entry: RecentCommand | null,
 ): RecentCommand[] {
   if (!entry || !entry.id || !entry.label) return [...current];
-  const next = [entry, ...current.filter((existing) => existing.id !== entry.id)]
+  const next = [entry, ...current.filter((existing) => (
+    existing.id !== entry.id || existing.arg !== entry.arg
+  ))]
     .slice(0, RECENT_COMMANDS_LIMIT);
   if (next.length === current.length && next.every((candidate, index) => (
     sameRecentCommandEntry(candidate, current[index])

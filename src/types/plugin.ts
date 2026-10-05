@@ -784,9 +784,9 @@ export interface GloomPluginContext {
   registerDocumentSearchProvider(provider: DocumentSearchProvider): () => void;
   registerChartSeriesCatalog(provider: ChartSeriesCatalogProvider): () => void;
   /**
-   * Advertise that this plugin accepts a personal API key. ACM Keys (local
-   * TUI/desktop) lists registered services and stores keys in the BYOK vault
-   * so later `getApiKey(service.id)` calls pick them up.
+   * Advertise that this plugin accepts a personal API key. Inert since the
+   * BYOK vault was removed: registrations are recorded for inventory and
+   * diagnostics only, and `getApiKey(service.id)` keeps returning undefined.
    */
   registerByokService(service: PluginByokService): () => void;
   registerAlertCondition(condition: AlertConditionDef): void;
@@ -826,13 +826,12 @@ export interface GloomPluginContext {
 
   /**
    * Resolve an API key for a known service (e.g. "adjacent", "hyperliquid",
-   * "sec-edgar") or a custom BYOK entry. Checks stored BYOK keys first, then
-   * falls back to the service's configured environment variable.
+   * "sec-edgar"). Always undefined now that the BYOK vault is gone — plugins
+   * read their own environment variable instead (`readProcessEnv`), so callers
+   * must keep that fallback.
    *
-   * External (user-installed) plugins are denied key resolution unless the
-   * host has granted this plugin explicit access via
-   * `PluginRegistry.grantApiKeyAccess` (issued after user approval); those
-   * plugins also receive a `getConfig()` view with BYOK key values redacted.
+   * External (user-installed) plugins also receive a `getConfig()` view with
+   * credential-bearing fields redacted.
    */
   getApiKey(serviceId: string): string | undefined;
 

@@ -52,6 +52,16 @@ describe("notification log", () => {
     expect(saved.at(-1)).toEqual([]);
   });
 
+  test("skips an identical body from the same source within ten minutes", () => {
+    configureNotificationLog({ get: () => [], set: () => {} });
+    const first = appendNotificationLog({ body: "Top News: Volkswagen" }, "news", 1_000);
+    const second = appendNotificationLog({ body: "Top News: Volkswagen" }, "news", 1_000 + 60_000);
+    expect(getNotificationLog()).toHaveLength(1);
+    expect(second.id).toBe(first.id);
+    appendNotificationLog({ body: "Top News: Volkswagen" }, "news", 1_000 + 11 * 60_000);
+    expect(getNotificationLog()).toHaveLength(2);
+  });
+
   test("upserts entries by refId instead of duplicating", () => {
     configureNotificationLog({ get: () => [], set: () => {} });
     const first = appendNotificationLog({ body: "first body", refId: "m1" }, "chat", 100);
@@ -75,4 +85,16 @@ describe("notification log", () => {
       at: 100,
     });
   });
+});
+
+test("queued writes retain the store that owned the notification", async () => {
+  const savedA: unknown[] = [];
+  const savedB: unknown[] = [];
+  configureNotificationLog({ get: () => [], set: (entries) => { savedA.push(entries); } });
+  appendNotificationLog({ body: "Account A" });
+  configureNotificationLog({ get: () => [], set: (entries) => { savedB.push(entries); } });
+  appendNotificationLog({ body: "Account B" });
+  await flushNotificationLog();
+  expect(savedA).toMatchObject([[{ body: "Account A" }]]);
+  expect(savedB).toMatchObject([[{ body: "Account B" }]]);
 });

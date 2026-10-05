@@ -1,6 +1,7 @@
 import type { AppNotificationRequest, AppNotificationType } from "../types/plugin";
 
 export const NOTIFICATION_LOG_LIMIT = 300;
+const IDENTICAL_BODY_DEDUPE_MS = 10 * 60 * 1000;
 
 export interface NotificationLogEntry {
   id: string;
@@ -56,9 +57,10 @@ function publish(): void {
 function persist(): void {
   if (!store) return;
   const snapshot = entries;
+  const targetStore = store;
   writeQueue = writeQueue
-    .catch(() => {})
-    .then(() => store?.set(snapshot));
+    .then(() => targetStore.set(snapshot))
+    .catch(() => {});
 }
 
 export function configureNotificationLog(nextStore: NotificationLogStore | null): void {
@@ -104,6 +106,18 @@ export function appendNotificationLog(
       publish();
       return existing;
     }
+  } else {
+    const duplicateIndex = entries.findIndex((candidate) => (
+      candidate.body === entry.body
+      && candidate.source === entry.source
+      && at - candidate.at <= IDENTICAL_BODY_DEDUPE_MS
+    ));
+    if (duplicateIndex >= 0) {
+      const existing = entries[duplicateIndex]!;
+      persist();
+      publish();
+      return existing;
+    }
   }
   entries = trim([...entries, entry]);
   persist();
@@ -120,6 +134,14 @@ export function markNotificationLogRead(ids?: Iterable<string>): void {
   entries = next;
   persist();
   publish();
+}
+
+export function markNotificationLogReadByRef(refIds: Iterable<string>): void {
+  const wanted = new Set(refIds);
+  if (wanted.size === 0) return;
+  markNotificationLogRead(
+    entries.filter((entry) => entry.refId && wanted.has(entry.refId)).map((entry) => entry.id),
+  );
 }
 
 export function clearNotificationLog(): void {

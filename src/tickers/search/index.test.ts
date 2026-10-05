@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DataProvider } from "../../types/data-provider";
+import type { Quote } from "../../types/financials";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { createTestDataProvider } from "../../test-support/data-provider";
@@ -9,7 +10,6 @@ import {
   createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
   normalizeTickerInput,
-  parseTickerListingQuery,
   rankTickerSearchItems,
   resolveTickerSearch,
   searchTickerCandidates,
@@ -72,6 +72,10 @@ describe("ticker-search utilities", () => {
     expect(normalizeTickerInput("AAPL", undefined)).toBe("AAPL");
     expect(normalizeTickerInput("AAPL", " msft ")).toBe("MSFT");
     expect(normalizeTickerInput(null, undefined)).toBeNull();
+    expect(normalizeTickerInput(".", undefined)).toBeNull();
+    expect(normalizeTickerInput(null, ".")).toBeNull();
+    expect(normalizeTickerInput(null, "NYSE:BLK")).toBe("NYSE:BLK");
+    expect(normalizeTickerInput(null, "BLK US")).toBe("BLK US");
   });
 
   test("finds exact provider matches for direct ticker resolution", async () => {
@@ -157,6 +161,187 @@ describe("ticker-search utilities", () => {
     });
     expect(resolved?.kind === "provider" ? resolved.result.name : null).toBe("Coinbase Global, Inc.");
     expect(resolved?.kind === "provider" ? resolved.result.exchange : null).toBe("NASDAQ");
+  });
+
+  test("keeps the other exchanges when a saved listing already covers one venue", () => {
+    const results = buildTickerSearchCandidates({
+      query: "BIRD",
+      tickers: new Map<string, TickerRecord>([[
+        "BIRD",
+        makeTicker("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+      ]]),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IDX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "IEX" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "TSXV" }),
+      ],
+      totalLimit: 8,
+    });
+
+    const venues = results.map((item) => item.exchangeLabel || item.right);
+    expect(venues.filter((venue) => venue === "IDX")).toEqual(["IDX"]);
+    expect(new Set(venues)).toEqual(new Set(["IDX", "NASDAQ", "LSE", "IEX", "TSXV"]));
+    expect(results.find((item) => item.exchangeLabel === "IDX")?.kind).toBe("ticker");
+  });
+
+  test("orders one symbol's venues by volume and keeps a quieter exchange", () => {
+    const venuesOf = (
+      exchanges: Array<{ exchange: string; volume?: number; averageVolume?: number }>,
+      tickers: Map<string, TickerRecord> = new Map(),
+    ) => {
+      const results = buildTickerSearchCandidates({
+        query: "BIRD",
+        tickers,
+        providerResults: exchanges.map((entry) => makeSearchResult("BIRD", "Allbirds Inc.", {
+          exchange: entry.exchange,
+          type: entry.exchange === "IDX" ? "INDEX" : "EQUITY",
+          ...(entry.volume != null ? { volume: entry.volume } : {}),
+          ...(entry.averageVolume != null ? { averageVolume: entry.averageVolume } : {}),
+        })),
+        totalLimit: 8,
+      });
+      return {
+        venues: results.map((item) => item.exchangeLabel || item.right),
+        results,
+      };
+    };
+
+    // No activity on the hit: US listings still outrank LSE, and NASDAQ does not jump NYSE.
+    expect(venuesOf([
+      { exchange: "NYSE" },
+      { exchange: "NASDAQ" },
+      { exchange: "LSE" },
+    ]).venues).toEqual(["NYSE", "NASDAQ", "LSE"]);
+
+    // Before this, NYSE stayed first because the two US venues tied. NASDAQ's volume leads.
+    expect(venuesOf([
+      { exchange: "NYSE", volume: 1_000 },
+      { exchange: "NASDAQ", volume: 5_000 },
+      { exchange: "LSE", volume: 50 },
+    ]).venues).toEqual(["NASDAQ", "NYSE", "LSE"]);
+
+    // A louder NYSE stays ahead. NASDAQ is not pinned first.
+    expect(venuesOf([
+      { exchange: "NASDAQ", volume: 100 },
+      { exchange: "NYSE", volume: 9_000 },
+      { exchange: "LSE", volume: 50 },
+    ]).venues).toEqual(["NYSE", "NASDAQ", "LSE"]);
+
+    // Session volume is missing, so average volume is the activity field.
+    expect(venuesOf([
+      { exchange: "NYSE", averageVolume: 100 },
+      { exchange: "NASDAQ", averageVolume: 5_000 },
+    ]).venues).toEqual(["NASDAQ", "NYSE"]);
+
+    // The saved NASDAQ row has no quote of its own; the provider hit's volume still counts.
+    const saved = venuesOf([
+      { exchange: "NASDAQ", volume: 5_000 },
+      { exchange: "NYSE", volume: 1_000 },
+    ], new Map([["BIRD", makeTicker("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" })]]));
+    expect(saved.venues).toEqual(["NASDAQ", "NYSE"]);
+    expect(saved.results.find((item) => item.exchangeLabel === "NASDAQ")?.kind).toBe("ticker");
+    expect(saved.results).toHaveLength(2);
+
+    // An explicit venue hint still beats a louder listing on the other exchange.
+    const hinted = buildTickerSearchCandidates({
+      query: "NYSE BIRD",
+      tickers: new Map(),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ", volume: 9_000 }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NYSE", volume: 100 }),
+      ],
+      totalLimit: 8,
+    });
+    expect(hinted.map((item) => item.exchangeLabel)).toEqual(["NYSE", "NASDAQ"]);
+  });
+
+  test("quotes exact venues when the search hit has no volume", async () => {
+    const volumes: Record<string, number> = { NYSE: 1_000, NASDAQ: 5_000, LSE: 50 };
+    let quoteCalls = 0;
+    const results = await searchTickerCandidates({
+      query: "BIRD",
+      tickers: new Map(),
+      dataProvider: createTestDataProvider({
+        id: "test",
+        search: async () => ["NYSE", "NASDAQ", "LSE"].map((exchange) => (
+          makeSearchResult("BIRD", "Allbirds Inc.", { exchange })
+        )),
+        getQuotesBatch: async (targets) => {
+          quoteCalls += 1;
+          return targets.map((target) => ({
+            target,
+            quote: {
+              symbol: target.symbol,
+              price: 1,
+              currency: "USD",
+              change: 0,
+              changePercent: 0,
+              lastUpdated: 0,
+              volume: volumes[target.exchange ?? ""],
+            } satisfies Quote,
+          }));
+        },
+      }),
+    });
+    expect(quoteCalls).toBe(1);
+    expect(results.map((item) => item.exchangeLabel).slice(0, 3)).toEqual(["NASDAQ", "NYSE", "LSE"]);
+  });
+
+  test("does not quote a name search", async () => {
+    let quoteCalls = 0;
+    await searchTickerCandidates({
+      query: "nvidia",
+      tickers: new Map(),
+      dataProvider: createTestDataProvider({
+        id: "test",
+        search: async () => [
+          makeSearchResult("NVDA", "NVIDIA Corporation", { exchange: "NASDAQ" }),
+          makeSearchResult("NVDA", "NVIDIA Corporation", { exchange: "XETRA" }),
+        ],
+        getQuotesBatch: async () => {
+          quoteCalls += 1;
+          return [];
+        },
+      }),
+    });
+    expect(quoteCalls).toBe(0);
+  });
+
+  test("keeps provider listings when the saved ticker has no venue", () => {
+    const results = buildTickerSearchCandidates({
+      query: "BIRD",
+      tickers: new Map<string, TickerRecord>([[
+        "BIRD",
+        makeTicker("BIRD", "Allbirds Inc.", { exchange: "" }),
+      ]]),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ" }),
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "LSE" }),
+      ],
+      totalLimit: 8,
+    });
+
+    const venues = results.map((item) => item.exchangeLabel || item.right);
+    expect(venues).toContain("NASDAQ");
+    expect(venues).toContain("LSE");
+  });
+
+  test("keeps only the named class when a class code precedes the symbol", () => {
+    const results = buildTickerSearchCandidates({
+      query: "EQ BIRD",
+      tickers: new Map(),
+      providerResults: [
+        makeSearchResult("BIRD", "Allbirds Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
+        makeSearchResult("BIRD", "Allbirds ETF", { exchange: "ARCA", type: "ETF" }),
+        makeSearchResult("BIRDF", "Bird Fund", { exchange: "NASDAQ", type: "EQUITY" }),
+      ],
+      totalLimit: 8,
+    });
+    expect(results.map((item) => item.symbol)).toContain("BIRD");
+    expect(results.every((item) => item.instrumentClass === "equity")).toBe(true);
+    expect(results.some((item) => item.symbol === "BIRD" && item.exchangeLabel === "ARCA")).toBe(false);
   });
 
   test("combines local and provider candidates without duplicate saved symbols", async () => {
@@ -675,6 +860,33 @@ describe("ticker-search utilities", () => {
     expect(ticker.metadata.exchange).toBe("BYMA");
     expect(ticker.metadata.currency).toBe("ARS");
     expect(saved).toHaveLength(1);
+  });
+
+  test("keeps the S&P 500 record when a stock listing shares SPX", async () => {
+    const existing = makeTicker("SPX", "S&P 500", { exchange: "INDEX", currency: "USD", assetCategory: "INDEX" });
+    existing.metadata.broker_contracts = [];
+    const saved: TickerRecord[] = [];
+    const repository = {
+      loadTicker: async () => existing,
+      createTicker: async (metadata: TickerRecord["metadata"]) => ({ metadata }),
+      saveTicker: async (ticker: TickerRecord) => {
+        saved.push(ticker);
+      },
+    };
+
+    const { ticker } = await upsertTickerFromSearchResult(repository as any, {
+      providerId: "test",
+      symbol: "SPX",
+      name: "Spirax Group plc",
+      exchange: "LSE",
+      type: "EQUITY",
+      currency: "GBP",
+    });
+
+    expect(ticker.metadata.name).toBe("S&P 500");
+    expect(ticker.metadata.exchange).toBe("INDEX");
+    expect(ticker.metadata.currency).toBe("USD");
+    expect(saved).toHaveLength(0);
   });
 
   test("exposes local ticker candidates in saved category", async () => {

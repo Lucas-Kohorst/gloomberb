@@ -8,8 +8,8 @@ describe("resolveWatchlistRowOpen", () => {
     expect(resolveWatchlistRowOpen(ticker)).toEqual({ templateId: "adjacent-indices-pane", arg: "RED" });
   });
 
-  test("Adjacent market watchlist rows open the markets list", () => {
+  test("Adjacent market watchlist rows open Prediction Markets", () => {
     const ticker = adjacentMarketTickerRecord({ id: "m1", ticker: "FED", title: "Fed cuts", platform: "kalshi" });
-    expect(resolveWatchlistRowOpen(ticker)).toEqual({ templateId: "adjacent-markets-pane", arg: "Fed cuts" });
+    expect(resolveWatchlistRowOpen(ticker)).toEqual({ templateId: "new-prediction-markets-pane", arg: "Fed cuts" });
   });
 });

@@ -226,7 +226,6 @@ export function CustomViewPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter(CUSTOM_VIEW_PANE_ID, () => ({
     info: [
-      { id: "source", parts: [{ text: data?.sourceLabel ?? (spec?.source.kind === "inline" ? spec.source.pane : "team view"), tone: "muted" as const }] },
       ...(data?.errors.length ? [{ id: "errors", parts: [{ text: data.errors[0]!, tone: "warning" as const }] }] : []),
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],

@@ -1,5 +1,5 @@
-import { Box, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
 import type {
   GloomPlugin,
   PaneProps,
@@ -7,13 +7,14 @@ import type {
   PaneTemplateContext,
 } from "../../../types/plugin";
 import {
-  EmptyState,
+  PaneListChrome,
+  PaneStatusBody,
+  usePaneListSearch,
   FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
   useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
+import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -37,9 +38,6 @@ function detailBody(record: CertificateRecord): string {
   return [
     `Serial number: ${record.serialNumber || "—"}`,
     `Issuer: ${record.issuerName || "—"}`,
-    `Common name: ${record.commonName || "—"}`,
-    `Not before: ${formatDate(record.notBefore)}`,
-    `Not after: ${formatDate(record.notAfter)}`,
     "",
     "Name values:",
     ...(record.nameValues.length > 0 ? record.nameValues.map((name) => `- ${name}`) : ["- —"]),
@@ -77,91 +75,45 @@ function createInstance(options?: PaneTemplateCreateOptions) {
   };
 }
 
-function CrtShPane({ width, height, focused }: PaneProps) {
+export function CrtShPane({ width, height, focused }: PaneProps) {
   const client = useMemo(() => new CrtShClient(), []);
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? "").trim());
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [focusToken, setFocusToken] = useState(0);
-  const searchRef = useRef<InputRenderable | null>(null);
-  const [records, setRecords] = useState<CertificateRecord[]>([]);
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useDebouncedPluginPaneState<string | null>("selectedId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const load = useCallback((value: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStatus("loading");
-    setError(null);
-    if (!value.trim()) {
-      setRecords([]);
-      setStatus("loaded");
-      return;
-    }
-    void client.searchCertificates(value, (partial) => {
-      if (abortRef.current !== controller) return;
-      setRecords(partial);
-      setStatus("loaded");
-      setLastUpdated(Date.now());
-    }).then((page) => {
-      if (abortRef.current !== controller) return;
-      setRecords(page.records);
-      setSelectedIdx(0);
-      setStatus("loaded");
-      setLastUpdated(Date.now());
-    }).catch((reason) => {
-      if (abortRef.current !== controller) return;
-      if (reason instanceof Error && reason.name === "AbortError") return;
-      setRecords([]);
-      setError(reason instanceof Error ? reason.message : String(reason));
-      setStatus("error");
-    });
-  }, [client, setSelectedIdx]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => load(query), query ? SEARCH_DEBOUNCE_MS : 0);
-    return () => clearTimeout(timer);
-  }, [load, query]);
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setFocusToken((value) => value + 1);
-  }, []);
+  const loader = useCallback(async (_force: boolean, signal: AbortSignal, publishPreview: (records: CertificateRecord[]) => void) => {
+    const page = await client.searchCertificates(query, publishPreview, signal);
+    return page.records;
+  }, [client, query]);
+  const { data, loading, error, updatedAt, reload: load } = useAsyncResource(query.trim() ? loader : null);
+  const records = data ?? [];
   const updateQuery = useCallback((value: string) => {
     setQuery(value.trim());
-    setSelectedIdx(0);
+    setSelectedId(null);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
-  const selected = records[selectedIdx] ?? null;
+  }, [setQuery, setSelectedId]);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused: focused && !openItemId, value: query, onQueryChange: updateQuery,
+    placeholder: "domain (e.g. example.com)", debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: (value) => value.trim(),
+  });
+  const selected = records.find((record) => String(record.id) === selectedId) ?? records[0] ?? null;
   const openRecord = openItemId ? records.find((record) => String(record.id) === openItemId) : null;
   const activeRecord = openRecord ?? selected;
-  const loading = status === "loading";
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const poll = useFeedPollInterval({ overrideConfigKey: "pollIntervalMinutes", defaultMinutes: REFRESH_INTERVAL_MINUTES });
-    useAutoRefresh(
-    status === "loaded" && query ? lastUpdated : null,
-    () => load(query), poll.intervalMinutes,
-  );
+  useAutoRefresh(!loading && !error && query ? updatedAt : null, load, poll.intervalMinutes);
   const items = useMemo(() => toFeedItems(records), [records]);
 
   useShortcut((event) => {
-    if (!focused || openItemId || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "/")) { event.preventDefault?.(); focusSearch(); }
-    if (isPlainKey(event, "r")) { event.preventDefault?.(); load(query); }
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) { event.preventDefault?.(); event.stopPropagation?.(); load(); }
   }, { enabled: focused });
 
   usePaneStatusLinkFooter({
     registrationId: CRT_SH_PLUGIN_ID,
-    focused,
+    focused: focused && !searchFocused,
     url: activeRecord ? `https://crt.sh/?q=${encodeURIComponent(activeRecord.commonName || query)}` : null,
-    source: activeRecord?.commonName,
-    label: "certificate",
     loading,
     error,
     info: [
@@ -171,25 +123,25 @@ function CrtShPane({ width, height, focused }: PaneProps) {
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !!activeRecord,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      ...(!openItemId ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
   });
 
-  const rootBefore = (
-    <InputSearchBar value={query} focused={focused && !openItemId} active={searchFocused}
-      width={width} focusToken={focusToken} inputRef={searchRef} placeholder="domain (e.g. example.com)"
-      debounceMs={SEARCH_DEBOUNCE_MS} normalizeValue={(value) => value.trim()}
-      onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
-      onNavigateDown={() => setSearchFocused(false)} onQueryChange={updateQuery} />
-  );
-  if (loading && records.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label={`Searching crt.sh${query ? ` for ${query}` : ""}...`} /></Box></Box>;
-  if (error && records.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Certificate search unavailable." message={error} hint="Press r to retry." /></Box></Box>;
+  const rootBefore = <PaneListChrome width={width} focused={focused && !openItemId} search={search} />;
+  if ((loading || error) && records.length === 0) {
+    return <Box flexDirection="column" width={width} height={height}>
+      {rootBefore}
+      <PaneStatusBody loading={loading} error={error} subject="Certificate search" onRetry={load} />
+    </Box>;
+  }
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused}
-    rootBefore={rootBefore} items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx}
-    onOpenItemIdChange={setOpenItemId} sourceLabel="Issuer" titleLabel="Domain" onRootKeyDown={(event, context) => {
+    rootBefore={rootBefore} items={items} selectedItemId={selected ? String(selected.id) : null}
+    onSelect={(index) => setSelectedId(records[index] ? String(records[index]!.id) : null)}
+    openItemId={openItemId} onOpenItemIdChange={setOpenItemId}
+    sourceLabel="Issuer" titleLabel="Domain" onRootKeyDown={(event, context) => {
       if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; }
-      if (event.name === "/") { event.preventDefault?.(); focusSearch(); return true; }
-      if (event.name === "r") { event.preventDefault?.(); load(query); return true; }
+      if (handleSearchKey(event)) return true;
+      if (isPlainKey(event, "r")) { event.preventDefault?.(); event.stopPropagation?.(); load(); return true; }
       return false;
     }} emptyStateTitle={query ? `No certificates match ${query}.` : "Search for a domain."} />;
 }

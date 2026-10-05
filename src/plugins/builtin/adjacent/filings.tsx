@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text, TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type {
   PaneProps,
@@ -13,6 +13,7 @@ import {
   nextStackSortPreference,
   sortStackItems,
   useTableLoadMore,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
@@ -20,7 +21,7 @@ import {
   type DataTableRootKeyContext,
   type StackSortPreference,
 } from "../../../components";
-import { MarkdownText } from "../../../components/markdown-text";
+import { ArticleContent } from "../../../components/article-content";
 import { filterAdjacentRows } from "./search";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -28,14 +29,13 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { colors } from "../../../theme/colors";
 import { usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import { newsArticleSharePayload, useCopyShareLink } from "../shared/article-share";
 import { useNewsReadState } from "../news/wire/read-state";
 import { formatTimeAgo } from "../../../utils/format";
-import { wrapTextLines } from "../../../utils/text-wrap";
 import type { AdjacentClient } from "./client";
 import { cftcPageHasMore, loadCftcFilings } from "./client";
 import {
@@ -49,10 +49,6 @@ import {
   filingSeenAt,
   formatFilingDay,
 } from "./filings-format";
-import {
-  renderCftcSummary,
-  useCftcFilingSummary,
-} from "./filings-summary";
 import {
   type CftcFiling,
   type CftcFilingDetail,
@@ -173,25 +169,18 @@ function FilingDetail({
   filing,
   detail,
   loading,
-  summaryMarkdown,
-  summarizing,
   width,
   scrollRef,
 }: {
   filing: CftcFiling;
   detail: CftcFilingDetail | null;
   loading: boolean;
-  summaryMarkdown?: string | null;
-  summarizing?: boolean;
   width: number;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
-  const lineWidth = Math.max(width - 2, 12);
+  const lineWidth = Math.max(width - 2, 1);
   const meta = buildDetailMeta(filing);
   const body = buildDetailBody(filing, detail, loading);
-  const summaryText = summarizing
-    ? "Summarizing with AI..."
-    : summaryMarkdown ?? "";
   return (
     <Box
       flexDirection="column"
@@ -210,21 +199,11 @@ function FilingDetail({
         scrollY
         focusable={false}
       >
-        <Box flexDirection="column" width={lineWidth}>
-          {meta.flatMap((entry) => wrapTextLines(entry, lineWidth, 2)).map((line, index) => (
-            <Box key={`meta-${index}`} height={1}>
-              <Text fg={colors.textMuted}>{line}</Text>
-            </Box>
-          ))}
-          {summaryText ? (
-            <>
-              <Box height={1} />
-              <MarkdownText text={summaryText} lineWidth={lineWidth} textColor={colors.text} selectable />
-            </>
-          ) : null}
-          <Box height={1} />
-          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} selectable />
-        </Box>
+        <ArticleContent
+          width={lineWidth}
+          metadata={meta}
+          body={body}
+        />
       </ScrollBox>
     </Box>
   );
@@ -254,9 +233,6 @@ export function AdjacentFilingsPane({
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
   const [filings, setFilings] = useState<CftcFiling[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -275,6 +251,21 @@ export function AdjacentFilingsPane({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const updateQuery = useCallback((nextQuery: string) => {
+    resetSelectionOnLoadRef.current = true;
+    setQuery(nextQuery);
+    setOpenItemId(null);
+  }, [setQuery]);
+  const listSearch = usePaneListSearch({
+    focused,
+    enabled: !openItemId,
+    value: query,
+    onQueryChange: updateQuery,
+    placeholder: "organization, product, or description",
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    normalizeValue: trimSearchValue,
+  });
+  const { searchFocused, focusSearch, blurSearch } = listSearch;
   const columns = useMemo(() => createFilingColumns(), []);
   const sortedFilings = useMemo(() => {
     const sorted = sortStackItems(filings, sortPreference, compareFilings, (left, right) => left.id - right.id);
@@ -288,6 +279,7 @@ export function AdjacentFilingsPane({
   }, [filings, query, sortPreference]);
 
   const load = useCallback((nextQuery: string) => {
+    const resetSelection = resetSelectionOnLoadRef.current;
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
     const controller = new AbortController();
@@ -295,8 +287,10 @@ export function AdjacentFilingsPane({
     setStatus("loading");
     setError(null);
     setLoadingMore(false);
-    setHasMore(false);
-    setPage(1);
+    if (resetSelection) {
+      setHasMore(false);
+      setPage(1);
+    }
     void loadCftcFilings(client, nextQuery, CFTC_PAGE_SIZE, 1)
       .then((result) => {
         if (abortRef.current !== controller) return;
@@ -315,8 +309,6 @@ export function AdjacentFilingsPane({
         if (abortRef.current !== controller) return;
         if (loadError instanceof Error && loadError.name === "AbortError") return;
         setError(loadError instanceof Error ? loadError.message : String(loadError));
-        setFilings([]);
-        setHasMore(false);
         setStatus("error");
       });
   }, [client]);
@@ -416,7 +408,7 @@ export function AdjacentFilingsPane({
     };
   }, [client, detailFilingId]);
 
-  const loading = status === "loading" && filings.length === 0;
+  const loading = status === "loading" && sortedFilings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const poll = useFeedPollInterval();
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
@@ -424,7 +416,6 @@ export function AdjacentFilingsPane({
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const copyShareLink = useCopyShareLink();
-  const filingSummary = useCftcFilingSummary();
   const markFilingRead = useCallback((filing: CftcFiling) => {
     markArticleRead(filingId(filing));
   }, [markArticleRead]);
@@ -448,11 +439,6 @@ export function AdjacentFilingsPane({
       await copyShareLink(newsArticleSharePayload(cftcFilingToArticle(filing, loaded)));
     })();
   }, [client, copyShareLink, detail, detailFiling]);
-  const handleSummarize = useCallback(() => {
-    if (!openFiling || detailLoading) return;
-    void filingSummary.summarize(openFiling, buildDetailBody(openFiling, detail, false));
-  }, [detail, detailLoading, filingSummary, openFiling]);
-  const openSummary = openFiling ? filingSummary.summaries.get(openFiling.id) : undefined;
 
   useEffect(() => {
     if (selectedFilingId !== selectedId) setSelectedId(selectedFilingId);
@@ -468,57 +454,33 @@ export function AdjacentFilingsPane({
     if (scrollBox) scrollBox.scrollTop = 0;
   }, [openItemId]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-  const updateQuery = useCallback((nextQuery: string) => {
-    resetSelectionOnLoadRef.current = true;
-    setQuery(nextQuery);
-    setOpenItemId(null);
-  }, [setQuery]);
-
   useShortcut((event) => {
     if (!focused || openItemId) return;
     if (searchFocused) {
       if (isPlainKey(event, "escape")) {
         event.stopPropagation?.();
         event.preventDefault?.();
-        setSearchFocused(false);
+        blurSearch();
       }
       return;
     }
     if (event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
     if (isPlainKey(event, "r")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       load(query);
       return;
     }
-    if (isPlainKey(event, "y") && detailFiling) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      shareSelected();
-    }
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
     registrationId: "adjacent-cftc",
     focused,
-    url: error ? null : detail?.sourceUrl || null,
+    url: detail?.sourceUrl || null,
     source: detailFiling ? feedLabel(detailFiling) : undefined,
     label: "filing",
-    loading: loading || loadingMore || filingSummary.summarizingId != null,
-    error: error ?? filingSummary.summaryError,
+    loading: status === "loading" || loadingMore,
+    error,
     info: [
       ...(client.isPublic
         ? [{ id: "tier", parts: [{ text: "public, last 90d", tone: "muted" as const }] }]
@@ -528,36 +490,28 @@ export function AdjacentFilingsPane({
         : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
-    showOpenHint: !error && !!detail?.sourceUrl,
+    showOpenHint: !searchFocused && !!detail?.sourceUrl,
     onOpen: () => {
       if (detailFiling) markFilingRead(detailFiling);
     },
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      paneSearchHint(focusSearch, { disabled: searchFocused || !!openItemId }),
       ...(detailFiling
-        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
+        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected, disabled: searchFocused }]
         : []),
       ...(detailFiling && !openFiling
-        ? [{ id: "share", key: "s", label: "hare", onPress: shareSelected }]
-        : []),
-      ...(openFiling && !detailLoading
-        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
+        ? [{ id: "share", key: "s", label: "hare", onPress: shareSelected, disabled: searchFocused }]
         : []),
     ],
   });
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
-    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+    if (!openItemId && context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -565,7 +519,7 @@ export function AdjacentFilingsPane({
       return true;
     }
     return false;
-  }, [focusSearch, load, query]);
+  }, [focusSearch, listSearch.handleSearchKey, load, openItemId, query]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -593,32 +547,14 @@ export function AdjacentFilingsPane({
       popOutSelected();
       return true;
     }
-    if (isPlainKey(event, "s") && openFiling && !detailLoading) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      handleSummarize();
-      return true;
-    }
     return false;
-  }, [detailFiling, detailLoading, handleSummarize, openFiling, popOutSelected, scrollDetailBy]);
+  }, [detailFiling, popOutSelected, scrollDetailBy]);
 
   const rootBefore = (
     <PaneListChrome
       width={width}
       focused={focused && !openItemId}
-      search={{
-        value: query,
-        active: searchFocused,
-        focusToken: searchFocusToken,
-        inputRef: searchInputRef,
-        placeholder: "organization, product, or description",
-        debounceMs: SEARCH_DEBOUNCE_MS,
-        normalizeValue: trimSearchValue,
-        onFocus: focusSearch,
-        onBlur: blurSearch,
-        onNavigateDown: blurSearch,
-        onQueryChange: updateQuery,
-      }}
+      search={listSearch.search}
     />
   );
 
@@ -635,7 +571,7 @@ export function AdjacentFilingsPane({
     );
   }
 
-  if (error && filings.length === 0) {
+  if (error && sortedFilings.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
@@ -660,8 +596,6 @@ export function AdjacentFilingsPane({
           filing={openFiling}
           detail={detail}
           loading={detailLoading}
-          summaryMarkdown={openSummary ? renderCftcSummary(openSummary) : null}
-          summarizing={openFiling != null && filingSummary.summarizingId === openFiling.id}
           width={width}
           scrollRef={detailScrollRef}
         />

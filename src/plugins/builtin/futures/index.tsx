@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
-  InputSearchBar,
+  PaneListChrome,
+  usePaneListSearch,
   usePaneFooter,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -10,7 +11,6 @@ import {
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
-import { type InputRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { cycleSortPreference } from "../../../utils/sort-values";
@@ -77,12 +77,15 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<FuturesSortPreference>(DEFAULT_FUTURES_SORT);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const { search, searchFocused, focusSearch, handleSearchKey } = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "ticker or name",
+  });
   const [collapsedSectors, setCollapsedSectors] = useState<ReadonlySet<FuturesSector>>(
     () => parseCollapsedSectors(paneInstance?.params?.collapse),
   );
-  const searchInputRef = useRef<InputRenderable | null>(null);
 
   const contractsBySector = useMemo(() => getContractsBySector(), []);
   const visibleCollapsed = effectiveCollapsedSectors(collapsedSectors, searchQuery);
@@ -110,12 +113,6 @@ function FuturesPane({ focused, width, height }: PaneProps) {
     _index: number,
     rowState: { selected: boolean },
   ) => renderFuturesCell(row, column, rowState, quotes, { sessionText }), [quotes, sessionText]);
-
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => setSearchFocused(false), []);
 
   const toggleSector = useCallback((sector: FuturesSector) => {
     setCollapsedSectors((current) => {
@@ -151,18 +148,14 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       refresh();
       return true;
     }
-    if (isPlainKey(event, "/")) {
-      stopSearchFocusNavigation(event);
-      focusSearch();
-      return true;
-    }
+    if (handleSearchKey(event)) return true;
     if (isPlainKey(event, "]") || isPlainKey(event, "[")) {
       stopSearchFocusNavigation(event);
       cycleSort(event.name === "]" ? 1 : -1);
       return true;
     }
     return false;
-  }, [cycleSort, focusSearch, refresh]);
+  }, [cycleSort, handleSearchKey, refresh]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -234,20 +227,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
         : "No market data provider connected."}
       emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       rootBefore={(
-        <InputSearchBar
-          value={searchQuery}
-          focused={focused}
-          active={searchFocused}
-          width={width}
-          focusToken={searchFocusToken}
-          inputRef={searchInputRef}
-          placeholder="ticker or name"
-          debounceMs={80}
-          onFocus={focusSearch}
-          onBlur={blurSearch}
-          onNavigateDown={blurSearch}
-          onQueryChange={setSearchQuery}
-        />
+        <PaneListChrome width={width} focused={focused} search={search} />
       )}
       onRootKeyDown={handleRootKeyDown}
     />

@@ -4,7 +4,6 @@ import type { LoadedExternalPlugin } from "./loader";
 import { newsPlugin } from "./builtin/news";
 import { substackPlugin } from "./builtin/substack";
 import { notesPlugin } from "./builtin/notes";
-import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { customViewPlugin } from "./builtin/custom-view";
 import { yahooPlugin } from "./builtin/yahoo";
@@ -34,8 +33,9 @@ import { predictionMarketsPlugin } from "./prediction-markets";
  * the same id is ignored — first-party wins, same as Prediction Markets.
  *
  * VoteHub polls, Federal Register, OFAC, and USAspending stay as Adjacent
- * Cloud modules (POLL / FR / OFAC / USA). WX is an Adjacent pane shortcut,
- * not a composed weather plugin. Traffic, satellite, and the rest of the
+ * Cloud modules (POLL / FR / OFAC / USA). WX opens the Adjacent pane on
+ * climate/weather markets; there is no standalone weather pane. Traffic,
+ * satellite, and the rest of the
  * long-tail pack stay extracted. Prediction Markets is native TUI/Electrobun
  * only: keep it out of this hosted-web list.
  */
@@ -54,7 +54,6 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   substackPlugin,
   adjacentPlugin,
   notesPlugin,
-  aiPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,

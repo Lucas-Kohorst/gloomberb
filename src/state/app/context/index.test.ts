@@ -77,6 +77,27 @@ describe("resolveTickerForPane", () => {
     expect(resolveTickerForPane(state, instance.instanceId)).toBe("MSFT");
   });
 
+  test("initializes ticker research from a pane-specific default tab", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const instance = createPaneInstance("ticker-research", {
+      instanceId: "ticker-research:AAPL:holders",
+      binding: { kind: "fixed", symbol: "AAPL" },
+      settings: { defaultTabId: "holders" },
+    });
+    config.layout.instances.push(instance);
+    config.layout.floating.push({
+      instanceId: instance.instanceId,
+      x: 0,
+      y: 0,
+      width: 60,
+      height: 20,
+    });
+
+    const state = createInitialState(config);
+
+    expect(state.paneState[instance.instanceId]).toEqual({ activeTabId: "holders" });
+  });
+
   test("hydrates remembered pane-local tab and sort state from the previous session", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const sessionSnapshot: AppSessionSnapshot = {
@@ -651,5 +672,22 @@ describe("recent commands ring", () => {
       article: { ...article, url: "https://example.com/fed-update" },
     });
     expect(next.recentCommands[0]?.article?.url).toBe("https://example.com/fed-update");
+  });
+
+  test("keeps separate arguments for recent searches and pane opens", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    let next = appReducer(state, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "AAPL",
+    });
+    next = appReducer(next, {
+      type: "RECORD_COMMAND",
+      id: "pane-template:ticker-news-pane",
+      label: "Ticker News",
+      arg: "MSFT",
+    });
+    expect(next.recentCommands.map((entry) => entry.arg)).toEqual(["MSFT", "AAPL"]);
   });
 });

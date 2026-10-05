@@ -3,9 +3,10 @@ import { apiClient, type CloudWorldVenueMapPayload, type CloudWorldVenuePayload 
 import {
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
   usePaneFooter,
+  usePaneListSearch,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -13,8 +14,9 @@ import {
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, Text, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
+import { paneSearchHint } from "../shared/pane-footer";
 import {
   applySortPreference,
   nextSortPreference,
@@ -79,15 +81,19 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: query,
+    onQueryChange: setQuery,
+    placeholder: "mic, venue, or city",
+    normalizeValue: (value) => value.trim(),
+  });
   const [selectedMic, setSelectedMic] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [sortPreference, setSortPreference] = useState<SortPreference<VenueColumnId>>({
     columnId: null,
     direction: "asc",
   });
-  const inputRef = useRef<InputRenderable | null>(null);
   const generationRef = useRef(0);
   const dataRef = useRef<CloudWorldVenueMapPayload | null>(null);
   dataRef.current = data;
@@ -161,33 +167,18 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     () => venues.find((venue) => venue.mic === selectedMic) ?? null,
     [selectedMic, venues],
   );
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((value) => value + 1);
-  }, []);
-  const blurSearch = useCallback(() => setSearchFocused(false), []);
   const refresh = useCallback(() => void load(), [load]);
 
   useShortcut((event) => {
-    if (searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.preventDefault();
-      event.stopPropagation();
-      focusSearch();
-    } else if (isPlainKey(event, "r")) {
-      event.preventDefault();
-      event.stopPropagation();
-      refresh();
-    }
-  }, { allowEditable: true, enabled: focused });
+    if (listSearch.searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    refresh();
+  }, { allowEditable: true, enabled: focused && !listSearch.searchFocused });
 
   const handleTableKey = useCallback((event: DataTableKeyEvent) => {
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
+    if (listSearch.handleSearchKey(event)) return true;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -195,7 +186,7 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, refresh]);
+  }, [listSearch.handleSearchKey, refresh]);
 
   const openCount = venues.reduce((count, venue) => count + Number(venue.isOpen), 0);
   usePaneFooter(WORLD_VENUE_MAP_PANE_ID, () => ({
@@ -206,9 +197,9 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused }),
     ],
-  }), [data, error, focusSearch, loading, refresh]);
+  }), [data, error, listSearch.focusSearch, listSearch.searchFocused, loading]);
 
   const horizontal = width >= 88;
   const sidebarWidth = horizontal ? Math.max(34, Math.min(46, Math.round(width * 0.34))) : width;
@@ -249,27 +240,13 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
           <Text fg={colors.textDim}>{` · ${venues.length - openCount} CLOSED`}</Text>
         </Box>
       </Box>
-      <InputSearchBar
-        value={query}
-        focused={focused}
-        active={searchFocused}
-        width={sidebarWidth}
-        focusToken={searchFocusToken}
-        inputRef={inputRef}
-        placeholder="Filter venues..."
-        debounceMs={80}
-        normalizeValue={(value) => value.trim()}
-        onFocus={focusSearch}
-        onBlur={blurSearch}
-        onNavigateDown={blurSearch}
-        onQueryChange={setQuery}
-      />
+      <PaneListChrome width={sidebarWidth} focused={focused} search={listSearch.search} />
     </Box>
   );
 
   const table = (
     <DataTableView<CloudWorldVenuePayload, VenueColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       selection={{
         kind: "id",
         selectedId: selectedMic,

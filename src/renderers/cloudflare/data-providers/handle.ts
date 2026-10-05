@@ -12,7 +12,7 @@ const PROXY_TIMEOUT_MS = 12_000;
 const PROXY_ORIGIN_RETRIES = 2;
 const CLOUDFLARE_ORIGIN_TIMEOUT_STATUSES = new Set([522, 524, 530]);
 const ADJACENT_ORIGIN_HOST = "api.adjacent.markets";
-const ADJACENT_PUBLIC_PREFIXES = new Set(["markets", "indices", "rates", "events"]);
+const ADJACENT_PUBLIC_PREFIXES = new Set(["markets", "indices", "rates", "events", "filings"]);
 const MAX_PRINT_CACHE = 256;
 
 interface MemoryCacheEntry {

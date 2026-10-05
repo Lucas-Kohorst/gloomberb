@@ -5,6 +5,7 @@ import {
 } from "./state";
 import {
   normalizeSessionUser,
+  persistedAuthUserFromChatSession,
   type ChatSessionUser,
 } from "./persistence";
 import {
@@ -133,9 +134,21 @@ export async function refreshChatControllerSession({
     if (persistedToken) {
       session.sessionToken = persistedToken;
       session.user = session.user ?? normalizeSessionUser(apiClient.getCurrentUser());
+      apiClient.setSessionToken(persistedToken);
+      // Older builds cleared apiClient.currentUser on an empty get-session even
+      // when a native token was still present. Restore the shared client from
+      // the session the controller already trusts.
+      if (session.user) {
+        apiClient.restoreCachedUser(persistedAuthUserFromChatSession(session.user));
+      }
       session.sessionChecked = true;
       persistSession(session.sessionToken, session.user);
       emit();
+      if (session.user?.emailVerified) {
+        ensureRealtimeSubscriptions();
+        await refreshChatState().catch(() => {});
+        ensureOpenChannelConnections();
+      }
       return;
     }
     applySignedOut();

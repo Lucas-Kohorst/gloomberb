@@ -9,7 +9,7 @@ interface ResourceState<T> {
 
 /** A stable loader owns a resource; null disables it and discards pending results. */
 export function useAsyncResource<T>(
-  loader: ((force: boolean) => Promise<T>) | null,
+  loader: ((force: boolean, signal: AbortSignal, publishPreview: (data: T) => void) => Promise<T>) | null,
   options: { initialData?: () => T | null; clearOnError?: boolean | ((error: unknown) => boolean) } = {},
 ) {
   const [state, setState] = useState<ResourceState<T> & { owner: typeof loader }>(() => ({
@@ -20,9 +20,13 @@ export function useAsyncResource<T>(
     updatedAt: null,
   }));
   const generation = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
   const clearOnError = options.clearOnError ?? false;
   const load = useCallback(async (force = false) => {
     const currentGeneration = ++generation.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     if (!loader) {
       setState({ owner: loader, data: null, loading: false, error: null, updatedAt: null });
       return;
@@ -31,7 +35,13 @@ export function useAsyncResource<T>(
       ? { ...current, loading: true, error: null }
       : { owner: loader, data: null, loading: true, error: null, updatedAt: null });
     try {
-      const data = await loader(force);
+      const data = await loader(force, controller.signal, (preview) => {
+        if (generation.current !== currentGeneration) return;
+        // Early paint must not replace a complete cached response during refresh.
+        setState((current) => current.owner === loader && current.loading && current.data === null
+          ? { ...current, data: preview, updatedAt: Date.now() }
+          : current);
+      });
       if (generation.current === currentGeneration) {
         setState({ owner: loader, data, loading: false, error: null, updatedAt: Date.now() });
       }
@@ -52,7 +62,10 @@ export function useAsyncResource<T>(
 
   useEffect(() => {
     void load();
-    return () => { generation.current += 1; };
+    return () => {
+      generation.current += 1;
+      abortRef.current?.abort();
+    };
   }, [load]);
 
   const reload = useCallback(() => load(true), [load]);

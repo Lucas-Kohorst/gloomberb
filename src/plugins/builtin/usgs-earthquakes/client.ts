@@ -132,6 +132,7 @@ export class EarthquakesClient {
     minMagnitude?: number;
     limit?: number;
     searchQuery?: string;
+    signal?: AbortSignal;
   }): Promise<EarthquakePage> {
     return withConnectionRequest(USGS_EARTHQUAKES_CONNECTION_ID, "fetch", async () => {
       const params = new URLSearchParams();
@@ -140,7 +141,7 @@ export class EarthquakesClient {
       params.set("minmagnitude", String(options.minMagnitude ?? 2.5));
       params.set("limit", String(options.limit ?? 100));
       const url = `${USGS_API_BASE_URL}/query?${params.toString()}`;
-      const response = await usgsFetch.fetch(url);
+      const response = await usgsFetch.fetch(url, { signal: options.signal });
       if (!response.ok) {
         throw new Error(
           `USGS request failed: ${response.status} ${response.statusText}`,

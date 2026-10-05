@@ -73,6 +73,63 @@ const documentRow: ResultItem = {
   action: () => {},
 };
 
+describe("asset class filter", () => {
+  test("lists every class when the query is a class code", () => {
+    const { items, initialIdx } = buildRootResultModel(rootOptions({ rootQuery: "EQ" }));
+    const classes = items.filter((item) => item.category === "Asset Classes");
+    expect(classes.map((item) => item.badge)).toEqual(["EQ", "CUR", "OPT", "FUT", "IDX", "ETF"]);
+    expect(classes.map((item) => item.label)).toEqual([
+      "Equity",
+      "Currency",
+      "Option",
+      "Future",
+      "Index",
+      "Exchange-Traded Fund",
+    ]);
+    expect(initialIdx).toBe(0);
+    expect(classes[0]?.right).toBe("Tab");
+    expect(classes[1]?.right).toBeUndefined();
+    const ordered = orderListResults(items);
+    expect(ordered[0]?.category).toBe("Asset Classes");
+  });
+
+  test("selects the class the query spells", () => {
+    const { items, initialIdx } = buildRootResultModel(rootOptions({ rootQuery: "opt" }));
+    expect(items[initialIdx]?.badge).toBe("OPT");
+    expect(items[initialIdx]?.right).toBe("Tab");
+  });
+
+  test("fills the code and a trailing space", () => {
+    let filled = "";
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "CUR",
+      setRootQuery: (query) => {
+        filled = query;
+      },
+    }));
+    items.find((item) => item.badge === "CUR")?.action();
+    expect(filled).toBe("CUR ");
+  });
+
+  test("a class code plus a symbol drops the menu and the free-text feed", () => {
+    const feed: ResultItem = {
+      id: "twitter-search:eq bird",
+      label: "eq bird",
+      detail: "Open an X advanced-search feed",
+      category: "X Feeds",
+      kind: "action",
+      right: "TWIT",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "eq bird",
+      providerResultItems: [feed],
+    }));
+    expect(items.some((item) => item.category === "Asset Classes")).toBe(false);
+    expect(items.some((item) => item.id.startsWith("twitter-search:"))).toBe(false);
+  });
+});
+
 describe("provider rows in the root result model", () => {
   test("land after the local matches instead of displacing them", () => {
     const { items } = buildRootResultModel(rootOptions({
@@ -541,7 +598,7 @@ describe("recents in the root result model", () => {
       },
     }));
 
-    items.find((item) => item.id === "recent:command:theme")?.action();
+    items.find((item) => item.id === "recent:command:theme:amber")?.action();
     expect(executed).toEqual([{ id: "theme", arg: "amber" }]);
   });
 
@@ -646,6 +703,47 @@ describe("recents in the root result model", () => {
     expect(row?.action).toBeTypeOf("function");
   });
 
+  test("replays a stored argument when reopening a recent pane template", () => {
+    const chartTemplate = {
+      id: "ticker-news-pane",
+      paneId: "ticker-news",
+      label: "Ticker News",
+      description: "News for one ticker",
+    } as PaneTemplateDef;
+    const created: Array<string | undefined> = [];
+    const { items } = buildRootResultModel(rootOptions({
+      availableCommands: [],
+      createPaneTemplateItem: (template, options) => {
+        created.push(options?.createOptions?.arg);
+        return {
+          id: `pane-template:${template.id}`,
+          label: template.label,
+          detail: template.description,
+          category: "Panes",
+          kind: "action",
+          action: () => {},
+        };
+      },
+      getRecentPaneTemplate: () => chartTemplate,
+      state: {
+        ...recentState,
+        recentCommands: [
+          { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "MSFT" },
+          { id: "pane-template:ticker-news-pane", label: "Ticker News", arg: "AAPL" },
+        ],
+      },
+    }));
+
+    expect(created).toEqual(["MSFT", "AAPL"]);
+    expect(items.filter((item) => item.id.startsWith("recent:pane-template:")).map((item) => ({
+      id: item.id,
+      detail: item.detail,
+    }))).toEqual([
+      { id: "recent:pane-template:ticker-news-pane:MSFT", detail: "MSFT" },
+      { id: "recent:pane-template:ticker-news-pane:AAPL", detail: "AAPL" },
+    ]);
+  });
+
   test("skip recent entries that no longer resolve to a command or template", () => {
     const { items } = buildRootResultModel(rootOptions({
       availableCommands: [],
@@ -655,5 +753,38 @@ describe("recents in the root result model", () => {
       },
     }));
     expect(items.filter((item) => item.category === "Suggested")).toEqual([]);
+  });
+});
+
+describe("same-prefix command and pane template rows", () => {
+  const teamCommandRow: ResultItem = {
+    id: "team",
+    label: "Team",
+    detail: "Your teams",
+    category: "Navigation",
+    kind: "command",
+    shortcutQuery: "TEAM",
+    action: () => {},
+  };
+  const teamTemplateRow: ResultItem = {
+    id: "pane-template:team-pane:",
+    label: "Team",
+    detail: "Members, invites, channels",
+    category: "Panes",
+    kind: "action",
+    shortcutQuery: "TEAM",
+    action: () => {},
+  };
+
+  test("list one TEAM entry when browsing and when fuzzy matching", () => {
+    for (const rootQuery of ["", "tea"]) {
+      const { items } = buildRootResultModel(rootOptions({
+        rootQuery,
+        paneShortcutItems: () => [teamTemplateRow, paneRow],
+        pluginCommandItems: () => [teamCommandRow],
+      }));
+      const teamRows = items.filter((item) => item.shortcutQuery === "TEAM");
+      expect(teamRows.map((item) => item.id), rootQuery || "(empty)").toEqual(["team"]);
+    }
   });
 });

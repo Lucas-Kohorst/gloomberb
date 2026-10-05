@@ -1,4 +1,4 @@
-import { Box } from "../../../ui";
+import { Box, useUiCapabilities } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PaneProps, TickerResearchTabDef } from "../../../types/plugin";
 import { t, tf } from "../../../i18n";
@@ -14,7 +14,17 @@ import {
 import { useQuoteUpdates } from "../../../state/hooks/quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
-import { EmptyState, PaneBodyPad, PaneFooterScope, PaneTabHeader, TickerEmptyState, usePaneFooter } from "../../../components";
+import {
+  EmptyState,
+  PaneBodyPad,
+  PaneFooterScope,
+  PaneTabHeader,
+  TickerEmptyState,
+  usePaneFooter,
+  type PaneHint,
+} from "../../../components";
+import { ChoiceDialog } from "../../../components/ui/choice-dialog";
+import { useOptionalDialog, type PromptContext } from "../../../ui/dialog";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { ensureDefaultWatchlist, isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
 import { getCollectionTypeFromConfig } from "../portfolio-list/pane/data";
@@ -31,11 +41,13 @@ import {
   buildVisibleTickerResearchTabs,
   getTickerResearchPaneSettings,
   resolveLockedTabId,
+  splitTickerResearchTabStrip,
+  TICKER_RESEARCH_MORE_TAB_VALUE,
 } from "./settings";
 import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
+import { TICKER_RESEARCH_TAB_POP_OUT_TEMPLATE_ID } from "./tab-pop-out";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
-import { useCloudAccessFooter } from "../shared/cloud-upgrade";
-import { CLOUD_QUOTE_DELAY_MINUTES } from "../shared/plan-access";
+import { useDelayedQuotesFooter } from "../shared/cloud-upgrade";
 import {
   EMPTY_TICKER_HISTORY,
   moveTickerHistory,
@@ -78,12 +90,14 @@ function useRegistryTickerResearchTabsSnapshot(registry: ReturnType<typeof getSh
 }
 
 export function TickerResearchPane({ focused, width, height }: PaneProps) {
+  const { fractionalViewport = false } = useUiCapabilities();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
   const { symbol, ticker, financials } = usePaneTicker();
   const { selectTicker } = usePluginPaneActions();
-  const { notify } = usePluginAppActions();
+  const { notify, createPaneFromTemplate } = usePluginAppActions();
+  const dialog = useOptionalDialog();
   const liveStreaming = useLiveStreamingSetting();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   const streamingTargets = useMemo(() => (
@@ -135,18 +149,12 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
   // Cloud quotes are delayed on the free tier; a broker feed can still be live.
-  const cloudAccess = useCloudAccessFooter({
-    delayLabel: tf("{count}m", { count: CLOUD_QUOTE_DELAY_MINUTES }),
-    degraded: financials?.quote?.dataSource === "delayed",
+  useDelayedQuotesFooter({
+    registrationId: "ticker-research-access",
+    delayed: financials?.quote?.dataSource === "delayed",
     focused,
-    segmentId: "ticker-research-access",
     shortcutScope: "ticker-research:upgrade",
   });
-  usePaneFooter(
-    "ticker-research-access",
-    () => cloudAccess.segment ? { info: [cloudAccess.segment], order: -1 } : null,
-    [cloudAccess.segment],
-  );
 
   const disabledPlugins = config.disabledPlugins;
   const registry = getSharedRegistry();
@@ -172,6 +180,53 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
       : (allTabs.some((tab) => tab.id === paneSettings.defaultTabId)
         ? paneSettings.defaultTabId
         : (allTabs[0]?.id ?? "overview")));
+  const tabStrip = fractionalViewport ? { inline: allTabs, overflow: [] } : splitTickerResearchTabStrip(allTabs, resolvedTabId);
+  const stripTabs = [
+    ...tabStrip.inline.map((tab) => ({ label: t(tab.name), value: tab.id })),
+    ...(tabStrip.overflow.length > 0 ? [{ label: t("More"), value: TICKER_RESEARCH_MORE_TAB_VALUE }] : []),
+  ];
+  const overflowTabs = tabStrip.overflow;
+  const openMoreTabs = useCallback(async () => {
+    if (!dialog || overflowTabs.length === 0) return;
+    const selected = await dialog.prompt<string>({
+      closeOnClickOutside: true,
+      content: (context: PromptContext<string>) => (
+        <ChoiceDialog
+          {...context}
+          title={t("More research")}
+          choices={overflowTabs.map((tab) => ({ id: tab.id, label: t(tab.name) }))}
+          selectedChoiceId={resolvedTabId}
+        />
+      ),
+    }).catch(() => null);
+    if (selected) setActiveTabId(selected);
+  }, [dialog, overflowTabs, resolvedTabId, setActiveTabId]);
+  const handleTabSelect = useCallback((value: string) => {
+    if (value === TICKER_RESEARCH_MORE_TAB_VALUE) {
+      void openMoreTabs();
+      return;
+    }
+    setActiveTabId(value);
+  }, [openMoreTabs, setActiveTabId]);
+
+  // Tabs own their keys: Chart binds [p]ercent and article tabs bind [p]op out
+  // for the selected article, so the pane-level pop-out yields to them.
+  const [tabHintKeys, setTabHintKeys] = useState<Record<string, string>>({});
+  const reportTabHints = useCallback((tabId: string, hints: readonly PaneHint[]) => {
+    const keys = hints.map((hint) => hint.key.toLowerCase()).join("\0");
+    setTabHintKeys((current) => (current[tabId] === keys ? current : { ...current, [tabId]: keys }));
+  }, []);
+  const activeTabOwnsPopOutKey = (tabHintKeys[resolvedTabId] ?? "").split("\0").includes("p");
+  const activeTabName = allTabs.find((tab) => tab.id === resolvedTabId)?.name ?? resolvedTabId;
+  const popOutActiveTab = useCallback(() => {
+    if (!symbol) return;
+    createPaneFromTemplate(TICKER_RESEARCH_TAB_POP_OUT_TEMPLATE_ID, {
+      symbol,
+      values: { tabId: resolvedTabId, tabName: t(activeTabName) },
+    });
+  }, [activeTabName, createPaneFromTemplate, resolvedTabId, symbol]);
+  const canPopOutTab = !paneSettings.hideTabs && !!ticker && !activeTabOwnsPopOutKey;
+
   const tabBarHeight = paneSettings.hideTabs ? 0 : 1;
   const contentHeight = Math.max(1, height - tabBarHeight);
   const visibleTabIdKey = allTabs.map((tab) => tab.id).join("\0");
@@ -291,23 +346,28 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
       });
     });
   }, [alreadyOnWatchlist, config, dispatch, notify, ticker, watchlistTarget]);
-  const watchlistAddHints = useMemo(() => (
+  const paneHints = useMemo<PaneHint[]>(() => (
     ticker
-      ? [{
-        id: "add",
-        key: "a",
-        label: "dd",
-        onPress: addTickerToDefaultWatchlist,
-        disabled: alreadyOnWatchlist,
-      }]
+      ? [
+        {
+          id: "add",
+          key: "a",
+          label: "dd",
+          onPress: addTickerToDefaultWatchlist,
+          disabled: alreadyOnWatchlist,
+        },
+        ...(canPopOutTab
+          ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutActiveTab }]
+          : []),
+      ]
       : []
-  ), [addTickerToDefaultWatchlist, alreadyOnWatchlist, ticker]);
+  ), [addTickerToDefaultWatchlist, alreadyOnWatchlist, canPopOutTab, popOutActiveTab, ticker]);
   usePaneFooter(
     "ticker-research-watchlist",
-    () => (watchlistAddHints.length > 0 ? { hints: watchlistAddHints, order: 0 } : null),
-    [watchlistAddHints],
+    () => (paneHints.length > 0 ? { hints: paneHints, order: 0 } : null),
+    [paneHints],
   );
-  usePaneFooterHintBindings(focused && !pluginCaptured, watchlistAddHints);
+  usePaneFooterHintBindings(focused && !pluginCaptured, paneHints);
 
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
@@ -335,10 +395,10 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
         <PaneTabHeader
           width={width}
           focused={focused && !pluginCaptured}
-          tabs={allTabs.map((tab) => ({ label: t(tab.name), value: tab.id }))}
+          tabs={stripTabs}
           activeValue={resolvedTabId}
-          onSelect={setActiveTabId}
-          scrollable={allTabs.length > 8}
+          onSelect={handleTabSelect}
+          scrollable={fractionalViewport || stripTabs.length > 8}
         />
       )}
 
@@ -357,7 +417,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
               height={contentHeight}
               overflow={tab.id === "chart" ? "clip" : "hidden"}
             >
-              <PaneFooterScope active={isActive}>
+              <PaneFooterScope active={isActive} onHintsChange={(hints) => reportTabHints(tab.id, hints)}>
                 <TickerResearchTab
                   width={width}
                   height={contentHeight}

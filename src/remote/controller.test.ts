@@ -206,7 +206,7 @@ const { setSharedNewsService } = await import("../news/hooks");
 const { registerConnectionSource } = await import("../plugins/builtin/connections/register");
 const { hydrateTickerMetadata } = await import("../tickers/metadata");
 const { createDefaultConfig } = await import("../types/config");
-const { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } = await import("../plugins/builtin/byok/types");
+const { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } = await import("../data/config/byok-legacy");
 const { REDACTED } = await import("./redact-config");
 const { createAppRemoteController } = await import("./controller");
 import type { AppAction, AppState } from "../core/state/app/state";

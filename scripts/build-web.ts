@@ -3,13 +3,16 @@ import { join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../src/components/layout/titlebar-overlay";
 import {
   electrobunViewAliasPlugin,
+  writeWebAppIcons,
 } from "../src/renderers/electrobun/view/build-assets";
+import { copyChartingLibrary } from "./copy-charting-library";
 
 const root = process.cwd();
 const outdir = join(root, "dist", "web");
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
-await writeFile(join(outdir, "favicon.svg"), await readFile(join(root, "src/assets/gloomberb-logo.svg")));
+await writeWebAppIcons(outdir);
+await copyChartingLibrary(outdir);
 
 async function buildPage(name: string, entrypoint: string, title: string, loadingText: string, htmlName: string) {
   const assetsDir = join(outdir, "assets", name);
@@ -28,6 +31,7 @@ async function buildPage(name: string, entrypoint: string, title: string, loadin
     define: {
       "process.env.NODE_ENV": '"production"',
       __GLOOMBERB_API_URL__: "location.origin",
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? ""),
     },
     plugins: [electrobunViewAliasPlugin(`browser-${name}-native-stubs`)],
   });
@@ -45,7 +49,10 @@ async function buildPage(name: string, entrypoint: string, title: string, loadin
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title}</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/app-icon-256.png">
   <link rel="stylesheet" href="${href(stylesheet.path)}">
 </head>
 <body>

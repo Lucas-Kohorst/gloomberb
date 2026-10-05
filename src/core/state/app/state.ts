@@ -139,7 +139,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         recentCommands: nextRecentCommands(state.recentCommands, {
           id: action.id,
           label: action.label,
-          arg: action.arg,
+          ...(action.arg?.trim() ? { arg: action.arg.trim() } : {}),
           article: action.article,
         }),
       };

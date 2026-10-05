@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { AdjacentClient, loadCftcFilings } from "./client";
+import {
+  AdjacentClient,
+  attachAdjacentPersistence,
+  loadCftcFilings,
+  resetAdjacentPersistence,
+} from "./client";
+import type { PluginPersistence } from "../../../types/plugin";
 import {
   filingKind,
   filingListTimestamp,
@@ -381,6 +387,153 @@ describe("AdjacentClient paths", () => {
 
     globalThis.fetch = (async () => new Response("", { status: 404 })) as typeof fetch;
     expect(await new AdjacentClient().getFilingDetail(2)).toBeNull();
+  });
+
+  test("serializes a price window into the query string", async () => {
+    setHosted(false);
+    mockFetch({ data: [] });
+    await new AdjacentClient({ apiKey: "ak_test" }).getIndexPrices("red", {
+      interval: "1hour",
+      start: "2026-09-01T00:00:00.000Z",
+      end: "2026-09-08T00:00:00.000Z",
+      perPage: 500,
+      order: "asc",
+    });
+    const url = new URL(requested[0]!.url);
+    expect(url.pathname).toBe("/api/v1/indices/red/prices");
+    expect(url.searchParams.get("interval")).toBe("1hour");
+    expect(url.searchParams.get("start")).toBe("2026-09-01T00:00:00.000Z");
+    expect(url.searchParams.get("end")).toBe("2026-09-08T00:00:00.000Z");
+    expect(url.searchParams.get("per_page")).toBe("500");
+    expect(url.searchParams.get("order")).toBe("asc");
+    expect(url.searchParams.get("page")).toBe("1");
+  });
+
+  test("caches each price window under its own key", async () => {
+    setHosted(false);
+    const keys: string[] = [];
+    attachAdjacentPersistence({
+      getResource: () => null,
+      setResource: (_kind: string, key: string) => {
+        keys.push(key);
+        return null;
+      },
+      getState: () => null,
+      setState: () => {},
+      deleteState: () => {},
+      deleteResource: () => {},
+    } as unknown as PluginPersistence);
+    try {
+      mockFetch({ data: [] });
+      const client = new AdjacentClient({ apiKey: "ak_test" });
+      await client.getIndexPrices("red", { interval: "1hour", start: "2026-09-01T00:00:00.000Z", perPage: 1000, order: "asc" });
+      await client.getIndexPrices("red", { interval: "1d", start: "2026-06-10T12:34:56.000Z", perPage: 1000, order: "asc" });
+      await client.getIndexPrices("red");
+      // Different windows must not collide on one cache entry, and the legacy
+      // no-window call keeps the bare id so already-cached rows still resolve.
+      expect(new Set(keys).size).toBe(3);
+      expect(keys[0]).toContain("2026-09-01");
+      expect(keys[1]).toContain("2026-06-10");
+      expect(keys[2]).toBe("red");
+    } finally {
+      resetAdjacentPersistence();
+    }
+  });
+
+  test("drops start, then the whole window, when the windowed price request fails", async () => {
+    setHosted(false);
+    requested = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      requested.push({ url, authorization: headerValue(init?.headers, "Authorization") });
+      const status = new URL(url).searchParams.has("start") ? 400 : 200;
+      return new Response(JSON.stringify({ data: [{ timestamp: "2026-09-01T00:00:00Z", price: 42 }] }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const result = await new AdjacentClient().getIndexPrices("red", {
+      interval: "1d",
+      start: "2026-01-01T00:00:00.000Z",
+      perPage: 1000,
+      order: "asc",
+    });
+    expect(result.data).toEqual([{ timestamp: "2026-09-01T00:00:00Z", price: 42 }]);
+    expect(requested).toHaveLength(2);
+    expect(new URL(requested[0]!.url).searchParams.get("start")).toBe("2026-01-01T00:00:00.000Z");
+    expect(requested[1]!.url).toBe("https://api.adjacent.markets/api/v1/public/indices/red/prices?interval=1d");
+  });
+
+  test("concatenates paginated price windows up to the six-page cap", async () => {
+    setHosted(false);
+    requested = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      requested.push({ url, authorization: headerValue(init?.headers, "Authorization") });
+      const page = Number(new URL(url).searchParams.get("page") ?? "1");
+      return new Response(JSON.stringify({
+        data: [{ timestamp: `2026-01-0${page}T00:00:00Z`, price: page }],
+        meta: { has_next: page < 7 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const result = await new AdjacentClient({ apiKey: "ak_test" }).getIndexPrices("red", {
+      interval: "1d",
+      start: "2026-01-01T00:00:00.000Z",
+      perPage: 1000,
+      order: "asc",
+    });
+    expect(requested).toHaveLength(6);
+    expect(new URL(requested[5]!.url).searchParams.get("page")).toBe("6");
+    expect(result.data.map((sample) => sample.price)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test("loads related index news from the public route and unwraps article rows", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [{
+        article_id: "hou-1",
+        title: "Texans injury report",
+        url: "https://example.com/texans",
+        source: "USA Today",
+        published_date: "2026-09-25T17:42:11Z",
+        via_market_question: "Will Houston win at least 3 games?",
+      }],
+    });
+    const page = await new AdjacentClient().getIndexNews("hou_nti");
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/public/indices/hou_nti/news?per_page=3",
+    );
+    expect(page.news?.[0]).toMatchObject({
+      id: "hou-1",
+      title: "Texans injury report",
+      source: "USA Today",
+      summary: "Will Houston win at least 3 games?",
+    });
+  });
+
+  test("loads related index filings on the keyed route and accepts filing_id", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [{
+        filing_id: 63380,
+        title: "NFL Starter Designation Contracts",
+        feed: "dcm_products",
+        org_code: "QCEX",
+        status: "Certified",
+        status_date: "2026-08-25",
+      }],
+      meta: { total: 1, page: 1, per_page: 40, has_next: false },
+    });
+    const page = await new AdjacentClient({ apiKey: "ak_test" }).getIndexFilings("hou_nti");
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/indices/hou_nti/filings?per_page=40",
+    );
+    expect(requested[0]?.authorization).toBe("Bearer ak_test");
+    expect(page.filings).toHaveLength(1);
+    expect(page.filings[0]?.id).toBe(63380);
+    expect(page.filings[0]?.orgCode).toBe("QCEX");
   });
 });
 

@@ -295,7 +295,7 @@ export interface AdjacentRateRow {
   category?: string;
 }
 
-/** Catalog identity for Adjacent market lists. No YES/NO/vol/OI — that chrome lives on PM. */
+/** Identity fields for an Adjacent market. Venue price and volume stay on Prediction Markets. */
 export interface AdjacentMarketRow {
   id: string;
   ticker: string;
@@ -308,8 +308,6 @@ export interface AdjacentMarketRow {
   subtitle?: string;
   description?: string;
 }
-
-export type AdjacentMarketSortColumnId = "ticker" | "title" | "platform" | "status" | "ends";
 
 export interface AdjacentPriceHistoryPoint {
   date: Date;

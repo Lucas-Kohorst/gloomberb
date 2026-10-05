@@ -138,7 +138,7 @@ function registerOptionalTextPane(pluginRegistry: MutablePaneRegistry): void {
     paneId: "optional-search",
     label: "Optional Search",
     description: "Open with an optional text query.",
-    shortcut: { prefix: "OPT", argPlaceholder: "query", argKind: "text", argOptional: true },
+    shortcut: { prefix: "ZZ", argPlaceholder: "query", argKind: "text", argOptional: true },
   });
 }
 
@@ -365,7 +365,7 @@ describe("CommandBar pane and layout routes", () => {
     const created: CreatedPaneCall[] = [];
 
     testSetup = await testRender(<CommandBarHarness
-      query="OPT"
+      query="ZZ"
       live
       configurePluginRegistry={(pluginRegistry) => {
         registerOptionalTextPane(pluginRegistry);

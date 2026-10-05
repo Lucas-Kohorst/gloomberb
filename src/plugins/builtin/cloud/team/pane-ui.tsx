@@ -3,7 +3,7 @@ import type { TeamAccentColor, TeamSummary } from "../../../../api-client";
 import { Button, Checkbox, TextField, type ButtonVariant } from "../../../../components";
 import { colors } from "../../../../theme/colors";
 import { Box, Span, Text, TextAttributes } from "../../../../ui";
-import { TEAM_ACCENT_COLORS, teamAccentHex, teamPrefix } from "./model";
+import { TEAM_ACCENT_COLORS, teamAccentHex, teamLabel } from "./model";
 
 /**
  * Every control in the pane registers under a field id. The pane keeps one
@@ -216,11 +216,8 @@ export function AccentPicker({
         {active ? <Text fg={colors.textMuted}>{"← →"}</Text> : null}
       </Box>
       <Box height={1} flexDirection="row" gap={2} paddingLeft={labelWidth + 1}>
-        <Text fg={accent}>{`${teamPrefix(team)} ${team.name}`}</Text>
-        <Text fg={colors.textDim}>
-          <Span fg={accent}>●</Span>
-          {` ${team.shortName}`}
-        </Text>
+        <Text fg={accent}>{teamLabel(team)}</Text>
+        <Text fg={accent}>{team.shortName}</Text>
         <Text fg={colors.textDim}>
           <Span fg={accent}>▎</Span>
           {"Main"}

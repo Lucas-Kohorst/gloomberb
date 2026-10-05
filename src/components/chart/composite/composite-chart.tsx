@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   ChartSurface,
-  LightweightChart,
   ScrollBox,
+  StyledText,
   Text,
   useNativeRenderer,
   useUiCapabilities,
@@ -14,14 +14,25 @@ import {
 } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useOptionalPaneInstanceId, usePaneSettingValue } from "../../../state/app/context";
-import { colors as themeColors, hoverBg } from "../../../theme/colors";
+import { colors as themeColors, hoverBg, type ThemeColors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
-import { formatPercentRaw } from "../../../utils/format";
+import { displayWidth } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
+import { DesktopAdvancedChart, shouldUseDesktopAdvancedChart } from "./desktop-advanced-chart";
 import { downsampleCompositeChartScene } from "./downsample";
-import { groupSeriesByPanelId, reuseResolvedSeriesList } from "./panel-series";
+import { reuseResolvedSeriesList } from "./panel-series";
+import {
+  buildPriceStrip,
+  fitPriceStrip,
+  priceStripSegments,
+  priceStripText,
+  priceStripWidth,
+  PRICE_STRIP_RANK,
+  type PriceStripSegment,
+  type PriceStripToken,
+} from "./price-strip";
 import {
   consumeChartMouseEvent,
   getGlobalMouseX,
@@ -46,9 +57,7 @@ import {
   formatCompositeAxisValue,
   formatCompositeCursorValue,
   formatCompositePointDetails,
-  formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
-  formatOhlcvHud,
   type CompositeAxisValueFormatter,
 } from "./format";
 import {
@@ -94,6 +103,7 @@ import {
   type ChartToolDrag,
   type ChartToolKind,
 } from "./tools";
+import { levelVectors, paintLevels, projectLevels, writeLevelText } from "./levels";
 import { unprojectCompositeTimestamp } from "./time-scale";
 import {
   allocateCompositePanelHeights,
@@ -115,6 +125,7 @@ import {
 import type {
   CompositeAxisDomain,
   CompositeChartColors,
+  CompositeChartPriceLevel,
   CompositeChartProps,
   CompositeChartScene,
   CompositePanelScene,
@@ -723,11 +734,8 @@ function resolveSeriesCursorYRatio(
   return null;
 }
 
-const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
-
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
-  panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
   leftAxisWidth: number;
@@ -760,12 +768,15 @@ interface CompositePanelSurfaceProps {
   onSetViewport: (range: CompositeViewportRange) => void;
   onToolSpanChange: (span: ChartToolSpan | null) => void;
   showTextFallback: boolean;
+  /** The legend strip already reads out hovered values, so the floating
+      tooltip would only repeat it. */
+  showCrosshairTooltip?: boolean;
   timeZone?: string;
+  priceLevels: readonly CompositeChartPriceLevel[];
 }
 
 function CompositePanelSurface({
   panel,
-  panelSeries,
   scene,
   plotWidth,
   leftAxisWidth,
@@ -793,11 +804,12 @@ function CompositePanelSurface({
   onSetViewport,
   onToolSpanChange,
   showTextFallback,
+  showCrosshairTooltip,
   timeZone,
+  priceLevels,
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const hasLightweightChart = !!ui.LightweightChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -824,14 +836,14 @@ function CompositePanelSurface({
   const [toolDrag, setToolDrag] = useState<ChartToolDrag | null>(null);
   const plotAspect = (plotWidth * cellWidthPx) / Math.max(panel.height * cellHeightPx, 1);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, panel.height);
-  // Desktop mounts Lightweight Charts for custom OHLCV. Keep the software
-  // raster for TUI and for any desktop path that still uses ChartSurface.
+  // The canvas raster is the plot for the terminal (including kitty) and for
+  // desktop series the TradingView embed cannot accept.
   const bitmap = useCompositePanelBitmap({
     panel,
     bitmapSize,
     colors,
     isDesktopWeb,
-    enabled: !hasLightweightChart,
+    enabled: true,
   });
   const columnLayout = useMemo(() => buildCompositeColumnLayout(panel), [panel]);
   // The level line follows the pointer only. A keyboard or shared cursor knows
@@ -896,24 +908,44 @@ function CompositePanelSurface({
     () => drawings.filter((drawing) => drawing.panelId === panel.id),
     [drawings, panel.id],
   );
+  const projectedLevels = useMemo(() => {
+    const projected: ReturnType<typeof projectLevels> = [];
+    for (const series of panel.series) {
+      const items = priceLevels.filter((level) => level.seriesId === series.source.id);
+      const axis = panel.axes[series.source.axis];
+      if (items.length === 0 || !axis) continue;
+      projected.push(...projectLevels(items.map((level) => ({
+        id: level.id,
+        value: level.value,
+        color: level.color,
+        editable: level.editable !== false,
+      })), axis));
+    }
+    return projected;
+  }, [panel.axes, panel.series, priceLevels]);
   const bitmapLayers = useMemo(() => {
     if (!bitmap) return null;
     // The desktop composites overlays as vectors, so the plot raster stays put
     // while a tool drags. Copying and reblending it per frame is what made the
     // ruler feel heavy.
-    if (isDesktopWeb || (!toolDrag && panelDrawings.length === 0)) return [bitmap];
-    return [drawChartToolOverlay(
-      bitmap,
-      toolDrag,
-      {
-        positive: themeColors.positive,
-        negative: colors.negative,
-        zoom: colors.crosshair,
-        draw: drawColor,
-      },
-      toolReadout?.direction ?? "up",
-      { scene, panel, items: panelDrawings, selectedId: selectedDrawingId },
-    )];
+    const bakeTools = !isDesktopWeb && (!!toolDrag || panelDrawings.length > 0);
+    const bakeLevels = !isDesktopWeb && projectedLevels.length > 0;
+    if (!bakeTools && !bakeLevels) return [bitmap];
+    const withTools = bakeTools
+      ? drawChartToolOverlay(
+        bitmap,
+        toolDrag,
+        {
+          positive: themeColors.positive,
+          negative: colors.negative,
+          zoom: colors.crosshair,
+          draw: drawColor,
+        },
+        toolReadout?.direction ?? "up",
+        { scene, panel, items: panelDrawings, selectedId: selectedDrawingId },
+      )
+      : bitmap;
+    return [bakeLevels ? paintLevels(withTools, projectedLevels) : withTools];
   }, [
     bitmap,
     colors.crosshair,
@@ -922,6 +954,7 @@ function CompositePanelSurface({
     isDesktopWeb,
     panel,
     panelDrawings,
+    projectedLevels,
     scene,
     selectedDrawingId,
     toolDrag,
@@ -929,20 +962,23 @@ function CompositePanelSurface({
   ]);
   const vectors = useMemo<ChartSurfaceProps["vectors"]>(() => {
     if (!isDesktopWeb) return null;
-    const shapes = buildChartToolVectors({
-      scene,
-      panel,
-      drawings: panelDrawings,
-      selectedId: selectedDrawingId,
-      drag: toolDrag,
-      colors: {
-        positive: themeColors.positive,
-        negative: colors.negative,
-        zoom: colors.crosshair,
-        draw: drawColor,
-      },
-      direction: toolReadout?.direction ?? "up",
-    });
+    const shapes = [
+      ...buildChartToolVectors({
+        scene,
+        panel,
+        drawings: panelDrawings,
+        selectedId: selectedDrawingId,
+        drag: toolDrag,
+        colors: {
+          positive: themeColors.positive,
+          negative: colors.negative,
+          zoom: colors.crosshair,
+          draw: drawColor,
+        },
+        direction: toolReadout?.direction ?? "up",
+      }),
+      ...levelVectors(projectedLevels),
+    ];
     return shapes.length > 0 ? shapes : null;
   }, [
     colors.crosshair,
@@ -951,16 +987,19 @@ function CompositePanelSurface({
     isDesktopWeb,
     panel,
     panelDrawings,
+    projectedLevels,
     scene,
     selectedDrawingId,
     toolDrag,
     toolReadout?.direction,
   ]);
   const textLines = useMemo(
-    () => isDesktopWeb || !showTextFallback
-      ? []
-      : renderCompositePanelText(panel, plotWidth, scene.cursorXRatio, pointerCursorYRatio),
-    [isDesktopWeb, panel, plotWidth, pointerCursorYRatio, scene.cursorXRatio, showTextFallback],
+    () => {
+      if (isDesktopWeb || !showTextFallback) return [];
+      const lines = renderCompositePanelText(panel, plotWidth, scene.cursorXRatio, pointerCursorYRatio);
+      return projectedLevels.length > 0 ? writeLevelText(lines, projectedLevels) : lines;
+    },
+    [isDesktopWeb, panel, plotWidth, pointerCursorYRatio, projectedLevels, scene.cursorXRatio, showTextFallback],
   );
   const leftAxisLabels = useMemo(
     () => axisLabelRows(
@@ -1308,49 +1347,29 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      {hasLightweightChart ? (
-        <LightweightChart
-          width={plotWidth}
-          height={panel.height}
-          panel={panel}
-          seriesData={panelSeries}
-          colors={colors}
-          viewport={viewport}
-          interactive={interactive}
-          vectors={vectors}
-          armedTool={armedTool}
-          timeZone={timeZone}
-          onViewportChange={onSetViewport}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        />
-      ) : (
-        <ChartSurface
-          ref={plotRef}
-          width={plotWidth}
-          height={panel.height}
-          flexDirection="column"
-          bitmaps={bitmapLayers}
-          crosshair={crosshair}
-          vectors={vectors}
-          onMouseMove={interactive ? handleMouseMove : undefined}
-          onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
-          onMouseDrag={interactive && navigable ? dragViewport : undefined}
-          onMouseUp={interactive && navigable ? resetDrag : undefined}
-          onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
-          onMouseScroll={interactive && navigable ? panFromWheel : undefined}
-          onMouseOut={interactive ? clearCursor : undefined}
-          cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
-          data-gloom-interactive={interactive ? "true" : undefined}
-          data-gloom-role={COMPOSITE_PANEL_ROLE}
-          data-gloom-remote-kind={remoteKind}
-          data-gloom-label={panel.label ?? panel.id}
-        >
-          {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
-        </ChartSurface>
-      )}
+      <ChartSurface
+        ref={plotRef}
+        width={plotWidth}
+        height={panel.height}
+        flexDirection="column"
+        bitmaps={bitmapLayers}
+        crosshair={crosshair}
+        vectors={vectors}
+        onMouseMove={interactive ? handleMouseMove : undefined}
+        onMouseDown={interactive ? navigable ? startDrag : pressCursor : undefined}
+        onMouseDrag={interactive && navigable ? dragViewport : undefined}
+        onMouseUp={interactive && navigable ? resetDrag : undefined}
+        onMouseDragEnd={interactive && navigable ? resetDrag : undefined}
+        onMouseScroll={interactive && navigable ? panFromWheel : undefined}
+        onMouseOut={interactive ? clearCursor : undefined}
+        cursor={interactive ? toolDrag || !navigable ? "crosshair" : "grab" : undefined}
+        data-gloom-interactive={interactive ? "true" : undefined}
+        data-gloom-role={COMPOSITE_PANEL_ROLE}
+        data-gloom-remote-kind={remoteKind}
+        data-gloom-label={panel.label ?? panel.id}
+      >
+        {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
+      </ChartSurface>
       {rightAxisWidth > 0 ? (
         <>
           <Box width={axisGap} />
@@ -1374,13 +1393,27 @@ function CompositePanelSurface({
   );
 }
 
-function legendValue(
-  series: ResolvedSeries,
-  value: number | null,
-  formatValue: CompositeChartProps["formatValue"],
+const LEGEND_MARKER_WIDTH = 2;
+const LEGEND_ENTRY_GAP = 1;
+const MAX_LEGEND_ROWS = 3;
+/** A row with no numbers to protect keeps the old compact cap. */
+const LEGEND_EMPTY_MAX_WIDTH = 30;
+
+function legendRowCount(seriesCount: number, multiRow: boolean): number {
+  if (!multiRow) return 1;
+  return Math.max(1, Math.min(MAX_LEGEND_ROWS, seriesCount));
+}
+
+function legendSegmentColor(
+  segment: PriceStripSegment,
+  entryVisible: boolean,
+  palette: ThemeColors,
 ): string {
-  if (value === null) return "—";
-  return formatValue ? formatValue(value, series) : formatCompositeSeriesValue(value, series);
+  if (!entryVisible) return palette.textDim;
+  if (segment.kind === "label") return palette.text;
+  if (segment.direction === "up") return palette.positive;
+  if (segment.direction === "down") return palette.negative;
+  return palette.text;
 }
 
 function CompositeLegend({
@@ -1391,7 +1424,6 @@ function CompositeLegend({
   accessory,
   accessoryWidth,
   formatValue,
-  showLatestChangePercent,
   onActivate,
   onToggleSeries,
   isSeriesToggleable,
@@ -1404,75 +1436,129 @@ function CompositeLegend({
   accessory: CompositeChartProps["legendAccessory"];
   accessoryWidth: CompositeChartProps["legendAccessoryWidth"];
   formatValue: CompositeChartProps["formatValue"];
-  showLatestChangePercent: CompositeChartProps["showLatestChangePercent"];
   onActivate: CompositeChartProps["onActivate"];
   onToggleSeries: CompositeChartProps["onToggleSeries"];
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
   keyboardIndex?: number | null;
 }) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const activeThemeColors = useThemeColors();
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const cursorValueById = new Map(
     scene?.cursorValues.map((entry) => [entry.seriesId, entry] as const) ?? [],
   );
-  const entries = series.map((entry) => {
-    const toggleable = !!onToggleSeries && (isSeriesToggleable?.(entry) ?? true);
-    const cursorValue = cursorValueById.get(entry.id);
-    const changeText = showLatestChangePercent
-        && !scene?.cursorDate
-        && typeof entry.latestChangePercent === "number"
-        && Number.isFinite(entry.latestChangePercent)
-      ? ` ${formatPercentRaw(entry.latestChangePercent)}`
-      : "";
-    const hud = cursorValue?.point
-      ? formatOhlcvHud(cursorValue.point, entry.unit, entry.unitGroup)
-      : null;
-    const fullText = entry.points.length === 0
-      ? `${entry.label}${entry.hidden ? "" : entry.error || entry.warning ? ` ${entry.error ?? entry.warning}` : " no data"}`
-      : hud
-        ? `${entry.label} ${hud}${changeText}`
-        : `${entry.label} ${legendValue(
-          entry,
-          cursorValue?.value ?? null,
-          formatValue,
-        )}${changeText}`;
-    const details = formatCompositePointDetails(cursorValue?.point);
-    const tooltip = details ? `${fullText} · ${details}` : fullText;
-    const visibleCap = hud
-      ? Math.max(1, Math.min(72, width - 2))
-      : 30;
-    const textWidth = Math.max(1, Math.min(visibleCap, [...fullText].length));
-    return {
-      entry,
-      text: truncateWithEllipsis(fullText, textWidth),
-      width: textWidth + 2,
-      toggleable,
-      tooltip,
-    };
-  });
-  const desiredSeriesWidth = entries.reduce(
-    (total, entry, index) => total + entry.width + (index > 0 ? 1 : 0),
-    0,
-  );
+
   const resolvedAccessoryWidth = accessory
     ? Math.max(1, Math.min(width, Math.floor(accessoryWidth ?? 14)))
     : 0;
   const reservedAccessoryGap = accessory && width > resolvedAccessoryWidth ? 1 : 0;
   // The cursor date lives on the time axis, where the crosshair points at it.
   const widthBeforeAccessory = Math.max(0, width - resolvedAccessoryWidth - reservedAccessoryGap);
+  const entryMaxWidth = Math.max(1, widthBeforeAccessory - LEGEND_MARKER_WIDTH);
+  const rows = legendRowCount(series.length, isDesktopWeb);
+  const columns = Math.max(1, Math.ceil(series.length / rows));
+
+  const built = series.map((entry) => {
+    const toggleable = !!onToggleSeries && (isSeriesToggleable?.(entry) ?? true);
+    const cursorValue = cursorValueById.get(entry.id);
+    const details = formatCompositePointDetails(cursorValue?.point);
+    if (entry.points.length === 0) {
+      const emptyText = `${entry.label}${
+        entry.hidden
+          ? ""
+          : entry.error || entry.warning
+            ? ` ${entry.error ?? entry.warning}`
+            : " no data"
+      }`;
+      return {
+        entry,
+        strip: {
+          label: truncateWithEllipsis(emptyText, Math.min(LEGEND_EMPTY_MAX_WIDTH, entryMaxWidth)),
+          tokens: [] as PriceStripToken[],
+        },
+        coreTokens: [] as PriceStripToken[],
+        toggleable,
+        details: "",
+      };
+    }
+    const strip = buildPriceStrip({
+      series: entry,
+      cursorPoint: cursorValue?.point ?? null,
+      cursorValue: cursorValue?.value ?? null,
+      startTime: scene?.startTime,
+      endTime: scene?.endTime,
+      formatValue,
+    });
+    return {
+      entry,
+      strip,
+      coreTokens: strip.tokens.filter((token) => token.rank === PRICE_STRIP_RANK.core),
+      toggleable,
+      details,
+    };
+  });
+
+  // Rows are column-major: entry i lives in column floor(i / rows). Each row
+  // shares the width it has, but an entry never gives up its label plus core
+  // numbers — that case scrolls, the way a long legend already did.
+  const rowMembers: number[][] = Array.from({ length: rows }, (_, row) => {
+    const members: number[] = [];
+    for (let index = row; index < built.length; index += rows) members.push(index);
+    return members;
+  });
+  const budgets = built.map(() => entryMaxWidth);
+  for (const members of rowMembers) {
+    if (members.length === 0) continue;
+    const overhead = members.length * LEGEND_MARKER_WIDTH
+      + Math.max(0, columns - 1) * LEGEND_ENTRY_GAP;
+    const share = Math.max(1, Math.floor((widthBeforeAccessory - overhead) / members.length));
+    for (const index of members) {
+      const item = built[index]!;
+      const minimal = priceStripWidth(item.strip.label, item.coreTokens);
+      budgets[index] = Math.min(entryMaxWidth, Math.max(share, minimal));
+    }
+  }
+  const entries = built.map((item, index) => {
+    const layout = fitPriceStrip(item.strip, budgets[index]!);
+    const text = priceStripText(layout);
+    return {
+      ...item,
+      layout,
+      segments: priceStripSegments(layout),
+      text,
+      width: displayWidth(text) + LEGEND_MARKER_WIDTH,
+    };
+  });
+
+  const columnWidths = entries.length === 0
+    ? []
+    : Array.from({ length: columns }, (_, column) => {
+      let widest = 1;
+      for (let index = column * rows; index < entries.length; index += rows) {
+        widest = Math.max(widest, entries[index]!.width);
+      }
+      return widest;
+    });
+  const desiredSeriesWidth = columnWidths.reduce(
+    (total, columnWidth) => total + columnWidth,
+    0,
+  ) + Math.max(0, columns - 1) * LEGEND_ENTRY_GAP;
   const seriesWidth = Math.min(desiredSeriesWidth, widthBeforeAccessory);
   const accessorySpacerWidth = accessory
     ? Math.max(reservedAccessoryGap, width - seriesWidth - resolvedAccessoryWidth)
     : 0;
-  const keyboardEntryStart = keyboardIndex === null || keyboardIndex === undefined
+  const keyboardColumn = keyboardIndex === null || keyboardIndex === undefined
     ? null
-    : entries.slice(0, keyboardIndex).reduce(
-      (total, entry, index) => total + entry.width + (index > 0 ? 1 : 0),
+    : Math.floor(keyboardIndex / rows);
+  const keyboardEntryStart = keyboardColumn === null || keyboardColumn >= columnWidths.length
+    ? null
+    : columnWidths.slice(0, keyboardColumn).reduce(
+      (total, columnWidth) => total + columnWidth + LEGEND_ENTRY_GAP,
       0,
-    ) + (keyboardIndex > 0 ? 1 : 0);
-  const keyboardEntryEnd = keyboardEntryStart === null
+    );
+  const keyboardEntryEnd = keyboardColumn === null || keyboardEntryStart === null
     ? null
-    : keyboardEntryStart + (entries[keyboardIndex!]?.width ?? 0);
+    : keyboardEntryStart + columnWidths[keyboardColumn]!;
 
   useEffect(() => {
     if (keyboardEntryStart === null || keyboardEntryEnd === null) return;
@@ -1520,7 +1606,7 @@ function CompositeLegend({
       flexDirection="row"
       alignItems="flex-end"
       width={width}
-      height={1}
+      height={rows}
       overflow="visible"
       zIndex={20}
       data-gloom-role="composite-chart-legend"
@@ -1529,7 +1615,7 @@ function CompositeLegend({
         <ScrollBox
           ref={scrollRef}
           width={seriesWidth}
-          height={1}
+          height={rows}
           flexShrink={0}
           scrollX
           focusable={false}
@@ -1537,56 +1623,77 @@ function CompositeLegend({
           onMouseScroll={handleMouseScroll}
           data-gloom-role="composite-chart-legend-scroll"
         >
-          <Box flexDirection="row" width={desiredSeriesWidth} height={1} gap={1}>
-            {entries.map(({ entry, text, toggleable, tooltip, width: entryWidth }, index) => {
-              const entryVisible = visibleSeriesIds.has(entry.id);
-              return (
+          <Box flexDirection="column" width={desiredSeriesWidth} height={rows}>
+            {rowMembers.map((members, row) => (
               <Box
-                key={entry.id}
+                key={row}
                 flexDirection="row"
-                alignItems="center"
-                width={entryWidth}
+                gap={LEGEND_ENTRY_GAP}
+                width={desiredSeriesWidth}
                 height={1}
-                flexShrink={0}
-                overflow="hidden"
-                backgroundColor={keyboardIndex === index ? themeColors.selected : undefined}
-                hoverBackgroundColor={toggleable ? hoverBg() : undefined}
-                onMouseDown={toggleable ? (event: ChartMouseEvent) => {
-                  onActivate?.();
-                  consumeChartMouseEvent(event);
-                  onToggleSeries?.(entry.id);
-                } : undefined}
-                cursor={toggleable ? "pointer" : undefined}
-                data-gloom-interactive={toggleable ? "true" : undefined}
-                data-gloom-role="composite-chart-legend-series"
-                data-gloom-label={`${toggleable
-                  ? `${entryVisible ? "Hide" : "Show"} `
-                  : ""}${tooltip}`}
-                data-visible={entryVisible ? "true" : "false"}
-                title={isDesktopWeb ? tooltip : undefined}
               >
-                {isDesktopWeb ? (
-                  <Box
-                    flexShrink={0}
-                    style={{
-                      width: 8,
-                      height: 8,
-                      marginInlineEnd: 6,
-                      borderRadius: 999,
-                      border: `1px solid ${entry.color}`,
-                      backgroundColor: entryVisible ? entry.color : "transparent",
-                    }}
-                    data-gloom-role="composite-chart-legend-marker"
-                  />
-                ) : (
-                  <Text fg={entryVisible ? entry.color : themeColors.textMuted}>● </Text>
-                )}
-                {/* The filled/hollow marker already says whether a series is
-                    shown; the word only repeated it in every legend slot. */}
-                <Text fg={entryVisible ? themeColors.text : themeColors.textDim}>{text}</Text>
+                {members.map((index) => {
+                  const item = entries[index]!;
+                  const { entry, segments, toggleable, text, details } = item;
+                  const entryWidth = columnWidths[Math.floor(index / rows)] ?? item.width;
+                  const entryVisible = visibleSeriesIds.has(entry.id);
+                  const tooltip = details ? `${text} · ${details}` : text;
+                  return (
+                    <Box
+                      key={entry.id}
+                      flexDirection="row"
+                      alignItems="center"
+                      width={entryWidth}
+                      height={1}
+                      flexShrink={0}
+                      overflow="hidden"
+                      backgroundColor={keyboardIndex === index
+                        ? activeThemeColors.selected
+                        : undefined}
+                      hoverBackgroundColor={toggleable ? hoverBg() : undefined}
+                      onMouseDown={toggleable ? (event: ChartMouseEvent) => {
+                        onActivate?.();
+                        consumeChartMouseEvent(event);
+                        onToggleSeries?.(entry.id);
+                      } : undefined}
+                      cursor={toggleable ? "pointer" : undefined}
+                      data-gloom-interactive={toggleable ? "true" : undefined}
+                      data-gloom-role="composite-chart-legend-series"
+                      data-gloom-label={`${toggleable
+                        ? `${entryVisible ? "Hide" : "Show"} `
+                        : ""}${tooltip}`}
+                      data-visible={entryVisible ? "true" : "false"}
+                      title={isDesktopWeb ? tooltip : undefined}
+                    >
+                      {isDesktopWeb ? (
+                        <Box
+                          flexShrink={0}
+                          style={{
+                            width: 8,
+                            height: 8,
+                            marginInlineEnd: 6,
+                            borderRadius: 999,
+                            border: `1px solid ${entry.color}`,
+                            backgroundColor: entryVisible ? entry.color : "transparent",
+                          }}
+                          data-gloom-role="composite-chart-legend-marker"
+                        />
+                      ) : (
+                        <Text fg={entryVisible
+                          ? activeThemeColors.text
+                          : activeThemeColors.textMuted}>● </Text>
+                      )}
+                      {/* The filled/hollow marker already says whether a series is
+                          shown; the word only repeated it in every legend slot. */}
+                      <Text content={new StyledText(segments.map((segment) => ({
+                        text: segment.text,
+                        fg: legendSegmentColor(segment, entryVisible, activeThemeColors),
+                      })))} />
+                    </Box>
+                  );
+                })}
               </Box>
-              );
-            })}
+            ))}
           </Box>
         </ScrollBox>
       ) : null}
@@ -1676,7 +1783,6 @@ export function CompositeChart({
   allowHistoricalBackfill = false,
   axisWidth = 9,
   showLegend = true,
-  showLatestChangePercent = false,
   legendAccessory,
   legendAccessoryWidth,
   showTimeAxis = true,
@@ -1689,12 +1795,12 @@ export function CompositeChart({
   onToggleSeries,
   isSeriesToggleable,
   timeZone,
+  priceLevels,
 }: CompositeChartProps) {
   const activeThemeColors = useThemeColors();
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const nativeLwcChrome = !!ui.LightweightChart;
   const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
@@ -1759,14 +1865,6 @@ export function CompositeChart({
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
   );
-  // Renderers that own their own time scale need the unwindowed series, and
-  // need it at a stable identity so panning does not look like new data.
-  const seriesByPanelIdRef = useRef<Map<string, ResolvedSeries[]>>(new Map());
-  const seriesByPanelId = useMemo(() => {
-    const next = groupSeriesByPanelId(visibleSeries, seriesByPanelIdRef.current);
-    seriesByPanelIdRef.current = next;
-    return next;
-  }, [visibleSeries]);
   useEffect(() => {
     setLegendKeyboardIndex((current) => (
       current === null || visibleLegendSeries.length === 0
@@ -1905,11 +2003,14 @@ export function CompositeChart({
     if (tool === null) setSelectedDrawingId(null);
   }, []);
   const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
-    ? 1
+    ? legendRowCount(
+      visibleSeries.length > 0 ? visibleLegendSeries.length : 0,
+      isDesktopWeb,
+    )
     : 0;
-  const timeAxisRows = nativeLwcChrome ? 0 : (showTimeAxis ? 1 : 0);
+  const timeAxisRows = showTimeAxis ? 1 : 0;
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
-  const xMarkerRows = nativeLwcChrome ? 0 : (xMarkers.some((marker) => marker.label) ? 1 : 0);
+  const xMarkerRows = xMarkers.some((marker) => marker.label) ? 1 : 0;
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
   const lastTickKey = visibleSeries.map((entry) => {
     const last = entry.points.at(-1);
@@ -1958,9 +2059,9 @@ export function CompositeChart({
       ]),
     ),
   ), [formatAxisValue, maximumAxisWidth, projectedScene]);
-  const leftAxisWidth = nativeLwcChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
-  const rightAxisWidth = nativeLwcChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
-  const axisGap = nativeLwcChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
+  const leftAxisWidth = hasLeftAxis ? resolvedAxisWidth : 0;
+  const rightAxisWidth = hasRightAxis ? resolvedAxisWidth : 0;
+  const axisGap = resolvedAxisWidth > 0 ? 1 : 0;
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
@@ -2164,12 +2265,31 @@ export function CompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis && !nativeLwcChrome
+  const timeAxisLayout = scene && showTimeAxis
     ? buildCompositeTimeAxisLayout(scene, plotWidth)
     : null;
-  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeLwcChrome && effectiveViewport
+  const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
+
+  if (shouldUseDesktopAdvancedChart({
+    isDesktopWeb,
+    hasPoints: visibleSeries.length > 0,
+    xAxis,
+    showTimeAxis,
+    formatAxisValue,
+  })) {
+    return (
+      <DesktopAdvancedChart
+        series={visibleSeries}
+        width={totalWidth}
+        height={totalHeight}
+        background={resolvedColors.background}
+        tickKey={lastTickKey}
+        timeZone={timeZone}
+      />
+    );
+  }
 
   if (!scene) {
     const emptyPlotHeight = Math.max(0, totalHeight - legendRows - timeAxisRows - xMarkerRows);
@@ -2190,7 +2310,6 @@ export function CompositeChart({
             accessory={legendAccessory}
             accessoryWidth={legendAccessoryWidth}
             formatValue={formatValue}
-            showLatestChangePercent={showLatestChangePercent}
             onActivate={onActivate}
             onToggleSeries={onToggleSeries}
             isSeriesToggleable={isSeriesToggleable}
@@ -2275,7 +2394,6 @@ export function CompositeChart({
           accessory={legendAccessory}
           accessoryWidth={legendAccessoryWidth}
           formatValue={formatValue}
-          showLatestChangePercent={showLatestChangePercent}
           onActivate={onActivate}
           onToggleSeries={onToggleSeries}
           isSeriesToggleable={isSeriesToggleable}
@@ -2326,7 +2444,6 @@ export function CompositeChart({
         <CompositePanelSurface
           key={panel.id}
           panel={panel}
-          panelSeries={seriesByPanelId.get(panel.id) ?? EMPTY_PANEL_SERIES}
           scene={scene}
           plotWidth={plotWidth}
           leftAxisWidth={leftAxisWidth}
@@ -2354,7 +2471,9 @@ export function CompositeChart({
           onSetViewport={setViewportRange}
           onToolSpanChange={setToolSpan}
           showTextFallback={showTextFallback}
+          showCrosshairTooltip={showLegend}
           timeZone={timeZone}
+          priceLevels={priceLevels ?? []}
         />
       ))}
       {xMarkers.length > 0 ? (

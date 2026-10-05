@@ -58,6 +58,7 @@ export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], trailingInfo: [], hi
 
 /** Empty-state / error copy in the 18px chrome band; never dump JSON. */
 export const PANE_FOOTER_INFO_MAX_CHARS = 24;
+const UNBINDABLE_FOOTER_KEY_GLYPHS = new Set([" ", "↵", "⏎", "⎋", "␛", "←", "→", "↑", "↓"]);
 
 /**
  * Keys `usePaneFooterHintBindings` can actually press. `/` or a single
@@ -65,7 +66,10 @@ export const PANE_FOOTER_INFO_MAX_CHARS = 24;
  * (`1-8`) never bind through the footer.
  */
 export function isBindableFooterHintKey(key: string): boolean {
-  return key === "/" || key.length === 1;
+  if (key === "/") return true;
+  if (key.length !== 1) return false;
+  if (/^[1-8]$/.test(key)) return false;
+  return !UNBINDABLE_FOOTER_KEY_GLYPHS.has(key);
 }
 
 function clipFooterParts(parts: PaneFooterPart[]): PaneFooterPart[] {
@@ -97,7 +101,7 @@ export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolea
     || footer.hints.some((hint) => !hint.disabled);
 }
 
-/** Bottom-left pane chrome: source, last-updated, errors, and data warnings. */
+/** Bottom-left pane chrome includes changing data and connection status. */
 export function isPaneFooterLeftSegment(segment: PaneFooterSegment): boolean {
   const id = segment.id.toLowerCase();
   if (
@@ -106,6 +110,13 @@ export function isPaneFooterLeftSegment(segment: PaneFooterSegment): boolean {
     || id === "external-link"
     || id === "error"
     || id === "data-warnings"
+    || id === "loading"
+    || id === "refreshing"
+    || id === "running"
+    || id === "live"
+    || id === "delayed"
+    || id === "stale"
+    || id === "auth"
     || id.endsWith("-updated")
     || id.endsWith("-source")
     || id.endsWith("-error")
@@ -167,6 +178,16 @@ function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boole
   });
 }
 
+function sameFooterMenu(left?: PaneFooterSelectMenu, right?: PaneFooterSelectMenu): boolean {
+  if (!left || !right) return left === right;
+  return left.value === right.value
+    && left.options.length === right.options.length
+    && left.options.every((option, index) => {
+      const other = right.options[index];
+      return option.value === other?.value && option.label === other.label;
+    });
+}
+
 export function samePaneFooterRegistration(
   left: PaneFooterRegistration | null,
   right: PaneFooterRegistration | null,
@@ -186,6 +207,8 @@ export function samePaneFooterRegistration(
       return !!other
         && segment.id === other.id
         && segment.disabled === other.disabled
+        && !!segment.onPress === !!other.onPress
+        && sameFooterMenu(segment.menu, other.menu)
         && sameFooterParts(segment.parts, other.parts);
     })
   );
@@ -199,6 +222,7 @@ export function samePaneFooterRegistration(
         && hint.id === other.id
         && hint.key === other.key
         && hint.label === other.label
-        && hint.disabled === other.disabled;
+        && hint.disabled === other.disabled
+        && !!hint.onPress === !!other.onPress;
     });
 }

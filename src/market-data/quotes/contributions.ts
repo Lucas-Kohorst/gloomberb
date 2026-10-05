@@ -37,7 +37,9 @@ function normalizeListingExchange(
 }
 
 function shouldProjectSessionPrice(quote: Quote | QuoteContribution): boolean {
-  return quote.sessionConfidence === "explicit" || quote.dataSource === "live";
+  // An explicit market state identifies the session, not which session supplied
+  // the last trade. Delayed snapshots can still contain the regular close.
+  return quote.dataSource === "live";
 }
 
 export function finalizeSessionFields(

@@ -22,7 +22,9 @@ import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { EventBus } from "../../event-bus";
 import type { DataProvider } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
-import type { TickerResearchTabDef } from "../../../types/plugin";
+import type { PaneTemplateCreateOptions, TickerResearchTabDef } from "../../../types/plugin";
+import { usePaneFooter } from "../../../components";
+import { TICKER_RESEARCH_TAB_POP_OUT_TEMPLATE_ID } from "./tab-pop-out";
 import type { TickerRecord } from "../../../types/ticker";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import type { PluginRegistry } from "../../registry";
@@ -42,7 +44,12 @@ let financialsHarnessState: ReturnType<typeof createInitialState> | null = null;
 let detailHarnessState: ReturnType<typeof createInitialState> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 
-const runtime = createTestPluginRuntime();
+const createdTemplates: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+const runtime = createTestPluginRuntime({
+  createPaneFromTemplate: (templateId, options) => {
+    createdTemplates.push({ templateId, options });
+  },
+});
 const TICKER_TAB_SETTLE_MS = 160;
 
 const DetailPane = tickerDetailModule.panes![0]!.component as (props: {
@@ -253,6 +260,7 @@ function DetailHarness({
   exchangeRates,
   width = 90,
   height = 24,
+  withFooter = false,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
@@ -261,25 +269,39 @@ function DetailHarness({
   exchangeRates?: Map<string, number>;
   width?: number;
   height?: number;
+  withFooter?: boolean;
 }) {
   const initialState = createDetailState(config, ticker, financials, activeTabId, exchangeRates);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
   detailHarnessState = state;
 
+  const pane = (
+    <PluginRenderProvider pluginId="ticker-research" runtime={runtime}>
+      <DetailPane
+        paneId={TEST_PANE_ID}
+        paneType={TICKER_RESEARCH_PANE_ID}
+        focused
+        width={width}
+        height={height}
+      />
+    </PluginRenderProvider>
+  );
+
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <text>{`active:${state.paneState[TEST_PANE_ID]?.activeTabId ?? ""}`}</text>
-        <PluginRenderProvider pluginId="ticker-research" runtime={runtime}>
-          <DetailPane
-            paneId={TEST_PANE_ID}
-            paneType={TICKER_RESEARCH_PANE_ID}
-            focused
-            width={width}
-            height={height}
-          />
-        </PluginRenderProvider>
+        {withFooter ? (
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={width} height={height + 1}>
+                {pane}
+                <PaneFooterBar footer={footer} focused width={width} />
+              </Box>
+            )}
+          </PaneFooterProvider>
+        ) : pane}
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -351,6 +373,7 @@ afterEach(() => {
     testSetup = undefined;
   }
   harnessDispatch = null;
+  createdTemplates.length = 0;
   financialsHarnessState = null;
   detailHarnessState = null;
   setSharedRegistryForTests(undefined);
@@ -584,7 +607,7 @@ describe("TickerResearchPane", () => {
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
   });
 
-  test("shows Trade when an IBKR gateway profile exists", async () => {
+  test("keeps the active long-tail tab in the strip next to More", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
 
@@ -593,13 +616,66 @@ describe("TickerResearchPane", () => {
         config={createDetailConfig("AAPL", [createGatewayInstance()])}
         ticker={makeTicker("AAPL")}
         financials={null}
+        activeTabId="ibkr-trade"
       />,
       { width: 90, height: 24 },
     );
 
     await flushFrame();
+    const tabLine = testSetup.captureCharFrame().split("\n").find((line) => line.includes("Overview"));
+    expect(tabLine).toContain("Trade");
+    expect(tabLine).toContain("More");
+    expect(tabLine).not.toContain("Ask AI");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("ibkr-trade");
+  });
+
+  test("pops out the active tab and yields p to a tab that binds it", async () => {
+    const PercentTab = () => {
+      usePaneFooter("percent-tab", () => ({ hints: [{ id: "percent", key: "p", label: "ercent", onPress: () => {} }] }), []);
+      return <text>percent</text>;
+    };
+    setSharedRegistryForTests(makeRegistry([
+      { id: "percent-tab", name: "Percent", order: 70, component: PercentTab },
+    ]));
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+        activeTabId="ai-chat"
+        height={16}
+        withFooter
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("[p]op out");
+    await act(async () => {
+      testSetup!.mockInput.pressKey("p");
+      await testSetup!.renderOnce();
+    });
+    expect(createdTemplates).toEqual([{
+      templateId: TICKER_RESEARCH_TAB_POP_OUT_TEMPLATE_ID,
+      options: { symbol: "AAPL", values: { tabId: "ai-chat", tabName: "Ask AI" } },
+    }]);
+
+    createdTemplates.length = 0;
+    await act(async () => {
+      harnessDispatch!({ type: "UPDATE_PANE_STATE", paneId: TEST_PANE_ID, patch: { activeTabId: "percent-tab" } });
+    });
+    await flushFrame();
+    await flushFrame();
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Trade");
+    expect(frame).toContain("[p]ercent");
+    expect(frame).not.toContain("[p]op out");
+    await act(async () => {
+      testSetup!.mockInput.pressKey("p");
+      await testSetup!.renderOnce();
+    });
+    expect(createdTemplates).toEqual([]);
   });
 
   test("hides Options for prediction-market tickers", async () => {

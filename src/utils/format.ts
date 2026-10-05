@@ -145,7 +145,7 @@ const EMOJI_PRESENTATION_RE = /\p{Emoji_Presentation}/u;
 const EXTENDED_PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/u;
 const REGIONAL_INDICATOR_RE = /\p{Regional_Indicator}/u;
 
-function segmentGraphemes(value: string): string[] {
+export function segmentGraphemes(value: string): string[] {
   const Segmenter = (Intl as any).Segmenter;
   if (typeof Segmenter === "function") {
     return Array.from(

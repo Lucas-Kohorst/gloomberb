@@ -115,7 +115,7 @@ function OpenTuiPageStackView({
         </Box>
         {detailTitle ? (
           <>
-            <Box width={1} flexShrink={0} />
+            <Text fg={colors.textMuted}> │ </Text>
             <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
               <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
                 {detailTitle}

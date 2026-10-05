@@ -1,6 +1,6 @@
-import { Box, ScrollBox, Text, type InputRenderable } from "../../../ui";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { InputSearchBar, SegmentedControl, usePaneFooter } from "../../../components";
+import { Box, ScrollBox, Text } from "../../../ui";
+import { useCallback, useMemo, useState } from "react";
+import { InputSearchBar, SegmentedControl, usePaneFooter, usePaneListSearch } from "../../../components";
 import type { PaneProps, PaneTemplateCreateOptions } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -71,9 +71,15 @@ function CorrelationMatrixPane({ focused, width, height }: PaneProps) {
   const symbolsKey = symbols.join(",");
   const [rangePreset, setRangePreset] = usePaneSettingValue<CorrelationRangePreset>("rangePreset", settings.rangePreset);
   const [symbolsText, setSymbolsText] = usePaneSettingValue<string>("symbolsText", settings.symbolsText);
-  const [symbolsEditing, setSymbolsEditing] = useState(false);
-  const [symbolsFocusToken, setSymbolsFocusToken] = useState(0);
-  const symbolsInputRef = useRef<InputRenderable | null>(null);
+  const symbolsSearch = usePaneListSearch({
+    focused,
+    enabled: !settings.symbolsError && symbols.length >= 2,
+    value: symbolsText,
+    onQueryChange: setSymbolsText,
+    placeholder: "tickers",
+    debounceMs: 500,
+  });
+  const { searchFocused: symbolsEditing } = symbolsSearch;
 
   const spec = useMemo(() => {
     if (settings.symbolsError || symbols.length < 2) return buildEmptyChartPreset();
@@ -166,15 +172,12 @@ function CorrelationMatrixPane({ focused, width, height }: PaneProps) {
             focused={focused}
             active={symbolsEditing}
             width={Math.max(12, Math.min(40, width - 24))}
-            focusToken={symbolsFocusToken}
-            inputRef={symbolsInputRef}
-            placeholder="tickers"
-            debounceMs={500}
-            onFocus={() => {
-              setSymbolsEditing(true);
-              setSymbolsFocusToken((token) => token + 1);
-            }}
-            onBlur={() => setSymbolsEditing(false)}
+            focusToken={symbolsSearch.search.focusToken ?? 0}
+            inputRef={symbolsSearch.search.inputRef}
+            placeholder={symbolsSearch.search.placeholder}
+            debounceMs={symbolsSearch.search.debounceMs ?? 500}
+            onFocus={symbolsSearch.search.onFocus}
+            onBlur={symbolsSearch.search.onBlur}
             onQueryChange={(query) => setSymbolsText(query)}
           />
         </Box>

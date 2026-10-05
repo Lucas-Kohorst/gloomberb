@@ -1,14 +1,16 @@
-import { Box, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import {
   DataTableView,
   EmptyState,
-  InputSearchBar,
+  PaneListChrome,
   Spinner,
+  usePaneListSearch,
   useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
+  type DataTableKeyEvent,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
@@ -16,8 +18,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { nextSortPreference } from "../../../utils/sort-values";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
-import { selectByokKeys } from "../byok/store";
+import { usePaneSettingValue } from "../../../state/app/context";
 import { paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
@@ -33,14 +34,11 @@ import {
   type UmaSort,
 } from "./model";
 import {
-  BRAVADO_UMA_BYOK_SERVICE_ID,
-  BRAVADO_UMA_SECRET_SERVICE_ID,
   UMA_DISPUTES_PANE_ID,
   type UmaDisputeColumnId,
   type UmaQuestion,
 } from "./types";
 
-const SEARCH_DEBOUNCE_MS = 80;
 const UNSORTED: UmaSort = { columnId: null, direction: "desc" };
 
 const COLUMNS: DataTableColumn[] = [
@@ -77,17 +75,15 @@ function renderCell(
 }
 
 export function UmaDisputesPane({ width, height, focused }: PaneProps) {
-  const storedCredential = useAppSelector((state) => {
-    const keys = selectByokKeys(state);
-    const apiKey = keys.find((entry) => entry.serviceId === BRAVADO_UMA_BYOK_SERVICE_ID)?.apiKey ?? "";
-    const apiSecret = keys.find((entry) => entry.serviceId === BRAVADO_UMA_SECRET_SERVICE_ID)?.apiKey ?? "";
-    return `${apiKey}\0${apiSecret}`;
-  });
   const [storedQuery] = usePaneSettingValue("query", "");
   const [query, setQuery] = usePluginPaneState("query", String(storedQuery ?? "").trim());
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const searchInputRef = useRef<InputRenderable | null>(null);
+  const listSearch = usePaneListSearch({
+    focused,
+    value: query,
+    onQueryChange: setQuery,
+    placeholder: "market, address, or question id",
+    normalizeValue: (value) => value.trim(),
+  });
   const [questions, setQuestions] = useState<UmaQuestion[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() => (
     currentBravadoCredentials() ? "loading" : "error"
@@ -131,7 +127,7 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
   useEffect(() => {
     load();
     return () => abortRef.current?.abort();
-  }, [load, storedCredential]);
+  }, [load]);
 
   const filtered = useMemo(() => filterDisputes(questions, query), [questions, query]);
   const rows = useMemo(() => sortDisputes(filtered, sort), [filtered, sort]);
@@ -141,10 +137,6 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
   const loading = status === "loading" && questions.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((token) => token + 1);
-  }, []);
   const refresh = useCallback(() => {
     load();
   }, [load]);
@@ -153,23 +145,15 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
   useAutoRefresh(status === "loaded" ? lastUpdated : null, refresh, poll.intervalMinutes);
 
   useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return;
-    }
-    if (isPlainKey(event, "r")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      refresh();
-    }
-  }, { allowEditable: true, enabled: focused });
+    if (!focused || listSearch.searchFocused || event.targetEditable) return;
+    if (!isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    refresh();
+  }, { allowEditable: true, enabled: focused && !listSearch.searchFocused });
 
   const openSelected = usePaneStatusLinkFooter({
     registrationId: UMA_DISPUTES_PANE_ID,
-    focused,
     url: missingKey ? null : selectedUrl,
     source: selectedUrl ? "Polygon" : undefined,
     label: "tx",
@@ -180,50 +164,29 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     trailingInfo: [poll.segment],
+    focused: focused && !listSearch.searchFocused,
     showOpenHint: !missingKey && !!selectedUrl,
-    hints: [paneSearchHint(focusSearch)],
+    hints: [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
   });
 
-  const handleRootKeyDown = useCallback((event: {
-    name?: string;
-    preventDefault?: () => void;
-    stopPropagation?: () => void;
-  }, context: { selectedIndex: number }) => {
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent, context: { selectedIndex: number }) => {
+    if (listSearch.handleSearchKey(event)) return true;
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
-      focusSearch();
+      listSearch.focusSearch();
       return true;
     }
-    if (event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    if (event.name === "r") {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
       return true;
     }
     return false;
-  }, [focusSearch, refresh]);
+  }, [listSearch.focusSearch, listSearch.handleSearchKey, refresh]);
 
   const searchBar = (
-    <InputSearchBar
-      value={query}
-      focused={focused}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="market, address, or question id"
-      debounceMs={SEARCH_DEBOUNCE_MS}
-      onFocus={focusSearch}
-      onBlur={() => setSearchFocused(false)}
-      onNavigateDown={() => setSearchFocused(false)}
-      onQueryChange={(value) => setQuery(value.trim())}
-    />
+    <PaneListChrome width={width} focused={focused} search={listSearch.search} />
   );
 
   if (loading) {
@@ -258,7 +221,7 @@ export function UmaDisputesPane({ width, height, focused }: PaneProps) {
 
   return (
     <DataTableView<UmaQuestion>
-      focused={focused && !searchFocused}
+      focused={focused && !listSearch.searchFocused}
       rootBefore={searchBar}
       rootWidth={width}
       rootHeight={height}

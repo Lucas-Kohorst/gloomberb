@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useState } from "react";
+import { act, useReducer, useState } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
   AppContext,
   PaneInstanceProvider,
   createInitialState,
+  appReducer,
 } from "../../state/app/context";
 import { createDefaultConfig } from "../../types/config";
 import { Box, Text } from "../../ui";
@@ -165,6 +166,49 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
 }
 
 describe("DataTableStackView", () => {
+  test("restores the scrolled list after opening a visible row before scroll persistence settles", async () => {
+    const items = Array.from({ length: 100 }, (_, index) => ({ id: String(index), title: `Record ${index}`, body: `Detail ${index}` }));
+    let savedScroll: number | undefined;
+    function LongList() {
+      const [state, dispatch] = useReducer(appReducer, createInitialState(createDefaultConfig("/tmp/gloomberb-stack-scroll")));
+      const [selectedId, setSelectedId] = useState<string | null>("0");
+      const [open, setOpen] = useState<Row | null>(null);
+      savedScroll = state.paneState["long-list"]?.tableScrollPositions?.title;
+      return (
+        <AppContext value={{ state, dispatch }}>
+          <PaneInstanceProvider paneId="long-list">
+            <DataTableStackView<Row, Column>
+              focused detailOpen={!!open} onBack={() => setOpen(null)}
+              detailTitle={open?.title} detailContent={<Text>{open?.body ?? ""}</Text>}
+              selection={{ kind: "id", selectedId, getId: (row) => row.id, onChange: setSelectedId }}
+              onActivate={setOpen} items={items}
+              columns={[{ id: "title", label: "Title", width: 30 }]}
+              getItemKey={(row) => row.id} renderCell={(row) => ({ text: row.title })}
+              emptyStateTitle="No records"
+            />
+          </PaneInstanceProvider>
+        </AppContext>
+      );
+    }
+    testSetup = await testRender(<LongList />, { width: 40, height: 10 });
+    await renderSettled();
+    await act(async () => {
+      for (let i = 0; i < 12; i++) await testSetup!.mockMouse.scroll(5, 5, "down");
+    });
+    await renderSettled();
+    const before = testSetup.captureCharFrame().split("\n");
+    expect(before[1]).not.toContain("Record 0");
+    await act(async () => { await testSetup!.mockMouse.click(5, 4); });
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("Detail");
+    expect(savedScroll).toBe(12);
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    await renderSettled();
+    await renderSettled();
+    expect(testSetup.captureCharFrame().split("\n")[1]).toBe(before[1]);
+  });
+
   test("owns table navigation, detail open, and back navigation", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
 
@@ -178,7 +222,7 @@ describe("DataTableStackView", () => {
 
     const detailFrame = testSetup.captureCharFrame();
     expect(detailFrame).toContain("\u2190 Back");
-    expect(detailFrame).toContain("\u2190 Back Second row");
+    expect(detailFrame).toContain("\u2190 Back \u2502 Second row");
     expect(detailFrame).toContain("Second detail");
 
     await emitKeypress({ name: "escape", sequence: "\u001b" });

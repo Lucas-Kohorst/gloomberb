@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, LoadingState, type DataTableCell, type DataTableColumn, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
+import { DataTableView, LoadingState, PaneListChrome, type DataTableCell, type DataTableColumn, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
-import { TextAttributes } from "../../../ui";
+import { Box, TextAttributes } from "../../../ui";
 import { useAppSelector, usePaneCollection, usePaneInstance } from "../../../state/app/context";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { getCollectionTickersFromConfig } from "../portfolio-list/pane/data";
 import { handleRefreshKey } from "../shared/table-pane";
-import { usePaneStatusFooter } from "../shared/pane-footer";
+import { paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { usePaneListSearch } from "../../../components/use-pane-list-search";
 import { colors } from "../../../theme/colors";
 import { mapPool } from "../../../utils/map-pool";
 import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
@@ -47,7 +48,18 @@ export function PortfolioEventsPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sortPreference, setSortPreference] = useState<SortPreference<ColumnId>>({ columnId: "date", direction: "asc" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const listSearch = usePaneListSearch({
+    focused,
+    value: searchQuery,
+    onQueryChange: setSearchQuery,
+    placeholder: "symbol, event, or detail",
+  });
   const requestRef = useRef(0);
+
+  useEffect(() => {
+    setSearchQuery("");
+  }, [collectionId]);
 
   const reload = useCallback(() => {
     const getCorporateActions = provider?.getCorporateActions;
@@ -81,27 +93,56 @@ export function PortfolioEventsPane({ focused, width, height }: PaneProps) {
     symbol: ticker.metadata.ticker, name: data.get(ticker.metadata.ticker)?.name ?? ticker.metadata.name,
     currency: ticker.metadata.currency ?? config.baseCurrency, data: data.get(ticker.metadata.ticker)?.data ?? null,
   }))), [config.baseCurrency, data, tickers]);
-  const sortedRows = useMemo(() => applySortPreference(rows, sortPreference, (row, id) => id === "date" ? row.date : id === "symbol" ? row.symbol : id === "event" ? row.status : id === "period" ? row.period : id === "value" ? row.value : row.detail), [rows, sortPreference]);
+  const filteredRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query.length === 0
+      ? rows
+      : rows.filter((row) => `${row.symbol} ${row.name} ${row.status} ${row.period} ${row.value} ${row.detail}`.toLowerCase().includes(query));
+  }, [rows, searchQuery]);
+  const sortedRows = useMemo(() => applySortPreference(filteredRows, sortPreference, (row, id) => id === "date" ? row.date : id === "symbol" ? row.symbol : id === "event" ? row.status : id === "period" ? row.period : id === "value" ? row.value : row.detail), [filteredRows, sortPreference]);
   const renderCell = useCallback((row: PortfolioEventRow, column: Column, _index: number, state: { selected: boolean }): DataTableCell => ({
     text: column.id === "date" ? row.date : column.id === "symbol" ? row.symbol : column.id === "event" ? row.status : column.id === "period" ? row.period : column.id === "value" ? row.value : row.detail,
     color: state.selected ? colors.selectedText : column.id === "event" ? colors.textBright : colors.text,
     attributes: column.id === "event" ? TextAttributes.BOLD : undefined,
   }), []);
-  const handleKeyDown = useCallback((event: DataTableKeyEvent) => handleRefreshKey(event, reload, { stopPropagation: true }), [reload]);
+  const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (listSearch.handleSearchKey(event)) return true;
+    return handleRefreshKey(event, reload, { stopPropagation: true });
+  }, [listSearch.handleSearchKey, reload]);
   // A partial failure still fills the table, so the gap only shows up here.
   const partialInfo = useMemo<PaneFooterSegment[]>(() => (
     !error && failedCount > 0 && tickers.length > 0
       ? [{ id: "partial", parts: [{ text: `${failedCount}/${tickers.length} unavailable`, tone: "warning" as const }] }]
       : []
   ), [error, failedCount, tickers.length]);
-  usePaneStatusFooter({ registrationId: "portfolio-events", loading, error, info: partialInfo });
+  usePaneStatusFooter({
+    registrationId: "portfolio-events",
+    loading,
+    error,
+    info: partialInfo,
+    hints: [paneSearchHint(listSearch.focusSearch, { disabled: listSearch.searchFocused })],
+    focused: focused && !listSearch.searchFocused,
+  });
   if (loading && rows.length === 0) return <LoadingState title="Loading portfolio events..." />;
-  return <DataTableView<PortfolioEventRow, Column>
-    focused={focused} rootWidth={width} rootHeight={height} columns={columns} items={sortedRows}
-    selection={{ kind: "index", selectedIndex: selectedIdx, onChange: setSelectedIdx }}
-    onActivate={(row) => navigateTicker(row.symbol)} onRootKeyDown={handleKeyDown}
-    sortColumnId={sortPreference.columnId} sortDirection={sortPreference.direction}
-    onHeaderClick={(id) => setSortPreference((current) => nextSortPreference(current, id as ColumnId, { defaultDirection: id === "date" ? "asc" : "asc" }))}
-    getItemKey={(row) => row.id} renderCell={renderCell} emptyStateTitle={tickers.length === 0 ? "No tickers in scope." : error ?? "No portfolio events found"}
-  />;
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      <PaneListChrome width={width} focused={focused} search={listSearch.search} />
+      <DataTableView<PortfolioEventRow, Column>
+        focused={focused && !listSearch.searchFocused}
+        rootWidth={width}
+        rootHeight={Math.max(1, height - 1)}
+        columns={columns}
+        items={sortedRows}
+        selection={{ kind: "index", selectedIndex: selectedIdx, onChange: setSelectedIdx }}
+        onActivate={(row) => navigateTicker(row.symbol)}
+        onRootKeyDown={handleKeyDown}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(id) => setSortPreference((current) => nextSortPreference(current, id as ColumnId, { defaultDirection: id === "date" ? "asc" : "asc" }))}
+        getItemKey={(row) => row.id}
+        renderCell={renderCell}
+        emptyStateTitle={tickers.length === 0 ? "No tickers in scope." : error ?? "No portfolio events found"}
+      />
+    </Box>
+  );
 }

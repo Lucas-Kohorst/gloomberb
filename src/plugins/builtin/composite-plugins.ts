@@ -4,7 +4,6 @@ import { registerConnectionSource } from "./connections/register";
 import { portfolioAnalyticsModule } from "./analytics";
 import { bondSearchModule } from "./bond-search";
 import { brokerManagerModule } from "./broker-manager";
-import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
 import { connectionsModule } from "./connections/index.ts";
 import { marketplaceModule } from "./marketplace";
@@ -18,6 +17,8 @@ import { earningsModule } from "./earnings";
 import { earningsCallsModule } from "./earnings-calls";
 import { ipoCalendarModule } from "./ipo-calendar";
 import { fearGreedModule } from "./fear-greed";
+import { equityScreenerModule } from "./equity-screener";
+import { futuresCurveModule } from "./futures-curve";
 import { futuresModule } from "./futures";
 import { fxMatrixModule } from "./fx-matrix";
 import { helpModule } from "./help";
@@ -26,12 +27,15 @@ import { positionSizerModule } from "./kelly-sizer";
 import { layoutManagerModule } from "./layout-manager";
 import { marketHaltsModule } from "./market-halts";
 import { marketHeatmapModule } from "./market-heatmap";
+import { moneyMarketsModule } from "./money-markets";
 import { marketMoversModule } from "./market-movers";
+import { relativeRotationModule } from "./relative-rotation";
 import { optionsCalcModule } from "./options-calc";
 import { tvModule } from "./tv";
 import { volatilityModule } from "./volatility";
 import { composeBuiltinPlugin, type PluginModule } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
+import { ratePathModule } from "./rate-path";
 import { scannerModule } from "./scanner";
 import { sectorsModule } from "./sectors";
 import { treasuryAuctionsModule } from "./treasury-auctions";
@@ -71,7 +75,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, marketplaceModule, helpModule, byokModule, keybindingsModule, changelogModule, connectionsModule],
+  modules: [layoutManagerModule, marketplaceModule, helpModule, keybindingsModule, changelogModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({
@@ -100,6 +104,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
   toggleable: true,
   modules: [
     correlationModule,
+    relativeRotationModule,
     worldIndicesModule,
     worldVenueMapModule,
     marketHeatmapModule,
@@ -110,6 +115,8 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     sectorsModule,
     fxMatrixModule,
     futuresModule,
+    futuresCurveModule,
+    equityScreenerModule,
   ],
 });
 
@@ -124,6 +131,8 @@ export const macroPlugin = composeBuiltinPlugin({
     economicCalendarModule,
     econStatisticsModule,
     yieldCurveModule,
+    ratePathModule,
+    moneyMarketsModule,
     volatilityModule,
     creditConditionsModule,
     marketValuationModule,

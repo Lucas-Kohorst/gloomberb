@@ -1,7 +1,7 @@
 import type { TickerFinancials } from "../types/financials";
 import type { CloudFinancialsPayload } from "./types";
 import type { InstrumentSearchResult } from "../types/instrument";
-import { CloudAuthApi } from "./auth";
+import { CloudAuthApi, type CalendarFeed } from "./auth";
 import { CloudChatApi } from "./chat";
 import { CloudCollectionsApi } from "./collections";
 import { CloudDataApi } from "./data";
@@ -111,6 +111,7 @@ import {
 } from "../layout-marketplace/cloud";
 
 export type * from "./types";
+export type { CalendarFeed };
 export { setCloudApiFetchTransport } from "./request";
 export { emptyChatPresence, mergeChatPresence, normalizeChatPresence } from "./normalizers";
 export { NoteConflictError } from "./notes";
@@ -159,11 +160,10 @@ class GloomApiClient {
       isCookieAuthenticated: () => this.transport.isHostedSocket(),
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
-      markCurrentUserUnverified: () => {
-        if (this.currentUser) {
-          this.currentUser = { ...this.currentUser, emailVerified: false };
-        }
-      },
+      // A socket rejection only means the handshake carried no usable credential
+      // (desktop webview sockets cannot send the session cookie). get-session is
+      // the authority on verification; downgrading here bounced Teams to sign-in.
+      markCurrentUserUnverified: () => this.traceAuth("socket:auth.unverified"),
       updateCurrentUserFromSocket: (user) => {
         this.updateCurrentUser((currentUser) => ({
           ...currentUser,
@@ -429,6 +429,18 @@ class GloomApiClient {
 
   async getCloudPricing(): Promise<CloudPricing> {
     return this.auth.getCloudPricing();
+  }
+
+  async getCalendarFeed(): Promise<CalendarFeed | null> {
+    return this.auth.getCalendarFeed();
+  }
+
+  async ensureCalendarFeed(): Promise<CalendarFeed> {
+    return this.auth.ensureCalendarFeed();
+  }
+
+  async rotateCalendarFeed(): Promise<CalendarFeed> {
+    return this.auth.rotateCalendarFeed();
   }
 
   async getBuildoutAccount(): Promise<BuildoutAccountResponse> {

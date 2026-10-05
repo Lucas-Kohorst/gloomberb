@@ -108,3 +108,14 @@ describe("public pane shares", () => {
     })).toBeNull();
   });
 });
+
+
+test("a replacement stored only in the chart snapshot cannot share the old authored symbol", () => {
+  const pluginRegistry = registry(undefined, { ...paneDef, id: "chart-composer" });
+  const pane = { instanceId: "chart:1", paneId: "chart-composer", settings: {
+    advancedChartPrimary: { ownerSymbol: "NASDAQ:AAPL", ticker: "NASDAQ:NVDA", name: "NVDA" },
+  } };
+  expect(buildPaneSharePayload(pluginRegistry, pane)).toBeNull();
+  pane.settings.advancedChartPrimary.ticker = "NASDAQ:AAPL";
+  expect(buildPaneSharePayload(pluginRegistry, pane)).not.toBeNull();
+});
