@@ -359,7 +359,7 @@ export function CustomViewPane({ focused, width, height }: PaneProps) {
   if (!spec) {
     return specError
       ? <PaneStatusBody error={specError} errorTitle="This view's spec is invalid." />
-      : <PaneStatusBody empty emptyTitle="This view is empty." emptyMessage={'Ask Gloom: "make a view of the top S&P movers"'} />;
+      : <PaneStatusBody empty emptyTitle="This view is empty." emptyMessage={'Ask Gloom for a screen or a ticker list. Index membership is not in the catalog.'} />;
   }
 
   if (loading && !data) {

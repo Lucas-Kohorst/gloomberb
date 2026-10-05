@@ -27,7 +27,7 @@ export const customViewPlugin: GloomPlugin = {
   id: "custom-view",
   name: "Custom Views",
   version: "1.0.0",
-  description: "Tables built from any data function: columns, a filter, a sort. Made by the agent, shared with a team.",
+  description: "A worksheet from a screen, a ticker list, or any data function. Columns, a filter, a sort. Built by Ask Gloom, shared with a team.",
   toggleable: false,
 
   panes: [{
@@ -53,7 +53,7 @@ export const customViewPlugin: GloomPlugin = {
     id: CUSTOM_VIEW_TEMPLATE_ID,
     paneId: CUSTOM_VIEW_PANE_ID,
     label: "Custom View",
-    description: "A table from any data function with your columns, filter, and sort.",
+    description: "A worksheet from a screen, a ticker list, or a data function, with your columns, filter, and sort.",
     keywords: ["view", "custom", "table", "query", "screen", "columns", "filter"],
     shortcut: { prefix: "VIEW", argPlaceholder: "spec JSON or empty", argKind: "text" },
     createInstance: (_context, options) => {

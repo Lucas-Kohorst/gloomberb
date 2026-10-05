@@ -626,6 +626,28 @@ describe("view operations", () => {
     expect(invalid.ok).toBe(false);
     if (!invalid.ok) expect(invalid.error.message).toContain("source.pane");
     expect(createdFromTemplate).toHaveLength(1);
+
+    const screen = await controller.handle({
+      type: "call",
+      operation: "view.create",
+      input: {
+        spec: {
+          source: {
+            kind: "screen",
+            definition: {
+              version: 1,
+              currency: "USD",
+              criteria: [{ field: "marketCap", op: "gte", value: 10_000_000_000 }],
+              sort: { field: "trailingPE", direction: "asc" },
+            },
+          },
+          projection: { columns: ["symbol", "trailingPE"] },
+        },
+      },
+    });
+    expect(screen.ok).toBe(true);
+    const screenOptions = createdFromTemplate[1]?.options as { values: { spec: string } };
+    expect(JSON.parse(screenOptions.values.spec).source.kind).toBe("screen");
   });
 
   test("view.update rewrites the spec of an existing custom view only", async () => {
