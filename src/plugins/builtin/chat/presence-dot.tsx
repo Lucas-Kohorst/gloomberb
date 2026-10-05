@@ -11,7 +11,7 @@ const PRESENCE_SLOT_STYLE = {
   flexShrink: 0,
 } as const;
 
-export function OnlinePresenceDot({
+function OnlinePresenceDot({
   onMouseDown,
 }: {
   onMouseDown?: (event: any) => void;
