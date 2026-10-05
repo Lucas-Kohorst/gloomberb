@@ -19,8 +19,6 @@ const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const SUBMISSIONS_URL = "https://data.sec.gov/submissions";
 const COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts";
 const FETCH_TIMEOUT_MS = 15_000;
-/** Older submission pages read when a form list is set, so a filter does not pull an issuer's full history. */
-const FORM_FILTER_ARCHIVE_LIMIT = 8;
 
 function sanitizeIdentityPart(value: string, fallback: string): string {
   const sanitized = value.trim().toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -155,12 +153,6 @@ function normalize(value?: string): string {
   return (value ?? "").trim().toUpperCase();
 }
 
-function formSet(forms: readonly string[] | undefined): ReadonlySet<string> | null {
-  if (!forms || forms.length === 0) return null;
-  const accepted = new Set(forms.map((form) => normalize(form)).filter(Boolean));
-  return accepted.size > 0 ? accepted : null;
-}
-
 function zeroPadCik(value: unknown): string | null {
   const digits = String(value ?? "").replace(/\D/g, "");
   if (!digits) return null;
@@ -290,7 +282,6 @@ function parseFilingColumns(
   columns: Record<string, unknown> | null | undefined,
   company: { cik: string; displayCik: string; companyName?: string },
   limit: number,
-  acceptedForms?: ReadonlySet<string> | null,
 ): SecFilingItem[] {
   if (!columns || !company.displayCik) return [];
   const accessionNumbers = Array.isArray(columns.accessionNumber) ? columns.accessionNumber : [];
@@ -300,9 +291,10 @@ function parseFilingColumns(
   const primaryDocuments = Array.isArray(columns.primaryDocument) ? columns.primaryDocument : [];
   const primaryDescriptions = Array.isArray(columns.primaryDocDescription) ? columns.primaryDocDescription : [];
   const items = Array.isArray(columns.items) ? columns.items : [];
-  const rowCount = Math.max(accessionNumbers.length, forms.length, filingDates.length);
-  // A form list has to see past the first page of unrelated filings. Unfiltered reads stay capped.
-  const total = acceptedForms ? rowCount : Math.min(rowCount, Math.max(limit, 0));
+  const total = Math.min(
+    Math.max(accessionNumbers.length, forms.length, filingDates.length),
+    Math.max(limit, 0),
+  );
 
   const results: SecFilingItem[] = [];
   for (let index = 0; index < total; index += 1) {
@@ -310,7 +302,6 @@ function parseFilingColumns(
     const form = String(forms[index] ?? "").trim();
     const filingDate = parseDate(filingDates[index]);
     if (!accessionNumber || !form || !filingDate) continue;
-    if (acceptedForms && !acceptedForms.has(normalize(form))) continue;
 
     const accessionNumberNoDashes = stripAccessionDashes(accessionNumber);
     const primaryDocument = String(primaryDocuments[index] ?? "").trim() || undefined;
@@ -333,7 +324,6 @@ function parseFilingColumns(
       filingUrl,
       primaryDocumentUrl,
     });
-    if (acceptedForms && results.length >= limit) break;
   }
 
   return results;
@@ -353,16 +343,12 @@ function submissionCompany(payload: unknown, fallbackCik = ""): {
   };
 }
 
-export function parseRecentFilings(
-  payload: unknown,
-  count = 15,
-  acceptedForms?: ReadonlySet<string> | null,
-): SecFilingItem[] {
+export function parseRecentFilings(payload: unknown, count = 15): SecFilingItem[] {
   const record = recordOrNull(payload);
   if (!record) return [];
   const recent = recordOrNull(recordOrNull(record.filings)?.recent)
     ?? (Array.isArray(record.accessionNumber) ? record : null);
-  return parseFilingColumns(recent, submissionCompany(record), count, acceptedForms);
+  return parseFilingColumns(recent, submissionCompany(record), count);
 }
 
 export function parseFilingDocuments(indexHtml: string, filing: SecFilingItem): SecFilingDocument[] {
@@ -799,30 +785,22 @@ export class SecEdgarClient {
     return this.lookupPromise;
   }
 
-  async getRecentFilings(
-    ticker: string,
-    count = 15,
-    options: { forms?: readonly string[] } = {},
-  ): Promise<SecFilingItem[]> {
+  async getRecentFilings(ticker: string, count = 15): Promise<SecFilingItem[]> {
     const normalizedTicker = normalize(ticker);
     if (!normalizedTicker) return [];
-    const acceptedForms = formSet(options.forms);
 
     const lookup = await this.loadLookup();
     const entry = lookup.get(normalizedTicker);
     if (!entry) return [];
 
     const payload = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/CIK${entry.cik}.json`);
-    const filings = parseRecentFilings(payload, count, acceptedForms);
+    const filings = parseRecentFilings(payload, count);
     if (filings.length >= count) return filings;
     const company = submissionCompany(payload, entry.cik);
-    let archivesRead = 0;
     for (const name of parseSubmissionArchiveNames(payload)) {
       if (filings.length >= count) break;
-      if (acceptedForms && archivesRead >= FORM_FILTER_ARCHIVE_LIMIT) break;
-      archivesRead += 1;
       const older = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/${name}`);
-      filings.push(...parseFilingColumns(recordOrNull(older), company, count - filings.length, acceptedForms));
+      filings.push(...parseFilingColumns(recordOrNull(older), company, count - filings.length));
     }
     return filings;
   }

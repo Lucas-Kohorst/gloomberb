@@ -889,7 +889,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["CF"],
   },
   ETF: {
-    summary: "Fund filings for a ticker: prospectuses, shareholder reports, and portfolio holdings. Open any of them inline.",
+    summary: "A US-listed fund's SEC filings: registration statements and prospectus updates, shareholder reports, N-CEN and N-PORT reports. Open any of them inline.",
     usage: ["ETF SPY"],
     keys: [OPEN, OPEN_SOURCE],
     data: AS_FILED,
