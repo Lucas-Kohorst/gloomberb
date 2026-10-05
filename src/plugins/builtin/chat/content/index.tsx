@@ -263,6 +263,7 @@ export function ChatContent({
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    dismissProfilePopover,
     hoverProfilePopover,
     ownProfileConfigured,
     profilePopoverUser,
@@ -747,7 +748,7 @@ export function ChatContent({
         setHoveredIdx={setHoveredIdx}
         showProfilePopover={hoverUserProfile}
         toggleProfilePopover={toggleUserProfile}
-        dismissProfilePopover={closeProfilePopover}
+        dismissProfilePopover={dismissProfilePopover}
         stickyTranscript={stickyTranscript}
         user={user}
         userByUsername={userByUsername}

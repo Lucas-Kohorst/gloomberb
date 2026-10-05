@@ -96,6 +96,14 @@ describe("profile popover", () => {
       hook.hoverProfilePopover(bob);
       hook.scheduleProfilePopoverClose();
     })).toContain("no card");
+
+    // On the desktop a click on the pinned name reaches the card first, as a click outside it.
+    expect(await run((hook) => hook.toggleProfilePopover(ada))).toContain("card:ada");
+    expect(await run((hook) => {
+      hook.dismissProfilePopover();
+      hook.toggleProfilePopover(ada);
+    })).toContain("no card");
+    expect(await run((hook) => hook.toggleProfilePopover(ada))).toContain("card:ada");
   });
 
 

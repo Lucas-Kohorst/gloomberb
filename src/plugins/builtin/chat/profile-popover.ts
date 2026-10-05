@@ -47,6 +47,7 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const activeRef = useRef(true);
   const pinnedRef = useRef(false);
   const profilePopoverUserIdRef = useRef<string | null>(null);
+  const dismissedPinnedUserIdRef = useRef<string | null>(null);
 
   const cancelProfilePopoverClose = useCallback(() => {
     if (profilePopoverCloseTimerRef.current == null) return;
@@ -129,12 +130,32 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
 
   /** A click on a name pins its card until Esc, a click outside, or a second click. */
   const toggleProfilePopover = useCallback((targetUser: ChatUserSummary, options?: { ownProfile?: boolean }) => {
+    // The desktop card hears the same click first, as a click outside it.
+    if (dismissedPinnedUserIdRef.current === targetUser.id) {
+      dismissedPinnedUserIdRef.current = null;
+      return;
+    }
     if (pinnedRef.current && profilePopoverUserIdRef.current === targetUser.id) {
       closeProfilePopover();
       return;
     }
     showProfilePopover(targetUser, { ...options, pin: true });
   }, [closeProfilePopover, showProfilePopover]);
+
+  /**
+   * Closes the card at once, pinned or not: a click outside it or Esc. When
+   * that click lands on the name that pinned it, the name's own toggle then
+   * leaves it closed instead of pinning it again.
+   */
+  const dismissProfilePopover = useCallback(() => {
+    if (pinnedRef.current) {
+      dismissedPinnedUserIdRef.current = profilePopoverUserIdRef.current;
+      setTimeout(() => {
+        dismissedPinnedUserIdRef.current = null;
+      }, 0);
+    }
+    closeProfilePopover();
+  }, [closeProfilePopover]);
 
   useEffect(() => {
     activeRef.current = true;
@@ -154,6 +175,7 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   return {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    dismissProfilePopover,
     ownProfileConfigured,
     profilePopoverUser,
     hoverProfilePopover,
