@@ -168,6 +168,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: QUOTES,
     bloomberg: ["HP"],
   },
+  RETURN: {
+    summary: "Interval and cumulative price returns in a scrollable table, for a selectable range and granularity.",
+    usage: ["RETURN AAPL"],
+    keys: [key("/", "search")],
+    data: QUOTES,
+    bloomberg: [],
+  },
   GR: {
     summary: "How two tickers move together: indexed prices, their ratio, rolling correlation, and a return regression with beta, alpha and R².",
     usage: ["GR NVDA, AMD"],
@@ -628,7 +635,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     summary: "Major indices grouped by region with last, change and session status: which markets are open and how they closed.",
     usage: ["WEI"],
     keys: [OPEN],
-    data: same("Delayed up to 15 minutes"),
+    data: same(DELAYED),
     bloomberg: ["WEI"],
   },
   BI: {
@@ -677,7 +684,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     summary: "Front-month futures across equity index, rates, energy, metals, agriculture, livestock and FX with last price and session change, grouped by sector.",
     usage: ["FUT"],
     keys: [SEARCH, OPEN],
-    data: same("Delayed, usually 10 minutes"),
+    data: same(DELAYED),
     bloomberg: ["GLCO"],
   },
   CTM: {
@@ -887,6 +894,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: [OPEN, OPEN_SOURCE],
     data: AS_FILED,
     bloomberg: ["CF"],
+  },
+  ETF: {
+    summary: "A US-listed fund's SEC filings: registration statements and prospectus updates, shareholder reports, N-CEN and N-PORT reports. Open any of them inline.",
+    usage: ["ETF SPY"],
+    keys: [OPEN, OPEN_SOURCE],
+    data: AS_FILED,
+    bloomberg: [],
   },
   TRIAL: {
     summary: "Clinical studies by condition, drug, or sponsor, with status, phase, and enrollment. Open the study record.",

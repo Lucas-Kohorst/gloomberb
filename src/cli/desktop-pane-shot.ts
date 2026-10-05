@@ -546,7 +546,6 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
         .forEach((table, tableIndex) => {
           const tableMetadata = semanticTables[tableIndex] && semanticTables[tableIndex].metadata || {};
           const semanticColumns = Array.isArray(tableMetadata.columns) ? tableMetadata.columns : [];
-          const semanticRows = Array.isArray(tableMetadata.rows) ? tableMetadata.rows : [];
           const headers = [...table.querySelectorAll('[data-gloom-role="data-table-header-cell"]')]
             .map((cell) => normalize(cell.innerText || cell.textContent));
           const rowElements = [...table.querySelectorAll(
@@ -555,7 +554,7 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
           rowElements.forEach((row, rowIndex) => {
             const cellElements = [...row.querySelectorAll('[data-gloom-role="data-table-cell"]')];
             const values = cellElements.length > 0 ? cellElements : [row];
-            const semanticRow = semanticRows[rowIndex] || {};
+            const rowKey = row.getAttribute("data-gloom-row-key");
             const cells = values.map((cell, cellIndex) => {
               const semanticColumn = semanticColumns[cellIndex] || {};
               const text = normalize(cell.innerText || cell.textContent);
@@ -582,8 +581,8 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
             rows.push({
               tableIndex,
               rowIndex,
-              ...(typeof semanticRow.key === "string" ? { key: semanticRow.key } : {}),
-              selected: row.getAttribute("data-selected") === "true" || semanticRow.selected === true,
+              ...(rowKey ? { key: rowKey } : {}),
+              selected: row.getAttribute("data-selected") === "true",
               cells,
             });
           });
