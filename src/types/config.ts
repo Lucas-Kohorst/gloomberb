@@ -284,6 +284,7 @@ const TICKER_PANE_IDS = new Set([
   "corporate-actions",
   "earnings-estimates",
   "historical-prices",
+  "returns",
   "ibkr-trading",
 ]);
 
