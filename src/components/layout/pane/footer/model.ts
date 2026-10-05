@@ -68,14 +68,10 @@ export interface CombinedPaneFooter {
 
 export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [], menu: [], keys: [] };
 
+/** Status the hints leave room for, more when it is a warning: a failure must stay readable. */
 const INFO_FLOOR_CHARS = 10;
+const WARNING_FLOOR_CHARS = 24;
 const HINT_GAP = 1;
-
-/** `r` refreshes every pane, so a per-pane `[r]efresh` hint is not footer chrome. */
-export function isPerPaneRefreshHint(hint: Pick<PaneHint, "id" | "key" | "label">): boolean {
-  return hint.key.toLowerCase() === "r"
-    && (hint.id.toLowerCase().includes("refresh") || /efresh/i.test(hint.label));
-}
 
 function paneHintWidth(hint: Pick<PaneHint, "key" | "label">, prefix = ""): number {
   return getShortcutHintWidth(hint.key, hint.label, prefix);
@@ -89,7 +85,7 @@ function infoTextWidth(segments: readonly PaneFooterSegment[]): number {
   if (segments.length === 0) return 0;
   return segments.reduce((total, segment, index) => {
     const text = segment.parts.reduce((sum, part, partIndex) => (
-      sum + (partIndex > 0 ? 1 : 0) + part.text.length
+      sum + (partIndex > 0 ? 1 : 0) + displayWidth(part.text)
     ), 0);
     return total + (index > 0 ? 1 : 0) + text;
   }, 0);
@@ -119,8 +115,11 @@ export function layoutPaneFooterHintRow(
   iconReserve = 0,
 ): PaneFooterHintRow {
   const width = Math.max(0, Math.floor(contentWidth));
-  const hints = footer.hints.filter((hint) => !hint.disabled && !isPerPaneRefreshHint(hint));
-  const textFloor = footer.info.length > 0 ? Math.min(INFO_FLOOR_CHARS, infoTextWidth(footer.info)) : 0;
+  const hints = footer.hints.filter((hint) => !hint.disabled);
+  const warning = footer.info.some((segment) => segment.parts.some((part) => part.tone === "warning" || part.tone === "negative"));
+  const textFloor = footer.info.length > 0
+    ? Math.min(warning ? WARNING_FLOOR_CHARS : INFO_FLOOR_CHARS, infoTextWidth(footer.info))
+    : 0;
   const infoFloor = Math.min(width, Math.max(iconReserve, textFloor));
   const hintBudget = Math.max(0, width - infoFloor - (infoFloor > 0 && hints.length > 0 ? 1 : 0));
   const more = moreControl(hintBudget);
@@ -151,7 +150,7 @@ export function layoutPaneFooterHintRow(
   };
 }
 
-/** The name a hint goes by in the pane menu: `[a]dd` is "Add", `[r]etry` is "Retry". */
+/** The name a hint goes by in the pane menu: `[a]dd` is "Add", `[r]efresh` is "Refresh". */
 export function paneHintTitle(hint: Pick<PaneHint, "key" | "label" | "title">): string {
   if (hint.title) return hint.title;
   const label = hint.label.trim();
@@ -165,7 +164,7 @@ export function paneHintTitle(hint: Pick<PaneHint, "key" | "label" | "title">): 
 
 export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
   if (!footer) return false;
-  return footer.info.length > 0 || footer.hints.some((hint) => !hint.disabled && !isPerPaneRefreshHint(hint));
+  return footer.info.length > 0 || footer.hints.some((hint) => !hint.disabled);
 }
 
 export function combinePaneFooterRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
@@ -182,7 +181,7 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   const keys: PaneHint[] = [];
   for (const [id, registration] of ordered) {
     if (registration.info) info.push(...registration.info);
-    if (registration.hints) hints.push(...registration.hints.filter((hint) => !isPerPaneRefreshHint(hint)));
+    if (registration.hints) hints.push(...registration.hints);
     if (registration.keys) keys.push(...registration.keys);
     if (registration.menu?.length) {
       if (menu.length > 0) menu.push({ type: "divider", id: `${id}:divider` });

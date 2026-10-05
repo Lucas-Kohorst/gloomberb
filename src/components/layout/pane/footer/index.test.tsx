@@ -153,13 +153,12 @@ describe("PaneFooterBar", () => {
     expect(frame).not.toContain("https://example.com");
   });
 
-  test("a refresh hint is absent and hints that do not fit open from More", async () => {
+  test("hints that do not fit open from More and run from there", async () => {
     const actions: string[] = [];
     function Crowded() {
       usePaneFooter("crowded", () => ({
         info: [{ id: "loading", parts: [{ text: "loading", tone: "muted" }] }],
         hints: [
-          { id: "refresh", key: "r", label: "efresh", onPress: () => actions.push("refresh") },
           { id: "search", key: "/", label: "search", onPress: () => actions.push("search") },
           { id: "open", key: "o", label: "pen", onPress: () => actions.push("open") },
           { id: "pop-out", key: "p", label: "op out", onPress: () => actions.push("pop-out") },
@@ -191,7 +190,6 @@ describe("PaneFooterBar", () => {
     expect(frame).toContain("loading");
     expect(frame).toContain("[/]search");
     expect(frame).toContain("More");
-    expect(frame).not.toContain("[r]efresh");
     expect(frame).not.toContain("[y]ank");
 
     const lines = frame.split("\n");

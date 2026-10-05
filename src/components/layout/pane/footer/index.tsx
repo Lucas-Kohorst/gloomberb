@@ -12,7 +12,6 @@ import { nativePaneFooterRows } from "../sizing";
 import {
   EMPTY_FOOTER,
   hasPaneFooterContent,
-  isPerPaneRefreshHint,
   layoutPaneFooterHintRow,
   totalHintsWidth,
   type CombinedPaneFooter,
@@ -125,7 +124,8 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
       fg={segment.disabled ? colors.textMuted : colors.textDim}
       attributes={attributes}
       aria-label={segment.label}
-      title={segment.title}
+      // The desktop shows a status the row clipped in full on hover.
+      title={segment.title ?? label}
       cursor={interactive ? "pointer" : undefined}
       onMouseDown={interactive ? startSegmentPress : undefined}
       onMouseUp={interactive ? finishSegmentPress : undefined}
@@ -149,7 +149,7 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
   );
 }
 
-function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
+function usePaneHintRemoteNode(hint: PaneHint) {
   useRemoteUiNode({
     role: "pane-hint",
     label: `${hint.key}${hint.label}`,
@@ -163,6 +163,10 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
       label: hint.label,
     },
   });
+}
+
+function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
+  usePaneHintRemoteNode(hint);
   return (
     <ShortcutHint
       hotkey={hint.key}
@@ -173,6 +177,12 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
       onPress={hint.onPress}
     />
   );
+}
+
+/** A hint behind More stays a remote control target, as it was when it only clipped. */
+function OverflowHintNode({ hint }: { hint: PaneHint }) {
+  usePaneHintRemoteNode(hint);
+  return null;
 }
 
 function FooterOverflowMenu({ hints, width, label }: { hints: PaneHint[]; width: number; label: string }) {
@@ -196,7 +206,12 @@ function FooterOverflowMenu({ hints, width, label }: { hints: PaneHint[]; width:
       if (selected) hints[Number(selected)]?.onPress?.();
     }, () => {});
   };
-  return <Button label={label} width={width} variant="plain" stopPropagation onPress={open} />;
+  return (
+    <>
+      <Button label={label} width={width} variant="plain" stopPropagation onPress={open} />
+      {hints.map((hint) => <OverflowHintNode key={hint.id} hint={hint} />)}
+    </>
+  );
 }
 
 function FooterContent({
@@ -213,9 +228,7 @@ function FooterContent({
   nativePaneChrome?: boolean;
 }) {
   const hasInfo = footer.info.length > 0;
-  const actionableHints = focused
-    ? footer.hints.filter((hint) => !hint.disabled && !isPerPaneRefreshHint(hint))
-    : [];
+  const actionableHints = focused ? footer.hints.filter((hint) => !hint.disabled) : [];
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
   const availableWidth = width && width > 0 ? Math.floor(width) : null;
