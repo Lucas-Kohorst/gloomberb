@@ -5,6 +5,7 @@ import {
   getPaneSidebarWidthRange,
   PaneSidebar,
   PaneSidebarAction,
+  PaneSidebarList,
   PaneSidebarRow,
 } from "../../../components";
 import { Box, Span, Text, useUiCapabilities } from "../../../ui";
@@ -231,6 +232,7 @@ export function ChannelSidebar({
         };
         return (
           <>
+            <PaneSidebarList>
             {sidebarRows.map((row) => {
               if (row.kind === "public-header") {
                 return sectionHeader({
@@ -324,7 +326,7 @@ export function ChannelSidebar({
                 </PaneSidebarRow>
               );
             })}
-            <Box flexGrow={1} />
+            </PaneSidebarList>
             {needsProfileSetup && (
               <PaneSidebarRow
                 active={false}
