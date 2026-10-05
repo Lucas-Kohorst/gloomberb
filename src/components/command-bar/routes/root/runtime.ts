@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { ScrollBoxRenderable } from "../../../../ui";
-import type { NewsArticle } from "../../../../news/types";
 import type { AppState } from "../../../../state/app/context";
-import type { DataProvider, SecFilingItem } from "../../../../types/data-provider";
+import type { DataProvider } from "../../../../types/data-provider";
 import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
@@ -67,11 +66,6 @@ interface UseCommandBarRootRuntimeOptions {
   providerResultItems?: ResultItem[];
   providerCategoryPriorities?: CommandBarCategoryPriorities;
   providerSearching?: boolean;
-  corpusArticles?: readonly NewsArticle[];
-  corpusFilings?: readonly SecFilingItem[];
-  corpusFilingTicker?: string | null;
-  onOpenCorpusArticle?: (article: NewsArticle) => void;
-  onOpenCorpusFiling?: (filing: SecFilingItem, ticker: string) => void;
   readTickerSearchCache(
     query: string,
     brokerId?: string | null,
@@ -127,11 +121,6 @@ export function useCommandBarRootRuntime({
   providerResultItems = [],
   providerCategoryPriorities,
   providerSearching = false,
-  corpusArticles = [],
-  corpusFilings = [],
-  corpusFilingTicker = null,
-  onOpenCorpusArticle,
-  onOpenCorpusFiling,
   readTickerSearchCache,
   rootModeKind,
   rootQuery,
@@ -207,11 +196,6 @@ export function useCommandBarRootRuntime({
     rootQuery,
     rootShortcutIntent,
     providerResultItems,
-    corpusArticles,
-    corpusFilings,
-    corpusFilingTicker,
-    onOpenCorpusArticle,
-    onOpenCorpusFiling,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -242,11 +226,6 @@ export function useCommandBarRootRuntime({
     rootQuery,
     rootShortcutIntent,
     providerResultItems,
-    corpusArticles,
-    corpusFilings,
-    corpusFilingTicker,
-    onOpenCorpusArticle,
-    onOpenCorpusFiling,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -270,8 +249,6 @@ export function useCommandBarRootRuntime({
       item !== pluginInstallItem
       && item.kind !== "ticker"
       && item.kind !== "search"
-      && item.category !== "Articles"
-      && item.category !== "Filings"
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
     ));
     return hasExactLocalRow ? null : trimmed;

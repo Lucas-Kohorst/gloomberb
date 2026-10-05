@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { NewsArticle } from "../../../../news/types";
-import type { SecFilingItem } from "../../../../types/data-provider";
 import type { PaneTemplateDef } from "../../../../types/plugin";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { PLUGIN_INSTALL_CATEGORY } from "../../view-model";
@@ -95,6 +93,46 @@ describe("provider rows in the root result model", () => {
     }));
 
     expect(items.map((item) => item.id)).toEqual([paneRow.id]);
+  });
+
+  test("an exact ticker stays ahead of the News, Filings and Documents sections", () => {
+    const tickerRow: ResultItem = {
+      id: "ticker:AAPL",
+      label: "AAPL",
+      detail: "Apple Inc.",
+      category: "Search Results",
+      kind: "ticker",
+      right: "NASDAQ",
+      action: () => {},
+    };
+    const storyRow: ResultItem = {
+      id: "search-provider:news:loaded-stories:story-1",
+      label: "AAPL guides higher",
+      detail: "Wire",
+      category: "News",
+      kind: "action",
+      action: () => {},
+    };
+    const filingRow: ResultItem = {
+      id: "search-provider:sec:filings:0000320193-25-000079",
+      label: "Annual Report",
+      detail: "Apple Inc.",
+      badge: "10-K",
+      category: "Filings",
+      kind: "action",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "AAPL",
+      providerResultItems: [documentRow, filingRow, storyRow],
+    }));
+    const ordered = orderListResults(mergePlainRootTickerResults("AAPL", [tickerRow], items), {
+      sectionOrder: "app-first",
+      categoryPriorities: new Map([["News", 190], ["Filings", 195], ["Documents", 200]]),
+    });
+
+    expect(ordered[0]).toMatchObject({ id: tickerRow.id, category: "Exact Match" });
+    expect(ordered.map((item) => item.id)).toEqual([tickerRow.id, storyRow.id, filingRow.id, documentRow.id]);
   });
 
   test("stay out of the way once a prefix claims the query", () => {
@@ -192,97 +230,5 @@ describe("the plugin install row in the root result model", () => {
 
     expect(orderListResults(items, { categoryPriorities: new Map([["Documents", 200]]) }).map((item) => item.id))
       .toEqual([installRow.id, "assist:pending", documentRow.id]);
-  });
-});
-
-function article(overrides: Partial<NewsArticle> & Pick<NewsArticle, "id" | "title">): NewsArticle {
-  return {
-    url: "https://example.com/story",
-    source: "Wire",
-    publishedAt: new Date("2026-03-01T00:00:00Z"),
-    topic: "markets",
-    topics: [],
-    sectors: [],
-    categories: [],
-    tickers: [],
-    scores: { importance: 1, urgency: 1, marketImpact: 1, novelty: 1, confidence: 1 },
-    isBreaking: false,
-    isDeveloping: false,
-    importance: 1,
-    ...overrides,
-  };
-}
-
-const appleFiling: SecFilingItem = {
-  accessionNumber: "0000320193-26-000001",
-  form: "10-K",
-  filingDate: new Date("2026-01-30T00:00:00Z"),
-  cik: "0000320193",
-  companyName: "Apple Inc.",
-  filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/0000320193-26-000001-index.html",
-  primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/aapl-20250927.htm",
-};
-
-describe("article and filing rows in the root result model", () => {
-  test("a three-character headline fragment returns an article row", () => {
-    const opened: string[] = [];
-    const hormuz = article({ id: "hormuz", title: "Hormuz shipping lane closes" });
-    const { items } = buildRootResultModel(rootOptions({
-      rootQuery: "hor",
-      corpusArticles: [
-        hormuz,
-        article({ id: "fed", title: "Fed holds rates", publishedAt: new Date("2026-04-01T00:00:00Z") }),
-      ],
-      onOpenCorpusArticle: (item) => opened.push(item.id),
-    }));
-
-    expect(items.map((item) => item.id)).toEqual(["article:hormuz"]);
-    expect(items[0]).toMatchObject({ category: "Articles", badge: "NEWS", label: hormuz.title });
-    items[0]?.action();
-    expect(opened).toEqual(["hormuz"]);
-
-    const { items: shortQuery } = buildRootResultModel(rootOptions({
-      rootQuery: "ho",
-      corpusArticles: [hormuz],
-    }));
-    expect(shortQuery.filter((item) => item.id.startsWith("article:"))).toEqual([]);
-  });
-
-  test("an exact ticker stays ahead of the matching article and filing rows", () => {
-    const opened: string[] = [];
-    const { items } = buildRootResultModel(rootOptions({
-      rootQuery: "AAPL",
-      corpusArticles: [article({
-        id: "aapl-guide",
-        title: "AAPL guides higher",
-        tickers: ["AAPL"],
-      })],
-      corpusFilings: [appleFiling],
-      onOpenCorpusFiling: (filing, ticker) => opened.push(`${ticker}:${filing.accessionNumber}`),
-    }));
-    const ticker: ResultItem = {
-      id: "ticker:AAPL",
-      label: "AAPL",
-      detail: "Apple Inc.",
-      category: "Search Results",
-      kind: "ticker",
-      right: "NASDAQ",
-      action: () => {},
-    };
-    const ordered = orderListResults(
-      mergePlainRootTickerResults("AAPL", [ticker], items),
-      { sectionOrder: "app-first" },
-    );
-
-    expect(ordered[0]).toMatchObject({ id: "ticker:AAPL", category: "Exact Match" });
-    expect(ordered.map((item) => item.id)).toEqual([
-      "ticker:AAPL",
-      "article:aapl-guide",
-      `filing:${appleFiling.accessionNumber}`,
-    ]);
-    const filingRow = ordered.find((item) => item.id.startsWith("filing:"));
-    expect(filingRow).toMatchObject({ category: "Filings", badge: "10-K", label: "10-K Apple Inc." });
-    filingRow?.action();
-    expect(opened).toEqual([`AAPL:${appleFiling.accessionNumber}`]);
   });
 });

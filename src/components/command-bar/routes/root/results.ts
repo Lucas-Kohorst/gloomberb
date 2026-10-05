@@ -1,6 +1,4 @@
-import type { NewsArticle } from "../../../../news/types";
 import type { AppState } from "../../../../state/app/context";
-import type { SecFilingItem } from "../../../../types/data-provider";
 import type {
   CommandDef,
   PaneTemplateCreateOptions,
@@ -22,7 +20,6 @@ import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
 import { buildHelpArgumentItems } from "./help-items";
-import { buildCorpusResultItems } from "./article-results";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
@@ -84,11 +81,6 @@ export interface RootResultModelOptions {
    * user is aiming at, and only ever adds to what the bar already resolved.
    */
   providerResultItems?: ResultItem[];
-  corpusArticles?: readonly NewsArticle[];
-  corpusFilings?: readonly SecFilingItem[];
-  corpusFilingTicker?: string | null;
-  onOpenCorpusArticle?: (article: NewsArticle) => void;
-  onOpenCorpusFiling?: (filing: SecFilingItem, ticker: string) => void;
   runDirectCommand: (command: Command, arg: string) => void;
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
@@ -164,11 +156,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     rootQuery,
     rootShortcutIntent,
     providerResultItems = [],
-    corpusArticles = [],
-    corpusFilings = [],
-    corpusFilingTicker = null,
-    onOpenCorpusArticle,
-    onOpenCorpusFiling,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -308,14 +295,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // free-text providers stay out of the way.
   if (!shortcutClaimedQuery) {
     items.push(...providerResultItems);
-    items.push(...buildCorpusResultItems({
-      query: rootQuery,
-      articles: corpusArticles,
-      filings: corpusFilings,
-      filingTicker: corpusFilingTicker,
-      onOpenArticle: onOpenCorpusArticle,
-      onOpenFiling: onOpenCorpusFiling,
-    }));
   }
 
   // Built from the local matches, then placed above them: the AI turns the

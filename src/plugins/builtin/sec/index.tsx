@@ -44,6 +44,7 @@ import {
   secReportedAcceptance,
 } from "./model";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
+import { createSecFilingSearchProvider, useSecFilingFocusRequest } from "./command-bar-search";
 
 export { secHeadless } from "./headless";
 
@@ -229,6 +230,8 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
     (itemId: string | null) => setOpenItemIdState(itemId, { immediate: true }),
     [setOpenItemIdState],
   );
+  // A filing chosen in the command bar opens here once the pane is on its ticker.
+  useSecFilingFocusRequest(ticker?.metadata.ticker, setOpenItemId);
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
   const filingsEntry = useSecFilingsQuery(
@@ -423,6 +426,7 @@ export const secModule: PluginModule = {
   ],
 
   setup(ctx) {
+    ctx.registerCommandBarSearchProvider(createSecFilingSearchProvider(ctx));
     ctx.registerTickerResearchTab({
       id: "sec",
       name: "SEC",
