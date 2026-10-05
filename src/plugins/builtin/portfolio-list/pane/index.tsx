@@ -12,7 +12,9 @@ import { useTickerSourceActivate } from "../../../../react/ticker-source";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { buildPortfolioFinancialsMap } from "../../../../market-data/portfolio-financials";
 import { useAppVisible } from "../../../../state/app/activity";
+import { tf } from "../../../../i18n";
 import {
+  useAppDispatch,
   useAppSelector,
   usePaneCollection,
   usePaneInstance,
@@ -59,7 +61,9 @@ import { PortfolioTickerTable } from "../table";
 import { PortfolioGrid } from "../grid";
 import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
 import { useCursorNeighborPrefetch } from "../use-cursor-neighbor-prefetch";
-import { isManualPortfolio } from "../mutations";
+import { getSharedRegistry } from "../../../registry";
+import { usePluginAppActions } from "../../../runtime";
+import { isManualPortfolio, removeTickerFromPortfolio, removeTickerFromWatchlist } from "../mutations";
 import { QuickAddTickerInput, type QuickAddCollectionKind } from "../quick-add";
 import {
   buildTrackedCurrencies,
@@ -365,8 +369,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     openTickerFloating(ticker.metadata.ticker, { newPane: true });
   }, [flushCursorSymbol, openTickerFloating]);
 
-  // `c` (cash) and `s` (table or grid) are footer hints, which bind their own
-  // keys in both views; the table only adds Shift+Enter.
+  // `c` (cash), `d` (delete), and `s` (table or grid) are footer hints, which
+  // bind their own keys in both views; the table only adds Shift+Enter.
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
 
@@ -455,11 +459,71 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     })
     : fxWarning ? [`FX ${fxStatusText}`] : [];
 
+  const dispatch = useAppDispatch();
+  const { notify } = usePluginAppActions();
+  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
+    if (!activeCollectionId) return null;
+    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
+    if (collectionType === "watchlist") return "watchlist";
+    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
+      return "portfolio";
+    }
+    return null;
+  }, [activeCollectionId, config, currentPortfolio]);
+  const canRemoveTicker = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const selectedTicker = cursorSymbol ? tickerBySymbol.get(cursorSymbol) : undefined;
+  const deleteDisabled = selectedTicker == null;
+  const deleteSelectedTicker = useCallback(() => {
+    if (!canRemoveTicker || !activeCollectionId || !activeCollectionEntry || !quickAddCollectionKind || !selectedTicker) return;
+    const collectionName = activeCollectionEntry.name;
+    const symbol = selectedTicker.metadata.ticker;
+    const result = quickAddCollectionKind === "portfolio"
+      ? removeTickerFromPortfolio(selectedTicker, activeCollectionId)
+      : removeTickerFromWatchlist(selectedTicker, activeCollectionId);
+    if (!result.changed) {
+      notify({ type: "info", body: tf("{symbol} is not in {collection}.", { symbol, collection: collectionName }) });
+      return;
+    }
+
+    const registry = getSharedRegistry();
+    if (!registry) {
+      notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
+      return;
+    }
+
+    void (async () => {
+      try {
+        await registry.tickerRepository.saveTicker(result.ticker);
+        dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
+        notify({ type: "success", body: tf("Removed {symbol} from {collection}.", { symbol, collection: collectionName }) });
+      } catch {
+        notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
+      }
+    })();
+  }, [
+    activeCollectionEntry,
+    activeCollectionId,
+    canRemoveTicker,
+    dispatch,
+    notify,
+    quickAddCollectionKind,
+    selectedTicker,
+  ]);
+
   usePaneFooter("portfolio-list", () => ({
     info: fxStatusText && !fxWarning
       ? [...summaryFooterInfo, { id: "fx", parts: [{ text: `FX ${fxStatusText}`, tone: "muted" as const }] }]
       : summaryFooterInfo,
     hints: [
+      ...(canRemoveTicker
+        ? [{
+            id: "delete",
+            key: "d",
+            label: "elete",
+            onPress: deleteSelectedTicker,
+            disabled: deleteDisabled,
+          }]
+        : []),
       ...(showCashDrawer
         ? [{
             id: "cash",
@@ -479,18 +543,22 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           }]
         : []),
     ],
-  }), [cashDrawerExpanded, fxStatusText, fxWarning, isPortfolioTab, setCashDrawerExpanded, showCashDrawer, summaryFooterInfo, toggleViewMode, viewMode]);
+  }), [
+    canRemoveTicker,
+    cashDrawerExpanded,
+    deleteDisabled,
+    deleteSelectedTicker,
+    fxStatusText,
+    fxWarning,
+    isPortfolioTab,
+    setCashDrawerExpanded,
+    showCashDrawer,
+    summaryFooterInfo,
+    toggleViewMode,
+    viewMode,
+  ]);
 
-  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
-    if (!activeCollectionId) return null;
-    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
-    if (collectionType === "watchlist") return "watchlist";
-    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
-      return "portfolio";
-    }
-    return null;
-  }, [activeCollectionId, config, currentPortfolio]);
-  const showQuickAdd = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const showQuickAdd = canRemoveTicker;
   const quickAddHeight = showQuickAdd ? 1 : 0;
   const selectedFinancials = cursorSymbol ? financialsMap.get(cursorSymbol) : undefined;
   const selectedCap = liveMarketCapitalization(selectedFinancials?.quote, selectedFinancials?.fundamentals);
@@ -498,7 +566,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const capNotice = viewMode === "table" && columns.some((column) => column.id === "market_cap")
     && selectedCap?.provenance.kind === "fundamentals" && !selectedCap.live
     ? `${cursorSymbol} market cap: ${describeFundamentalMarketCap(selectedCap.provenance)}.` : undefined;
-  const selectedTicker = cursorSymbol ? tickerBySymbol.get(cursorSymbol) : undefined;
   const multiplierNotice = isPortfolioTab && selectedTicker && hasUnknownOptionMultiplier(selectedTicker, activeCollectionId)
     ? `${cursorSymbol} has no contract multiplier; its value assumes 1x.` : undefined;
   usePaneNoticeFooter({

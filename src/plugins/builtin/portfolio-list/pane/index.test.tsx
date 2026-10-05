@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { act, useReducer } from "react";
 import { Box } from "../../../../ui";
-import { PaneFooterProvider, PaneFooterBar } from "../../../../components/layout/pane/footer";
+import { PaneFooterProvider, PaneFooterBar, PaneFooterKeys } from "../../../../components/layout/pane/footer";
 import type { ReactElement } from "react";
 import { createOpenTuiTestHarness } from "../../../../renderers/opentui/test-utils";
 import { AppPersistence } from "../../../../data/app-persistence";
@@ -586,6 +586,132 @@ describe("PortfolioListPane cash and margin UI", () => {
       type: "success",
       body: "Added MSFT to Main Portfolio.",
     });
+  });
+
+  test("d removes the selected ticker from a watchlist and leaves its other lists", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const position = { portfolio: "main", shares: 2, avgCost: 40, currency: "USD", broker: "manual" as const };
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+
+    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({
+          portfolios: ["main"],
+          watchlists: ["watchlist", "team:t1:w1"],
+          positions: [position],
+        })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => { notifications.push(notification); },
+        })}
+        paneHeight={11}
+      />
+      <PaneFooterBar footer={footer} focused width={100} />
+      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
+    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
+
+    await flushFrame();
+    expect(tui.frame()).toContain("[d]elete");
+
+    await act(async () => {
+      tui.setup().mockInput.pressKey("d");
+      await Promise.resolve();
+      await tui.setup().renderOnce();
+    });
+    await flushFrame();
+
+    const ticker = harnessState?.tickers.get("AAPL");
+    expect(ticker?.metadata.watchlists).toEqual(["team:t1:w1"]);
+    expect(ticker?.metadata.portfolios).toEqual(["main"]);
+    expect(ticker?.metadata.positions).toEqual([position]);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "success",
+      body: "Removed AAPL from Watchlist.",
+    });
+  });
+
+  test("d removes a manual portfolio ticker and its position", async () => {
+    const config = createManualCollectionConfig("main");
+    const kept = { portfolio: "other", shares: 1, avgCost: 10, currency: "USD", broker: "manual" as const };
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+
+    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
+      <PortfolioHarness
+        config={config}
+        collectionId="main"
+        ticker={makeTicker({
+          portfolios: ["main", "other"],
+          watchlists: ["watchlist"],
+          positions: [
+            { portfolio: "main", shares: 4, avgCost: 100, currency: "USD", broker: "manual" },
+            kept,
+          ],
+        })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => { notifications.push(notification); },
+        })}
+        paneHeight={11}
+      />
+      <PaneFooterBar footer={footer} focused width={100} />
+      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
+    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
+
+    await flushFrame();
+    expect(tui.frame()).toContain("[d]elete");
+
+    await act(async () => {
+      tui.setup().mockInput.pressKey("d");
+      await Promise.resolve();
+      await tui.setup().renderOnce();
+    });
+    await flushFrame();
+
+    const ticker = harnessState?.tickers.get("AAPL");
+    expect(ticker?.metadata.portfolios).toEqual(["other"]);
+    expect(ticker?.metadata.positions).toEqual([kept]);
+    expect(ticker?.metadata.watchlists).toEqual(["watchlist"]);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "success",
+      body: "Removed AAPL from Main Portfolio.",
+    });
+  });
+
+  test("a broker portfolio does not offer delete", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+    const ticker = makeTicker();
+
+    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        ticker={ticker}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => { notifications.push(notification); },
+        })}
+        paneHeight={11}
+      />
+      <PaneFooterBar footer={footer} focused width={100} />
+      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
+    </Box>}</PaneFooterProvider>, { width: 100, height: 12 });
+
+    await flushFrame();
+    expect(tui.frame()).not.toContain("[d]elete");
+
+    await act(async () => {
+      tui.setup().mockInput.pressKey("d");
+      await Promise.resolve();
+      await tui.setup().renderOnce();
+    });
+    await flushFrame();
+
+    expect(harnessState?.tickers.get("AAPL")?.metadata.portfolios).toEqual(ticker.metadata.portfolios);
+    expect(notifications).toEqual([]);
   });
 
   test("quick-add rejects unresolved ticker input", async () => {
