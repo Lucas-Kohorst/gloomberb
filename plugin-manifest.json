@@ -101,6 +101,23 @@
       }
     },
     {
+      "id": "daily-brief",
+      "name": "Daily Brief",
+      "description": "Opens at the start of the day. Futures, bitcoin, sentiment, the next Fed meeting, and small tables. Headlines, releases, and earnings are the start; Ask Gloom or the Tables setting can replace those tables with any view.",
+      "categories": [
+        "markets",
+        "news"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "daily-brief"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",

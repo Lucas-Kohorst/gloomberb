@@ -84,6 +84,7 @@ Press `Ctrl+P` to open the command bar, or press `` ` `` to search for a ticker.
 | `DOE` / `NGS` | EIA weekly oil stocks and gas storage, with builds, draws and five-year ranges |
 | `CPI [component]` / `ECAN` | US consumer prices by component, with weights, contributions to the headline and the next release |
 | `TOP` | Market stories |
+| `DAY` | Daily Brief. Futures, bitcoin, and small tables, opened at the start of the day. Headlines, today's releases, and earnings are the default; Ask Gloom or the pane's Tables setting can replace them |
 | `WIRP` / `FFIP` | US rate path and conditional FOMC probabilities |
 | `BTMM` | Funding rates, bill curves and Federal Reserve liquidity |
 | `CTM [root]` | Futures contract curve, historical ghosts, roll yield and open interest, including `CTM VX` |

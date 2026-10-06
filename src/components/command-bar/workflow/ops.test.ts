@@ -4,6 +4,7 @@ import { createInitialState, type AppState } from "../../../state/app/context";
 import type { PluginRegistry } from "../../../plugins/registry";
 import { PANE_LOCK_SETTING_KEY } from "../../../pane-settings";
 import { createTestDataProvider } from "../../../test-support/data-provider";
+import { storeBriefTables } from "../../../plugins/builtin/daily-brief/sections";
 import { applyPaneSettingFieldValue, createPaneTemplateOrThrow, resolveTickerInput, resolveTickerInputOrThrow, resolveTickerListInput } from "./ops";
 import type { TickerRecord } from "../../../types/ticker";
 import { bringToFront } from "../../../layout/pane-manager/floating-actions";
@@ -578,6 +579,70 @@ describe("applyPaneSettingFieldValue", () => {
       pluginId: "ai",
       values: { defaultModelId: "", defaultProviderId: "codex" },
     }]);
+  });
+
+  test("a plugin checklist stores the document its field builds, not the id list", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const stored = JSON.stringify({
+      version: 1,
+      sections: [
+        { id: "headlines", builtin: "headlines" },
+        { id: "wire", title: "Wire", spec: {
+          version: 1,
+          source: { kind: "inline", pane: "N" },
+          projection: { columns: ["headline"], filters: [], limit: 4 },
+          presentation: { title: "Wire" },
+        } },
+      ],
+    });
+    config.pluginConfig["daily-brief"] = { sections: stored };
+    const state = createInitialState(config);
+    const updates: unknown[] = [];
+    const pane = findPaneInstance(state.config.layout, "chat:main")!;
+
+    await applyPaneSettingFieldValue("chat:main", {
+      key: "sections",
+      label: "Tables",
+      type: "ordered-multi-select",
+      storage: "plugin",
+      options: [],
+      store: storeBriefTables,
+    }, ["wire"], {
+      ...workflowDeps(state, {
+        resolvePaneSettings: () => ({
+          paneId: "chat:main",
+          pluginId: "daily-brief",
+          pane,
+          paneDef: { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" },
+          settingsDef: { fields: [] },
+          rawSettings: {},
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: "chat:main",
+            paneType: "chat",
+            pane,
+            settings: { sections: ["headlines", "wire"] },
+            paneState: {},
+            activeTicker: null,
+            activeCollectionId: null,
+          },
+        }),
+        getConfigState: () => stored,
+        setConfigStates: async (pluginId: string, values: Record<string, unknown>) => {
+          updates.push({ pluginId, values });
+        },
+      }),
+      persistLayout: () => {},
+    });
+
+    const written = updates[0] as { pluginId: string; values: { sections: string } };
+    expect(written.pluginId).toBe("daily-brief");
+    expect(typeof written.values.sections).toBe("string");
+    const saved = JSON.parse(written.values.sections) as { sections: Array<{ id: string; title?: string; spec?: { source?: { pane?: string } } }> };
+    expect(saved.sections.map((section) => section.id)).toEqual(["wire"]);
+    expect(saved.sections[0]?.title).toBe("Wire");
+    expect(saved.sections[0]?.spec?.source?.pane).toBe("N");
   });
 
   test("clears a pane model override in the same layout update as its provider", async () => {

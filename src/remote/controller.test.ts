@@ -11,6 +11,7 @@ import type { RemoteUiRegistry } from "./semantic-tree";
 function createRegistryHarness(options: {
   withFloatingPane?: boolean;
   withCustomView?: boolean;
+  withDailyBrief?: boolean;
   financials?: TickerFinancials;
   dialogOpen?: boolean;
 } = {}) {
@@ -30,6 +31,18 @@ function createRegistryHarness(options: {
       floating: [...config.layout.floating, { instanceId: "custom-view:test", x: 1, y: 1, width: 60, height: 20 }],
     };
   }
+  if (options.withDailyBrief) {
+    config.layout = {
+      ...config.layout,
+      instances: [...config.layout.instances, {
+        instanceId: "daily-brief:test",
+        paneId: "daily-brief",
+        binding: { kind: "none" as const },
+        settings: {},
+      }],
+      floating: [...config.layout.floating, { instanceId: "daily-brief:test", x: 2, y: 2, width: 96, height: 36 }],
+    };
+  }
   if (options.withFloatingPane) {
     const instance = {
       instanceId: "help:test",
@@ -43,6 +56,8 @@ function createRegistryHarness(options: {
     };
   }
   const createdFromTemplate: Array<{ templateId: string; options: unknown }> = [];
+  const configWrites: Array<{ pluginId: string; values: Record<string, unknown> }> = [];
+  const focusedPanes: string[] = [];
   let state = createInitialState(config);
   const actions: AppAction[] = [];
   const dispatch: Dispatch<AppAction> = (action) => {
@@ -83,7 +98,7 @@ function createRegistryHarness(options: {
     },
     resolvePaneSettings: () => null,
     showPane: () => {},
-    focusPane: () => {},
+    focusPane: (paneId: string) => { focusedPanes.push(paneId); },
     hidePane: () => {},
     createPaneFromTemplateAsync: async (templateId: string, options: unknown) => {
       createdFromTemplate.push({ templateId, options });
@@ -97,6 +112,9 @@ function createRegistryHarness(options: {
       dispatch({ type: "UPDATE_LAYOUT", layout });
     },
     applyPaneSettingValue: async () => {},
+    setConfigStates: async (pluginId: string, values: Record<string, unknown>) => {
+      configWrites.push({ pluginId, values });
+    },
     notify: () => {},
   } as unknown as PluginRegistry;
   let uiNodes: RemoteUiNodeSnapshot[] = [{ id: "ui:test", role: "button", label: "Test", actions: ["press"] }];
@@ -126,7 +144,9 @@ function createRegistryHarness(options: {
   return {
     actions,
     controller,
+    configWrites,
     createdFromTemplate,
+    focusedPanes,
     getState: () => state,
     invokedCapabilities,
     invokedUiActions,
@@ -647,5 +667,75 @@ describe("view operations", () => {
     });
     expect(notAView.ok).toBe(false);
     if (!notAView.ok) expect(notAView.error.message).toContain("not a custom view");
+  });
+});
+
+describe("brief operations", () => {
+  const sections = [
+    "headlines",
+    {
+      title: "Wire",
+      spec: {
+        source: { pane: "N" },
+        projection: { columns: ["headline"], limit: 5 },
+        presentation: { title: "Wire" },
+      },
+    },
+  ];
+
+  test("brief.update writes the table list and opens the brief", async () => {
+    const { controller, configWrites, createdFromTemplate, focusedPanes } = createRegistryHarness();
+    const missing = await controller.handle({ type: "call", operation: "brief.update", input: {} });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.error.message).toContain("sections list");
+    expect(configWrites).toEqual([]);
+    expect(createdFromTemplate).toEqual([]);
+
+    const result = await controller.handle({ type: "call", operation: "brief.update", input: { sections } });
+    expect(result.ok).toBe(true);
+    expect(configWrites).toHaveLength(1);
+    expect(configWrites[0]?.pluginId).toBe("daily-brief");
+    const stored = JSON.parse(String(configWrites[0]?.values.sections));
+    expect(stored.sections[0]).toMatchObject({ builtin: "headlines" });
+    expect(stored.sections[1].spec.source).toMatchObject({ kind: "inline", pane: "N" });
+    expect(stored.sections[1].spec.projection.limit).toBe(5);
+    expect(createdFromTemplate.map((entry) => entry.templateId)).toEqual(["daily-brief-pane"]);
+    expect(focusedPanes).toEqual([]);
+
+    const invalid = await controller.handle({
+      type: "call",
+      operation: "brief.update",
+      input: { sections: [{ builtin: "gpu" }] },
+    });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.error.message).toContain("unknown table");
+    expect(configWrites).toHaveLength(1);
+    expect(createdFromTemplate).toHaveLength(1);
+  });
+
+  test("brief.update focuses an open brief and leaves other panes alone", async () => {
+    const { controller, configWrites, createdFromTemplate, focusedPanes, getState } = createRegistryHarness({ withDailyBrief: true });
+    const result = await controller.handle({
+      type: "call",
+      operation: "brief.update",
+      input: { sections: ["today"] },
+    });
+    expect(result.ok).toBe(true);
+    expect(createdFromTemplate).toEqual([]);
+    expect(focusedPanes).toEqual(["daily-brief:test"]);
+    expect(JSON.parse(String(configWrites[0]?.values.sections)).sections).toEqual([
+      { id: "today", builtin: "today" },
+    ]);
+
+    const other = getState().config.layout.instances.find((entry) => entry.paneId !== "daily-brief");
+    const rejected = await controller.handle({
+      type: "call",
+      operation: "brief.update",
+      input: { paneId: other!.instanceId, sections: [] },
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.error.message).toContain("not a daily brief");
+    expect(configWrites).toHaveLength(1);
+    expect(createdFromTemplate).toEqual([]);
   });
 });

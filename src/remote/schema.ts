@@ -136,6 +136,20 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
     objectSchema({ paneId: requiredStringSchema, spec: openObjectSchema, name: stringSchema }, ["paneId", "spec"]),
   ),
   op(
+    "brief.update",
+    "Replace the small tables on the Daily Brief and open it. The quote strip and the ES session chart stay. "
+      + "sections is an ordered list of at most 8 tables. An entry is \"headlines\", \"today\", or \"earnings\", "
+      + "{ builtin, title? } for one of those, or a view spec { title?, spec } with the same source, columns, filters, and sort as view.create. "
+      + "A view source is one headless pane function, a screen, or a ticker list. The row limit defaults to 8 and is capped at 12. "
+      + "An empty list clears the tables. The pane Tables setting is a checklist of these tables and stores the same list.",
+    "{ sections: array, paneId?: string }",
+    "local-write",
+    objectSchema({
+      sections: { type: "array", items: anySchema, maxItems: 8 },
+      paneId: stringSchema,
+    }, ["sections"]),
+  ),
+  op(
     "pane.setState",
     "Patch pane runtime state.",
     "{ paneId: string, patch: object }",
@@ -387,6 +401,7 @@ export const REMOTE_AGENT_HELP = {
     "A form with covered: true has another dialog over it, such as a listing picker or a sign-in; its controls wait until that one is answered or closed with app.closeDialog.",
     "Pane settings open in their own dialog, not as command-bar rows; change one with pane.setSetting, read them from app://pane-settings/{paneId}, and close the dialog with app.closeDialog.",
     "Use ui.invokeMatching only after checking app-level operations; it is intentionally generic and depends on visible semantic controls.",
+    "Daily Brief tables are brief.update. Each section is headlines, today, or earnings, or a view spec in the same shape as view.create. The quote strip and the ES chart stay. The pane Tables setting is a checklist of the same tables.",
   ],
 };
 
