@@ -3,7 +3,7 @@ import { t } from "../../../../i18n";
 import { displayWidth } from "../../../../utils/format";
 import { getShortcutHintWidth } from "../../../ui/shortcut-hint";
 
-export interface PaneFooterSelectOption {
+interface PaneFooterSelectOption {
   value: string;
   label: string;
 }
@@ -97,7 +97,7 @@ export function totalHintsWidth(hints: readonly Pick<PaneHint, "key" | "label">[
   return hints.reduce((total, hint, index) => total + paneHintWidth(hint, index > 0 ? " " : ""), 0);
 }
 
-export function footerSegmentsWidth(segments: readonly PaneFooterSegment[]): number {
+function footerSegmentsWidth(segments: readonly PaneFooterSegment[]): number {
   if (segments.length === 0) return 0;
   return segments.reduce((total, segment, index) => {
     const text = segment.parts.reduce((sum, part, partIndex) => (

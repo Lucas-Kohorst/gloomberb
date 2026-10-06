@@ -6,7 +6,7 @@ import { Popover } from "../../../ui/popover";
 import type { DialogApi, PromptContext } from "../../../../ui/dialog";
 import type { PaneFooterSelectMenu } from "./model";
 
-export const FOOTER_SELECT_MENU_TITLE = "Refresh interval";
+const FOOTER_SELECT_MENU_TITLE = "Refresh interval";
 
 export async function openFooterSelectMenu(
   dialog: DialogApi | null,

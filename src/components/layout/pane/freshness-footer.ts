@@ -7,13 +7,13 @@ import { formatApproximateAge } from "../../../utils/datetime-format";
 import type { PaneFooterSegment } from "./footer";
 
 /** Choices on the poll chip. The label is the value this menu writes. */
-export const FEED_POLL_INTERVAL_MINUTES = [1, 5, 15, 30] as const;
+const FEED_POLL_INTERVAL_MINUTES = [1, 5, 15, 30] as const;
 
-export function formatPollIntervalFooterLabel(minutes: number): string {
+function formatPollIntervalFooterLabel(minutes: number): string {
   return `poll ${Math.max(1, Math.floor(minutes))}m`;
 }
 
-export function pollIntervalOptionLabel(minutes: number): string {
+function pollIntervalOptionLabel(minutes: number): string {
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 

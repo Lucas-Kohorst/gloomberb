@@ -1,7 +1,5 @@
 import { displayWidth } from "../../utils/format";
 
-export const TABLE_COLUMN_WIDTHS_SETTING = "columnWidths";
-
 const AUTO_SAMPLE = 24;
 /** A cell longer than this ellipsizes. Dragging can still go wider. */
 const AUTO_CONTENT_CAP = 64;
@@ -59,7 +57,7 @@ export function parseColumnWidths(value: unknown): TableColumnWidths {
   return widths;
 }
 
-export function hasColumnWidths(widths: TableColumnWidths): boolean {
+function hasColumnWidths(widths: TableColumnWidths): boolean {
   for (const _key in widths) return true;
   return false;
 }
