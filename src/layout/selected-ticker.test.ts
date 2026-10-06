@@ -8,7 +8,8 @@ import {
   type DockLayoutNode,
   type PaneInstanceConfig,
 } from "../types/config";
-import { layoutTickerTarget, LINKED_TICKER_MARK, selectedLayoutTicker } from "./selected-ticker";
+import { createTestTicker } from "../test-support/ticker";
+import { cursorSourceHoldsSymbol, layoutTickerTarget, LINKED_TICKER_MARK, selectedLayoutTicker } from "./selected-ticker";
 
 function dockOf(ids: readonly string[]): DockLayoutNode {
   const [first, ...rest] = ids;
@@ -80,16 +81,37 @@ test("a symbol chosen for a list moves the list cursor when something follows it
     binding: { kind: "follow", sourceInstanceId: "list" },
   });
   const state = layoutState([list, research], "des");
-  state.paneState.list = { cursorSymbol: "NVDA" };
+  state.paneState.list = { cursorSymbol: "NVDA", collectionId: "main" };
+  state.tickers.set("NVDA", createTestTicker("NVDA", "NVIDIA", { portfolios: ["main"] }));
 
   expect(selectedLayoutTicker(state)?.rootInstanceId).toBe("list");
-  expect(layoutTickerTarget(state, { isTickerSource: isList })).toMatchObject({
+  expect(layoutTickerTarget(state, { isTickerSource: isList, symbol: "NVDA" })).toMatchObject({
     kind: "retarget",
     rootInstanceId: "list",
     mode: "cursor",
     keepFocus: true,
   });
   expect(activeCommandInstrumentLabel(state)).toBe(`${LINKED_TICKER_MARK} NVDA`);
+});
+
+test("a symbol the linked list does not hold opens a pane", () => {
+  const list = createPaneInstance("portfolio-list", { instanceId: "list", binding: { kind: "none" } });
+  const research = createPaneInstance(TICKER_RESEARCH_PANE_ID, {
+    instanceId: "des",
+    binding: { kind: "follow", sourceInstanceId: "list" },
+  });
+  const state = layoutState([list, research], "des");
+  state.paneState.list = { cursorSymbol: "ZEC/USD", collectionId: "main" };
+  state.tickers.set("ZEC/USD", createTestTicker("ZEC/USD", "Zcash", { portfolios: ["main"] }));
+
+  expect(cursorSourceHoldsSymbol(state, "list", "ZEC/USD")).toBe(true);
+  expect(cursorSourceHoldsSymbol(state, "list", "RSP")).toBe(false);
+  expect(layoutTickerTarget(state, { isTickerSource: isList, symbol: "RSP" })).toEqual({ kind: "open" });
+  expect(layoutTickerTarget(state, { isTickerSource: isList, symbol: "ZEC/USD" })).toMatchObject({
+    kind: "retarget",
+    mode: "cursor",
+    rootInstanceId: "list",
+  });
 });
 
 test("a lone list still opens a pane, and a new pane never retargets", () => {

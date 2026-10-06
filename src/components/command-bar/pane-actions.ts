@@ -105,6 +105,7 @@ export function useCommandBarPaneActions({
     const target = layoutTickerTarget(currentState, {
       forceNewPane: options?.forceNewPane,
       isTickerSource: (paneType) => pluginRegistry.panes.get(paneType)?.tickerSource === true,
+      symbol,
     });
     if (target.kind === "open") {
       openFixedTickerPane(symbol, options);
