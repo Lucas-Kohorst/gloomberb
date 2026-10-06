@@ -4,7 +4,7 @@ import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { DAILY_BRIEF_PLUGIN_ID } from "./wake";
 
-export const FRED_PUBLIC_CONNECTION_ID = "fred-public";
+const FRED_PUBLIC_CONNECTION_ID = "fred-public";
 
 const SERIES_ID_RE = /^[A-Z0-9._-]{1,80}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

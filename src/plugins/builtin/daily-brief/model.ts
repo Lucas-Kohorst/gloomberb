@@ -9,19 +9,19 @@ export const BRIEF_FUTURES = ["ES=F", "NQ=F", "CL=F"] as const;
 const HEADLINE_CAP = 8;
 const NEW_YORK = "America/New_York";
 
-export interface BriefSession {
+interface BriefSession {
   date: string;
   phase: "pre" | "regular" | "post" | "closed";
 }
 
-export interface BriefMarketRow {
+interface BriefMarketRow {
   symbol: string;
   label: string;
   last: number | null;
   changePercent: number | null;
 }
 
-export interface BriefHeadline {
+interface BriefHeadline {
   articleId: string;
   title: string;
   source: string;
@@ -29,7 +29,7 @@ export interface BriefHeadline {
   publishedAt: string;
 }
 
-export interface BriefEvent {
+interface BriefEvent {
   id: string;
   at: string;
   kind: "earnings" | "economic";
@@ -50,7 +50,7 @@ export interface Brief {
   events: BriefEvent[];
 }
 
-export interface BriefQuote {
+interface BriefQuote {
   last: number | null;
   changePercent: number | null;
 }

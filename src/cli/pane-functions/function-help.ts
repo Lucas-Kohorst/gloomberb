@@ -92,6 +92,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: QUOTES,
     bloomberg: ["DES"],
   },
+  DAY: {
+    summary: "The first pane of the day. ES, Nasdaq, crude, the 10-year and 30-year, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, then headlines, today's releases, and earnings.",
+    usage: ["DAY"],
+    keys: [OPEN],
+    data: { free: "Quotes 15 minutes delayed; rates and the calendar as published", pro: "Quotes real-time for US listings; rates and the calendar as published" },
+    bloomberg: [],
+  },
   QQ: {
     summary: "A compact board of live quotes for any list of tickers, each with change, range and a sparkline. Good as the always-open strip in a layout.",
     usage: ["QQ NVDA, AAPL, MSFT"],

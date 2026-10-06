@@ -4,15 +4,15 @@ import { isRecord } from "../../../utils/guards";
 /** Plugin setting that holds the small-table list. Ask Gloom writes the same JSON. */
 export const BRIEF_SECTIONS_SETTING = "sections";
 
-export const BRIEF_BUILTINS = ["headlines", "today", "earnings"] as const;
-export type BriefBuiltin = (typeof BRIEF_BUILTINS)[number];
+const BRIEF_BUILTINS = ["headlines", "today", "earnings"] as const;
+type BriefBuiltin = (typeof BRIEF_BUILTINS)[number];
 
 /** A brief is a short stack. Past this, it stops being a brief. */
-export const BRIEF_SECTION_CAP = 8;
+const BRIEF_SECTION_CAP = 8;
 /** A table with no limit of its own shows this many rows. */
-export const BRIEF_TABLE_DEFAULT = 8;
+const BRIEF_TABLE_DEFAULT = 8;
 /** Projection limits above this are cut down so an added view stays a small table. */
-export const BRIEF_TABLE_CAP = 12;
+const BRIEF_TABLE_CAP = 12;
 
 const BUILTIN_TITLE: Record<BriefBuiltin, string> = {
   headlines: "Headlines",
