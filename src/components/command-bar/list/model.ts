@@ -180,6 +180,73 @@ export function resolveListPageTarget(
   return target;
 }
 
+export interface ListRowWindow {
+  padBefore: number;
+  padAfter: number;
+  rows: readonly CommandBarListRow[];
+}
+
+export function resolveListRowWindow(
+  rows: readonly CommandBarListRow[],
+  selectedIdx: number,
+  viewportLines: number,
+  overscanLines: number,
+  scrollLine?: number,
+): ListRowWindow {
+  const viewport = Math.max(0, viewportLines);
+  const overscan = Math.max(0, overscanLines);
+  const heights = new Array<number>(rows.length);
+  let totalLines = 0;
+  let selectedRowIndex = -1;
+  let selectedStart = 0;
+  let selectedEnd = 0;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    const height = getListRowHeight(row);
+    heights[index] = height;
+    if (selectedRowIndex < 0 && row.kind === "item" && row.globalIdx === selectedIdx) {
+      selectedRowIndex = index;
+      selectedStart = totalLines;
+      selectedEnd = totalLines + height;
+    }
+    totalLines += height;
+  }
+  if (totalLines <= viewport + overscan) {
+    return { padBefore: 0, padAfter: 0, rows };
+  }
+
+  const margin = Math.max(0, viewport - 1) + overscan;
+  let windowStart = selectedRowIndex < 0 ? 0 : Math.max(0, selectedStart - margin);
+  let windowEnd = selectedRowIndex < 0
+    ? Math.min(totalLines, viewport + overscan)
+    : Math.min(totalLines, selectedEnd + margin);
+  if (typeof scrollLine === "number" && Number.isFinite(scrollLine)) {
+    const scrolled = Math.min(totalLines, Math.max(0, Math.floor(scrollLine)));
+    windowStart = Math.min(windowStart, Math.max(0, scrolled - overscan));
+    windowEnd = Math.max(windowEnd, Math.min(totalLines, scrolled + viewport + overscan));
+  }
+
+  let startRow = 0;
+  let line = 0;
+  while (startRow < rows.length && line + heights[startRow]! <= windowStart) {
+    line += heights[startRow]!;
+    startRow += 1;
+  }
+  const padBefore = line;
+
+  let endRow = startRow;
+  while (endRow < rows.length && line < windowEnd) {
+    line += heights[endRow]!;
+    endRow += 1;
+  }
+
+  return {
+    padBefore,
+    padAfter: totalLines - line,
+    rows: rows.slice(startRow, endRow),
+  };
+}
+
 export function buildNativeListRows(listState: ListScreenState, rows: CommandBarListRow[]): CommandBarListRow[] {
   if (listState.searching && rows.length === 0) {
     return [{ kind: "spinner", id: "searching", label: "Searching…" }];
