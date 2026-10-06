@@ -4,6 +4,7 @@ import {
   loadCachedFredSeries,
   type FredSeriesRequest,
 } from "../../../sources/gloomberb-cloud/fred-series";
+import { fetchPublicFredSeries } from "./fred-public";
 
 /** Latest print and the one before it. Both are already in percent. */
 export interface RateLevel {
@@ -24,11 +25,11 @@ export interface BriefYields {
   stale: boolean;
 }
 
-/** Treasury par yields, then the Freddie Mac 30-year fixed average. */
+/** Treasury yields use Gloom Cloud. The mortgage average is the public FRED CSV. */
 export const BRIEF_YIELDS = [
-  { id: "us10y", seriesId: "DGS10", label: "10Y" },
-  { id: "us30y", seriesId: "DGS30", label: "30Y" },
-  { id: "mtg30", seriesId: "MORTGAGE30US", label: "30Y MTG" },
+  { id: "us10y", seriesId: "DGS10", label: "10Y", source: "cloud" },
+  { id: "us30y", seriesId: "DGS30", label: "30Y", source: "cloud" },
+  { id: "mtg30", seriesId: "MORTGAGE30US", label: "30Y MTG", source: "public" },
 ] as const;
 
 const HISTORY_LIMIT = 8;
@@ -106,7 +107,9 @@ export async function loadBriefYields(
   const settled = await Promise.allSettled(BRIEF_YIELDS.map(async (yieldRow) => {
     const result = await loadCachedFredSeries(
       requestFor(yieldRow.seriesId),
-      () => loader(yieldRow.seriesId),
+      () => yieldRow.source === "public"
+        ? fetchPublicFredSeries(yieldRow.seriesId, { limit: HISTORY_LIMIT, sortOrder: "desc" })
+        : loader(yieldRow.seriesId),
       { force },
     );
     return {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseFredGraphCsv } from "./fred-public";
 import { latestRate, rateChangeBp, yieldStat, type BriefYieldRow } from "./rates";
 
 test("latestRate keeps the newest print and the one before it", () => {
@@ -15,6 +16,15 @@ test("rateChangeBp is the rounded move in basis points", () => {
   expect(rateChangeBp(4.21, 4.19)).toBe(2);
   expect(rateChangeBp(4.19, 4.21)).toBe(-2);
   expect(rateChangeBp(6.3, null)).toBeNull();
+});
+
+test("public FRED csv keeps the mortgage prints and skips missing weeks", () => {
+  const rows = parseFredGraphCsv(
+    "observation_date,MORTGAGE30US\n2026-09-24,7.03\n2026-10-01,.\n2026-10-08,7.28\n",
+    "MORTGAGE30US",
+  );
+  expect(latestRate(rows)).toEqual({ value: 7.28, previous: 7.03 });
+  expect(() => parseFredGraphCsv("<!DOCTYPE html><html>", "MORTGAGE30US")).toThrow("unavailable");
 });
 
 test("yieldStat prints the level and the basis-point move", () => {

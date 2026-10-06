@@ -16,6 +16,7 @@ import {
   DAILY_BRIEF_TEMPLATE_ID,
   OPEN_ON_WAKE_SETTING,
 } from "./wake";
+import { attachDailyBriefFred, detachDailyBriefFred } from "./fred-public";
 import { startDailyBriefWake } from "./wake-host";
 
 const BRIEF_DESCRIPTION = "Opens at the start of the day. ES, Nasdaq, crude, the 10-year and 30-year yields, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, plus small tables. Headlines, releases, and earnings are the start; Ask Gloom or the Tables setting can replace those tables with any view.";
@@ -31,10 +32,12 @@ export const dailyBriefPlugin: GloomPlugin = {
   setup(ctx) {
     stopWake?.();
     stopWake = startDailyBriefWake(ctx);
+    attachDailyBriefFred(ctx.connectionHealth);
   },
   dispose() {
     stopWake?.();
     stopWake = null;
+    detachDailyBriefFred();
   },
   panes: [
     {
