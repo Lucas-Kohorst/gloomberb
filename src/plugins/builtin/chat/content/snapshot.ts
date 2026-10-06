@@ -88,6 +88,7 @@ export function useChatSnapshotState({
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(initialSnapshot.loadingOlderMessages);
   const [hasOlderMessages, setHasOlderMessages] = useState(initialSnapshot.hasOlderMessages);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => resolveReplyTo(initialSnapshot));
+  const [draftAttachments, setDraftAttachments] = useState(initialSnapshot.draftAttachments);
 
   useEffect(() => {
     return useDefaultControllerChannel
@@ -119,6 +120,7 @@ export function useChatSnapshotState({
       setMessagesError(snapshot.messagesError);
       setLoadingOlderMessages(snapshot.loadingOlderMessages);
       setHasOlderMessages(snapshot.hasOlderMessages);
+      setDraftAttachments(snapshot.draftAttachments);
       syncDraftFromSnapshot({
         applyingExternalDraftRef,
         inputRef,
@@ -156,6 +158,7 @@ export function useChatSnapshotState({
     channels,
     channelsLoading,
     channelStates,
+    draftAttachments,
     hasOlderMessages,
     hasSavedSession,
     onlineUserIds,

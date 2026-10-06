@@ -41,7 +41,6 @@ import { composeBuiltinPlugin } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
 import { scannerModule } from "./scanner";
 import { sectorsModule } from "./sectors";
-import { themesModule } from "./themes";
 import { treasuryAuctionsModule } from "./treasury-auctions";
 import { worldIndicesModule } from "./world-indices";
 import { worldVenueMapModule } from "./world-venue-map";
@@ -74,6 +73,7 @@ import { realizedVolModule } from "./realized-vol";
 import { seasonalityModule } from "./seasonality";
 import { earningsRippleModule } from "./earnings-ripple";
 import { reverseDcfModule } from "./reverse-dcf";
+import { peBandModule } from "./pe-band";
 import { macroDayModule } from "./macro-day";
 import { ivHistoryModule } from "./iv-history";
 import { backtestModule } from "./backtest";
@@ -117,6 +117,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     seasonalityModule,
     earningsRippleModule,
     reverseDcfModule,
+    peBandModule,
     macroDayModule,
     ivHistoryModule,
     backtestModule,
@@ -169,7 +170,6 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     marketMoversModule,
     scannerModule,
     sectorsModule,
-    themesModule,
     fxMatrixModule,
     futuresModule,
     futuresCurveModule,

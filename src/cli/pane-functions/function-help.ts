@@ -305,6 +305,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: ON_RELEASE,
     bloomberg: [],
   },
+  PEB: {
+    summary: "Is the stock cheap or rich against itself? Weekly price against round multiples of trailing EPS, stepping when each EPS figure became known, with today's P/E ranked in its own history.",
+    usage: ["PEB AAPL", "PEB RELIANCE.NS"],
+    keys: [],
+    data: ON_RELEASE,
+    bloomberg: [],
+  },
   MDAY: {
     summary: "Does this name care about CPI day? Its average move on CPI, jobs report and FOMC days against a normal day, the average signed move and share of up days, and the move on every release day.",
     usage: ["MDAY SPY"],
@@ -640,16 +647,16 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["WEI"],
   },
   BI: {
-    summary: "S&P 500 sectors and industries sorted by the day's move, with their representative ETFs.",
+    summary: "S&P 500 sectors and industries sorted by the day's move, with their representative ETFs, and curated thematic baskets on the Themes tab.",
     usage: ["BI"],
     keys: [TABS, OPEN],
     data: QUOTES,
     bloomberg: ["IMAP"],
   },
   THEM: {
-    summary: "Curated thematic baskets with equal-weight returns and breadth. Open a theme to see its members, leaders and laggards.",
+    summary: "Curated thematic baskets with equal-weight returns and breadth. Open a theme to see its members, leaders and laggards. The Themes tab of BI.",
     usage: ["THEM", "THEM nuclear"],
-    keys: [OPEN, key("Esc", "back")],
+    keys: [TABS, OPEN, key("Esc", "back")],
     data: same("Updated every 15 minutes"),
     bloomberg: ["IMAP", "custom baskets"],
   },

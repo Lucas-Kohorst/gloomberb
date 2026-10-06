@@ -72,6 +72,7 @@ import { realizedVolModule } from "./builtin/realized-vol";
 import { seasonalityModule } from "./builtin/seasonality";
 import { earningsRippleModule } from "./builtin/earnings-ripple";
 import { reverseDcfModule } from "./builtin/reverse-dcf";
+import { peBandModule } from "./builtin/pe-band";
 import { macroDayModule } from "./builtin/macro-day";
 import { ivHistoryModule } from "./builtin/iv-history";
 import { backtestModule } from "./builtin/backtest";
@@ -80,7 +81,6 @@ import { portfolioListModule } from "./builtin/portfolio-list";
 import { researchModule } from "./builtin/research";
 import { scannerModule } from "./builtin/scanner";
 import { sectorsModule } from "./builtin/sectors";
-import { themesModule } from "./builtin/themes";
 import { tickerDetailModule } from "./builtin/ticker-detail";
 import { treasuryAuctionsModule } from "./builtin/treasury-auctions";
 import { volatilityModule } from "./builtin/volatility";
@@ -124,6 +124,7 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     seasonalityModule,
     earningsRippleModule,
     reverseDcfModule,
+    peBandModule,
     macroDayModule,
     ivHistoryModule,
     backtestModule,
@@ -171,7 +172,6 @@ const browserMarketOverviewPlugin = composeBuiltinPlugin({
     worldVenueMapModule,
     scannerModule,
     sectorsModule,
-    themesModule,
     fxMatrixModule,
     futuresModule,
     futuresCurveModule,
