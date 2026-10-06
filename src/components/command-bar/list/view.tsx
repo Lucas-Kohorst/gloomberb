@@ -1,4 +1,4 @@
-import { memo, useMemo, type RefObject } from "react";
+import { memo, useCallback, useMemo, useState, type RefObject } from "react";
 import { t } from "../../../i18n";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { commandBarBadgeText, type CommandBarBadgeTone } from "../../../theme/colors";
@@ -12,6 +12,7 @@ import {
   type ScrollBoxRenderable,
 } from "../../../ui";
 import { truncateTextSegments, truncateToDisplayWidth } from "../../../utils/format";
+import { useScrollBoxScrollActivity } from "../../table-view-shared";
 import { Spinner } from "../../ui";
 import { useCommandBarPalette } from "../panel/palette";
 import { getRowPresentation } from "../view-model";
@@ -24,6 +25,7 @@ import {
 import {
   getListRowsHeight,
   getResultItemLines,
+  resolveListRowWindow,
   type CommandBarListRow,
   type ListScreenState,
   type ResultItem,
@@ -37,6 +39,7 @@ export type CommandBarListScrollEvent = {
 
 /** Columns every row gives up to the badge column, badge or not. */
 const BADGE_INDENT = BADGE_COLUMN_WIDTH + BADGE_GAP;
+const LIST_WINDOW_OVERSCAN_LINES = 8;
 
 interface CommandBarListItemRowProps {
   item: ResultItem;
@@ -256,6 +259,14 @@ export const CommandBarListBody = memo(function CommandBarListBody({
   onRowMouseDown,
 }: CommandBarListBodyProps) {
   const palette = useCommandBarPalette(nativePaneChrome);
+  const [scrollVersion, setScrollVersion] = useState(0);
+  const noteListScroll = useCallback(() => {
+    setScrollVersion((current) => current + 1);
+  }, []);
+  useScrollBoxScrollActivity({
+    scrollRef: nativeListScrollRef,
+    onVerticalScroll: noteListScroll,
+  });
   // Headings, messages and the spinner sit on the label edge: the badge column
   // is a gutter for the rows, not an indent for everything else.
   const labelEdgePadding = contentPadding + BADGE_INDENT;
@@ -276,10 +287,22 @@ export const CommandBarListBody = memo(function CommandBarListBody({
     nativeListRows,
     nativePaneChrome,
   ]);
+  const scrollLine = nativeListScrollRef.current?.scrollTop ?? 0;
+  const listWindow = useMemo(
+    () => resolveListRowWindow(
+      visibleRows,
+      visibleListState.selectedIdx,
+      listBodyHeight,
+      LIST_WINDOW_OVERSCAN_LINES,
+      scrollLine,
+    ),
+    [listBodyHeight, scrollLine, scrollVersion, visibleListState.selectedIdx, visibleRows],
+  );
 
   const renderedRows = (
     <>
-      {visibleRows.map((row) => {
+      {listWindow.padBefore > 0 && <Box height={listWindow.padBefore} />}
+      {listWindow.rows.map((row) => {
         if (row.kind === "filler" || row.kind === "spacer") {
           return <Box key={row.id} height={1} />;
         }
@@ -330,6 +353,7 @@ export const CommandBarListBody = memo(function CommandBarListBody({
           />
         );
       })}
+      {listWindow.padAfter > 0 && <Box height={listWindow.padAfter} />}
     </>
   );
 

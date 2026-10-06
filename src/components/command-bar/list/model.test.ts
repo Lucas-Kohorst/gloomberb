@@ -3,7 +3,9 @@ import {
   buildListRows,
   getListRowsHeight,
   resolveListPageTarget,
+  resolveListRowWindow,
   resolveSelectedScrollLine,
+  type CommandBarListRow,
   type ListScreenState,
   type ResultItem,
 } from "./model";
@@ -125,5 +127,89 @@ describe("page keys", () => {
   test("moves at least one result even when the next row is taller than the page", () => {
     expect(resolveListPageTarget(rows, 2, 2, 1)).toBe(3);
     expect(resolveListPageTarget(rows, 0, 1, -1)).toBe(0);
+  });
+});
+
+function includesItem(rows: readonly CommandBarListRow[], globalIdx: number): boolean {
+  return rows.some((row) => row.kind === "item" && row.globalIdx === globalIdx);
+}
+
+describe("list row window", () => {
+  test("does not slice a list that fits in the viewport plus the overscan", () => {
+    const rows = buildListRows(makeListState([
+      makeItem("a", "Commands"),
+      makeItem("b", "Commands", 2),
+    ]));
+
+    const window = resolveListRowWindow(rows, 1, 16, 8);
+
+    expect(window.rows).toBe(rows);
+    expect(window.padBefore).toBe(0);
+    expect(window.padAfter).toBe(0);
+  });
+
+  test("keeps the selected row and balances the spacers against the full height", () => {
+    const rows = buildListRows(makeListState(
+      Array.from({ length: 60 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
+      40,
+    ));
+    const fullHeight = getListRowsHeight(rows);
+
+    const window = resolveListRowWindow(rows, 40, 10, 8);
+
+    expect(includesItem(window.rows, 40)).toBe(true);
+    expect(window.padBefore).toBe(41 - (10 - 1) - 8);
+    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(fullHeight);
+    expect(window.padBefore).toBeGreaterThan(0);
+    expect(window.padAfter).toBeGreaterThan(0);
+    expect(window.rows.length).toBeLessThan(rows.length);
+  });
+
+  test("starts at the top when nothing is selected", () => {
+    const rows = buildListRows(makeListState(
+      Array.from({ length: 40 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
+      -1,
+    ));
+
+    const window = resolveListRowWindow(rows, -1, 10, 8);
+
+    expect(window.padBefore).toBe(0);
+    expect(window.rows[0]).toBe(rows[0]);
+    expect(getListRowsHeight(window.rows)).toBe(10 + 8);
+    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(getListRowsHeight(rows));
+  });
+
+  test("keeps the scrolled lines and the selected row in one slice", () => {
+    const rows = buildListRows(makeListState(
+      Array.from({ length: 60 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
+      40,
+    ));
+    const fullHeight = getListRowsHeight(rows);
+
+    const parked = resolveListRowWindow(rows, 40, 10, 8, 0);
+    expect(parked.padBefore).toBe(0);
+    expect(includesItem(parked.rows, 40)).toBe(true);
+    expect(parked.padBefore + getListRowsHeight(parked.rows) + parked.padAfter).toBe(fullHeight);
+
+    const beside = resolveListRowWindow(rows, 40, 10, 8, 41);
+    expect(beside.padBefore).toBe(41 - (10 - 1) - 8);
+    expect(includesItem(beside.rows, 40)).toBe(true);
+  });
+
+  test("mounts a multi-line row whole when the window starts inside it", () => {
+    const rows = buildListRows(makeListState([
+      ...Array.from({ length: 20 }, (_unused, index) => makeItem(`before-${index}`, "Commands")),
+      makeItem("tall", "Commands", 2),
+      ...Array.from({ length: 20 }, (_unused, index) => makeItem(`after-${index}`, "Commands")),
+    ], 28));
+
+    const window = resolveListRowWindow(rows, 28, 10, 0);
+
+    expect(includesItem(window.rows, 28)).toBe(true);
+    expect(window.rows[0]).toMatchObject({ kind: "item", globalIdx: 20 });
+    expect(window.padBefore).toBe(21);
+    expect(getListRowsHeight(window.rows.slice(0, 1))).toBe(3);
+    expect(includesItem(window.rows, 19)).toBe(false);
+    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(getListRowsHeight(rows));
   });
 });
