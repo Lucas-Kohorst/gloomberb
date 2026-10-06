@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TickerResearchTabDef, TickerResearchTabLoadContext } from "../../../types/plugin";
 
-export type ResearchTabLoadStatus = "pending" | "ready" | "absent";
+type ResearchTabLoadStatus = "pending" | "ready" | "absent";
 
 export interface ResearchTabLoadSnapshot {
   key: string;
