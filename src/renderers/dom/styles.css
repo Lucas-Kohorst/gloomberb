@@ -181,20 +181,23 @@ body.gloom-dragging {
   pointer-events: auto;
 }
 [data-gloom-role="status-bar"] {
-  /* 3px top + 4px bottom + 1px border. Keep the 8px in NATIVE_STATUS_BAR_EXTRA_PX. */
+  /* 4px top + 10px bottom (4 + 6px window-curve clearance) + 1px border.
+     Keep the 15px in NATIVE_STATUS_BAR_EXTRA_PX so the pane grid stops here. */
   box-sizing: border-box !important;
-  flex: 0 0 calc(var(--cell-h) + 8px) !important;
-  height: calc(var(--cell-h) + 8px) !important;
-  min-height: calc(var(--cell-h) + 8px) !important;
-  max-height: calc(var(--cell-h) + 8px) !important;
+  flex: 0 0 calc(var(--cell-h) + 15px) !important;
+  height: calc(var(--cell-h) + 15px) !important;
+  min-height: calc(var(--cell-h) + 15px) !important;
+  max-height: calc(var(--cell-h) + 15px) !important;
   align-items: center;
-  padding-top: 3px;
-  padding-bottom: 4px;
+  padding-top: 4px;
+  padding-bottom: 10px;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
+  line-height: 1.15 !important;
 }
 [data-gloom-role="status-bar"] span {
-  line-height: var(--cell-h);
+  /* A cell-height line box fills the tape and shears glyphs on the curve. */
+  line-height: 1.15 !important;
 }
 [data-gloom-role="pane-body"] {
   overflow: hidden;
@@ -207,23 +210,36 @@ body.gloom-dragging {
   min-height: 0;
   max-height: 100%;
 }
-/* The same chrome row as the pane header, query bar and table header. */
+/* Same tape as the status bar: one cell plus 15px. Keep that in
+   NATIVE_PANE_FOOTER_EXTRA_PX so the body stops above this bar. */
 [data-gloom-role="pane-footer"] {
-  flex: 0 0 var(--chrome-h);
-  height: var(--chrome-h);
-  min-height: var(--chrome-h);
-  max-height: var(--chrome-h);
+  box-sizing: border-box !important;
+  flex: 0 0 calc(var(--cell-h) + 15px) !important;
+  height: calc(var(--cell-h) + 15px) !important;
+  min-height: calc(var(--cell-h) + 15px) !important;
+  max-height: calc(var(--cell-h) + 15px) !important;
   align-items: center;
+  padding-top: 4px;
+  padding-bottom: 10px;
   border-top: 1px solid color-mix(in srgb, var(--pane-footer-border-color, var(--gloom-border)) 72%, transparent);
   font-size: 11.5px;
-  overflow: hidden;
+  line-height: 1.15 !important;
+  overflow: visible;
+  /* The corner resize handle sits in this padding. Hints opt back in. */
+  pointer-events: none;
 }
 [data-gloom-role="pane-footer"][data-empty="true"] {
   border-top-color: transparent;
 }
 [data-gloom-role="pane-footer"] span,
 [data-gloom-role="pane-hint"] span {
-  line-height: var(--cell-h);
+  line-height: 1.15 !important;
+}
+[data-gloom-role="pane-footer"] button,
+[data-gloom-role="pane-footer"] a,
+[data-gloom-role="pane-hint"],
+[data-gloom-role="pane-footer"] [data-gloom-interactive="true"] {
+  pointer-events: auto;
 }
 [data-gloom-role="pane-hint"] {
   cursor: pointer;
@@ -234,6 +250,8 @@ body.gloom-dragging {
 }
 [data-gloom-role="resize-handle"] {
   cursor: nwse-resize;
+  pointer-events: auto;
+  z-index: 2;
 }
 [data-gloom-role="window-mode-status"] {
   border: 1px solid color-mix(in srgb, var(--gloom-border-focused) 76%, transparent);

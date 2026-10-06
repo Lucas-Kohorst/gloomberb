@@ -3,11 +3,11 @@ import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "../titlebar
 export const DEFAULT_HEADER_HEIGHT = 1;
 export const DEFAULT_STATUS_BAR_HEIGHT = 1;
 /**
- * Extra pixels on the desktop status bar beyond one cell: 3px top, 4px bottom,
- * 1px border. The bottom pad keeps the version pill off the window curve.
- * Must stay in sync with `[data-gloom-role="status-bar"]` in styles.css.
+ * Extra pixels on the desktop status bar beyond one cell: 4px top, 10px bottom
+ * (the last 6 clear the window curve), 1px border. Pane footers use the same
+ * 15px. Must stay in sync with `[data-gloom-role="status-bar"]` in styles.css.
  */
-export const NATIVE_STATUS_BAR_EXTRA_PX = 8;
+export const NATIVE_STATUS_BAR_EXTRA_PX = 15;
 
 const HEADER_PROMPT_MIN_WIDTH = 10;
 /** Columns the header keeps free right of the prompt for the update status. */

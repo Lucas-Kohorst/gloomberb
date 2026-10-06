@@ -230,7 +230,7 @@ describe("Shell", () => {
   });
 
   test("reserves the desktop status bar's extra padding under the pane grid", () => {
-    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: true, cellHeightPx: 18 })).toBe(26 / 18);
+    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: true, cellHeightPx: 18 })).toBe(33 / 18);
     expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: false, cellHeightPx: 18 })).toBe(1);
     expect(resolveAppStatusBarHeightCells({ visible: false, nativePaneChrome: true, cellHeightPx: 18 })).toBe(0);
   });
