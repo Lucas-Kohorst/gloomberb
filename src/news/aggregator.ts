@@ -32,13 +32,6 @@ export interface NewsServiceOptions {
 export type NewsQueryListener = (state: NewsQueryState) => void;
 
 const DEFAULT_POLL_INTERVAL_MS = 2 * 60 * 1000;
-/**
- * The slowest a visible app refreshes open news panes, whatever research
- * cadence is configured: headlines are the one research feed that moves by
- * the minute. A hidden app falls back to the configured cadence, which still
- * feeds breaking-news notifications.
- */
-const VISIBLE_POLL_INTERVAL_MS = 2 * 60 * 1000;
 const MIN_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_INACTIVE_QUERY_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_INACTIVE_QUERIES = 50;
@@ -117,8 +110,8 @@ export class NewsService {
     this.polling = true;
     // Watching a query fetches it, so the first cycle is one interval out.
     this.lastPollAt = this.now();
-    // Coming back into view reschedules at the faster cadence, and polls at
-    // once if a poll came due while the app was hidden.
+    // Coming back into view reschedules, and polls at once if one came due
+    // while the app was hidden.
     this.unsubscribeVisibility = this.visibility.subscribe(() => {
       if (!this.polling || this.pollInFlight) return;
       this.clearPollTimer();
@@ -146,8 +139,7 @@ export class NewsService {
   /** Rescheduled every cycle so a config or visibility change takes effect on the next tick. */
   private scheduleNextPoll(): void {
     if (!this.polling) return;
-    const configured = Math.max(MIN_POLL_INTERVAL_MS, this.pollIntervalMs());
-    const interval = this.visibility.isVisible() ? Math.min(configured, VISIBLE_POLL_INTERVAL_MS) : configured;
+    const interval = Math.max(MIN_POLL_INTERVAL_MS, this.pollIntervalMs());
     const delay = Math.max(0, this.lastPollAt + interval - this.now());
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;

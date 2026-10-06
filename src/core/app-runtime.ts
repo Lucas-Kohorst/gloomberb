@@ -60,7 +60,8 @@ export function createAppRuntime({
   const marketData = new MarketDataCoordinator(dataProvider);
   const newsService = new NewsService({
     connectionHealth: pluginRegistry.connectionHealth,
-    pollIntervalMs: () => Math.max(1, config.refreshIntervalMinutes) * 60_000,
+    // The shell rebinds getConfig onto live state, so a poll-menu change is the next wait.
+    pollIntervalMs: () => Math.max(1, pluginRegistry.getConfig().refreshIntervalMinutes) * 60_000,
     ...newsOptions,
   });
   const modules = { pluginRegistry, marketData, newsService };

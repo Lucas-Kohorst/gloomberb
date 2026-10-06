@@ -65,6 +65,7 @@ export function usePaneStatusLinkFooter({
   stale = false,
   info = EMPTY_STATUS_INFO,
   hints,
+  trailingInfo,
   showOpenHint = false,
 }: PaneStatusInfoOptions & {
   registrationId: string;
@@ -73,6 +74,7 @@ export function usePaneStatusLinkFooter({
   source?: string | null;
   label?: string;
   hints?: PaneHint[];
+  trailingInfo?: PaneFooterSegment[];
   showOpenHint?: boolean;
 }) {
   const statusInfo = useMemo(
@@ -87,6 +89,7 @@ export function usePaneStatusLinkFooter({
     label,
     info: statusInfo,
     hints,
+    trailingInfo,
     showHint: showOpenHint,
   });
 }

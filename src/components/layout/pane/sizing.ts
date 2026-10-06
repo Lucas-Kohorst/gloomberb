@@ -1,4 +1,4 @@
-import { WEB_CELL_HEIGHT, chromeRowPx } from "../../../theme/font-scale";
+import { NATIVE_PANE_FOOTER_TOP_PAD_PX, WEB_CELL_HEIGHT, chromeRowPx } from "../../../theme/font-scale";
 
 const PANE_HEADER_ROWS = 1;
 /** Desktop pane header height in cells: one chrome row (see chromeRowPx). */
@@ -6,9 +6,10 @@ export function nativePaneHeaderRows(): number {
   return chromeRowPx() / WEB_CELL_HEIGHT;
 }
 const PANE_FOOTER_ROWS = 1;
-/** Desktop pane footer height in cells: the same chrome row as the header. */
+
+/** One chrome row plus 8px, centered. Matches `--footer-h` in styles.css. */
 export function nativePaneFooterRows(): number {
-  return chromeRowPx() / WEB_CELL_HEIGHT;
+  return (chromeRowPx() + NATIVE_PANE_FOOTER_TOP_PAD_PX) / WEB_CELL_HEIGHT;
 }
 
 export function paneHeaderRows(nativePaneChrome: boolean | undefined): number {

@@ -103,6 +103,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }]
       : undefined,
     onPopOut: readableArticle ? popOutReadable : undefined,
+    updatedAt: newsState.updatedAt,
   });
 
   if (!ticker) {

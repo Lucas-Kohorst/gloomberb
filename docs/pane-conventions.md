@@ -29,18 +29,21 @@ never goes there.
   sits under it, so the tab, the bar and the figures read as one surface.
   No loose text lines, blank rows or button rows above or between them.
 - Footer, registered with `usePaneFooter`: `info` on the left (changing
-  status), `hints` on the right (pane actions with their keys, visible only
-  while focused). When AGENTS.md says "pane status bar" it means this footer.
+  status, including `updated ~0m`), action `hints` on the right while the pane
+  is focused, then `trailingInfo` (`poll 30m`, which stays up when the pane is
+  not focused). Standing sentences do not. When AGENTS.md says "pane status
+  bar" it means this footer.
 
 ## 2. Where does it go
 
 | You have | It goes | Use |
 |---|---|---|
 | A pane action (add, edit, open source, sync, save search) | Footer hint | `usePaneFooter({ hints })` |
-| Changing status (loading, error, live/delayed, stale, updated 2m ago, saving) | Footer info | `usePaneStatusFooter`, `loadingErrorFooterInfo` |
+| Changing status (loading, error, live/delayed, stale, saving) | Footer info, on the left | `usePaneStatusFooter`, `loadingErrorFooterInfo` |
+| When data was last fetched, and how often it polls | `updated ~0m` on the left, `poll 30m` on the right. The chip opens 1, 5, 15, or 30 minutes. A pane that does not poll omits it | `useUpdatedFooterInfo`, `useRefreshPollTrailing` |
 | Summary figures for the whole pane or an open detail (VWAP, spread, percentile, range) | Header zone, under the query bar | `StatGrid` |
 | A control that changes what the pane shows (range, window, scope, level) | Query bar, never a cycling footer hint | `QueryBar` |
-| Non-blocking data limitation (missing period, fallback dates, partial source) | One amber `⚠` in the footer, `!` or click opens details | `usePaneNoticeFooter` |
+| Non-blocking data limitation (missing period, fallback dates, partial source) | `!` opens the details. Nothing standing in the footer | `usePaneNoticeFooter` |
 | Nothing can render yet (first load, hard failure, no data) | Body, replacing content | `PaneStatusBody` |
 | No ticker, no selection, empty result | Body | `EmptyState` |
 | Refresh failed but last data exists | Keep the data, failure in footer info | `loading={loading && !data}`, `error={!data ? error : null}` |
@@ -303,9 +306,11 @@ header, with the detail's height.
   icon set. A long strip of choices above content (expiries, chart ranges) is
   an inline filter in the bar, not a raw `Tabs` row; `Tabs` stays for a
   pane's primary strip and for section switches inside content.
-- On the desktop, pane headers, query bars, detail bars and table header rows
-  share one chrome height (`chromeRowPx()`, `--chrome-h`). Tables and details
-  fill to the pane footer; do not size them with terminal row arithmetic.
+- On the desktop, pane headers, query bars, detail bars, and table header rows
+  share one chrome height (`chromeRowPx()`, `--chrome-h`). A pane footer is
+  that row plus 8px, with the text centered (`--footer-h`). The window status
+  bar is one cell plus its curve pad. Tables and details fill to the pane
+  footer; do not size them with terminal row arithmetic.
 
 ## 7. Tabs with forms
 

@@ -16,6 +16,8 @@ const MAX_FONT_SIZE_PX = 20;
 
 const BASE_CELL_WIDTH_PX = 8;
 const BASE_CELL_HEIGHT_PX = 18;
+/** Extra footer height, split above and below the text. Not a top-only pad. */
+export const NATIVE_PANE_FOOTER_TOP_PAD_PX = 8;
 
 export let WEB_CELL_WIDTH: number = BASE_CELL_WIDTH_PX;
 export let WEB_CELL_HEIGHT: number = BASE_CELL_HEIGHT_PX;
@@ -53,16 +55,19 @@ export function syncFontScale(fontSizePx: unknown): boolean {
   style.setProperty("--cell-w", `${WEB_CELL_WIDTH}px`);
   style.setProperty("--cell-h", `${WEB_CELL_HEIGHT}px`);
   style.setProperty("--chrome-h", `${chromeRowPx()}px`);
+  style.setProperty("--footer-h", `${chromeRowPx() + NATIVE_PANE_FOOTER_TOP_PAD_PX}px`);
   style.setProperty("font-size", `${size}px`);
   appliedToDocument = true;
   return true;
 }
 
 /**
- * Height of a desktop chrome row: pane headers, query bars, stack detail bars
- * and table header rows. 20px at the default font size, a little taller than a
- * text cell so controls have room, and rounded to whole pixels at every size so
- * rules and text land on the pixel grid. CSS mirrors it as --chrome-h.
+ * Height of a desktop chrome row: pane headers, query bars, stack detail bars,
+ * and table header rows. A pane footer adds NATIVE_PANE_FOOTER_TOP_PAD_PX.
+ * The status bar is taller so it clears the window curve. 20px at the default
+ * font size, a little taller than a text cell so controls have room, and
+ * rounded to whole pixels at every size so rules and text land on the pixel
+ * grid. CSS mirrors it as --chrome-h.
  */
 export function chromeRowPx(): number {
   return Math.round(WEB_CELL_HEIGHT * 20 / 18);
