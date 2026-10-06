@@ -198,16 +198,62 @@ describe("ticker-search utilities", () => {
     expect(candidates.map((item) => item.symbol).sort()).toEqual(["ES=F", "ESR=F"]);
 
     // The word ranking alone puts coins named "... BTC USD" ahead of BTC-USD.
+    const coinResults = [
+      makeSearchResult("PBTC-USD", "pTokens BTC USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+      makeSearchResult("BTC", "Grayscale Bitcoin Mini Trust ETF", { exchange: "ARCA", type: "ETF" }),
+      makeSearchResult("BTC-USD", "Bitcoin USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
+    ];
     const coins = buildTickerSearchCandidates({
-      query: "BTC CUR",
+      query: "BTC CRYP",
       tickers: new Map(),
-      providerResults: [
-        makeSearchResult("PBTC-USD", "pTokens BTC USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
-        makeSearchResult("BTC", "Grayscale Bitcoin Mini Trust ETF", { exchange: "ARCA", type: "ETF" }),
-        makeSearchResult("BTC-USD", "Bitcoin USD", { exchange: "CCC", type: "CRYPTOCURRENCY" }),
-      ],
+      providerResults: coinResults,
     });
     expect(coins.map((item) => item.symbol)).toEqual(["BTC-USD", "PBTC-USD"]);
+    expect(buildTickerSearchCandidates({
+      query: "BTC CUR",
+      tickers: new Map(),
+      providerResults: coinResults,
+    })).toEqual([]);
+
+    asked.length = 0;
+    await searchTickerCandidates({
+      query: "BTC CRYP",
+      tickers: new Map(),
+      dataProvider: createTestDataProvider({ search: async (query) => { asked.push(query); return []; } }),
+    });
+    expect(asked).toContain("BTC-USD");
+    expect(asked).not.toContain("BTC CRYP");
+  });
+
+  test("leaves open-end mutual funds out of provider search and keeps funds that quote", async () => {
+    const providerResults = [
+      makeSearchResult("VTSAX", "Vanguard Total Stock Market Index Fund", { type: "Mutual Fund" }),
+      makeSearchResult("FXAIX", "Fidelity 500 Index Fund", { type: "MUTUAL_FUND" }),
+      makeSearchResult("PDI", "PIMCO Dynamic Income", { type: "Closed-end Fund" }),
+      makeSearchResult("SPAXX", "Fidelity Government Money Market", { type: "MONEY_MARKET" }),
+      makeSearchResult("VTI", "Vanguard Total Stock Market ETF", { type: "ETF" }),
+    ];
+    expect(buildTickerSearchCandidates({
+      query: "",
+      tickers: new Map(),
+      providerResults,
+    }).map((item) => item.symbol).sort()).toEqual(["PDI", "SPAXX", "VTI"]);
+
+    const saved = createTestTicker("VTSAX", "Vanguard Total Stock Market Index Fund", { assetCategory: "MUTUALFUND" });
+    const tickers = new Map([[saved.metadata.ticker, saved]]);
+    expect(buildTickerSearchCandidates({
+      query: "VTSAX",
+      tickers,
+      providerResults,
+    })).toMatchObject([{ symbol: "VTSAX", saved: true, kind: "ticker" }]);
+    expect(await resolveTickerSearch({
+      query: "VTSAX", activeTicker: null, tickers,
+      dataProvider: createTestDataProvider({ search: async () => { throw new Error("saved fund should resolve locally"); } }),
+    })).toMatchObject({ kind: "local", symbol: "VTSAX" });
+    expect(await resolveTickerSearch({
+      query: "VTSAX", activeTicker: null, tickers: new Map(),
+      dataProvider: makeDataProvider(providerResults),
+    })).toBeNull();
   });
 
   test("resolves catalogue omissions through a quote for the exact market symbol only", async () => {

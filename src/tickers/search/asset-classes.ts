@@ -3,12 +3,13 @@ import type { TickerSearchInstrumentClass } from "./types";
 
 /**
  * Class codes typed after a symbol or name, the way a terminal's market
- * sector key follows a ticker: `ES FUT`, `EURUSD CUR`, `SPY ETF`. The same
- * letters are the badge on a matching search row, so the list teaches them.
- * A code on its own is never a filter: `EQ` is still Equillium, and `FUT` and
- * `ETF` still open their panes.
+ * sector key follows a ticker: `ES FUT`, `EURUSD CUR`, `BTC CRYP`, `SPY ETF`.
+ * The same letters are the badge on a matching search row, so the list teaches
+ * them.
+ * A code on its own is never a filter: `EQ` is still Equillium, and `FUT`,
+ * `ETF`, and `CRYP` still open their panes.
  */
-const ASSET_CLASS_CODES = ["EQ", "CUR", "OPT", "FUT", "IDX", "ETF"] as const;
+const ASSET_CLASS_CODES = ["EQ", "CUR", "CRYP", "OPT", "FUT", "IDX", "ETF", "FUND"] as const;
 
 export type AssetClassCode = (typeof ASSET_CLASS_CODES)[number];
 
@@ -44,7 +45,9 @@ export function assetClassMarketSymbol(query: AssetClassQuery): string | null {
     case "IDX":
       return `^${symbol}`;
     case "CUR":
-      return /^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : `${symbol}-USD`;
+      return /^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : null;
+    case "CRYP":
+      return `${symbol}-USD`;
     default:
       return null;
   }
@@ -57,8 +60,8 @@ function isExchangeTradedType(type: string): boolean {
 
 /**
  * The class code of a search row: its type when the type names one, else its
- * listing syntax (`=F`, `=X`, `^`, the crypto venue). Coins count as currency.
- * A fund is ETF only when it trades on an exchange.
+ * listing syntax (`=F`, `=X`, `^`, the crypto venue). A fund is ETF when it
+ * trades on an exchange and FUND otherwise.
  */
 export function instrumentClassCode(item: {
   instrumentClass?: TickerSearchInstrumentClass;
@@ -72,8 +75,9 @@ export function instrumentClassCode(item: {
     case "equity":
       return "EQ";
     case "currency":
-    case "crypto":
       return "CUR";
+    case "crypto":
+      return "CRYP";
     case "option":
       return "OPT";
     case "future":
@@ -81,7 +85,7 @@ export function instrumentClassCode(item: {
     case "index":
       return "IDX";
     case "fund":
-      return isExchangeTradedType(type) ? "ETF" : null;
+      return isExchangeTradedType(type) ? "ETF" : "FUND";
     case "bond":
     case "other":
       return null;

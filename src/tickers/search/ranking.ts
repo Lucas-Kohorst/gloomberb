@@ -369,7 +369,7 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     seen.add(key);
     deduped.push(entry.item);
   }
-  // "BTC CUR" means BTC-USD, which the word ranking puts behind wrapped coins
+  // "BTC CRYP" means BTC-USD, which the word ranking puts behind wrapped coins
   // whose names contain "BTC".
   const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
   const marketIndex = marketSymbol

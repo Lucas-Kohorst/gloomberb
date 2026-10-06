@@ -56,9 +56,18 @@ const KIND_BY_TYPE: Record<string, TickerInstrumentKind> = {
   CMDTY: "other",
 };
 
+/** Open-end mutual fund. Closed-end, money-market, and exchange-traded funds are other types. */
+export function isMutualFundType(type: string | null | undefined): boolean {
+  return normalizeInstrumentType(type) === "MUTUALFUND";
+}
+
+function normalizeInstrumentType(type: string | null | undefined): string {
+  return (type ?? "").trim().toUpperCase().replace(/[\s_-]+/g, "");
+}
+
 /** A provider or broker type string, or null when it names nothing known. */
 export function classifyInstrumentType(type: string | null | undefined): TickerInstrumentKind | null {
-  const normalized = (type ?? "").trim().toUpperCase().replace(/[\s_-]+/g, "");
+  const normalized = normalizeInstrumentType(type);
   if (!normalized) return null;
   const exact = KIND_BY_TYPE[normalized];
   if (exact) return exact;
