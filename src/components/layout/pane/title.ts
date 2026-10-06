@@ -7,7 +7,7 @@ import {
 } from "../../../types/config";
 import type { PaneDef } from "../../../types/plugin";
 import { paneTitleMnemonic } from "../../../layout/pane-follow";
-import { canFollowTickerSource } from "../../../layout/ticker-navigation";
+import { canFollowTickerSource, isTickerLinkPeer } from "../../../layout/ticker-navigation";
 
 /** Single-cell link glyph: emoji link icons render double-width in terminals. */
 const LINK_GLYPH = "\u29c9";
@@ -79,9 +79,9 @@ export function getPaneDisplayTitle(
   const source = findPaneInstance(state.config.layout, instance.binding.sourceInstanceId);
   const sourceDef = source ? panes.get(source.paneId) : null;
   if (!source || !sourceDef) return title;
-  // Other panes name only the list or scanner they follow; one chained to a fixed pane (a desk's
-  // OMON following OVDV) reads as it always has.
-  if (!research && !sourceDef.tickerSource) return title;
+  // Name the list, scanner, or single-ticker pane this one follows. A follow pointed at anything
+  // else (a desk's OMON following a comparison chart) reads as it always has.
+  if (!sourceDef.tickerSource && !isTickerLinkPeer(source, panes)) return title;
   const sourceTitle = getBasePaneDisplayTitle(state, source, sourceDef);
   return `${title}  ${LINK_GLYPH} ${tf("Linked to {source}", { source: sourceTitle })}`;
 }

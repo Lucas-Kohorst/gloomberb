@@ -29,6 +29,8 @@ import { useViewport } from "../../react/input";
 import { canRetryUpdate } from "../../app/global-shortcuts";
 import { t, tf } from "../../i18n";
 import { truncateToDisplayWidth } from "../../utils/format";
+import { LINKED_TICKER_MARK } from "../../layout/selected-ticker";
+import { activeCommandInstrumentLabel, rootCommandPlaceholder } from "../command-bar/prompt-placeholder";
 import { resolveMarketSummaryFit, useMarketSummary } from "./market-summary";
 import { resolveHeaderPromptGeometry } from "./shell/chrome";
 import { useWindowFullscreen } from "./window-fullscreen";
@@ -48,13 +50,17 @@ type HeaderActionEvent = {
  * its space before the shortcut hint does, because the prompt is what tells a
  * first-time user the command bar exists at all.
  */
-function resolveHeaderPromptContent(width: number, shortcutLabel: string): {
+function resolveHeaderPromptContent(
+  width: number,
+  shortcutLabel: string,
+  instrumentLabel: string | null,
+): {
   placeholder: string;
   shortcut: string;
 } {
   const textSpace = Math.max(0, width - 2 - "> ".length);
-  const full = t("Search or run a command");
-  const short = t("Search");
+  const full = rootCommandPlaceholder(instrumentLabel);
+  const short = instrumentLabel ? truncateToDisplayWidth(full, textSpace) : t("Search");
   if (textSpace >= full.length + shortcutLabel.length + 2) return { placeholder: full, shortcut: shortcutLabel };
   if (textSpace >= full.length) return { placeholder: full, shortcut: "" };
   if (textSpace >= short.length) return { placeholder: short, shortcut: "" };
@@ -176,7 +182,14 @@ function HeaderCommandPrompt({
 }) {
   const colors = useThemeColors();
   const binding = useCommandBarPromptBinding();
-  const { placeholder, shortcut } = resolveHeaderPromptContent(width, shortcutLabel);
+  const instrumentLabel = useAppSelector(activeCommandInstrumentLabel);
+  const linkedTicker = instrumentLabel?.startsWith(`${LINKED_TICKER_MARK} `) === true
+    ? instrumentLabel.slice(LINKED_TICKER_MARK.length + 1)
+    : null;
+  const promptLabel = linkedTicker
+    ? tf("Change {ticker} for the linked panes", { ticker: linkedTicker })
+    : instrumentLabel ?? t("Search or run a command");
+  const { placeholder, shortcut } = resolveHeaderPromptContent(width, shortcutLabel, instrumentLabel);
   const idleBg = headerSurface(colors);
   // Open, the prompt takes the sheet's own surface so the two read as one
   // control: the sheet is the prompt, expanded. Closed it fills nothing on
@@ -214,7 +227,8 @@ function HeaderCommandPrompt({
       data-gloom-interactive={open ? undefined : "true"}
       role={open ? undefined : "button"}
       tabIndex={open ? undefined : 0}
-      aria-label={t("Search or run a command")}
+      aria-label={promptLabel}
+      title={promptLabel}
       aria-keyshortcuts={shortcutLabel}
       onMouseDown={open ? undefined : onOpen}
       onKeyDown={open ? undefined : (event: HeaderActionEvent) => {

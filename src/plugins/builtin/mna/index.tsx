@@ -29,6 +29,7 @@ export const mnaModule: PluginModule = {
       icon: "M",
       component: MnaPane,
       defaultPosition: "right",
+      tickerFollower: true,
       defaultMode: "floating",
       defaultFloatingSize: { width: 120, height: 30 },
       tableExport: true,
@@ -47,7 +48,7 @@ export const mnaModule: PluginModule = {
       createInstance: (_context, options) => {
         const symbol = (options?.symbol ?? options?.arg)?.trim().toUpperCase();
         return symbol
-          ? { instanceId: `${MNA_PANE_ID}:${symbol}`, title: `M&A ${symbol}`, placement: "floating", settings: { ticker: symbol } }
+          ? { instanceId: `${MNA_PANE_ID}:${symbol}`, title: `M&A ${symbol}`, binding: { kind: "fixed" as const, symbol }, placement: "floating", settings: { ticker: symbol } }
           : { placement: "floating" };
       },
     },
