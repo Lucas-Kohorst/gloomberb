@@ -5,9 +5,7 @@ import { usSessionAt } from "../market-movers/session";
 import type { NewsArticle } from "../../../news/types";
 import { zonedDateKey } from "../../../utils/zoned-date-time";
 
-export const BRIEF_FUTURES = ["ES=F", "NQ=F", "RTY=F", "ZN=F", "CL=F"] as const;
-/** Bitcoin quotes on the same board as the futures, after them. */
-export const BRIEF_BTC = "BTC-USD";
+export const BRIEF_FUTURES = ["ES=F", "NQ=F", "CL=F"] as const;
 const HEADLINE_CAP = 8;
 const NEW_YORK = "America/New_York";
 
@@ -85,13 +83,13 @@ function oldestIso(values: readonly (number | string | null | undefined)[]): str
 export function assembleBrief(input: BriefSlices): Brief {
   const session = usSessionAt(input.now);
   const contracts = new Map(FUTURES_CONTRACTS.map((contract) => [contract.symbol, contract]));
-  const markets = [...BRIEF_FUTURES, BRIEF_BTC].map((symbol) => {
+  const markets = BRIEF_FUTURES.map((symbol) => {
     const contract = contracts.get(symbol);
-    if (symbol !== BRIEF_BTC && !contract) throw new Error(`missing futures contract ${symbol}`);
+    if (!contract) throw new Error(`missing futures contract ${symbol}`);
     const quote = input.quotes.get(symbol);
     return {
       symbol,
-      label: contract?.code ?? "BTC",
+      label: contract.code,
       last: quote?.last ?? null,
       changePercent: quote?.changePercent ?? null,
     };

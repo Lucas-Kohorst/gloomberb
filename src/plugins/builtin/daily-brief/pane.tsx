@@ -49,7 +49,8 @@ import { EsSessionChart } from "./chart";
 import { esChartHeight, esChartStart } from "./chart-window";
 import { loadBriefMarks, type SessionMark } from "./session-history";
 import { briefFooterInfo } from "./footer";
-import { assembleBrief, BRIEF_BTC, BRIEF_FUTURES } from "./model";
+import { assembleBrief, BRIEF_FUTURES } from "./model";
+import { BRIEF_YIELDS, getCachedBriefYields, loadBriefYields, yieldStat } from "./rates";
 import { BriefViewBlock, type BriefViewLine } from "./section-view";
 import {
   BRIEF_SECTIONS_SETTING,
@@ -68,7 +69,7 @@ import {
 } from "./tables";
 
 const BRIEF_VIX = "^VIX";
-const BRIEF_SYMBOLS: string[] = [...BRIEF_FUTURES, BRIEF_BTC, BRIEF_VIX];
+const BRIEF_SYMBOLS: string[] = [...BRIEF_FUTURES, BRIEF_VIX];
 /** Same day cap as the earnings board, so a busy session is not cut after the largest names. */
 const EARNINGS_PER_DAY = 200;
 const PANE_KEY = "daily-brief";
@@ -224,6 +225,8 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const econ = useAsyncResource<EconCalendarLoadResult>(loadEcon, { initialData: getCalendarCache });
   const fear = useAsyncResource<FearGreedLoadResult>(loadFearGreed, { initialData: getCachedFearGreedData });
   const rates = useAsyncResource(loadRatePath, { initialData: getCachedRatePath });
+  const loadYields = useCallback((force: boolean) => loadBriefYields(force), []);
+  const yields = useAsyncResource(loadYields, { initialData: getCachedBriefYields });
   const provider = useMarketData();
   const loadMarks = useCallback(async () => {
     if (!provider) return new Map<string, SessionMark>();
@@ -239,10 +242,11 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
     void econ.reload();
     void fear.reload();
     void rates.reload();
+    void yields.reload();
     void marks.reload();
     board.refresh();
     void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.top);
-  }, [board.refresh, earnings.reload, econ.reload, fear.reload, marks.reload, rates.reload]);
+  }, [board.refresh, earnings.reload, econ.reload, fear.reload, marks.reload, rates.reload, yields.reload]);
   usePaneRefreshKey(reload, { focused });
   const refreshEarnings = useCallback(() => {
     setNow(Date.now());
@@ -252,6 +256,7 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   useAutoRefresh(econ.updatedAt, () => { void econ.reload(); });
   useAutoRefresh(fear.updatedAt, () => { void fear.reload(); });
   useAutoRefresh(rates.updatedAt, () => { void rates.reload(); });
+  useAutoRefresh(yields.updatedAt, () => { void yields.reload(); });
   useAutoRefresh(marks.updatedAt, () => { void marks.reload(); });
 
   const shownQuotes = useMemo(() => {
@@ -279,8 +284,9 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       econ.data?.fetchedAt,
       fear.data?.fetchedAt,
       rates.data?.fetchedAt,
+      yields.data?.fetchedAt,
     ],
-  }), [earnings.data, econ.data, fear.data, news.articles, news.updatedAt, now, rates.data, shownQuotes]);
+  }), [earnings.data, econ.data, fear.data, news.articles, news.updatedAt, now, rates.data, shownQuotes, yields.data]);
 
   const onSort = useCallback((table: string, columnId: string) => {
     setSorts((current) => {
@@ -431,7 +437,7 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
     || earnings.data != null
     || econ.data != null;
   const failure = earnings.error ?? econ.error ?? news.error ?? boardErrorMessage(board.quotes);
-  const stale = quoteStatus.stale > 0 || !!earnings.data?.stale || !!econ.data?.stale;
+  const stale = quoteStatus.stale > 0 || !!earnings.data?.stale || !!econ.data?.stale || !!yields.data?.stale;
   const selectedHeadline = selected?.kind === "headline" && !selected.placeholder ? selected : null;
   const selectedView = selected?.kind === "view" && !selected.placeholder ? selected : null;
   const link = detailArticle
@@ -469,6 +475,8 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       fear.error,
       fear.data?.refreshError,
       rates.error,
+      yields.error,
+      ...(yields.data?.errors ?? []),
       news.error,
       boardErrorMessage(board.quotes),
       sectionsError,
@@ -479,8 +487,10 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const mood = fear.data?.data.overall ?? null;
   const meeting = rates.data ? pricedMeeting(rates.data, brief.session.date) : null;
   const vix = shownQuotes.get(BRIEF_VIX);
+  const yieldRows = yields.data?.rows ?? BRIEF_YIELDS.map((row) => ({ id: row.id, label: row.label, level: null }));
   const stats: StatItem[] = [
     ...brief.markets.map((row) => priceStat(row.symbol, row.label, row.last, row.changePercent)),
+    ...yieldRows.map(yieldStat),
     {
       id: "fng",
       label: "FNG",
@@ -488,13 +498,13 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       detail: mood ? ratingLabel(mood.rating) : undefined,
       tone: mood ? ratingTrend(mood.rating) : "neutral",
     },
+    priceStat(BRIEF_VIX, "VIX", vix?.last ?? null, vix?.changePercent ?? null),
     {
       id: "fomc",
       label: "FOMC",
       value: meeting ? moveOddsText(meeting.step) : "--",
       detail: meeting ? meetingLabel(meeting.date) : undefined,
     },
-    priceStat(BRIEF_VIX, "VIX", vix?.last ?? null, vix?.changePercent ?? null),
   ];
   const chartHeight = esChartHeight(height);
   const columns = useMemo(() => ({

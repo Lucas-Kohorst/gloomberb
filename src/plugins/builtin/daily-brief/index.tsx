@@ -18,7 +18,7 @@ import {
 } from "./wake";
 import { startDailyBriefWake } from "./wake-host";
 
-const BRIEF_DESCRIPTION = "Opens at the start of the day. Futures, bitcoin, sentiment, the next Fed meeting, and small tables. Headlines, releases, and earnings are the start; Ask Gloom or the Tables setting can replace those tables with any view.";
+const BRIEF_DESCRIPTION = "Opens at the start of the day. ES, Nasdaq, crude, the 10-year and 30-year yields, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, plus small tables. Headlines, releases, and earnings are the start; Ask Gloom or the Tables setting can replace those tables with any view.";
 
 let stopWake: (() => void) | null = null;
 
@@ -78,7 +78,7 @@ export const dailyBriefPlugin: GloomPlugin = {
       paneId: DAILY_BRIEF_PANE_ID,
       label: "Daily Brief",
       description: BRIEF_DESCRIPTION,
-      keywords: ["daily", "brief", "lineup", "morning", "day", "bitcoin", "fear", "fomc", "wake", "tables", "view"],
+      keywords: ["daily", "brief", "lineup", "morning", "day", "crude", "yield", "mortgage", "fear", "fomc", "wake", "tables", "view"],
       shortcut: { prefix: "DAY" },
       createInstance: (_context, options) => createDailyBriefInstance(options),
     },

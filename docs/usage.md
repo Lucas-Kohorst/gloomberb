@@ -201,7 +201,7 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | Shortcut | Function |
 |----------|----------|
 | `TOP` | The 20 top-ranked market stories |
-| `DAY` | Opens at the start of the day, and again when the laptop wakes from sleep after midnight. Futures, bitcoin, fear and greed, the next Fed meeting, and small tables. Headlines, today's earnings, and economic releases are the default; Ask Gloom or the Tables setting can replace them |
+| `DAY` | Opens at the start of the day, and again when the laptop wakes from sleep after midnight. ES, Nasdaq, crude, the 10-year and 30-year, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, plus small tables. Headlines, today's earnings, and economic releases are the default; Ask Gloom or the Tables setting can replace them |
 | `HM` | Market heatmap for large US stocks, ETFs, and the portfolio pane's selected list |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
 | `HILO` | Session new highs and new lows with 30s/1m/5m momentum |

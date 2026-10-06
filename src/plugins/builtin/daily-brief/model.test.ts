@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { EconEvent } from "../econ/types";
 import { FUTURES_CONTRACTS } from "../futures/contracts";
 import type { NewsArticle } from "../../../news/types";
-import { assembleBrief, BRIEF_BTC, BRIEF_FUTURES, type BriefSlices } from "./model";
+import { assembleBrief, BRIEF_FUTURES, type BriefSlices } from "./model";
 
 function article(id: string): NewsArticle {
   return {
@@ -115,9 +115,9 @@ describe("assembleBrief", () => {
       now: Date.parse("2026-10-05T14:30:00Z"),
       quotes: new Map([["ES=F", { last: null, changePercent: null }]]),
     }));
-    expect(brief.markets.map((row) => row.symbol)).toEqual([...BRIEF_FUTURES, BRIEF_BTC]);
+    expect(brief.markets.map((row) => row.symbol)).toEqual([...BRIEF_FUTURES]);
+    expect(brief.markets.map((row) => row.label)).toEqual(["ES", "NQ", "CL"]);
     expect(brief.markets[0]).toMatchObject({ symbol: "ES=F", label: "ES", last: null });
-    expect(brief.markets.at(-1)).toMatchObject({ symbol: BRIEF_BTC, label: "BTC", last: null });
   });
 
   test("the futures strip is copied from the futures board", () => {
