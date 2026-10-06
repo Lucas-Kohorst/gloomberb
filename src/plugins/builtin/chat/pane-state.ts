@@ -2,7 +2,6 @@ import { updatePaneInstance } from "../../../pane-settings";
 import { removePane } from "../../../layout/pane-manager";
 import type { AppConfig } from "../../../types/config";
 import { LAST_VISITED_CHAT_CHANNEL_KEY, normalizeChannelId } from "./channels";
-import type { UnreadInboxItem } from "./unread-inbox";
 
 type ChatPaneSettings = Record<string, unknown>;
 
@@ -45,12 +44,21 @@ function setChatPaneJump(
   return clearChatPaneTargetMessage(nextSettings);
 }
 
+/**
+ * Opens an unread channel in the layout's chat pane (the one already on that
+ * channel, else the first) at the message, and closes the unread list. With
+ * no chat pane, the caller opens one.
+ */
 export function applyUnreadInboxItemToConfig(
   config: AppConfig,
-  item: Pick<UnreadInboxItem, "channelId" | "messageId" | "paneTitle">,
+  item: { channelId: string; messageId: string | null; paneTitle: string },
   inboxInstanceId?: string | null,
 ): { config: AppConfig; chatInstanceId: string | null } {
-  const existing = config.layout.instances.find((instance) => instance.paneId === "chat");
+  const chatPanes = config.layout.instances.filter((instance) => instance.paneId === "chat");
+  const existing = chatPanes.find((instance) => (
+    typeof instance.settings?.channelId === "string"
+    && normalizeChannelId(instance.settings.channelId) === item.channelId
+  )) ?? chatPanes[0];
   let layout = config.layout;
   if (existing) {
     layout = updatePaneInstance(layout, existing.instanceId, (instance) => ({

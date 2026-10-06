@@ -10,6 +10,7 @@ import {
   unavailableText,
   usePaneFooter,
   usePaneHeaderTabs,
+  usePaneNoticeFooter,
   usePaneStatusFooter,
   type MetricTreemapDirection,
   type MetricTreemapItem,
@@ -19,19 +20,24 @@ import { useShortcut } from "../../../react/input";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { GloomPlugin, PaneProps, PaneSettingField } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
+import { tf } from "../../../i18n";
 import { priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useAppSelector, usePaneAppConfig, usePaneSettingValue } from "../../../state/app/context";
 import { usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
-import { useTickerFinancialsMap } from "../../../market-data/hooks";
+import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import { instrumentFromTicker } from "../../../market-data/request-types";
+import { instrumentFromTicker, type InstrumentRef } from "../../../market-data/request-types";
 import {
+  buildTrackedCurrencies,
   getCollectionTickersFromConfig,
   getCollectionTypeFromConfig,
 } from "../portfolio-list/pane/data";
+import { resolvePortfolioTotalsCurrency } from "../portfolio-list/metrics";
+import { useThrottledMemo } from "../portfolio-list/use-throttled-memo";
+import { PORTFOLIO_REORDER_THROTTLE_MS } from "../portfolio-list/use-throttled-ticker-order";
 import {
   MARKET_HEATMAP_UNIVERSES,
   fetchMarketHeatmap,
@@ -62,7 +68,9 @@ import {
 } from "../../../market-data/quotes/screener-live-quotes";
 
 const NO_ASSETS: HeatmapBoardAsset[] = [];
+const NO_BOARD = { assets: NO_ASSETS, omitted: 0 };
 const EMPTY_TICKERS: TickerRecord[] = [];
+const NO_CURRENCIES: string[] = [];
 const EMPTY_TITLE = "No market heatmap data.";
 const EMPTY_PORTFOLIO_TITLE = "No symbols in this list.";
 
@@ -70,14 +78,16 @@ function loadCollectionSnapshots(
   tickers: readonly TickerRecord[],
   collectionId: string | null,
   kind: "portfolio" | "watchlist" | null,
+  forceRefresh = false,
 ): void {
   const coordinator = getSharedMarketDataCoordinator();
   if (!coordinator || !collectionId) return;
   const instrumentOptions = kind === "portfolio" ? { portfolioId: collectionId } : {};
-  for (const ticker of tickers) {
+  const instruments = tickers.flatMap((ticker): InstrumentRef[] => {
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, instrumentOptions);
-    if (instrument) void coordinator.loadSnapshot(instrument).catch(() => {});
-  }
+    return instrument ? [instrument] : [];
+  });
+  if (instruments.length > 0) void coordinator.loadSnapshotsBatch(instruments, { forceRefresh }).catch(() => {});
 }
 
 function formatMoneyCompact(value: number | null | undefined, currency: string): string {
@@ -89,7 +99,7 @@ function formatMoneyCompact(value: number | null | undefined, currency: string):
 function sizeLabel(asset: HeatmapBoardAsset): string | null {
   if (asset.showSize === false || asset.size == null) return null;
   const label = asset.sizeCaption ?? (asset.sizeKind === "net-assets" ? "Assets" : "Mkt");
-  return `${label} ${formatMoneyCompact(asset.size, asset.currency)}`;
+  return `${label} ${formatMoneyCompact(asset.size, asset.sizeCurrency ?? asset.currency)}`;
 }
 
 function buildItems(assets: HeatmapBoardAsset[]): Array<MetricTreemapItem<HeatmapBoardAsset>> {
@@ -154,19 +164,46 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     { label: portfolioLabel, value: PORTFOLIO_HEATMAP_TAB },
   ], [portfolioLabel]);
   const collectionTickers = useMemo(
-    () => (collectionId && collectionKind ? getCollectionTickersFromConfig(config, tickersBySymbol, collectionId) : EMPTY_TICKERS),
-    [collectionId, collectionKind, config, tickersBySymbol],
+    () => (portfolioTab && collectionId && collectionKind
+      ? getCollectionTickersFromConfig(config, tickersBySymbol, collectionId)
+      : EMPTY_TICKERS),
+    [collectionId, collectionKind, config, portfolioTab, tickersBySymbol],
   );
+  const collectionSymbolsKey = collectionTickers.map((ticker) => ticker.metadata.ticker).join(",");
   const financials = useTickerFinancialsMap(
-    portfolioTab || linkPortfolio ? collectionTickers : EMPTY_TICKERS,
+    collectionTickers,
     collectionKind === "portfolio" && collectionId ? { portfolioId: collectionId } : {},
   );
-  const portfolioAssets = useMemo(
-    () => (collectionId && collectionKind
-      ? buildPortfolioHeatmapAssets({ tickers: collectionTickers, financials, collectionId, kind: collectionKind })
-      : NO_ASSETS),
-    [collectionId, collectionKind, collectionTickers, financials],
+  // Holdings in the portfolio's currency, as its pane totals them; a watchlist's caps in the base currency.
+  const boardCurrency = collectionKind === "portfolio"
+    ? resolvePortfolioTotalsCurrency(config.portfolios.find((portfolio) => portfolio.id === collectionId), config.baseCurrency)
+    : resolvePortfolioTotalsCurrency(null, config.baseCurrency);
+  const trackedCurrencies = useMemo(
+    () => (collectionTickers.length > 0
+      ? buildTrackedCurrencies(collectionTickers, financials, null, boardCurrency)
+      : NO_CURRENCIES),
+    [boardCurrency, collectionTickers, financials],
   );
+  const exchangeRates = useFxRatesMap(trackedCurrencies);
+  // Tile areas follow prices on the portfolio pane's reorder cadence, so a
+  // tick does not reshuffle the board; colors and captions stream below.
+  // A snapshot arriving (the map growing) or a new list applies at once.
+  const portfolioBoard = useThrottledMemo(
+    () => (collectionId && collectionKind
+      ? buildPortfolioHeatmapAssets({
+        tickers: collectionTickers,
+        financials,
+        collectionId,
+        kind: collectionKind,
+        currency: boardCurrency,
+        exchangeRates,
+      })
+      : NO_BOARD),
+    [financials],
+    [boardCurrency, collectionId, collectionKind, collectionTickers, exchangeRates, financials.size],
+    PORTFOLIO_REORDER_THROTTLE_MS,
+  );
+  const portfolioAssets = portfolioBoard.assets;
   const [assets, setAssets] = useState<HeatmapBoardAsset[]>([]);
   // The universe `assets` came from. A board is drawn only under its own tab,
   // so a switch never paints the previous universe's tiles.
@@ -277,10 +314,12 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     setSelectedSymbol(null);
   }, [collectionId, linkPortfolio, setActiveUniverse]);
 
+  // The financials map only reads the cache; this fills it for the list on screen.
   useEffect(() => {
-    if (!portfolioTab && !linkPortfolio) return;
+    if (!portfolioTab) return;
     loadCollectionSnapshots(collectionTickers, collectionId, collectionKind);
-  }, [collectionId, collectionKind, collectionTickers, linkPortfolio, portfolioTab]);
+    // Keyed by the symbols: another ticker's record changing does not reload the list.
+  }, [collectionId, collectionKind, collectionSymbolsKey, portfolioTab]);
 
   useEffect(() => {
     if (selectedSymbol && boardAssets.some((asset) => asset.symbol === selectedSymbol)) return;
@@ -289,12 +328,16 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
 
   const refresh = useCallback(() => {
     if (portfolioTab) {
-      loadCollectionSnapshots(collectionTickers, collectionId, collectionKind);
+      loadCollectionSnapshots(collectionTickers, collectionId, collectionKind, true);
       return;
     }
     if (!isRemoteHeatmapUniverse(activeUniverse)) return;
     void loadUniverse(activeUniverse, { forceRefresh: true });
   }, [activeUniverse, collectionId, collectionKind, collectionTickers, loadUniverse, portfolioTab]);
+  // The list's quotes stream; on a timer only the market boards reload.
+  const autoRefresh = useCallback(() => {
+    if (isRemoteHeatmapUniverse(activeUniverse)) void loadUniverse(activeUniverse, { forceRefresh: true });
+  }, [activeUniverse, loadUniverse]);
 
   const selectAdjacentUniverse = useCallback((direction: -1 | 1) => {
     const index = universeTabs.findIndex((tab) => tab.value === activeUniverse);
@@ -403,9 +446,16 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   });
 
   const updated = useUpdatedAgo(!portfolioTab && loadedUniverse === activeUniverse ? lastUpdated : null);
-  useAutoRefresh(lastUpdated, refresh);
+  useAutoRefresh(lastUpdated, autoRefresh);
 
   usePaneStatusFooter({ registrationId: "market-heatmap-retained", stale: hasBoard && stale && !portfolioTab });
+  usePaneNoticeFooter({
+    registrationId: "market-heatmap-omitted",
+    notices: portfolioTab && portfolioBoard.omitted > 0
+      ? [tf("The {count} smallest names in {list} are left out of the map.", { count: portfolioBoard.omitted, list: portfolioLabel })]
+      : [],
+    focused,
+  });
 
   usePaneFooter("market-heatmap", () => ({
     info: [
@@ -508,14 +558,14 @@ export const marketHeatmapPlugin: GloomPlugin = {
                 value: universe.id,
                 label: universe.label,
               })),
-              { value: PORTFOLIO_HEATMAP_TAB, label: "Portfolio" },
+              { value: PORTFOLIO_HEATMAP_TAB, label: "Portfolio pane list" },
             ],
           },
           {
             key: "linkPortfolio",
             label: "Link to portfolio",
             type: "toggle",
-            description: "Follow the portfolio pane. Switching its list opens that list here.",
+            description: "Open the list's tab whenever the portfolio pane switches lists.",
           },
         ] satisfies PaneSettingField[],
       }, context.settings),

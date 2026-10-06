@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ListView, type ListViewItem } from "../../../components/ui";
-import { t } from "../../../i18n";
-import { useShortcut } from "../../../react/input";
+import { useCallback, useEffect, useState } from "react";
+import {
+  DataTableView,
+  EmptyState,
+  type DataTableCell,
+  type DataTableColumn,
+} from "../../../components";
 import {
   syncConfigActiveLayoutState,
   useAppDispatch,
@@ -9,19 +12,50 @@ import {
   useOptionalPaneInstanceId,
 } from "../../../state/app/context";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
+import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box } from "../../../ui";
-import { isPlainKey } from "../../../utils/keyboard";
-import { usePluginAppActions } from "../../runtime";
+import { Box, TextAttributes } from "../../../ui";
+import { usePluginAppActions, usePluginPaneState } from "../../runtime";
+import { SignInWall } from "../cloud/auth-actions";
 import { chatController, type ChatController } from "./controller";
 import { applyUnreadInboxItemToConfig } from "./pane-state";
-import {
-  formatUnreadInboxRowLabel,
-  type UnreadInboxItem,
-} from "./unread-inbox";
+import type { UnreadInboxItem } from "./unread-inbox";
 
 interface UnreadInboxPaneProps extends PaneProps {
-  controller?: Pick<ChatController, "listUnreadInbox" | "subscribe">;
+  controller?: Pick<ChatController, "getSnapshot" | "listUnreadInbox" | "subscribe">;
+}
+
+const COLUMNS: DataTableColumn[] = [
+  { id: "channel", label: "Channel", width: 18, align: "left" },
+  { id: "unread", label: "Unread", width: 6, align: "right" },
+  { id: "latest", label: "Latest", width: 24, align: "left", flexGrow: 1 },
+];
+
+function renderCell(item: UnreadInboxItem, column: DataTableColumn): DataTableCell {
+  switch (column.id) {
+    case "channel":
+      return { text: item.title };
+    case "unread":
+      // A mention of you reads like the status bar's count.
+      return item.mentionsYou
+        ? { text: String(item.unreadCount), value: item.unreadCount, color: colors.positive, attributes: TextAttributes.BOLD }
+        : { text: String(item.unreadCount), value: item.unreadCount };
+    default: {
+      const preview = item.preview;
+      if (!preview) return { text: "" };
+      const author = preview.user.username ? `@${preview.user.username}: ` : "";
+      return { text: `${author}${preview.content.replace(/\s+/g, " ").trim()}` };
+    }
+  }
+}
+
+function readInbox(controller: NonNullable<UnreadInboxPaneProps["controller"]>) {
+  const snapshot = controller.getSnapshot();
+  return {
+    items: controller.listUnreadInbox(),
+    user: snapshot.user,
+    hasSavedSession: snapshot.hasSavedSession,
+  };
 }
 
 export function UnreadInboxPane({
@@ -34,21 +68,21 @@ export function UnreadInboxPane({
   const stateRef = useAppStateRef();
   const inboxInstanceId = useOptionalPaneInstanceId();
   const { createPaneFromTemplate } = usePluginAppActions();
-  const [items, setItems] = useState<UnreadInboxItem[]>(() => controller.listUnreadInbox());
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [inbox, setInbox] = useState(() => readInbox(controller));
+  const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selectedChannel", null);
 
+  // Counts and messages follow the chat's own socket and refreshes; the list asks for nothing.
   useEffect(() => {
-    const unsubscribe = controller.subscribe(() => {
-      setItems(controller.listUnreadInbox());
-    });
-    return unsubscribe;
+    setInbox(readInbox(controller));
+    return controller.subscribe(() => setInbox(readInbox(controller)));
   }, [controller]);
 
   const openItem = useCallback((item: UnreadInboxItem) => {
     const currentState = stateRef.current;
+    const messageId = item.preview?.id ?? null;
     const { config, chatInstanceId } = applyUnreadInboxItemToConfig(
       currentState.config,
-      item,
+      { channelId: item.channelId, messageId, paneTitle: item.title },
       inboxInstanceId,
     );
     const syncedConfig = syncConfigActiveLayoutState(
@@ -64,63 +98,44 @@ export function UnreadInboxPane({
     }
     createPaneFromTemplate("new-chat-pane", {
       arg: item.channelId,
-      ...(item.messageId ? { values: { messageId: item.messageId } } : {}),
+      ...(messageId ? { values: { messageId } } : {}),
     });
   }, [createPaneFromTemplate, dispatch, inboxInstanceId, stateRef]);
 
-  const listItems = useMemo<ListViewItem[]>(() => items.map((item) => ({
-    id: item.id,
-    label: formatUnreadInboxRowLabel(item),
-  })), [items]);
+  if (!inbox.user && !inbox.hasSavedSession) {
+    return <SignInWall placement="chat-unread-signin" action="see your unread chat" width={width} height={height} />;
+  }
+  if (inbox.user && !inbox.user.emailVerified) {
+    return <SignInWall placement="chat-unread-signin" action="see your unread chat" needsVerification width={width} height={height} />;
+  }
 
-  const safeSelectedIndex = listItems.length === 0
-    ? 0
-    : Math.min(selectedIndex, listItems.length - 1);
-
-  const activateSelected = useCallback(() => {
-    const item = items[safeSelectedIndex];
-    if (item) openItem(item);
-  }, [items, openItem, safeSelectedIndex]);
-
-  useShortcut((event) => {
-    if (!focused || event.defaultPrevented || event.propagationStopped) return;
-    if (items.length === 0) return;
-    if (isPlainKey(event, "up", "k")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelectedIndex((current) => Math.max(0, Math.min(current, items.length - 1) - 1));
-      return;
-    }
-    if (isPlainKey(event, "down", "j")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setSelectedIndex((current) => Math.min(items.length - 1, current + 1));
-      return;
-    }
-    if (event.name === "enter" || event.name === "return") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      activateSelected();
-    }
-  }, { enabled: focused });
-
+  const selected = inbox.items.find((item) => item.channelId === selectedId) ?? inbox.items[0] ?? null;
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <ListView
-        items={listItems}
-        selectedIndex={safeSelectedIndex}
-        onSelect={setSelectedIndex}
-        onActivate={(listItem) => {
-          const item = items.find((entry) => entry.id === listItem.id);
-          if (item) openItem(item);
-        }}
-        selectOnHover
-        scrollable
-        flexGrow={1}
-        height={height}
-        emptyMessage={t("No unread messages")}
-        surface="plain"
-      />
+    <Box width={width} height={height} flexDirection="column" overflow="hidden">
+      {inbox.items.length === 0 ? (
+        <EmptyState title="No unread messages." />
+      ) : (
+        <DataTableView<UnreadInboxItem>
+          focused={focused}
+          columns={COLUMNS}
+          items={inbox.items}
+          rootWidth={width}
+          rootHeight={height}
+          getItemKey={(item) => item.channelId}
+          emptyStateTitle="No unread messages."
+          sortColumnId={null}
+          sortDirection="asc"
+          selection={{
+            kind: "id",
+            selectedId: selected?.channelId ?? null,
+            getId: (item) => item.channelId,
+            onChange: setSelectedId,
+          }}
+          selectedTextOverridesCellColor
+          onActivate={openItem}
+          renderCell={renderCell}
+        />
+      )}
     </Box>
   );
 }

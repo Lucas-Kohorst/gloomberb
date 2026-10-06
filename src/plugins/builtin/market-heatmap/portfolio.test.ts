@@ -84,43 +84,60 @@ test("linking follows a later list and ignores the list already on screen", () =
   expect(fallbackHeatmapCollectionId({ portfolios: [], watchlists: [{ id: "watchlist" }] })).toBe("watchlist");
 });
 
-test("portfolio tiles use position value and watchlist tiles use market cap", () => {
-  const held = ticker("AAPL", {
-    portfolios: ["main"],
-    positions: [{ portfolio: "main", shares: 10, marketValue: 5_000, broker: "manual" }],
-  });
-  const larger = ticker("MSFT", {
-    portfolios: ["main"],
-    positions: [{ portfolio: "main", shares: 2, marketValue: -20_000, broker: "manual" }],
-  });
-  const quoted = new Map<string, TickerFinancials>([
-    ["AAPL", quote("AAPL", { changePercent: -2, change: -4, price: 200 })],
-    ["MSFT", quote("MSFT")],
-  ]);
-  const portfolio = buildPortfolioHeatmapAssets({
-    tickers: [held, larger],
-    financials: quoted,
+test("holdings are sized by market value in the portfolio's currency, and a name without one gets the smallest tile", () => {
+  const rates = new Map([["JPY", 0.0067]]);
+  const { assets, omitted } = buildPortfolioHeatmapAssets({
+    tickers: [
+      ticker("AAPL", { portfolios: ["main"], positions: [{ portfolio: "main", shares: 10, avgCost: 150, currency: "USD", broker: "manual" }] }),
+      ticker("7203", {
+        exchange: "TSE",
+        currency: "JPY",
+        portfolios: ["main"],
+        positions: [{ portfolio: "main", shares: 100, avgCost: 2500, currency: "JPY", broker: "manual" }],
+      }),
+      ticker("AAPL 270115C00200000", {
+        assetCategory: "OPT",
+        portfolios: ["main"],
+        positions: [{ portfolio: "main", shares: 2, avgCost: 4, currency: "USD", broker: "manual", multiplier: 100 }],
+      }),
+      ticker("GOOGL", { portfolios: ["main"] }),
+    ],
+    financials: new Map<string, TickerFinancials>([
+      ["AAPL", quote("AAPL", { price: 200, changePercent: -2, change: -4 })],
+      ["7203", quote("7203", { price: 3000, currency: "JPY" })],
+      ["AAPL 270115C00200000", quote("AAPL 270115C00200000", { price: 5 })],
+      ["GOOGL", { ...quote("GOOGL", { price: 340 }), fundamentals: { marketCap: 4e12, marketCapCurrency: "USD" } }],
+    ]),
     collectionId: "main",
     kind: "portfolio",
+    currency: "USD",
+    exchangeRates: rates,
   });
-  expect(portfolio.map((asset) => asset.symbol)).toEqual(["MSFT", "AAPL"]);
-  expect(portfolio[0]).toMatchObject({ size: 20_000, weight: 20_000, sizeCaption: "Value", showSize: true, hasChange: true });
-  expect(portfolio[1]).toMatchObject({ changePercent: -2, hasChange: true, weight: 5_000 });
+  expect(omitted).toBe(0);
+  expect(assets.map((asset) => [asset.symbol, Math.round(asset.weight ?? 0), asset.showSize, asset.sizeCurrency])).toEqual([
+    ["7203", 2010, true, "USD"],
+    ["AAPL", 2000, true, "USD"],
+    ["AAPL 270115C00200000", 1000, true, "USD"],
+    ["GOOGL", 1000, false, "USD"],
+  ]);
+  expect(assets[1]).toMatchObject({ sizeCaption: "Value", changePercent: -2, hasChange: true });
+});
 
-  const listed = ticker("SPY", { watchlists: ["watchlist"] });
-  const unquoted = ticker("IWM", { watchlists: ["watchlist"] });
-  const watchlist = buildPortfolioHeatmapAssets({
-    tickers: [unquoted, listed],
-    financials: new Map([["SPY", { ...quote("SPY"), fundamentals: { marketCap: 400, marketCapCurrency: "USD" } }]]),
+test("watchlist names are sized by the square root of market cap in the base currency", () => {
+  const { assets } = buildPortfolioHeatmapAssets({
+    tickers: [ticker("IWM"), ticker("SPY"), ticker("7203", { currency: "JPY" })],
+    financials: new Map<string, TickerFinancials>([
+      ["SPY", { ...quote("SPY"), fundamentals: { marketCap: 400, marketCapCurrency: "USD" } }],
+      ["7203", { ...quote("7203", { currency: "JPY" }), fundamentals: { marketCap: 90_000, marketCapCurrency: "JPY" } }],
+    ]),
     collectionId: "watchlist",
     kind: "watchlist",
+    currency: "USD",
+    exchangeRates: new Map([["JPY", 0.01]]),
   });
-  expect(watchlist.map((asset) => [asset.symbol, asset.showSize, asset.sizeCaption])).toEqual([
-    ["SPY", true, undefined],
-    ["IWM", false, undefined],
+  expect(assets.map((asset) => [asset.symbol, asset.size, asset.weight, asset.showSize])).toEqual([
+    ["7203", 900, 30, true],
+    ["SPY", 400, 20, true],
+    ["IWM", null, 20, false],
   ]);
-  expect(watchlist[0]?.size).toBe(400);
-  expect(watchlist[0]?.weight).toBe(20);
-  expect(watchlist[1]?.size).toBe(400);
-  expect(watchlist[1]?.weight).toBe(20);
 });

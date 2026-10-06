@@ -1,7 +1,8 @@
 import { Box } from "../../../../ui";
 import { describeFundamentalMarketCap } from "../../../../utils/market-capitalization";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  confirmDialog,
   usePaneFooter,
   usePaneNoticeFooter,
   usePaneTabs,
@@ -13,9 +14,11 @@ import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/h
 import { buildPortfolioFinancialsMap } from "../../../../market-data/portfolio-financials";
 import { useAppVisible } from "../../../../state/app/activity";
 import { tf } from "../../../../i18n";
+import { useDialog } from "../../../../ui/dialog";
 import {
   useAppDispatch,
   useAppSelector,
+  useAppStateRef,
   usePaneCollection,
   usePaneInstance,
   usePaneSettingValue,
@@ -63,7 +66,13 @@ import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
 import { useCursorNeighborPrefetch } from "../use-cursor-neighbor-prefetch";
 import { getSharedRegistry } from "../../../registry";
 import { usePluginAppActions } from "../../../runtime";
-import { isManualPortfolio, removeTickerFromPortfolio, removeTickerFromWatchlist } from "../mutations";
+import { isManualPortfolio } from "../mutations";
+import {
+  cursorAfterRemoval,
+  removableCollection,
+  removeTickerFromCollection,
+  tickerRemovalSummary,
+} from "./remove-ticker";
 import { QuickAddTickerInput, type QuickAddCollectionKind } from "../quick-add";
 import {
   buildTrackedCurrencies,
@@ -460,68 +469,66 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     : fxWarning ? [`FX ${fxStatusText}`] : [];
 
   const dispatch = useAppDispatch();
+  const dialog = useDialog();
+  const appStateRef = useAppStateRef();
   const { notify } = usePluginAppActions();
-  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
-    if (!activeCollectionId) return null;
-    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
-    if (collectionType === "watchlist") return "watchlist";
-    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
-      return "portfolio";
-    }
-    return null;
-  }, [activeCollectionId, config, currentPortfolio]);
-  const canRemoveTicker = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const removalCollection = useMemo(
+    () => removableCollection(config, activeCollectionId),
+    [activeCollectionId, config],
+  );
   const selectedTicker = cursorSymbol ? tickerBySymbol.get(cursorSymbol) : undefined;
-  const deleteDisabled = selectedTicker == null;
-  const deleteSelectedTicker = useCallback(() => {
-    if (!canRemoveTicker || !activeCollectionId || !activeCollectionEntry || !quickAddCollectionKind || !selectedTicker) return;
-    const collectionName = activeCollectionEntry.name;
+  const sortedTickersRef = useRef(sortedTickers);
+  sortedTickersRef.current = sortedTickers;
+  const removingRef = useRef(false);
+  // Asks first: a manual portfolio's position goes with the row, and a stray
+  // key should not take either.
+  const removeSelectedTicker = useCallback(async () => {
+    if (!removalCollection || !selectedTicker || removingRef.current) return;
     const symbol = selectedTicker.metadata.ticker;
-    const result = quickAddCollectionKind === "portfolio"
-      ? removeTickerFromPortfolio(selectedTicker, activeCollectionId)
-      : removeTickerFromWatchlist(selectedTicker, activeCollectionId);
-    if (!result.changed) {
-      notify({ type: "info", body: tf("{symbol} is not in {collection}.", { symbol, collection: collectionName }) });
-      return;
-    }
+    const collection = removalCollection;
+    removingRef.current = true;
+    try {
+      const confirmed = await confirmDialog(dialog, {
+        title: tf("Remove {symbol} from {collection}?", { symbol, collection: collection.name }),
+        body: tickerRemovalSummary(selectedTicker, collection),
+        confirmLabel: "Remove",
+      });
+      if (!confirmed) return;
 
-    const registry = getSharedRegistry();
-    if (!registry) {
-      notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
-      return;
-    }
-
-    void (async () => {
-      try {
-        await registry.tickerRepository.saveTicker(result.ticker);
-        dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
-        notify({ type: "success", body: tf("Removed {symbol} from {collection}.", { symbol, collection: collectionName }) });
-      } catch {
-        notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
+      // The record as it is now, in case a sync touched it while the dialog was open.
+      const current = appStateRef.current.tickers.get(symbol) ?? selectedTicker;
+      const result = removeTickerFromCollection(current, collection);
+      if (!result.changed) {
+        notify({ type: "info", body: tf("{symbol} is not in {collection}.", { symbol, collection: collection.name }) });
+        return;
       }
-    })();
-  }, [
-    activeCollectionEntry,
-    activeCollectionId,
-    canRemoveTicker,
-    dispatch,
-    notify,
-    quickAddCollectionKind,
-    selectedTicker,
-  ]);
+      const registry = getSharedRegistry();
+      if (!registry) throw new Error("No ticker repository");
+      await registry.tickerRepository.saveTicker(result.ticker);
+      const symbols = sortedTickersRef.current.map((ticker) => ticker.metadata.ticker);
+      setCursorSymbol(cursorAfterRemoval(symbols, symbol), { immediate: true });
+      dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
+      notify({ type: "success", body: tf("Removed {symbol} from {collection}.", { symbol, collection: collection.name }) });
+    } catch {
+      notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
+    } finally {
+      removingRef.current = false;
+    }
+  }, [appStateRef, dialog, dispatch, notify, removalCollection, selectedTicker, setCursorSymbol]);
 
   usePaneFooter("portfolio-list", () => ({
     info: fxStatusText && !fxWarning
       ? [...summaryFooterInfo, { id: "fx", parts: [{ text: `FX ${fxStatusText}`, tone: "muted" as const }] }]
       : summaryFooterInfo,
     hints: [
-      ...(canRemoveTicker
+      ...(removalCollection
         ? [{
             id: "delete",
             key: "d",
             label: "elete",
-            onPress: deleteSelectedTicker,
-            disabled: deleteDisabled,
+            title: tf("Remove from {collection}", { collection: removalCollection.name }),
+            onPress: () => { void removeSelectedTicker(); },
+            disabled: !selectedTicker,
           }]
         : []),
       ...(showCashDrawer
@@ -544,13 +551,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         : []),
     ],
   }), [
-    canRemoveTicker,
     cashDrawerExpanded,
-    deleteDisabled,
-    deleteSelectedTicker,
     fxStatusText,
     fxWarning,
     isPortfolioTab,
+    removalCollection,
+    removeSelectedTicker,
+    selectedTicker,
     setCashDrawerExpanded,
     showCashDrawer,
     summaryFooterInfo,
@@ -558,7 +565,16 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     viewMode,
   ]);
 
-  const showQuickAdd = canRemoveTicker;
+  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
+    if (!activeCollectionId) return null;
+    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
+    if (collectionType === "watchlist") return "watchlist";
+    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
+      return "portfolio";
+    }
+    return null;
+  }, [activeCollectionId, config, currentPortfolio]);
+  const showQuickAdd = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
   const quickAddHeight = showQuickAdd ? 1 : 0;
   const selectedFinancials = cursorSymbol ? financialsMap.get(cursorSymbol) : undefined;
   const selectedCap = liveMarketCapitalization(selectedFinancials?.quote, selectedFinancials?.fundamentals);

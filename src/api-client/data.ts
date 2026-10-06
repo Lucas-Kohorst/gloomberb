@@ -172,6 +172,14 @@ export class CloudDataApi {
     return this.request<T>(`/cloud/equity-screener/${path}`, init);
   }
 
+  getCloudThemes() {
+    return this.request<import("./themes").ThemesPayload>("/cloud/themes");
+  }
+
+  getCloudThemeMembers(id: string) {
+    return this.request<import("./themes").ThemeMembersPayload>(`/cloud/themes/${encodeURIComponent(id)}`);
+  }
+
   /** Stored implied volatility (HIVG, VCA, OVDV dates); one prefix-scoped method, like EQS. */
   impliedVolatility<T>(path: string, init?: RequestInit) {
     return this.request<T>(`/cloud/iv/${path}`, init);
@@ -764,8 +772,8 @@ export class CloudDataApi {
   }
 
   /**
-   * Cross-document full-text search. Pro-gated: unentitled accounts get a 402,
-   * which the caller turns into the access gate rather than an empty result.
+   * Cross-document full-text search, open to every signed-in account; signed
+   * out it answers 401. Only alerts on a saved search need Pro.
    */
   async searchCloudDocuments(
     params: CloudSearchParams,

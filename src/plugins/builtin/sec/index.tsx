@@ -48,6 +48,7 @@ import {
   secReportedAcceptance,
 } from "./model";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
+import { createSecFilingSearchProvider, resetSecFilingFocusRequests, useSecFilingFocusRequest } from "./command-bar-search";
 
 export { secHeadless } from "./headless";
 
@@ -238,6 +239,9 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
     () => parseFormsSetting(typeof formsSetting === "string" ? formsSetting : ""),
     [formsSetting],
   );
+  // A filing chosen in the command bar opens here once the pane is on its
+  // ticker. The fund filings view (ETF) lists other forms, so it leaves it.
+  useSecFilingFocusRequest(forms ? null : ticker?.metadata.ticker, setOpenItemId);
   // A form list is the fund filings view (ETF), which US-listed funds open too.
   const eligibleTicker = forms ? isUsEquityOrFundTicker(ticker) : isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
@@ -480,6 +484,7 @@ export const secModule: PluginModule = {
   ],
 
   setup(ctx) {
+    ctx.registerCommandBarSearchProvider(createSecFilingSearchProvider(ctx));
     ctx.registerTickerResearchTab({
       id: "sec",
       name: "SEC",
@@ -489,5 +494,8 @@ export const secModule: PluginModule = {
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
       load: loadSecTab,
     });
+  },
+  dispose() {
+    resetSecFilingFocusRequests();
   },
 };

@@ -46,6 +46,8 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const ownProfileLoadedAtRef = useRef(0);
   const activeRef = useRef(true);
   const pinnedRef = useRef(false);
+  const profilePopoverUserIdRef = useRef<string | null>(null);
+  const dismissedPinnedUserIdRef = useRef<string | null>(null);
 
   const cancelProfilePopoverClose = useCallback(() => {
     if (profilePopoverCloseTimerRef.current == null) return;
@@ -56,6 +58,7 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const closeProfilePopover = useCallback(() => {
     cancelProfilePopoverClose();
     pinnedRef.current = false;
+    profilePopoverUserIdRef.current = null;
     setProfilePopoverUser(null);
   }, [cancelProfilePopoverClose]);
 
@@ -65,6 +68,7 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
     profilePopoverCloseTimerRef.current = setTimeout(() => {
       profilePopoverCloseTimerRef.current = null;
       if (pinnedRef.current) return;
+      profilePopoverUserIdRef.current = null;
       setProfilePopoverUser(null);
     }, PROFILE_POPOVER_CLOSE_DELAY_MS);
   }, [cancelProfilePopoverClose]);
@@ -103,19 +107,55 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
     options?: { ownProfile?: boolean; pin?: boolean },
   ) => {
     const ownProfile = options?.ownProfile === true;
-    const pin = options?.pin === true;
     const cachedUser = ownProfile && ownProfileRef.current?.id === targetUser.id
       ? ownProfileRef.current
       : targetUser;
-    if (!ownProfile && !pin && !hasPublicChatProfileInfo(cachedUser)) {
-      if (!pinnedRef.current) closeProfilePopover();
+    // Only what the server shared: a private or empty profile has no card.
+    if (!ownProfile && !hasPublicChatProfileInfo(cachedUser)) {
+      closeProfilePopover();
       return;
     }
     cancelProfilePopoverClose();
-    if (pin) pinnedRef.current = true;
+    pinnedRef.current = options?.pin === true;
+    profilePopoverUserIdRef.current = cachedUser.id;
     setProfilePopoverUser(cachedUser);
     if (ownProfile) refreshOwnProfile(targetUser.id);
   }, [cancelProfilePopoverClose, closeProfilePopover, refreshOwnProfile]);
+
+  /** Pointing at a name previews its card, but never over one a click pinned. */
+  const hoverProfilePopover = useCallback((targetUser: ChatUserSummary, options?: { ownProfile?: boolean }) => {
+    if (pinnedRef.current) return;
+    showProfilePopover(targetUser, options);
+  }, [showProfilePopover]);
+
+  /** A click on a name pins its card until Esc, a click outside, or a second click. */
+  const toggleProfilePopover = useCallback((targetUser: ChatUserSummary, options?: { ownProfile?: boolean }) => {
+    // The desktop card hears the same click first, as a click outside it.
+    if (dismissedPinnedUserIdRef.current === targetUser.id) {
+      dismissedPinnedUserIdRef.current = null;
+      return;
+    }
+    if (pinnedRef.current && profilePopoverUserIdRef.current === targetUser.id) {
+      closeProfilePopover();
+      return;
+    }
+    showProfilePopover(targetUser, { ...options, pin: true });
+  }, [closeProfilePopover, showProfilePopover]);
+
+  /**
+   * Closes the card at once, pinned or not: a click outside it or Esc. When
+   * that click lands on the name that pinned it, the name's own toggle then
+   * leaves it closed instead of pinning it again.
+   */
+  const dismissProfilePopover = useCallback(() => {
+    if (pinnedRef.current) {
+      dismissedPinnedUserIdRef.current = profilePopoverUserIdRef.current;
+      setTimeout(() => {
+        dismissedPinnedUserIdRef.current = null;
+      }, 0);
+    }
+    closeProfilePopover();
+  }, [closeProfilePopover]);
 
   useEffect(() => {
     activeRef.current = true;
@@ -135,9 +175,12 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   return {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    dismissProfilePopover,
     ownProfileConfigured,
     profilePopoverUser,
+    hoverProfilePopover,
     scheduleProfilePopoverClose,
     showProfilePopover,
+    toggleProfilePopover,
   };
 }

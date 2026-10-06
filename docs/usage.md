@@ -97,6 +97,10 @@ Chords use the accelerator grammar: `Ctrl`, `Cmd`, `Alt`, `Shift`, and `CmdOrCtr
 
 Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar prefixes are listed here for quick scanning.
 
+### Searching by asset class
+
+Text that no command claims searches symbols and names, and every result carries its class: `EQ` equity (receipts, preferred shares and partnership units included), `ETF` exchange-traded fund, `CUR` currency pair or coin, `FUT` future, `IDX` index, `OPT` option, and `FUND` or `DERIV` for other funds and derivatives. End a search with one of the first six to keep only that class, the way a market sector key follows a ticker: `ES FUT` finds the E-mini S&P 500 future rather than Eversource, `EURUSD CUR` the currency pair, `BTC CUR` the coin, `SPY ETF` the fund, `S&P 500 IDX` the index. For `FUT`, `CUR` and `IDX` a bare symbol is also looked up in its market spelling (`ES=F`, `EURUSD=X`, `BTC-USD`, `^GSPC`), which symbol search does not return for the bare letters. `AAPL OPT` lists option contracts when a connected broker returns them. A code on its own, or first, is not a filter: `EQ` searches that symbol, and `FUT` and `ETF SPY` open their panes. The filter works the same in ticker search (`` ` ``) and after `DES`.
+
 ### Company Research
 
 | Shortcut | Function |
@@ -130,7 +134,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `HVG <ticker>` | Realized volatility by estimator and window, price, and current ATM IV |
 | `HVT <ticker>` | Volatility cone, current estimates and historical percentiles |
 | `SEAS <ticker>` | Seasonality: monthly returns by year, each month's average and hit rate, and year overlays |
-| `RIPL [tickers]` | Earnings Ripple: customers of your holdings (or the named tickers) that report in the next 30 days, with the share of each holding's revenue |
+| `RIPL [tickers]` | Earnings Ripple: customers and suppliers of your holdings (or the named tickers) that report in the next 30 days, with the disclosed revenue share |
 | `RDCF <ticker>` | Reverse DCF: the ten-year free cash flow growth the enterprise value prices in, against past growth, by discount rate |
 | `MDAY <ticker>` | Macro-day reaction: average absolute and signed move and up share on CPI, jobs and FOMC days against a normal day, and every release day |
 | `HIVG <ticker>` | Implied volatility history against realized, with IV rank and percentile |
@@ -247,6 +251,8 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
 
+`HM` has a third tab, named for the list open in the portfolio pane (`PF`): the one last focused when there are several, your first portfolio when none is open. It sizes a portfolio's holdings by market value in the portfolio's currency, as `PF` shows it, and a watchlist's names by the square root of their market cap in your base currency, so a mega-cap does not hide the rest of a short list; tiles are colored by the day's move. A name without a position, quote, market cap or exchange rate gets the smallest tile and no figure, and past 160 names the smallest are left out, which the footer says. **Link to portfolio** in its settings switches the heatmap to that tab whenever the portfolio pane changes list. `3` opens the tab, and `[` / `]` step through all three.
+
 News rows credit the article's publisher and open its original URL. The managed
 news feed includes only articles whose publisher and original link can be
 verified. Custom RSS and Atom feeds use each item's source when supplied,
@@ -329,6 +335,8 @@ FUT's 1W, 1M and YTD columns are returns on the contract the row names (LEZ26 fo
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Manage plugins |
+
+In `PF`, `a` adds a ticker to the open manual portfolio or watchlist and `d` removes the selected one after a confirm. Removing it from a portfolio deletes its position there; its notes, alerts and other lists stay. Broker portfolios have no `d`, since the next sync would put the ticker back, and neither do team lists, which everyone on the team shares; `RW` and `RP` still edit a team list.
 
 Published layouts preserve portable pane setup and state, including searches, chart viewport, and drawings. Credentials, accounts, portfolios, and pane fields marked private stay local. Publishing copies a durable `term.gloom.sh/l/...` link for social sharing.
 
@@ -475,6 +483,12 @@ An independent current bond quote must declare its own price basis. A percent-of
 ## Gloom Cloud sign-in
 
 Sign in with email and password, or pick `Log In with QR Code` from the command bar and scan the code with the Gloomberb mobile companion app to sign the terminal in without typing. The onboarding wizard offers the same QR option as the recommended path, with email and password as the alternative.
+
+## Chat
+
+`CHAT [channel]` opens a channel. When the pane is too narrow or short for the channel list beside it, the list and the open channel take turns: Back, Esc, Backspace, Left or the mouse back button return to the list, and Enter, Right or a click opens a channel. Pointing at a name shows that person's profile card if they made their profile public; a click keeps it open until Esc, a click outside it or a second click.
+
+The unread count in the status bar opens Unread Chat (also in the command bar): one row per channel with unread messages, and the count of a channel that mentions you in green. Counts are your account's, the same on every device. A row shows the latest unread message, one that mentions you first, only when the messages after the last one you read are already on this device, so a row can have a count and no message. Opening a row shows that channel in your chat pane; the list itself marks nothing read.
 
 ## Debt maturities
 

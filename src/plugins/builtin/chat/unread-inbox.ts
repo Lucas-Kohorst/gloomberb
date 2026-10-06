@@ -1,122 +1,91 @@
 import type { ChatChannel, ChatMessage } from "../../../api-client";
 import { formatChatPaneTitle } from "./channel-labels";
-import { normalizeChannelId } from "./controller/state";
-import {
-  chatMessageMentionsUsername,
-  formatChatMessageSnippet,
-  normalizeChatUsername,
-} from "./controller/utils";
+import { chatMessageMentionsUsername, normalizeChatUsername } from "./controller/utils";
 
 export const UNREAD_INBOX_PANE_ID = "unread-inbox";
 export const UNREAD_INBOX_TEMPLATE_ID = "unread-inbox-pane";
-const UNREAD_INBOX_LIMIT = 12;
 
 export interface UnreadInboxChannelState {
   channelId: string;
+  /** The account's unread count for the channel, as Gloom Cloud keeps it. */
   unreadCount: number;
+  /** The read marker: the last message read in the channel. */
   lastViewedMessageId: string | null;
+  /** The channel's messages on this device, oldest first. */
   messages: ChatMessage[];
 }
 
 export interface UnreadInboxItem {
-  id: string;
   channelId: string;
-  channelLabel: string;
-  paneTitle: string;
-  authorLabel: string;
-  preview: string;
-  messageId: string | null;
-  createdAt: string;
-  unreadInChannel: number;
+  title: string;
+  unreadCount: number;
+  /**
+   * The newest message known to be unread, a mention of you first. Null when
+   * the messages after the read marker are not on this device: the count is
+   * still right, but which messages it counts is not known here.
+   */
+  preview: ChatMessage | null;
+  mentionsYou: boolean;
 }
 
-function formatAuthorLabel(username: string | null | undefined): string {
-  const trimmed = username?.trim();
-  return trimmed ? `@${trimmed}` : "";
-}
-
-function getUnseenMessages(messages: ChatMessage[], lastViewedMessageId: string | null): ChatMessage[] {
-  if (!lastViewedMessageId) return messages;
-  const viewedIndex = messages.findIndex((message) => message.id === lastViewedMessageId);
-  return viewedIndex >= 0 ? messages.slice(viewedIndex + 1) : messages;
-}
-
-function getMentionMessages(
-  messages: ChatMessage[],
-  user: { id: string; username: string } | null,
-): ChatMessage[] {
-  const normalizedUsername = normalizeChatUsername(user?.username);
-  if (!normalizedUsername || messages.length === 0) return [];
-  return messages.filter((message) => (
-    message.user.id !== user?.id && chatMessageMentionsUsername(message.content, normalizedUsername)
-  ));
-}
-
-function itemsForChannel(
-  channel: ChatChannel | undefined,
+/**
+ * Cached messages after the read marker are unread for certain. Without the
+ * marker in the cache nothing can be placed before or after it, so no message
+ * is claimed as unread (the cache may be older than what was read elsewhere).
+ */
+function knownUnreadMessages(
   state: UnreadInboxChannelState,
-  user: { id: string; username: string } | null,
-): UnreadInboxItem[] {
-  if (state.unreadCount <= 0) return [];
-
-  const channelId = normalizeChannelId(state.channelId);
-  const paneTitle = formatChatPaneTitle(channel, channelId);
-  const unseen = getUnseenMessages(state.messages, state.lastViewedMessageId);
-  const mentions = getMentionMessages(unseen, user);
-  if (mentions.length > 0) {
-    return mentions.map((message) => ({
-      id: `${channelId}:${message.id}`,
-      channelId,
-      channelLabel: paneTitle,
-      paneTitle,
-      authorLabel: formatAuthorLabel(message.user.username),
-      preview: formatChatMessageSnippet(message.content),
-      messageId: message.id,
-      createdAt: message.createdAt,
-      unreadInChannel: state.unreadCount,
-    }));
-  }
-
-  const latestUnseen = [...unseen].reverse().find((message) => message.user.id !== user?.id) ?? null;
-  return [{
-    id: `${channelId}:${latestUnseen?.id ?? "unread"}`,
-    channelId,
-    channelLabel: paneTitle,
-    paneTitle,
-    authorLabel: formatAuthorLabel(latestUnseen?.user.username),
-    preview: latestUnseen ? formatChatMessageSnippet(latestUnseen.content) : "",
-    messageId: latestUnseen?.id ?? null,
-    createdAt: latestUnseen?.createdAt ?? "",
-    unreadInChannel: state.unreadCount,
-  }];
+  userId: string | null,
+): ChatMessage[] {
+  if (!state.lastViewedMessageId) return [];
+  const markerIndex = state.messages.findIndex((message) => message.id === state.lastViewedMessageId);
+  if (markerIndex < 0) return [];
+  return state.messages
+    .slice(markerIndex + 1)
+    .filter((message) => message.user.id !== userId && !message.clientStatus);
 }
 
+function messageTime(message: ChatMessage | undefined): number {
+  const time = message ? Date.parse(message.createdAt) : Number.NaN;
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * One row per channel with unread messages, the newest known unread message
+ * first; rows whose messages are not known here follow, most unread first.
+ * Listing them reads nothing.
+ */
 export function listUnreadInboxItems(options: {
   channels: ChatChannel[];
   states: UnreadInboxChannelState[];
   user: { id: string; username: string } | null;
-  limit?: number;
 }): UnreadInboxItem[] {
+  if (!options.user) return [];
+  const userId = options.user.id;
+  const username = normalizeChatUsername(options.user.username);
   const channelById = new Map(options.channels.map((channel) => [channel.id, channel]));
-  const items = options.states.flatMap((state) => (
-    itemsForChannel(channelById.get(state.channelId), state, options.user)
-  ));
-  items.sort((left, right) => {
-    if (left.createdAt === right.createdAt) return right.id.localeCompare(left.id);
-    if (!left.createdAt) return 1;
-    if (!right.createdAt) return -1;
-    return right.createdAt.localeCompare(left.createdAt);
-  });
-  return items.slice(0, options.limit ?? UNREAD_INBOX_LIMIT);
-}
-
-export function formatUnreadInboxRowLabel(item: UnreadInboxItem): string {
-  if (item.messageId) {
-    const head = item.authorLabel ? `${item.channelLabel}  ${item.authorLabel}` : item.channelLabel;
-    return item.preview ? `${head}: ${item.preview}` : head;
+  const items: Array<UnreadInboxItem & { latestAt: number }> = [];
+  for (const state of options.states) {
+    const channel = channelById.get(state.channelId);
+    if (!channel || state.unreadCount <= 0) continue;
+    const unread = knownUnreadMessages(state, userId);
+    const mention = username
+      ? unread.findLast((message) => chatMessageMentionsUsername(message.content, username)) ?? null
+      : null;
+    items.push({
+      channelId: channel.id,
+      title: formatChatPaneTitle(channel, channel.id),
+      unreadCount: state.unreadCount,
+      preview: mention ?? unread.at(-1) ?? null,
+      mentionsYou: !!mention,
+      latestAt: messageTime(unread.at(-1)),
+    });
   }
-  if (item.unreadInChannel > 1) {
-    return `${item.channelLabel}  ${item.unreadInChannel} unread`;
-  }
-  return item.preview ? `${item.channelLabel}  ${item.preview}` : `${item.channelLabel}  unread`;
+  return items
+    .sort((left, right) => (
+      right.latestAt - left.latestAt
+      || right.unreadCount - left.unreadCount
+      || left.title.localeCompare(right.title)
+    ))
+    .map(({ latestAt: _latestAt, ...item }) => item);
 }

@@ -46,8 +46,7 @@ export function useChatContentShortcuts({
   setSelectedIdx,
   setSidebarSectionExpanded,
   shouldLeaveComposerForSelection,
-  showChannelSidebar,
-  channelListVisible = showChannelSidebar,
+  channelListReachable,
   sidebarCursorRow,
   sidebarFocusedRef,
 }: {
@@ -89,8 +88,8 @@ export function useChatContentShortcuts({
   setSelectedIdx: (selectedIdx: number) => void;
   setSidebarSectionExpanded: (expanded: boolean | "toggle") => boolean;
   shouldLeaveComposerForSelection: (direction: "up" | "down") => boolean;
-  showChannelSidebar: boolean;
-  channelListVisible?: boolean;
+  /** The channel list is drawn, or in the narrow stack one step back. */
+  channelListReachable: boolean;
   sidebarCursorRow: ChatSidebarRow | null;
   sidebarFocusedRef: MutableRefObject<boolean>;
 }) {
@@ -115,7 +114,7 @@ export function useChatContentShortcuts({
     if (!focused || commandBarOpen) return;
     const isEnterKey = event.name === "return" || event.name === "enter";
 
-    if (sidebarFocusedRef.current && channelListVisible) {
+    if (sidebarFocusedRef.current && channelListReachable) {
       // A section header folds and unfolds in place; a channel opens.
       const headerRow = sidebarCursorRow && sidebarCursorRow.kind !== "channel" ? sidebarCursorRow : null;
       if (isEnterKey) {
@@ -157,7 +156,7 @@ export function useChatContentShortcuts({
 
     if (
       isPlainKey(event, "left") &&
-      channelListVisible &&
+      channelListReachable &&
       (!inputFocused || inputValueRef.current.length === 0) &&
       focusChannelSidebar()
     ) {
