@@ -136,4 +136,9 @@ export interface DataTableProps<
   scrollToIndex?: number | null;
   scrollToIndexAlign?: DataTableScrollAlign;
   scrollToIndexVersion?: number;
+  /** A drag on the column edge. Width is in cells. Absent when the column cannot be resized. */
+  onColumnResize?: (columnId: string, width: number) => void;
+  onColumnResizeEnd?: () => void;
+  /** Double-click the edge. Drops a locked width. */
+  onColumnResizeReset?: (columnId: string) => void;
 }

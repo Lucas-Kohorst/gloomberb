@@ -136,21 +136,29 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-header"] {
   align-items: center;
   padding-inline: 7px;
-  cursor: grab;
+  cursor: default;
   -webkit-user-select: none;
   user-select: none;
 }
-[data-gloom-role="pane-header"] * {
-  cursor: inherit;
+[data-gloom-role="pane-grip"],
+[data-gloom-role="pane-header-chrome"] {
+  cursor: grab;
+}
+[data-gloom-role="pane-header"] [data-gloom-role="tab-button"],
+[data-gloom-role="pane-header"] button,
+[data-gloom-role="pane-header"] [data-gloom-interactive="true"] {
+  cursor: pointer;
 }
 [data-gloom-role="pane-header"][data-window-mode-selected="true"] {
   background: color-mix(in srgb, var(--gloom-border-focused) 24%, var(--gloom-panel)) !important;
 }
 [data-gloom-role="pane-action"],
-[data-gloom-role="pane-close"] {
+[data-gloom-role="pane-close"],
+[data-gloom-role="pane-restore"] {
   cursor: pointer;
 }
-body.gloom-dragging [data-gloom-role="pane-header"] {
+body.gloom-dragging [data-gloom-role="pane-grip"],
+body.gloom-dragging [data-gloom-role="pane-header-chrome"] {
   cursor: grabbing;
 }
 body.gloom-dragging {
@@ -201,16 +209,23 @@ body.gloom-dragging {
   max-width: calc(100vw - 48px);
 }
 [data-gloom-role="status-bar"] {
-  flex: 0 0 var(--cell-h);
-  height: var(--cell-h);
-  min-height: var(--cell-h);
-  max-height: var(--cell-h);
+  /* 4px top + 10px bottom (4 + 6px window-curve clearance) + 1px border.
+     Keep the 15px in NATIVE_STATUS_BAR_EXTRA_PX so the pane grid stops here. */
+  box-sizing: border-box !important;
+  flex: 0 0 calc(var(--cell-h) + 15px) !important;
+  height: calc(var(--cell-h) + 15px) !important;
+  min-height: calc(var(--cell-h) + 15px) !important;
+  max-height: calc(var(--cell-h) + 15px) !important;
   align-items: center;
+  padding-top: 4px;
+  padding-bottom: 10px;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
+  line-height: 1.15 !important;
 }
 [data-gloom-role="status-bar"] span {
-  line-height: var(--cell-h);
+  /* A cell-height line box fills the tape and shears glyphs on the curve. */
+  line-height: 1.15 !important;
 }
 [data-gloom-role="pane-body"] {
   overflow: hidden;
@@ -1066,8 +1081,38 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 /* A header that sorts brightens under the pointer; plain headers (no
    onHeaderClick) are not interactive and stay put. Tinted headers keep
    their colour. */
-[data-gloom-role="data-table-header-cell"][data-gloom-interactive="true"]:not([data-gloom-tinted="true"]):hover > * {
+[data-gloom-role="data-table-header-cell"][data-gloom-interactive="true"]:not([data-gloom-tinted="true"]):hover > *:not([data-gloom-role="data-table-column-resize"]) {
   color: var(--gloom-text) !important;
+}
+[data-gloom-role="data-table-column-resize"] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+[data-gloom-role="data-table-column-resize"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  right: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+[data-gloom-role="data-table-column-resize"]:hover::after,
+[data-gloom-role="data-table-column-resize"]:focus-visible::after,
+[data-gloom-role="data-table-column-resize"][data-active="true"]::after {
+  background: var(--gloom-border-focused, #8b8fa3);
+}
+body.gloom-col-resizing,
+body.gloom-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Keyboard focus. Tab walks the controls of an open dialog, and a focused

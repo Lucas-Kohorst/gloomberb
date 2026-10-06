@@ -22,6 +22,7 @@ import {
   Shell,
   buildNativeWindowState,
   resolveAppHeaderHeightCells,
+  resolveAppStatusBarHeightCells,
   resolvePaneManagementShortcut,
 } from "./index";
 import { inputCaptureAllowsPaneManagementShortcut } from "./shortcuts";
@@ -228,6 +229,12 @@ describe("Shell", () => {
     expect(resolveAppHeaderHeightCells({ titleBarOverlay: false, cellHeightPx: 18 })).toBe(1);
   });
 
+  test("reserves the desktop status bar's extra padding under the pane grid", () => {
+    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: true, cellHeightPx: 18 })).toBe(33 / 18);
+    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: false, cellHeightPx: 18 })).toBe(1);
+    expect(resolveAppStatusBarHeightCells({ visible: false, nativePaneChrome: true, cellHeightPx: 18 })).toBe(0);
+  });
+
   test("keeps command bar native occlusion scoped to the panel", () => {
     const state = buildNativeWindowState(
       ["portfolio-list:main"],
@@ -375,6 +382,47 @@ describe("Shell", () => {
     frame = tui.frame();
     expect(frame).toContain("Main Portfolio");
     expect(frame).toContain("Ticker Research Body");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("the fullscreen corner restores the layout and leaves the pane open", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-restore-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const layout = cloneLayout(config.layout);
+    layout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    layout.instances = [{ ...mainPane }, { ...detailPane }];
+    layout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    const { actions } = await renderShell(
+      createShellStateWithLayout(config, layout, "ticker-detail:main"),
+      { width: 80, height: 18 },
+    );
+
+    await emitKeypress({ name: "f", ctrl: true, shift: true });
+    await act(async () => {
+      await tui.setup().renderOnce();
+    });
+    const frame = tui.frame();
+    const rows = frame.split("\n");
+    const headerRow = rows.findIndex((row) => row.includes(" - "));
+    expect(headerRow).toBeGreaterThanOrEqual(0);
+    expect(rows[headerRow]).not.toContain(" x ");
+    expect(frame).toContain("Ticker Research Body");
+    expect(frame).not.toContain("Portfolio Body");
+
+    await act(async () => {
+      await tui.setup().mockMouse.click(rows[headerRow]!.indexOf(" - ") + 1, headerRow + 1);
+    });
+    // The mouse handler's state update lands on the next turn.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tui.setup().renderOnce();
+    });
+
+    const restored = tui.frame();
+    expect(restored).toContain("Portfolio Body");
+    expect(restored).toContain("Ticker Research Body");
+    expect(restored).not.toContain(" - ");
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
   });
 

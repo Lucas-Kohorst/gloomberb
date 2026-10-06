@@ -112,6 +112,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   scrollToIndex,
   scrollToIndexAlign = "nearest",
   scrollToIndexVersion = 0,
+  onColumnResize,
+  onColumnResizeEnd,
+  onColumnResizeReset,
 }: DataTableProps<T, C>) {
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const focusPane = useFocusOwningPane();
@@ -388,6 +391,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             onTableMouseDown={onTableMouseDown}
             gridTemplateColumns={gridTemplateColumns}
             onHeaderClick={onHeaderClick}
+            onColumnResize={onColumnResize}
+            onColumnResizeEnd={onColumnResizeEnd}
+            onColumnResizeReset={onColumnResizeReset}
             sortColumnId={sortColumnId}
             sortDirection={sortDirection}
           />
