@@ -1,7 +1,5 @@
 import { useLayoutEffect } from "react";
 import { t } from "../../../i18n";
-import { useAppSelector } from "../../../state/app/context";
-import { activeCommandInstrumentLabel, rootCommandPlaceholder } from "../prompt-placeholder";
 import { useThemeColors } from "../../../theme/theme-context";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { truncateToDisplayWidth } from "../../../utils/format";
@@ -24,8 +22,8 @@ const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
  * placeholder underneath it read as the control being swapped out. Nested
  * screens are a different screen and say so.
  */
-function resolvePromptPlaceholder(listState: ListScreenState, instrumentLabel: string | null): string {
-  if (listState.kind === "root") return rootCommandPlaceholder(instrumentLabel);
+function resolvePromptPlaceholder(listState: ListScreenState): string {
+  if (listState.kind === "root") return t("Search or run a command");
   if (listState.title === "Security Description") return t("Search tickers");
   return t("Filter");
 }
@@ -66,7 +64,6 @@ export function CommandBarPanel({
 }: CommandBarPanelProps) {
   const colors = useThemeColors();
   const palette = useCommandBarPalette(nativePaneChrome);
-  const instrumentLabel = useAppSelector(activeCommandInstrumentLabel);
 
   useLayoutEffect(() => {
     const scrollBox = nativeListScrollRef.current;
@@ -90,11 +87,11 @@ export function CommandBarPanel({
     publishCommandBarPrompt({
       screenKey: `${visibleListState.kind}:${visibleListState.title}`,
       query: visibleListState.query,
-      placeholder: resolvePromptPlaceholder(visibleListState, instrumentLabel),
+      placeholder: resolvePromptPlaceholder(visibleListState),
       ghostSuffix: visibleListState.kind === "root" ? rootGhostSuffix : null,
       onQueryChange,
     });
-  }, [instrumentLabel, onQueryChange, rootGhostSuffix, visibleListState]);
+  }, [onQueryChange, rootGhostSuffix, visibleListState]);
   useLayoutEffect(() => () => publishCommandBarPrompt(null), []);
 
   useLayoutEffect(() => {

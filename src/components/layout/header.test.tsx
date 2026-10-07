@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { createOpenTuiTestHarness } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app/context";
 import { createStaticAppStore } from "../../test-support/app-store";
-import { createDefaultConfig, createPaneInstance, TICKER_RESEARCH_PANE_ID } from "../../types/config";
+import { createDefaultConfig } from "../../types/config";
 import { act } from "react";
 import { Header } from "./header";
 import { publishCommandBarPrompt } from "../command-bar/panel/prompt-binding";
@@ -78,64 +78,4 @@ test("hosts the command bar input while a list screen is published", async () =>
     await tui.setup().renderOnce();
   });
   expect(tui.frame()).not.toContain("QQ");
-});
-
-test("shows the focused instrument in the command prompt", async () => {
-  const state = createInitialState(createDefaultConfig("/tmp/gloomberb-header-instrument"));
-  state.focusedPaneId = "portfolio-list:main";
-  state.paneState["portfolio-list:main"] = { cursorSymbol: "NVDA" };
-
-  await tui.render(
-    <AppContext value={createStaticAppStore(state)}>
-      <Header />
-    </AppContext>,
-    { width: 120, height: 1 },
-  );
-  await tui.setup().renderOnce();
-
-  expect(tui.frame()).toContain("NVDA");
-  expect(tui.frame()).not.toContain("Search or run a command");
-});
-
-test("shows the linked desk ticker while a market pane is focused", async () => {
-  const state = createInitialState(createDefaultConfig("/tmp/gloomberb-header-linked"));
-  const des = createPaneInstance(TICKER_RESEARCH_PANE_ID, {
-    instanceId: "des",
-    binding: { kind: "fixed", symbol: "MSTR:XMEX" },
-  });
-  const chart = createPaneInstance("chart-composer", {
-    instanceId: "chart",
-    binding: { kind: "follow", sourceInstanceId: "des" },
-  });
-  const news = createPaneInstance("news-top", { instanceId: "news", binding: { kind: "none" } });
-  state.focusedPaneId = "news";
-  state.config.layout = {
-    dockRoot: {
-      kind: "split",
-      axis: "horizontal",
-      ratio: 0.5,
-      first: { kind: "pane", instanceId: "des" },
-      second: {
-        kind: "split",
-        axis: "horizontal",
-        ratio: 0.5,
-        first: { kind: "pane", instanceId: "chart" },
-        second: { kind: "pane", instanceId: "news" },
-      },
-    },
-    instances: [des, chart, news],
-    floating: [],
-    detached: [],
-  };
-
-  await tui.render(
-    <AppContext value={createStaticAppStore(state)}>
-      <Header />
-    </AppContext>,
-    { width: 120, height: 1 },
-  );
-  await tui.setup().renderOnce();
-
-  expect(tui.frame()).toContain("MSTR:XMEX");
-  expect(tui.frame()).not.toContain("Search or run a command");
 });

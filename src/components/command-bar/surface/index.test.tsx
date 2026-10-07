@@ -759,26 +759,6 @@ describe("CommandBar", () => {
     expect(tui.frame()).toContain("Search or run a command");
   });
 
-  test("the open prompt shows the focused instrument", async () => {
-    await tui.render(
-      <CommandBarHarness
-        query=""
-        configureState={(state) => ({
-          ...state,
-          focusedPaneId: "portfolio-list:main",
-          paneState: {
-            ...state.paneState,
-            "portfolio-list:main": { cursorSymbol: "NVDA" },
-          },
-        })}
-      />,
-      { width: 80, height: 24 },
-    );
-
-    await waitForFrameToContain("NVDA");
-    expect(tui.frame()).not.toContain("Search or run a command");
-  });
-
   test("DES MSFT opens an exact ticker directly", async () => {
     const pinned: string[] = [];
 

@@ -48,22 +48,12 @@ test("restored qualified Shopify stays in the five root results and retargets th
   const initial = createInitialState(createDefaultConfig(":memory:"));
   const main = createPaneInstance(TICKER_RESEARCH_PANE_ID, { instanceId: "research:main", binding: { kind: "fixed", symbol: "BTC-USD:CCC" } });
   const existing = createPaneInstance(TICKER_RESEARCH_PANE_ID, { instanceId: "research:shop", binding: { kind: "fixed", symbol: "SHOP:XNAS" } });
-  initial.config.layout = {
-    ...initial.config.layout,
-    dockRoot: { kind: "pane", instanceId: main.instanceId },
-    instances: [main, existing],
-    floating: [],
-    detached: [],
-  };
+  initial.config.layout.instances = [main, existing];
   initial.tickers = new Map([[saved.metadata.ticker, saved]]);
   initial.focusedPaneId = main.instanceId;
   const stateRef = { current: initial };
   let search!: ReturnType<typeof useCommandBarTickerSearchActions>;
-  const registry = {
-    events: { emit() {} },
-    panes: new Map(),
-    pinTicker() { throw new Error("The focused research pane should be retargeted"); },
-  } as unknown as PluginRegistry;
+  const registry = { events: { emit() {} }, pinTicker() { throw new Error("The focused research pane should be retargeted"); } } as unknown as PluginRegistry;
   function Harness() {
     const dispatch = (action: Parameters<typeof appReducer>[1]) => { stateRef.current = appReducer(stateRef.current, action); };
     const pane = useCommandBarPaneActions({ dispatch, pluginRegistry: registry, stateRef });

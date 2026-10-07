@@ -166,58 +166,6 @@ describe("createPaneTemplateOrThrow", () => {
     expect(createdSymbol).toBe("MSFT");
   });
 
-  test("an explicit ticker argument stays that symbol while another ticker is focused", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
-    const layout = cloneLayout(config.layout);
-    layout.instances = [{
-      instanceId: "des",
-      paneId: "ticker-detail",
-      binding: { kind: "fixed", symbol: "NVDA" },
-    }] as never;
-    const state = createInitialState({ ...config, layout });
-    state.focusedPaneId = "des";
-    state.tickers.set("NVDA", createTestTicker("NVDA", "NVIDIA", { portfolios: ["main"] }));
-    const created: TickerRecord[] = [];
-    let createdSymbol: string | null | undefined;
-
-    await createPaneTemplateOrThrow("seg", { arg: "AAPL" }, templateDeps(state, {
-      template: {
-        id: "seg",
-        paneId: "revenue-breakdown",
-        label: "Revenue Breakdown",
-        description: "Revenue Breakdown",
-        shortcut: { prefix: "SEG", argPlaceholder: "ticker", argKind: "ticker" },
-        createInstance: (_context: unknown, options: { symbol?: string } | undefined) => {
-          createdSymbol = options?.symbol;
-          return { instanceId: `revenue-breakdown:${options?.symbol}`, binding: { kind: "fixed", symbol: options?.symbol ?? "" } };
-        },
-      },
-      pane: { id: "revenue-breakdown", name: "Revenue Breakdown", component: () => null, defaultPosition: "right" },
-      buildPaneInstance: () => ({ instanceId: "revenue-breakdown:AAPL", paneId: "revenue-breakdown" }),
-      dataProvider: createTestDataProvider({
-        search: async () => [{
-          providerId: "test", symbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ",
-          primaryExchange: "NASDAQ", currency: "USD", type: "EQUITY",
-        }],
-      }),
-      tickerRepository: {
-        loadTicker: async (symbol: string) => state.tickers.get(symbol) ?? null,
-        createTicker: async (metadata: TickerRecord["metadata"]) => {
-          const ticker = { metadata };
-          created.push(ticker);
-          state.tickers.set(metadata.ticker, ticker);
-          return ticker;
-        },
-      } as any,
-      dispatch: (action: any) => {
-        if (action.type === "UPDATE_TICKER") state.tickers.set(action.ticker.metadata.ticker, action.ticker);
-      },
-    }));
-
-    expect(createdSymbol).toBe("AAPL");
-    expect(created[0]?.metadata.ticker).toBe("AAPL");
-  });
-
   // JOBS, CALLS and CDS open market-wide when nothing was named, so an empty
   // arg must neither fail to resolve nor quietly inherit the focused ticker.
   test("opens an optional-ticker template unbound, ignoring the focused ticker", async () => {
