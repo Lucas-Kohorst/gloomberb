@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
-import { searchTickerCandidates } from "../../../../tickers/search";
+import { orderCandidatesByListingVolume, searchTickerCandidates } from "../../../../tickers/search";
 import {
   COMMAND_BAR_TICKER_SEARCH_LIMIT,
   mergePlainRootTickerResults,
   mergeTickerSearchResultItems,
   QUICK_LOOK_TICKER_SEARCH_OPTIONS,
+  venueDropdownResults,
 } from "../ticker-search/results";
 import { orderListResults, type ResultItem } from "../../list/model";
 import type { CommandBarCategoryPriorities, CommandBarSectionOrder } from "../../view-model";
@@ -27,6 +28,8 @@ export function useRootProviderSearch(options: {
     brokerInstanceId?: string | null,
   ) => TickerSearchCandidate[] | null;
   rootPlainTickerSearchArg: string | null;
+  /** Set when the query is `NET:` or `NET:N`. Empty string lists every venue. */
+  listingSuffix: string | null;
   rootResultItems: ResultItem[];
   rootTickerSearchArg: string | null;
   tickers: AppState["tickers"];
@@ -52,6 +55,7 @@ export function useRootProviderSearch(options: {
     portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg,
+    listingSuffix,
     rootResultItems,
     rootTickerSearchArg,
     tickers,
@@ -109,6 +113,12 @@ export function useRootProviderSearch(options: {
     setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
+    const searchContext = {
+      preferBroker: true,
+      interactive: true,
+      brokerId: activeSearchPortfolio?.brokerId,
+      brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
+    };
     rootSearchTimerRef.current = setTimeout(async () => {
       try {
         const publish = (candidates: TickerSearchCandidate[]) => {
@@ -123,12 +133,7 @@ export function useRootProviderSearch(options: {
           query: searchQuery,
           tickers,
           dataProvider,
-          searchContext: {
-            preferBroker: true,
-            interactive: true,
-            brokerId: activeSearchPortfolio?.brokerId,
-            brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
-          },
+          searchContext,
           // A broker that answers after the cloud upgrades the rows in place
           // rather than being dropped because the list was already drawn.
           onPartial: (candidates) => {
@@ -139,13 +144,15 @@ export function useRootProviderSearch(options: {
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
+        const ordered = await orderCandidatesByListingVolume(combined, searchQuery, dataProvider, searchContext);
+        if (requestId !== rootSearchRequestIdRef.current) return;
         writeTickerSearchCache(
           searchQuery,
-          combined,
+          ordered,
           activeSearchPortfolio?.brokerId,
           activeSearchPortfolio?.brokerInstanceId,
         );
-        publish(combined);
+        publish(ordered);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
         setRootProviderResults([{
@@ -181,6 +188,13 @@ export function useRootProviderSearch(options: {
   }, []);
 
   const rootResults = useMemo(() => {
+    if (listingSuffix != null) {
+      if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
+        return venueDropdownResults(rootTickerSearchArg, rootProviderResults, listingSuffix);
+      }
+      // The venue list replaces commands. Nothing else shows while it loads.
+      return [];
+    }
     if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
       if (rootPlainTickerSearchArg) {
         return mergePlainRootTickerResults(rootPlainTickerSearchArg, rootProviderResults, rootResultItems);
@@ -189,13 +203,16 @@ export function useRootProviderSearch(options: {
     }
     return rootResultItems;
   }, [
+    listingSuffix,
     rootPlainTickerSearchArg,
     rootProviderResults,
     rootProviderResultsQuery,
     rootResultItems,
     rootTickerSearchArg,
   ]);
-  const rootSectionOrder: CommandBarSectionOrder = rootPlainTickerSearchArg
+  const rootSectionOrder: CommandBarSectionOrder = listingSuffix != null
+    ? "ranked"
+    : rootPlainTickerSearchArg
     ? "app-first"
     : rootTickerSearchArg
       ? "ranked"

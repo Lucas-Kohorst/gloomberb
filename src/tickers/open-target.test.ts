@@ -75,6 +75,6 @@ test("ambiguous search cannot fall through to an unqualified quote and create a 
       getQuote: async () => { quoteCalls++; return { symbol: "GLD", currency: "USD", price: 400, lastUpdated: 1, change: 0, changePercent: 0 }; },
     }),
   })).rejects.toBeInstanceOf(AmbiguousTickerError);
-  expect(quoteCalls).toBe(1);
+  expect(quoteCalls).toBe(3);
   expect(await tickerRepository.loadAllTickers()).toEqual([]);
 });

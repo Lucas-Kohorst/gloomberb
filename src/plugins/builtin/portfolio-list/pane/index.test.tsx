@@ -737,6 +737,90 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
   });
 
+  test("quick-add previews the busiest venue and opens the command bar on a colon", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const nyse = { providerId: "quick-add-test", symbol: "NET", name: "Cloudflare", exchange: "NYSE", currency: "USD", type: "STK" };
+    const lse = { providerId: "quick-add-test", symbol: "NET", name: "Netcall Plc", exchange: "LSE", currency: "GBP", type: "STK" };
+    installQuickAddRegistry(createTestDataProvider({
+      id: "quick-add-test",
+      name: "Quick Add Test",
+      async search() { return [lse, nyse]; },
+      async getQuote(_symbol, exchange) {
+        if (exchange === "NYSE") {
+          return makeQuote({
+            symbol: "NET", price: 200, changePercent: 1.5, currency: "USD",
+            name: "Cloudflare", listingExchangeName: "NYSE", volume: 8_000_000,
+          });
+        }
+        if (exchange === "LSE") {
+          return makeQuote({
+            symbol: "NET", price: 1.26, changePercent: 0.4, currency: "GBP",
+            name: "Netcall Plc", listingExchangeName: "LSE", volume: 15_000,
+          });
+        }
+        throw new Error(`No quote for ${exchange}`);
+      },
+    }));
+
+    await tui.render(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        stateMutator={(state) => {
+          const net = createTestTicker("NET", "Netcall Plc", {
+            exchange: "LSE", currency: "GBP", portfolios: [], watchlists: [], positions: [],
+          });
+          state.tickers = new Map([["NET", net]]);
+          state.financials = new Map([["NET", createTestFinancials({
+            quote: makeQuote({ symbol: "NET", price: 1.26, changePercent: 0.4, currency: "GBP", name: "Netcall Plc" }),
+          })]]);
+        }}
+        paneHeight={16}
+      />,
+      { width: 100, height: 16 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      tui.setup().mockInput.pressKey("a");
+      await tui.setup().renderOnce();
+    });
+    await act(async () => {
+      await tui.setup().mockInput.typeText("NET");
+      await tui.setup().renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+
+    const bare = tui.frame();
+    expect(bare).toContain("Cloudflare");
+    expect(bare).toContain("NYSE");
+    expect(bare).not.toContain("Netcall");
+
+    await act(async () => {
+      await tui.setup().mockInput.typeText(":");
+      await tui.setup().renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+
+    expect(harnessState?.commandBarOpen).toBe(true);
+    expect(harnessState?.commandBarQuery).toBe("NET:");
+    expect(harnessState?.commandBarLaunchRequest).toMatchObject({
+      kind: "add-listing",
+      collectionId: "watchlist",
+      collectionKind: "watchlist",
+    });
+    const listed = tui.frame();
+    expect(listed).not.toContain("Netcall");
+    expect(listed).not.toContain("LSE");
+    expect(listed).not.toContain("Use a ticker symbol");
+  });
+
   test("renders one-month sparkline column when price history is loaded", async () => {
     const config = createPortfolioConfigWithColumns(
       "broker:ibkr-flex:DU12345",

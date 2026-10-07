@@ -82,3 +82,55 @@ test("watchlist listing selection consumes the chosen record without re-searchin
   expect(saved.at(-1)?.metadata).toMatchObject({ ticker: "SHOP:XTSE", exchange: "TSX", currency: "CAD", watchlists: ["watchlist"] });
   expect(tui.frame()).toContain("Search or run a command");
 });
+
+test("a colon venue choice adds that listing to the watchlist", async () => {
+  const saved: TickerRecord[] = [];
+  const opened: string[] = [];
+  await tui.render(<CommandBarHarness
+    query="NET:"
+    live
+    onSaveTicker={(ticker) => saved.push(ticker)}
+    configureState={(state) => ({
+      ...state,
+      commandBarLaunchRequest: {
+        kind: "add-listing",
+        collectionId: "watchlist",
+        collectionKind: "watchlist",
+        sequence: 1,
+      },
+    })}
+    configurePluginRegistry={(registry) => {
+      registry.createPaneFromTemplate = () => { opened.push("pane"); };
+      registry.pinTicker = () => { opened.push("pin"); };
+    }}
+    dataProvider={createTestDataProvider({
+      search: async () => [
+        { providerId: "test", symbol: "NET", name: "Netcall Plc", exchange: "LSE", currency: "GBP", type: "EQUITY" },
+        { providerId: "test", symbol: "NET", name: "Cloudflare", exchange: "NYSE", currency: "USD", type: "EQUITY" },
+      ],
+      getQuote: async (_symbol, exchange) => ({
+        symbol: "NET",
+        listingExchangeName: exchange,
+        exchangeName: exchange,
+        currency: exchange === "NYSE" ? "USD" : "GBP",
+        price: exchange === "NYSE" ? 200 : 1.26,
+        volume: exchange === "NYSE" ? 8_000_000 : 15_000,
+        lastUpdated: 1,
+        change: 0,
+        changePercent: 0,
+      }),
+    })}
+  />, { width: 100, height: 24 });
+  await waitForFrameToContain("NYSE");
+  await tui.emitKeypress({ name: "return", sequence: "\r" });
+  await act(async () => { await Bun.sleep(20); });
+  await tui.setup().renderOnce();
+  expect(saved.at(-1)?.metadata).toMatchObject({
+    ticker: "NET:XNYS",
+    exchange: "NYSE",
+    name: "Cloudflare",
+    watchlists: ["watchlist"],
+  });
+  expect(opened).toEqual([]);
+  expect(tui.frame()).toContain("Search or run a command");
+});

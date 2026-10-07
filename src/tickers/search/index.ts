@@ -184,7 +184,7 @@ function createProviderTickerSearchCandidates(
 }
 
 export async function searchTickerCandidates({
-  query,
+  query: rawQuery,
   tickers,
   dataProvider,
   searchContext,
@@ -203,6 +203,7 @@ export async function searchTickerCandidates({
   /** Called when a slower, richer source improves results already returned. */
   onPartial?: (candidates: TickerSearchCandidate[]) => void;
 }): Promise<TickerSearchCandidate[]> {
+  const query = symbolSearchQuery(rawQuery);
   const assemble = (providerResults: InstrumentSearchResult[]) => buildTickerSearchCandidates({
     query,
     tickers,
@@ -259,13 +260,160 @@ interface ResolveTickerSearchOptions {
   tickers: ReadonlyMap<string, TickerRecord>;
   dataProvider: DataProvider;
   searchContext?: SearchRequestContext;
+  /** A new bare add picks the busiest venue, including when another company is already saved under the symbol. */
+  preferHighestVolume?: boolean;
+}
+
+/** `NET:` asks which NET. `NET:N` narrows that list. `NET:XNYS` already names one. */
+const LISTING_PICKER_QUERY = /^[A-Z0-9][A-Z0-9.\-]{0,20}:$/;
+const LISTING_CHOICE_QUERY = /^([A-Z0-9][A-Z0-9.\-]{0,20}):([A-Z0-9.\-]*)$/;
+const LISTING_VOLUME_QUOTE_LIMIT = 10;
+
+export function isListingPickerQuery(query: string): boolean {
+  return LISTING_PICKER_QUERY.test(query.trim().toUpperCase());
+}
+
+/** `NET:` and `NET:N` name a symbol plus the exchange prefix still being typed. */
+export function listingChoiceQuery(query: string): { symbol: string; suffix: string } | null {
+  const match = LISTING_CHOICE_QUERY.exec(query.trim().toUpperCase());
+  if (!match?.[1]) return null;
+  return { symbol: match[1], suffix: match[2] ?? "" };
+}
+
+/** Search text for a ticker query. A trailing colon searches the symbol it qualifies. */
+export function symbolSearchQuery(query: string): string {
+  const trimmed = query.trim();
+  if (!isListingPickerQuery(trimmed)) return trimmed;
+  return trimmed.slice(0, -1).toUpperCase();
+}
+
+interface ListedCandidate {
+  symbol: string;
+  exchange?: string;
+  exchangeLabel?: string;
+  result?: InstrumentSearchResult;
+  ticker?: { metadata: { exchange?: string } };
+}
+
+function listedExchange(item: ListedCandidate): string {
+  if (item.exchange) return item.exchange;
+  if (item.result) return listingExchange(item.result);
+  return item.ticker?.metadata.exchange || item.exchangeLabel || "";
+}
+
+function listedKey(item: ListedCandidate): string {
+  return publicTickerKey(item.symbol, listedExchange(item));
+}
+
+function quoteRequestContext(searchContext?: SearchRequestContext) {
+  return {
+    brokerId: searchContext?.brokerId,
+    brokerInstanceId: searchContext?.brokerInstanceId,
+  };
+}
+
+function quoteNamesListing(
+  quote: { listingExchangeName?: string; exchangeName?: string; price: number; lastUpdated: number },
+  exchange: string,
+): boolean {
+  return canonicalExchange(quote.listingExchangeName || quote.exchangeName) === canonicalExchange(exchange)
+    && Number.isFinite(quote.price) && quote.price !== 0
+    && Number.isFinite(quote.lastUpdated) && quote.lastUpdated > 0;
+}
+
+async function quoteListingVolumes(
+  items: readonly ListedCandidate[],
+  dataProvider: DataProvider,
+  searchContext?: SearchRequestContext,
+): Promise<Map<string, { volume: number; currency: string }>> {
+  const volumes = new Map<string, { volume: number; currency: string }>();
+  const distinct: ListedCandidate[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!listedExchange(item)) continue;
+    const key = listedKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    distinct.push(item);
+    if (distinct.length >= LISTING_VOLUME_QUOTE_LIMIT) break;
+  }
+  await Promise.all(distinct.map(async (item) => {
+    const exchange = listedExchange(item);
+    if (!exchange) return;
+    try {
+      const quote = await dataProvider.getQuote(parsePublicTickerKey(item.symbol).symbol, exchange, quoteRequestContext(searchContext));
+      const volume = quote?.volume;
+      if (!quote || typeof volume !== "number" || !Number.isFinite(volume) || volume <= 0) return;
+      if (!quoteNamesListing(quote, exchange)) return;
+      volumes.set(listedKey(item), { volume, currency: resolveCurrencyUnit(quote.currency).currency });
+    } catch {
+      // This venue's volume is unknown. Another listing can still win.
+    }
+  }));
+  return volumes;
+}
+
+function byListingVolume<T extends ListedCandidate>(volumes: ReadonlyMap<string, { volume: number }>) {
+  return (left: T, right: T): number => {
+    const leftVolume = volumes.get(listedKey(left))?.volume;
+    const rightVolume = volumes.get(listedKey(right))?.volume;
+    if (leftVolume == null && rightVolume == null) return 0;
+    if (leftVolume == null) return 1;
+    if (rightVolume == null) return -1;
+    return rightVolume - leftVolume;
+  };
+}
+
+function listingAmbiguity(query: string, matches: readonly ListedCandidate[]): AmbiguousTickerError {
+  const listings: string[] = [];
+  const names: Record<string, string> = {};
+  for (const item of matches) {
+    if (!item.result) continue;
+    const key = listedKey(item);
+    if (key in names) continue;
+    listings.push(key);
+    names[key] = item.result.name;
+  }
+  return new AmbiguousTickerError(query, listings, names);
+}
+
+/** Highest traded volume first among exact listings of one symbol. Other rows stay put. */
+export async function orderCandidatesByListingVolume(
+  candidates: TickerSearchCandidate[],
+  query: string,
+  dataProvider: DataProvider,
+  searchContext?: SearchRequestContext,
+): Promise<TickerSearchCandidate[]> {
+  const symbol = normalizeTickerSymbol(symbolSearchQuery(query));
+  if (!symbol || parsePublicTickerKey(symbol).exchange || tickerHasListingSuffix(symbol)) return candidates;
+  const positions: number[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    const bare = normalizeTickerSymbol(parsePublicTickerKey(candidate.symbol).symbol);
+    if (bare === symbol && listedExchange(candidate)) positions.push(index);
+  }
+  if (new Set(positions.map((index) => listedKey(candidates[index]!))).size < 2) return candidates;
+  const exact = positions.map((index) => candidates[index]!);
+  const volumes = await quoteListingVolumes(exact, dataProvider, searchContext);
+  if (volumes.size === 0) return candidates;
+  const sorted = exact.slice().sort(byListingVolume(volumes));
+  const ordered = candidates.slice();
+  positions.forEach((position, index) => {
+    ordered[position] = sorted[index]!;
+  });
+  return ordered;
 }
 
 export function resolveTickerSearch(options: ResolveTickerSearchOptions): Promise<ResolvedTickerSearch | null> {
-  const symbol = normalizeTickerInput(options.activeTicker, options.query);
-  if (!symbol) return Promise.resolve(null);
-  const literal = resolveTickerSymbol(symbol, options);
-  const alternatives = dottedVenueQueries(symbol);
+  const requested = normalizeTickerInput(options.activeTicker, options.query);
+  if (!requested) return Promise.resolve(null);
+  const symbol = symbolSearchQuery(requested);
+  const pickListing = isListingPickerQuery(requested);
+  const literal = resolveTickerSymbol(symbol, options, {
+    pickListing,
+    ambiguityQuery: requested,
+    preferHighestVolume: options.preferHighestVolume,
+  });
+  const alternatives = pickListing ? [] : dottedVenueQueries(symbol);
   // Most input has no venue code to retry: hand back the literal lookup
   // itself, so it settles no later than it did before the retry existed.
   if (alternatives.length === 0) return literal;
@@ -281,6 +429,7 @@ export function resolveTickerSearch(options: ResolveTickerSearchOptions): Promis
 async function resolveTickerSymbol(
   symbol: string,
   { tickers, dataProvider, searchContext }: ResolveTickerSearchOptions,
+  listingChoice: { pickListing?: boolean; ambiguityQuery?: string; preferHighestVolume?: boolean } = {},
 ): Promise<ResolvedTickerSearch | null> {
   const local = tickers.get(symbol)
     ?? findExactTickerSearchMatch(createLocalTickerSearchCandidates(tickers.values()), symbol)?.ticker
@@ -292,7 +441,11 @@ async function resolveTickerSymbol(
     }));
     if (contracts.size > 1) throw new AmbiguousContractError(symbol,
       [...contracts.values()].map((contract) => tickerInstrumentLabel(local.metadata.ticker, contract)));
-    return { kind: "local", symbol: local.metadata.ticker, ticker: local };
+    // Opening NET keeps the company already saved under it. Adding a bare
+    // symbol compares venues first, and reuses that record only when it is the busiest.
+    if (!listingChoice.pickListing && !listingChoice.preferHighestVolume) {
+      return { kind: "local", symbol: local.metadata.ticker, ticker: local };
+    }
   }
 
   const providerItems = createProviderTickerSearchCandidates(
@@ -303,7 +456,10 @@ async function resolveTickerSymbol(
   const matches = literalMatches.length ? literalMatches
     : providerItems.filter((item) => findExactTickerSearchMatch([item], symbol));
   let exactMatch = matches[0];
-  if (!exactMatch?.result) return null;
+  if (!exactMatch?.result) {
+    if (local && !listingChoice.pickListing) return { kind: "local", symbol: local.metadata.ticker, ticker: local };
+    return null;
+  }
 
   const contracts = new Set(matches.map((item) => item.contractKey).filter(Boolean));
   if (contracts.size > 1 || (contracts.size && matches.some((item) => !item.contractKey))) {
@@ -311,38 +467,53 @@ async function resolveTickerSymbol(
   }
   const listings = new Set(matches.map((item) => publicTickerKey(item.symbol, listingExchange(item.result!))));
   if (listings.size > 1 && !parsePublicTickerKey(symbol).exchange && !tickerHasListingSuffix(symbol)) {
-    // Search order is relevance, not a canonical listing identifier. Align bare
-    // symbols with the quote source only when it supplies the exact identity.
-    let verified: TickerSearchCandidate[] = [];
-    try {
-      const quote = await dataProvider.getQuote(symbol, "", {
-        brokerId: searchContext?.brokerId,
-        brokerInstanceId: searchContext?.brokerInstanceId,
-      });
-      const exchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
-      const currency = resolveCurrencyUnit(quote.currency).currency;
-      if (exchange && currency && Number.isFinite(quote.price) && quote.price !== 0
-        && Number.isFinite(quote.lastUpdated) && quote.lastUpdated > 0) {
-        verified = matches.filter((item) => {
-          const result = item.result!;
-          const candidateCurrency = resolveCurrencyUnit(result.currency).currency;
-          return canonicalExchange(listingExchange(result)) === exchange
-            && (!candidateCurrency || candidateCurrency === currency)
-            && findExactTickerSearchMatch([{ label: quote.symbol, right: exchange, instrumentType: quote.instrumentType }], item.symbol)
-            && (!isCryptoInstrumentType(result.type) || quote.price > 0);
-        }).map((item) => ({ ...item, result: { ...item.result!, currency } }));
+    // The same symbol can be different companies. Traded volume picks the
+    // listing; a trailing colon leaves that choice open. No volume falls
+    // back to the bare quote, and only when that quote names one of these rows.
+    const volumes = await quoteListingVolumes(matches, dataProvider, searchContext);
+    const ranked = matches.slice().sort(byListingVolume(volumes));
+    if (listingChoice.pickListing) throw listingAmbiguity(listingChoice.ambiguityQuery || symbol, ranked);
+    const winner = ranked.find((item) => item.result && volumes.has(listedKey(item)));
+    const winnerCurrency = winner ? volumes.get(listedKey(winner))?.currency : undefined;
+    if (winner?.result) {
+      exactMatch = winnerCurrency
+        ? { ...winner, result: { ...winner.result, currency: winnerCurrency } }
+        : winner;
+    } else {
+      let verified: TickerSearchCandidate[] = [];
+      try {
+        const quote = await dataProvider.getQuote(symbol, "", quoteRequestContext(searchContext));
+        const exchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
+        const currency = resolveCurrencyUnit(quote.currency).currency;
+        if (exchange && currency && Number.isFinite(quote.price) && quote.price !== 0
+          && Number.isFinite(quote.lastUpdated) && quote.lastUpdated > 0) {
+          verified = matches.filter((item) => {
+            const result = item.result!;
+            const candidateCurrency = resolveCurrencyUnit(result.currency).currency;
+            return canonicalExchange(listingExchange(result)) === exchange
+              && (!candidateCurrency || candidateCurrency === currency)
+              && findExactTickerSearchMatch([{ label: quote.symbol, right: exchange, instrumentType: quote.instrumentType }], item.symbol)
+              && (!isCryptoInstrumentType(result.type) || quote.price > 0);
+          }).map((item) => ({ ...item, result: { ...item.result!, currency } }));
+        }
+      } catch {
+        // An unavailable quote cannot establish the default listing.
       }
-    } catch {
-      // An unavailable quote cannot establish the default listing.
+      if (new Set(verified.map((item) => publicTickerKey(item.symbol, listingExchange(item.result!)))).size !== 1) {
+        if (local && listingChoice.preferHighestVolume) {
+          return { kind: "local", symbol: local.metadata.ticker, ticker: local };
+        }
+        throw listingAmbiguity(symbol, matches);
+      }
+      exactMatch = verified[0]!;
     }
-    if (new Set(verified.map((item) => publicTickerKey(item.symbol, listingExchange(item.result!)))).size !== 1) {
-      throw new AmbiguousTickerError(symbol, [...listings], Object.fromEntries(matches.map((item) => [
-        publicTickerKey(item.symbol, listingExchange(item.result!)), item.result!.name,
-      ])));
-    }
-    exactMatch = verified[0]!;
   }
 
+  if (local && listingChoice.preferHighestVolume && exactMatch.result
+    && publicTickerKey(exactMatch.symbol, listingExchange(exactMatch.result))
+      === publicTickerKey(local.metadata.ticker, local.metadata.exchange)) {
+    return { kind: "local", symbol: local.metadata.ticker, ticker: local };
+  }
   return {
     kind: "provider",
     symbol: exactMatch.symbol,

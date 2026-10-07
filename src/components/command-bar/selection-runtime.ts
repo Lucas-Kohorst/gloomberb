@@ -1,5 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { AppState } from "../../state/app/context";
+import type { TickerRecord } from "../../types/ticker";
+import { t } from "../../i18n";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { Command } from "./commands/registry";
 import type {
@@ -30,6 +32,8 @@ type ExecuteCollectionCommandFn = (
   commandId: CollectionCommandId,
   rawInput?: string,
   explicitTargetId?: string | null,
+  selectedTicker?: TickerRecord,
+  directMembership?: boolean,
 ) => Promise<void>;
 
 interface UseCommandBarSelectionRuntimeOptions {
@@ -270,6 +274,34 @@ export function useCommandBarSelectionRuntime({
     const selected = options?.item ?? typed ?? listState.results[listState.selectedIdx];
     if (!selected || selected.disabled) return;
 
+    const addListing = stateRef.current.commandBarLaunchRequest;
+    if (
+      !options?.secondary
+      && addListing?.kind === "add-listing"
+      && (selected.kind === "ticker" || selected.kind === "search")
+      && selected.resolveTicker
+    ) {
+      const launch = addListing;
+      void (async () => {
+        try {
+          const ticker = await selected.resolveTicker!();
+          await executeCollectionCommand(
+            launch.collectionKind === "watchlist" ? "add-watchlist" : "add-portfolio",
+            ticker.metadata.ticker,
+            launch.collectionId,
+            ticker,
+            true,
+          );
+        } catch (error) {
+          pluginRegistry.notify({
+            type: "error",
+            body: error instanceof Error ? error.message : t("Could not add the selected listing."),
+          });
+        }
+      })();
+      return;
+    }
+
     const run = () => {
       if (options?.secondary && selected.secondaryAction) {
         void selected.secondaryAction();
@@ -320,6 +352,7 @@ export function useCommandBarSelectionRuntime({
     rootQueryRef,
     runRootRow,
     stateConfigLayout,
+    stateRef,
     visibleListStateRef,
   ]);
 

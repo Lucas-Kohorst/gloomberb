@@ -8,10 +8,14 @@ import {
   buildTickerSearchCandidates,
   createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
+  isListingPickerQuery,
+  listingChoiceQuery,
   normalizeTickerInput,
+  orderCandidatesByListingVolume,
   rankTickerSearchItems,
   resolveTickerSearch,
   searchTickerCandidates,
+  symbolSearchQuery,
   upsertTickerFromSearchResult,
 } from "./index";
 import { createTestTicker } from "../../test-support/ticker";
@@ -58,9 +62,76 @@ describe("ticker-search utilities", () => {
           } }),
         });
         expect(resolved).toMatchObject({ kind: "provider", result: { exchange: venue, currency } });
-        expect(quoteCalls).toEqual([[symbol, "", { brokerId: "ibkr", brokerInstanceId: "research-account" }]]);
+        expect(quoteCalls).toContainEqual([symbol, "", { brokerId: "ibkr", brokerInstanceId: "research-account" }]);
+        expect(quoteCalls).toHaveLength(3);
       }
     }
+  });
+
+  test("a bare symbol prefers the listing with the most traded volume", async () => {
+    const nyse = makeSearchResult("NET", "Cloudflare", { exchange: "NYSE", currency: "USD" });
+    const lse = makeSearchResult("NET", "Netcall", { exchange: "LSE", currency: "GBp" });
+    const quoteFor = (exchange = "") => {
+      if (exchange === "NYSE") {
+        return { symbol: "NET", listingExchangeName: "NYSE", currency: "USD", price: 200, volume: 8_000_000, lastUpdated: 1, change: 0, changePercent: 0 };
+      }
+      return { symbol: "NET", listingExchangeName: "LSE", currency: "GBP", price: 1.255, volume: 15_000, lastUpdated: 1, change: 0, changePercent: 0 };
+    };
+    for (const results of [[lse, nyse], [nyse, lse]]) {
+      const resolved = await resolveTickerSearch({
+        query: "NET", activeTicker: null, tickers: new Map(),
+        dataProvider: createTestDataProvider({ search: async () => results, getQuote: async (_symbol, exchange) => quoteFor(exchange) }),
+      });
+      expect(resolved).toMatchObject({ kind: "provider", symbol: "NET", result: { name: "Cloudflare", exchange: "NYSE", currency: "USD" } });
+    }
+    const searches: string[] = [];
+    const provider = createTestDataProvider({
+      search: async (query) => { searches.push(query); return [lse, nyse]; },
+      getQuote: async (_symbol, exchange) => quoteFor(exchange),
+    });
+    const candidates = await searchTickerCandidates({ query: "net:", tickers: new Map(), dataProvider: provider });
+    expect(searches).toContain("NET");
+    expect(searches).not.toContain("NET:");
+    const ordered = await orderCandidatesByListingVolume(candidates, "NET:", provider);
+    expect(ordered.map((item) => item.exchangeLabel)).toEqual(["NYSE", "LSE"]);
+  });
+
+  test("a trailing colon lists the venues instead of taking the volume winner", async () => {
+    const nyse = makeSearchResult("NET", "Cloudflare", { exchange: "NYSE", currency: "USD" });
+    const lse = makeSearchResult("NET", "Netcall", { exchange: "LSE", currency: "GBP" });
+    const dataProvider = createTestDataProvider({
+      search: async () => [lse, nyse],
+      getQuote: async (_symbol, exchange) => exchange === "NYSE"
+        ? { symbol: "NET", listingExchangeName: "NYSE", currency: "USD", price: 200, volume: 8_000_000, lastUpdated: 1, change: 0, changePercent: 0 }
+        : { symbol: "NET", listingExchangeName: "LSE", currency: "GBP", price: 1.255, volume: 15_000, lastUpdated: 1, change: 0, changePercent: 0 },
+    });
+    const error = await resolveTickerSearch({ query: "NET:", activeTicker: null, tickers: new Map(), dataProvider }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(AmbiguousTickerError);
+    expect(error.query).toBe("NET:");
+    expect(error.listings).toEqual(["NET:XNYS", "NET:XLON"]);
+    expect(error.listingNames).toEqual({ "NET:XNYS": "Cloudflare", "NET:XLON": "Netcall" });
+    expect(await resolveTickerSearch({ query: "NET:XNYS", activeTicker: null, tickers: new Map(), dataProvider }))
+      .toMatchObject({ kind: "provider", result: { name: "Cloudflare", exchange: "NYSE" } });
+    const saved = createTestTicker("NET", "Netcall", { exchange: "LSE", currency: "GBP" });
+    const tickers = new Map([[saved.metadata.ticker, saved]]);
+    expect(await resolveTickerSearch({ query: "NET", activeTicker: null, tickers, dataProvider }))
+      .toMatchObject({ kind: "local", ticker: saved });
+    expect(await resolveTickerSearch({
+      query: "NET", activeTicker: null, tickers, dataProvider, preferHighestVolume: true,
+    })).toMatchObject({ kind: "provider", result: { name: "Cloudflare", exchange: "NYSE" } });
+    const crowded = buildTickerSearchCandidates({ query: "NET", tickers, providerResults: [lse, nyse] });
+    const listed = await orderCandidatesByListingVolume(crowded, "NET:", dataProvider);
+    expect(listed[0]).toMatchObject({ symbol: "NET", result: { exchange: "NYSE", name: "Cloudflare" } });
+
+    expect(symbolSearchQuery("NET:")).toBe("NET");
+    expect(symbolSearchQuery("NET:XNYS")).toBe("NET:XNYS");
+    expect(symbolSearchQuery("nvidia")).toBe("nvidia");
+    expect(listingChoiceQuery("NET:")).toEqual({ symbol: "NET", suffix: "" });
+    expect(listingChoiceQuery("net:n")).toEqual({ symbol: "NET", suffix: "N" });
+    expect(listingChoiceQuery("NET:XNYS")).toEqual({ symbol: "NET", suffix: "XNYS" });
+    expect(listingChoiceQuery("nvidia")).toBeNull();
+    expect(isListingPickerQuery("net:")).toBe(true);
+    expect(isListingPickerQuery("NET:NYSE")).toBe(false);
   });
 
   test("ambiguous symbols require venue, currency and exact quote evidence", async () => {
