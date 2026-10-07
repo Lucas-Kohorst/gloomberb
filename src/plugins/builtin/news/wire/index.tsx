@@ -24,7 +24,12 @@ import { createLoadedStorySearchProvider } from "./news/command-bar-search";
 import { NEWS_INDUSTRY_CODES, NEWS_QUERY_PRESETS, parseNewsIndustryCode } from "./news/query-presets";
 import { createRssNewsCapability } from "./rss/source";
 import { rssCliCommand } from "./rss/cli";
-import { newsFeedHeadless } from "../headless";
+import {
+  breakingNewsHeadless,
+  newsFeedHeadless,
+  topicNewsHeadless,
+  topNewsHeadless,
+} from "../headless";
 
 const TopPane = createNewsPresetPane({
   paneKey: "top:curated",
@@ -132,7 +137,7 @@ const newsWirePanes: PluginModule["panes"] = [
 ];
 
 const newsWirePaneTemplates: PluginModule["paneTemplates"] = [
-  { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" } },
+  { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" }, headless: topNewsHeadless },
   // FH is the same combined latest feed, Gloom Cloud with your RSS feeds, so it opens this pane.
   { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream", "latest"], shortcut: { prefix: "N", aliases: ["FH"] }, headless: newsFeedHeadless },
   {
@@ -151,6 +156,7 @@ const newsWirePaneTemplates: PluginModule["paneTemplates"] = [
         .filter((entry) => entry.code !== "ALL")
         .map((entry) => ({ value: entry.code, label: entry.label })),
     },
+    headless: topicNewsHeadless,
     // An unknown code still opens, on a body that lists the codes.
     createInstance: (_context, options) => {
       const input = options?.arg?.trim();
@@ -158,7 +164,7 @@ const newsWirePaneTemplates: PluginModule["paneTemplates"] = [
       return { title: code === "ALL" ? TOPIC_NEWS_TITLE : `NI ${code}`, params: { code } };
     },
   },
-  { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },
+  { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" }, headless: breakingNewsHeadless },
   createNewsStoryPaneTemplate(),
 ];
 

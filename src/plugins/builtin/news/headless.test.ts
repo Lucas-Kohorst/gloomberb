@@ -3,10 +3,14 @@ import type { CloudNewsPayload } from "../../../api-client";
 import type { HeadlessPaneContext, HeadlessPaneLoadArgs } from "../../../types/plugin";
 import type { NewsQuery } from "../../../news/types";
 import {
+  createBreakingNewsHeadless,
   createNewsFeedHeadless,
   createTickerNewsHeadless,
+  createTopNewsHeadless,
+  createTopicNewsHeadless,
   type NewsHeadlessDependencies,
 } from "./headless";
+import { NEWS_QUERY_PRESETS } from "./wire/news/query-presets";
 
 function story(
   id: string,
@@ -70,11 +74,14 @@ function args(
 
 const context = {} as HeadlessPaneContext;
 
-function dependencies(seen: NewsQuery[]): NewsHeadlessDependencies {
+function dependencies(
+  seen: NewsQuery[],
+  items: CloudNewsPayload[] = stories,
+): NewsHeadlessDependencies {
   return {
     loadNews: async (query) => {
       seen.push(query);
-      return { items: stories, nextCursor: "page-2" };
+      return { items, nextCursor: "page-2" };
     },
     now: () => new Date("2026-09-04T21:00:00.000Z"),
   };
@@ -145,5 +152,75 @@ describe("ticker news headless", () => {
     } as unknown as HeadlessPaneContext);
 
     expect(seen[0]).toMatchObject({ feed: "ticker", ticker: "NVDA", exchange: "NASDAQ" });
+  });
+});
+
+describe("top news headless", () => {
+  test("requests the ranked top feed and keeps that order", async () => {
+    const seen: NewsQuery[] = [];
+    const definition = createTopNewsHeadless(dependencies(seen, [...stories].reverse()));
+
+    const result = await definition.load(
+      args(null, { sentiment: "any", minImportance: 0 }),
+      context,
+    );
+
+    expect(definition.options.find((option) => option.key === "limit")?.defaultValue).toBe(20);
+    expect(seen[0]).toMatchObject({ feed: "top", limit: 20 });
+    expect(result.items.map((item) => item.id)).toEqual(["older", "newer"]);
+
+    await definition.load(
+      args(null, { sentiment: "any", minImportance: 0, limit: 7 }),
+      context,
+    );
+    expect(seen[1]).toMatchObject({ feed: "top", limit: 7 });
+  });
+});
+
+describe("breaking news headless", () => {
+  test("requests the breaking feed and sorts by importance", async () => {
+    const seen: NewsQuery[] = [];
+    const definition = createBreakingNewsHeadless(dependencies(seen, [
+      story("newer-low", "negative", 70, "2026-09-04T20:00:00.000Z"),
+      story("older-high", "positive", 95, "2026-09-04T12:00:00.000Z"),
+    ]));
+
+    const result = await definition.load(
+      args(null, { sentiment: "any", minImportance: 0 }),
+      context,
+    );
+
+    expect(seen[0]).toMatchObject({ feed: "breaking", breaking: true, limit: 50 });
+    expect(result.items.map((item) => item.id)).toEqual(["older-high", "newer-low"]);
+  });
+});
+
+describe("topic news headless", () => {
+  test("requests the topic query for an NI code", async () => {
+    const seen: NewsQuery[] = [];
+    const definition = createTopicNewsHeadless(dependencies(seen));
+
+    await definition.load(args("MNA", { sentiment: "any", minImportance: 0 }), context);
+
+    expect(seen[0]).toMatchObject(NEWS_QUERY_PRESETS.topic("mna"));
+    expect(definition.describe).toBeTypeOf("function");
+    if (typeof definition.describe === "function") {
+      expect(definition.describe(args("MNA", {}))).toBe("Topic News | MNA");
+      expect(definition.describe(args(null, {}))).toBe("Topic News");
+    }
+  });
+
+  test("does not load an unknown code", async () => {
+    const seen: NewsQuery[] = [];
+    const definition = createTopicNewsHeadless(dependencies(seen));
+
+    const result = await definition.load(
+      args("NOTACODE", { sentiment: "any", minImportance: 0 }),
+      context,
+    );
+
+    expect(seen).toHaveLength(0);
+    expect(result.items).toEqual([]);
+    expect(result.metadata).toMatchObject({ code: "NOTACODE" });
   });
 });

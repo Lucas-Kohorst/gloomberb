@@ -11,6 +11,7 @@ import {
   mapCloudNewsArticle,
 } from "../../../sources/gloomberb-cloud/news";
 import { parsePublicTickerKey } from "../../../utils/exchanges";
+import { NEWS_QUERY_PRESETS, parseNewsIndustryCode } from "./wire/news/query-presets";
 
 const NEWS_COLUMNS = [
   { key: "publishedAt", header: "Published" },
@@ -63,20 +64,33 @@ function selectedSentiment(args: HeadlessPaneLoadArgs): string {
   return String(args.options.sentiment ?? "any");
 }
 
+type NewsHeadlessSort = "time" | "rank" | "importance";
+
+function orderNewsStories(articles: NewsArticle[], sort: NewsHeadlessSort): NewsArticle[] {
+  // Rank is the feed order. Top News is already ranked, and a time sort undoes it.
+  if (sort === "rank") return articles;
+  if (sort === "importance") {
+    // Ties keep feed order; Array#sort is stable.
+    return [...articles].sort((left, right) => right.importance - left.importance);
+  }
+  return [...articles].sort((left, right) => right.publishedAt.getTime() - left.publishedAt.getTime());
+}
+
 function projectNewsHeadless(
   response: CloudNewsListResponse,
   args: HeadlessPaneLoadArgs,
   now: Date,
+  sort: NewsHeadlessSort = "time",
+  defaultLimit = 50,
 ): HeadlessSnapshotResult {
   const sentiment = selectedSentiment(args);
   const minImportance = Number(args.options.minImportance ?? 0);
-  const limit = Number(args.options.limit ?? 50);
+  const limit = Number(args.options.limit ?? defaultLimit);
   const matching = response.items
     .map((item) => mapCloudNewsArticle(item, args.symbols[0]))
     .filter((article) => sentiment === "any" || article.sentiment === sentiment)
-    .filter((article) => article.importance >= minImportance)
-    .sort((left, right) => right.publishedAt.getTime() - left.publishedAt.getTime());
-  const items = matching.slice(0, limit).map(newsRow);
+    .filter((article) => article.importance >= minImportance);
+  const items = orderNewsStories(matching, sort).slice(0, limit).map(newsRow);
 
   return {
     asOf: now.toISOString(),
@@ -92,7 +106,7 @@ function projectNewsHeadless(
   };
 }
 
-function newsOptions() {
+function newsOptions(defaultLimit = 50) {
   return [
     {
       key: "sentiment",
@@ -119,7 +133,7 @@ function newsOptions() {
       key: "limit",
       description: "Maximum stories to return.",
       type: "integer" as const,
-      defaultValue: 50,
+      defaultValue: defaultLimit,
       minimum: 1,
       maximum: 200,
     },
@@ -144,13 +158,14 @@ async function resolveTicker(
 
 function queryFor(
   args: HeadlessPaneLoadArgs,
-  feed: "latest" | "ticker",
+  feed: "latest" | "ticker" | NewsQuery,
   ticker: { symbol: string; exchange?: string } | null = null,
 ): NewsQuery {
+  const base: NewsQuery = typeof feed === "string" ? { feed } : { ...feed };
   const sentiment = selectedSentiment(args);
   return {
-    feed,
-    ...(feed === "ticker"
+    ...base,
+    ...(base.feed === "ticker"
       ? {
           ticker: ticker?.symbol,
           exchange: ticker?.exchange,
@@ -159,7 +174,8 @@ function queryFor(
       : {}),
     ...(sentiment === "any" ? {} : { sentiment: sentiment as "positive" | "neutral" | "negative" }),
     minImportance: Number(args.options.minImportance ?? 0),
-    limit: Number(args.options.limit ?? 50),
+    // A preset limit is only the default. The tool limit is the page size.
+    limit: Number(args.options.limit ?? base.limit ?? 50),
   };
 }
 
@@ -208,5 +224,121 @@ export function createTickerNewsHeadless(
   };
 }
 
+export function createTopNewsHeadless(
+  dependencies: NewsHeadlessDependencies = defaultDependencies,
+): HeadlessPaneDefinition<"snapshot"> {
+  return {
+    shape: "snapshot",
+    argument: { kind: "none" },
+    options: newsOptions(NEWS_QUERY_PRESETS.top.limit),
+    columns: NEWS_COLUMNS,
+    describe: "Top News",
+    async load(args, context) {
+      const query = queryFor(args, NEWS_QUERY_PRESETS.top);
+      return projectNewsHeadless(
+        await dependencies.loadNews(query, context),
+        args,
+        dependencies.now(),
+        "rank",
+        query.limit,
+      );
+    },
+  };
+}
+
+export function createBreakingNewsHeadless(
+  dependencies: NewsHeadlessDependencies = defaultDependencies,
+): HeadlessPaneDefinition<"snapshot"> {
+  return {
+    shape: "snapshot",
+    argument: { kind: "none" },
+    options: newsOptions(NEWS_QUERY_PRESETS.breaking.limit),
+    columns: NEWS_COLUMNS,
+    describe: "Breaking News",
+    async load(args, context) {
+      const query = queryFor(args, NEWS_QUERY_PRESETS.breaking);
+      return projectNewsHeadless(
+        await dependencies.loadNews(query, context),
+        args,
+        dependencies.now(),
+        "importance",
+        query.limit,
+      );
+    },
+  };
+}
+
+function topicArgument(args: HeadlessPaneLoadArgs): string {
+  return typeof args.argument === "string" ? args.argument.trim() : "";
+}
+
+function describeTopicNews(args: HeadlessPaneLoadArgs): string {
+  const code = topicArgument(args);
+  if (!code) return "Topic News";
+  return `Topic News | ${parseNewsIndustryCode(code)?.code ?? code.toUpperCase()}`;
+}
+
+/** Empty and ALL read every sector. An unknown code is rejected instead of queried. */
+function industryPreset(code: string): NewsQuery | null {
+  if (!code) return NEWS_QUERY_PRESETS.sectorAll;
+  const entry = parseNewsIndustryCode(code);
+  if (!entry) return null;
+  if (entry.topic) return NEWS_QUERY_PRESETS.topic(entry.topic);
+  if (entry.sector) return NEWS_QUERY_PRESETS.sector(entry.sector);
+  return NEWS_QUERY_PRESETS.sectorAll;
+}
+
+function rejectedTopicSnapshot(
+  code: string,
+  args: HeadlessPaneLoadArgs,
+  now: Date,
+): HeadlessSnapshotResult {
+  return {
+    asOf: now.toISOString(),
+    items: [],
+    metadata: {
+      code,
+      sentiment: selectedSentiment(args),
+      minImportance: Number(args.options.minImportance ?? 0),
+      total: 0,
+      returned: 0,
+      truncated: false,
+    },
+  };
+}
+
+export function createTopicNewsHeadless(
+  dependencies: NewsHeadlessDependencies = defaultDependencies,
+): HeadlessPaneDefinition<"snapshot"> {
+  return {
+    shape: "snapshot",
+    argument: {
+      kind: "free-text",
+      optional: true,
+      placeholder: "code",
+      description: "Topic or sector code, such as MNA, CB, ENERGY, or TECH.",
+    },
+    options: newsOptions(NEWS_QUERY_PRESETS.sectorAll.limit),
+    columns: NEWS_COLUMNS,
+    describe: describeTopicNews,
+    async load(args, context) {
+      const code = topicArgument(args);
+      const preset = industryPreset(code);
+      if (!preset) return rejectedTopicSnapshot(code, args, dependencies.now());
+      const query = queryFor(args, preset);
+      return projectNewsHeadless(
+        await dependencies.loadNews(query, context),
+        args,
+        dependencies.now(),
+        "time",
+        query.limit,
+      );
+    },
+  };
+}
+
 export const newsFeedHeadless = createNewsFeedHeadless();
 export const tickerNewsHeadless = createTickerNewsHeadless();
+export const topNewsHeadless = createTopNewsHeadless();
+export const breakingNewsHeadless = createBreakingNewsHeadless();
+export const topicNewsHeadless = createTopicNewsHeadless();
