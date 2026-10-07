@@ -147,8 +147,9 @@ export function PaneHeader({
     capturePointerDrag(nativeRenderer, terminalHeaderRef.current);
     onHeaderMouseDown?.(event);
   }, [nativeRenderer, onHeaderMouseDown]);
-  // The grip moves the pane. The title and the empty bar move the desktop window.
-  const windowDrag = Boolean(titleBar) || (!floating && titleBarOverlay === true && nativeWindowChrome === true);
+  // The grip, the title and the empty bar move the pane. A fullscreen pane
+  // cannot move, so there they move the desktop window instead.
+  const windowDrag = Boolean(titleBar) || (fullscreen && titleBarOverlay === true && nativeWindowChrome === true);
   const beginPaneDrag = (event: { stopPropagation?: () => void }) => {
     event.stopPropagation?.();
     onHeaderMouseDown?.(event);

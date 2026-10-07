@@ -40,29 +40,32 @@ function press(target: HTMLElement) {
   }));
 }
 
-test("the grip moves the pane and the title moves the window", async () => {
+test("a docked pane moves from its grip and its title, and a fullscreen one moves the window", async () => {
   const paneDrags: string[] = [];
   let windowDrags = 0;
+  const host = { ...noopRendererHost, startWindowDrag() { windowDrags += 1; } };
   const container = await renderDom(
-    <UiHostProvider
-      ui={desktopUi()}
-      renderer={{ ...noopRendererHost, startWindowDrag() { windowDrags += 1; } }}
-    >
+    <UiHostProvider ui={desktopUi()} renderer={host}>
       <PaneHeader title="Portfolio" width={80} focused onHeaderMouseDown={() => paneDrags.push("pane")} />
     </UiHostProvider>,
   );
+  const release = () => testWindow.document.dispatchEvent(new testWindow.MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0 }));
   const grip = container.querySelector("[data-gloom-role='pane-grip']") as HTMLElement;
-  const title = container.querySelector("[data-gloom-role='pane-title']") as HTMLElement;
+  const title = () => container.querySelector("[data-gloom-role='pane-title']") as HTMLElement;
 
   await act(async () => press(grip));
-  expect(paneDrags).toEqual(["pane"]);
+  await act(async () => { release(); press(title()); });
+  expect(paneDrags).toEqual(["pane", "pane"]);
   expect(windowDrags).toBe(0);
 
-  await act(async () => {
-    testWindow.document.dispatchEvent(new testWindow.MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0 }));
-    press(title);
-  });
-  expect(paneDrags).toEqual(["pane"]);
+  await act(async () => { release(); });
+  const fullscreen = await renderDom(
+    <UiHostProvider ui={desktopUi()} renderer={host}>
+      <PaneHeader title="Portfolio" width={80} focused fullscreen onHeaderMouseDown={() => paneDrags.push("pane")} />
+    </UiHostProvider>,
+  );
+  await act(async () => press(fullscreen.querySelector("[data-gloom-role='pane-title']") as HTMLElement));
+  expect(paneDrags).toEqual(["pane", "pane"]);
   expect(windowDrags).toBe(1);
 });
 
