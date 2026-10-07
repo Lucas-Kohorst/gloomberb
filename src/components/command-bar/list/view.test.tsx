@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { createOpenTuiTestHarness } from "../../../renderers/opentui/test-utils";
+import { createRemoteUiRegistry, RemoteUiRegistryProvider } from "../../../remote/semantic-tree";
+import { commandBarResultsFromNodes } from "../../../remote/command-bar";
 import { CommandBarListBody } from "./view";
 import type { CommandBarListRow, ListScreenState, ResultItem } from "./model";
 
@@ -36,10 +38,10 @@ const LIST_STATE: ListScreenState = {
   footerRight: "",
 };
 
-function ListHarness({ nativeListRows }: { nativeListRows: CommandBarListRow[] }) {
+function ListHarness({ nativeListRows, selectedIdx = -1 }: { nativeListRows: CommandBarListRow[]; selectedIdx?: number }) {
   return (
     <CommandBarListBody
-      visibleListState={LIST_STATE}
+      visibleListState={{ ...LIST_STATE, selectedIdx }}
       nativeListRows={nativeListRows}
       listBodyHeight={16}
       contentPadding={3}
@@ -103,4 +105,26 @@ test("keeps labels in place when a later section brings wider badges", async () 
   expect(columnOf(after, "Commands")).toBe(columnOf(before, "Commands"));
   // The widest badge ends one gap short of the label edge it shares.
   expect(columnOf(after, "DERIV") + "DERIV".length).toBe(columnOf(after, "Call spread") - 1);
+});
+
+/**
+ * A long terminal list draws only the rows near the selection, but remote
+ * control lists and activates results by label or index across the whole list.
+ */
+test("remote control still sees every result of a long list", async () => {
+  const registry = createRemoteUiRegistry();
+  const items = Array.from({ length: 150 }, (_unused, index) => item({ id: `cmd-${index}`, label: `Command ${index}` }));
+  await tui.render(
+    <RemoteUiRegistryProvider registry={registry}>
+      <ListHarness nativeListRows={rows(items)} selectedIdx={0} />
+    </RemoteUiRegistryProvider>,
+    { width: 60, height: 20 },
+  );
+  await tui.setup().renderOnce();
+
+  expect(tui.frame()).not.toContain("Command 149");
+  const results = commandBarResultsFromNodes(registry.snapshot());
+  expect(results).toHaveLength(150);
+  expect(results.at(-1)).toMatchObject({ label: "Command 149", index: 149, selected: false });
+  expect(results[0]).toMatchObject({ selected: true });
 });

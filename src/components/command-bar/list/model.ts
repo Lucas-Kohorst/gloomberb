@@ -180,12 +180,32 @@ export function resolveListPageTarget(
   return target;
 }
 
-export interface ListRowWindow {
+/** Mounted lines grow and move in steps of this many, so arrowing through a step remounts nothing. */
+const LIST_WINDOW_BLOCK_LINES = 32;
+
+interface ListRowRun {
+  /** Unmounted lines between the previous run, or the top, and this one. */
   padBefore: number;
-  padAfter: number;
   rows: readonly CommandBarListRow[];
 }
 
+export interface ListRowWindow {
+  runs: readonly ListRowRun[];
+  /** Unmounted lines after the last run. */
+  padAfter: number;
+  /** Mounted line ranges as [start, end), to check a scroll position against. */
+  mounted: readonly (readonly [number, number])[];
+}
+
+/**
+ * The rows a long terminal list mounts. Around the selected row, the lines the
+ * scroll can land on when it follows the selection (a viewport either way)
+ * plus the overscan; around the current scroll position as well, when it sits
+ * elsewhere for a frame before following. Ranges are widened to whole steps,
+ * and two far-apart ranges stay separate runs, so a jump from the top to the
+ * end mounts two small runs instead of everything between them. Spacers keep
+ * every line where it is, so the scroll box still addresses the full list.
+ */
 export function resolveListRowWindow(
   rows: readonly CommandBarListRow[],
   selectedIdx: number,
@@ -195,55 +215,58 @@ export function resolveListRowWindow(
 ): ListRowWindow {
   const viewport = Math.max(0, viewportLines);
   const overscan = Math.max(0, overscanLines);
-  const heights = new Array<number>(rows.length);
+  // starts[i] is the first line of row i; starts[rows.length] is the total.
+  const starts = new Array<number>(rows.length + 1);
   let totalLines = 0;
   let selectedRowIndex = -1;
-  let selectedStart = 0;
-  let selectedEnd = 0;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index]!;
-    const height = getListRowHeight(row);
-    heights[index] = height;
-    if (selectedRowIndex < 0 && row.kind === "item" && row.globalIdx === selectedIdx) {
-      selectedRowIndex = index;
-      selectedStart = totalLines;
-      selectedEnd = totalLines + height;
-    }
-    totalLines += height;
+    starts[index] = totalLines;
+    if (selectedRowIndex < 0 && row.kind === "item" && row.globalIdx === selectedIdx) selectedRowIndex = index;
+    totalLines += getListRowHeight(row);
   }
+  starts[rows.length] = totalLines;
   if (totalLines <= viewport + overscan) {
-    return { padBefore: 0, padAfter: 0, rows };
+    return { runs: [{ padBefore: 0, rows }], padAfter: 0, mounted: [[0, totalLines]] };
   }
 
   const margin = Math.max(0, viewport - 1) + overscan;
-  let windowStart = selectedRowIndex < 0 ? 0 : Math.max(0, selectedStart - margin);
-  let windowEnd = selectedRowIndex < 0
-    ? Math.min(totalLines, viewport + overscan)
-    : Math.min(totalLines, selectedEnd + margin);
+  const lineRanges: Array<[number, number]> = [selectedRowIndex < 0
+    ? [0, viewport + overscan]
+    : [starts[selectedRowIndex]! - margin, starts[selectedRowIndex + 1]! + margin]];
   if (typeof scrollLine === "number" && Number.isFinite(scrollLine)) {
-    const scrolled = Math.min(totalLines, Math.max(0, Math.floor(scrollLine)));
-    windowStart = Math.min(windowStart, Math.max(0, scrolled - overscan));
-    windowEnd = Math.max(windowEnd, Math.min(totalLines, scrolled + viewport + overscan));
+    const scrolled = Math.floor(scrollLine);
+    lineRanges.push([scrolled - overscan, scrolled + viewport + overscan]);
   }
 
-  let startRow = 0;
+  // Whole steps, then whole rows: a multi-line row the edge falls inside is mounted entire.
+  const rowRanges = lineRanges.map(([from, to]): [number, number] => {
+    const fromLine = Math.max(0, Math.floor(from / LIST_WINDOW_BLOCK_LINES) * LIST_WINDOW_BLOCK_LINES);
+    const toLine = Math.min(totalLines, Math.ceil(to / LIST_WINDOW_BLOCK_LINES) * LIST_WINDOW_BLOCK_LINES);
+    let startRow = 0;
+    while (startRow < rows.length && starts[startRow + 1]! <= fromLine) startRow += 1;
+    let endRow = startRow;
+    while (endRow < rows.length && starts[endRow]! < toLine) endRow += 1;
+    return [startRow, endRow];
+  }).filter(([from, to]) => to > from).sort((left, right) => left[0] - right[0]);
+
+  const merged: Array<[number, number]> = [];
+  for (const range of rowRanges) {
+    const last = merged.at(-1);
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+    else merged.push([range[0], range[1]]);
+  }
+
   let line = 0;
-  while (startRow < rows.length && line + heights[startRow]! <= windowStart) {
-    line += heights[startRow]!;
-    startRow += 1;
-  }
-  const padBefore = line;
-
-  let endRow = startRow;
-  while (endRow < rows.length && line < windowEnd) {
-    line += heights[endRow]!;
-    endRow += 1;
-  }
-
+  const runs = merged.map(([from, to]) => {
+    const run = { padBefore: starts[from]! - line, rows: rows.slice(from, to) };
+    line = starts[to]!;
+    return run;
+  });
   return {
-    padBefore,
+    runs,
     padAfter: totalLines - line,
-    rows: rows.slice(startRow, endRow),
+    mounted: merged.map(([from, to]) => [starts[from]!, starts[to]!] as const),
   };
 }
 

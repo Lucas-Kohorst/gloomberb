@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, type RefObject } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { t } from "../../../i18n";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { commandBarBadgeText, type CommandBarBadgeTone } from "../../../theme/colors";
@@ -27,6 +27,7 @@ import {
   getResultItemLines,
   resolveListRowWindow,
   type CommandBarListRow,
+  type ListRowWindow,
   type ListScreenState,
   type ResultItem,
 } from "./model";
@@ -46,9 +47,6 @@ interface CommandBarListItemRowProps {
   globalIdx: number;
   isSelected: boolean;
   isHovered: boolean;
-  listKind: ListScreenState["kind"];
-  listTitle: string;
-  listQuery: string;
   contentPadding: number;
   labelWidth: number;
   trailingWidth: number;
@@ -58,7 +56,23 @@ interface CommandBarListItemRowProps {
   onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
 }
 
-const CommandBarListItemRow = memo(function CommandBarListItemRow({
+interface CommandBarResultNodeProps {
+  item: ResultItem;
+  globalIdx: number;
+  isSelected: boolean;
+  isHovered: boolean;
+  listKind: ListScreenState["kind"];
+  listTitle: string;
+  listQuery: string;
+  onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
+}
+
+/**
+ * A result as remote control sees it. Kept apart from the drawn row, which a
+ * long terminal list only mounts near the viewport, so every result can still
+ * be listed and activated by label, id or index.
+ */
+const CommandBarResultNode = memo(function CommandBarResultNode({
   item,
   globalIdx,
   isSelected,
@@ -66,37 +80,8 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
   listKind,
   listTitle,
   listQuery,
-  contentPadding,
-  labelWidth,
-  trailingWidth,
-  nativePaneChrome,
-  onHoverIndex,
-  onListScroll,
   onRowMouseDown,
-}: CommandBarListItemRowProps) {
-  const palette = useCommandBarPalette(nativePaneChrome);
-  const presentation = getRowPresentation(item, isSelected, trailingWidth > 0);
-  const badge = resolveRowBadge(item);
-  // The badge column and its gap come out of the label, so the right column
-  // stays where it is for rows with and without a badge alike.
-  const labelColumnWidth = Math.max(1, labelWidth - BADGE_INDENT);
-  // A long title stops one cell short of the right column, so its ellipsis
-  // never runs into the date or shortcut sitting there.
-  const label = truncateToDisplayWidth(presentation.label, Math.max(1, labelColumnWidth - (trailingWidth > 0 ? 1 : 0)));
-  // "current" outranks the shortcut on the right; otherwise a badge lifted from
-  // `right` must not be repeated there.
-  const trailing = badgeConsumesRight(item) && !item.current
-    ? ""
-    : truncateToDisplayWidth(presentation.trailing, trailingWidth);
-  const lineWidth = labelColumnWidth + trailingWidth;
-  const lines = useMemo(
-    () => getResultItemLines(item).map((line) => truncateTextSegments(
-      line.segments,
-      lineWidth,
-      (ellipsis) => ({ text: ellipsis, emphasis: "muted" as const }),
-    )),
-    [item, lineWidth],
-  );
+}: CommandBarResultNodeProps) {
   const activate = () => onRowMouseDown({
     preventDefault() {},
     stopPropagation() {},
@@ -133,6 +118,45 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
     },
   });
 
+  return null;
+});
+
+const CommandBarListItemRow = memo(function CommandBarListItemRow({
+  item,
+  globalIdx,
+  isSelected,
+  isHovered,
+  contentPadding,
+  labelWidth,
+  trailingWidth,
+  nativePaneChrome,
+  onHoverIndex,
+  onListScroll,
+  onRowMouseDown,
+}: CommandBarListItemRowProps) {
+  const palette = useCommandBarPalette(nativePaneChrome);
+  const presentation = getRowPresentation(item, isSelected, trailingWidth > 0);
+  const badge = resolveRowBadge(item);
+  // The badge column and its gap come out of the label, so the right column
+  // stays where it is for rows with and without a badge alike.
+  const labelColumnWidth = Math.max(1, labelWidth - BADGE_INDENT);
+  // A long title stops one cell short of the right column, so its ellipsis
+  // never runs into the date or shortcut sitting there.
+  const label = truncateToDisplayWidth(presentation.label, Math.max(1, labelColumnWidth - (trailingWidth > 0 ? 1 : 0)));
+  // "current" outranks the shortcut on the right; otherwise a badge lifted from
+  // `right` must not be repeated there.
+  const trailing = badgeConsumesRight(item) && !item.current
+    ? ""
+    : truncateToDisplayWidth(presentation.trailing, trailingWidth);
+  const lineWidth = labelColumnWidth + trailingWidth;
+  const lines = useMemo(
+    () => getResultItemLines(item).map((line) => truncateTextSegments(
+      line.segments,
+      lineWidth,
+      (ellipsis) => ({ text: ellipsis, emphasis: "muted" as const }),
+    )),
+    [item, lineWidth],
+  );
   return (
     <Box
       key={item.id}
@@ -259,13 +283,24 @@ export const CommandBarListBody = memo(function CommandBarListBody({
   onRowMouseDown,
 }: CommandBarListBodyProps) {
   const palette = useCommandBarPalette(nativePaneChrome);
+  // The terminal lays out every mounted row on each keypress, so a long list
+  // mounts only the lines near the selection. The desktop and the web keep
+  // every row: the browser lays out only what changed, and a trackpad fling
+  // would outrun the mounted lines.
+  const windowed = !nativePaneChrome;
   const [scrollVersion, setScrollVersion] = useState(0);
+  const mountedLinesRef = useRef<ListRowWindow["mounted"]>([]);
   const noteListScroll = useCallback(() => {
+    const scrollBox = nativeListScrollRef.current;
+    if (!scrollBox) return;
+    const top = scrollBox.scrollTop;
+    const bottom = top + Math.max(1, scrollBox.viewport?.height ?? listBodyHeight);
+    if (mountedLinesRef.current.some(([start, end]) => top >= start && bottom <= end)) return;
     setScrollVersion((current) => current + 1);
-  }, []);
+  }, [listBodyHeight, nativeListScrollRef]);
   useScrollBoxScrollActivity({
     scrollRef: nativeListScrollRef,
-    onVerticalScroll: noteListScroll,
+    onVerticalScroll: windowed ? noteListScroll : undefined,
   });
   // Headings, messages and the spinner sit on the label edge: the badge column
   // is a gutter for the rows, not an indent for everything else.
@@ -289,20 +324,47 @@ export const CommandBarListBody = memo(function CommandBarListBody({
   ]);
   const scrollLine = nativeListScrollRef.current?.scrollTop ?? 0;
   const listWindow = useMemo(
-    () => resolveListRowWindow(
-      visibleRows,
-      visibleListState.selectedIdx,
-      listBodyHeight,
-      LIST_WINDOW_OVERSCAN_LINES,
-      scrollLine,
-    ),
-    [listBodyHeight, scrollLine, scrollVersion, visibleListState.selectedIdx, visibleRows],
+    () => windowed
+      ? resolveListRowWindow(
+        visibleRows,
+        visibleListState.selectedIdx,
+        listBodyHeight,
+        LIST_WINDOW_OVERSCAN_LINES,
+        scrollLine,
+      )
+      : null,
+    [listBodyHeight, scrollLine, scrollVersion, visibleListState.selectedIdx, visibleRows, windowed],
   );
+  mountedLinesRef.current = listWindow?.mounted ?? [];
+  // One flat list, spacers included, so a row keeps its key when the mounted lines move.
+  const mountedRows = useMemo((): Array<CommandBarListRow | { kind: "pad"; id: string; lines: number }> => {
+    if (!listWindow) return visibleRows;
+    const out: Array<CommandBarListRow | { kind: "pad"; id: string; lines: number }> = [];
+    listWindow.runs.forEach((run, index) => {
+      if (run.padBefore > 0) out.push({ kind: "pad", id: `pad:${index}`, lines: run.padBefore });
+      out.push(...run.rows);
+    });
+    if (listWindow.padAfter > 0) out.push({ kind: "pad", id: "pad:end", lines: listWindow.padAfter });
+    return out;
+  }, [listWindow, visibleRows]);
 
   const renderedRows = (
     <>
-      {listWindow.padBefore > 0 && <Box height={listWindow.padBefore} />}
-      {listWindow.rows.map((row) => {
+      {visibleRows.map((row) => row.kind === "item" && (
+        <CommandBarResultNode
+          key={`node:${row.globalIdx}:${row.item.id}:${row.item.category}:${row.item.label}:${row.item.right || ""}`}
+          item={row.item}
+          globalIdx={row.globalIdx}
+          isSelected={row.globalIdx === visibleListState.selectedIdx}
+          isHovered={row.globalIdx === visibleListState.hoveredIdx && row.globalIdx !== visibleListState.selectedIdx}
+          listKind={visibleListState.kind}
+          listTitle={visibleListState.title}
+          listQuery={visibleListState.query}
+          onRowMouseDown={onRowMouseDown}
+        />
+      ))}
+      {mountedRows.map((row) => {
+        if (row.kind === "pad") return <Box key={row.id} height={row.lines} />;
         if (row.kind === "filler" || row.kind === "spacer") {
           return <Box key={row.id} height={1} />;
         }
@@ -340,9 +402,6 @@ export const CommandBarListBody = memo(function CommandBarListBody({
             globalIdx={row.globalIdx}
             isSelected={isSelected}
             isHovered={isHovered}
-            listKind={visibleListState.kind}
-            listTitle={visibleListState.title}
-            listQuery={visibleListState.query}
             contentPadding={contentPadding}
             labelWidth={labelWidth}
             trailingWidth={trailingWidth}
@@ -353,7 +412,6 @@ export const CommandBarListBody = memo(function CommandBarListBody({
           />
         );
       })}
-      {listWindow.padAfter > 0 && <Box height={listWindow.padAfter} />}
     </>
   );
 

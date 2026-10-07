@@ -130,86 +130,62 @@ describe("page keys", () => {
   });
 });
 
-function includesItem(rows: readonly CommandBarListRow[], globalIdx: number): boolean {
-  return rows.some((row) => row.kind === "item" && row.globalIdx === globalIdx);
+function mountedItems(window: ReturnType<typeof resolveListRowWindow>): number[] {
+  return window.runs.flatMap((run) => run.rows.flatMap((row) => (row.kind === "item" ? [row.globalIdx] : [])));
+}
+
+function mountedLines(window: ReturnType<typeof resolveListRowWindow>): number {
+  return window.runs.reduce((total, run) => total + run.padBefore + getListRowsHeight(run.rows), window.padAfter);
 }
 
 describe("list row window", () => {
-  test("does not slice a list that fits in the viewport plus the overscan", () => {
-    const rows = buildListRows(makeListState([
-      makeItem("a", "Commands"),
-      makeItem("b", "Commands", 2),
-    ]));
+  const longRows = (count: number, selectedIdx: number) => buildListRows(makeListState(
+    Array.from({ length: count }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
+    selectedIdx,
+  ));
 
+  test("mounts a list that fits whole", () => {
+    const rows = buildListRows(makeListState([makeItem("a", "Commands"), makeItem("b", "Commands", 2)]));
     const window = resolveListRowWindow(rows, 1, 16, 8);
-
-    expect(window.rows).toBe(rows);
-    expect(window.padBefore).toBe(0);
+    expect(window.runs).toEqual([{ padBefore: 0, rows }]);
     expect(window.padAfter).toBe(0);
   });
 
-  test("keeps the selected row and balances the spacers against the full height", () => {
-    const rows = buildListRows(makeListState(
-      Array.from({ length: 60 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
-      40,
-    ));
-    const fullHeight = getListRowsHeight(rows);
-
-    const window = resolveListRowWindow(rows, 40, 10, 8);
-
-    expect(includesItem(window.rows, 40)).toBe(true);
-    expect(window.padBefore).toBe(41 - (10 - 1) - 8);
-    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(fullHeight);
-    expect(window.padBefore).toBeGreaterThan(0);
-    expect(window.padAfter).toBeGreaterThan(0);
-    expect(window.rows.length).toBeLessThan(rows.length);
+  test("mounts every line the scroll can land on when it follows the selection, in steady steps", () => {
+    const rows = longRows(200, 100);
+    const viewport = 16;
+    const window = resolveListRowWindow(rows, 100, viewport, 8, 90);
+    const items = mountedItems(window);
+    // The selected row sits on line 101 (after the heading); a viewport either way of it is mounted.
+    expect(items[0]).toBeLessThanOrEqual(100 - (viewport - 1) - 1);
+    expect(items.at(-1)).toBeGreaterThanOrEqual(100 + (viewport - 1));
+    expect(items.length).toBeLessThan(rows.length / 2);
+    expect(mountedLines(window)).toBe(getListRowsHeight(rows));
+    // One row further down the same rows stay mounted, so nothing remounts per keypress.
+    expect(mountedItems(resolveListRowWindow(rows, 101, viewport, 8, 91))).toEqual(items);
   });
 
-  test("starts at the top when nothing is selected", () => {
-    const rows = buildListRows(makeListState(
-      Array.from({ length: 40 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
-      -1,
-    ));
-
-    const window = resolveListRowWindow(rows, -1, 10, 8);
-
-    expect(window.padBefore).toBe(0);
-    expect(window.rows[0]).toBe(rows[0]);
-    expect(getListRowsHeight(window.rows)).toBe(10 + 8);
-    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(getListRowsHeight(rows));
+  test("a jump to the end mounts the end and the lines still on screen, not everything between", () => {
+    const rows = longRows(400, 399);
+    const window = resolveListRowWindow(rows, 399, 16, 8, 0);
+    expect(window.runs).toHaveLength(2);
+    expect(window.runs[0]!.padBefore).toBe(0);
+    expect(mountedItems(window)).toContain(399);
+    expect(mountedItems(window)).toContain(0);
+    expect(mountedItems(window).length).toBeLessThan(150);
+    expect(mountedLines(window)).toBe(getListRowsHeight(rows));
   });
 
-  test("keeps the scrolled lines and the selected row in one slice", () => {
-    const rows = buildListRows(makeListState(
-      Array.from({ length: 60 }, (_unused, index) => makeItem(`item-${index}`, "Commands")),
-      40,
-    ));
-    const fullHeight = getListRowsHeight(rows);
-
-    const parked = resolveListRowWindow(rows, 40, 10, 8, 0);
-    expect(parked.padBefore).toBe(0);
-    expect(includesItem(parked.rows, 40)).toBe(true);
-    expect(parked.padBefore + getListRowsHeight(parked.rows) + parked.padAfter).toBe(fullHeight);
-
-    const beside = resolveListRowWindow(rows, 40, 10, 8, 41);
-    expect(beside.padBefore).toBe(41 - (10 - 1) - 8);
-    expect(includesItem(beside.rows, 40)).toBe(true);
-  });
-
-  test("mounts a multi-line row whole when the window starts inside it", () => {
+  test("mounts a multi-line row whole when an edge falls inside it", () => {
     const rows = buildListRows(makeListState([
-      ...Array.from({ length: 20 }, (_unused, index) => makeItem(`before-${index}`, "Commands")),
+      ...Array.from({ length: 30 }, (_unused, index) => makeItem(`before-${index}`, "Commands")),
       makeItem("tall", "Commands", 2),
-      ...Array.from({ length: 20 }, (_unused, index) => makeItem(`after-${index}`, "Commands")),
-    ], 28));
-
-    const window = resolveListRowWindow(rows, 28, 10, 0);
-
-    expect(includesItem(window.rows, 28)).toBe(true);
-    expect(window.rows[0]).toMatchObject({ kind: "item", globalIdx: 20 });
-    expect(window.padBefore).toBe(21);
-    expect(getListRowsHeight(window.rows.slice(0, 1))).toBe(3);
-    expect(includesItem(window.rows, 19)).toBe(false);
-    expect(window.padBefore + getListRowsHeight(window.rows) + window.padAfter).toBe(getListRowsHeight(rows));
+      ...Array.from({ length: 60 }, (_unused, index) => makeItem(`after-${index}`, "Commands")),
+    ], 57));
+    // The tall row covers lines 31 to 33 and the mounted lines start on line 32.
+    const window = resolveListRowWindow(rows, 57, 10, 0);
+    expect(window.runs[0]!.padBefore).toBe(31);
+    expect(window.runs[0]!.rows[0]).toMatchObject({ kind: "item", item: { id: "tall" } });
+    expect(mountedLines(window)).toBe(getListRowsHeight(rows));
   });
 });
