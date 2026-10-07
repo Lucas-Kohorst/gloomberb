@@ -223,6 +223,34 @@ function sanitizeWatchlist(watchlist: Watchlist): Watchlist {
   };
 }
 
+function withoutWatchlistGroups(watchlist: Watchlist): Watchlist {
+  if (!watchlist.groups) return watchlist;
+  const { groups: _groups, ...rest } = watchlist;
+  return rest;
+}
+
+function isPulledWatchlist(value: unknown): value is Watchlist {
+  return isRecord(value) && typeof value.id === "string" && typeof value.name === "string";
+}
+
+/**
+ * Groups never go to the server. When a pulled list replaces a local one and
+ * does not carry them, keep the ones stored here. A list the cloud dropped
+ * stays dropped, and a team list never receives any.
+ */
+function withLocalWatchlistGroups(local: readonly Watchlist[], incoming: readonly unknown[]): Watchlist[] {
+  const localById = new Map(local.map((watchlist) => [watchlist.id, watchlist]));
+  return incoming.map((entry) => {
+    if (!isPulledWatchlist(entry)) return entry as unknown as Watchlist;
+    const watchlist = entry;
+    const previous = localById.get(watchlist.id);
+    if (watchlist.teamId || previous?.teamId) return withoutWatchlistGroups(watchlist);
+    if (Array.isArray(watchlist.groups)) return watchlist;
+    if (!previous?.groups?.length) return watchlist;
+    return { ...watchlist, groups: previous.groups };
+  });
+}
+
 function sanitizeBrokerInstance(instance: BrokerInstanceConfig): Omit<BrokerInstanceConfig, "config"> {
   return {
     id: instance.id,
@@ -651,7 +679,12 @@ function mergeConfigPayload(
       ? mergeLocalBrokerPortfolioIdentity(config.portfolios, syncedPortfolios as Portfolio[])
       : syncedPortfolios as AppConfig["portfolios"];
   }
-  assign("watchlists");
+  if ("watchlists" in payload && canApply("watchlists")) {
+    const syncedWatchlists = payload.watchlists;
+    next.watchlists = Array.isArray(syncedWatchlists)
+      ? withLocalWatchlistGroups(config.watchlists, syncedWatchlists)
+      : syncedWatchlists as AppConfig["watchlists"];
+  }
   assign("disabledSources");
   assign("theme");
   assign("chartPreferences");

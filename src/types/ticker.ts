@@ -58,10 +58,18 @@ export interface Portfolio {
   teamId?: string;
 }
 
+export interface WatchlistGroup {
+  id: string;
+  name: string;
+  symbols: string[];
+}
+
 export interface Watchlist {
   id: string;
   name: string;
   description?: string;
   /** Set on watchlists shared with a team; the server holds the items. */
   teamId?: string;
+  /** Personal lists only. Absent on anything the cloud has stored. */
+  groups?: WatchlistGroup[];
 }

@@ -8,6 +8,7 @@ import { useDataTableSortMenu } from "../../../components/data-table/sort-menu";
 import { followLiveSparklinePrice } from "../../../components/price-sparkline/model";
 import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline/view";
 import type { QuoteFlashDirection } from "../../../components/quote-flash";
+import type { TickerListRow } from "../../../components/ticker/list-table-view";
 import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import type { ColumnConfig } from "../../../types/config";
 import type { PricePoint, TickerFinancials } from "../../../types/financials";
@@ -19,6 +20,7 @@ import { portfolioPnlLabel } from "./position-metrics";
 import { PORTFOLIO_ROW_MENU_KEYS } from "./row-actions";
 
 export type { QuoteFlashDirection };
+export type { TickerListRow };
 
 /** A cell recomputes only when its row's records or a context input it reads change. */
 function buildCellVersion(
@@ -98,6 +100,7 @@ export function PortfolioTickerTable({
   visibleRangeBuffer,
   resetScrollKey,
   onRowActivate,
+  rows,
   rootHeight,
 }: {
   columns: ColumnConfig[];
@@ -117,6 +120,7 @@ export function PortfolioTickerTable({
   visibleRangeBuffer?: number;
   resetScrollKey?: unknown;
   onRowActivate?: (ticker: TickerRecord) => void;
+  rows?: readonly TickerListRow[];
   rootHeight?: number;
 }) {
   const cellCacheRef = useRef(createRowValueCache<string, ReturnType<typeof getColumnValue>>(5000));
@@ -174,6 +178,7 @@ export function PortfolioTickerTable({
       visibleRangeBuffer={visibleRangeBuffer}
       resetScrollKey={resetScrollKey}
       onRowActivate={onRowActivate}
+      rows={rows}
       rowMenuAccelerators={PORTFOLIO_ROW_MENU_KEYS}
       rootHeight={rootHeight}
     />

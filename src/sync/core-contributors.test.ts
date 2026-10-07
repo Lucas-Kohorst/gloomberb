@@ -474,6 +474,34 @@ describe("core sync contributors", () => {
     expect(incompletePayload).not.toHaveProperty("onboardingComplete");
   });
 
+  test("a pull without groups keeps local groups and a removed watchlist stays removed", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-watchlist-groups");
+    const chips = [{ id: "g1", name: "Chips", symbols: ["NVDA"] }];
+    config.watchlists = [
+      { id: "tech", name: "Tech", groups: chips },
+      { id: "old", name: "Old", groups: [{ id: "g2", name: "Gone", symbols: ["AAPL"] }] },
+      { id: "team:t:1", name: "Team", teamId: "t", groups: [{ id: "g3", name: "Secret", symbols: ["MSFT"] }] },
+    ];
+    const lastSynced = await coreConfigSyncContributor.collect({ state: createInitialState(config) }) as {
+      watchlists: Array<Record<string, unknown>>;
+    };
+    expect(lastSynced.watchlists.every((watchlist) => !("groups" in watchlist))).toBe(true);
+
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      watchlists: [
+        { id: "tech", name: "Technology" },
+        { id: "fresh", name: "Fresh" },
+        { id: "team:t:1", name: "Team", teamId: "t" },
+      ],
+    }, config, lastSynced);
+
+    expect(merged?.watchlists).toEqual([
+      { id: "tech", name: "Technology", groups: chips },
+      { id: "fresh", name: "Fresh" },
+      { id: "team:t:1", name: "Team", teamId: "t" },
+    ]);
+  });
+
   test("ignores malformed synced layout collections", () => {
     const config = createDefaultConfig("/tmp/gloomberb-sync-test");
     const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {

@@ -45,6 +45,22 @@ export interface TickerListVisibleRange {
   end: number;
 }
 
+export interface TickerListSectionRow {
+  kind: "section";
+  id: string;
+  label: string;
+}
+
+export type TickerListRow = TickerRecord | TickerListSectionRow;
+
+function isTickerRow(item: TickerListRow): item is TickerRecord {
+  return "metadata" in item;
+}
+
+function getTickerListRowKey(item: TickerListRow): string {
+  return isTickerRow(item) ? item.metadata.ticker : `section:${item.id}`;
+}
+
 export interface TickerListTableViewProps {
   columns: ColumnConfig[];
   tickers: TickerRecord[];
@@ -78,6 +94,11 @@ export interface TickerListTableViewProps {
   sortDirection?: "asc" | "desc";
   onHeaderClick?: (columnId: string) => void;
   onRowActivate?: (ticker: TickerRecord) => void;
+  /**
+   * Section headers mixed into the ticker rows. Headers are not selectable.
+   * Omit it and the table is the ticker list alone.
+   */
+  rows?: readonly TickerListRow[];
   /** The pane's own keys for row menu actions, by item id, shown beside them in the pane menu. */
   rowMenuAccelerators?: Readonly<Record<string, string>>;
   emptyTitle?: string;
@@ -118,10 +139,6 @@ type TableMouseEvent = {
 
 function getPriceHistory(financials: TickerFinancials | undefined): PricePoint[] | undefined {
   return financials?.priceHistory;
-}
-
-function getTickerKey(ticker: TickerRecord): string {
-  return ticker.metadata.ticker;
 }
 
 /** What right-clicking the row offers, plugin additions included. */
@@ -199,6 +216,7 @@ export function TickerListTableView({
   sortDirection = "asc",
   onHeaderClick,
   onRowActivate,
+  rows,
   rowMenuAccelerators,
   emptyTitle = t("No tickers."),
   emptyHint,
@@ -211,9 +229,11 @@ export function TickerListTableView({
   const { showContextMenu } = useContextMenu();
   const { nativeContextMenu } = useUiCapabilities();
   const safeFlashSymbols = flashSymbols ?? EMPTY_FLASH_SYMBOLS;
+  const items = (rows ?? tickers) as TickerListRow[];
+  const sectioned = rows != null;
   const selectedIndex = useMemo(
-    () => tickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol),
-    [cursorSymbol, tickers],
+    () => items.findIndex((item) => isTickerRow(item) && item.metadata.ticker === cursorSymbol),
+    [cursorSymbol, items],
   );
 
   // A quote tick replaces the financials map and the flash set. The cell
@@ -232,11 +252,12 @@ export function TickerListTableView({
   const resolveEpoch = resolveCellRef.current.epoch;
 
   const renderCell = useCallback((
-    ticker: TickerRecord,
+    ticker: TickerListRow,
     column: ColumnConfig,
     _index: number,
     rowState: { selected: boolean },
   ) => {
+    if (!isTickerRow(ticker)) return { text: "" };
     const financials = financialsRef.current.get(ticker.metadata.ticker);
     if (column.id === PRICE_SPARKLINE_COLUMN_ID) {
       return {
@@ -255,28 +276,47 @@ export function TickerListTableView({
     };
   }, []);
 
-  const getRowVersion = useCallback((ticker: TickerRecord) => {
+  const getRowVersion = useCallback((ticker: TickerListRow) => {
+    if (!isTickerRow(ticker)) return ticker.id;
     const symbol = ticker.metadata.ticker;
     return `${resolveEpoch}|${objectVersion(financialsMap.get(symbol))}|${safeFlashSymbols.get(symbol) ?? ""}`;
   }, [financialsMap, resolveEpoch, safeFlashSymbols]);
 
-  const selection = useMemo<DataTableSelection<TickerRecord>>(() => ({
+  const selection = useMemo<DataTableSelection<TickerListRow>>(() => ({
     kind: "id",
     selectedId: cursorSymbol,
-    getId: getTickerKey,
+    getId: getTickerListRowKey,
     onChange: (symbol) => {
       setCursorSymbol(symbol);
     },
   }), [cursorSymbol, setCursorSymbol]);
 
-  const handleActivate = useCallback((ticker: TickerRecord) => {
-    onRowActivate?.(ticker);
+  const handleActivate = useCallback((ticker: TickerListRow) => {
+    if (isTickerRow(ticker)) onRowActivate?.(ticker);
   }, [onRowActivate]);
 
+  const handleCursorChange = useCallback((ticker: TickerListRow, index: number) => {
+    if (isTickerRow(ticker)) onCursorChange?.(ticker, index);
+  }, [onCursorChange]);
+
+  const reportVisibleRange = useCallback((range: TickerListVisibleRange) => {
+    if (!onVisibleRangeChange) return;
+    const tickerIndexAt = (itemIndex: number) => {
+      let count = 0;
+      const end = Math.min(Math.max(itemIndex, 0), items.length);
+      for (let index = 0; index < end; index += 1) {
+        if (isTickerRow(items[index]!)) count += 1;
+      }
+      return count;
+    };
+    onVisibleRangeChange({ start: tickerIndexAt(range.start), end: tickerIndexAt(range.end) });
+  }, [items, onVisibleRangeChange]);
+
   const showTickerContextMenu = useCallback((
-    ticker: TickerRecord,
+    ticker: TickerListRow,
     event: TableMouseEvent,
   ) => {
+    if (!isTickerRow(ticker)) return;
     const financials = financialsRef.current.get(ticker.metadata.ticker);
     const registry = getSharedRegistry() ?? null;
     void showContextMenu(
@@ -296,7 +336,8 @@ export function TickerListTableView({
     );
   }, [renderer, showContextMenu]);
 
-  const handleRowMouseDown = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
+  const handleRowMouseDown = useCallback((ticker: TickerListRow, _index: number, event: TableMouseEvent) => {
+    if (!isTickerRow(ticker)) return false;
     if (event.button !== 2) return false;
     if (nativeContextMenu !== true) {
       showTickerContextMenu(ticker, event);
@@ -304,12 +345,14 @@ export function TickerListTableView({
     return true;
   }, [nativeContextMenu, showTickerContextMenu]);
 
-  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
+  const handleRowContextMenu = useCallback((ticker: TickerListRow, _index: number, event: TableMouseEvent) => {
+    if (!isTickerRow(ticker)) return;
     showTickerContextMenu(ticker, event);
   }, [showTickerContextMenu]);
 
   // The cursor row's right-click menu, for the keyboard, while the table is focused.
-  const cursorTicker = selectedIndex >= 0 ? tickers[selectedIndex] ?? null : null;
+  const cursorItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
+  const cursorTicker = cursorItem && isTickerRow(cursorItem) ? cursorItem : null;
   const cursorFinancials = cursorTicker ? financialsMap.get(cursorTicker.metadata.ticker) ?? null : null;
   useTickerRowPaneMenu({
     ticker: cursorTicker,
@@ -319,21 +362,25 @@ export function TickerListTableView({
   });
 
   return (
-    <DataTableView<TickerRecord, ColumnConfig>
+    <DataTableView<TickerListRow, ColumnConfig>
       focused={focused}
       columns={columns}
-      items={tickers}
+      items={items}
       sortColumnId={sortColumnId ?? null}
       sortDirection={sortDirection}
       onHeaderClick={onHeaderClick}
-      getItemKey={getTickerKey}
+      getItemKey={getTickerListRowKey}
       selection={selection}
-      onCursorChange={onCursorChange}
+      onCursorChange={handleCursorChange}
       onActivate={handleActivate}
       onRowMouseDown={handleRowMouseDown}
       onRowContextMenu={handleRowContextMenu}
       rowContextMenuSurface
       renderCell={renderCell}
+      renderSectionHeader={sectioned
+        ? (item) => isTickerRow(item) ? null : { text: item.label }
+        : undefined}
+      isNavigable={sectioned ? isTickerRow : undefined}
       getRowVersion={getRowVersion}
       emptyStateTitle={emptyTitle}
       emptyStateHint={resolvedEmptyHint}
@@ -348,7 +395,7 @@ export function TickerListTableView({
       scrollRef={scrollRef}
       syncHeaderScroll={syncHeaderScroll}
       onBodyScrollActivity={onBodyScrollActivity}
-      onVisibleRangeChange={onVisibleRangeChange}
+      onVisibleRangeChange={sectioned ? reportVisibleRange : onVisibleRangeChange}
       visibleRangeBuffer={visibleRangeBuffer}
       keyboardNavigation={keyboardNavigation}
       onRootKeyDown={onRootKeyDown}

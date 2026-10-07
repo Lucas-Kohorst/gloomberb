@@ -3,6 +3,7 @@ import { describeFundamentalMarketCap } from "../../../../utils/market-capitaliz
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   confirmDialog,
+  TextPromptDialog,
   usePaneFooter,
   usePaneNoticeFooter,
   usePaneTabs,
@@ -13,10 +14,11 @@ import { useTickerSourceActivate } from "../../../../react/ticker-source";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { buildPortfolioFinancialsMap } from "../../../../market-data/portfolio-financials";
 import { useAppVisible } from "../../../../state/app/activity";
-import { tf } from "../../../../i18n";
+import { t, tf } from "../../../../i18n";
 import { useDialog } from "../../../../ui/dialog";
 import {
   useAppDispatch,
+  useAppGetState,
   useAppSelector,
   useAppStateRef,
   usePaneCollection,
@@ -26,6 +28,7 @@ import {
   type CollectionSortPreference,
   usePaneAppConfig,
 } from "../../../../state/app/context";
+import { scheduleConfigSave } from "../../../../state/config-save-scheduler";
 import { summarizeFxRates, fxStatusLabel } from "../../../../utils/fx-status";
 import { convertCurrency } from "../../../../utils/format";
 import { nextHeaderSort } from "../../../../utils/sort-values";
@@ -60,7 +63,8 @@ import {
   type PortfolioViewMode,
 } from "../settings";
 import { useQuoteFlashMap } from "../../../../components/quote-flash";
-import { PortfolioTickerTable } from "../table";
+import { PortfolioTickerTable, type TickerListRow } from "../table";
+import { assignWatchlistSymbolGroup, layoutWatchlist, pruneWatchlistGroups } from "../groups";
 import { PortfolioGrid } from "../grid";
 import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
 import { useCursorNeighborPrefetch } from "../use-cursor-neighbor-prefetch";
@@ -144,6 +148,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       ? config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
       : null
   ), [activeCollectionId, config.portfolios, isPortfolioTab]);
+  const activeWatchlist = useMemo(() => (
+    isPortfolioTab
+      ? null
+      : config.watchlists.find((watchlist) => watchlist.id === activeCollectionId) ?? null
+  ), [activeCollectionId, config.watchlists, isPortfolioTab]);
   const viewMode: PortfolioViewMode = isPortfolioTab ? paneSettings.viewMode : "table";
 
   const tickers = useMemo(
@@ -254,6 +263,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
   const orderResetKey = `${activeCollectionId}|${activeSort.columnId ?? ""}|${activeSort.direction}`;
   const orderedSymbols = useThrottledTickerOrder(candidateSymbols, orderResetKey);
+  const watchlistLayout = useMemo(
+    () => activeWatchlist ? layoutWatchlist(orderedSymbols, activeWatchlist, activeSort.columnId != null) : null,
+    [activeSort.columnId, activeWatchlist, orderedSymbols],
+  );
+  const displaySymbols = watchlistLayout?.kind === "grouped" ? watchlistLayout.symbols : orderedSymbols;
   // Keyed on the records, not the re-sorted candidates, so the rows keep their
   // identity across ticks until the throttled order actually moves.
   const tickerBySymbol = useMemo(
@@ -261,12 +275,25 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     [tickers],
   );
   const sortedTickers = useMemo(
-    () => orderedSymbols.flatMap((symbol) => {
+    () => displaySymbols.flatMap((symbol) => {
       const ticker = tickerBySymbol.get(symbol);
       return ticker ? [ticker] : [];
     }),
-    [orderedSymbols, tickerBySymbol],
+    [displaySymbols, tickerBySymbol],
   );
+  const sectionedRows = useMemo(() => {
+    if (watchlistLayout?.kind !== "grouped") return undefined;
+    const rows: TickerListRow[] = [];
+    for (const row of watchlistLayout.rows) {
+      if (row.kind === "header") {
+        rows.push({ kind: "section", id: row.id, label: row.name ?? t("Ungrouped") });
+        continue;
+      }
+      const ticker = tickerBySymbol.get(row.symbol);
+      if (ticker) rows.push(ticker);
+    }
+    return rows;
+  }, [tickerBySymbol, watchlistLayout]);
 
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
@@ -378,8 +405,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     openTickerFloating(ticker.metadata.ticker, { newPane: true });
   }, [flushCursorSymbol, openTickerFloating]);
 
-  // `c` (cash), `d` (delete), and `s` (table or grid) are footer hints, which
-  // bind their own keys in both views; the table only adds Shift+Enter.
+  // `c` (cash), `d` (delete), `g` (group), and `s` (table or grid) are footer
+  // hints, which bind their own keys; the table only adds Shift+Enter.
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
 
@@ -469,8 +496,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     : fxWarning ? [`FX ${fxStatusText}`] : [];
 
   const dispatch = useAppDispatch();
+  const getState = useAppGetState();
   const dialog = useDialog();
   const appStateRef = useAppStateRef();
+  const groupingRef = useRef(false);
   const { notify } = usePluginAppActions();
   const removalCollection = useMemo(
     () => removableCollection(config, activeCollectionId),
@@ -508,13 +537,80 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       const symbols = sortedTickersRef.current.map((ticker) => ticker.metadata.ticker);
       setCursorSymbol(cursorAfterRemoval(symbols, symbol), { immediate: true });
       dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
+      if (collection.kind === "watchlist") {
+        const state = getState();
+        const watchlist = state.config.watchlists.find((entry) => entry.id === collection.id);
+        if (watchlist) {
+          const members: string[] = [];
+          for (const entry of state.tickers.values()) {
+            if (entry.metadata.ticker === symbol) continue;
+            if (entry.metadata.watchlists.includes(collection.id)) members.push(entry.metadata.ticker);
+          }
+          const nextWatchlist = pruneWatchlistGroups(watchlist, members);
+          if (nextWatchlist !== watchlist) {
+            const nextConfig = {
+              ...state.config,
+              watchlists: state.config.watchlists.map((entry) => entry.id === watchlist.id ? nextWatchlist : entry),
+            };
+            dispatch({ type: "SET_CONFIG", config: nextConfig });
+            scheduleConfigSave(nextConfig);
+          }
+        }
+      }
       notify({ type: "success", body: tf("Removed {symbol} from {collection}.", { symbol, collection: collection.name }) });
     } catch {
       notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
     } finally {
       removingRef.current = false;
     }
-  }, [appStateRef, dialog, dispatch, notify, removalCollection, selectedTicker, setCursorSymbol]);
+  }, [appStateRef, dialog, dispatch, getState, notify, removalCollection, selectedTicker, setCursorSymbol]);
+
+  const groupSelectedTicker = useCallback(async () => {
+    if (groupingRef.current) return;
+    const collection = removalCollection;
+    const ticker = selectedTicker;
+    if (!collection || collection.kind !== "watchlist" || !ticker) return;
+    const symbol = ticker.metadata.ticker;
+    const watchlist = getState().config.watchlists.find((entry) => entry.id === collection.id);
+    if (!watchlist || watchlist.teamId) return;
+    const currentName = watchlist.groups?.find((group) => group.symbols.includes(symbol))?.name;
+    groupingRef.current = true;
+    try {
+      const name = await dialog.prompt<string>({
+        closeOnClickOutside: true,
+        content: (context) => (
+          <TextPromptDialog
+            {...context}
+            title={tf("Group {symbol}", { symbol })}
+            label="Group"
+            placeholder="Group name"
+            confirmLabel="Save"
+            allowEmpty
+            initialValue={currentName}
+            width={40}
+          />
+        ),
+      }).catch(() => undefined);
+      if (name === undefined) return;
+      const latest = getState();
+      const current = latest.config.watchlists.find((entry) => entry.id === collection.id);
+      if (!current || current.teamId) return;
+      const members: string[] = [];
+      for (const entry of latest.tickers.values()) {
+        if (entry.metadata.watchlists.includes(current.id)) members.push(entry.metadata.ticker);
+      }
+      const nextWatchlist = assignWatchlistSymbolGroup(current, members, symbol, name);
+      if (nextWatchlist === current) return;
+      const nextConfig = {
+        ...latest.config,
+        watchlists: latest.config.watchlists.map((entry) => entry.id === current.id ? nextWatchlist : entry),
+      };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      scheduleConfigSave(nextConfig);
+    } finally {
+      groupingRef.current = false;
+    }
+  }, [dialog, dispatch, getState, removalCollection, selectedTicker]);
 
   usePaneFooter("portfolio-list", () => ({
     info: fxStatusText && !fxWarning
@@ -529,6 +625,15 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
             title: tf("Remove from {collection}", { collection: removalCollection.name }),
             onPress: () => { void removeSelectedTicker(); },
             disabled: !selectedTicker,
+          }]
+        : []),
+      ...(removalCollection?.kind === "watchlist" && selectedTicker
+        ? [{
+            id: "group",
+            key: "g",
+            label: "roup",
+            title: t("Group"),
+            onPress: () => { void groupSelectedTicker(); },
           }]
         : []),
       ...(showCashDrawer
@@ -552,6 +657,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ],
   }), [
     cashDrawerExpanded,
+    groupSelectedTicker,
     fxStatusText,
     fxWarning,
     isPortfolioTab,
@@ -637,6 +743,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           visibleRangeBuffer={3}
           resetScrollKey={activeCollectionId}
           onRowActivate={handleRowActivate}
+          rows={sectionedRows}
           rootHeight={contentHeight}
         />
       ) : (
