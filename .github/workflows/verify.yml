@@ -51,10 +51,16 @@ jobs:
       - name: Test
         run: bun test
 
+      # The charting library is not in git. These steps prove the canvas build.
+      # Deploy leaves the backend on auto and will not publish without the library.
       - name: Build Electrobun view
+        env:
+          GLOOM_CHART_BACKEND: custom
         run: bun run desktop:view:build
 
       - name: Build and audit browser app
+        env:
+          GLOOM_CHART_BACKEND: custom
         run: bun run web:audit
 
       # Reuses the bundle the audit step just built.

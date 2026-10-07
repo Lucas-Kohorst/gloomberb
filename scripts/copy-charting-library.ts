@@ -20,23 +20,24 @@ export async function stampEmptyChartChunks(dir: string): Promise<void> {
   }
 }
 
-/** The widget loads bundles from `library_path` at runtime. Ship the submodule's static folder next to the page. */
-export async function copyChartingLibrary(outdir: string): Promise<void> {
-  const source = join(process.cwd(), "vendor", "charting_library", "charting_library");
+/**
+ * The widget loads bundles from `library_path` at runtime.
+ * `auto` still mounts TradingView on the hosted page, so a missing library
+ * must fail the build. `GLOOM_CHART_BACKEND=custom` is the canvas-only build.
+ */
+export async function copyChartingLibrary(
+  outdir: string,
+  source = join(process.cwd(), "vendor", "charting_library", "charting_library"),
+): Promise<void> {
   const dest = join(outdir, "charting_library");
   await rm(dest, { recursive: true, force: true });
   try {
     await stat(source);
   } catch {
-    // The library is a git submodule (`git submodule update --init`). Checkouts
-    // without it can still build: GLOOM_CHART_BACKEND=custom renders every
-    // chart with the built-in renderer, and auto falls back where the library
-    // cannot load.
-    console.warn(
-      "[charts] vendor/charting_library is missing (submodule not initialized); skipping the copy.\n" +
-      "         Set GLOOM_CHART_BACKEND=custom to ship the fully custom charts without it.",
+    if ((process.env.GLOOM_CHART_BACKEND ?? "").trim().toLowerCase() === "custom") return;
+    throw new Error(
+      "vendor/charting_library is missing. Hosted and desktop builds mount TradingView unless GLOOM_CHART_BACKEND=custom.",
     );
-    return;
   }
   await cp(source, dest, { recursive: true });
   await stampEmptyChartChunks(dest);
