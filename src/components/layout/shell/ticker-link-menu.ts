@@ -16,7 +16,7 @@ import {
 } from "../../../types/config";
 import type { ContextMenuItem } from "../../../types/context-menu";
 import type { PaneDef } from "../../../types/plugin";
-import { getBasePaneDisplayTitle } from "../pane/title";
+import { getTickerLinkSourceTitle } from "../pane/title";
 
 /**
  * Flat link controls for a pane that shows one ticker (Ticker Research, or a pane that sets
@@ -89,7 +89,7 @@ export function tickerLinkMenuItems({
       && followBindingReaches(layout, source.instanceId, instance.instanceId)
     ) return [];
     if (peer && !list && !resolveTickerForPane(state as AppState, source.instanceId)) return [];
-    const title = getBasePaneDisplayTitle(state, source, sourceDef);
+    const title = getTickerLinkSourceTitle(state, source, sourceDef, panes, "menu");
 
     if (source.instanceId !== sourceInstanceId) {
       return linkable

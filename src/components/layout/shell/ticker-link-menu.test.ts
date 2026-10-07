@@ -223,6 +223,9 @@ describe("tickerLinkMenuItems", () => {
       return getPaneDisplayTitle(current, instance, linkedPanes.get(instance.paneId)!, linkedPanes);
     };
 
+    // Ticker Research's title is only its symbol, so a row names the pane as well.
+    expect(menu(options.instanceId).find((item) => item.id === "link:ticker-detail:main")?.label)
+      .toBe("Link to Ticker Research AAPL");
     menu(options.instanceId).find((item) => item.id === "link:vol-surface:SPY")!.onSelect!();
     menu(second.instanceId).find((item) => item.id === "link:vol-surface:SPY")!.onSelect!();
     expect(findPaneInstance(layout, options.instanceId)).toMatchObject({
@@ -233,7 +236,7 @@ describe("tickerLinkMenuItems", () => {
       kind: "follow",
       sourceInstanceId: surface.instanceId,
     });
-    expect(title(options.instanceId)).toBe("OMON SPY  ⧉ Linked to OVDV SPY");
+    expect(title(options.instanceId)).toBe("OMON SPY  ⧉ Linked to OVDV");
     expect(menu(surface.instanceId).map((item) => item.id)).not.toContain(`link:${options.instanceId}`);
 
     const linked = layout;
