@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, type CSSProperties } from "react";
 import { TextAttributes } from "../../../ui/host";
 import { DisclosureMarker } from "../../../components/ui/disclosure-marker";
 import type {
@@ -9,11 +9,6 @@ import type {
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
 import { tableColumnLeadGap } from "../../../components/ui/table-layout";
-import {
-  MAX_TABLE_COLUMN_WIDTH,
-  MIN_TABLE_COLUMN_WIDTH,
-  resizedColumnWidth,
-} from "../../../components/data-table/column-widths";
 import { WebIcon } from "../desktop/icons";
 import { useFrozenColumnInsets } from "./frozen-column";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../../theme/font-scale";
@@ -60,156 +55,6 @@ function inlinePaddingPx(horizontalPadding: number): number {
   return TABLE_INLINE_PADDING_PX * horizontalPadding;
 }
 
-function WebColumnResizeHandle<C extends DataTableColumn>({
-  column,
-  onResize,
-  onResizeEnd,
-  onReset,
-  focusPane,
-}: {
-  column: C;
-  focusPane: () => void;
-  onResize?: (columnId: string, width: number) => void;
-  onResizeEnd?: () => void;
-  onReset?: (columnId: string) => void;
-}) {
-  const onResizeRef = useRef(onResize);
-  const onResizeEndRef = useRef(onResizeEnd);
-  const onResetRef = useRef(onReset);
-  onResizeRef.current = onResize;
-  onResizeEndRef.current = onResizeEnd;
-  onResetRef.current = onReset;
-  const keyboardResizedRef = useRef(false);
-  const keyboardWidthRef = useRef<number | null>(null);
-  const [active, setActive] = useState(false);
-  const sessionRef = useRef<{
-    columnId: string;
-    startWidth: number;
-    startX: number;
-    lastWidth: number;
-    pointerId: number;
-    handleMove: (event: globalThis.PointerEvent) => void;
-    handleUp: (event?: globalThis.PointerEvent) => void;
-  } | null>(null);
-
-  const finishKeyboardResize = () => {
-    if (!keyboardResizedRef.current) return;
-    keyboardResizedRef.current = false;
-    keyboardWidthRef.current = null;
-    onResizeEndRef.current?.();
-  };
-
-  useEffect(() => () => {
-    const session = sessionRef.current;
-    if (session) {
-      document.removeEventListener("pointermove", session.handleMove);
-      document.removeEventListener("pointerup", session.handleUp);
-      document.removeEventListener("pointercancel", session.handleUp);
-      sessionRef.current = null;
-    }
-    document.body.classList.remove("gloom-col-resizing");
-  }, []);
-
-  if (!onResize) return null;
-
-  const renderedWidth = (cell: HTMLElement | null) => {
-    const width = cell?.getBoundingClientRect().width;
-    return width && width > 0 ? width / WEB_CELL_WIDTH : column.width;
-  };
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.button !== 0 || !event.isPrimary || sessionRef.current) return;
-    event.currentTarget.focus();
-    if (event.detail >= 2) return;
-    const startWidth = renderedWidth(event.currentTarget.parentElement);
-    const handleMove = (moveEvent: globalThis.PointerEvent) => {
-      const session = sessionRef.current;
-      if (!session || moveEvent.pointerId !== session.pointerId) return;
-      const deltaCells = (moveEvent.clientX - session.startX) / WEB_CELL_WIDTH;
-      const nextWidth = resizedColumnWidth(session.startWidth, deltaCells);
-      if (nextWidth === session.lastWidth) return;
-      session.lastWidth = nextWidth;
-      onResizeRef.current?.(session.columnId, nextWidth);
-    };
-    const handleUp = (upEvent?: globalThis.PointerEvent) => {
-      const session = sessionRef.current;
-      if (!session || (upEvent && upEvent.pointerId !== session.pointerId)) return;
-      sessionRef.current = null;
-      setActive(false);
-      document.body.classList.remove("gloom-col-resizing");
-      document.removeEventListener("pointermove", session.handleMove);
-      document.removeEventListener("pointerup", session.handleUp);
-      document.removeEventListener("pointercancel", session.handleUp);
-      onResizeEndRef.current?.();
-    };
-    sessionRef.current = {
-      columnId: column.id,
-      pointerId: event.pointerId,
-      startWidth,
-      startX: event.clientX,
-      lastWidth: Math.round(startWidth),
-      handleMove,
-      handleUp,
-    };
-    setActive(true);
-    document.body.classList.add("gloom-col-resizing");
-    document.addEventListener("pointermove", handleMove);
-    document.addEventListener("pointerup", handleUp);
-    document.addEventListener("pointercancel", handleUp);
-  };
-
-  return (
-    <div
-      data-gloom-role="data-table-column-resize"
-      data-active={active ? "true" : undefined}
-      role="separator"
-      tabIndex={0}
-      aria-orientation="vertical"
-      aria-valuemin={MIN_TABLE_COLUMN_WIDTH}
-      aria-valuemax={MAX_TABLE_COLUMN_WIDTH}
-      aria-valuenow={column.width}
-      aria-label={`Resize ${column.label} column`}
-      title="Drag or use Left/Right to resize. Double-click or Home to reset."
-      onPointerDown={handlePointerDown}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home") return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.key === "Home") {
-          keyboardResizedRef.current = false;
-          keyboardWidthRef.current = null;
-          onResetRef.current?.(column.id);
-          return;
-        }
-        const step = event.shiftKey ? 5 : 1;
-        const startWidth = keyboardWidthRef.current ?? renderedWidth(event.currentTarget.parentElement);
-        const nextWidth = resizedColumnWidth(startWidth, event.key === "ArrowLeft" ? -step : step);
-        keyboardWidthRef.current = nextWidth;
-        onResizeRef.current?.(column.id, nextWidth);
-        keyboardResizedRef.current = true;
-      }}
-      onKeyUp={(event) => {
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-        event.stopPropagation();
-        finishKeyboardResize();
-      }}
-      onFocus={focusPane}
-      onBlur={finishKeyboardResize}
-      onDoubleClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onResetRef.current?.(column.id);
-      }}
-    />
-  );
-}
-
 export function WebDataTableHeader<C extends DataTableColumn>({
   columns,
   freezeFirstColumn,
@@ -221,9 +66,6 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   onTableMouseDown,
   gridTemplateColumns,
   onHeaderClick,
-  onColumnResize,
-  onColumnResizeEnd,
-  onColumnResizeReset,
   sortColumnId,
   sortDirection,
 }: {
@@ -237,9 +79,6 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   onTableMouseDown?: (event: any) => void;
   gridTemplateColumns: string;
   onHeaderClick?: (columnId: string) => void;
-  onColumnResize?: (columnId: string, width: number) => void;
-  onColumnResizeEnd?: () => void;
-  onColumnResizeReset?: (columnId: string) => void;
   sortColumnId: string | null;
   sortDirection: "asc" | "desc";
 }) {
@@ -276,7 +115,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             data-gloom-tinted={column.headerColor ? "true" : undefined}
             style={{
               minWidth: 0,
-              position: freezeFirstColumn && columnIndex === 0 ? "sticky" : "relative",
+              position: freezeFirstColumn && columnIndex === 0 ? "sticky" : undefined,
               left: freezeFirstColumn && columnIndex === 0 ? inlinePaddingPx(horizontalPadding) : undefined,
               zIndex: freezeFirstColumn && columnIndex === 0 ? 1 : undefined,
               marginLeft: leadGapCss(columns, columnIndex, columnGap),
@@ -296,8 +135,6 @@ export function WebDataTableHeader<C extends DataTableColumn>({
               boxShadow: freezeFirstColumn && columnIndex === 0 ? `-${inlinePaddingPx(horizontalPadding)}px 0 0 ${column.headerBackgroundColor ?? CSS_PANEL}, ${columnGap * WEB_CELL_WIDTH}px 0 0 ${column.headerBackgroundColor ?? CSS_PANEL}` : undefined,
             }}
             onMouseDown={onHeaderClick ? (event) => {
-              const target = event.target as HTMLElement | null;
-              if (target?.closest?.('[data-gloom-role="data-table-column-resize"]')) return;
               focusPane();
               onTableMouseDown?.(event);
               event.preventDefault();
@@ -326,13 +163,6 @@ export function WebDataTableHeader<C extends DataTableColumn>({
                 <WebIcon name={sortDirection === "asc" ? "sort-up" : "sort-down"} size={SORT_MARKER_SIZE_PX} />
               </span>
             ) : null}
-            <WebColumnResizeHandle
-              column={column}
-              focusPane={focusPane}
-              onResize={onColumnResize}
-              onResizeEnd={onColumnResizeEnd}
-              onReset={onColumnResizeReset}
-            />
           </div>
         );
       })}

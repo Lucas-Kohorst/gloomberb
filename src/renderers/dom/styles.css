@@ -1074,38 +1074,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 /* A header that sorts brightens under the pointer; plain headers (no
    onHeaderClick) are not interactive and stay put. Tinted headers keep
    their colour. */
-[data-gloom-role="data-table-header-cell"][data-gloom-interactive="true"]:not([data-gloom-tinted="true"]):hover > *:not([data-gloom-role="data-table-column-resize"]) {
+[data-gloom-role="data-table-header-cell"][data-gloom-interactive="true"]:not([data-gloom-tinted="true"]):hover > * {
   color: var(--gloom-text) !important;
-}
-[data-gloom-role="data-table-column-resize"] {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 10px;
-  height: 100%;
-  z-index: 2;
-  cursor: col-resize;
-  touch-action: none;
-}
-[data-gloom-role="data-table-column-resize"]::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  right: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
-}
-[data-gloom-role="data-table-column-resize"]:hover::after,
-[data-gloom-role="data-table-column-resize"]:focus-visible::after,
-[data-gloom-role="data-table-column-resize"][data-active="true"]::after {
-  background: var(--gloom-border-focused, #8b8fa3);
-}
-body.gloom-col-resizing,
-body.gloom-col-resizing * {
-  cursor: col-resize !important;
-  user-select: none !important;
 }
 
 /* Keyboard focus. Tab walks the controls of an open dialog, and a focused

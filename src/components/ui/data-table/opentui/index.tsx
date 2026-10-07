@@ -1,7 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useNativeRenderer } from "../../../../ui";
-import { capturePointerDrag } from "../../../../ui/pointer-drag";
-import { resizedColumnWidth } from "../../../data-table/column-widths";
 import { hoverBg } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
 import { usePaneInstance } from "../../../../state/app/context";
@@ -221,71 +219,6 @@ function OpenTuiDataTableRowInner<
 
 const OpenTuiDataTableRow = memo(OpenTuiDataTableRowInner) as typeof OpenTuiDataTableRowInner;
 
-const COLUMN_RESIZE_DOUBLE_CLICK_MS = 400;
-
-function useOpenTuiColumnResize({
-  nativeRenderer,
-  onColumnResize,
-  onColumnResizeEnd,
-  onColumnResizeReset,
-}: {
-  nativeRenderer: unknown;
-  onColumnResize?: (columnId: string, width: number) => void;
-  onColumnResizeEnd?: () => void;
-  onColumnResizeReset?: (columnId: string) => void;
-}) {
-  const headerRowRef = useRef<any>(null);
-  const lastClickRef = useRef<{ columnId: string; time: number } | null>(null);
-  const sessionRef = useRef<{
-    columnId: string;
-    startWidth: number;
-    startX: number;
-    lastWidth: number;
-  } | null>(null);
-
-  const onMouseDrag = useCallback((event: any) => {
-    const session = sessionRef.current;
-    if (!session || !onColumnResize) return;
-    const nextX = typeof event?.x === "number" ? event.x : session.startX;
-    const nextWidth = resizedColumnWidth(session.startWidth, nextX - session.startX);
-    if (nextWidth === session.lastWidth) return;
-    lastClickRef.current = null;
-    session.lastWidth = nextWidth;
-    onColumnResize(session.columnId, nextWidth);
-  }, [onColumnResize]);
-
-  const onMouseDragEnd = useCallback(() => {
-    if (sessionRef.current == null) return;
-    sessionRef.current = null;
-    onColumnResizeEnd?.();
-  }, [onColumnResizeEnd]);
-
-  const onHandleMouseDown = useCallback((columnId: string, startWidth: number, event: any) => {
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    if (event.button != null && event.button !== 0) return;
-    const now = performance.now();
-    const previous = lastClickRef.current;
-    if (previous?.columnId === columnId && now - previous.time <= COLUMN_RESIZE_DOUBLE_CLICK_MS) {
-      lastClickRef.current = null;
-      sessionRef.current = null;
-      onColumnResizeReset?.(columnId);
-      return;
-    }
-    lastClickRef.current = { columnId, time: now };
-    const startX = typeof event?.x === "number" ? event.x : 0;
-    sessionRef.current = { columnId, startWidth, startX, lastWidth: startWidth };
-    capturePointerDrag(nativeRenderer, headerRowRef.current);
-  }, [nativeRenderer, onColumnResizeReset]);
-
-  return {
-    headerRowRef,
-    onMouseDrag: onColumnResize ? onMouseDrag : undefined,
-    onMouseDragEnd: onColumnResize ? onMouseDragEnd : undefined,
-    onHandleMouseDown,
-  };
-}
-
 export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   columns: columnsProp,
   items,
@@ -328,9 +261,6 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   scrollToIndex,
   scrollToIndexAlign = "nearest",
   scrollToIndexVersion = 0,
-  onColumnResize,
-  onColumnResizeEnd,
-  onColumnResizeReset,
 }: DataTableProps<T, C>) {
   const columns = useStableColumns(columnsProp);
   const colors = useThemeColors();
@@ -338,12 +268,6 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const appViewport = useViewport();
   const nativeRenderer = useNativeRenderer();
-  const columnResize = useOpenTuiColumnResize({
-    nativeRenderer,
-    onColumnResize,
-    onColumnResizeEnd,
-    onColumnResizeReset,
-  });
   const [scrollVersion, setScrollVersion] = useState(0);
   const [frozenColumnOffset, setFrozenColumnOffset] = useState(0);
   useEffect(() => {
@@ -602,14 +526,11 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         onSizeChange={measureContentWidth}
       >
         <Box
-          ref={columnResize.headerRowRef}
           flexDirection="row"
           height={1}
           {...tableContentWidthProps(contentWidth)}
           paddingX={horizontalPadding}
           backgroundColor={colors.panel}
-          onMouseDrag={columnResize.onMouseDrag}
-          onMouseDragEnd={columnResize.onMouseDragEnd}
         >
           {displayColumns.map((column, columnIndex) => {
             const frozen = freezeFirstColumn && columnIndex === 0;
@@ -631,48 +552,6 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
               column.align,
               hasNextLabel,
             ) : "");
-            const headerColor = column.headerBackgroundColor ?? colors.panel;
-            const showHandle = Boolean(onColumnResize) && columnGap >= 1;
-            const sortHeader = (event: any) => {
-              focusPane();
-              onTableMouseDown?.(event);
-              if (!onHeaderClick) return;
-              event.preventDefault();
-              onHeaderClick(column.id);
-            };
-            if (showHandle) {
-              const frozenPad = frozen ? horizontalPadding : 0;
-              return (
-                <Box
-                  key={column.id}
-                  flexDirection="row"
-                  width={column.width + columnGap + frozenPad}
-                  marginLeft={frozen ? -horizontalPadding : tableColumnLeadGap(displayColumns, columnIndex, columnGap)}
-                  position="relative"
-                  left={frozen ? frozenColumnOffset : undefined}
-                  zIndex={frozen ? 1 : undefined}
-                  backgroundColor={headerColor}
-                >
-                  <Box width={column.width + frozenPad} height={1} backgroundColor={headerColor} onMouseDown={sortHeader}>
-                    <Text
-                      attributes={TextAttributes.BOLD}
-                      fg={isSorted ? colors.text : column.headerColor ?? colors.textDim}
-                    >
-                      {frozen ? `${" ".repeat(horizontalPadding)}${labelText}` : labelText}
-                    </Text>
-                  </Box>
-                  <Box
-                    width={columnGap}
-                    height={1}
-                    backgroundColor={headerColor}
-                    onMouseDown={(event: any) => {
-                      focusPane();
-                      columnResize.onHandleMouseDown(column.id, column.width, event);
-                    }}
-                  />
-                </Box>
-              );
-            }
             return (
               <Box
                 key={column.id}
@@ -681,8 +560,14 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                 position="relative"
                 left={frozen ? frozenColumnOffset : undefined}
                 zIndex={frozen ? 1 : undefined}
-                backgroundColor={headerColor}
-                onMouseDown={sortHeader}
+                backgroundColor={column.headerBackgroundColor ?? colors.panel}
+                onMouseDown={(event: any) => {
+                  focusPane();
+                  onTableMouseDown?.(event);
+                  if (!onHeaderClick) return;
+                  event.preventDefault();
+                  onHeaderClick(column.id);
+                }}
               >
                 <Text
                   attributes={TextAttributes.BOLD}
