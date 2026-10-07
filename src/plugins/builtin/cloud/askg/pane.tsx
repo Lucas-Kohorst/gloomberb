@@ -71,6 +71,7 @@ import { useDialog, type PromptContext } from "../../../../ui/dialog";
 import { subscribeASKGQuestions } from "./pending-question";
 import { buildASKGUserData } from "./user-data";
 import { ASKGConversationSidebar } from "./sidebar";
+import { ASKGUndoManager } from "./undo";
 import {
   activeTurn,
   canRetryASKGError,
@@ -81,6 +82,7 @@ import {
   pendingConfirmation,
   rowSymbol,
   toolResultTables,
+  toolRowHeadline,
   type ASKGConversationState,
   type ASKGResultTable,
   type ASKGToolRow,
@@ -165,6 +167,7 @@ export function ToolTimelineRow({
   const marker = hasRows ? (expanded ? "▾" : "▸") : "·";
   const tier = tierLabel(row);
   const status = describeToolStatus(row);
+  const { label, summary } = toolRowHeadline(row);
   const undoLabel = row.undo?.status === "running"
     ? "undoing…"
     : row.undo?.status === "done"
@@ -177,21 +180,21 @@ export function ToolTimelineRow({
   // The row lays its parts out with a one-cell gap between each: marker, name,
   // "  " + summary, spacer, tier, status, server mark. A summary that leaves no
   // room for them pushes the row onto two lines, over the note below it.
-  const parts = [marker, row.name, "  ", "", ...(tier ? [`${tier}  `] : []), status, ...(row.origin === "server" ? [" · Gloom"] : [])];
+  const parts = [marker, label, "  ", "", ...(tier ? [`${tier}  `] : []), status, ...(row.origin === "server" ? [" · Gloom"] : [])];
   const fixedWidth = parts.reduce((total, part) => total + part.length, 0) + parts.length;
   const summaryWidth = Math.max(6, width - fixedWidth);
 
   return (
     <Box ref={selected ? selectedRowRef : undefined} flexDirection="column">
       <ActionRow
-        label={row.name}
+        label={label}
         expanded={hasRows ? expanded : undefined}
         active={selected}
         width={width}
         onPress={() => { onSelect(); onToggle(); }}
       >
-        {row.argumentSummary ? (
-          <Text fg={colors.textDim}>{`  ${truncateWithEllipsis(row.argumentSummary, summaryWidth)}`}</Text>
+        {summary ? (
+          <Text fg={colors.textDim}>{`  ${truncateWithEllipsis(summary, summaryWidth)}`}</Text>
         ) : null}
         <Box flexGrow={1} />
         {tier ? <Text fg={row.writeTier === "ui-write" ? colors.textMuted : colors.warning}>{`${tier}  `}</Text> : null}
@@ -514,6 +517,14 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
   const getAppStateRef = useRef(getAppState);
   getAppStateRef.current = getAppState;
 
+  // Each call and each undo gets a fresh executor, so the tokens live here:
+  // an executor's own manager would forget them as soon as its call returned.
+  const undoManager = useMemo(() => new ASKGUndoManager((request) => {
+    const handler = remoteHandlerRef.current;
+    if (!handler) return Promise.reject(new Error("This window cannot undo tool calls."));
+    return handler(request);
+  }), []);
+
   const controller = useMemo(() => new ASKGSessionController({
     transport: apiClient.askg,
     loadManifest: () => loadASKGClientManifest(),
@@ -528,6 +539,7 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
           manifestHash: manifest.manifestHash,
           skipped: [],
         },
+        undoManager,
       });
     },
     client: { kind: clientKind(), version: CLIENT_VERSION },
@@ -544,7 +556,7 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
         ...(userData ? { userData } : {}),
       };
     },
-  }), []);
+  }), [undoManager]);
 
   useEffect(() => () => controller.dispose(), [controller]);
 
