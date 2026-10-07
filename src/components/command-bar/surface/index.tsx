@@ -474,6 +474,7 @@ export function CommandBar({
     createPaneTemplateItem,
     createPluginCommandItem,
     currentRoute,
+    deferEnterToExactSymbol: rootSearching && rootShortcutIntent.kind === "none",
     currentRouteRef,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,

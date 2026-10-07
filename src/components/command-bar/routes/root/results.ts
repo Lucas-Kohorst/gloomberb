@@ -92,6 +92,19 @@ export interface RootResultModelOptions {
   tickerActionItems: () => ResultItem[];
 }
 
+/**
+ * A one- to three-character query matches the start of a label, a shortcut, or
+ * a keyword. A word inside the description ("on or off", "details") does not,
+ * and neither does a later word of the label ("Reset All Data").
+ */
+export function shortRootQueryMatches(query: string, item: Pick<ResultItem, "label" | "shortcutQuery" | "searchText">): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q || q.length >= 4 || /\s/.test(q)) return false;
+  if (item.label.trim().toLowerCase().startsWith(q)) return true;
+  if ((item.shortcutQuery ?? "").trim().toLowerCase().startsWith(q)) return true;
+  return (item.searchText ?? "").toLowerCase().split(/[^a-z0-9]+/).some((word) => word.startsWith(q));
+}
+
 /** An in-flight or answered request keeps its rows even if the heuristic lapses. */
 function isAssistSectionVisible(
   assist: AssistRowHandlers,
@@ -336,12 +349,15 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       ...tickerActionItems(),
       ...pluginCommandItems(),
     ];
-    const matchedItems = fuzzyFilter(
-      allItems,
-      rootQuery,
-      (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`,
-      (item) => item.label,
-    );
+    const trimmedQuery = rootQuery.trim();
+    const matchedItems = trimmedQuery.length > 0 && trimmedQuery.length < 4 && !/\s/.test(trimmedQuery)
+      ? allItems.filter((item) => shortRootQueryMatches(trimmedQuery, item))
+      : fuzzyFilter(
+        allItems,
+        rootQuery,
+        (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`,
+        (item) => item.label,
+      );
     items.push(...matchedItems);
   }
 

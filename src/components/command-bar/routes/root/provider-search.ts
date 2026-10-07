@@ -27,6 +27,8 @@ export function useRootProviderSearch(options: {
     brokerInstanceId?: string | null,
   ) => TickerSearchCandidate[] | null;
   rootPlainTickerSearchArg: string | null;
+  /** A bare mnemonic keeps Enter on the command. The symbol rows are still listed. */
+  symbolsTakeEnter?: boolean;
   rootResultItems: ResultItem[];
   rootTickerSearchArg: string | null;
   tickers: AppState["tickers"];
@@ -52,6 +54,7 @@ export function useRootProviderSearch(options: {
     portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg,
+    symbolsTakeEnter = true,
     rootResultItems,
     rootTickerSearchArg,
     tickers,
@@ -183,7 +186,12 @@ export function useRootProviderSearch(options: {
   const rootResults = useMemo(() => {
     if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
       if (rootPlainTickerSearchArg) {
-        return mergePlainRootTickerResults(rootPlainTickerSearchArg, rootProviderResults, rootResultItems);
+        return mergePlainRootTickerResults(
+          rootPlainTickerSearchArg,
+          rootProviderResults,
+          rootResultItems,
+          { symbolsTakeEnter },
+        );
       }
       return rootProviderResults;
     }
@@ -194,6 +202,7 @@ export function useRootProviderSearch(options: {
     rootProviderResultsQuery,
     rootResultItems,
     rootTickerSearchArg,
+    symbolsTakeEnter,
   ]);
   const rootSectionOrder: CommandBarSectionOrder = rootPlainTickerSearchArg
     ? "app-first"

@@ -93,7 +93,12 @@ export function shouldAutoAskAssist({
   hasShortcutIntent: boolean;
 }): boolean {
   if (hasShortcutIntent) return false;
-  return query.trim().length >= ASSIST_AUTO_MIN_QUERY_LENGTH;
+  const trimmed = query.trim();
+  if (trimmed.length < ASSIST_AUTO_MIN_QUERY_LENGTH) return false;
+  // A single token is a name or a prefix. Enter belongs to the security, and
+  // a question mark or a second word is what asks.
+  if (!/\s/.test(trimmed) && !trimmed.endsWith("?")) return false;
+  return true;
 }
 
 /**

@@ -246,10 +246,16 @@ export function useCommandBarRootRuntime({
   // Free text that no prefix claims also goes to symbol search, so "nvidia"
   // finds NVDA without the backtick. Skipped when a local row already carries
   // that exact name, since an "Exact Match" symbol would otherwise outrank it.
+  // A bare mnemonic (`T`, `CN`) still searches that symbol. Enter stays on the
+  // command; the listing is listed under it.
+  const bareMnemonic = rootShortcutIntent.kind !== "none" && rootShortcutIntent.argText === ""
+    ? rootShortcutIntent.prefix
+    : null;
   const rootPlainTickerSearchArg = useMemo(() => {
-    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
-    const trimmed = rootQuery.trim();
-    if (trimmed.length < 2) return null;
+    if (currentRoute || activeMatch) return null;
+    if (rootShortcutIntent.kind !== "none" && !bareMnemonic) return null;
+    const trimmed = bareMnemonic ?? rootQuery.trim();
+    if (!bareMnemonic && trimmed.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
     // The install row for "TV" is labelled TV, but it leads on purpose and
     // must not keep Grupo Televisa out of the list.
@@ -260,7 +266,7 @@ export function useCommandBarRootRuntime({
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
     ));
     return hasExactLocalRow ? null : trimmed;
-  }, [activeMatch, currentRoute, pluginInstallItem, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
+  }, [activeMatch, bareMnemonic, currentRoute, pluginInstallItem, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
   const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
 
   const {
@@ -278,6 +284,7 @@ export function useCommandBarRootRuntime({
     portfolios: state.config.portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg,
+    symbolsTakeEnter: bareMnemonic == null,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,

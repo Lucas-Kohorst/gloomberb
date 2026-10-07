@@ -30,7 +30,8 @@ function labels(
 describe("shouldAutoAskAssist", () => {
   test("stays out of the way while the user speaks the command language", () => {
     expect(shouldAutoAskAssist({ query: "chart nvidia vs amd", hasShortcutIntent: false })).toBe(true);
-    expect(shouldAutoAskAssist({ query: "nvda", hasShortcutIntent: false })).toBe(true);
+    expect(shouldAutoAskAssist({ query: "nvda", hasShortcutIntent: false })).toBe(false);
+    expect(shouldAutoAskAssist({ query: "nvda?", hasShortcutIntent: false })).toBe(true);
     // A recognized prefix — with or without an argument — is not a question.
     expect(shouldAutoAskAssist({ query: "T NVDA", hasShortcutIntent: true })).toBe(false);
     expect(shouldAutoAskAssist({ query: "gg", hasShortcutIntent: false })).toBe(false);

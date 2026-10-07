@@ -3,7 +3,7 @@ import type { PaneTemplateDef } from "../../../../types/plugin";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { PLUGIN_INSTALL_CATEGORY } from "../../view-model";
 import { mergePlainRootTickerResults } from "../ticker-search/results";
-import { buildRootResultModel, type RootResultModelOptions } from "./results";
+import { buildRootResultModel, shortRootQueryMatches, type RootResultModelOptions } from "./results";
 
 function rootOptions(overrides: Partial<RootResultModelOptions>): RootResultModelOptions {
   const empty = () => [] as ResultItem[];
@@ -133,6 +133,89 @@ describe("provider rows in the root result model", () => {
 
     expect(ordered[0]).toMatchObject({ id: tickerRow.id, category: "Exact Match" });
     expect(ordered.map((item) => item.id)).toEqual([tickerRow.id, storyRow.id, filingRow.id, documentRow.id]);
+  });
+
+  test("a short query ignores description words and later label words", () => {
+    const crash: ResultItem = {
+      id: "crash",
+      label: "Crash Reports",
+      detail: "Turn automatic crash reports on or off",
+      shortcutQuery: "",
+      category: "Config",
+      kind: "command",
+      action: () => {},
+    };
+    const reset: ResultItem = {
+      id: "reset",
+      label: "Reset All Data",
+      detail: "Erase local data",
+      category: "Config",
+      kind: "command",
+      action: () => {},
+    };
+    const description: ResultItem = {
+      id: "des",
+      label: "Description",
+      detail: "Open security details for a ticker",
+      shortcutQuery: "DES",
+      category: "Search",
+      kind: "command",
+      action: () => {},
+    };
+    expect(shortRootQueryMatches("ON", crash)).toBe(false);
+    expect(shortRootQueryMatches("ALL", reset)).toBe(false);
+    expect(shortRootQueryMatches("AI", description)).toBe(false);
+    expect(shortRootQueryMatches("DES", description)).toBe(true);
+
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "ON",
+      availableCommands: [{
+        id: "crash",
+        prefix: "",
+        label: "Crash Reports",
+        description: "Turn automatic crash reports on or off",
+        category: "Config",
+      }],
+    }));
+    expect(items.map((item) => item.id)).not.toContain("crash");
+  });
+
+  test("a company name leads when no command starts with it, and a mnemonic keeps Enter", () => {
+    const nvidia: ResultItem = {
+      id: "ticker:NVDA",
+      label: "NVDA",
+      detail: "NVIDIA Corporation",
+      category: "Search Results",
+      kind: "ticker",
+      action: () => {},
+    };
+    const command: ResultItem = {
+      id: "des",
+      label: "Description",
+      detail: "",
+      shortcutQuery: "T",
+      category: "Search",
+      kind: "command",
+      action: () => {},
+    };
+    const named = mergePlainRootTickerResults("nvidia", [nvidia], [command]);
+    expect(named[0]).toMatchObject({ id: "ticker:NVDA", category: "Exact Match" });
+    expect(named[0]?.defaultSelectable).toBeUndefined();
+
+    const atAndT: ResultItem = {
+      id: "ticker:T",
+      label: "T",
+      detail: "AT&T Inc.",
+      category: "Search Results",
+      kind: "ticker",
+      action: () => {},
+    };
+    const mnemonic = mergePlainRootTickerResults("T", [atAndT], [command], { symbolsTakeEnter: false });
+    expect(mnemonic.find((item) => item.id === "ticker:T")).toMatchObject({
+      category: "Exact Match",
+      defaultSelectable: false,
+    });
+    expect(mnemonic.find((item) => item.id === "des")?.defaultSelectable).toBeUndefined();
   });
 
   test("stay out of the way once a prefix claims the query", () => {

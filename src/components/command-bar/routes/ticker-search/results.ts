@@ -133,6 +133,7 @@ export function mergePlainRootTickerResults(
   query: string,
   providerItems: ResultItem[],
   rootItems: ResultItem[],
+  options?: { symbolsTakeEnter?: boolean },
 ): ResultItem[] {
   const seenExactVenues = new Set<string>();
   const seenLooseSymbols = new Set<string>();
@@ -160,11 +161,35 @@ export function mergePlainRootTickerResults(
   const instruments = pickRootInstruments(candidates, isExact);
   if (instruments.length === 0) return rootItems;
 
+  const symbolsTakeEnter = options?.symbolsTakeEnter !== false;
+  const ranked = symbolsTakeEnter ? withLeadingCompanyName(query, instruments, rootItems) : instruments;
+  const present = (item: ResultItem, category: string): ResultItem => ({
+    ...item,
+    category,
+    ...(symbolsTakeEnter ? {} : { defaultSelectable: false }),
+  });
+  const exactNow = (item: ResultItem) => item.category === "Exact Match" || isExact(item);
+
   return [
-    ...instruments.filter(isExact).map((item) => ({ ...item, category: "Exact Match" })),
+    ...ranked.filter(exactNow).map((item) => present(item, "Exact Match")),
     ...rootItems,
-    ...instruments.filter((item) => !isExact(item)).map((item) => ({ ...item, category: ROOT_INSTRUMENTS_CATEGORY })),
+    ...ranked.filter((item) => !exactNow(item)).map((item) => present(item, ROOT_INSTRUMENTS_CATEGORY)),
   ];
+}
+
+/** The company the query names leads, unless a command or shortcut already starts with it. */
+function withLeadingCompanyName(query: string, instruments: ResultItem[], rootItems: ResultItem[]): ResultItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q || /\s/.test(q)) return instruments;
+  const claimed = rootItems.some((item) => {
+    if (item.kind === "ticker" || item.kind === "search") return false;
+    return item.label.trim().toLowerCase().startsWith(q)
+      || (item.shortcutQuery ?? "").trim().toLowerCase().startsWith(q);
+  });
+  if (claimed) return instruments;
+  const index = instruments.findIndex((item) => item.detail.trim().toLowerCase().startsWith(q));
+  if (index < 0) return instruments;
+  return instruments.map((item, itemIndex) => itemIndex === index ? { ...item, category: "Exact Match" } : item);
 }
 
 /**

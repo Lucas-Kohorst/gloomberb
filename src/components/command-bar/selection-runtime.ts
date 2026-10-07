@@ -1,4 +1,4 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { AppState } from "../../state/app/context";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { Command } from "./commands/registry";
@@ -45,6 +45,8 @@ interface UseCommandBarSelectionRuntimeOptions {
     shortcutExecution?: boolean;
   }) => ResultItem;
   createPluginCommandItem: (command: CommandDef, options?: { shortcutArg?: string }) => ResultItem;
+  /** Symbol search has not landed, and no mnemonic owns this query. Enter waits for an exact listing. */
+  deferEnterToExactSymbol?: boolean;
   currentRoute: CommandBarRoute | null;
   currentRouteRef: MutableRefObject<CommandBarRoute | null>;
   executeCollectionCommand: ExecuteCollectionCommandFn;
@@ -75,6 +77,17 @@ interface UseCommandBarSelectionRuntimeOptions {
   visibleListStateRef: MutableRefObject<ListScreenState | null>;
 }
 
+/** An exact listing that can take Enter wins. Otherwise the row that was selected while search ran. */
+export function resolvePendingEnter(results: readonly ResultItem[], fallback: ResultItem | null): ResultItem | null {
+  const exact = results.find((item) => (
+    (item.kind === "ticker" || item.kind === "search")
+    && item.category === "Exact Match"
+    && item.defaultSelectable !== false
+    && item.disabled !== true
+  ));
+  return exact ?? fallback;
+}
+
 export function useCommandBarSelectionRuntime({
   activeTickerSymbol,
   availableCommands,
@@ -84,6 +97,7 @@ export function useCommandBarSelectionRuntime({
   createPaneTemplateItem,
   createPluginCommandItem,
   currentRoute,
+  deferEnterToExactSymbol = false,
   currentRouteRef,
   executeCollectionCommand,
   getAvailablePaneShortcutTemplates,
@@ -259,6 +273,23 @@ export function useCommandBarSelectionRuntime({
     updateTopRoute,
   ]);
 
+  const deferEnterRef = useRef(deferEnterToExactSymbol);
+  deferEnterRef.current = deferEnterToExactSymbol;
+  const pendingEnterRef = useRef<{ fallback: ResultItem | null; query: string } | null>(null);
+
+  useEffect(() => {
+    if (deferEnterToExactSymbol) return;
+    const pending = pendingEnterRef.current;
+    if (!pending) return;
+    if (pending.query !== rootQuery) {
+      pendingEnterRef.current = null;
+      return;
+    }
+    pendingEnterRef.current = null;
+    const next = resolvePendingEnter(visibleListStateRef.current?.results ?? [], pending.fallback);
+    if (next && next.disabled !== true) void next.action();
+  }, [deferEnterToExactSymbol, rootQuery, visibleListStateRef]);
+
   const activateListSelection = useCallback((options?: { secondary?: boolean; item?: ResultItem }) => {
     const listState = visibleListStateRef.current;
     if (!listState) return;
@@ -268,6 +299,14 @@ export function useCommandBarSelectionRuntime({
         ? resolveImmediateRootSelection(rootQueryRef.current)
         : null);
     const selected = options?.item ?? typed ?? listState.results[listState.selectedIdx];
+    if (
+      !options?.secondary
+      && deferEnterRef.current
+      && (selected == null || selected.disabled || (selected.kind !== "ticker" && selected.kind !== "search"))
+    ) {
+      pendingEnterRef.current = { fallback: selected && !selected.disabled ? selected : null, query: rootQueryRef.current };
+      return;
+    }
     if (!selected || selected.disabled) return;
 
     const run = () => {
