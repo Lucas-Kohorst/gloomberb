@@ -1,14 +1,14 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
-import { useCallback, useRef, useState } from "react";
+import { useRef } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
 import { ShortcutHint } from "../../../ui/shortcut-hint";
 import { Button } from "../../../ui/button";
 import { ChoiceDialog } from "../../../ui/choice-dialog";
+import { IconButton } from "../../../ui/icon";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
 import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
 import { nativePaneFooterRows } from "../sizing";
-import { FooterSelectMenuPopover, openFooterSelectMenu } from "./select-menu";
 import {
   EMPTY_FOOTER,
   hasPaneFooterContent,
@@ -59,9 +59,13 @@ function stopMouseEvent(event?: { stopPropagation?: () => void; preventDefault?:
   event?.preventDefault?.();
 }
 
-/** The key the terminal draws after a segment that has its own shortcut (`warning[!]`). */
+/**
+ * The key the terminal draws after an icon segment while its pane is focused
+ * (`⚠[!]`), since a glyph has no tooltip there. The desktop shows it in the
+ * icon's tooltip instead.
+ */
 function terminalSegmentKey(segment: PaneFooterSegment, focused: boolean): string {
-  return focused && segment.shortcut && segment.onPress && !segment.disabled
+  return focused && segment.icon && segment.shortcut && segment.onPress && !segment.disabled
     ? `[${segment.shortcut}]`
     : "";
 }
@@ -74,32 +78,17 @@ function iconSegmentReserve(segment: PaneFooterSegment, focused: boolean, native
 
 function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused: boolean }) {
   const { nativePaneChrome } = useUiCapabilities();
-  const dialog = useOptionalDialog();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menu = segment.menu;
-  const interactive = (!!segment.onPress || !!menu) && !segment.disabled;
+  const interactive = !!segment.onPress && !segment.disabled;
   const keyText = nativePaneChrome ? "" : terminalSegmentKey(segment, focused);
   const label = segment.label ?? segment.parts.map((part) => part.text).join(" ");
-  const handlePress = useCallback(() => {
-    if (segment.disabled) return;
-    if (menu) {
-      if (nativePaneChrome) {
-        setMenuOpen((open) => !open);
-        return;
-      }
-      void openFooterSelectMenu(dialog, menu);
-      return;
-    }
-    segment.onPress?.();
-  }, [dialog, menu, nativePaneChrome, segment]);
   useRemoteUiNode(interactive ? {
     role: "pane-footer-segment",
     label,
     disabled: segment.disabled,
     actions: {
-      press: handlePress,
+      press: () => segment.onPress?.(),
     },
-    metadata: { id: segment.id, title: segment.title, shortcut: segment.shortcut, hasMenu: !!menu },
+    metadata: { id: segment.id, title: segment.title, shortcut: segment.shortcut },
   } : null);
   const attributes = segment.parts.some((part) => part.bold) || interactive ? TextAttributes.BOLD : 0;
   const triggerMouseDownRef = useRef(false);
@@ -110,22 +99,37 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
   const finishSegmentPress = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     const startedOnTrigger = triggerMouseDownRef.current;
     triggerMouseDownRef.current = false;
-    if (startedOnTrigger) handlePress();
+    if (startedOnTrigger) segment.onPress?.();
     else stopMouseEvent(event);
   };
 
-  const chip = (
+  if (nativePaneChrome && segment.icon) {
+    return (
+      <IconButton
+        icon={segment.icon}
+        label={label}
+        title={segment.title ?? label}
+        shortcut={segment.shortcut}
+        hasPopup={interactive ? "dialog" : undefined}
+        size={14}
+        disabled={!interactive}
+        color={segment.disabled ? colors.textMuted : footerToneColor(segment.parts[0] ?? { text: "" })}
+        onPress={() => segment.onPress?.()}
+      />
+    );
+  }
+
+  return (
     <Text
       fg={segment.disabled ? colors.textMuted : colors.textDim}
       attributes={attributes}
-      aria-label={menu ? segment.label ?? "Refresh interval" : segment.label}
+      aria-label={segment.label}
       // The desktop shows a status the row clipped in full on hover.
       title={segment.title ?? label}
       cursor={interactive ? "pointer" : undefined}
       onMouseDown={interactive ? startSegmentPress : undefined}
       onMouseUp={interactive ? finishSegmentPress : undefined}
       {...(interactive ? { "data-gloom-interactive": "true" } : {})}
-      {...(menu ? { "data-gloom-role": "pane-footer-select" } : {})}
     >
       {[
         ...segment.parts.map((part, index) => (
@@ -133,11 +137,8 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
             key={`${segment.id}:part:${index}`}
             fg={segment.disabled ? colors.textMuted : footerToneColor(part)}
             attributes={part.bold ? TextAttributes.BOLD : 0}
-            // A leading space collapses under the footer's nowrap rule. The gap
-            // is a margin, one character, the same between parts and segments.
-            style={nativePaneChrome && index > 0 ? { marginLeft: "1ch" } : undefined}
           >
-            {index > 0 && !nativePaneChrome ? " " : ""}{part.text}
+            {index > 0 ? " " : ""}{part.text}
           </Span>
         )),
         ...(keyText
@@ -145,44 +146,6 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
           : []),
       ]}
     </Text>
-  );
-
-  if (menu && nativePaneChrome) {
-    return (
-      <FooterSelectMenuPopover
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-        menu={menu}
-        trigger={chip}
-      />
-    );
-  }
-
-  return chip;
-}
-
-/** One footer segment. The gap after it matches the gap between parts: one character. */
-function FooterSegment({
-  segment,
-  focused,
-  gapAfter,
-  nativePaneChrome,
-}: {
-  segment: PaneFooterSegment;
-  focused: boolean;
-  gapAfter: boolean;
-  nativePaneChrome: boolean;
-}) {
-  return (
-    <Box
-      flexDirection="row"
-      flexShrink={0}
-      {...(nativePaneChrome
-        ? (gapAfter ? { style: { marginRight: "1ch" } } : {})
-        : { marginRight: gapAfter ? 1 : 0 })}
-    >
-      <SegmentView segment={segment} focused={focused} />
-    </Box>
   );
 }
 
@@ -264,9 +227,7 @@ function FooterContent({
   showBackground?: boolean;
   nativePaneChrome?: boolean;
 }) {
-  const trailingInfo = footer.trailingInfo ?? [];
   const hasInfo = footer.info.length > 0;
-  const hasTrailing = trailingInfo.length > 0;
   const actionableHints = focused ? footer.hints.filter((hint) => !hint.disabled) : [];
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
@@ -283,7 +244,7 @@ function FooterContent({
     ? (row?.infoWidth ?? Math.max(0, availableWidth - hintsWidth))
     : undefined;
 
-  if (!hasInfo && !hasHints && !hasTrailing) {
+  if (!hasInfo && !hasHints) {
     return <Box flexGrow={1} height={1} />;
   }
 
@@ -291,74 +252,46 @@ function FooterContent({
     <Box
       height={1}
       flexGrow={1}
-      flexShrink={1}
-      minWidth={0}
       flexDirection="row"
       justifyContent="space-between"
-      alignItems="center"
+      overflow="hidden"
       backgroundColor={backgroundColor}
     >
       {hasInfo && (
         <Box
           flexDirection="row"
+          overflow="hidden"
           flexShrink={1}
-          minWidth={0}
-          {...(nativePaneChrome ? {} : {
-            overflow: "hidden" as const,
-            ...(infoWidth != null ? { width: infoWidth } : {}),
-          })}
+          {...(infoWidth != null ? { width: infoWidth } : {})}
         >
           {footer.info.map((segment, index) => (
-            <FooterSegment
-              key={segment.id}
-              segment={segment}
-              focused={focused}
-              gapAfter={index !== footer.info.length - 1}
-              nativePaneChrome={nativePaneChrome}
-            />
+            <Box key={segment.id} flexDirection="row" marginRight={index === footer.info.length - 1 ? 0 : 1}>
+              <SegmentView segment={segment} focused={focused} />
+            </Box>
           ))}
         </Box>
       )}
-      {(hasHints || hasTrailing) && (
+      {hasHints && (
         <>
           <Box flexGrow={1} />
-          {hasHints && (
-            <Box
-              flexDirection="row"
-              justifyContent="flex-end"
-              flexShrink={0}
-              {...(nativePaneChrome ? {} : availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
-            >
-              {shownHints.map((hint, index) => (
-                <Box key={hint.id} flexDirection="row">
-                  <HintView hint={hint} prefixSpace={index > 0} />
-                </Box>
-              ))}
-              {overflowHints.length > 0 && row && (
-                <Box marginLeft={shownHints.length > 0 ? 1 : 0} flexShrink={0}>
-                  <FooterOverflowMenu hints={overflowHints} width={row.moreWidth} label={row.moreLabel} />
-                </Box>
-              )}
-            </Box>
-          )}
-          {hasTrailing && (
-            <Box
-              flexDirection="row"
-              flexShrink={0}
-              marginLeft={hasHints ? 1 : 0}
-              {...(nativePaneChrome ? { style: hasHints ? { marginLeft: "1ch" } : undefined } : {})}
-            >
-              {trailingInfo.map((segment, index) => (
-                <FooterSegment
-                  key={segment.id}
-                  segment={segment}
-                  focused={focused}
-                  gapAfter={index !== trailingInfo.length - 1}
-                  nativePaneChrome={nativePaneChrome}
-                />
-              ))}
-            </Box>
-          )}
+          <Box
+            flexDirection="row"
+            justifyContent="flex-end"
+            flexShrink={0}
+            overflow="hidden"
+            {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
+          >
+            {shownHints.map((hint, index) => (
+              <Box key={hint.id} flexDirection="row">
+                <HintView hint={hint} prefixSpace={index > 0} />
+              </Box>
+            ))}
+            {overflowHints.length > 0 && row && (
+              <Box marginLeft={shownHints.length > 0 ? 1 : 0} flexShrink={0}>
+                <FooterOverflowMenu hints={overflowHints} width={row.moreWidth} label={row.moreLabel} />
+              </Box>
+            )}
+          </Box>
         </>
       )}
     </Box>
@@ -389,17 +322,14 @@ export function PaneFooterBar({
       ? blendHex(colors.bg, colors.borderFocused, 0.06)
       : blendHex(colors.panel, colors.border, 0.12);
   const reservedRight = Math.max(0, reserveRight);
-  // Two cells clear of the left edge, three on the right so the last glyph
-  // clears the pane border. Floating panes also keep the resize-handle reserve.
-  const leftPadding = 2;
-  const rightPadding = reservedRight + 3;
+  const rightPadding = reservedRight > 0 ? reservedRight : 1;
 
   if (nativePaneChrome) {
     return (
       <Box
         height={nativePaneFooterRows()}
         flexDirection="row"
-        paddingLeft={leftPadding}
+        paddingLeft={1}
         paddingRight={rightPadding}
         alignItems="center"
         data-gloom-role="pane-footer"
@@ -415,7 +345,7 @@ export function PaneFooterBar({
         <FooterContent
           footer={resolvedFooter}
           focused={focused}
-          width={width > 0 ? Math.max(0, Math.floor(width) - rightPadding - leftPadding) : undefined}
+          width={width > 0 ? Math.max(0, Math.floor(width) - rightPadding - 1) : undefined}
           showBackground={false}
           nativePaneChrome
         />

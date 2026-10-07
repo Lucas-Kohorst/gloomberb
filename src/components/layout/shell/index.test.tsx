@@ -22,7 +22,6 @@ import {
   Shell,
   buildNativeWindowState,
   resolveAppHeaderHeightCells,
-  resolveAppStatusBarHeightCells,
   resolvePaneManagementShortcut,
 } from "./index";
 import { inputCaptureAllowsPaneManagementShortcut } from "./shortcuts";
@@ -227,12 +226,6 @@ describe("Shell", () => {
   test("uses the desktop titlebar overlay height for shell chrome math", () => {
     expect(resolveAppHeaderHeightCells({ titleBarOverlay: true, cellHeightPx: 18 })).toBe(28 / 18);
     expect(resolveAppHeaderHeightCells({ titleBarOverlay: false, cellHeightPx: 18 })).toBe(1);
-  });
-
-  test("reserves the desktop status bar's extra padding under the pane grid", () => {
-    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: true, cellHeightPx: 18 })).toBe(33 / 18);
-    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: false, cellHeightPx: 18 })).toBe(1);
-    expect(resolveAppStatusBarHeightCells({ visible: false, nativePaneChrome: true, cellHeightPx: 18 })).toBe(0);
   });
 
   test("keeps command bar native occlusion scoped to the panel", () => {

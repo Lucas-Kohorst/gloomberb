@@ -4,6 +4,7 @@ import { useShortcut, useViewport } from "../react/input";
 import { Box, ScrollBox, type ScrollBoxRenderable } from "../ui";
 import { useDialog, useDialogKeyboard, useDialogState, type AlertContext } from "../ui/dialog";
 import { wrapTextLines } from "../utils/text-wrap";
+import { usePaneFooter } from "./layout/pane/footer";
 import { usePaneFooterScopeActive } from "./layout/pane/footer/registration";
 import { Button } from "./ui/button";
 import { DialogFrame } from "./ui/frame";
@@ -111,4 +112,17 @@ export function usePaneNoticeFooter({
     event.stopPropagation();
     open();
   }, { enabled: active && focused && !dialogOpen, scope: registrationId });
+
+  usePaneFooter(registrationId, () => active ? {
+    order: -10,
+    info: [{
+      id: "data-warnings",
+      icon: "warning",
+      label: title,
+      title: `${title} (!)`,
+      shortcut: "!",
+      parts: [{ text: "⚠", tone: "warning" }],
+      onPress: open,
+    }],
+  } : null, [active, open, title]);
 }

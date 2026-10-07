@@ -100,7 +100,6 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     defaultSort: DEFAULT_SORT,
     refreshing: loaded.loading && loaded.articles.length > 0,
     error: loaded.error,
-    updatedAt: loaded.newsState.updatedAt,
   });
   const { setSelectedArticleId } = stack;
 

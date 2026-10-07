@@ -43,7 +43,7 @@ import {
   resolveExternalDockPreview,
   resolveHoverOverlay,
 } from "./drag";
-import { resolveAppHeaderHeightCells, resolveAppStatusBarHeightCells } from "./chrome";
+import { resolveAppHeaderHeightCells } from "./chrome";
 import { useShellWindowMode } from "./window-mode";
 import { useShellNativeSurfaceWindowState } from "./native/surfaces";
 import { ShellWindowModeOverlays } from "./window-mode/overlays";
@@ -77,7 +77,7 @@ import { copyLivePaneShare } from "../../../shares/live";
 import { buildPaneSharePayload } from "../../../shares/pane";
 import type { SharePayload } from "../../../shares/payload";
 
-export { resolveAppHeaderHeightCells, resolveAppStatusBarHeightCells } from "./chrome";
+export { resolveAppHeaderHeightCells } from "./chrome";
 export { buildNativeWindowState } from "./native/window-state";
 export { resolvePaneManagementShortcut } from "./shortcuts";
 
@@ -128,8 +128,7 @@ export function Shell({
   const shellRef = useRef<BoxRenderable | null>(null);
 
   const appHeaderHeight = resolveAppHeaderHeightCells({ titleBarOverlay, cellHeightPx });
-  const statusBarHeight = resolveAppStatusBarHeightCells({ visible: statusBarVisible, nativePaneChrome, cellHeightPx });
-  const contentHeight = Math.max(1, height - appHeaderHeight - statusBarHeight);
+  const contentHeight = Math.max(1, height - appHeaderHeight - (statusBarVisible ? 1 : 0));
   pluginRegistry.bindHost({ getTermSize: () => ({ width, height: contentHeight }) });
 
   const layout = useAppSelector((state) => state.config.layout);

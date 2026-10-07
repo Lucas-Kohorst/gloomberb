@@ -26,9 +26,6 @@ import {
   type CollectionSortPreference,
   usePaneAppConfig,
 } from "../../../../state/app/context";
-import { getMostRecentQuoteUpdate } from "../../../../market-data/quotes/time";
-import { pollFooterSegment, useUpdatedFooterInfo } from "../../../../components/layout/pane/freshness-footer";
-import { DEFAULT_QUOTE_POLL_INTERVAL_MS } from "../../../../state/hooks/quote-streaming";
 import { summarizeFxRates, fxStatusLabel } from "../../../../utils/fx-status";
 import { convertCurrency } from "../../../../utils/format";
 import { nextHeaderSort } from "../../../../utils/sort-values";
@@ -446,10 +443,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     accountStatusText: accountsError
       ? `Accounts unavailable: ${accountsError}`
       : isPortfolioTab && currentPortfolio?.brokerInstanceId && !accountState ? "Acct missing" : undefined,
+    financialsMap,
     isPortfolioTab,
     refreshingSize,
+    sortedTickers,
     totals: portfolioSummaryTotals,
-  }), [], [
+  }), [financialsMap, sortedTickers], [
     accountState,
     accountsError,
     currentPortfolio?.brokerInstanceId,
@@ -517,26 +516,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [appStateRef, dialog, dispatch, notify, removalCollection, selectedTicker, setCursorSymbol]);
 
-  const quoteUpdatedAt = useThrottledMemo(
-    () => getMostRecentQuoteUpdate(
-      sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
-    ),
-    [financialsMap, sortedTickers],
-    [sortedTickers],
-    FOOTER_TOTALS_THROTTLE_MS,
-  );
-  // A live book has no poll. With streaming off, quotes refresh once a minute.
-  const updatedInfo = useUpdatedFooterInfo(quoteUpdatedAt ?? fxStatus.latestFetchedAt);
-  const trailingInfo = useMemo(
-    () => (quoteUpdatedAt != null && !liveStreaming
-      ? [pollFooterSegment(DEFAULT_QUOTE_POLL_INTERVAL_MS / 60_000)]
-      : []),
-    [liveStreaming, quoteUpdatedAt],
-  );
-
   usePaneFooter("portfolio-list", () => ({
-    info: [...updatedInfo, ...summaryFooterInfo],
-    trailingInfo,
+    info: fxStatusText && !fxWarning
+      ? [...summaryFooterInfo, { id: "fx", parts: [{ text: `FX ${fxStatusText}`, tone: "muted" as const }] }]
+      : summaryFooterInfo,
     hints: [
       ...(removalCollection
         ? [{
@@ -569,6 +552,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ],
   }), [
     cashDrawerExpanded,
+    fxStatusText,
+    fxWarning,
     isPortfolioTab,
     removalCollection,
     removeSelectedTicker,
@@ -577,8 +562,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     showCashDrawer,
     summaryFooterInfo,
     toggleViewMode,
-    trailingInfo,
-    updatedInfo,
     viewMode,
   ]);
 

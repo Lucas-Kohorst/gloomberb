@@ -5,7 +5,6 @@ body {
   --cell-w: 8px;
   --cell-h: 18px;
   --chrome-h: 20px;
-  --footer-h: 28px;
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
@@ -210,23 +209,16 @@ body.gloom-dragging {
   max-width: calc(100vw - 48px);
 }
 [data-gloom-role="status-bar"] {
-  /* 4px top + 10px bottom (4 + 6px window-curve clearance) + 1px border.
-     Keep the 15px in NATIVE_STATUS_BAR_EXTRA_PX so the pane grid stops here. */
-  box-sizing: border-box !important;
-  flex: 0 0 calc(var(--cell-h) + 15px) !important;
-  height: calc(var(--cell-h) + 15px) !important;
-  min-height: calc(var(--cell-h) + 15px) !important;
-  max-height: calc(var(--cell-h) + 15px) !important;
+  flex: 0 0 var(--cell-h);
+  height: var(--cell-h);
+  min-height: var(--cell-h);
+  max-height: var(--cell-h);
   align-items: center;
-  padding-top: 4px;
-  padding-bottom: 10px;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
-  line-height: 1.15 !important;
 }
 [data-gloom-role="status-bar"] span {
-  /* A cell-height line box fills the tape and shears glyphs on the curve. */
-  line-height: 1.15 !important;
+  line-height: var(--cell-h);
 }
 [data-gloom-role="pane-body"] {
   overflow: hidden;
@@ -239,38 +231,23 @@ body.gloom-dragging {
   min-height: 0;
   max-height: 100%;
 }
-/* A chrome row plus 8px, text centered. Height stays in nativePaneFooterRows. */
+/* The same chrome row as the pane header, query bar and table header. */
 [data-gloom-role="pane-footer"] {
-  position: relative;
-  z-index: 4;
-  isolation: isolate;
-  box-sizing: border-box !important;
-  flex: 0 0 var(--footer-h) !important;
-  height: var(--footer-h) !important;
-  min-height: var(--footer-h) !important;
-  max-height: var(--footer-h) !important;
+  flex: 0 0 var(--chrome-h);
+  height: var(--chrome-h);
+  min-height: var(--chrome-h);
+  max-height: var(--chrome-h);
   align-items: center;
   border-top: 1px solid color-mix(in srgb, var(--pane-footer-border-color, var(--gloom-border)) 72%, transparent);
-  font-size: 12px;
+  font-size: 11.5px;
   overflow: hidden;
-  white-space: nowrap;
-  /* Hints and the corner resize handle opt back in. */
-  pointer-events: none;
 }
 [data-gloom-role="pane-footer"][data-empty="true"] {
   border-top-color: transparent;
 }
 [data-gloom-role="pane-footer"] span,
 [data-gloom-role="pane-hint"] span {
-  /* pre keeps the gap between pieces. nowrap would collapse it. */
-  white-space: pre !important;
-  line-height: 1.15 !important;
-}
-[data-gloom-role="pane-footer"] button,
-[data-gloom-role="pane-footer"] a,
-[data-gloom-role="pane-hint"],
-[data-gloom-role="pane-footer"] [data-gloom-interactive="true"] {
-  pointer-events: auto;
+  line-height: var(--cell-h);
 }
 [data-gloom-role="pane-hint"] {
   cursor: pointer;
@@ -281,9 +258,6 @@ body.gloom-dragging {
 }
 [data-gloom-role="resize-handle"] {
   cursor: nwse-resize;
-  pointer-events: auto;
-  /* Above the pane footer, which stacks over table rows. */
-  z-index: 5;
 }
 [data-gloom-role="window-mode-status"] {
   border: 1px solid color-mix(in srgb, var(--gloom-border-focused) 76%, transparent);

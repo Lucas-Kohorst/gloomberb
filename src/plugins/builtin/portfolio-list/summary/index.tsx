@@ -4,7 +4,8 @@ import { colors, priceColor } from "../../../../theme/colors";
 import type { AppState } from "../../../../state/app/context";
 import type { PaneFooterSegment } from "../../../../components/layout/pane/footer/model";
 import type { BrokerConnectionStatus } from "../../../../types/broker";
-import type { Portfolio } from "../../../../types/ticker";
+import type { TickerFinancials } from "../../../../types/financials";
+import type { Portfolio, TickerRecord } from "../../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../../types/trading";
 import { formatShortDate } from "../../../../utils/datetime-format";
 import { displayWidth, formatPercentRaw } from "../../../../utils/format";
@@ -16,6 +17,7 @@ import {
   type BrokerSnapshotBasis,
 } from "../account-metrics";
 import { formatPortfolioAmount, type PortfolioSummaryTotals } from "./totals";
+import { getMostRecentQuoteUpdate } from "../../../../market-data/quotes/time";
 import { fxStatusLabel, type FxRateStatus } from "../../../../utils/fx-status";
 import { t } from "../../../../i18n";
 
@@ -330,18 +332,22 @@ export function layoutPortfolioSummaryHeader(
   return { row, detail };
 }
 
-/** Account status only. Quote age and the poll chip are the shared footer. */
+/** Changing status only: where the account numbers come from, account failures, and quote refresh time. */
 export function buildPortfolioFooterSegments({
   accountState,
   accountStatusText,
+  financialsMap,
   isPortfolioTab,
   refreshingSize,
+  sortedTickers,
   totals,
 }: {
   accountState: PortfolioSummaryAccountState | null;
   accountStatusText?: string;
+  financialsMap: Map<string, TickerFinancials>;
   isPortfolioTab: boolean;
   refreshingSize: number;
+  sortedTickers: TickerRecord[];
   totals: PortfolioSummaryTotals;
 }): PaneFooterSegment[] {
   const accountStatus: PaneFooterSegment[] = isPortfolioTab && accountStatusText
@@ -349,12 +355,17 @@ export function buildPortfolioFooterSegments({
     : [];
   // Cached account numbers stay on screen when a live refresh fails, so the failure sits beside their date.
   if (accountState) return [{ id: "source", parts: [{ text: accountState.sourceLabel, tone: "muted" }] }, ...accountStatus];
-  const hasRows = isPortfolioTab ? totals.hasPositions : totals.watchlistCount > 0;
-  if (!hasRows && !accountStatusText) return [];
-  if (refreshingSize > 0 && hasRows) {
-    return [...accountStatus, { id: "refresh", parts: [{ text: "Refreshing...", tone: "muted" }] }];
-  }
-  return accountStatus;
+  if (isPortfolioTab ? !totals.hasPositions && !accountStatusText : totals.watchlistCount === 0) return [];
+
+  const lastRefreshTimestamp = getMostRecentQuoteUpdate(
+    sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
+  );
+  const refreshText = refreshingSize > 0
+    ? "Refreshing..."
+    : lastRefreshTimestamp != null
+      ? new Date(lastRefreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+      : "-";
+  return [...accountStatus, { id: "refresh", parts: [{ text: refreshText, tone: "muted" }] }];
 }
 
 const MAX_NOTICE_SYMBOLS = 12;

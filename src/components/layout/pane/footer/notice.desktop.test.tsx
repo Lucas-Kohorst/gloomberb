@@ -14,41 +14,44 @@ function DesktopChrome({ children }: { children: ReactNode }) {
   return <UiHostProvider ui={ui} renderer={renderer}>{children}</UiHostProvider>;
 }
 
-function press(element: Element) {
-  element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-  element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-}
-
-test("footer warning is the word warning, with no icon, and keeps the current disclosure target", async () => {
+test("footer warning has accessible SVG/button activation and updates its disclosure identity without stale callbacks", async () => {
   let update!: (value: Partial<PaneFooterSegment>) => void;
   let selection!: (value: string) => void;
   const actions: string[] = [];
   function Registration() {
     const [selected, setSelected] = useState("AMD");
     const [segment, setSegment] = useState<PaneFooterSegment>({
-      id: "notice", label: "Data warnings", title: "Data warnings (!)", shortcut: "!",
-      parts: [{ text: "warning", tone: "warning" }],
+      id: "notice", icon: "warning", label: "Data warnings", title: "Data warnings (!)", shortcut: "!",
+      parts: [{ text: "⚠", tone: "warning" }],
     });
     update = (value) => setSegment((current) => ({ ...current, ...value }));
     selection = setSelected;
     usePaneFooter("notice", () => ({ info: [{ ...segment, onPress: () => actions.push(selected) }] }), [segment, selected]);
     return null;
   }
-  const container = await render(<DesktopChrome><div onClick={() => actions.push("parent")}>
+  const container = await render(<DesktopChrome><div onClick={() => actions.push("parent")} onKeyDown={() => actions.push("parent-key")}>
     <PaneFooterProvider>{(footer) => <><Registration /><PaneFooterBar footer={footer} focused width={50} /></>}</PaneFooterProvider>
   </div></DesktopChrome>);
-  const notice = () => container.querySelector('[aria-label="Data warnings"], [aria-label="History warnings"]')!;
-  expect(container.querySelector("svg")).toBeNull();
-  expect(notice().textContent).toContain("warning");
-  expect(notice().getAttribute("title")).toBe("Data warnings (!)");
-  await act(async () => { press(notice()); selection("MSFT"); });
-  await act(async () => { update({ label: "History warnings", title: "History warnings (!)" }); });
-  expect(actions).toEqual(["AMD"]);
-  expect(notice().getAttribute("aria-label")).toBe("History warnings");
-  expect(notice().getAttribute("title")).toBe("History warnings (!)");
-  await act(async () => { press(notice()); });
-  expect(actions).toEqual(["AMD", "MSFT"]);
+  const button = () => container.querySelector("button")!;
+  expect(button().getAttribute("aria-label")).toBe("Data warnings");
+  expect(button().getAttribute("title")).toBe("Data warnings (!)");
+  expect(button().getAttribute("aria-keyshortcuts")).toBe("!");
+  expect(button().getAttribute("aria-haspopup")).toBe("dialog");
+  expect(button().querySelector("svg")).not.toBeNull();
+  expect(button().textContent).toBe("");
+  await act(async () => { button().click(); selection("MSFT"); });
+  await act(async () => {
+    button().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    button().dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    update({ label: "History warnings", title: "History warnings (!)" });
+  });
+  expect(actions).toEqual(["AMD", "MSFT", "MSFT"]);
+  expect(button().getAttribute("aria-label")).toBe("History warnings");
+  expect(button().title).toBe("History warnings (!)");
   await act(async () => { update({ disabled: true }); });
-  await act(async () => { press(notice()); });
-  expect(actions).toEqual(["AMD", "MSFT"]);
+  await act(async () => { button().click(); });
+  expect(actions).toEqual(["AMD", "MSFT", "MSFT"]);
+  await act(async () => { update({ icon: undefined }); });
+  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).toContain("⚠");
 });

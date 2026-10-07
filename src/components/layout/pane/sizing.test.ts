@@ -13,8 +13,9 @@ describe("pane sizing", () => {
       reserveFooter: false,
     });
 
-    // Header is one 20px chrome row. The footer is that row plus 8px.
-    expect(bodyFrame.height).toBeCloseTo(30 - 20 / 18 - (20 + 8) / 18);
+    // The desktop header and footer are 20px chrome rows, a fractional cell
+    // taller than the terminal's.
+    expect(bodyFrame.height).toBeCloseTo(30 - 20 / 18 - 20 / 18);
     expect(bodyFrame.layoutProps).toEqual({
       flexGrow: 1,
       flexShrink: 1,

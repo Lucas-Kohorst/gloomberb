@@ -40,23 +40,6 @@ export function formatRelativeAge(timestamp: number | undefined, now = Date.now(
 }
 
 /**
- * Approximate age for the footer: `~0m` under a minute, then `~5m`, `~3h`,
- * `~2d`, `~1w`. A missing or future time clamps to `~0m`.
- */
-export function formatApproximateAge(timestamp: number | null | undefined, now = Date.now()): string {
-  if (timestamp == null || !Number.isFinite(timestamp)) return "~0m";
-  const seconds = Math.floor((now - timestamp) / 1000);
-  if (seconds < 60) return "~0m";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `~${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `~${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `~${days}d`;
-  return `~${Math.floor(days / 7)}w`;
-}
-
-/**
  * Relative time that turns into a date ("1/5/26") after a week, for feeds read
  * by recency: "just now", "5m ago", "3h ago", "2d ago". `short` drops the
  * "ago" for a narrow column ("<1m", "5m").

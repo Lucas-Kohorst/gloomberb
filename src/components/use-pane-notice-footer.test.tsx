@@ -36,28 +36,29 @@ async function key(name: string, modifiers = {}) {
   await controls.renderFrames(3);
 }
 
-test("notices stay off the footer and open from !", async () => {
+test("compact warnings disclose by mouse, follow the current data and vanish without disabling existing actions", async () => {
   await act(async () => { await tui.render(<Harness />, { width: 80, height: 28 }); });
   await controls.renderFrames(3);
-  expect(tui.frame()).not.toContain("warning");
+  expect(tui.frame()).toContain("⚠");
   expect(tui.frame()).toContain("[s]eries");
   expect(tui.frame()).not.toContain("publication");
-  expect(footer.info).toEqual([]);
-  await key("!");
+  const retained = footer.info[0]!.onPress!;
+  await act(async () => { await tui.setup().mockMouse.click(tui.frame().split("\n")[0]!.indexOf("⚠"), 0); });
   await controls.waitForFrameToContain("publication dates unavailable");
   expect(tui.frame().match(/publication dates unavailable/g)?.length).toBe(1);
   const dialogLines = tui.frame().split("\n");
   expect(dialogLines.findIndex((line) => line.includes("Close")) - dialogLines.findIndex((line) => line.includes("Data warnings"))).toBeLessThanOrEqual(5);
   await change({ notices: ["MSFT: stale provider observation."] });
   expect(tui.frame()).not.toContain("publication");
-  await key("!");
+  await act(async () => retained());
   await controls.waitForFrameToContain("MSFT: stale provider observation.");
   await controls.clickFrameText("Close");
   await controls.renderFrames(3);
   expect(tui.frame()).not.toContain("stale provider");
   await change({ notices: [" "] });
+  await act(async () => retained());
   await key("!");
-  expect(tui.frame()).not.toContain("warning");
+  expect(tui.frame()).not.toContain("⚠");
   expect(tui.frame()).toContain("[s]eries");
   expect(footer.info).toEqual([]);
 });
@@ -102,10 +103,10 @@ test("long warning details remain scrollable to their final observation", async 
 test("narrow panes keep warning disclosure visible beside overflowing action hints", async () => {
   await act(async () => {
     await tui.render(<PaneFooterBar focused width={18} footer={{
-      info: [{ id: "notice", icon: "warning", parts: [{ text: "warning", tone: "warning" }], onPress: () => {} }],
+      info: [{ id: "notice", icon: "warning", parts: [{ text: "⚠", tone: "warning" }], onPress: () => {} }],
       hints: [{ id: "series", key: "s", label: "eries" }, { id: "indicators", key: "i", label: "ndicators" }, { id: "share", key: "x", label: " share" }],
     }} />, { width: 18, height: 1 });
   });
   await controls.renderFrames(3);
-  expect(tui.frame()).toContain("warning");
+  expect(tui.frame()).toContain("⚠");
 });

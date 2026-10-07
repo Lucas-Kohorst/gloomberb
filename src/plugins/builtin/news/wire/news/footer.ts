@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { PaneFooterSegment } from "../../../../../components";
-import { tf } from "../../../../../i18n";
+import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
 import { useShortcut } from "../../../../../react/input";
 import { useUiCapabilities } from "../../../../../ui";
@@ -8,7 +8,6 @@ import { isPlainKey } from "../../../../../utils/keyboard";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../../../api-client/plan-access";
 import { usePaneStatusLinkFooter } from "../../../../../components/layout/pane/status-footer";
-import { useRefreshPollTrailing, useUpdatedFooterInfo } from "../../../../../components/layout/pane/freshness-footer";
 import { usePluginAppActions } from "../../../../runtime";
 import { useOptionalPaneInstanceId } from "../../../../../state/app/context";
 
@@ -26,8 +25,6 @@ interface UseNewsArticleFooterOptions {
   loading?: boolean;
   error?: string | null;
   onPopOut?: () => void;
-  /** Last successful fetch. Article readers omit this and do not show a poll. */
-  updatedAt?: number | null;
 }
 
 export function useNewsArticleFooter({
@@ -38,7 +35,6 @@ export function useNewsArticleFooter({
   loading = false,
   error,
   onPopOut,
-  updatedAt,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const { publicSharing } = useUiCapabilities();
@@ -64,14 +60,13 @@ export function useNewsArticleFooter({
     shortcutScope: `${registrationId}:news-upgrade`,
   });
 
-  const accessInfo = useMemo<PaneFooterSegment[]>(
-    () => (access.isPayingPro || !segment ? [] : [segment]),
-    [access.isPayingPro, language, segment],
-  );
-  const updatedInfo = useUpdatedFooterInfo(updatedAt);
-  const footerInfo = useMemo(() => [...updatedInfo, ...accessInfo, ...(info ?? [])], [accessInfo, info, updatedInfo]);
-  // Lists pass updatedAt and show the refresh interval. Article readers omit it.
-  const trailingInfo = useRefreshPollTrailing(updatedAt != null);
+  const accessInfo = useMemo<PaneFooterSegment[]>(() => {
+    if (access.isPayingPro) {
+      return [{ id: "news-access", parts: [{ text: t("real-time news"), tone: "positive" }] }];
+    }
+    return segment ? [segment] : [];
+  }, [access.isPayingPro, language, segment]);
+  const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -79,7 +74,6 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
-    trailingInfo,
     // [o]pen is appended after these, so the story's own actions stay rightmost.
     hints: [
       ...(upgradeHint ? [upgradeHint] : []),

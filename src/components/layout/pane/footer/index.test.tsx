@@ -42,30 +42,6 @@ function Registration({
   return null;
 }
 
-function FreshnessRegistration() {
-  usePaneFooter("freshness", () => ({
-    info: [{ id: "updated", parts: [{ text: "updated ~5m", tone: "muted" }] }],
-    hints: [{ id: "delete", key: "d", label: "elete" }],
-    trailingInfo: [
-      { id: "poll-interval", parts: [{ text: "poll 5m", tone: "muted" }] },
-    ],
-  }), []);
-  return null;
-}
-
-function FreshnessHarness({ focused }: { focused: boolean }) {
-  return (
-    <PaneFooterProvider>
-      {(footer) => (
-        <Box width={64} height={1}>
-          <FreshnessRegistration />
-          <PaneFooterBar footer={footer} focused={focused} width={64} />
-        </Box>
-      )}
-    </PaneFooterProvider>
-  );
-}
-
 function ExternalLinkRegistration() {
   useExternalLinkFooter({
     registrationId: "external-link",
@@ -162,33 +138,6 @@ describe("PaneFooterBar", () => {
     const frame = tui.frame();
     expect(frame).toContain("Rows 12");
     expect(frame).not.toContain("[o]pen");
-  });
-
-  test("keeps the age on the left and the poll interval on the right of the hints", async () => {
-    await tui.render(<FreshnessHarness focused />, { width: 64, height: 1 });
-    await act(async () => {
-      await tui.setup().renderOnce();
-      await tui.setup().renderOnce();
-    });
-
-    const focusedFrame = tui.frame();
-    const hintAt = focusedFrame.indexOf("[d]elete");
-    const ageAt = focusedFrame.indexOf("updated ~5m");
-    const intervalAt = focusedFrame.indexOf("poll 5m");
-    expect(ageAt).toBeGreaterThanOrEqual(0);
-    expect(hintAt).toBeGreaterThan(ageAt);
-    expect(intervalAt).toBeGreaterThan(hintAt);
-
-    await tui.render(<FreshnessHarness focused={false} />, { width: 64, height: 1 });
-    await act(async () => {
-      await tui.setup().renderOnce();
-      await tui.setup().renderOnce();
-    });
-    const blurred = tui.frame();
-    expect(blurred).toContain("updated ~5m");
-    expect(blurred).toContain("poll 5m");
-    expect(blurred.indexOf("poll 5m")).toBeGreaterThan(blurred.indexOf("updated ~5m"));
-    expect(blurred).not.toContain("[d]elete");
   });
 
   test("keeps raw external URLs out of footer text", async () => {

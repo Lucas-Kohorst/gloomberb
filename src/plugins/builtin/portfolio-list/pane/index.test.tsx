@@ -452,7 +452,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       expect(frame).toContain(source === "CAD" ? "Cash 13.5k" : "Cash —");
       expect(frame).not.toContain("Cash 0");
       if (source !== "unknown currency") expect(requested).toContain("CAD");
-      else expect(frame).not.toContain("warning");
+      else expect(frame).toContain("⚠");
     });
   }
 
@@ -837,7 +837,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       </Box>}</PaneFooterProvider>, { width, height: 16 });
       await flushFrame();
       const before = tui.frame();
-      expect(before).not.toContain("warning");
+      expect(before).toContain("⚠");
       expect(before).toMatch(/AAPL\s+—\s+1\.2k\s+\+200\.00\s+—/);
       expect(before).not.toContain("NaN");
       const corrected = { ...imported, metadata: { ...imported.metadata,
@@ -846,7 +846,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       await act(async () => { harnessDispatch!({ type: "UPDATE_TICKER", ticker: corrected }); });
       await flushFrame();
       const after = tui.frame();
-      expect(after).not.toContain("warning");
+      expect(after).not.toContain("⚠");
       expect(after).toMatch(/AAPL\s+100\s+1\.2k\s+\+200\.00\s+\+20\.00%/);
     });
   }

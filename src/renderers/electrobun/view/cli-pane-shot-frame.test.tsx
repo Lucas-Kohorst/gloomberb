@@ -22,7 +22,7 @@ function Source({ warning }: { warning: boolean }) {
   return <div>Research data</div>;
 }
 
-test("pane screenshots omit the notice chip, optionally preserve source status and reclaim empty footers", async () => {
+test("pane screenshots retain warnings, optionally preserve source status and reclaim empty footers", async () => {
   const ui = createDomUiHost();
   let update: (value: { warning: boolean; active: boolean; preserveStatus?: boolean }) => void = () => {};
   function Harness() {
@@ -48,16 +48,19 @@ test("pane screenshots omit the notice chip, optionally preserve source status a
   expect(bodyHeight()).toBeCloseTo(withoutFooter);
 
   await act(async () => update({ warning: true, active: true }));
-  expect(root.querySelector('[data-gloom-role="pane-footer"]')).toBeNull();
-  expect(root.textContent).not.toContain("warning");
+  expect(root.querySelector('button[aria-label="Data warnings"] svg')).not.toBeNull();
+  expect(root.querySelector('[data-gloom-role="pane-footer"]')).not.toBeNull();
   expect(root.textContent).not.toContain("Source publication date unavailable.");
   expect(root.textContent).not.toContain("Loading a normal source");
-  expect(bodyHeight()).toBeCloseTo(withoutFooter);
+  expect(root.querySelector('[data-gloom-role="pane-hint"]')).toBeNull();
+  expect(bodyHeight()).toBeCloseTo(withFooter);
 
   await act(async () => update({ warning: true, active: false }));
   expect(root.querySelector('[data-gloom-role="pane-footer"]')).toBeNull();
   expect(bodyHeight()).toBeCloseTo(withoutFooter);
 
+  await act(async () => update({ warning: true, active: true }));
+  expect(root.querySelector('button[aria-label="Data warnings"]')).not.toBeNull();
   await act(async () => update({ warning: false, active: true }));
   expect(root.querySelector('[data-gloom-role="pane-footer"]')).toBeNull();
   expect(bodyHeight()).toBeCloseTo(withoutFooter);

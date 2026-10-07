@@ -3,22 +3,9 @@ import { t } from "../../../../i18n";
 import { displayWidth } from "../../../../utils/format";
 import { getShortcutHintWidth } from "../../../ui/shortcut-hint";
 
-interface PaneFooterSelectOption {
-  value: string;
-  label: string;
-}
-
-export interface PaneFooterSelectMenu {
-  value: string;
-  options: readonly PaneFooterSelectOption[];
-  onSelect: (value: string) => void;
-}
-
 export interface PaneFooterRegistration {
   order?: number;
   info?: PaneFooterSegment[];
-  /** Status on the right, after the action hints. The poll interval lives here. */
-  trailingInfo?: PaneFooterSegment[];
   hints?: PaneHint[];
   /**
    * Extra entries for the pane menu (the "..." button, `.`), for actions that
@@ -36,15 +23,13 @@ export interface PaneFooterRegistration {
 export interface PaneFooterSegment {
   id: string;
   parts: PaneFooterPart[];
-  /** Not drawn. Footer segments are the words in `parts`. */
+  /** Desktop affordance; parts retain the terminal representation. */
   icon?: "warning";
   label?: string;
   title?: string;
   shortcut?: string;
   onPress?: () => void;
   disabled?: boolean;
-  /** Click or Enter opens this list. The desktop menu flips above a footer chip. */
-  menu?: PaneFooterSelectMenu;
 }
 
 export interface PaneFooterPressEvent {
@@ -76,13 +61,12 @@ export interface PaneHint {
 
 export interface CombinedPaneFooter {
   info: PaneFooterSegment[];
-  trailingInfo: PaneFooterSegment[];
   hints: PaneHint[];
   menu: ContextMenuItem[];
   keys: PaneHint[];
 }
 
-export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], trailingInfo: [], hints: [], menu: [], keys: [] };
+export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [], menu: [], keys: [] };
 
 /** Status the hints leave room for, more when it is a warning: a failure must stay readable. */
 const INFO_FLOOR_CHARS = 10;
@@ -97,7 +81,7 @@ export function totalHintsWidth(hints: readonly Pick<PaneHint, "key" | "label">[
   return hints.reduce((total, hint, index) => total + paneHintWidth(hint, index > 0 ? " " : ""), 0);
 }
 
-function footerSegmentsWidth(segments: readonly PaneFooterSegment[]): number {
+function infoTextWidth(segments: readonly PaneFooterSegment[]): number {
   if (segments.length === 0) return 0;
   return segments.reduce((total, segment, index) => {
     const text = segment.parts.reduce((sum, part, partIndex) => (
@@ -130,12 +114,11 @@ export function layoutPaneFooterHintRow(
   contentWidth: number,
   iconReserve = 0,
 ): PaneFooterHintRow {
-  const trailingWidth = footerSegmentsWidth(footer.trailingInfo ?? []);
-  const width = Math.max(0, Math.floor(contentWidth) - trailingWidth - (trailingWidth > 0 ? 1 : 0));
+  const width = Math.max(0, Math.floor(contentWidth));
   const hints = footer.hints.filter((hint) => !hint.disabled);
   const warning = footer.info.some((segment) => segment.parts.some((part) => part.tone === "warning" || part.tone === "negative"));
   const textFloor = footer.info.length > 0
-    ? Math.min(warning ? WARNING_FLOOR_CHARS : INFO_FLOOR_CHARS, footerSegmentsWidth(footer.info))
+    ? Math.min(warning ? WARNING_FLOOR_CHARS : INFO_FLOOR_CHARS, infoTextWidth(footer.info))
     : 0;
   const infoFloor = Math.min(width, Math.max(iconReserve, textFloor));
   const hintBudget = Math.max(0, width - infoFloor - (infoFloor > 0 && hints.length > 0 ? 1 : 0));
@@ -181,9 +164,7 @@ export function paneHintTitle(hint: Pick<PaneHint, "key" | "label" | "title">): 
 
 export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
   if (!footer) return false;
-  return footer.info.length > 0
-    || (footer.trailingInfo?.length ?? 0) > 0
-    || footer.hints.some((hint) => !hint.disabled);
+  return footer.info.length > 0 || footer.hints.some((hint) => !hint.disabled);
 }
 
 export function combinePaneFooterRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
@@ -195,13 +176,11 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   });
 
   const info: PaneFooterSegment[] = [];
-  const trailingInfo: PaneFooterSegment[] = [];
   const hints: PaneHint[] = [];
   const menu: ContextMenuItem[] = [];
   const keys: PaneHint[] = [];
   for (const [id, registration] of ordered) {
     if (registration.info) info.push(...registration.info);
-    if (registration.trailingInfo) trailingInfo.push(...registration.trailingInfo);
     if (registration.hints) hints.push(...registration.hints);
     if (registration.keys) keys.push(...registration.keys);
     if (registration.menu?.length) {
@@ -210,23 +189,8 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
     }
   }
 
-  if (info.length === 0 && trailingInfo.length === 0 && hints.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
-  return { info, trailingInfo, hints, menu, keys };
-}
-
-function sameFooterSegments(left: PaneFooterSegment[], right: PaneFooterSegment[]): boolean {
-  return left.length === right.length && left.every((segment, index) => {
-    const other = right[index];
-    return !!other
-      && segment.id === other.id
-      && segment.icon === other.icon
-      && segment.label === other.label
-      && segment.title === other.title
-      && segment.shortcut === other.shortcut
-      && !!segment.onPress === !!other.onPress
-      && segment.disabled === other.disabled
-      && sameFooterParts(segment.parts, other.parts);
-  });
+  if (info.length === 0 && hints.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
+  return { info, hints, menu, keys };
 }
 
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {
@@ -263,8 +227,6 @@ export function samePaneFooterRegistration(
   if (!left || !right) return false;
   const leftInfo = left.info ?? [];
   const rightInfo = right.info ?? [];
-  const leftTrailing = left.trailingInfo ?? [];
-  const rightTrailing = right.trailingInfo ?? [];
   const leftHints = left.hints ?? [];
   const rightHints = right.hints ?? [];
   const leftKeys = left.keys ?? [];
@@ -273,9 +235,20 @@ export function samePaneFooterRegistration(
     && sameMenuItems(left.menu ?? [], right.menu ?? [])
     && leftKeys.length === rightKeys.length
     && leftKeys.every((key, index) => key.id === rightKeys[index]!.id && key.key === rightKeys[index]!.key && key.disabled === rightKeys[index]!.disabled)
-    && sameFooterSegments(leftInfo, rightInfo)
-    && sameFooterSegments(leftTrailing, rightTrailing)
+    && leftInfo.length === rightInfo.length
     && leftHints.length === rightHints.length
+    && leftInfo.every((segment, index) => {
+      const other = rightInfo[index];
+      return !!other
+        && segment.id === other.id
+        && segment.icon === other.icon
+        && segment.label === other.label
+        && segment.title === other.title
+        && segment.shortcut === other.shortcut
+        && !!segment.onPress === !!other.onPress
+        && segment.disabled === other.disabled
+        && sameFooterParts(segment.parts, other.parts);
+    })
     && leftHints.every((hint, index) => {
       const other = rightHints[index];
       return !!other

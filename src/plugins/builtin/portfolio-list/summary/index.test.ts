@@ -283,10 +283,12 @@ describe("buildPortfolioSummarySegments", () => {
       totals: { ...totals, hasPositions: false },
       accountState: null,
       accountStatusText: "Acct missing",
+      financialsMap: new Map(),
       isPortfolioTab: true,
       refreshingSize: 0,
+      sortedTickers: [],
     });
 
-    expect(segments.map((segment) => segment.parts[0]?.text)).toEqual(["Acct missing"]);
+    expect(segments.map((segment) => segment.parts[0]?.text)).toEqual(["Acct missing", "-"]);
   });
 });
