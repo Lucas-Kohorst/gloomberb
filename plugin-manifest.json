@@ -2,6 +2,22 @@
   "version": 1,
   "plugins": [
     {
+      "id": "adjacent",
+      "name": "Adjacent",
+      "description": "Prediction-market indices, reference rates, and CFTC filings.",
+      "categories": [
+        "markets"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "adjacent"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "alerts",
       "name": "Alerts",
       "description": "Price, market and filing event alerts",

@@ -8,6 +8,8 @@ interface StaticAssetsBinding {
 
 export interface WorkerEnv {
   ASSETS: StaticAssetsBinding;
+  /** Injected on Adjacent auth requests. A browser-supplied Authorization wins. */
+  ADJACENT_API_KEY?: string;
 }
 
 const SHARE_PATH = /^\/s\/[a-f0-9]{32}\/?$/;
@@ -107,7 +109,11 @@ export async function handleRequest(request: Request, env: WorkerEnv, fetchApi: 
   if (API_PATH.test(url.pathname)) return proxyApi(request, fetchApi);
   // Before the GET/HEAD gate below, since plugin requests arrive as POST.
   if (url.pathname === HTTP_PROXY_PATH) {
-    return withSecurityHeaders(await handleHttpProxy(request, { sessions: proxySessions, fetchApi }));
+    return withSecurityHeaders(await handleHttpProxy(request, {
+      sessions: proxySessions,
+      fetchApi,
+      adjacentApiKey: env.ADJACENT_API_KEY,
+    }));
   }
 
   if (request.method !== "GET" && request.method !== "HEAD") {

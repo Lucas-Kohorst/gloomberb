@@ -193,6 +193,26 @@ function upstreamFailure(error: unknown): Response {
   return proxyError(timedOut ? "The upstream request timed out." : "The upstream request failed.", 504);
 }
 
+const ADJACENT_API_HOST = "api.adjacent.markets";
+
+/**
+ * Adds the worker's Adjacent key on auth paths. A key the browser already
+ * set wins, and public twins never receive one.
+ */
+export function adjacentProxyAuthorization(
+  url: URL,
+  headers: Record<string, string>,
+  apiKey: string | undefined,
+): Record<string, string> {
+  if (url.hostname !== ADJACENT_API_HOST) return headers;
+  const key = apiKey?.trim();
+  if (!key) return headers;
+  if (url.pathname.includes("/api/v1/public/")) return headers;
+  const existing = Object.entries(headers).find(([name]) => name.toLowerCase() === "authorization");
+  if (existing && existing[1].trim()) return headers;
+  return { ...headers, Authorization: `Bearer ${key}` };
+}
+
 export interface HttpProxyOptions {
   /** Confirms the caller is signed in. One per isolate, so its cache is shared. */
   sessions: ProxySessionGate;
@@ -201,6 +221,8 @@ export interface HttpProxyOptions {
   /** Reaches the plugin's target. */
   fetchUpstream?: typeof fetch;
   hosts?: readonly string[];
+  /** Worker secret for Adjacent auth paths. Never copied into the response. */
+  adjacentApiKey?: string;
 }
 
 /**
@@ -250,9 +272,13 @@ export async function handleHttpProxy(request: Request, options: HttpProxyOption
   }
 
   const signal = AbortSignal.timeout(Math.min(init.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS));
+  const forwarded = {
+    ...init,
+    headers: adjacentProxyAuthorization(target.url, init.headers, options.adjacentApiKey),
+  };
   let result: UpstreamResult;
   try {
-    result = await fetchWithinAllowlist(target.url, init, fetchUpstream, hosts, signal);
+    result = await fetchWithinAllowlist(target.url, forwarded, fetchUpstream, hosts, signal);
   } catch (error) {
     return upstreamFailure(error);
   }

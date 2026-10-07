@@ -801,6 +801,27 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: same("Daily"),
     bloomberg: ["IPO"],
   },
+  ADI: {
+    summary: "Prediction-market indices with the level and the one- and seven-day change. Open one to chart it.",
+    usage: ["ADI", "ADI red"],
+    keys: [TABS, SEARCH, OPEN],
+    data: same("Real-time with an API key, otherwise 15 minutes delayed"),
+    bloomberg: [],
+  },
+  ADR: {
+    summary: "Cross-venue reference rates with the value, the spread, and the one-day change. Open one to chart it.",
+    usage: ["ADR", "ADR fed"],
+    keys: [TABS, SEARCH, OPEN],
+    data: same("Real-time with an API key, otherwise 15 minutes delayed"),
+    bloomberg: [],
+  },
+  ADCF: {
+    summary: "CFTC product certifications, rule filings, and DCO registrations. Open one to read it.",
+    usage: ["ADCF", "ADCF CME"],
+    keys: [TABS, SEARCH, OPEN],
+    data: same("As filed"),
+    bloomberg: [],
+  },
   MAP: {
     summary: "Trading venues around the world with open or closed status, local time and time to the next session change.",
     usage: ["MAP"],

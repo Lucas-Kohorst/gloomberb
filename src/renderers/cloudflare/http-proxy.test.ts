@@ -42,6 +42,8 @@ function harness(options: {
   upstream?: Upstream;
   api?: (request: Request) => Response | Promise<Response>;
   gate?: Partial<ProxySessionGateOptions>;
+  hosts?: readonly string[];
+  adjacentApiKey?: string;
 } = {}) {
   let clock = 1_000_000;
   const apiCalls: Request[] = [];
@@ -64,7 +66,13 @@ function harness(options: {
       clock += ms;
     },
     send(request: Request) {
-      return handleHttpProxy(request, { sessions, fetchApi, fetchUpstream, hosts: HOSTS });
+      return handleHttpProxy(request, {
+        sessions,
+        fetchApi,
+        fetchUpstream,
+        hosts: options.hosts ?? HOSTS,
+        adjacentApiKey: options.adjacentApiKey,
+      });
     },
   };
 }
@@ -410,6 +418,34 @@ describe("proxy session check", () => {
       "gloomberb.session_token=c",
       "gloomberb.session_token=a",
     ]);
+  });
+});
+
+describe("Adjacent worker key", () => {
+  const HOSTS_WITH_ADJACENT = ["substack.com", "api.adjacent.markets"];
+  const SECRET = "adj_test_secret";
+
+  test("adds the worker key on an auth path and leaves it out of the response", async () => {
+    const proxy = harness({ hosts: HOSTS_WITH_ADJACENT, adjacentApiKey: SECRET });
+    const response = await proxy.send(proxyRequest({ url: "https://api.adjacent.markets/api/v1/indices" }));
+    const sent = new Headers(proxy.upstreamCalls[0]?.init.headers);
+
+    expect(response.status).toBe(200);
+    expect(sent.get("authorization")).toBe(`Bearer ${SECRET}`);
+    expect(JSON.stringify(await response.json())).not.toContain(SECRET);
+  });
+
+  test("leaves a public twin and a caller-supplied key alone", async () => {
+    const proxy = harness({ hosts: HOSTS_WITH_ADJACENT, adjacentApiKey: SECRET });
+    await proxy.send(proxyRequest({ url: "https://api.adjacent.markets/api/v1/public/filings" }));
+    await proxy.send(proxyRequest({
+      url: "https://api.adjacent.markets/api/v1/indices",
+      init: { headers: { Authorization: "Bearer user_key" } },
+    }));
+    await proxy.send(proxyRequest({ url: "https://substack.com/x" }));
+
+    const authorizations = proxy.upstreamCalls.map((call) => new Headers(call.init.headers).get("authorization"));
+    expect(authorizations).toEqual([null, "Bearer user_key", null]);
   });
 });
 

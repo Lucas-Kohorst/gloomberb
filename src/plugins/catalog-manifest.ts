@@ -42,6 +42,7 @@ const EDITORIAL: Record<
     featured: true,
     icon: "plugin-icons/gloomberb-cloud.webp",
   },
+  adjacent: { categories: ["markets"] },
   alerts: { categories: ["alerts"] },
   application: { categories: ["core"] },
   broker: { categories: ["broker"] },

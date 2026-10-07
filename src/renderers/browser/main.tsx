@@ -37,6 +37,9 @@ import type { AppConfig } from "../../types/config";
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
 setCurrentPluginTarget("web");
+// The worker holds the Adjacent key. The browser asks for auth paths and
+// sends a key only when the user typed one in plugin settings.
+(globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
 installWindowCrashListeners();
 installWindowUsageFlush();
 

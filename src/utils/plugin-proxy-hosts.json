@@ -1,5 +1,6 @@
 {
   "hosts": [
+    "api.adjacent.markets",
     "api.elections.kalshi.com",
     "api.fda.gov",
     "api.votehub.com",

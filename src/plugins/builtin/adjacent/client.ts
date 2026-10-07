@@ -1,0 +1,935 @@
+import { httpFetch } from "../../../utils/http-transport";
+import { createThrottledFetch } from "../../../utils/throttled-fetch";
+import type { PluginPersistence } from "../../../types/plugin";
+import type {
+  AdjacentCandlesResponse,
+  AdjacentConstituentsResponse,
+  AdjacentEventsResponse,
+  AdjacentIndex,
+  AdjacentIndexPricesResponse,
+  AdjacentIndicesResponse,
+  AdjacentMarketDetail,
+  AdjacentMarketsResponse,
+  AdjacentNewsArticle,
+  AdjacentNewsLatestResponse,
+  AdjacentNewsResponse,
+  AdjacentPricesResponse,
+  AdjacentQuotesResponse,
+  AdjacentRate,
+  AdjacentRatePricesResponse,
+  AdjacentRatesResponse,
+  AdjacentSimilarResponse,
+  AdjacentTradesResponse,
+  CftcFeed,
+  CftcFiling,
+  CftcFilingDetail,
+  CftcFilingDocument,
+  CftcFilingFilters,
+  CftcFilingsPage,
+  CftcFilingsQuery,
+  CftcPageMeta,
+} from "./types";
+import {
+  unwrapAdjacentMarketIds,
+  unwrapAdjacentMarketsResponse,
+  unwrapAdjacentNewsArticles,
+  unwrapAdjacentPriceSamples,
+  unwrapAdjacentSimilarMarkets,
+} from "./normalize";
+import type { AdjacentPriceWindow } from "./price-window";
+
+/** Set by the hosted browser entry. Desktop and the terminal leave it unset. */
+export function isHostedWebClient(): boolean {
+  return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+}
+
+function readAdjacentEnvKey(): string | null {
+  const value = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ADJACENT_API_KEY;
+  return typeof value === "string" ? value : null;
+}
+
+const BASE_URL = "https://api.adjacent.markets/api/v1";
+const DEFAULT_SOURCE_KEY = "adjacent";
+const ADJACENT_PUBLIC_HEADS = new Set(["markets", "indices", "rates", "events", "filings"]);
+
+/** Blank, literal "undefined", and "null" are not keys. They must not force auth paths. */
+export function normalizeAdjacentApiKey(apiKey: string | null | undefined): string | null {
+  const trimmed = typeof apiKey === "string" ? apiKey.trim() : "";
+  if (!trimmed || trimmed === "undefined" || trimmed === "null") return null;
+  return trimmed;
+}
+
+/**
+ * Auth list paths have a delayed public twin. News and similar do not.
+ * A 401 on the auth URL can retry this twin; a 401 here is a real rejection.
+ */
+export function adjacentPublicTwinUrl(url: string): string | null {
+  if (url.startsWith("/")) {
+    const queryAt = url.indexOf("?");
+    const path = queryAt >= 0 ? url.slice(0, queryAt) : url;
+    const search = queryAt >= 0 ? url.slice(queryAt) : "";
+    const marker = "/api/data/adjacent/";
+    const at = path.indexOf(marker);
+    if (at < 0) return null;
+    const rest = path.slice(at + marker.length);
+    if (!rest || rest.startsWith("public/")) return null;
+    const head = rest.split("/")[0] ?? "";
+    if (!ADJACENT_PUBLIC_HEADS.has(head)) return null;
+    return `${path.slice(0, at)}${marker}public/${rest}${search}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== "api.adjacent.markets") return null;
+  const prefix = "/api/v1/";
+  if (!parsed.pathname.startsWith(prefix)) return null;
+  const rest = parsed.pathname.slice(prefix.length);
+  if (!rest || rest.startsWith("public/")) return null;
+  const head = rest.split("/")[0] ?? "";
+  if (!ADJACENT_PUBLIC_HEADS.has(head)) return null;
+  parsed.pathname = `${prefix}public/${rest}`;
+  return parsed.toString();
+}
+
+function adjacentTransport(url: string, init?: RequestInit): Promise<Response> {
+  if (url.startsWith("/")) return globalThis.fetch(url, init);
+  return httpFetch(url, init);
+}
+
+const ADJACENT_FETCH = createThrottledFetch({
+  requestsPerMinute: 60,
+  maxRetries: 2,
+  timeoutMs: 10_000,
+  backoffBaseMs: 500,
+  dedupeGetRequests: true,
+  defaultHeaders: {
+    Accept: "application/json",
+    "User-Agent": "gloomberb-adjacent",
+  },
+  transport: adjacentTransport,
+});
+
+export const ADJACENT_CACHE_POLICIES = {
+  markets: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
+  marketDetail: { staleMs: 10_000, expireMs: 5 * 60_000 },
+  prices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
+  candles: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
+  trades: { staleMs: 5_000, expireMs: 2 * 60_000 },
+  quotes: { staleMs: 5_000, expireMs: 30_000 },
+  similar: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
+  events: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
+  indices: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
+  constituents: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
+  indexDetail: { staleMs: 60_000, expireMs: 10 * 60_000 },
+  indexPrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
+  rates: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
+  ratePrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
+  news: { staleMs: 2 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+  filings: { staleMs: 2 * 60_000, expireMs: 30 * 60_000 },
+  filingDetail: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
+} as const;
+
+const CFTC_FEEDS: readonly CftcFeed[] = ["ptc_dcm_rules", "dcm_products", "dco", "dco_rules"];
+const DEFAULT_FILINGS_PER_PAGE = 100;
+const MAX_FILINGS_PER_PAGE = 500;
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function asDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function asFeed(value: unknown): CftcFeed {
+  return CFTC_FEEDS.includes(value as CftcFeed) ? value as CftcFeed : "dcm_products";
+}
+
+function parseFiling(raw: unknown): CftcFiling | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const rawId = record.filing_id ?? record.id;
+  const id = typeof rawId === "number" ? rawId : Number(rawId);
+  if (!Number.isFinite(id)) return null;
+  const title = asString(record.title);
+  if (!title) return null;
+  return {
+    id,
+    title,
+    feed: asFeed(record.feed),
+    orgCode: asString(record.org_code) ?? "",
+    status: asString(record.status) ?? "",
+    statusDate: asDate(record.status_date) ?? new Date(0),
+    docCount: typeof record.doc_count === "number" ? record.doc_count : 0,
+    description: asString(record.description),
+    productName: asString(record.product_name),
+    productType: asString(record.product_type),
+    category: asString(record.category),
+    subcategory: asString(record.subcategory),
+    productsAffected: asString(record.products_affected),
+    remarks: asString(record.remarks),
+    receiptDate: asDate(record.receipt_date),
+    predictedEffectiveDate: asDate(record.predicted_effective_date),
+    firstSeenAt: asDate(record.first_seen_at),
+    lastSeenAt: asDate(record.last_seen_at),
+  };
+}
+
+function parseDocument(raw: unknown): CftcFilingDocument | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const url = asString(record.url);
+  if (!url) return null;
+  return { url, title: asString(record.title) ?? url };
+}
+
+function parseMeta(raw: unknown): CftcPageMeta {
+  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const total = num(record.total);
+  const page = num(record.page) ?? 1;
+  const perPage = num(record.per_page) ?? DEFAULT_FILINGS_PER_PAGE;
+  const totalPages = num(record.total_pages);
+  return {
+    total,
+    page,
+    perPage,
+    totalPages,
+    hasNext: record.has_next === true
+      || (totalPages != null && page < totalPages)
+      || (total != null && page * perPage < total),
+    hasPrev: record.has_prev === true,
+    totalCapped: record.total_capped === true ? true : undefined,
+  };
+}
+
+export function cftcPageHasMore(meta: CftcPageMeta, receivedCount: number): boolean {
+  if (meta.hasNext) return true;
+  if (receivedCount <= 0) return false;
+  return receivedCount >= meta.perPage;
+}
+
+let adjacentPersistence: PluginPersistence | null = null;
+
+export function attachAdjacentPersistence(persistence: PluginPersistence): void {
+  adjacentPersistence = persistence;
+}
+
+export function resetAdjacentPersistence(): void {
+  adjacentPersistence = null;
+}
+
+export interface AdjacentClientOptions {
+  apiKey?: string | null;
+  /** Key the user personally owns (BYOK entry or process env), never plugin config. */
+  userApiKey?: string | null;
+}
+
+function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
+  const url = new URL(`${BASE_URL}${path}`);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+  return url.toString();
+}
+
+function authHeaders(apiKey: string | null | undefined): Record<string, string> {
+  const key = normalizeAdjacentApiKey(apiKey);
+  if (!key) return {};
+  return { Authorization: `Bearer ${key}` };
+}
+
+/** Hosted injects ADJACENT_API_KEY on the worker; the browser has no BYOK key. */
+function usesWorkerAdjacentKey(): boolean {
+  return isHostedWebClient();
+}
+
+function isPublicMode(apiKey: string | null | undefined): boolean {
+  if (usesWorkerAdjacentKey()) return false;
+  return !normalizeAdjacentApiKey(apiKey);
+}
+
+function adjacentPriceInterval(interval: string): string {
+  return interval === "1h" ? "1hour" : interval;
+}
+
+async function adjacentFetchJson<T>(
+  url: string,
+  apiKey: string | null | undefined,
+  signal?: AbortSignal,
+): Promise<T> {
+  const headers = authHeaders(apiKey);
+  let response = await ADJACENT_FETCH.fetch(url, { headers, signal });
+  // A stale or rejected key 401s the auth path. Indices, filings, markets,
+  // rates, and events still have a public twin that ignores that key.
+  // News and similar have no twin, so their 401 stays a real rejection.
+  if (response.status === 401) {
+    const fallback = adjacentPublicTwinUrl(url);
+    if (fallback) {
+      response = await ADJACENT_FETCH.fetch(fallback, { signal });
+    }
+  }
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Adjacent request unauthorized.");
+    }
+    throw new Error(`Adjacent request failed (${response.status}).`);
+  }
+  const body = await response.text();
+  return JSON.parse(body) as T;
+}
+
+function getCached<T>(
+  kind: string,
+  key: string,
+  options?: { allowExpired?: boolean },
+): T | null {
+  const record = adjacentPersistence?.getResource<T>(kind, key, {
+    sourceKey: DEFAULT_SOURCE_KEY,
+    allowExpired: options?.allowExpired,
+  });
+  return record?.value ?? null;
+}
+
+function setCached<T>(
+  kind: string,
+  key: string,
+  value: T,
+  cachePolicy: { staleMs: number; expireMs: number },
+): void {
+  adjacentPersistence?.setResource(kind, key, value, {
+    sourceKey: DEFAULT_SOURCE_KEY,
+    cachePolicy,
+  });
+}
+
+const inflightCached = new Map<string, Promise<unknown>>();
+
+async function loadCached<T>(
+  kind: string,
+  key: string,
+  fetcher: () => Promise<T>,
+  cachePolicy: { staleMs: number; expireMs: number },
+): Promise<T> {
+  const cached = adjacentPersistence?.getResource<T>(kind, key, {
+    sourceKey: DEFAULT_SOURCE_KEY,
+  });
+  if (cached && cached.stale !== true && cached.staleAt > Date.now()) {
+    return cached.value;
+  }
+  const inflightKey = `${kind}:${key}`;
+  const pending = inflightCached.get(inflightKey) as Promise<T> | undefined;
+  if (pending) return pending;
+  const work = (async () => {
+    try {
+      const next = await fetcher();
+      setCached(kind, key, next, cachePolicy);
+      return next;
+    } catch (error) {
+      if (cached) return cached.value;
+      throw error;
+    } finally {
+      inflightCached.delete(inflightKey);
+    }
+  })();
+  inflightCached.set(inflightKey, work);
+  return work;
+}
+
+const MAX_PRICE_WINDOW_PAGES = 6;
+
+function adjacentPriceCacheKey(id: string, window?: AdjacentPriceWindow): string {
+  if (!window) return id;
+  return `${id}|${JSON.stringify({
+    ...window,
+    start: window.start?.slice(0, 10),
+    end: window.end?.slice(0, 10),
+  })}`;
+}
+
+function pricePageHasNext(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const meta = (payload as { meta?: unknown }).meta;
+  if (!meta || typeof meta !== "object") return false;
+  return (meta as { has_next?: unknown }).has_next === true;
+}
+
+function pricePageRows(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === "object") {
+    const rows = (payload as { data?: unknown }).data;
+    if (Array.isArray(rows)) return rows;
+  }
+  return [];
+}
+
+export class AdjacentClient {
+  constructor(private options: AdjacentClientOptions = {}) {}
+
+  get apiKey(): string | null | undefined {
+    return normalizeAdjacentApiKey(this.options.apiKey);
+  }
+
+  /** The key actually transmitted for this request; drives the public/keyed tier. */
+  get requestApiKey(): string | null {
+    return normalizeAdjacentApiKey(
+      isHostedWebClient() ? this.options.userApiKey : this.options.apiKey,
+    );
+  }
+
+  get isPublic(): boolean {
+    return isPublicMode(this.requestApiKey);
+  }
+
+  private marketsPath(): string {
+    return this.isPublic ? "/public/markets" : "/markets";
+  }
+
+  private indicesPath(): string {
+    return this.isPublic ? "/public/indices" : "/indices";
+  }
+
+  private ratesPath(): string {
+    return this.isPublic ? "/public/rates" : "/rates";
+  }
+
+  private eventsPath(): string {
+    return this.isPublic ? "/public/events" : "/events";
+  }
+
+  private newsPath(): string {
+    return "/news";
+  }
+
+  private filingsPath(): string {
+    // CFTC records are on Adjacent's public filings API. Hosted always uses
+    // that twin: the Worker auth path 403s when the injected key cannot read
+    // private /filings, and the browser has no BYOK key of its own.
+    if (usesWorkerAdjacentKey() || this.isPublic) return "/public/filings";
+    return "/filings";
+  }
+
+  async getMarkets(params?: {
+    platform?: string;
+    category?: string;
+    sort?: string;
+    sortDir?: string;
+    limit?: number;
+    page?: number;
+    /** Auth lists default to index constituents. `all` is the tradable universe. */
+    scope?: string;
+  }): Promise<AdjacentMarketsResponse> {
+    const url = buildUrl(this.marketsPath(), {
+      platform: params?.platform,
+      category: params?.category,
+      sort: params?.sort,
+      sort_dir: params?.sortDir,
+      per_page: params?.limit,
+      page: params?.page,
+      scope: params?.scope ?? (this.isPublic ? "all" : undefined),
+    });
+    return loadCached(
+      "adjacent-markets",
+      url,
+      () => adjacentFetchJson<AdjacentMarketsResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.markets,
+    );
+  }
+
+  async listMarkets(params?: {
+    platform?: string;
+    category?: string;
+    sort?: string;
+    sortDir?: string;
+    limit?: number;
+    page?: number;
+    signal?: AbortSignal;
+  }): Promise<AdjacentMarketsResponse> {
+    const url = buildUrl(this.marketsPath(), {
+      platform: params?.platform,
+      category: params?.category,
+      sort: params?.sort,
+      sort_dir: params?.sortDir,
+      per_page: params?.limit,
+      page: params?.page,
+      scope: "all",
+    });
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey, params?.signal);
+    return unwrapAdjacentMarketsResponse(raw);
+  }
+
+  async searchMarkets(
+    query: string,
+    limit = 30,
+    platform?: string,
+    options?: { page?: number; signal?: AbortSignal },
+  ): Promise<AdjacentMarketsResponse> {
+    const url = buildUrl(this.marketsPath(), {
+      search: query,
+      per_page: limit,
+      page: options?.page ?? 1,
+      platform,
+      // Search is the full tradable universe. Auth defaults to index
+      // constituents, which drops most Kalshi contracts.
+      scope: "all",
+    });
+    // Don't cache search results persistently
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey, options?.signal);
+    return unwrapAdjacentMarketsResponse(raw);
+  }
+
+  async getMarket(id: string): Promise<AdjacentMarketDetail> {
+    const url = buildUrl(`${this.marketsPath()}/${id}`);
+    return loadCached(
+      "adjacent-market-detail",
+      id,
+      () => adjacentFetchJson<AdjacentMarketDetail>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.marketDetail,
+    );
+  }
+
+  async getMarketPrices(id: string, interval = "1h"): Promise<AdjacentPricesResponse> {
+    const url = buildUrl(`${this.marketsPath()}/${id}/prices`, {
+      interval: adjacentPriceInterval(interval),
+    });
+    const cacheKey = `${id}:${interval}`;
+    return loadCached(
+      "adjacent-prices",
+      cacheKey,
+      () => adjacentFetchJson<AdjacentPricesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.prices,
+    );
+  }
+
+  async getMarketCandles(id: string, intervalMinutes = 60): Promise<AdjacentCandlesResponse> {
+    const url = buildUrl(`${this.marketsPath()}/${id}/candles`, { interval: intervalMinutes });
+    const cacheKey = `${id}:${intervalMinutes}`;
+    return loadCached(
+      "adjacent-candles",
+      cacheKey,
+      () => adjacentFetchJson<AdjacentCandlesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.candles,
+    );
+  }
+
+  async getMarketTrades(id: string): Promise<AdjacentTradesResponse> {
+    const url = buildUrl(`${this.marketsPath()}/${id}/trades`);
+    return loadCached(
+      "adjacent-trades",
+      id,
+      () => adjacentFetchJson<AdjacentTradesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.trades,
+    );
+  }
+
+  async getMarketQuotes(id: string): Promise<AdjacentQuotesResponse> {
+    const url = buildUrl(`${this.marketsPath()}/${id}/quotes`);
+    return loadCached(
+      "adjacent-quotes",
+      id,
+      () => adjacentFetchJson<AdjacentQuotesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.quotes,
+    );
+  }
+
+  async getSimilarMarkets(id: string): Promise<AdjacentSimilarResponse> {
+    const url = buildUrl(`/markets/${id}/similar`);
+    const raw = await loadCached(
+      "adjacent-similar",
+      id,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.similar,
+    );
+    return { markets: unwrapAdjacentSimilarMarkets(raw) };
+  }
+
+  async getEvents(params?: {
+    platform?: string;
+    category?: string;
+    limit?: number;
+    page?: number;
+  }): Promise<AdjacentEventsResponse> {
+    const url = buildUrl(this.eventsPath(), {
+      platform: params?.platform,
+      category: params?.category,
+      per_page: params?.limit,
+      page: params?.page,
+    });
+    return loadCached(
+      "adjacent-events",
+      url,
+      () => adjacentFetchJson<AdjacentEventsResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.events,
+    );
+  }
+
+  async getIndices(): Promise<AdjacentIndicesResponse> {
+    const url = buildUrl(this.indicesPath());
+    return loadCached(
+      "adjacent-indices",
+      url,
+      () => adjacentFetchJson<AdjacentIndicesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.indices,
+    );
+  }
+
+  async getIndex(id: string): Promise<AdjacentIndex> {
+    const url = buildUrl(`${this.indicesPath()}/${id}`);
+    return loadCached(
+      "adjacent-index",
+      `${this.isPublic ? "public" : "keyed"}:${id}`,
+      () => adjacentFetchJson<AdjacentIndex>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.indexDetail,
+    );
+  }
+
+  async getIndexConstituents(id: string): Promise<AdjacentConstituentsResponse> {
+    const url = buildUrl(`${this.indicesPath()}/${id}/constituents`);
+    return loadCached(
+      "adjacent-constituents",
+      id,
+      () => adjacentFetchJson<AdjacentConstituentsResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.constituents,
+    );
+  }
+
+  private async fetchPricePages(path: string, window: AdjacentPriceWindow): Promise<unknown> {
+    const pages: unknown[] = [];
+    for (let page = 1; page <= MAX_PRICE_WINDOW_PAGES; page += 1) {
+      const url = buildUrl(path, {
+        interval: window.interval,
+        start: window.start,
+        end: window.end,
+        per_page: window.perPage,
+        order: window.order,
+        page,
+      });
+      const payload = await adjacentFetchJson<unknown>(url, this.requestApiKey);
+      pages.push(payload);
+      if (!pricePageHasNext(payload)) break;
+    }
+    return pages.length === 1 ? pages[0] : { data: pages.flatMap(pricePageRows) };
+  }
+
+  private async loadPriceWindow(path: string, window?: AdjacentPriceWindow): Promise<unknown> {
+    if (!window?.start) {
+      return adjacentFetchJson<unknown>(
+        buildUrl(path, window ? { interval: window.interval } : undefined),
+        this.requestApiKey,
+      );
+    }
+    try {
+      return await this.fetchPricePages(path, window);
+    } catch {
+      return adjacentFetchJson<unknown>(
+        buildUrl(path, { interval: window.interval }),
+        this.requestApiKey,
+      ).catch(() => adjacentFetchJson<unknown>(buildUrl(path), this.requestApiKey));
+    }
+  }
+
+  async getIndexPrices(id: string, window?: AdjacentPriceWindow): Promise<AdjacentIndexPricesResponse> {
+    const path = `${this.indicesPath()}/${id}/prices`;
+    const raw = await loadCached(
+      "adjacent-index-prices",
+      adjacentPriceCacheKey(id, window),
+      () => this.loadPriceWindow(path, window),
+      ADJACENT_CACHE_POLICIES.indexPrices,
+    );
+    return { data: unwrapAdjacentPriceSamples(raw) };
+  }
+
+  async getIndexNews(id: string): Promise<AdjacentNewsResponse> {
+    // Public related news is capped at 3. The keyed route pages up to 500.
+    const perPage = this.isPublic ? 3 : 40;
+    const url = buildUrl(`${this.indicesPath()}/${id}/news`, { per_page: perPage });
+    const raw = await loadCached(
+      "adjacent-index-news",
+      `${this.isPublic ? "public" : "keyed"}:${id}:${perPage}`,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.news,
+    );
+    return { news: unwrapAdjacentNewsArticles(raw) };
+  }
+
+  /** Related CFTC filings. The public index routes do not serve this. */
+  async getIndexFilings(id: string): Promise<CftcFilingsPage> {
+    const url = buildUrl(`${this.indicesPath()}/${id}/filings`, { per_page: 40 });
+    const payload = await loadCached(
+      "adjacent-index-filings",
+      `${this.isPublic ? "public" : "keyed"}:${id}`,
+      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.filings,
+    );
+    return {
+      filings: (payload.data ?? [])
+        .map(parseFiling)
+        .filter((filing): filing is CftcFiling => filing !== null),
+      meta: parseMeta(payload.meta),
+    };
+  }
+
+  async getRates(): Promise<AdjacentRatesResponse> {
+    const url = buildUrl(this.ratesPath());
+    return loadCached(
+      "adjacent-rates",
+      url,
+      () => adjacentFetchJson<AdjacentRatesResponse>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.rates,
+    );
+  }
+
+  async getRate(id: string): Promise<AdjacentRate> {
+    const url = buildUrl(`${this.ratesPath()}/${id}`);
+    return adjacentFetchJson<AdjacentRate>(url, this.requestApiKey);
+  }
+
+  async getRatePrices(id: string, window?: AdjacentPriceWindow): Promise<AdjacentRatePricesResponse> {
+    const path = `${this.ratesPath()}/${id}/prices`;
+    const raw = await loadCached(
+      "adjacent-rate-prices",
+      adjacentPriceCacheKey(id, window),
+      () => this.loadPriceWindow(path, window),
+      ADJACENT_CACHE_POLICIES.ratePrices,
+    );
+    return { data: unwrapAdjacentPriceSamples(raw) };
+  }
+
+  async getNews(params?: { limit?: number; offset?: number }): Promise<AdjacentNewsResponse> {
+    const url = buildUrl(this.newsPath(), {
+      limit: params?.limit,
+      offset: params?.offset,
+    });
+    const raw = await loadCached(
+      "adjacent-news",
+      url,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.news,
+    );
+    return { news: unwrapAdjacentNewsArticles(raw) };
+  }
+
+  async getLatestNews(limit = 20): Promise<AdjacentNewsLatestResponse> {
+    const url = buildUrl(`${this.newsPath()}/latest`, { per_page: limit });
+    const raw = await loadCached(
+      "adjacent-news-latest",
+      url,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.news,
+    );
+    return { news: unwrapAdjacentNewsArticles(raw) };
+  }
+
+  async getNewsArticle(id: string): Promise<AdjacentNewsArticle> {
+    const url = buildUrl(`${this.newsPath()}/${id}`);
+    return adjacentFetchJson<AdjacentNewsArticle>(url, this.requestApiKey);
+  }
+
+  async getNewsMarkets(id: string): Promise<AdjacentMarketsResponse> {
+    const url = buildUrl(`${this.newsPath()}/${id}/markets`);
+    return adjacentFetchJson<AdjacentMarketsResponse>(url, this.requestApiKey);
+  }
+
+  async getMarketNews(
+    marketId: string,
+    params?: { limit?: number },
+  ): Promise<AdjacentNewsResponse> {
+    const limit = Math.max(10, params?.limit ?? 20);
+    const url = buildUrl(`${this.marketsPath()}/${marketId}/news`, { per_page: limit });
+    const raw = await loadCached(
+      "adjacent-market-news",
+      `${marketId}:${limit}`,
+      () => adjacentFetchJson<unknown>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.news,
+    );
+    return { news: unwrapAdjacentNewsArticles(raw).slice(0, limit) };
+  }
+
+  async searchMarketsByText(
+    query: string,
+    limit = 5,
+    platform?: string,
+  ): Promise<string[]> {
+    const url = buildUrl(this.marketsPath(), {
+      search: query,
+      scope: "all",
+      per_page: limit,
+      platform,
+    });
+    const raw = await adjacentFetchJson<unknown>(url, this.requestApiKey);
+    return unwrapAdjacentMarketIds(raw).slice(0, limit);
+  }
+
+  async listFilings(query: CftcFilingsQuery = {}): Promise<CftcFilingsPage> {
+    const url = buildUrl(this.filingsPath(), {
+      feed: query.feed,
+      org: query.org,
+      status: query.status,
+      search: query.search?.trim() || undefined,
+      page: query.page && query.page > 1 ? query.page : undefined,
+      per_page: Math.min(query.perPage ?? DEFAULT_FILINGS_PER_PAGE, MAX_FILINGS_PER_PAGE),
+      sort: query.sort,
+      sort_dir: query.sortDir,
+    });
+    const payload = await loadCached(
+      "adjacent-filings",
+      url,
+      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.requestApiKey),
+      ADJACENT_CACHE_POLICIES.filings,
+    );
+    return {
+      filings: (payload.data ?? [])
+        .map(parseFiling)
+        .filter((filing): filing is CftcFiling => filing !== null),
+      meta: parseMeta(payload.meta),
+    };
+  }
+
+  async getFilingDetail(id: number): Promise<CftcFilingDetail | null> {
+    const url = buildUrl(`${this.filingsPath()}/${encodeURIComponent(String(id))}/markdown`);
+    return loadCached(
+      "adjacent-filing-detail",
+      url,
+      async () => {
+        try {
+          const payload = await adjacentFetchJson<{
+            filing?: unknown;
+            markdown?: unknown;
+            documents?: unknown[];
+            source_url?: unknown;
+          }>(url, this.requestApiKey);
+          const filing = parseFiling(payload.filing);
+          if (!filing) return null;
+          return {
+            filing,
+            markdown: asString(payload.markdown) ?? "",
+            documents: (payload.documents ?? [])
+              .map(parseDocument)
+              .filter((doc): doc is CftcFilingDocument => doc !== null),
+            sourceUrl: asString(payload.source_url) ?? "",
+          };
+        } catch (error) {
+          if (error instanceof Error && /\(404\)/.test(error.message)) return null;
+          throw error;
+        }
+      },
+      ADJACENT_CACHE_POLICIES.filingDetail,
+    );
+  }
+
+  async getFilingFilters(): Promise<CftcFilingFilters> {
+    const url = buildUrl(`${this.filingsPath()}/filters`);
+    const payload = await adjacentFetchJson<{
+      feeds?: unknown[];
+      orgs?: unknown[];
+      statuses?: unknown[];
+    }>(url, this.requestApiKey);
+    const strings = (values: unknown[] | undefined): string[] =>
+      (values ?? []).map(asString).filter((value): value is string => value !== undefined);
+    return {
+      feeds: strings(payload.feeds),
+      orgs: strings(payload.orgs),
+      statuses: strings(payload.statuses),
+    };
+  }
+}
+
+export async function loadCftcFilings(
+  client: AdjacentClient,
+  query: string,
+  perPage = DEFAULT_FILINGS_PER_PAGE,
+  page = 1,
+): Promise<CftcFilingsPage> {
+  const normalized = query.trim();
+  return client.listFilings({
+    ...(normalized ? { search: normalized } : {}),
+    perPage,
+    page,
+    sort: "first_seen",
+    sortDir: "desc",
+  });
+}
+
+const MAX_CFTC_CHART_PAGES = 8;
+
+export async function loadCftcFilingsFeed(
+  client: AdjacentClient,
+  options: {
+    feed?: CftcFeed;
+    search?: string;
+    perPage?: number;
+    maxPages?: number;
+  } = {},
+): Promise<CftcFiling[]> {
+  const perPage = Math.min(options.perPage ?? MAX_FILINGS_PER_PAGE, MAX_FILINGS_PER_PAGE);
+  const maxPages = Math.max(1, options.maxPages ?? MAX_CFTC_CHART_PAGES);
+  const filings: CftcFiling[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const result = await client.listFilings({
+      feed: options.feed,
+      search: options.search?.trim() || undefined,
+      page,
+      perPage,
+    });
+    filings.push(...result.filings);
+    if (!result.meta.hasNext) break;
+  }
+  return filings;
+}
+
+export { getCached as getAdjacentCached, setCached as setAdjacentCached };
+
+let sharedApiKey: string | null = null;
+let resolveSharedApiKey: () => string | null = () => sharedApiKey;
+
+/**
+ * Records the Adjacent API key for cross-plugin consumers (e.g. the
+ * prediction-markets detail tabs) that don't own the Adjacent config state.
+ */
+export function setSharedAdjacentApiKey(apiKey: string | null): void {
+  sharedApiKey = apiKey;
+  resolveSharedApiKey = () => apiKey;
+}
+
+export function setSharedAdjacentApiKeyResolver(resolver: () => string | null): void {
+  resolveSharedApiKey = resolver;
+}
+
+export function resolveAdjacentApiKey(): string | null {
+  return normalizeAdjacentApiKey(resolveSharedApiKey()) ?? normalizeAdjacentApiKey(readAdjacentEnvKey());
+}
+
+let sharedUserApiKey: string | null = null;
+
+/** The key the user personally owns (BYOK or env); never the plugin-config key. */
+export function setSharedAdjacentUserApiKey(key: string | null): void {
+  sharedUserApiKey = normalizeAdjacentApiKey(key);
+}
+
+export function resolveAdjacentUserApiKey(): string | null {
+  return sharedUserApiKey;
+}
+
+/** Returns an Adjacent client using the effective shared API key, if any. */
+export function getSharedAdjacentClient(): AdjacentClient {
+  const configured = resolveAdjacentApiKey();
+  const owned = resolveAdjacentUserApiKey();
+  return new AdjacentClient({
+    apiKey: configured,
+    // Hosted sends only the key the user typed. Plugin config is that key.
+    userApiKey: owned ?? (isHostedWebClient() ? configured : null),
+  });
+}
