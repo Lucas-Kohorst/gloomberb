@@ -2,6 +2,11 @@ import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { researchIsPro, shownIf } from "../shared/research-tab-availability";
 import { loadMnaDeals, MNA_DEALS_UNAVAILABLE, mnaDealCache, mnaDealsCache } from "./client";
+import { DISTRESS_CACHES } from "./distress/client";
+import { distressHeadless } from "./distress/headless";
+import { mnaHeadless } from "./headless";
+import { MNA_PANE_ID } from "./model";
+import { MnaPane, MnaTickerTab } from "./pane";
 
 function loadMnaTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
   return shownIf(
@@ -10,14 +15,12 @@ function loadMnaTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> 
     (error) => error instanceof Error && error.message === MNA_DEALS_UNAVAILABLE,
   );
 }
-import { mnaHeadless } from "./headless";
-import { MNA_PANE_ID } from "./model";
-import { MnaPane, MnaTickerTab } from "./pane";
 
 export const mnaModule: PluginModule = {
   setup(ctx) {
     mnaDealsCache.attach(ctx.persistence);
     mnaDealCache.attach(ctx.persistence);
+    for (const cache of DISTRESS_CACHES) cache.attach(ctx.persistence);
     ctx.registerTickerResearchTab({
       id: "mna",
       name: "M&A",
@@ -31,6 +34,7 @@ export const mnaModule: PluginModule = {
   dispose() {
     mnaDealsCache.reset();
     mnaDealCache.reset();
+    for (const cache of DISTRESS_CACHES) cache.reset();
   },
 
   panes: [
@@ -62,6 +66,17 @@ export const mnaModule: PluginModule = {
           ? { instanceId: `${MNA_PANE_ID}:${symbol}`, title: `M&A ${symbol}`, binding: { kind: "fixed" as const, symbol }, placement: "floating", settings: { ticker: symbol } }
           : { placement: "floating" };
       },
+    },
+    {
+      // The M&A pane on its Distress tab, not a pane of its own.
+      id: "distress-pane",
+      paneId: MNA_PANE_ID,
+      label: "Distress",
+      description: "Dated public records about companies in difficulty: US 8-K bankruptcy, obligation and listing filings, SEC going-concern disclosures, Taiwan listing designations, and French and UK insolvency notices.",
+      keywords: ["distress", "distressed", "bankruptcy", "chapter 11", "receivership", "going concern", "substantial doubt", "insolvency", "liquidation", "administration", "delisting", "delisted", "suspended", "special situations"],
+      shortcut: { prefix: "DIST" },
+      headless: distressHeadless,
+      createInstance: () => ({ placement: "floating", params: { tab: "distress" } }),
     },
   ],
 };
