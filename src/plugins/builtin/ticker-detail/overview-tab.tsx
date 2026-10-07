@@ -343,6 +343,7 @@ function ResolvedOverviewTab({ width, focused = false, ticker, financials, onOpe
               panels={[{ id: "price" }]}
               axisWidth={8}
               showLegend={false}
+              advancedChart={false}
             />
           </Box>
         )}

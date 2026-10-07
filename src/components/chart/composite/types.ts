@@ -247,6 +247,11 @@ export interface CompositeChartProps {
   legendAccessory?: ReactNode;
   legendAccessoryWidth?: number;
   showTimeAxis?: boolean;
+  /**
+   * False keeps the canvas chart. Description overviews and other embedded
+   * sparklines pass false so a short row does not mount the charting widget.
+   */
+  advancedChart?: boolean;
   emptyMessage?: string;
   formatValue?: (value: number, series: ResolvedSeries) => string;
   onCursorDateChange?: (date: Date | null) => void;

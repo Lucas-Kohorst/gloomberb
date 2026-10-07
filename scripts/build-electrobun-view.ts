@@ -4,6 +4,7 @@ import {
   electrobunViewPath,
   writeElectrobunViewPage,
 } from "../src/renderers/dom/build-assets";
+import { copyChartingLibrary } from "./copy-charting-library";
 
 const outdir = join(process.cwd(), "dist", "electrobun-view");
 
@@ -70,3 +71,4 @@ await writeElectrobunViewPage({
       document.getElementById("root").innerHTML = '<div class="gloom-loading">Booting Gloomberb renderer...</div>';
 `,
 });
+await copyChartingLibrary(outdir);

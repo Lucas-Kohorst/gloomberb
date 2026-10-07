@@ -82,7 +82,7 @@ jobs:
 
   deploy-web:
     name: Deploy terminal to Cloudflare
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'gloom-sh/gloomberb'
     needs:
       - typecheck
       - build-and-test

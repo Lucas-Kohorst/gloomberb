@@ -8,6 +8,7 @@ import {
   Text,
   useNativeRenderer,
   useUiCapabilities,
+  useUiHost,
   type BoxRenderable,
   type ChartSurfaceProps,
   type ScrollBoxRenderable,
@@ -25,6 +26,7 @@ import { displayWidth, formatPercentRaw, truncateToDisplayWidth } from "../../..
 import { isPlainKey } from "../../../utils/keyboard";
 import { CHART_WATERMARK_ROLE } from "../../../utils/screenshot-watermark";
 import type { ResolvedSeries } from "../../../time-series/types";
+import { DesktopAdvancedChart, shouldUseDesktopAdvancedChart } from "./desktop-advanced-chart";
 import { downsampleCompositeChartScene } from "./downsample";
 import { reuseResolvedSeriesList } from "./panel-series";
 import {
@@ -1971,6 +1973,7 @@ export function CompositeChart({
   legendAccessory,
   legendAccessoryWidth,
   showTimeAxis = true,
+  advancedChart = true,
   emptyMessage = "No chart data",
   formatValue,
   onCursorDateChange,
@@ -2826,6 +2829,30 @@ export function CompositeChart({
   const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
+
+  const tradingViewHost = useUiHost();
+  if (
+    tradingViewHost.TradingViewChart
+    && shouldUseDesktopAdvancedChart({
+      isDesktopWeb,
+      hasPoints: visibleSeries.length > 0,
+      xAxis,
+      showTimeAxis,
+      formatAxisValue,
+      advancedChart,
+    })
+  ) {
+    return (
+      <DesktopAdvancedChart
+        series={visibleSeries}
+        width={totalWidth}
+        height={totalHeight}
+        background={resolvedColors.background}
+        tickKey={lastTickKey}
+        timeZone={visibleSeries.find((entry) => entry.timeBasis?.timeZone)?.timeBasis?.timeZone}
+      />
+    );
+  }
 
   if (!scene) {
     const emptyPlotHeight = Math.max(0, totalHeight - legendRows - timeAxisRows - xMarkerRows);

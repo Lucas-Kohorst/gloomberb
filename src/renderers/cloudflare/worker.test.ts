@@ -71,6 +71,20 @@ describe("static Cloudflare host", () => {
     expect(response.headers.has("x-robots-tag")).toBe(false);
   });
 
+  test("lets the charting library frame itself and run its worker", async () => {
+    const { env } = fixture();
+    const response = await handleRequest(new Request("https://term.example/charting_library/sameorigin.html"), env);
+    expect(response.headers.get("x-frame-options")).toBeNull();
+    const policy = response.headers.get("content-security-policy") ?? "";
+    expect(policy).toContain("frame-ancestors 'self'");
+    expect(policy).toContain("'unsafe-eval'");
+    expect(policy).toContain("worker-src 'self' blob:");
+    const app = await handleRequest(new Request("https://term.example/"), env);
+    expect(app.headers.get("x-frame-options")).toBe("DENY");
+    expect(app.headers.get("content-security-policy")).toContain("frame-src 'self'");
+    expect(app.headers.get("content-security-policy")).not.toContain("unsafe-eval");
+  });
+
   test("serves a robots.txt that lets crawlers reach the noindex header", async () => {
     const { env, requests } = fixture();
     const response = await handleRequest(new Request("https://term.example/robots.txt"), env);

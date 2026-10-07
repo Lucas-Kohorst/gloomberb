@@ -87,6 +87,7 @@ export async function writeElectrobunViewPage(options: PageOptions): Promise<str
       // The webview has no `process`, so the cloud endpoint override the terminal
       // already reads from the environment is baked in at build time.
       __GLOOMBERB_API_URL__: JSON.stringify(process.env.GLOOMBERB_API_URL ?? ""),
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? "auto"),
     },
   });
   const stylesheet = withTitlebarOverlayHeight(await readFile(join(DOM_RENDERER_DIR, "styles.css"), "utf8"));

@@ -6,18 +6,19 @@
   "assets": {
     "directory": "./dist/web",
     "binding": "ASSETS",
+    "html_handling": "none",
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
   "env": {
-    // term.gloom.sh, deployed from main by the Verify workflow.
+    // terminal.kohor.st. This branch is the hosted fork, not term.gloom.sh.
     "production": {
-      "name": "gloomberb-terminal",
+      "name": "gloomberb-cloud",
       "workers_dev": false,
       "preview_urls": false,
       "routes": [
         {
-          "pattern": "term.gloom.sh",
+          "pattern": "terminal.kohor.st",
           "custom_domain": true
         }
       ],

@@ -43,3 +43,6 @@ paseo.json
 
 # Third-party agent skills restored from skills-lock.json (bunx skills experimental_install)
 .agents/skills/opentui/
+
+# TradingView Advanced Charts. Private checkout, copied into dist at build time.
+vendor/charting_library/

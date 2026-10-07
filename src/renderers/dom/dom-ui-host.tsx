@@ -21,6 +21,7 @@ import { WebIcon, WebIconButton } from "./desktop/icons";
 import { WebSelectField } from "./desktop/select-field";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
+import { WebTradingViewChart } from "./host/tradingview-chart";
 import { WebSurface3D } from "./host/surface-3d";
 import { WebInput, WebTextarea } from "./host/input";
 import { WebMediaSurface } from "./host/media-surface";
@@ -91,6 +92,7 @@ export function createDomUiHost(
     DataTable: WebDataTable,
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
+    TradingViewChart: WebTradingViewChart,
     Surface3D: WebSurface3D,
     ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
       const imageSrc = typeof src === "string" ? src.trim() : "";

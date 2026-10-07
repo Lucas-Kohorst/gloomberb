@@ -48,13 +48,15 @@ const APPLE_APP_SITE_ASSOCIATION = {
   },
 } as const;
 const API_ORIGIN = "https://api.gloom.sh";
+const TRADINGVIEW_ORIGINS = "https://tradingview.com https://s3.tradingview.com https://tradingview-widget.com https://*.tradingview.com";
+const CHART_LIBRARY_PREFIX = "/charting_library/";
 const API_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 type ApiFetch = (request: Request) => Promise<Response>;
 /** Module scope, so every request this isolate serves shares one session cache. */
 const proxySessions = createProxySessionGate({ sessionUrl: `${API_ORIGIN}/auth/get-session` });
 
 export const SECURITY_HEADERS = {
-  "content-security-policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https://api.github.com https://api.fiscaldata.treasury.gov https://plugins.gloom.sh; form-action 'self'; upgrade-insecure-requests",
+  "content-security-policy": `default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' ${TRADINGVIEW_ORIGINS}; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https://api.github.com https://api.fiscaldata.treasury.gov https://plugins.gloom.sh ${TRADINGVIEW_ORIGINS}; form-action 'self'; upgrade-insecure-requests`,
   "cross-origin-opener-policy": "same-origin",
   "cross-origin-resource-policy": "same-origin",
   "permissions-policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
@@ -64,9 +66,19 @@ export const SECURITY_HEADERS = {
   "x-frame-options": "DENY",
 } as const;
 
-export function withSecurityHeaders(response: Response, options: { share?: boolean; noindex?: boolean } = {}): Response {
+/**
+ * sameorigin.html is the chart iframe. Its bundles call eval and spawn a blob
+ * worker, and X-Frame-Options DENY leaves the pane on "Chart could not finish loading."
+ */
+export const CHART_FRAME_CSP = `default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' blob: ${TRADINGVIEW_ORIGINS}; worker-src 'self' blob:; form-action 'self'`;
+
+export function withSecurityHeaders(response: Response, options: { share?: boolean; noindex?: boolean; chartFrame?: boolean } = {}): Response {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  if (options.chartFrame) {
+    headers.set("content-security-policy", CHART_FRAME_CSP);
+    headers.delete("x-frame-options");
+  }
   const html = (headers.get("content-type") ?? "").includes("text/html");
   if (options.share) headers.set("x-robots-tag", "noindex, nofollow, noarchive");
   else if (options.noindex && html) headers.set("x-robots-tag", "noindex");
@@ -135,7 +147,8 @@ export async function handleRequest(request: Request, env: WorkerEnv, fetchApi: 
   // `/?ticker=GPC&tab=executives` would be indexed as thin duplicates. Only the
   // bare root stays indexable.
   const deepLink = url.pathname !== "/" || url.search !== "";
-  return withSecurityHeaders(await env.ASSETS.fetch(request), { noindex: deepLink });
+  const chartFrame = url.pathname.startsWith(CHART_LIBRARY_PREFIX);
+  return withSecurityHeaders(await env.ASSETS.fetch(request), { noindex: deepLink, chartFrame });
 }
 
 export default {

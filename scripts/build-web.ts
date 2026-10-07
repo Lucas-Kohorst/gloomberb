@@ -3,6 +3,7 @@ import { join, relative } from "path";
 import { buildViewBundle } from "../src/renderers/dom/build-assets";
 import type { WebBundledPluginDescriptor } from "../src/plugins/web-bundled";
 import { isProxiedHost, PROXY_ALLOWED_HOSTS } from "../src/utils/plugin-proxy-hosts";
+import { copyChartingLibrary } from "./copy-charting-library";
 import { compileWebBundledPlugins } from "./web-plugins";
 
 const root = process.cwd();
@@ -44,7 +45,11 @@ async function buildPage(
     entrypoint,
     outdir: join(outdir, "assets", name),
     sourcemap: "none",
-    define: { __GLOOMBERB_API_URL__: "location.origin", ...extraDefines },
+    define: {
+      __GLOOMBERB_API_URL__: "location.origin",
+      __GLOOM_CHART_BACKEND__: JSON.stringify(process.env.GLOOM_CHART_BACKEND ?? "auto"),
+      ...extraDefines,
+    },
     failureMessage: `Failed to build the ${name} web page`,
     missingEntryMessage: `${name} build did not emit JavaScript`,
   });
@@ -113,3 +118,4 @@ await buildPage(
   { __GLOOM_WEB_PLUGINS__: JSON.stringify(bundledPlugins) },
 );
 await buildPage("share", join(root, "src/renderers/share/main.tsx"), "Gloomberb Share", "Loading shared view...", "share.html");
+await copyChartingLibrary(outdir);

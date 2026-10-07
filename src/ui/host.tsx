@@ -281,6 +281,24 @@ export interface ChartSurfaceProps extends BoxProps {
   vectors?: readonly ChartVectorShape[] | null;
   nativeBitmapsEnabled?: boolean;
 }
+export interface TradingViewChartProps extends BoxProps {
+  onPrimarySymbolChange?: (symbol: { ticker: string; name: string }) => void;
+  /** Symbol the charting-library datafeed resolves. */
+  symbol: string;
+  /** TradingView interval token. Default D. */
+  interval?: string;
+  /** IANA zone for the widget. Default America/New_York. */
+  timezone?: string;
+  compareSymbols?: readonly string[];
+  backgroundColor?: string;
+  /** Candles for price series. A line for probability, macro, and other single-value series. */
+  chartStyle?: "candles" | "heikinashi" | "line" | "step";
+  hasVolume?: boolean;
+  /** Percentage rebases unlike series onto one axis. Percent, temperature, and precip stay linear. */
+  priceScale?: "normal" | "percentage";
+  /** Bars the widget asks for. The library does not fetch TradingView's tape. */
+  feed?: import("../plugins/builtin/chart-composer/charting-library-feed").LibraryDatafeed;
+}
 /** GPU surface plot. Geometry arrives prebuilt; the host owns camera interaction between commits. */
 export interface Surface3DHostProps {
   width: number;
@@ -534,6 +552,8 @@ export interface UiHost {
   Input: ComponentType<InputProps>;
   Textarea: ComponentType<TextareaProps>;
   ChartSurface: ComponentType<ChartSurfaceProps>;
+  /** Desktop and hosted web time series. Hosts that omit it keep the canvas chart. */
+  TradingViewChart?: ComponentType<TradingViewChartProps>;
   /** Optional GPU 3D surface; hosts without it use the software raster. */
   Surface3D?: ComponentType<Surface3DHostProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;

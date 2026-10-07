@@ -281,6 +281,12 @@ export const ChartSurface = forwardRef<any, ComponentProps<UiHost["ChartSurface"
 });
 ChartSurface.displayName = "ChartSurface";
 
+export function TradingViewChart(props: ComponentProps<NonNullable<UiHost["TradingViewChart"]>>) {
+  const Host = useUiHost().TradingViewChart;
+  if (!Host) return null;
+  return createElement(Host, props);
+}
+
 export const ImageSurface = forwardRef<any, ComponentProps<UiHost["ImageSurface"]>>((props, ref) => {
   const { ImageSurface: HostImageSurface } = useUiHost();
   return createElement(HostImageSurface as any, { ...props, ref });
