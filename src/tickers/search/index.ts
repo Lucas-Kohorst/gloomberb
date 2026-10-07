@@ -8,7 +8,6 @@ import { resolveCurrencyUnit } from "../../utils/currency-units";
 import { assetClassMarketSymbol, parseAssetClassQuery } from "./asset-classes";
 import { searchContractKey, searchInstrumentKey } from "./identity";
 import { tickerInstrumentLabel } from "../instrument-label";
-import { isMutualFundType } from "../instrument-kind";
 import {
   buildSymbolAliases,
   classifyInstrumentKind,
@@ -155,8 +154,6 @@ function createProviderTickerSearchCandidates(
 ): TickerSearchCandidate[] {
   return searchResults.flatMap((result, providerRank) => {
     if (options.includeOptionContracts === false && isOptionSearchResult(result)) return [];
-    // Search lists these, then the quote fails. Closed-end and money-market funds still quote.
-    if (isMutualFundType(result.brokerContract?.secType || result.type)) return [];
     const symbol = getSearchResultSymbol(result);
     const currency = result.currency || getForexQuoteCurrency(symbol);
     if (currency && !result.currency) result = { ...result, currency };

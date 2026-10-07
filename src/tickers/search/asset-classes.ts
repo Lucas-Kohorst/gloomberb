@@ -5,13 +5,24 @@ import type { TickerSearchInstrumentClass } from "./types";
  * Class codes typed after a symbol or name, the way a terminal's market
  * sector key follows a ticker: `ES FUT`, `EURUSD CUR`, `BTC CRYP`, `SPY ETF`.
  * The same letters are the badge on a matching search row, so the list teaches
- * them.
- * A code on its own is never a filter: `EQ` is still Equillium, and `FUT`,
- * `ETF`, and `CRYP` still open their panes.
+ * them. A code on its own is never a filter: `EQ` is still Equillium, and
+ * `FUT`, `ETF` and `CRYP` still open their panes.
  */
 const ASSET_CLASS_CODES = ["EQ", "CUR", "CRYP", "OPT", "FUT", "IDX", "ETF", "FUND"] as const;
 
 export type AssetClassCode = (typeof ASSET_CLASS_CODES)[number];
+
+/**
+ * Whether a query's code keeps a row badged `rowCode`. CUR keeps coins and
+ * FUND keeps exchange-traded funds as well: `BTC CUR` is the coin, as the
+ * market sector key files it, and a fund name typed in full ends in "Fund"
+ * whether or not the fund trades on an exchange (Technology Select Sector
+ * SPDR Fund is XLK).
+ */
+export function assetClassKeeps(code: AssetClassCode, rowCode: AssetClassCode | null): boolean {
+  if (rowCode === code) return true;
+  return (code === "CUR" && rowCode === "CRYP") || (code === "FUND" && rowCode === "ETF");
+}
 
 export interface AssetClassQuery {
   code: AssetClassCode;
@@ -45,7 +56,7 @@ export function assetClassMarketSymbol(query: AssetClassQuery): string | null {
     case "IDX":
       return `^${symbol}`;
     case "CUR":
-      return /^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : null;
+      return /^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : `${symbol}-USD`;
     case "CRYP":
       return `${symbol}-USD`;
     default:

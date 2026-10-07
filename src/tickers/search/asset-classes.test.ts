@@ -16,7 +16,7 @@ describe("asset class query", () => {
     const spell = (query: string) => assetClassMarketSymbol(parseAssetClassQuery(query)!);
     expect(spell("ES FUT")).toBe("ES=F");
     expect(spell("eurusd CUR")).toBe("EURUSD=X");
-    expect(spell("BTC CUR")).toBeNull();
+    expect(spell("BTC CUR")).toBe("BTC-USD");
     expect(spell("BTC CRYP")).toBe("BTC-USD");
     expect(spell("BTC-USD CRYP")).toBeNull();
     expect(spell("GSPC IDX")).toBe("^GSPC");
