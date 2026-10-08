@@ -260,8 +260,8 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
 
   type RankedEntry = (typeof ranked)[number];
   // One exact symbol can name several companies (NET is Cloudflare in New York
-  // and Netcall in London). The search service lists the most searched one
-  // first, so each company ranks by its best listing there, after a saved one.
+  // and Netcall in London). Saved listings come first, then each company ranks
+  // by its earliest listing position in the returned search order.
   // Without this, a name that starts with the symbol (Netcall) or the boost for
   // stocks over funds (GLD) put a thinly traded company first.
   const exactIssuerRank = new Map<string, number>();
