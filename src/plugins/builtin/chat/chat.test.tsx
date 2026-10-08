@@ -1112,6 +1112,7 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const frame = tui.frame();
+    expect(frame).toContain("0 online");
     expect(frame).toContain("☁");
     expect(frame).toContain("Log in");
     expect(frame).not.toContain("Sign up");
@@ -1171,6 +1172,7 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const frame = tui.frame();
+    expect(frame).toContain("0 online");
     expect(frame).toContain("ada");
     expect(frame).toContain("[1]");
 

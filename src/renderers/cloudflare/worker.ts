@@ -52,6 +52,7 @@ const APPLE_APP_SITE_ASSOCIATION = {
 const API_ORIGIN = "https://api.gloom.sh";
 const TRADINGVIEW_ORIGINS = "https://tradingview.com https://s3.tradingview.com https://tradingview-widget.com https://*.tradingview.com";
 const CHART_LIBRARY_PREFIX = "/charting_library/";
+const CHART_BUNDLE_PREFIX = "/bundles/";
 const API_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 type ApiFetch = (request: Request) => Promise<Response>;
 /** Module scope, so every request this isolate serves shares one session cache. */
@@ -104,6 +105,15 @@ async function proxyApi(request: Request, fetchApi: ApiFetch): Promise<Response>
   return fetchApi(new Request(upstreamUrl, request));
 }
 
+async function fetchChartBundle(request: Request, url: URL, env: WorkerEnv): Promise<Response | null> {
+  if (!url.pathname.startsWith(CHART_BUNDLE_PREFIX)) return null;
+  const assetUrl = new URL(`${CHART_LIBRARY_PREFIX.slice(0, -1)}${url.pathname}`, url.origin);
+  const asset = await env.ASSETS.fetch(new Request(assetUrl, { method: request.method, headers: request.headers }));
+  const type = asset.headers.get("content-type") ?? "";
+  if (type.includes("text/html")) return null;
+  return asset;
+}
+
 export async function handleRequest(request: Request, env: WorkerEnv, fetchApi: ApiFetch = fetch): Promise<Response> {
   const url = new URL(request.url);
   if (API_PATH.test(url.pathname)) return proxyApi(request, fetchApi);
@@ -149,6 +159,11 @@ export async function handleRequest(request: Request, env: WorkerEnv, fetchApi: 
     const assetRequest = new Request(assetUrl, { method: request.method, headers: request.headers });
     return withSecurityHeaders(await env.ASSETS.fetch(assetRequest), { share: true });
   }
+  // Chrome keeps the parent URL as the iframe base after the library's
+  // document.write, so bundles are requested at /bundles/ rather than under
+  // /charting_library/. Missing names still fall through to the app shell.
+  const chartBundle = await fetchChartBundle(request, url, env);
+  if (chartBundle) return withSecurityHeaders(chartBundle, { chartFrame: true });
   // Every path and query gets the same "Gloomberb" shell, so deep links such as
   // `/?ticker=GPC&tab=executives` would be indexed as thin duplicates. Only the
   // bare root stays indexable.

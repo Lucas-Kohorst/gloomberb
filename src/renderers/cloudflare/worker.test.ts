@@ -71,6 +71,32 @@ describe("static Cloudflare host", () => {
     expect(response.headers.has("x-robots-tag")).toBe(false);
   });
 
+  test("serves charting library bundles from the path the widget requests", async () => {
+    const requests: string[] = [];
+    const env: WorkerEnv = {
+      ASSETS: {
+        async fetch(request) {
+          const pathname = new URL(request.url).pathname;
+          requests.push(pathname);
+          if (pathname === "/charting_library/bundles/runtime.ba95fce24f0291a98470.js") {
+            return new Response("runtime", { headers: { "content-type": "text/javascript" } });
+          }
+          return new Response("<!doctype html>", { headers: { "content-type": "text/html" } });
+        },
+      },
+    };
+    const hit = await handleRequest(new Request("https://term.example/bundles/runtime.ba95fce24f0291a98470.js"), env);
+    expect(requests).toEqual(["/charting_library/bundles/runtime.ba95fce24f0291a98470.js"]);
+    expect(await hit.text()).toBe("runtime");
+    expect(hit.headers.get("x-frame-options")).toBeNull();
+    expect(hit.headers.get("content-security-policy")).toContain("'unsafe-eval'");
+
+    const miss = await handleRequest(new Request("https://term.example/bundles/not-a-chart-file.js"), env);
+    expect(await miss.text()).toContain("<!doctype html>");
+    expect(miss.headers.get("content-security-policy")).not.toContain("unsafe-eval");
+    expect(miss.headers.get("x-frame-options")).toBe("DENY");
+  });
+
   test("lets the charting library frame itself and run its worker", async () => {
     const { env } = fixture();
     const response = await handleRequest(new Request("https://term.example/charting_library/sameorigin.html"), env);

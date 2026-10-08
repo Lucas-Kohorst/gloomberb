@@ -13,7 +13,7 @@ import { chatController, type ChatController } from "./controller";
 import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
-  controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
+  controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "refreshPresence" | "subscribe">;
 }
 
 type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
@@ -75,11 +75,16 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
       setHasSavedSession(nextSnapshot.hasSavedSession);
     });
     void controller.refreshSession().catch(() => {});
+    void controller.refreshPresence().catch(() => {});
     return unsubscribe;
   }, [controller]);
 
   return (
     <Box flexDirection="row" paddingRight={1}>
+      <Text
+        fg={colors.textDim}
+        data-gloom-role="status-online-count"
+      >{`${snapshot.onlineCount} online `}</Text>
       {!username && !hasSavedSession ? (
         <>
           <CloudStatusIcon />
@@ -89,6 +94,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
         <>
           <Button label={username ? `Open chat as ${username}` : "Open chat"} variant="plain" compact stopPropagation onPress={openChat}>
             <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
+              {" "}
               <Span fg={colors.positive}>@</Span>
               {username ? (
                 <>
