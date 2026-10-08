@@ -102,7 +102,32 @@ async function proxyApi(request: Request, fetchApi: ApiFetch): Promise<Response>
     return Response.json({ error: "Origin not allowed" }, { status: 403 });
   }
   const upstreamUrl = new URL(`${url.pathname.slice(4) || "/"}${url.search}`, API_ORIGIN);
-  return fetchApi(new Request(upstreamUrl, request));
+  // Gloom Cloud allowlists term.gloom.sh and api.gloom.sh. The browser Origin
+  // on this host is terminal.kohor.st, and forwarding it comes back as
+  // "Invalid origin", which the login form shows as a bad password.
+  const headers = new Headers(request.headers);
+  headers.set("origin", API_ORIGIN);
+  const upstream = new Request(upstreamUrl, {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    redirect: "manual",
+  });
+  return rewriteProxiedCookies(await fetchApi(upstream));
+}
+
+/** A session cookie scoped to api.gloom.sh would be dropped by this host. */
+function rewriteProxiedCookies(response: Response): Response {
+  const cookies = response.headers.getSetCookie?.() ?? [];
+  const single = cookies.length === 0 ? response.headers.get("set-cookie") : null;
+  if (single) cookies.push(single);
+  if (cookies.length === 0) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("set-cookie");
+  for (const cookie of cookies) {
+    headers.append("set-cookie", cookie.replace(/;\s*Domain=[^;]*/i, ""));
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function fetchChartBundle(request: Request, url: URL, env: WorkerEnv): Promise<Response | null> {

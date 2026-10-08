@@ -187,8 +187,21 @@ describe("static Cloudflare host", () => {
     expect(upstream?.url).toBe("https://api.gloom.sh/chat/channels/everyone/messages?limit=1");
     expect(upstream?.method).toBe("POST");
     expect(upstream?.headers.get("cookie")).toBe("session=browser-cookie");
-    expect(upstream?.headers.get("origin")).toBe("https://term.example");
+    expect(upstream?.headers.get("origin")).toBe("https://api.gloom.sh");
     expect(await upstream?.text()).toBe('{"content":"hello"}');
+  });
+
+  test("keeps a proxied session cookie on this host", async () => {
+    const { env } = fixture();
+    const response = await handleRequest(new Request("https://terminal.kohor.st/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { Origin: "https://terminal.kohor.st", "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "a@b.co", password: "secret" }),
+    }), env, async () => new Response(JSON.stringify({ user: { id: "1" } }), {
+      status: 200,
+      headers: { "content-type": "application/json", "set-cookie": "gloomberb.session_token=abc; Path=/; Domain=api.gloom.sh; HttpOnly; Secure" },
+    }));
+    expect(response.headers.get("set-cookie")).toBe("gloomberb.session_token=abc; Path=/; HttpOnly; Secure");
   });
 
   test("rejects cross-origin API requests before proxying", async () => {
