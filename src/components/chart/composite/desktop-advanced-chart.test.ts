@@ -3,6 +3,8 @@ import { createElement, useRef, type ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Window } from "happy-dom";
+import { pinChartPaneToSymbol } from "../../../layout/pane-follow";
+import type { LayoutConfig } from "../../../types/config";
 import { UiHostProvider, type UiHost } from "../../../ui";
 import type { RendererHost } from "../../../ui/host";
 
@@ -208,6 +210,26 @@ describe("shouldUseDesktopAdvancedChart", () => {
       hasPoints: true,
       showTimeAxis: true,
     })).toBe(true);
+  });
+});
+
+describe("chart symbol search", () => {
+  test("pins a following chart pane onto the instrument that was picked", () => {
+    const layout: LayoutConfig = {
+      dockRoot: { kind: "pane", instanceId: "chart-1" },
+      floating: [],
+      detached: [],
+      instances: [{
+        instanceId: "chart-1",
+        paneId: "chart-composer",
+        title: "G MGE=F",
+        binding: { kind: "follow", sourceInstanceId: "des-1" },
+      }],
+    };
+    const next = pinChartPaneToSymbol(layout, "chart-1", "AAPL:XNAS");
+    expect(next?.instances[0]?.binding).toEqual({ kind: "fixed", symbol: "AAPL:XNAS" });
+    expect(next?.instances[0]?.title).toBe("G AAPL:XNAS");
+    expect(pinChartPaneToSymbol(next!, "chart-1", "AAPL:XNAS")).toBeNull();
   });
 });
 

@@ -1,12 +1,18 @@
 import { libraryDataDefaults } from "../../../plugins/builtin/chart-composer/charting-library-options";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Box, TradingViewChart } from "../../../ui";
 import { tradingViewChartsEnabled } from "../backend";
 import {
   createResolvedSeriesLibraryFeed,
+  type LibrarySearchItem,
   type ResolvedLibraryModel,
   type ResolvedLibrarySeries,
 } from "../../../plugins/builtin/chart-composer/charting-library-feed";
+import { pinChartPaneToSymbol } from "../../../layout/pane-follow";
+import { getSharedRegistry } from "../../../plugins/registry/shared";
+import { AppContext, useOptionalPaneInstanceId } from "../../../state/app/context";
+import { searchTickerCandidates } from "../../../tickers/search";
+import { publicTickerKey } from "../../../utils/exchanges";
 
 const EMPTY_MODEL: ResolvedLibraryModel = { symbol: "", compares: [], chartStyle: "line", priceScale: "normal" };
 
@@ -102,7 +108,38 @@ export function DesktopAdvancedChart({
   tickKey: string;
   timeZone?: string;
 }) {
-  const handle = useRef(createResolvedSeriesLibraryFeed());
+  const app = useContext(AppContext);
+  const paneId = useOptionalPaneInstanceId();
+  const appRef = useRef(app);
+  const paneIdRef = useRef(paneId);
+  const symbolRef = useRef("");
+  appRef.current = app;
+  paneIdRef.current = paneId;
+  const handle = useRef(createResolvedSeriesLibraryFeed(async (query) => {
+    const current = appRef.current;
+    const registry = getSharedRegistry();
+    if (!current || !registry) return [];
+    const state = "getState" in current ? current.getState() : current.state;
+    const candidates = await searchTickerCandidates({
+      query,
+      tickers: state.tickers,
+      dataProvider: registry.marketData,
+      totalLimit: 30,
+      localLimit: 12,
+    });
+    return candidates.flatMap((candidate): LibrarySearchItem[] => {
+      const exchange = candidate.result?.primaryExchange || candidate.result?.exchange || candidate.ticker?.metadata.exchange || "";
+      const ticker = publicTickerKey(candidate.symbol, exchange);
+      if (!ticker) return [];
+      return [{
+        symbol: candidate.symbol,
+        description: candidate.result?.name || candidate.ticker?.metadata.name || candidate.label,
+        exchange,
+        ticker,
+        type: candidate.instrumentType || "stock",
+      }];
+    });
+  }));
   const seriesRef = useRef(series);
   seriesRef.current = series;
   const identity = desktopAdvancedSeriesIdentity(series);
@@ -113,6 +150,7 @@ export function DesktopAdvancedChart({
   const interval = defaults.chartStyle === "heikinashi" && /^\d+$/.test(nativeInterval) && Number(nativeInterval) <= 240 ? "240" : nativeInterval;
   const timezone = desktopAdvancedChartTimezone(timeZone, series[0]?.timeBasis?.timeZone);
   const [model, setModel] = useState<ResolvedLibraryModel>(EMPTY_MODEL);
+  symbolRef.current = model.symbol;
   useEffect(() => {
     handle.current.setSeries(seriesRef.current);
     const next = handle.current.model();
@@ -148,6 +186,18 @@ export function DesktopAdvancedChart({
         priceScale={model.priceScale}
         backgroundColor={background}
         feed={handle.current.feed}
+        onPrimarySymbolChange={(info) => {
+          const picked = info.ticker.trim();
+          const currentSymbol = symbolRef.current;
+          if (!picked || picked.toUpperCase() === currentSymbol.toUpperCase()) return;
+          const pane = paneIdRef.current;
+          const context = appRef.current;
+          const registry = getSharedRegistry();
+          if (!pane || !context || !registry) return;
+          const state = "getState" in context ? context.getState() : context.state;
+          const next = pinChartPaneToSymbol(state.config.layout, pane, picked);
+          if (next) registry.updateLayout(next);
+        }}
       />
     </Box>
   );

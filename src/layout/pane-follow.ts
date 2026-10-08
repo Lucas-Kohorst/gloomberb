@@ -1,4 +1,4 @@
-import { TICKER_RESEARCH_PANE_ID, type PaneInstanceConfig } from "../types/config";
+import { findPaneInstance, TICKER_RESEARCH_PANE_ID, type LayoutConfig, type PaneInstanceConfig } from "../types/config";
 import type { BrokerContractRef } from "../types/instrument";
 
 const PANE_TITLE_MNEMONIC = /^([A-Z][A-Z0-9]{0,7})(?=\s|$)/;
@@ -43,5 +43,18 @@ export function pinFollowingPane(
     // matching `T AAPL` reuse, which tells null and unspecified contracts apart.
     binding: { kind: "fixed", symbol: pinned, ...(instrument ? { instrument } : {}) },
     ...(title ? { title } : {}),
+  };
+}
+
+/** Points this chart pane at a searched instrument, including one that was following another pane. */
+export function pinChartPaneToSymbol(layout: LayoutConfig, paneId: string, symbol: string): LayoutConfig | null {
+  const instance = findPaneInstance(layout, paneId);
+  const pinnedSymbol = symbol.trim();
+  if (!instance || !pinnedSymbol) return null;
+  if (instance.binding?.kind === "fixed" && instance.binding.symbol === pinnedSymbol) return null;
+  const pinned = pinFollowingPane(instance, pinnedSymbol);
+  return {
+    ...layout,
+    instances: layout.instances.map((item) => item.instanceId === instance.instanceId ? pinned : item),
   };
 }

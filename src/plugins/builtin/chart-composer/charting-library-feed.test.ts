@@ -194,4 +194,24 @@ describe("resolved series library feed", () => {
     });
     expect(annual.supported_resolutions).toEqual(["D", "W", "M"]);
   });
+
+  test("searches instruments beyond the series already on the chart", async () => {
+    const resolved = createResolvedSeriesLibraryFeed(async () => [{
+      symbol: "AAPL",
+      description: "Apple Inc.",
+      exchange: "NASDAQ",
+      ticker: "AAPL:XNAS",
+      type: "stock",
+    }]);
+    resolved.setSeries([{ id: "mge", label: "MGE=F", style: "line", points: [point(2, 93)] }]);
+    const items = await new Promise<Array<{ ticker: string; description: string }>>((done) => {
+      resolved.feed.searchSymbols("apple", "", "", done);
+    });
+    expect(items.map((item) => item.ticker)).toEqual(["AAPL:XNAS"]);
+    const info = await new Promise<Record<string, unknown>>((done, reject) => {
+      resolved.feed.resolveSymbol("AAPL:XNAS", done, reject);
+    });
+    expect(info.ticker).toBe("AAPL:XNAS");
+    expect(info.description).toBe("Apple Inc.");
+  });
 });

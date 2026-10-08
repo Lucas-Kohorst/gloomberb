@@ -15,13 +15,16 @@ export interface LibraryBar {
   volume?: number;
 }
 
-interface LibrarySearchItem {
+export interface LibrarySearchItem {
   symbol: string;
   description: string;
   exchange: string;
   ticker: string;
   type: string;
 }
+
+/** Looks up instruments beyond the series already drawn on this chart. */
+export type LibraryInstrumentSearch = (query: string) => Promise<LibrarySearchItem[]>;
 
 export interface LibraryDatafeed {
   onReady: (callback: (config: {
@@ -380,14 +383,35 @@ function libraryTicker(label: string, id: string, index: number): string {
   return raw || `S${index + 1}`;
 }
 
-export function createResolvedSeriesLibraryFeed(): {
+function symbolInfoForSearchHit(hit: LibrarySearchItem): Record<string, unknown> {
+  return {
+    name: hit.ticker,
+    ticker: hit.ticker,
+    description: hit.description,
+    type: hit.type || "stock",
+    session: "24x7",
+    timezone: "Etc/UTC",
+    exchange: hit.exchange,
+    minmov: 1,
+    pricescale: 100,
+    visible_plots_set: "ohlcv",
+    supported_resolutions: [...LIBRARY_RESOLUTIONS],
+    volume_precision: 0,
+    data_status: "endofday",
+    format: "price",
+  };
+}
+
+export function createResolvedSeriesLibraryFeed(search?: LibraryInstrumentSearch): {
   feed: LibraryDatafeed;
   setSeries: (next: readonly ResolvedLibrarySeries[]) => void;
   model: () => ResolvedLibraryModel;
 } {
   let entries: Array<{ ticker: string; label: string; bars: LibraryBar[]; style: string; unit?: string }> = [];
   let listenerEpoch = 0;
+  let searchEpoch = 0;
   const listeners = new Map<string, LibraryBarListener>();
+  const searchHits = new Map<string, LibrarySearchItem>();
   const find = (ticker: string) => entries.find((entry) => entry.ticker === ticker);
   const infoFor = (entry: { ticker: string; label: string; unit?: string; bars: LibraryBar[] }): Record<string, unknown> => {
     const axisUnit = libraryAxisUnit(entry.unit);
@@ -453,7 +477,7 @@ export function createResolvedSeriesLibraryFeed(): {
       },
       searchSymbols(userInput, _exchange, _symbolType, onResult) {
         const query = userInput.trim().toUpperCase();
-        const items = entries
+        const plotted = entries
           .filter((entry) => !query || entry.ticker.includes(query) || entry.label.toUpperCase().includes(query))
           .map((entry) => ({
             symbol: entry.ticker,
@@ -462,16 +486,42 @@ export function createResolvedSeriesLibraryFeed(): {
             ticker: entry.ticker,
             type: "stock",
           }));
-        setTimeout(() => onResult(items), 0);
+        if (!query || !search) {
+          setTimeout(() => onResult(plotted), 0);
+          return;
+        }
+        const epoch = ++searchEpoch;
+        void search(userInput.trim()).then((hits) => {
+          if (epoch !== searchEpoch) return;
+          const seen = new Set(plotted.map((item) => item.ticker.toUpperCase()));
+          const extra: LibrarySearchItem[] = [];
+          for (const hit of hits) {
+            const ticker = hit.ticker.trim();
+            if (!ticker) continue;
+            searchHits.set(ticker.toUpperCase(), { ...hit, ticker });
+            if (seen.has(ticker.toUpperCase())) continue;
+            seen.add(ticker.toUpperCase());
+            extra.push({ ...hit, ticker });
+          }
+          onResult([...plotted, ...extra]);
+        }).catch(() => {
+          if (epoch === searchEpoch) onResult(plotted);
+        });
       },
       resolveSymbol(symbolName, onResolve, onError) {
-        const entry = find(symbolName.trim().toUpperCase());
+        const key = symbolName.trim().toUpperCase();
+        const entry = find(key);
+        const hit = searchHits.get(key);
         setTimeout(() => {
-          if (!entry) {
-            onError("unknown_symbol");
+          if (entry) {
+            onResolve(infoFor(entry));
             return;
           }
-          onResolve(infoFor(entry));
+          if (hit) {
+            onResolve(symbolInfoForSearchHit(hit));
+            return;
+          }
+          onError("unknown_symbol");
         }, 0);
       },
       getBars(symbolInfo, resolution, periodParams, onResult) {
