@@ -253,8 +253,10 @@ export function useCommandBarRootRuntime({
   }, [activeMatch, currentRoute, rootQuery, rootShortcutIntent.kind]);
   const rootPlainTickerSearchArg = useMemo(() => {
     if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    // An explicit venue choice also searches one-letter symbols and names shared with local actions.
+    if (rootListingChoice) return rootListingChoice.symbol;
     const trimmed = rootQuery.trim();
-    const symbolQuery = rootListingChoice?.symbol ?? symbolSearchQuery(trimmed);
+    const symbolQuery = symbolSearchQuery(trimmed);
     if (symbolQuery.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(symbolQuery);
     // The install row for "TV" is labelled TV, but it leads on purpose and
