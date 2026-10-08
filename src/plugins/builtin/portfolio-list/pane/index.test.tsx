@@ -737,29 +737,14 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
   });
 
-  test("quick-add previews the busiest venue and opens the command bar on a colon", async () => {
+  test("quick-add shows the saved listing's venue, and a colon opens that symbol's venues in the command bar", async () => {
     const config = createManualCollectionConfig("watchlist");
     const nyse = { providerId: "quick-add-test", symbol: "NET", name: "Cloudflare", exchange: "NYSE", currency: "USD", type: "STK" };
     const lse = { providerId: "quick-add-test", symbol: "NET", name: "Netcall Plc", exchange: "LSE", currency: "GBP", type: "STK" };
     installQuickAddRegistry(createTestDataProvider({
       id: "quick-add-test",
       name: "Quick Add Test",
-      async search() { return [lse, nyse]; },
-      async getQuote(_symbol, exchange) {
-        if (exchange === "NYSE") {
-          return makeQuote({
-            symbol: "NET", price: 200, changePercent: 1.5, currency: "USD",
-            name: "Cloudflare", listingExchangeName: "NYSE", volume: 8_000_000,
-          });
-        }
-        if (exchange === "LSE") {
-          return makeQuote({
-            symbol: "NET", price: 1.26, changePercent: 0.4, currency: "GBP",
-            name: "Netcall Plc", listingExchangeName: "LSE", volume: 15_000,
-          });
-        }
-        throw new Error(`No quote for ${exchange}`);
-      },
+      async search() { return [nyse, lse]; },
     }));
 
     await tui.render(
@@ -795,9 +780,8 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const bare = tui.frame();
-    expect(bare).toContain("Cloudflare");
-    expect(bare).toContain("NYSE");
-    expect(bare).not.toContain("Netcall");
+    expect(bare).toContain("Netcall Plc");
+    expect(bare).toContain("LSE");
 
     await act(async () => {
       await tui.setup().mockInput.typeText(":");
@@ -815,10 +799,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       collectionId: "watchlist",
       collectionKind: "watchlist",
     });
-    const listed = tui.frame();
-    expect(listed).not.toContain("Netcall");
-    expect(listed).not.toContain("LSE");
-    expect(listed).not.toContain("Use a ticker symbol");
+    expect(tui.frame()).not.toContain("Use a ticker symbol");
   });
 
   test("renders one-month sparkline column when price history is loaded", async () => {

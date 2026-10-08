@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import type { ResultItem } from "../../list/model";
-import { symbolSearchQuery } from "../../../../tickers/search";
 import { formatInstrumentBadge, mergePlainRootTickerResults, mergeTickerSearchResultItems, venueDropdownResults } from "./results";
 
 function resultItem(id: string, label: string, right: string, kind: ResultItem["kind"] = "ticker"): ResultItem {
@@ -140,15 +139,6 @@ test("a colon dropdown is one exact venue per row, narrowed by the exchange pref
   expect(venueDropdownResults("NET", items, "N").map((item) => item.right)).toEqual(["NYSE"]);
   expect(venueDropdownResults("NET", items, "X").map((item) => item.right)).toEqual(["LSE", "NYSE"]);
   expect(venueDropdownResults("NET", items, "LON").map((item) => item.right)).toEqual(["LSE"]);
-});
-
-test("a trailing colon keeps one row per venue once the symbol is searched", () => {
-  const items = [
-    resultItem("net:lse", "NET", "LSE", "search"),
-    resultItem("net:nyse", "NET", "NYSE", "search"),
-  ];
-  expect(mergePlainRootTickerResults(symbolSearchQuery("NET:"), items, []).map((item) => item.right))
-    .toEqual(["LSE", "NYSE"]);
 });
 
 test("plain exact-symbol search retains venue choices while deduplicating the same listing", () => {

@@ -3,7 +3,6 @@ import {
   AmbiguousContractError,
   AmbiguousTickerError,
   resolveTickerSearch,
-  symbolSearchQuery,
   type ResolvedTickerSearch,
 } from "../../../../tickers/search";
 import type { Quote } from "../../../../types/financials";
@@ -12,7 +11,6 @@ import { canonicalExchange, parsePublicTickerKey, publicTickerKey } from "../../
 
 const QUICK_ADD_MAX_QUERY_LENGTH = 32;
 const QUICK_ADD_SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-\s]*$/;
-const QUICK_ADD_COLON_RE = /^([A-Z0-9][A-Z0-9.\-]{0,20}):([A-Z0-9.\-]*)$/;
 
 export type QuickAddCollectionKind = "portfolio" | "watchlist";
 
@@ -24,21 +22,13 @@ interface ResolvedQuickAdd {
   quote: Quote | null;
 }
 
-/** One venue offered when the add row is asked to choose (`NET:`). */
-export interface QuickAddListingChoice {
-  /** Public listing key, such as `NET:XNYS`. Submitting this adds that venue. */
-  id: string;
-  name: string;
-  /** Canonical venue, such as `NYSE`, shown on the row. */
-  exchange: string;
-}
-
 export type QuickAddValidation =
   | { status: "idle"; query: "" }
   | { status: "checking"; query: string }
   | (ResolvedQuickAdd & { status: "ready" })
   | (ResolvedQuickAdd & { status: "duplicate" })
-  | { status: "choose"; query: string; symbol: string; listings: QuickAddListingChoice[] }
+  /** The symbol names several listings and none is the default: the add row asks which. */
+  | { status: "choose"; query: string }
   | { status: "missing"; query: string; message: string }
   | { status: "error"; query: string; message: string };
 
@@ -48,16 +38,10 @@ export function normalizeQuickAddQuery(value: string): string {
   return value.replace(/^\s*\$/, "").trim().toUpperCase().replace(/\s+/g, " ");
 }
 
-function colonQuery(query: string): { symbol: string; suffix: string } | null {
-  const match = QUICK_ADD_COLON_RE.exec(query);
-  if (!match) return null;
-  return { symbol: match[1] ?? "", suffix: match[2] ?? "" };
-}
-
 export function isPlausibleTickerQuery(query: string): boolean {
   return query.length > 0
     && query.length <= QUICK_ADD_MAX_QUERY_LENGTH
-    && (QUICK_ADD_SYMBOL_RE.test(query) || colonQuery(query) !== null);
+    && QUICK_ADD_SYMBOL_RE.test(query);
 }
 
 function tickerBelongsToCollection(
@@ -93,7 +77,6 @@ function exchangeFromResolved(resolved: ResolvedTickerSearch): string | undefine
 export function tickerNameFromValidation(
   validation: Extract<QuickAddValidation, { status: "ready" | "duplicate" }>,
 ): string {
-  if (validation.resolved.kind === "provider" && !validation.ticker) return validation.resolved.result.name;
   if (validation.ticker?.metadata.name) return validation.ticker.metadata.name;
   return validation.resolved.kind === "provider" ? validation.resolved.result.name : "";
 }
@@ -108,35 +91,9 @@ export function exchangeLabelFromValidation(
   return validation.ticker?.metadata.exchange || "";
 }
 
-function listingChoices(error: AmbiguousTickerError): QuickAddListingChoice[] {
-  return error.listings.map((id) => {
-    const parsed = parsePublicTickerKey(id);
-    return {
-      id,
-      name: error.listingNames[id] ?? "",
-      exchange: canonicalExchange(parsed.exchange) || parsed.exchange || "",
-    };
-  });
-}
-
-function listingCode(id: string): string {
-  const normalized = id.trim().toUpperCase();
-  const separator = normalized.lastIndexOf(":");
-  if (separator <= 0 || separator === normalized.length - 1) return "";
-  return normalized.slice(separator + 1);
-}
-
-function choiceMatchesSuffix(choice: QuickAddListingChoice, suffix: string): boolean {
-  if (!suffix) return true;
-  const exchange = choice.exchange.toUpperCase();
-  if (exchange.startsWith(suffix) || listingCode(choice.id).startsWith(suffix)) return true;
-  const aliased = canonicalExchange(suffix);
-  return aliased === exchange && aliased !== suffix;
-}
-
 /**
- * The symbol key can already store a different company. Only that company's
- * own record, and its cached quote, belong to this add.
+ * The symbol key can already store another listing. Only this listing's own
+ * record, and its cached quote, belong to this add.
  */
 function tickerForResolved(
   resolved: ResolvedTickerSearch,
@@ -179,17 +136,25 @@ export async function resolveQuickAddValidation({
     return { status: "error", query, message: "Ticker lookup unavailable" };
   }
 
-  const describe = async (resolved: ResolvedTickerSearch): Promise<QuickAddValidation> => {
+  try {
+    const resolved = await resolveTickerSearch({
+      query,
+      activeTicker: null,
+      tickers,
+      dataProvider: registry.marketData,
+    });
+    if (!resolved) {
+      return { status: "missing", query, message: "No exact ticker match" };
+    }
+
+    const symbol = resolved.symbol;
     const ticker = tickerForResolved(resolved, tickers);
     const cachedQuote = ticker ? financials.get(ticker.metadata.ticker)?.quote ?? null : null;
     let quote = cachedQuote;
     if (!quote) {
       try {
-        const bare = resolved.kind === "local"
-          ? resolved.symbol
-          : parsePublicTickerKey(resolved.symbol).symbol;
         quote = await registry.marketData.getQuote(
-          bare,
+          symbol,
           exchangeFromResolved(resolved),
           quoteContextFromResolved(resolved),
         );
@@ -201,70 +166,14 @@ export async function resolveQuickAddValidation({
     return {
       status: tickerBelongsToCollection(ticker, collectionKind, collectionId) ? "duplicate" : "ready",
       query,
-      symbol: ticker?.metadata.ticker ?? resolved.symbol,
+      symbol: ticker?.metadata.ticker ?? symbol,
       resolved,
       ticker,
       quote,
     };
-  };
-
-  const chooseFrom = async (error: AmbiguousTickerError): Promise<QuickAddValidation> => {
-    const suffix = colonQuery(query)?.suffix ?? "";
-    const listings = listingChoices(error).filter((choice) => choiceMatchesSuffix(choice, suffix));
-    if (listings.length === 0) {
-      return { status: "missing", query, message: "No exact ticker match" };
-    }
-    if (listings.length === 1 && suffix) {
-      try {
-        const resolved = await resolveTickerSearch({
-          query: listings[0]!.id,
-          activeTicker: null,
-          tickers,
-          dataProvider: registry.marketData,
-          preferHighestVolume: true,
-        });
-        if (resolved) return describe(resolved);
-      } catch {
-        return { status: "error", query, message: "Ticker lookup failed" };
-      }
-      return { status: "missing", query, message: "No exact ticker match" };
-    }
-    return {
-      status: "choose",
-      query,
-      symbol: colonQuery(query)?.symbol || symbolSearchQuery(query),
-      listings,
-    };
-  };
-
-  const search = (tickerQuery: string) => resolveTickerSearch({
-    query: tickerQuery,
-    activeTicker: null,
-    tickers,
-    dataProvider: registry.marketData,
-    preferHighestVolume: true,
-  });
-
-  const colon = colonQuery(query);
-  try {
-    const resolved = await search(query);
-    if (resolved) return describe(resolved);
-    if (!colon?.suffix) return { status: "missing", query, message: "No exact ticker match" };
   } catch (error) {
     if (error instanceof AmbiguousTickerError && !(error instanceof AmbiguousContractError)) {
-      return chooseFrom(error);
-    }
-    return { status: "error", query, message: "Ticker lookup failed" };
-  }
-
-  // `NET:N` is not a listing key. Open the venue list for NET and keep the rows the prefix matches.
-  try {
-    const resolved = await search(`${colon!.symbol}:`);
-    if (resolved) return describe(resolved);
-    return { status: "missing", query, message: "No exact ticker match" };
-  } catch (error) {
-    if (error instanceof AmbiguousTickerError && !(error instanceof AmbiguousContractError)) {
-      return chooseFrom(error);
+      return { status: "choose", query };
     }
     return { status: "error", query, message: "Ticker lookup failed" };
   }

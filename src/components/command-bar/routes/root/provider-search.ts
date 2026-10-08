@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
-import { orderCandidatesByListingVolume, searchTickerCandidates } from "../../../../tickers/search";
+import { searchTickerCandidates } from "../../../../tickers/search";
 import {
   COMMAND_BAR_TICKER_SEARCH_LIMIT,
   mergePlainRootTickerResults,
@@ -113,12 +113,6 @@ export function useRootProviderSearch(options: {
     setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
-    const searchContext = {
-      preferBroker: true,
-      interactive: true,
-      brokerId: activeSearchPortfolio?.brokerId,
-      brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
-    };
     rootSearchTimerRef.current = setTimeout(async () => {
       try {
         const publish = (candidates: TickerSearchCandidate[]) => {
@@ -133,7 +127,12 @@ export function useRootProviderSearch(options: {
           query: searchQuery,
           tickers,
           dataProvider,
-          searchContext,
+          searchContext: {
+            preferBroker: true,
+            interactive: true,
+            brokerId: activeSearchPortfolio?.brokerId,
+            brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
+          },
           // A broker that answers after the cloud upgrades the rows in place
           // rather than being dropped because the list was already drawn.
           onPartial: (candidates) => {
@@ -144,15 +143,13 @@ export function useRootProviderSearch(options: {
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
-        const ordered = await orderCandidatesByListingVolume(combined, searchQuery, dataProvider, searchContext);
-        if (requestId !== rootSearchRequestIdRef.current) return;
         writeTickerSearchCache(
           searchQuery,
-          ordered,
+          combined,
           activeSearchPortfolio?.brokerId,
           activeSearchPortfolio?.brokerInstanceId,
         );
-        publish(ordered);
+        publish(combined);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
         setRootProviderResults([{
@@ -213,10 +210,10 @@ export function useRootProviderSearch(options: {
   const rootSectionOrder: CommandBarSectionOrder = listingSuffix != null
     ? "ranked"
     : rootPlainTickerSearchArg
-    ? "app-first"
-    : rootTickerSearchArg
-      ? "ranked"
-      : "default";
+      ? "app-first"
+      : rootTickerSearchArg
+        ? "ranked"
+        : "default";
   const orderedRootResults = useMemo(
     () => orderListResults(rootResults, { sectionOrder: rootSectionOrder, categoryPriorities }),
     [categoryPriorities, rootResults, rootSectionOrder],

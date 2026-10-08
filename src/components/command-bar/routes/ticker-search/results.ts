@@ -167,11 +167,6 @@ export function mergePlainRootTickerResults(
   ];
 }
 
-/**
- * Up to the cap, in this order: the first exact row of each security, the
- * exact symbol's other exchanges, then looser hits. The rows keep their
- * ranked order. Exchanges of one security share its issuer name and class.
- */
 function venueMatchesSuffix(item: ResultItem, suffix: string): boolean {
   if (!suffix) return true;
   const displayed = (item.right ?? "").trim().toUpperCase();
@@ -184,8 +179,8 @@ function venueMatchesSuffix(item: ResultItem, suffix: string): boolean {
 }
 
 /**
- * The colon query's dropdown: one row per exact venue, in the order the
- * volume sort already produced. A typed exchange prefix keeps the rows it matches.
+ * The colon query's dropdown: one row per exact venue, in ranked order. A
+ * typed exchange prefix keeps the rows it matches.
  */
 export function venueDropdownResults(symbol: string, items: ResultItem[], suffix: string): ResultItem[] {
   const rows: ResultItem[] = [];
@@ -198,6 +193,11 @@ export function venueDropdownResults(symbol: string, items: ResultItem[], suffix
   return rows;
 }
 
+/**
+ * Up to the cap, in this order: the first exact row of each security, the
+ * exact symbol's other exchanges, then looser hits. The rows keep their
+ * ranked order. Exchanges of one security share its issuer name and class.
+ */
 function pickRootInstruments(candidates: ResultItem[], isExact: (item: ResultItem) => boolean): ResultItem[] {
   if (candidates.length <= ROOT_INSTRUMENTS_LIMIT) return candidates;
   const exact = candidates.filter(isExact);
