@@ -4,6 +4,7 @@ import { createOpenTuiTestHarness } from "../../../renderers/opentui/test-utils"
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import type { PaneTemplateCreateOptions, PaneTemplateDef } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
+import type { AppState } from "../../../state/app/context";
 import { CommandBarHarness, createCommandBarTestControls } from "./test-harness";
 import { createTestTicker } from "../../../test-support/ticker";
 
@@ -83,54 +84,57 @@ test("watchlist listing selection consumes the chosen record without re-searchin
   expect(tui.frame()).toContain("Search or run a command");
 });
 
-test("a colon venue choice adds that listing to the watchlist", async () => {
+const addListingLaunch = (state: AppState): AppState => ({
+  ...state,
+  commandBarLaunchRequest: { kind: "add-listing" as const, collectionId: "watchlist", collectionKind: "watchlist" as const, sequence: 1 },
+});
+
+test("a venue picked from an add row's colon list joins that watchlist", async () => {
   const saved: TickerRecord[] = [];
   const opened: string[] = [];
   await tui.render(<CommandBarHarness
     query="NET:"
     live
     onSaveTicker={(ticker) => saved.push(ticker)}
-    configureState={(state) => ({
-      ...state,
-      commandBarLaunchRequest: {
-        kind: "add-listing",
-        collectionId: "watchlist",
-        collectionKind: "watchlist",
-        sequence: 1,
-      },
-    })}
+    configureState={addListingLaunch}
     configurePluginRegistry={(registry) => {
       registry.createPaneFromTemplate = () => { opened.push("pane"); };
       registry.pinTicker = () => { opened.push("pin"); };
     }}
     dataProvider={createTestDataProvider({
       search: async () => [
-        { providerId: "test", symbol: "NET", name: "Netcall Plc", exchange: "LSE", currency: "GBP", type: "EQUITY" },
         { providerId: "test", symbol: "NET", name: "Cloudflare", exchange: "NYSE", currency: "USD", type: "EQUITY" },
+        { providerId: "test", symbol: "NET", name: "Netcall Plc", exchange: "LSE", currency: "GBP", type: "EQUITY" },
       ],
-      getQuote: async (_symbol, exchange) => ({
-        symbol: "NET",
-        listingExchangeName: exchange,
-        exchangeName: exchange,
-        currency: exchange === "NYSE" ? "USD" : "GBP",
-        price: exchange === "NYSE" ? 200 : 1.26,
-        volume: exchange === "NYSE" ? 8_000_000 : 15_000,
-        lastUpdated: 1,
-        change: 0,
-        changePercent: 0,
-      }),
     })}
   />, { width: 100, height: 24 });
-  await waitForFrameToContain("NYSE");
+  await waitForFrameToContain("LSE");
+  await tui.emitKeypress({ name: "down" });
   await tui.emitKeypress({ name: "return", sequence: "\r" });
   await act(async () => { await Bun.sleep(20); });
   await tui.setup().renderOnce();
-  expect(saved.at(-1)?.metadata).toMatchObject({
-    ticker: "NET:XNYS",
-    exchange: "NYSE",
-    name: "Cloudflare",
-    watchlists: ["watchlist"],
-  });
+  expect(saved.at(-1)?.metadata).toMatchObject({ exchange: "LSE", name: "Netcall Plc", watchlists: ["watchlist"] });
   expect(opened).toEqual([]);
   expect(tui.frame()).toContain("Search or run a command");
+});
+
+test("other text in a bar opened from an add row runs as usual", async () => {
+  const saved: TickerRecord[] = [];
+  const opened: string[] = [];
+  await tui.render(<CommandBarHarness
+    query="DES AAPL"
+    live
+    onSaveTicker={(ticker) => saved.push(ticker)}
+    configureState={addListingLaunch}
+    configurePluginRegistry={(registry) => {
+      registry.pinTicker = (symbol) => { opened.push(symbol); };
+    }}
+    dataProvider={createTestDataProvider({ search: async () => [] })}
+  />, { width: 100, height: 24 });
+  await waitForFrameToContain("NASDAQ");
+  await tui.emitKeypress({ name: "return", sequence: "\r" });
+  await act(async () => { await Bun.sleep(20); });
+  await tui.setup().renderOnce();
+  expect(opened).toEqual(["AAPL"]);
+  expect(saved.filter((ticker) => ticker.metadata.watchlists.includes("watchlist"))).toEqual([]);
 });

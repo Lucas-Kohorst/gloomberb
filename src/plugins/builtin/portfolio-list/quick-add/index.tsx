@@ -59,7 +59,7 @@ function QuickAddPreview({
   }
 
   if (validation.status === "choose") {
-    return <Text fg={colors.textMuted}> </Text>;
+    return <Text fg={colors.textMuted}>{t("Multiple listings")}</Text>;
   }
 
   if (validation.status === "duplicate") {
@@ -219,14 +219,14 @@ export function QuickAddTickerInput({
 
     setSubmitting(true);
     try {
-      let currentValidation = (
+      const currentValidation = (
         validation.query === query
         && (validation.status === "ready" || validation.status === "duplicate")
       )
         ? validation
         : await validateQuery(query);
       if (currentValidation.status === "choose") {
-        handOffListingChoice(query);
+        handOffListingChoice(`${query}:`);
         return;
       }
       setValidation(currentValidation);
@@ -334,7 +334,6 @@ export function QuickAddTickerInput({
         event.stopPropagation?.();
         resetInput();
         blurInput();
-        return;
       }
       return;
     }
@@ -355,32 +354,30 @@ export function QuickAddTickerInput({
   }), [focusInput, inputFocused]);
 
   return (
-    <Box flexDirection="column" flexShrink={0} width={width}>
-      <InlineQuickAddRow
-        value={inputValue}
-        active={inputFocused}
-        paneFocused={focused}
-        width={width}
-        placeholder={t("ticker")}
-        inputRef={inputRef}
-        onFocusRequest={focusInput}
-        onChange={(value) => setInputValue(value.toUpperCase())}
-        onSubmit={(value) => { void submitInput(value); }}
-        onFocus={() => setInputFocused(true)}
-        onBlur={blurInput}
-        onCancel={() => {
-          inputRef.current?.blur?.();
-          resetInput();
-          blurInput();
-        }}
-        preview={(
-          <QuickAddPreview
-            validation={validation}
-            collectionKind={collectionKind}
-            submitting={submitting}
-          />
-        )}
-      />
-    </Box>
+    <InlineQuickAddRow
+      value={inputValue}
+      active={inputFocused}
+      paneFocused={focused}
+      width={width}
+      placeholder={t("ticker")}
+      inputRef={inputRef}
+      onFocusRequest={focusInput}
+      onChange={(value) => setInputValue(value.toUpperCase())}
+      onSubmit={(value) => { void submitInput(value); }}
+      onFocus={() => setInputFocused(true)}
+      onBlur={blurInput}
+      onCancel={() => {
+        inputRef.current?.blur?.();
+        resetInput();
+        blurInput();
+      }}
+      preview={(
+        <QuickAddPreview
+          validation={validation}
+          collectionKind={collectionKind}
+          submitting={submitting}
+        />
+      )}
+    />
   );
 }

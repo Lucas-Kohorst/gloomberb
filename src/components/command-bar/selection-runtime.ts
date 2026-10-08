@@ -2,6 +2,7 @@ import { useCallback, type MutableRefObject } from "react";
 import type { AppState } from "../../state/app/context";
 import type { TickerRecord } from "../../types/ticker";
 import { t } from "../../i18n";
+import { listingChoiceQuery } from "../../tickers/search";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { Command } from "./commands/registry";
 import type {
@@ -274,10 +275,14 @@ export function useCommandBarSelectionRuntime({
     const selected = options?.item ?? typed ?? listState.results[listState.selectedIdx];
     if (!selected || selected.disabled) return;
 
+    // Opened from an add row: a venue picked from the colon list joins that
+    // collection. Any other text or screen runs as usual.
     const addListing = stateRef.current.commandBarLaunchRequest;
     if (
       !options?.secondary
       && addListing?.kind === "add-listing"
+      && !currentRoute
+      && listingChoiceQuery(rootQueryRef.current)
       && (selected.kind === "ticker" || selected.kind === "search")
       && selected.resolveTicker
     ) {
