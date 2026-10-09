@@ -8,6 +8,11 @@ import { quoteFutureToleranceMs } from "../quotes/clock";
 import { zonedDateKey, zonedDateTimeParts, zonedWallClockToUtcMs } from "../../utils/zoned-date-time";
 
 const ALWAYS_OPEN_EXCHANGES = new Set(["CCC"]);
+
+/** Spot crypto venues have no equity open or close. */
+export function isAlwaysOpenExchange(exchange: string | undefined): boolean {
+  return ALWAYS_OPEN_EXCHANGES.has(canonicalExchange(exchange));
+}
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const OVERNIGHT_CLOSE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
 const ALWAYS_OPEN_MAX_AGE_MS = 2 * 60 * 60 * 1000;

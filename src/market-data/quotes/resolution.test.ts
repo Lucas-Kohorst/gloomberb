@@ -620,6 +620,27 @@ test("canonical quote preserves unavailable day changes while retaining zero and
   expect(resolveCanonicalQuote({ quote: { ...base, previousClose: 10 } }).quote).toMatchObject({ change: 2, changePercent: 20 });
 });
 
+test("crypto stays open when the tape omits the session or copies an equity close", () => {
+  const now = Date.parse("2026-10-09T14:45:00Z");
+  const tape = {
+    symbol: "BTC-USD", providerId: "gloomberb-cloud", dataSource: "live" as const,
+    instrumentType: "CRYPTOCURRENCY", listingExchangeName: "CCC",
+    price: 83000, currency: "USD", change: 1, changePercent: 1, lastUpdated: now,
+  };
+  expect(normalizeQuoteContribution(tape)).toMatchObject({ marketState: "REGULAR", sessionConfidence: "derived" });
+  expect(normalizeQuoteContribution({ ...tape, marketState: "CLOSED", sessionConfidence: "explicit" }))
+    .toMatchObject({ marketState: "REGULAR", sessionConfidence: "derived" });
+  expect(normalizeQuoteContribution({ ...tape, symbol: "ETH-USD", marketState: "REGULAR", sessionConfidence: "explicit" }))
+    .toMatchObject({ marketState: "REGULAR", sessionConfidence: "explicit" });
+  expect(normalizeQuoteContribution({
+    ...tape, symbol: "MAGS", instrumentType: undefined, listingExchangeName: "CBOE",
+  })?.marketState).toBeUndefined();
+  expect(normalizeQuoteContribution({
+    ...tape, symbol: "EURUSD=X", instrumentType: "CURRENCY", listingExchangeName: "CCY", marketState: "CLOSED",
+  })?.marketState).toBe("CLOSED");
+  expect(resolveTickerFinancialsQuoteState(null, tape)?.quote?.marketState).toBe("REGULAR");
+});
+
 test("a current live price outranks a delayed one stamped later, but a stale live price does not", () => {
   const now = Date.parse("2026-09-14T18:00:00Z");
   const common = { symbol: "AAPL", currency: "USD", change: 0, changePercent: 0, listingExchangeName: "NASDAQ", marketState: "REGULAR" as const };
