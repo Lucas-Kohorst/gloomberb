@@ -611,7 +611,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       }] : []),
       ...(updated ? [{
         id: "updated",
-        parts: [{ text: `updated ${updated}`, tone: "muted" as const }],
+        parts: [{ text: updated, tone: "muted" as const }],
       }] : []),
       ...(!portfolioTab && loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       // Without a board the body carries the failure.

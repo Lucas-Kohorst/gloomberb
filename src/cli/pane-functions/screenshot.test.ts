@@ -327,7 +327,7 @@ describe("financial analysis ratio screenshots", () => {
 
   test("valuation fails instead of drawing weekly bars when daily closes are missing, errored or stale", async () => {
     await expect(capture("annual", (range, resolution) => resolution === "1d" ? [] : bars(range, resolution)))
-      .rejects.toThrow(/^MSFT: daily price history is unavailable/);
+      .rejects.toThrow(/^MSFT: Daily price history unavailable/);
     await expect(capture("annual", (range, resolution) => {
       if (resolution === "1d") throw new Error("Source unavailable");
       return bars(range, resolution);
@@ -336,7 +336,7 @@ describe("financial analysis ratio screenshots", () => {
     await expect(capture("annual", (range) => bars(range, "1wk"))).rejects.toThrow(/^MSFT: Daily closes are unavailable/);
     // Closes that stop more than a week before the June 2026 period end.
     await expect(capture("quarterly", (range, resolution) => bars(range, resolution, Date.parse("2026-06-01"))))
-      .rejects.toThrow(/^MSFT: daily price history is stale/);
+      .rejects.toThrow(/^MSFT: Daily price history 2026-06-01/);
   });
 
   /** The pane's collapsed table drawn from `history`, as the page renders it. */

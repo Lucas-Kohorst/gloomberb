@@ -12,6 +12,7 @@ import {
   formatPercent,
   formatPercentRaw,
 } from "../../../utils/format";
+import { unavailableText } from "../../../components/ui/status-copy";
 import { formatObservationAge } from "../../../utils/datetime-format";
 import { computeTTM } from "../ticker-detail/financials/aggregation";
 
@@ -417,10 +418,14 @@ export function eventSourceNotice(state: EventSourceState): EventSourceNotice | 
       : `No dividends, splits, or reported earnings for ${state.symbol}`);
   }
 
-  const actionsAge = state.actions?.stale ? formatObservationAge(state.actions.fetchedAt) : null;
-  const estimatesAge = state.estimates?.stale ? formatObservationAge(state.estimates.fetchedAt) : null;
-  if (actionsAge) notices.push(`Corporate actions ${actionsAge}`);
-  if (estimatesAge) notices.push(`Analyst estimates ${estimatesAge}`);
+  if (state.actions?.stale) {
+    const age = formatObservationAge(state.actions.fetchedAt);
+    notices.push(age ? `Corporate actions ${age}` : unavailableText("Corporate actions"));
+  }
+  if (state.estimates?.stale) {
+    const age = formatObservationAge(state.estimates.fetchedAt);
+    notices.push(age ? `Analyst estimates ${age}` : unavailableText("Analyst estimates"));
+  }
 
   if (state.estimatesError) {
     notices.push(`Analyst estimates unavailable: ${state.estimatesError}`);

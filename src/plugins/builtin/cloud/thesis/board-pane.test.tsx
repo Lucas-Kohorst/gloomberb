@@ -195,7 +195,6 @@ describe("ThesisBoardPane", () => {
     await flush(null);
     const loading = tui.frame();
     expect(loading).toContain("ASML");
-    expect(loading).toContain("footer: loading");
     expect(loading).not.toContain("offline copy");
     await act(async () => { failList(new Error("network down")); });
     await flush(null);

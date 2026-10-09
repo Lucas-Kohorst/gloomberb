@@ -354,7 +354,7 @@ function CompanyView({
     }
   });
 
-  usePaneLoadingSignal(more.loadingMore || status === "loading");
+  usePaneLoadingSignal(more.loadingMore || loading);
   usePaneFooter(registrationId, () => {
     const info: PaneFooterSegment[] = [];
     if (error) info.push({ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" }] });

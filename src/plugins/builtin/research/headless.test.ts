@@ -69,7 +69,7 @@ describe("earnings estimates headless", () => {
     const definition = createEarningsEstimatesHeadless({ loadSources: async () => ({ ...sources, actions: { ...sources.actions!, stale: true } }) });
     const result = await definition.load(args({ kind: "all" }), context);
     expect(result.rows.length).toBeGreaterThan(0);
-    expect(result.errors?.join(" ")).toContain("stale");
+    expect(result.errors?.join(" ")).toContain("Corporate actions unavailable.");
   });
 
   test("applies kind and limit options", async () => {

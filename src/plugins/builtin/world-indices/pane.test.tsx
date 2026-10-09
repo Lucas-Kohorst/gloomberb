@@ -100,7 +100,7 @@ describe("WorldIndicesPane", () => {
 
 // Saved selections share one live pane, so removed regions must leave no status behind.
 test.each([80, 120])("saved index selection prunes unavailable counts and source times at %i cells", async (width) => {
-  const times = { "^GSPC": Date.parse("2026-09-11T20:46:00Z"), "^FTSE": Date.parse("2026-09-11T15:35:00Z") };
+  const times = { "^GSPC": Date.parse("2026-09-11T20:46:00Z"), "^FTSE": Date.parse("2026-08-13T15:35:00Z") };
   let selectSymbols!: (symbols: string[]) => void;
   const provider = createTestDataProvider({ getQuotesBatch: async (targets: Array<{ symbol: string }>): Promise<QuoteBatchResult[]> => targets.map((target) => ({
     target, quote: target.symbol === "DX-Y.NYB" ? null : {
@@ -125,15 +125,14 @@ test.each([80, 120])("saved index selection prunes unavailable counts and source
   }
   await act(async () => { await tui.render(<SelectionHarness />, { width, height: 24 }); });
   await settle();
-  const formatTime = (value: number) => new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   expect(tui.frame()).toContain("1 unavailable");
-  expect(tui.frame()).toContain(formatTime(times["^GSPC"]));
+  expect(tui.frame()).toContain("2026-09-11");
   await act(async () => selectSymbols(["^FTSE"]));
   await settle();
   const frame = tui.frame();
   expect(frame).toContain("FTSE");
   expect(frame).not.toContain("DXY");
   expect(frame).not.toContain("unavailable");
-  expect(frame).toContain(formatTime(times["^FTSE"]));
-  expect(frame).not.toContain(formatTime(times["^GSPC"]));
+  expect(frame).toContain("2026-08-13");
+  expect(frame).not.toContain("2026-09-11");
 });

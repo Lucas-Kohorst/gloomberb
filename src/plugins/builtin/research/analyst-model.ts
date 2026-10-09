@@ -378,7 +378,7 @@ export function buildAnalystStatusSegments(
   if (!data.stale && data.fetchedAt) {
     segments.push({
       id: "analyst-fetched",
-      parts: [{ text: `fetched ${formatRelativeTime(data.fetchedAt)} ago`, tone: "muted" }],
+      parts: [{ text: `fetched ${formatRelativeTime(data.fetchedAt)}`, tone: "muted" }],
     });
   }
 

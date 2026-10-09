@@ -53,7 +53,7 @@ describe("selected contract status", () => {
     for (const visible of [false, true]) {
       const parts = texts(reference(10.05, 10.15), visible, NOW);
       expect(parts).toContain("AAPL260619C00101000");
-      expect(parts).toContain("trade 1h");
+      expect(parts).toContain("trade ~1hr");
     }
     expect(optionContractFooterSegments(undefined, false, NOW)).toEqual([]);
   });

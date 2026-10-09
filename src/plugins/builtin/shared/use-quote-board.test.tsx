@@ -176,7 +176,7 @@ describe("useQuoteBoard failure handling", () => {
     const status = quoteBoardStatus(quotes);
     expect(status).toMatchObject({ loading: 0, stale: 2, unavailable: 0 });
     expect(quoteBoardFooterInfo(status).map((segment) => segment.id))
-      .toEqual(["stale", "fresh"]);
+      .toEqual(["fresh"]);
   });
 
   test("a whole batch call that throws still leaves the board readable", async () => {

@@ -19,7 +19,6 @@
  * and then run their own.
  */
 import { SESSION_COOKIE_NAMES } from "../../api-client/session-cookie";
-import { unavailableText } from "../../components/ui/status-copy";
 
 type ApiFetch = (request: Request) => Promise<Response>;
 
@@ -93,7 +92,7 @@ const SIGN_IN: ProxyAdmission = { ok: false, status: 401, error: "Sign in to use
 const UNAVAILABLE: ProxyAdmission = {
   ok: false,
   status: 503,
-  error: unavailableText("Session"),
+  error: "Could not confirm your session right now. Try again shortly.",
 };
 
 /** The session cookies (and `dont_remember`) from a Cookie header, in order. */
