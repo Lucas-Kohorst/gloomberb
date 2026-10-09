@@ -1,14 +1,32 @@
 {
   "hosts": [
+    "api.congress.gov",
+    "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
+    "api.fiscaldata.treasury.gov",
+    "api.nasdaq.com",
+    "api.publisher.jodidata.org",
     "api.votehub.com",
+    "app-money.tmx.com",
+    "apps.fas.usda.gov",
+    "banks.data.fdic.gov",
     "clinicaltrials.gov",
     "clob.polymarket.com",
     "data-api.polymarket.com",
+    "data.sec.gov",
     "efts.sec.gov",
+    "fred.stlouisfed.org",
     "gamma-api.polymarket.com",
+    "markets.newyorkfed.org",
+    "mba.tuck.dartmouth.edu",
     "nasdaqtrader.com",
-    "production.dataviz.cnn.io"
+    "production.dataviz.cnn.io",
+    "services-dynarep.ddwa.finra.org",
+    "services9.arcgis.com",
+    "www.deribit.com",
+    "www.ers.usda.gov",
+    "www.jodidata.org",
+    "www.sec.gov"
   ]
 }
