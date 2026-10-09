@@ -723,6 +723,8 @@ export interface AppNotificationRequest {
     label: string;
     onClick: () => void;
   };
+  source?: string;
+  refId?: string;
   /** Rendered next to `action`. Use for a dismissing counterpart such as snooze. */
   secondaryAction?: {
     label: string;
