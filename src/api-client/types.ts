@@ -10,12 +10,23 @@ import type {
 } from "../types/financials";
 import type { SyncSettings, SyncSnapshot } from "../sync/types";
 
+/**
+ * What stands behind a chat account. `discord` is a person on the Gloom
+ * Discord who has not linked a Gloom account: a ghost with no profile, no DMs.
+ * A server that predates the field leaves it out, which reads as a human.
+ */
+export type ChatAccountType = "human" | "managed_llm" | "discord";
+
+/** Where a message was written. A message without one came from the app. */
+export type ChatMessageOrigin = "app" | "discord";
+
 export interface ChatUserSummary {
   id: string;
   /** A person, a managed assistant (Gloombot), or a Discord user bridged into public channels. */
   accountType?: "human" | "managed_llm" | "discord";
   username: string | null;
   displayName: string;
+  accountType?: ChatAccountType;
   bio?: string | null;
   company?: string | null;
   title?: string | null;
@@ -55,6 +66,7 @@ export interface ChatMessage {
   createdAt: string;
   editedAt?: string | null;
   user: ChatUserSummary;
+  origin?: ChatMessageOrigin;
   replyTo?: {
     content: string;
     user: { id?: string; username: string };
@@ -73,6 +85,15 @@ export interface ChatMessage {
   clientError?: string | null;
   /** The idempotency key a local send went out with, so a retry repeats it. */
   clientMessageId?: string;
+}
+
+/** Whether this account is tied to a person on the Gloom Discord, and whether its public messages go there. */
+export interface ChatDiscordLink {
+  linked: boolean;
+  discordUsername?: string;
+  mirror: boolean;
+  /** False when the server has linking switched off. A server that predates the field is available. */
+  available: boolean;
 }
 
 export interface ChatChannel {

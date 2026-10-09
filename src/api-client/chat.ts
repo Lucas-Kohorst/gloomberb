@@ -1,6 +1,7 @@
 import {
   normalizeChatAttachments,
   normalizeChatChannel,
+  normalizeChatDiscordLink,
   normalizeChatMessage,
   normalizeChatMessages,
   normalizeChatPresence,
@@ -11,6 +12,7 @@ import type {
   ChatAttachment,
   ChatChannel,
   ChatChannelState,
+  ChatDiscordLink,
   ChatMessage,
   ChatNotification,
   ChatPresence,
@@ -256,6 +258,23 @@ export class CloudChatApi {
       },
     );
     return normalizeChatMessage(message);
+  }
+
+  /** Whether this account is tied to a Discord person. Throws a 404 or 501 `ApiRequestError` on a server without Discord sync. */
+  async getDiscordLink(): Promise<ChatDiscordLink> {
+    return normalizeChatDiscordLink(await this.options.request<unknown>("/chat/discord/link"));
+  }
+
+  async unlinkDiscord(): Promise<void> {
+    await this.options.request<unknown>("/chat/discord/link", { method: "DELETE" });
+  }
+
+  /** Turns the mirroring of your own public messages to Discord on or off. */
+  async setDiscordMirror(enabled: boolean): Promise<void> {
+    await this.options.request<unknown>("/chat/discord/mirror", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
   }
 
   connectChannel(

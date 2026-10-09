@@ -59,6 +59,8 @@ import {
 } from "./notifications";
 import {
   CHAT_MESSAGE_EDIT_WINDOW_LABEL,
+  DISCORD_MESSAGE_EDIT_NOTICE,
+  isEditableOnGloom,
   isWithinChatMessageEditWindow,
 } from "../edit-window";
 import { ChatControllerRealtime } from "./realtime";
@@ -641,6 +643,10 @@ export class ChatController {
     if (!messageContent && !(latestOwnMessage?.id === messageId && latestOwnMessage.attachments?.length)) return false;
     if (!latestOwnMessage || latestOwnMessage.id !== messageId) {
       this.notifyFn({ body: "Only your latest sent message can be edited.", type: "error" });
+      return false;
+    }
+    if (!isEditableOnGloom(latestOwnMessage)) {
+      this.notifyFn({ body: DISCORD_MESSAGE_EDIT_NOTICE, type: "error" });
       return false;
     }
     if (!isWithinChatMessageEditWindow(latestOwnMessage)) {
