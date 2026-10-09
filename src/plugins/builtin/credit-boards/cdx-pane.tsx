@@ -76,14 +76,14 @@ function IndexDetail({ row, width, height, focused }: { row: CdxRow; width: numb
   );
 }
 
-export function CdxPane({ paneId, focused, width, height }: PaneProps) {
+export function CdxPane({ focused, width, height }: PaneProps) {
   const theme = useThemeColors();
   const resource = useAsyncResource(loadCdxBoard, { initialData: getCachedCdxBoard });
   const { loading, load: refresh, reload } = resource;
   const payload = resource.data?.payload ?? null;
   const rows = useMemo(() => payload ? cdxRows(payload.indexes, payload.asOf) : EMPTY_ROWS, [payload]);
-  const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
-  const [openId, setOpenId] = usePluginPaneState<string | null>("open", null);
+  const [selectedId, setSelectedId] = usePluginPaneState<string | null>("cdx:selected", null);
+  const [openId, setOpenId] = usePluginPaneState<string | null>("cdx:open", null);
   useAutoRefresh(resource.updatedAt, refresh);
   usePaneRefreshKey(reload, { focused, enabled: !loading });
 
@@ -94,7 +94,7 @@ export function CdxPane({ paneId, focused, width, height }: PaneProps) {
     ...(resource.data?.stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
   ], [asOf, payload, resource.data?.stale]);
   usePaneStatusFooter({
-    registrationId: paneId,
+    registrationId: "cdx",
     loading,
     error: resource.error ?? resource.data?.refreshError ?? null,
     info,

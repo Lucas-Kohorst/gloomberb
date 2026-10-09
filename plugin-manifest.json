@@ -168,7 +168,6 @@
           "market-valuation",
           "money-markets",
           "rate-path",
-          "sovr-board",
           "treasury-auctions",
           "volatility-term-structure",
           "yield-curve"
@@ -376,7 +375,6 @@
           "seasonality",
           "sec",
           "short-interest",
-          "short-volume",
           "short-watch",
           "social-mentions",
           "supply-chain",
