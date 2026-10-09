@@ -16,6 +16,13 @@ import {
   resolveSoleCollectionTarget,
 } from "../../workflow/ops";
 
+/** The ticker a required pane shortcut took from the command prompt. */
+function inferredPromptSymbol(intent: Exclude<ShortcutIntent, { kind: "none" }>): string | undefined {
+  if (intent.kind !== "inferred-complete" || !intent.completionQuery) return undefined;
+  const symbol = intent.completionQuery.slice(intent.prefix.length).trim();
+  return symbol || undefined;
+}
+
 export function buildRootShortcutFeedback({
   activeCollectionId,
   activeTickerSymbol,
@@ -37,7 +44,10 @@ export function buildRootShortcutFeedback({
       if (rootShortcutIntent.template.shortcut?.argOptional && !rootShortcutIntent.argText) {
         return `Shortcut: ${rootShortcutIntent.label}`;
       }
-      const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
+      const symbol = normalizeTickerInput(
+        activeTickerSymbol,
+        rootShortcutIntent.argText || inferredPromptSymbol(rootShortcutIntent),
+      );
       if (symbol) {
         return rootShortcutIntent.kind === "inferred-complete"
           ? `Shortcut: ${rootShortcutIntent.label} for ${symbol} · Tab to accept`
@@ -49,13 +59,16 @@ export function buildRootShortcutFeedback({
       if (rootShortcutIntent.argText) {
         return `Shortcut: ${rootShortcutIntent.label} · ${rootShortcutIntent.argText}`;
       }
-      const inferred = normalizeTickerInput(activeTickerSymbol, undefined);
+      const inferred = inferredPromptSymbol(rootShortcutIntent)
+        ?? normalizeTickerInput(activeTickerSymbol, undefined);
       if (inferred) {
         return `Shortcut: ${rootShortcutIntent.label} for ${inferred} · Tab to accept`;
       }
       return `Shortcut: ${rootShortcutIntent.label} · Enter tickers`;
     }
-    return `Shortcut: ${rootShortcutIntent.label}`;
+    return rootShortcutIntent.argText
+      ? `Shortcut: ${rootShortcutIntent.label} · ${rootShortcutIntent.argText}`
+      : `Shortcut: ${rootShortcutIntent.label}`;
   }
 
   if (rootShortcutIntent.source === "plugin-command") {

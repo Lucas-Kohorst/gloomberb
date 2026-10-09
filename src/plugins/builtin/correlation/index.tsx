@@ -404,6 +404,8 @@ export const correlationModule: PluginModule = {
       description: "Date-aligned Pearson correlation matrix for ticker returns.",
       keywords: ["correlation", "corr", "matrix", "pearson", "returns", "covariance"],
       shortcut: { prefix: "CORR", argPlaceholder: "tickers", argKind: "ticker-list" },
+      // One symbol is not a matrix. An empty open still uses the default basket.
+      canCreate: (_context, options) => !options?.symbols?.length || options.symbols.length >= 2,
       wizard: [
         {
           key: "tickers",

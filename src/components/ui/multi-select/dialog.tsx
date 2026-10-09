@@ -1,3 +1,4 @@
+import { unavailableText } from "../status";
 import { Box, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useShortcut, useViewport } from "../../../react/input";
@@ -170,7 +171,7 @@ function DesktopMultiSelectMenu({
       await onChange(next);
     } catch (nextError) {
       setSelectedValues(previous);
-      setError(nextError instanceof Error ? nextError.message : "Could not update selection.");
+      setError(nextError instanceof Error ? nextError.message : unavailableText("Selection"));
     }
   };
 
@@ -239,6 +240,7 @@ export function MultiSelectDialogContent({
     && selectedValueOrder >= 0
     && selectedValueOrder < knownSelectedValues.length - 1;
   const [labelOverrides, setLabelOverrides] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
   const canRunRowAction = !!rowAction
     && !!selectedOption
     && !selectedOption.disabled
@@ -285,12 +287,14 @@ export function MultiSelectDialogContent({
     const previousDisplayValues = displayValues;
     setSelectedValues(nextValues);
     setDisplayValues(nextDisplayValues);
+    setError(null);
     try {
       await onChange(nextValues);
-    } catch (error) {
+    } catch (cause) {
       setSelectedValues(previousValues);
       setDisplayValues(previousDisplayValues);
-      throw error;
+      setError(cause instanceof Error ? cause.message : unavailableText("List"));
+      throw cause;
     }
   };
 
@@ -360,6 +364,7 @@ export function MultiSelectDialogContent({
             void toggleOption(optionByValue.get(id)).catch(() => {});
           }}
         />
+        {error ? <Text fg={colors.negative} wrapText>{error}</Text> : null}
         <Box
           flexDirection="row"
           gap={1}

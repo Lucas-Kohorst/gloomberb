@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { ChartTableHeader, DataTableView, EmptyState, PaneStatusBody, QueryBar, scalarPoint, spanAxisFormatter, staticSeries,
-  useChartTableSelection, usePaneFooter, usePaneNoticeFooter, usePaneTicker, type DataTableCell, type DataTableColumn,
+  useChartTableSelection, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, usePaneTicker, type DataTableCell, type DataTableColumn,
   type StatItem } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { instrumentFromTicker } from "../../../market-data/request-types";
@@ -117,9 +117,8 @@ export function PeBandPane({ width, height, focused }: PaneProps) {
     ? `${model.unavailable} trailing EPS sum${model.unavailable === 1 ? " is" : "s are"} unavailable because a quarter's EPS is not reported; the previous figure stays in force.` : null;
   usePaneNoticeFooter({ registrationId: "pe-band-notices", focused, notices: [...new Set([identityError, inputs.error, inputs.data?.historyError,
     model?.notice, unavailableNotice, undatedNotice].filter((value): value is string => !!value))] });
+  usePaneLoadingSignal((inputs.loading));
   usePaneFooter("pe-band", () => ({ info: [
-    ...(inputs.loading ? [{ id: "loading", parts: [{ text: "loading statements", tone: "muted" as const }] }] : []),
-    ...(inputs.data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
     ...(currency && model?.weeks.length ? [{ id: "units", parts: [{ text: `weekly closes, ${currency}`, tone: "muted" as const }] }] : []),
   ] }), [inputs.loading, inputs.data?.stale, currency, model?.weeks.length]);
 
@@ -141,7 +140,7 @@ export function PeBandPane({ width, height, focused }: PaneProps) {
   const formatAxis = useMemo(() => spanAxisFormatter((value, digits) => formatCurrency(value, currency, Math.max(2, digits))), [currency]);
   const query = <QueryBar width={width} filters={[{ id: "lookback", label: "Lookback", value: String(lookback), options: LOOKBACK_OPTIONS, onChange: setLookback }]} />;
 
-  if (!symbol) return <EmptyState title="Choose a ticker." />;
+  if (!symbol) return <EmptyState title="Select a ticker." />;
   return <Box width={width} height={height} flexDirection="column" overflow="hidden">
     <PaneStatusBody subject="P/E band" loading={inputs.loading && !model} error={!model ? inputs.error ?? identityError ?? null : model.error} empty={false}>
       {model && !model.error ? <DataTableView<PeBandRow> focused={focused} columns={COLUMNS} items={rows} rootWidth={width} rootHeight={height}

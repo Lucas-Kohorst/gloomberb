@@ -228,7 +228,7 @@ function newsMuteSettingFields(
     {
       key: NEWS_MUTED_SOURCES_KEY,
       label: "Muted Sources",
-      description: "Hide these publishers' stories in News Feed, Topic News and Ticker News. Top News and Breaking News still show them.",
+      description: "Hide these publishers' stories in Firehose, Topic News and Ticker News. Top News and Breaking News still show them.",
       type: "multi-select",
       storage: "plugin",
       options: collectNewsSourceOptions(articles, mutedSources),
@@ -236,7 +236,7 @@ function newsMuteSettingFields(
     {
       key: NEWS_MUTED_KEYWORDS_KEY,
       label: "Muted Keywords",
-      description: "Hide stories whose headline contains any of these, separated by commas, in News Feed, Topic News and Ticker News.",
+      description: "Hide stories whose headline contains any of these, separated by commas, in Firehose, Topic News and Ticker News.",
       type: "text",
       storage: "plugin",
       placeholder: "crypto, earnings call",

@@ -97,6 +97,12 @@ export interface RootResultModelOptions {
  * a keyword. A word inside the description ("on or off", "details") does not,
  * and neither does a later word of the label ("Reset All Data").
  */
+/** A bare mnemonic lists the focused instrument. With none focused, it lists the prefix itself. */
+export function mnemonicListingQuery(prefix: string, activeSymbol: string | null | undefined): string {
+  const symbol = activeSymbol?.trim();
+  return symbol || prefix;
+}
+
 export function shortRootQueryMatches(query: string, item: Pick<ResultItem, "label" | "shortcutQuery" | "searchText">): boolean {
   const q = query.trim().toLowerCase();
   if (!q || q.length >= 4 || /\s/.test(q)) return false;

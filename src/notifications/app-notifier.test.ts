@@ -5,6 +5,7 @@ import {
   createAppNotifier,
   createDesktopNotifier,
 } from "./app-notifier";
+import { getNotificationLog, resetNotificationLogForTest } from "./notification-log";
 
 describe("desktop notification commands", () => {
   test("builds a macOS notification command", () => {
@@ -156,6 +157,20 @@ describe("app notifier", () => {
 
     expect(toasts).toEqual(["Pending reply"]);
     expect(delivery).toEqual({ toastVisible: false, desktopRequested: false });
+  });
+
+  test("records a notice even when the toast is suppressed", () => {
+    resetNotificationLogForTest();
+    const notifier = createAppNotifier({
+      isAppActive: () => true,
+      renderToast: () => {},
+      desktop: null,
+    });
+
+    notifier.notify({ body: "Saved", type: "success", toast: false, source: "alerts" });
+
+    expect(getNotificationLog()).toMatchObject([{ body: "Saved", source: "alerts", read: false }]);
+    resetNotificationLogForTest();
   });
 });
 

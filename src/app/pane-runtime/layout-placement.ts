@@ -1,7 +1,4 @@
 import {
-  getDockLeafLayouts,
-} from "../../layout/pane-manager";
-import {
   findPaneInstance,
   isTickerPaneId,
   normalizePaneId,
@@ -9,8 +6,6 @@ import {
   type LayoutConfig,
   type PaneInstanceConfig,
 } from "../../types/config";
-
-const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 
 export function isCollectionPaneInstance(instance: PaneInstanceConfig): boolean {
   return instance.paneId === "portfolio-list";
@@ -37,20 +32,4 @@ export function resolvePaneShowTarget(
     paneType: normalizePaneId(instance?.paneId ?? paneId),
     instance,
   };
-}
-
-export function selectEdgeAnchor(layout: LayoutConfig, edge: "left" | "right"): string | null {
-  const leaves = getDockLeafLayouts(layout, PANEL_RESOLUTION_BOUNDS);
-  if (leaves.length === 0) return null;
-  const edgeCoordinate = edge === "left"
-    ? Math.min(...leaves.map((leaf) => leaf.rect.x))
-    : Math.max(...leaves.map((leaf) => leaf.rect.x + leaf.rect.width));
-  return [...leaves]
-    .filter((leaf) => (
-      edge === "left"
-        ? leaf.rect.x === edgeCoordinate
-        : leaf.rect.x + leaf.rect.width === edgeCoordinate
-    ))
-    .sort((a, b) => (b.rect.y + b.rect.height) - (a.rect.y + a.rect.height))
-    [0]?.instanceId ?? null;
 }

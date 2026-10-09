@@ -52,6 +52,8 @@ import { isPlainKey } from "../../utils/keyboard";
 import { isCopyShortcut, isPasteShortcut } from "../../utils/selection-clipboard";
 import { useThemeColors } from "../../theme/theme-context";
 import { t, tf } from "../../i18n";
+import { Spinner } from "../ui/loading";
+import { loadingText, unavailableText } from "../ui/status";
 import { useAppLanguage } from "../../i18n/react";
 import type { PluginRegistry } from "../../plugins/registry";
 import { chatController } from "../../plugins/builtin/chat/controller";
@@ -242,7 +244,7 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, onComp
           return nextConfig;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          setPersistenceError(message || t("Unable to save onboarding progress."));
+          setPersistenceError(message || unavailableText("Onboarding"));
           throw error;
         }
       });
@@ -1120,7 +1122,7 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, onComp
               <OnboardingButton label="Back" variant="ghost" disabled={isBrokerCommitting} onPress={backPortfolio} />
               {!desktop || portfolioSub !== "choose" ? (
                 <OnboardingButton
-                  label={portfolioSub === "broker-sync" ? (isBrokerSyncing ? t("Importing...") : t("Retry")) : t("Continue")}
+                  label={portfolioSub === "broker-sync" ? t("Retry") : t("Continue")}
                   variant="primary"
                   disabled={isBrokerSyncing}
                   onPress={continuePortfolio}
@@ -1407,12 +1409,13 @@ export function OnboardingWizard({ pluginRegistry, importBrokerPositions, onComp
           variant="ghost"
           onPress={() => goToSection(progress.accountStatus === "signed-in" ? "pro" : "cloud")}
         />
-        <OnboardingButton
-          label={isFinishing ? "Opening workspace..." : "Start exploring"}
-          variant="primary"
-          disabled={isFinishing}
-          onPress={() => { void finish(); }}
-        />
+        {isFinishing ? <Spinner label={loadingText()} /> : (
+          <OnboardingButton
+            label="Start exploring"
+            variant="primary"
+            onPress={() => { void finish(); }}
+          />
+        )}
       </OnboardingActions>
     </OnboardingModal>
   );

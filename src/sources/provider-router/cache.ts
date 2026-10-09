@@ -23,6 +23,8 @@ const SCHEMA_VERSIONS: Record<string, number> = {
   "corporateActions-v2": MARKET_METADATA_SCHEMA_VERSION,
   "options-chain": MARKET_METADATA_SCHEMA_VERSION,
   "exchange-rate": MARKET_METADATA_SCHEMA_VERSION,
+  // Version 1 stored the raw filing. A fund's N-PORT is about 10MB and froze the pane.
+  "sec-filing-content": 2,
 };
 
 const DEFAULT_CACHE_POLICIES = {

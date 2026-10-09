@@ -120,7 +120,7 @@ test.each(["ambiguous", "missing"])("%s ticker feedback waits for current naviga
     ? [{ type: "SET_COMMAND_BAR", open: true, query: "GLD", launch: { kind: "ticker-search", query: "GLD" } }]
     : []);
   expect(notifications).toHaveLength(1);
-  expect(notifications[0]).toContain(mode === "ambiguous" ? "Multiple listings match GLD" : "Could not open GLD");
+  expect(notifications[0]).toContain(mode === "ambiguous" ? "Multiple listings match GLD" : "GLD unavailable.");
 });
 
 test.each(["floating", "docked", "only-floating"])("ticker research opens visibly from a %s source", async (mode) => {
@@ -148,7 +148,8 @@ test.each(["floating", "docked", "only-floating"])("ticker research opens visibl
   const rendered = await tui.render(<Harness />);
   await act(async () => { await rendered.renderOnce(); runtime.placePinnedTickerTarget({ symbol: "RIVN:XNAS", ticker, created: false }, { floating: false }); });
   const layout = stateRef.current.config.layout;
-  expect(getDockedPaneIds(layout)).toContain("ticker-detail:opened");
+  expect(layout.floating.map((pane) => pane.instanceId)).toContain("ticker-detail:opened");
+  expect(getDockedPaneIds(layout)).not.toContain("ticker-detail:opened");
   expect(layout.instances.find((pane) => pane.instanceId === "ticker-detail:opened")?.binding).toEqual({ kind: "fixed", symbol: "RIVN:XNAS" });
   expect(activated).toEqual(["ticker-detail:opened"]);
   if (mode !== "docked") expect(layout.floating.map((pane) => pane.instanceId)).toContain(source.instanceId);

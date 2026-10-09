@@ -187,7 +187,7 @@ export function createNewsFeedHeadless(
     argument: { kind: "none" },
     options: newsOptions(),
     columns: NEWS_COLUMNS,
-    describe: "News Feed",
+    describe: "Firehose",
     async load(args, context) {
       return projectNewsHeadless(
         await dependencies.loadNews(queryFor(args, "latest"), context),

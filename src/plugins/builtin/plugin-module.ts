@@ -37,6 +37,8 @@ void ALL_MODULE_KEYS_HANDLED;
 
 interface CompositePluginOptions extends PluginMetadata {
   modules: readonly PluginModule[];
+  /** Third-party hosts a built-in pane fetches, declared on the parent plugin. */
+  hosts?: readonly string[];
 }
 
 function composeSlots(modules: readonly PluginModule[]): GloomPlugin["slots"] {

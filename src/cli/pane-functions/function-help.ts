@@ -92,6 +92,13 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: QUOTES,
     bloomberg: ["DES"],
   },
+  DAY: {
+    summary: "The first pane of the day. ES, Nasdaq, crude, the 10-year and 30-year, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, then headlines, today's releases, and earnings.",
+    usage: ["DAY"],
+    keys: [OPEN],
+    data: { free: "Quotes 15 minutes delayed; rates and the calendar as published", pro: "Quotes real-time for US listings; rates and the calendar as published" },
+    bloomberg: [],
+  },
   QQ: {
     summary: "A compact board of live quotes for any list of tickers, each with change, range and a sparkline. Good as the always-open strip in a layout.",
     usage: ["QQ NVDA, AAPL, MSFT"],
@@ -114,8 +121,8 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["GIP"],
   },
   G: {
-    summary: "Chart any series together: prices, statement lines, valuation multiples, FRED series, indicators and formulas. Series read SYMBOL:field or FRED:series.",
-    usage: ["G", "G NVDA:revenue, NVDA:net_income"],
+    summary: "Chart any series together: prices, statement lines, valuation multiples, FRED series, indicators and formulas. Series read SYMBOL:field or FRED:series. A / B is the ratio and A - B is the spread.",
+    usage: ["G", "G NVDA:revenue, NVDA:net_income", "G GAA / VOO"],
     keys: CHART_KEYS,
     data: { free: "Prices 15 minutes delayed, other series as published", pro: "Prices real-time for US listings, other series as published" },
     bloomberg: ["G"],

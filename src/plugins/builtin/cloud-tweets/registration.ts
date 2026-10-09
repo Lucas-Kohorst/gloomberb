@@ -29,9 +29,12 @@ import {
   TwitterFeedPane,
   TwitterTickerTab,
 } from "./pane";
+import { createXMarketsNewsCapability } from "./news-capability";
 import { isRecord } from "../../../utils/guards";
 
 export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
+  ctx.registerCapability(createXMarketsNewsCapability());
+
   ctx.registerTickerResearchTab({
     id: "ticker-tweets",
     name: "Tweets",

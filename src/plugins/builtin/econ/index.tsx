@@ -211,7 +211,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const showStale = stale && (!loading || calendar.updatedAt !== null);
   const calendarStatus = useMemo<PaneFooterSegment[]>(() => [
     ...(nextText && !detailEvent ? [{ id: "next", parts: [{ text: nextText, tone: "muted" as const }] }] : []),
-    ...(showStale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(staleness ? [{ id: "updated", parts: [{ text: staleness, tone: "muted" as const }] }] : []),
   ], [detailEvent, nextText, showStale, staleness]);
   usePaneStatusFooter({
@@ -351,7 +350,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       renderSectionHeader={renderSectionHeader}
       renderCell={renderCell}
       selectedTextOverridesCellColor
-      emptyStateTitle={loading ? "Loading economic events..." : "No events"}
+      emptyStateTitle={loading ? "" : "No events"}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
     />

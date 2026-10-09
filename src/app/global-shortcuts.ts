@@ -131,6 +131,16 @@ export function useAppGlobalShortcuts({
     const match = matchKeybinding(keybindings, event);
     const action = match?.kind === "action" ? match.id : null;
 
+    // Text fields keep Cmd+Z for their own undo. Everywhere else it restores
+    // the previous layout, and Cmd+Shift+Z puts that change back.
+    if (action === "layout-undo" || action === "layout-redo") {
+      if (dialogOpen || state.commandBarOpen || event.targetEditable === true) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dispatch({ type: action === "layout-undo" ? "UNDO_LAYOUT" : "REDO_LAYOUT" });
+      return;
+    }
+
     // Terminals send Ctrl; the browser and the desktop webview send Cmd on
     // macOS, which the OpenTUI host also reports as `super` under the kitty
     // protocol. While a dialog, the command bar or an editable field owns the

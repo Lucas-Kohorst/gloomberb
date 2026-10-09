@@ -7,6 +7,7 @@ import { useAsyncResource, usePluginPaneState } from "../../../public/react";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAutoRefresh } from "../../../react/auto-refresh";
@@ -167,8 +168,7 @@ export function RatePathPane({ width, height, focused }: PaneProps) {
     ...(data?.gaps ?? []), ...(selectedMeeting?.reason ? [selectedMeeting.reason] : []),
   ] });
   usePaneStatusFooter({ registrationId: "rate-path", loading: resource.loading, error: resource.error,
-    info: data ? [{ id: "as-of", parts: [{ text: `as of ${timestamp(data.asOf)} UTC`, tone: "muted" }] }] : [],
-    stale: data?.stale,
+    info: formatObservationAge(data?.asOf) ? [{ id: "as-of", parts: [{ text: formatObservationAge(data?.asOf)!, tone: "muted" }] }] : [],
   });
   const selection = { kind: "id" as const, selectedId, getId: meetingKey, onChange: setSelected };
   const onHeaderClick = (id: string) => setSort((current) => nextHeaderSort(current, id));

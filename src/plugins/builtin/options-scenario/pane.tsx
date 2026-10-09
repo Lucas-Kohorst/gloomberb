@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ChoiceDialog, confirmDialog, DataTableView, EmptyState, PageStackView, PaneStatusBody, QueryBar, StatGrid, statGridRows,
-  usePaneFooter, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type SelectControl, type StatItem } from "../../../components";
+  usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type SelectControl, type StatItem } from "../../../components";
 import { useAsyncResource, useInputCapture, usePaneInstance, usePaneSettingValue, usePaneTicker,
   usePluginAppActions, usePluginPaneState, usePluginState, useShortcut } from "../../../public/react";
 import { Box } from "../../../ui";
@@ -15,6 +15,7 @@ import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import { optionMid } from "../shared/volatility";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { buildOptionQuoteKey, freshOptionQuote, OPTIONS_QUOTE_EXCHANGE } from "../options/live-quotes";
@@ -212,12 +213,13 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
     && money(market.spot) !== money(position!.spot) ? ` · last ${money(market.spot)}` : "";
   const midVolatility = !midLegs ? "" : (midLegs === position!.legs.length ? " · IV from quote mid"
     : ` · IV from quote mid on ${midLegs} of ${position!.legs.length} legs`) + lastPrint;
+  usePaneLoadingSignal((resource.loading));
+  const liveAge = live ? formatObservationAge(live.observedAt) : null;
   usePaneFooter("osa", () => ({ info: [
-    ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading chain", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ...(live ? [{ id: "asof", parts: [{ text: `${live.basis} · as of ${new Date(live.observedAt).toISOString().slice(11, 19)} UTC`, tone: "muted" as const }] }]
+    ...(live ? [{ id: "asof", parts: [{ text: liveAge ? `${live.basis} · ${liveAge}` : live.basis, tone: "muted" as const }] }]
       : position ? [{ id: "asof", parts: [{ text: `${dateLabel(position.asOf)} · ${market?.source ? "market" : "input assumptions"}${midVolatility}`, tone: "muted" as const }] }] : []),
-  ], hints }), [hints, position, market?.source, resource.loading, error, live?.basis, live?.observedAt, midVolatility]);
+  ], hints }), [hints, position, market?.source, resource.loading, error, live?.basis, liveAge, midVolatility]);
   useScenarioEvidence({ scenario, view: tab, loading: !!resource.loading && !scenario, error: error ?? (snapshotErrors.join("; ") || null), notices });
   // A choice dialog (scenario date, saved strategies) owns the keys while open.
   const dialogOpen = useDialogState((state) => state.isOpen);

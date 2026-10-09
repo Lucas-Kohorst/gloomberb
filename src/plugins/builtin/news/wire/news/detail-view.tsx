@@ -184,15 +184,22 @@ function TextLines({
 
 function NewsStoryTimelineItemView({
   item,
+  headline,
   width,
   nativePaneChrome,
 }: {
   item: NewsStoryItem;
+  headline: string;
   width: number;
   nativePaneChrome: boolean;
 }) {
   const time = formatDetailDate(storyItemDate(item.publishedAt));
-  const summary = item.summary && item.summary.trim() !== item.title.trim() ? item.summary : "";
+  const title = item.title.trim() && item.title.trim() !== headline.trim() ? item.title : "";
+  const summary = item.summary
+    && item.summary.trim() !== item.title.trim()
+    && item.summary.trim() !== headline.trim()
+    ? item.summary
+    : "";
   const source = item.sourceName || item.sourceKey;
   const contentWidth = Math.max(10, width - 2);
   const sourceLabel = nativePaneChrome ? source : truncateToDisplayWidth(source, Math.max(4, width - time.length - 4));
@@ -204,7 +211,7 @@ function NewsStoryTimelineItemView({
         <ExternalLinkText url={item.url} label={sourceLabel} color={colors.textBright} />
       </Box>
       <Box flexDirection="column" paddingLeft={2} width={nativePaneChrome ? "100%" : undefined} style={nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined}>
-        <TextLines text={item.title} width={contentWidth} color={colors.text} nativePaneChrome={nativePaneChrome} />
+        <TextLines text={title} width={contentWidth} color={colors.text} nativePaneChrome={nativePaneChrome} />
         <TextLines text={summary} width={contentWidth} color={colors.textDim} nativePaneChrome={nativePaneChrome} />
       </Box>
     </Box>
@@ -231,6 +238,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const { catalog, openTicker } = useInlineTickers(tickerTexts, { badgeQuotes: true });
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
+  const summary = item.summary && item.summary.trim() !== item.title.trim() ? item.summary : "";
   const categoryLabels = useMemo(
     () => item.categories.map(formatNewsCategory).filter(Boolean).join(" · "),
     [item.categories],
@@ -320,7 +328,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               {`${item.url?.trim() || !item.source ? "" : `${item.source} · `}Last updated ${lastUpdatedStr} · score ${item.importance}/100`}
             </Text>
           </Box>
-          <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
+          <TextLines text={summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
           {tickers.length > 0 && (
             <Box flexDirection="row" flexWrap="wrap" width={contentWidth} style={contentStyle}>
               {tickers.map((ticker) => {
@@ -366,6 +374,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
                 <NewsStoryTimelineItemView
                   key={timelineItem.id}
                   item={timelineItem}
+                  headline={item.title}
                   width={innerW}
                   nativePaneChrome={nativePaneChrome === true}
                 />

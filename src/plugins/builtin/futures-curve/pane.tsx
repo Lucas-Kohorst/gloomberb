@@ -8,6 +8,7 @@ import { usePaneInstance, usePaneTitle } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, type InputRenderable } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercentRaw } from "../../../utils/format";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../../../react/auto-refresh";
@@ -79,7 +80,13 @@ function FuturesCurveView({ width, height, focused, root }: PaneProps & { root: 
   // A pending date change must never relabel the previous curve as the new one.
   const data = resource.data?.date === requestedDate ? resource.data.payload : null;
   usePaneTitle(`CTM ${root}`);
-  const staleCount = data?.contracts.filter((row) => row.stale).length ?? 0;
+  const staleObservedAt = (data?.contracts ?? []).reduce<number | null>((oldest, row) => {
+    if (!row.stale) return oldest;
+    const ts = row.asOf ? Date.parse(row.asOf) : Number.NaN;
+    if (!Number.isFinite(ts) || ts <= 0) return oldest;
+    return oldest == null || ts < oldest ? ts : oldest;
+  }, null);
+  const staleAge = formatObservationAge(staleObservedAt);
   const newest = data ? newestQuote(data.contracts) : null;
   // A past curve is named by the session it holds: a weekend or holiday date shows the session before it.
   const curves = useMemo(() => data ? futuresCurveSeries(data, { current: colors.positive, ghosts: curveGhostColors(colors) }, horizon,
@@ -151,7 +158,7 @@ function FuturesCurveView({ width, height, focused, root }: PaneProps & { root: 
     ],
     info: data ? [
       { id: "source", parts: [{ text: `${requestedDate ? "daily archive" : data.source === "cboe" ? "settlement" : delay > 0 ? `${delay}m delayed` : "dated quotes"} · ${data.quoteUnit ?? data.currency ?? "units unavailable"} · ${curveTimestamp(newest)}${newest?.includes("T") ? " UTC" : ""}`, tone: "muted" }] },
-      ...(staleCount ? [{ id: "stale", parts: [{ text: `${staleCount} of ${data.contracts.length} stale`, tone: "warning" as const }] }] : []),
+      ...(staleAge ? [{ id: "updated", parts: [{ text: staleAge, tone: "muted" as const }] }] : []),
     ] : [],
   });
   const tableChromeRows = chartTableChromeRows(columns, width);

@@ -14,8 +14,8 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH, chromeRowPx } from "../../../theme/fon
 export const TABLE_INLINE_PADDING_PX = 8;
 
 /**
- * The header row is a chrome row, the same height as the pane header and the
- * query bar above it; body rows stay one text cell. Rows are positioned below
+ * The header row is a chrome row, the same height as the pane header, the
+ * query bar, and the pane footer. Body rows stay one text cell. Rows sit below
  * this offset, so scrolling by whole rows keeps them aligned under the header.
  */
 export function tableHeaderPx(): number {

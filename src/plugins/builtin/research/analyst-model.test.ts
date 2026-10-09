@@ -40,15 +40,15 @@ test("status segments name an older mix's period and never claim fresh stale dat
 
   // The Buy/Hold/Sell split is a figure above the chart, not a footer segment.
   expect(text(research)).toBe(
-    "low $225.00 med $482.50 high $625.00 · rating 8.8/10 · upside vs $467.50 · fetched 2h ago",
+    "low $225.00 med $482.50 high $625.00 · rating 8.8/10 · upside vs $467.50 · ~2hr",
   );
   expect(ratingSplit(research)).toEqual({ buy: 5, hold: 4, sell: 0, period: null });
   expect(ratingSplit({ ...research, recommendations: [{ ...complete, period: "previous month" }] })?.period)
     .toBe("prev month");
   expect(ratingSplit({ ...research, recommendations: [{ ...complete, strongSell: undefined }] })).toBeNull();
   const stale = text({ ...research, stale: true });
-  expect(stale.startsWith("stale · ")).toBe(true);
-  expect(stale).not.toContain("fetched");
+  expect(stale).toContain("~2hr");
+  expect(stale).not.toContain("stale");
 
   // A narrow pane drops whole segments instead of shrinking them into stubs,
   // and a failure keeps its room ahead of the context.

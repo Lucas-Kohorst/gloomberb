@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import {
   DataTableView,
+  loadingText,
   usePaneStatusFooter,
   usePaneNoticeFooter,
   type DataTableCell,
@@ -21,14 +22,14 @@ import { normalizeSymbol } from "../../../utils/exchanges";
 import { colors, priceColor } from "../../../theme/colors";
 import { compareSortValues, nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { formatCompact, formatCurrency, formatLevelPercent, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
-import { parseDisplayDate } from "../../../utils/datetime-format";
+import { formatApproximateAge, parseDisplayDate } from "../../../utils/datetime-format";
 import { convertMarketCapitalization } from "../../../utils/market-capitalization";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, useClampSelectedIndex } from "../../../components/data-table/table-pane";
 import { useAsyncResource } from "../../../react/async-resource";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 import { useFxRatesMap } from "../../../market-data/hooks";
-import { RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE, relativeValuationValues, withLiveQuote } from "./relative-valuation-model";
+import { relativeValuationValues, withLiveQuote } from "./relative-valuation-model";
 
 type RelativeColumnId = "symbol" | "price" | "changePercent" | "marketCap" | "trailingPE" | "forwardPE" | "evSales" | "fcfYield" | "revenueGrowth" | "operatingMargin";
 type RelativeColumn = DataTableColumn & { id: RelativeColumnId };
@@ -132,7 +133,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   // A changed peer list keeps the last snapshot up until its own answer.
   const peerSnapshot = useAsyncResource(symbols.length > 0 ? loadPeers : null, { keepPreviousData: true });
   const { data: peers, loading, updatedAt, reload } = peerSnapshot;
-  const error = symbols.length > 0 ? peerSnapshot.error : "No tickers selected";
+  const error = symbols.length > 0 ? peerSnapshot.error : "Select a ticker.";
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sortPreference, setSortPreference] = useState<RelativeSortPreference>(DEFAULT_RELATIVE_SORT);
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
@@ -173,15 +174,20 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     [comparableRows, order],
   );
 
-  const staleSymbols = rows.filter((row) => row.quoteStale).map((row) => row.symbol);
+  const quoteAges = rows.flatMap((row) => (
+    row.quoteStale && row.quoteAsOf != null ? [`${row.symbol} ${formatApproximateAge(row.quoteAsOf)}`] : []
+  ));
   const rowErrors = rows.filter((row) => row.error).map((row) => `${row.symbol}: ${row.error}`);
-  const status = [error, ...rowErrors, staleSymbols.length ? `Stale quotes: ${staleSymbols.join(", ")}` : null,
-    missingFx ? "Market-cap FX unavailable" : null].filter(Boolean).join(" · ") || null;
+  const status = [error, ...rowErrors, missingFx ? "Market-cap FX unavailable" : null].filter(Boolean).join(" · ") || null;
 
   usePaneNoticeFooter({
     registrationId: "relative-valuation-notices",
-    notices: rows.filter((row) => row.fundamentalsProvenance?.stale)
-      .map((row) => `${row.symbol}: ${RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE}.`),
+    notices: rows.flatMap((row) => {
+      if (!row.fundamentalsProvenance?.stale) return [];
+      const parsed = Date.parse(row.fundamentalsProvenance.retrievedAt ?? "");
+      const age = Number.isFinite(parsed) ? formatApproximateAge(parsed) : "retained values may be out of date";
+      return [`${row.symbol} ${age}`];
+    }),
     focused,
   });
 
@@ -222,7 +228,12 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     }));
   }, []);
 
-  usePaneStatusFooter({ registrationId: "relative-valuation", loading, error: status });
+  usePaneStatusFooter({
+    registrationId: "relative-valuation",
+    loading,
+    error: status,
+    info: quoteAges.map((text) => ({ id: `quote-age-${text}`, parts: [{ text, tone: "muted" as const }] })),
+  });
 
   return (
     <DataTableView<RelativeRow, RelativeColumn>
@@ -248,9 +259,9 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
         [row.symbol, "Quote as of", parseDisplayDate(row.quoteAsOf)?.toISOString() ?? "unavailable", "Stale", String(row.quoteStale ?? "unknown")],
         [row.symbol, "Fundamentals retrieved", row.fundamentalsProvenance?.retrievedAt ?? "unavailable",
           "Stale", String(row.fundamentalsProvenance?.stale ?? "unknown")],
-        ...(row.fundamentalsProvenance?.stale ? [[row.symbol, RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE]] : []),
+        ...(row.fundamentalsProvenance?.stale ? [[row.symbol, Number.isFinite(Date.parse(row.fundamentalsProvenance.retrievedAt ?? "")) ? formatApproximateAge(Date.parse(row.fundamentalsProvenance.retrievedAt ?? "")) : "retained values may be out of date"]] : []),
       ])}
-      emptyStateTitle={loading ? "Loading peers..." : error ?? "No peers"}
+      emptyStateTitle={loading ? loadingText() : error ?? "No peers"}
     />
   );
 }

@@ -6,7 +6,9 @@ import {
   EmptyState,
   QueryBar,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneNoticeFooter,
+  loadingText,
   type PaneFooterPressEvent,
 } from "../../../components";
 import {
@@ -889,12 +891,11 @@ function ChartComposerSurface({
   }, [anchoredVwapOn]);
   const anchorable = anchoredVwapOn && !pickingAnchor;
   const footerAnchor = useCallback(() => setPickingAnchor(true), []);
+  usePaneLoadingSignal(resolution.loading);
   usePaneFooter(footerId, () => ({
-    info: resolution.loading
-      ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
-      : pickingAnchor
-        ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
-        : [],
+    info: pickingAnchor
+      ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
+      : [],
     hints: [
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
@@ -969,7 +970,7 @@ function ChartComposerSurface({
   const emptyMessage = spec.series.length === 0
     ? "Add a series to start the chart"
     : resolution.loading
-      ? "Loading chart data"
+      ? loadingText()
       : statusErrorNotice ?? comparisonUnavailable ?? "No observations in this range";
 
   return (
@@ -1145,7 +1146,7 @@ export function ChartComposerPane({ paneId, focused, width, height }: PaneProps)
     }
   }, [follows, ownedIds, savedIds, setSpec, spec, stored, target, unlinkedFrom, updateSettings]);
   if (follows && !target && ownedIds.length > 0) {
-    return <EmptyState title={error ?? "No ticker selected."} />;
+    return <EmptyState title={error ?? "Select a ticker."} />;
   }
   return (
     <ChartComposerSurface

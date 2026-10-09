@@ -20,6 +20,7 @@ import {
   QueryBar,
   statGridRows,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneNoticeFooter,
   usePaneTabs,
   type ChartTableChart,
@@ -444,20 +445,11 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     focused,
     enabled: !openRow,
   });
+  usePaneLoadingSignal(resource.loading);
   usePaneFooter(
     "portfolio-risk",
     () => ({
       info: [
-        ...(resource.loading
-          ? [
-              {
-                id: "loading",
-                parts: [
-                  { text: "loading history", tone: "muted" as const },
-                ],
-              },
-            ]
-          : []),
         ...(model
           ? [
               {
@@ -612,7 +604,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
       <PaneStatusBody
         loading={resource.loading}
         error={resource.error}
-        loadingLabel="Loading portfolio risk"
+        
         emptyTitle="Risk data unavailable"
       />
     );

@@ -3,6 +3,8 @@ import { Box, Text, TextAttributes, useUiCapabilities, type InputRenderable } fr
 import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
 import { TextField } from "../../ui";
+import { Spinner } from "../../ui/loading";
+import { loadingText } from "../../ui/status";
 import type { AccountMode, AccountSubmitError } from "../../../plugins/builtin/cloud/auth-model";
 import { ONBOARDING_DESKTOP } from "../onboarding-frame";
 
@@ -93,11 +95,9 @@ export function AccountFormPanel({
   const onEmail = fieldIdx <= 0;
 
   if (desktop) {
-    const status = submitting
-      ? { color: colors.text, text: mode === "signup" ? t("Creating your account...") : t("Signing you in...") }
-      : validationError || submitError
-        ? { color: colors.negative, text: validationError ?? submitError?.message ?? "" }
-        : null;
+    const status = validationError || submitError
+      ? { color: colors.negative, text: validationError ?? submitError?.message ?? "" }
+      : null;
     return (
       <Box flexDirection="column" style={{ marginTop: ONBOARDING_DESKTOP.afterHeader, gap: 14 }}>
         <TextField
@@ -132,7 +132,7 @@ export function AccountFormPanel({
         />
         {/* Reserved so the footer does not jump when a message appears. */}
         <Box style={{ minHeight: 18 }}>
-          {status ? <Text fg={status.color} wrapText>{status.text}</Text> : null}
+          {submitting ? <Spinner label={loadingText()} /> : status ? <Text fg={status.color} wrapText>{status.text}</Text> : null}
         </Box>
       </Box>
     );
@@ -173,9 +173,7 @@ export function AccountFormPanel({
         overflow="hidden"
       >
         {submitting ? (
-          <Text fg={colors.text} wrapText>
-            {mode === "signup" ? t("Creating your account...") : t("Signing you in...")}
-          </Text>
+          <Spinner label={loadingText()} />
         ) : validationError || submitError ? (
           <Text fg={colors.negative} wrapText>{validationError ?? submitError?.message ?? ""}</Text>
         ) : (

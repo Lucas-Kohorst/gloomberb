@@ -3,7 +3,9 @@ import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   Badge,
   DataTableView,
+  PaneStatusBody,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneTabs,
   usePaneTicker,
   type DataTableCell,
@@ -283,17 +285,16 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
   // Both views share one status; the treemap must not claim "no chartable
   // values" while the request is still in flight or the pane has no ticker.
   const statusTitle = !symbol
-    ? "No ticker selected."
-    : loading && !data
-      ? "Loading holders..."
-      : !data && error ? error : sortedRows.length === 0 ? "No holders available" : null;
+    ? "Select a ticker."
+    : !data && error ? error : sortedRows.length === 0 ? "No holders available" : null;
+  usePaneLoadingSignal(loading && !!data);
   const chartHeight = Math.max(1, height - tabRows - (nativePaneChrome ? 1 : 0));
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       {nativePaneChrome ? tabStrip : tabStrip && <Box height={1} paddingX={1}>{tabStrip}</Box>}
 
-      {viewMode === "table" ? (
+      {loading && !data ? <PaneStatusBody loading /> : viewMode === "table" ? (
         <DataTableView<HolderRow, HolderColumn>
           focused={focused}
           selection={{

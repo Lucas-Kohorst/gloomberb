@@ -2,7 +2,8 @@ import { formatPriceEarnings, PRICE_EARNINGS_NOTICE } from "../../../utils/price
 import type { HeadlessPaneDefinition } from "../../../types/headless";
 import { formatCurrency, formatLevelPercent, formatNumber, formatPercent } from "../../../utils/format";
 import { loadHeadlessFinancials, loadHeadlessSymbols } from "../shared/headless-market-data";
-import { RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE, RELATIVE_VALUATION_STALE_QUOTE_NOTICE, relativeValuationValues } from "./relative-valuation-model";
+import { formatApproximateAge } from "../../../utils/datetime-format";
+import { relativeValuationValues } from "./relative-valuation-model";
 import { paneSchemas } from "./headless-schema";
 
 export const relativeValuationHeadless: HeadlessPaneDefinition<"rows"> = {
@@ -33,10 +34,16 @@ export const relativeValuationHeadless: HeadlessPaneDefinition<"rows"> = {
     ].some((value) => value != null)).map(({ symbol }) => symbol)];
     const staleSymbols = rows.filter((row) => row.quoteStale).map((row) => row.symbol);
     const staleFundamentalsSymbols = rows.filter((row) => row.fundamentalsProvenance?.stale).map((row) => row.symbol);
-    const errors = [...loaded.errors,
-      ...staleSymbols.map((symbol) => `${symbol}: ${RELATIVE_VALUATION_STALE_QUOTE_NOTICE}`),
-      ...staleFundamentalsSymbols.map((symbol) => `${symbol}: ${RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE}`),
-    ];
+    const quoteAges = rows.flatMap((row) => (
+      row.quoteStale && row.quoteAsOf != null ? [`${row.symbol} ${formatApproximateAge(row.quoteAsOf)}`] : []
+    ));
+    const fundamentalsAges = rows.flatMap((row) => {
+      if (!row.fundamentalsProvenance?.stale) return [];
+      const parsed = Date.parse(row.fundamentalsProvenance.retrievedAt ?? "");
+      const age = Number.isFinite(parsed) ? formatApproximateAge(parsed) : "retained values may be out of date";
+      return [`${row.symbol} ${age}`];
+    });
+    const errors = [...loaded.errors, ...quoteAges, ...fundamentalsAges];
     return { rows, unavailableSymbols, errors, complete: unavailableSymbols.length === 0 && errors.length === 0, metadata: {
       staleSymbols,
       staleFundamentalsSymbols,

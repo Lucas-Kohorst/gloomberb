@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataTableStackView,
   DataTableView,
-  EmptyState, PaneStatusBody, QueryBar, StatGrid, usePagedRows, usePaneNoticeFooter, usePaneTabs, useQueryBarSearch, useTableLoadMore, type DataTableKeyEvent,
+  EmptyState, loadingText, PaneStatusBody, QueryBar, StatGrid, usePagedRows, usePaneNoticeFooter, usePaneTabs, useQueryBarSearch, useTableLoadMore, type DataTableKeyEvent,
   type DataTableRootKeyContext, type PageRequest, type PaneFooterSegment, type PaneHint, type StatItem
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
@@ -21,7 +21,7 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useMineTickers } from "../shared/mine-tickers";
-import { usePaneStatusFooter, usePaneStatusLinkFooter } from "../../../components/layout/pane/status-footer";
+import { usePaneStatusFooter, usePaneStatusLinkFooter, usePaneLoadingSignal } from "../../../components/layout/pane/status-footer";
 import { loadBrowserRows, loadFilingPositions, loadFundDetail } from "./data";
 import { FundOverlapView } from "./overlap-pane";
 import { ThirteenFCrowdingPane, ThirteenFTickerHoldingsView } from "./signals-pane";
@@ -187,10 +187,10 @@ function ThirteenFBrowserPane({ focused, width, height, onDetailChange }: PanePr
   }, []);
 
   const browserStatusInfo = useMemo<PaneFooterSegment[]>(() => [
-        ...(loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
         ...(warning ? [{ id: "warning", parts: [{ text: warning, tone: "warning" as const }] }] : []),
   ], [loadingMore, warning]);
   const searchHints = useMemo(() => [{ id: "search", key: "/", label: "search", onPress: focusSearch }], [focusSearch]);
+  usePaneLoadingSignal((loadingMore));
   usePaneStatusFooter({
     registrationId: THIRTEENF_PANE_ID,
     enabled: !detailSeed && !showTickerHoldings,
@@ -218,7 +218,7 @@ function ThirteenFBrowserPane({ focused, width, height, onDetailChange }: PanePr
   const rootBefore = renderQueryBar();
 
   const emptyTitle = loading
-    ? "Loading 13F funds..."
+    ? loadingText()
     : error ?? warning ?? "No 13F funds found.";
 
   const handleRootKeyDown = useCallback((
@@ -517,7 +517,7 @@ export function FundDetailView({
   if ((status === "loading" || status === "idle") && !data) {
     return (
       <Box flexDirection="column" width={width} flexGrow={1} overflow="hidden">
-        <PaneStatusBody loading align="center" loadingLabel="Loading 13F filing..." />
+        <PaneStatusBody loading align="center" />
       </Box>
     );
   }
@@ -526,7 +526,7 @@ export function FundDetailView({
     return (
       <Box flexDirection="column" width={width} flexGrow={1} overflow="hidden">
         <Box padding={1}>
-          <EmptyState status={error ? "error" : "empty"} title="13F fund unavailable." message={error ?? "Failed to load fund."} />
+          <EmptyState status={error ? "error" : "empty"} title="13F fund unavailable." message={error || undefined} />
         </Box>
       </Box>
     );
@@ -689,7 +689,7 @@ function FilingDetailView({
   ];
   const summary = <StatGrid items={summaryItems} width={width} />;
   const emptyTitle = positions.loading
-    ? "Loading filing positions..."
+    ? loadingText()
     : error ?? "No positions in filing.";
 
   return (

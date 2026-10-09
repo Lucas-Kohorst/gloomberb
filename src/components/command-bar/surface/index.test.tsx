@@ -135,6 +135,81 @@ describe("CommandBar", () => {
     expect(created).toEqual([{ templateId: "new-watchlist-pane", options: undefined }]);
   });
 
+  test("opens the row the user moved to while symbol search is still running", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+    const added: string[] = [];
+    let releaseSearch = () => {};
+    const held = new Promise<void>((resolve) => { releaseSearch = resolve; });
+    await tui.render(<CommandBarHarness
+      query="list"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.events.emit = (name, payload) => {
+          if (name === "ticker:added") added.push(payload.symbol);
+        };
+        pluginRegistry.createPaneFromTemplateAsync = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+      dataProvider={makeDataProvider(async () => {
+        await held;
+        return [{ providerId: "gloom", symbol: "LIST", name: "List Corp", exchange: "NYSE", type: "EQUITY" }];
+      })}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await tui.setup().renderOnce();
+    await waitForFrameToContain("Loading...");
+    await tui.emitKeypress({ name: "down" });
+    await tui.emitKeypress({ name: "return", sequence: "\r" });
+    expect(created).toEqual([{ templateId: "new-watchlist-pane", options: undefined }]);
+
+    releaseSearch();
+    await waitForFrameToContain("Exact Match");
+    await Bun.sleep(50);
+    expect(created).toEqual([{ templateId: "new-watchlist-pane", options: undefined }]);
+    expect(added).toEqual([]);
+  });
+
+  test("an untouched Enter still opens the exact listing once search lands", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+    const added: string[] = [];
+    let releaseSearch = () => {};
+    const held = new Promise<void>((resolve) => { releaseSearch = resolve; });
+    await tui.render(<CommandBarHarness
+      query="list"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.events.emit = (name, payload) => {
+          if (name === "ticker:added") added.push(payload.symbol);
+        };
+        pluginRegistry.createPaneFromTemplateAsync = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+      dataProvider={makeDataProvider(async () => {
+        await held;
+        return [{ providerId: "gloom", symbol: "LIST", name: "List Corp", exchange: "NYSE", type: "EQUITY" }];
+      })}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await tui.setup().renderOnce();
+    await waitForFrameToContain("Loading...");
+    await tui.emitKeypress({ name: "return", sequence: "\r" });
+    expect(created).toEqual([]);
+
+    releaseSearch();
+    await waitForFrameToContain("Exact Match");
+    for (let attempt = 0; attempt < 20 && added.length === 0; attempt += 1) {
+      await Bun.sleep(15);
+    }
+    expect(added).toEqual(["LIST"]);
+    expect(created).toEqual([]);
+  });
+
   test("keeps symbol search out of a query a prefix claims", async () => {
     const searchQueries: string[] = [];
     await tui.render(<CommandBarHarness
@@ -569,6 +644,17 @@ describe("CommandBar", () => {
     const frame = tui.frame();
     expect(frame).toContain("Back");
     expect(frame).toContain("Security Description");
+  });
+
+  test("a lowercase ticker shortcut still greys the prompt ticker", async () => {
+    await tui.render(<CommandBarHarness query="qq" live selectedTicker="AAPL" showQueryState />, {
+      width: 100,
+      height: 20,
+    });
+
+    await tui.setup().renderOnce();
+    expect(tui.frame()).toContain("qq AAPL");
+    expect(tui.frame()).toContain("query:qq");
   });
 
   test("QQ with an active ticker shows ghost completion and tab inserts the symbol", async () => {

@@ -1,6 +1,6 @@
 import type { Dispatch } from "react";
 import { apiClient } from "../../../api-client";
-import { t } from "../../../i18n";
+import { t, tf } from "../../../i18n";
 import { teamCollectionLocalId } from "../../../plugins/builtin/cloud/team/collections";
 import type { DataProvider } from "../../../types/data-provider";
 import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
@@ -15,6 +15,7 @@ import { removeBrokerProfile } from "../../../brokers/remove-profile";
 import { connectSignedInBrokerProfile } from "../../../brokers/signed-in/connect";
 import {
   addTickerToPortfolio,
+  addTickerToWatchlist,
   adoptFirstPositionCurrency,
   createManualPortfolio as createManualPortfolioConfig,
   deleteManualPortfolio,
@@ -24,6 +25,11 @@ import {
   resolveManualPositionCurrency,
   setManualPortfolioPosition,
 } from "../../../plugins/builtin/portfolio-list/mutations";
+import { parseBulkImport, resolveBulkImportEntries } from "../../../plugins/builtin/portfolio-list/quick-add/import";
+import { resolveQuickAddValidation } from "../../../plugins/builtin/portfolio-list/quick-add/resolution";
+import { upsertTickerFromSearchResult } from "../../../tickers/search";
+import { captureAttentionAction } from "../../../telemetry/attention-counts";
+import { publicTickerKey } from "../../../utils/exchanges";
 import type { CommandBarFieldValue } from "./types";
 import type { WorkflowStringValues } from "./broker";
 import { coerceFieldString } from "../helpers";
@@ -50,6 +56,7 @@ export interface CommandBarCollectionWorkflowActions {
   disconnectBrokerInstance: (instanceId: string) => Promise<void>;
   setPortfolioPositionFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
   addTickerMembershipFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
+  importTickersFromWorkflow: (values: Record<string, CommandBarFieldValue>) => Promise<void>;
 }
 
 export function createCommandBarCollectionWorkflowActions(options: {
@@ -310,6 +317,136 @@ export function createCommandBarCollectionWorkflowActions(options: {
           : `${result.ticker.metadata.ticker} is already in "${portfolio.name}".`,
         { type: result.changed ? "success" : "info" },
       );
+    },
+
+    async importTickersFromWorkflow(values) {
+      const currentState = getState();
+      const watchlist = currentState.config.watchlists.find((entry) => entry.id === activeCollectionId);
+      const portfolio = currentState.config.portfolios.find((entry) => entry.id === activeCollectionId);
+      const collectionKind = watchlist ? "watchlist" : portfolio && isManualPortfolio(portfolio) ? "portfolio" : null;
+      const collection = watchlist ?? (collectionKind === "portfolio" ? portfolio : null);
+      if (!collectionKind || !collection || !activeCollectionId) {
+        throw new Error("Select a watchlist or manual portfolio first.");
+      }
+
+      const parsed = parseBulkImport(coerceFieldString(values.tickers), collectionKind);
+      const recordAttention = captureAttentionAction();
+      // Dispatch may not publish a ticker before the next row resolves, so later rows read this copy.
+      const tickers = new Map(currentState.tickers);
+      let config = currentState.config;
+      const results = await resolveBulkImportEntries(parsed.entries, async (entry) => {
+        const validation = await resolveQuickAddValidation({
+          query: entry.symbol,
+          collectionId: activeCollectionId,
+          collectionKind,
+          tickers,
+          financials: currentState.financials,
+        });
+        // Already listed, and this row does not set a position: skip it and say why.
+        if (validation.status === "duplicate" && entry.shares == null) {
+          return { reason: "Already in collection" };
+        }
+        if (validation.status === "ready" || validation.status === "duplicate") return { value: validation };
+        // Quick-add already picked the highest-volume venue. A remaining choice cannot be answered from a paste.
+        if (validation.status === "choose") {
+          const venues = validation.listings.map((listing) => listing.exchange).filter(Boolean).join(", ");
+          return { reason: venues ? `Multiple listings match: ${venues}` : "Multiple listings match" };
+        }
+        return {
+          reason: validation.status === "idle" || validation.status === "checking"
+            ? "Ticker lookup unavailable"
+            : validation.message,
+        };
+      });
+
+      const failures = [...parsed.failures, ...results.flatMap((result) => result.failure ? [result.failure] : [])];
+      let added = 0;
+      for (const result of results) {
+        if (!result.value || (result.value.status === "duplicate" && result.entry.shares == null)) continue;
+        try {
+          let ticker = result.value.ticker;
+          let created = false;
+          if (!ticker) {
+            if (result.value.resolved.kind === "local") {
+              ticker = result.value.resolved.ticker;
+            } else {
+              const upserted = await upsertTickerFromSearchResult(tickerRepository, result.value.resolved.result);
+              ticker = upserted.ticker;
+              created = upserted.created;
+            }
+          }
+          const subject = tickers.get(ticker.metadata.ticker) ?? ticker;
+          const shares = result.entry.shares;
+          const avgCost = result.entry.avgCost;
+          let nextTicker = subject;
+          let positionCurrency: string | null = null;
+          if (shares != null && avgCost != null) {
+            const livePortfolio = config.portfolios.find((entry) => entry.id === activeCollectionId);
+            if (!livePortfolio || !isManualPortfolio(livePortfolio)) {
+              throw new Error("Select a watchlist or manual portfolio first.");
+            }
+            positionCurrency = resolveManualPositionCurrency("", subject, livePortfolio, config.baseCurrency);
+            nextTicker = setManualPortfolioPosition(subject, livePortfolio.id, {
+              shares,
+              avgCost,
+              currency: positionCurrency,
+            }).ticker;
+          } else {
+            const membership = collectionKind === "portfolio"
+              ? addTickerToPortfolio(subject, activeCollectionId)
+              : addTickerToWatchlist(subject, activeCollectionId);
+            if (!membership.changed) continue;
+            nextTicker = membership.ticker;
+          }
+          const firstPosition = positionCurrency != null
+            && !hasOpenPortfolioPositions(activeCollectionId, tickers.values());
+          await tickerRepository.saveTicker(nextTicker);
+          dispatch({ type: "UPDATE_TICKER", ticker: nextTicker });
+          tickers.set(nextTicker.metadata.ticker, nextTicker);
+          if (positionCurrency && firstPosition) {
+            const adopted = adoptFirstPositionCurrency(config, activeCollectionId, positionCurrency);
+            if (adopted) {
+              config = adopted;
+              dispatch({ type: "SET_CONFIG", config: adopted });
+              persistConfig(adopted);
+            }
+          }
+          if (created) {
+            pluginRegistry.events.emit("ticker:added", {
+              symbol: nextTicker.metadata.ticker,
+              ticker: nextTicker,
+            });
+          }
+          if (collectionKind === "portfolio") {
+            pluginRegistry.events.emit("host:portfolio-ticker-saved", {
+              symbol: nextTicker.metadata.ticker,
+              portfolioId: activeCollectionId,
+            });
+          } else {
+            recordAttention(publicTickerKey(nextTicker.metadata.ticker, nextTicker.metadata.exchange), "watchlist_add");
+          }
+          added += 1;
+        } catch (error) {
+          failures.push({
+            line: result.entry.line,
+            symbol: result.entry.symbol,
+            reason: error instanceof Error ? error.message : "Ticker add failed",
+          });
+        }
+      }
+
+      const summary = tf("Added {count}.", { count: added });
+      if (failures.length > 0) {
+        notify(tf("{summary} Failed: {failures}", {
+          summary,
+          failures: failures.map((failure) => tf("{symbol}: {reason}", {
+            symbol: failure.symbol || tf("line {line}", { line: failure.line }),
+            reason: t(failure.reason),
+          })).join("; "),
+        }), { type: "error" });
+      } else {
+        notify(summary, { type: "success" });
+      }
     },
 
     async disconnectBrokerInstance(instanceId) {

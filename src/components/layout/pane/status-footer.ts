@@ -1,5 +1,7 @@
 import { useMemo } from "react";
-import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "./footer";
+import { usePaneFooter, usePaneLoadingSignal, type PaneFooterSegment, type PaneHint } from "./footer";
+
+export { usePaneLoadingSignal };
 import { useExternalLinkFooter } from "../../use-external-link-footer";
 import { loadingErrorFooterInfo } from "../../data-table/table-pane";
 
@@ -9,12 +11,14 @@ const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
 // has no per-pane footer hint. Do not reintroduce one. See PR #589. Panes bind
 // it with `usePaneRefreshKey`.
 
-const STALE_SEGMENT: PaneFooterSegment = { id: "stale", parts: [{ text: "stale", tone: "warning" }] };
-
 interface PaneStatusInfoOptions {
+  /** In flight. Draws the body spinner. It is not a footer word. */
   loading?: boolean;
   error?: string | null;
-  /** The data on screen is older than it should be; adds the shared `stale` warning after `info`. */
+  /**
+   * Accepted so existing callers compile. The age token is the staleness.
+   * Do not draw the word.
+   */
   stale?: boolean;
   info?: readonly PaneFooterSegment[];
 }
@@ -22,17 +26,15 @@ interface PaneStatusInfoOptions {
 function buildPaneStatusInfo({
   loading = false,
   error,
-  stale = false,
   info = EMPTY_STATUS_INFO,
 }: PaneStatusInfoOptions): PaneFooterSegment[] {
-  return [...info, ...(stale ? [STALE_SEGMENT] : []), ...loadingErrorFooterInfo(loading, error)];
+  return [...info, ...loadingErrorFooterInfo(loading, error)];
 }
 
 export function usePaneStatusFooter({
   registrationId,
   loading = false,
   error,
-  stale = false,
   info = EMPTY_STATUS_INFO,
   hints,
   enabled = true,
@@ -41,9 +43,10 @@ export function usePaneStatusFooter({
   hints?: PaneHint[];
   enabled?: boolean;
 }) {
+  usePaneLoadingSignal(enabled && loading);
   const statusInfo = useMemo(
-    () => buildPaneStatusInfo({ loading, error, stale, info }),
-    [error, info, loading, stale],
+    () => buildPaneStatusInfo({ loading, error, info }),
+    [error, info, loading],
   );
   usePaneFooter(
     registrationId,
@@ -62,9 +65,9 @@ export function usePaneStatusLinkFooter({
   label,
   loading = false,
   error,
-  stale = false,
   info = EMPTY_STATUS_INFO,
   hints,
+  trailingInfo,
   showOpenHint = false,
 }: PaneStatusInfoOptions & {
   registrationId: string;
@@ -73,11 +76,13 @@ export function usePaneStatusLinkFooter({
   source?: string | null;
   label?: string;
   hints?: PaneHint[];
+  trailingInfo?: PaneFooterSegment[];
   showOpenHint?: boolean;
 }) {
+  usePaneLoadingSignal(loading);
   const statusInfo = useMemo(
-    () => buildPaneStatusInfo({ loading, error, stale, info }),
-    [error, info, loading, stale],
+    () => buildPaneStatusInfo({ loading, error, info }),
+    [error, info, loading],
   );
   return useExternalLinkFooter({
     registrationId,
@@ -87,6 +92,7 @@ export function usePaneStatusLinkFooter({
     label,
     info: statusInfo,
     hints,
+    trailingInfo,
     showHint: showOpenHint,
   });
 }

@@ -4,15 +4,18 @@ import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";
-import type { TickerSearchCandidate } from "../../../../tickers/search";
+import { listingChoiceQuery, symbolSearchQuery, type TickerSearchCandidate } from "../../../../tickers/search";
 import type { AssistRowHandlers } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
 import type { CommandBarCategoryPriorities } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
+import { commandPromptTicker, LINKED_TICKER_MARK } from "../../../../layout/selected-ticker";
+import { activeCommandInstrumentLabel } from "../../prompt-placeholder";
 import { normalizeCommandTickerSearchText } from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
-import { buildRootResultModel, type RootResultModel } from "./results";
+import { shortcutGhostSuffix } from "./ghost";
+import { buildRootResultModel, mnemonicListingQuery, type RootResultModel } from "./results";
 import { useRootProviderSearch } from "./provider-search";
 import { buildRootShortcutFeedback } from "./shortcut-feedback";
 import type { ShortcutIntent } from "./shortcuts";
@@ -247,26 +250,46 @@ export function useCommandBarRootRuntime({
   // finds NVDA without the backtick. Skipped when a local row already carries
   // that exact name, since an "Exact Match" symbol would otherwise outrank it.
   // A bare mnemonic (`T`, `CN`) still searches that symbol. Enter stays on the
-  // command; the listing is listed under it.
+  // command; the listing is listed under it. `NET:` is that symbol's venue dropdown.
   const bareMnemonic = rootShortcutIntent.kind !== "none" && rootShortcutIntent.argText === ""
     ? rootShortcutIntent.prefix
     : null;
+  const rootListingChoice = useMemo(() => {
+    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    return listingChoiceQuery(rootQuery);
+  }, [activeMatch, currentRoute, rootQuery, rootShortcutIntent.kind]);
   const rootPlainTickerSearchArg = useMemo(() => {
     if (currentRoute || activeMatch) return null;
     if (rootShortcutIntent.kind !== "none" && !bareMnemonic) return null;
-    const trimmed = bareMnemonic ?? rootQuery.trim();
-    if (!bareMnemonic && trimmed.length < 2) return null;
-    const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
+    const trimmed = rootQuery.trim();
+    const symbolQuery = rootListingChoice?.symbol
+      ?? (bareMnemonic
+        ? mnemonicListingQuery(bareMnemonic, activeTickerSymbol || commandPromptTicker(state)?.symbol)
+        : symbolSearchQuery(trimmed));
+    if (!bareMnemonic && symbolQuery.length < 2) return null;
+    const normalizedQuery = normalizeCommandTickerSearchText(symbolQuery);
     // The install row for "TV" is labelled TV, but it leads on purpose and
-    // must not keep Grupo Televisa out of the list.
-    const hasExactLocalRow = rootResultModel.items.some((item) => (
+    // must not keep Grupo Televisa out of the list. A bare mnemonic's own row
+    // is labelled with the focused symbol, and that must not hide the listing.
+    const hasExactLocalRow = !bareMnemonic && rootResultModel.items.some((item) => (
       item !== pluginInstallItem
       && item.kind !== "ticker"
       && item.kind !== "search"
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
     ));
-    return hasExactLocalRow ? null : trimmed;
-  }, [activeMatch, bareMnemonic, currentRoute, pluginInstallItem, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
+    return hasExactLocalRow ? null : symbolQuery;
+  }, [
+    activeMatch,
+    activeTickerSymbol,
+    bareMnemonic,
+    currentRoute,
+    pluginInstallItem,
+    rootListingChoice,
+    rootQuery,
+    rootResultModel.items,
+    rootShortcutIntent.kind,
+    state,
+  ]);
   const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
 
   const {
@@ -285,6 +308,7 @@ export function useCommandBarRootRuntime({
     readTickerSearchCache,
     rootPlainTickerSearchArg,
     symbolsTakeEnter: bareMnemonic == null,
+    listingSuffix: rootPlainTickerSearchArg && rootListingChoice ? rootListingChoice.suffix : null,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,
@@ -345,9 +369,15 @@ export function useCommandBarRootRuntime({
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery
     : null;
-  const rootGhostSuffix = rootGhostCompletion && rootGhostCompletion.startsWith(rootQuery)
-    ? rootGhostCompletion.slice(rootQuery.length)
+  const promptSymbol = commandPromptTicker(state)?.symbol ?? null;
+  const promptLabel = activeCommandInstrumentLabel(state);
+  const inferredSymbol = rootGhostCompletion?.slice(rootGhostCompletion.lastIndexOf(" ") + 1) ?? "";
+  const displayTicker = promptSymbol && inferredSymbol.toUpperCase() === promptSymbol.toUpperCase()
+    ? (promptLabel?.startsWith(`${LINKED_TICKER_MARK} `)
+      ? promptLabel.slice(LINKED_TICKER_MARK.length + 1)
+      : promptLabel)
     : null;
+  const rootGhostSuffix = shortcutGhostSuffix(rootQuery, rootGhostCompletion, { displayTicker });
   const rootShortcutFeedback = useMemo(() => buildRootShortcutFeedback({
     activeCollectionId,
     activeTickerSymbol,

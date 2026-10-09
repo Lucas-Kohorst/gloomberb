@@ -28,11 +28,24 @@ export function releaseColumns(width: number): DataTableColumn[] {
   ], { id: "event", label: "EVENT", width: 16, align: "left" });
 }
 
+const EARNINGS_ESTIMATES: DataTableColumn[] = [
+  { id: "eps", label: "EPS EST", width: 8, align: "right" },
+  { id: "sales", label: "SALES EST", width: 10, align: "right" },
+];
+
 export function earningsColumns(width: number): DataTableColumn[] {
-  return withFlex(width, [
+  const lead: DataTableColumn[] = [
     { id: "when", label: "WHEN", width: 6, align: "left" },
     { id: "ticker", label: "TICKER", width: 8, align: "left" },
-  ], { id: "company", label: "COMPANY", width: 16, align: "left" });
+  ];
+  const company: DataTableColumn = { id: "company", label: "COMPANY", width: 12, align: "left" };
+  const tail: DataTableColumn[] = [];
+  for (const column of EARNINGS_ESTIMATES) {
+    const next = [...tail, column];
+    if (getTableWidth(withFlex(width, lead, company, next)) > width + 1) break;
+    tail.push(column);
+  }
+  return withFlex(width, lead, company, tail);
 }
 
 export function BriefTable<T extends BriefTableRow>({

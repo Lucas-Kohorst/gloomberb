@@ -10,7 +10,7 @@ import {
   StatGrid,
   usePagedRows,
   usePaneNoticeFooter,
-  usePaneStatusLinkFooter,
+  usePaneStatusLinkFooter, usePaneLoadingSignal,
   useQueryBarSearch,
   useTableLoadMore,
   type DataTableCell,
@@ -32,6 +32,7 @@ import {
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, type ScrollBoxRenderable } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { OpenFdaClient, parseOpenFdaDate } from "./client";
 import {
@@ -257,13 +258,13 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
 
   const linkRecord = openRecord ?? selected;
   const info = useMemo<PaneFooterSegment[]>(() => [
-    ...(records.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
     ...(records.moreError ? [{ id: "more-error", parts: [{ text: records.moreError.message, tone: "warning" as const }] }] : []),
   ], [records.loadingMore, records.moreError]);
   const hints = useMemo<PaneHint[]>(
     () => (openItemId ? [] : [{ id: "search", key: "/", label: "search", onPress: focusSearch }]),
     [focusSearch, openItemId],
   );
+  usePaneLoadingSignal((records.loadingMore));
   usePaneStatusLinkFooter({
     registrationId: OPENFDA_PANE_ID,
     focused,
@@ -299,7 +300,7 @@ export function OpenFdaPane({ width, height, focused }: PaneProps) {
     id: "matched",
     label: dataset === "recall" ? "Recalls" : "Reports",
     value: firstPage.matched.toLocaleString("en-US"),
-    detail: lastUpdated ? `data as of ${formatDate(lastUpdated)}` : undefined,
+    detail: lastUpdated ? formatObservationAge(lastUpdated.getTime()) ?? undefined : undefined,
   }] : []), [dataset, error, firstPage, lastUpdated]);
 
   const header = (

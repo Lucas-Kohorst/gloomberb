@@ -7,8 +7,11 @@ import { recordResearchActivity } from "../../../api-client/research-activity";
 import {
   DataTableStackView,
   EmptyState,
+  loadingText,
   PaneStatusBody, QueryBar, Spinner,
+  unavailableText,
   usePaneFooter,
+  usePaneLoadingSignal,
   useQueryBarSearch,
   useTableLoadMore,
   type DataTableCell,
@@ -183,7 +186,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   const [calls, setCalls] = useState<CloudEarningsCallPayload[]>([]);
   const [listStatus, setListStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [listError, setListError] = useState<{ message: string; status?: number } | null>(null);
-  const [stale, setStale] = useState(false);
   const [listFetchedAt, setListFetchedAt] = useState(0);
   const listRequestVersion = useRef(0);
   const [listCompletedRequest, setListCompletedRequest] = useState(0);
@@ -240,7 +242,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
           setCalls(result.calls);
           setNextOffset(result.calls.length);
           setHasMore(result.sourceLimitReached === true);
-          setStale(result.stale);
           setListFetchedAt(result.fetchedAt);
           setListPending(result.pending === true && result.calls.length === 0);
           setListError(
@@ -309,7 +310,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     setNextOffset(0);
     setListStatus("idle");
     setListPending(false);
-    setStale(false);
     setListFetchedAt(0);
     setListError(null);
     setLookup(null);
@@ -653,27 +653,16 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     [focusSearch, scrollTranscriptBy, openSource],
   );
 
+  usePaneLoadingSignal(
+    listStatus === "loading" || loadingMore || producing || transcriptLoading || listPending
+    || (!!lookupTicker && (lookupState === "loading" || lookupState === "pending")),
+  );
   usePaneFooter(
     EARNINGS_CALLS_PANE_ID,
     () => {
       const info: PaneFooterSegment[] = [];
-      if (listStatus === "loading") {
-        info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
-      } else if (loadingMore) {
-        info.push({ id: "loading-more", parts: [{ text: "loading more calls", tone: "muted" }] });
-      }
-      if (producing) {
-        info.push({ id: "producing", parts: [{ text: "producing transcript", tone: "muted" }] });
-      } else if (transcriptLoading) {
-        info.push({ id: "transcribing", parts: [{ text: "loading transcript", tone: "muted" }] });
-      }
-      if (listPending) {
-        info.push({ id: "searching", parts: [{ text: "searching for calls", tone: "muted" }] });
-      }
       if (lookupTicker && lookupState) {
-        if (lookupState === "loading" || lookupState === "pending") {
-          info.push({ id: "lookup", parts: [{ text: `looking up ${lookupTicker}`, tone: "muted" }] });
-        } else if (lookupState === "unknown") {
+        if (lookupState === "unknown") {
           info.push({ id: "lookup", parts: [{ text: `${lookupTicker} not found`, tone: "warning" }] });
         } else if (lookupState === "none") {
           info.push({ id: "lookup", parts: [{ text: `no ${lookupTicker} calls yet`, tone: "muted" }] });
@@ -682,14 +671,8 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
         }
       }
       const visibleLookup = lookup && (lookup.ticker === lookupTicker || (detailOpen && selected?.ticker === lookup.ticker)) ? lookup : null;
-      if (visibleLookup?.stale) {
-        info.push({ id: "lookup-stale", parts: [{ text: `${visibleLookup.ticker} stale cache`, tone: "warning" }] });
-      }
       if (visibleLookup?.refreshError && lookupState !== "error") {
         info.push({ id: "lookup-error", parts: [{ text: `${visibleLookup.ticker}: ${visibleLookup.refreshError}`, tone: "warning" }] });
-      }
-      if (stale) {
-        info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
       }
       if (listError) {
         info.push({ id: "error", parts: [{ text: listError.message, tone: "warning" }] });
@@ -720,7 +703,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       lookupState,
       lookupTicker,
       lookup,
-      stale,
       listError,
       proRequired,
       transcriptProRequired,
@@ -759,13 +741,13 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
 
   if (listStatus === "loading" && calls.length === 0) {
     return (
-      <PaneStatusBody loading align="center" loadingLabel="Loading calls..." />
+      <PaneStatusBody loading align="center" />
     );
   }
 
   if (listStatus === "error" && calls.length === 0) {
     return (
-      <PaneStatusBody error={listError?.message ?? "Could not load earnings calls."} errorTitle="Could not load earnings calls." />
+      <PaneStatusBody error={listError?.message ?? unavailableText("Earnings calls")} errorTitle={listError?.message ? unavailableText("Earnings calls") : undefined} />
     );
   }
 
@@ -773,7 +755,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   // for the company, or it has nothing to search for.
   if (ticker && calls.length === 0) {
     return listPending ? (
-      <PaneStatusBody loading align="center" loadingLabel={`Looking for ${ticker}'s earnings calls...`} />
+      <PaneStatusBody loading align="center" />
     ) : (
       <EmptyState
         title={`No earnings calls found for ${ticker}.`}
@@ -798,7 +780,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
             .join("  ·  ")}
         </Text>
       </Box>
-      <Spinner label="Producing the transcript. This usually takes two to three minutes." />
+      <Spinner label={loadingText()} />
     </Box>
   ) : (
 
@@ -889,8 +871,8 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
             : lookupState === "none"
               ? `No reachable earnings call for ${lookupTicker} yet.`
               : lookupState === "error"
-                ? `Could not look up ${lookupTicker}.`
-                : `Looking up ${lookupTicker}...`
+                ? unavailableText(lookupTicker)
+                : loadingText()
           : searchQuery.trim()
             ? "No matching calls."
             : "No calls yet."

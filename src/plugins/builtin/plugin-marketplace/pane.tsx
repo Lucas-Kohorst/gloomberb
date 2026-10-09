@@ -8,7 +8,9 @@ import {
   KeyValueRow,
   PaneStatusBody,
   QueryBar,
+  unavailableText,
   useExternalLinkFooter,
+  usePaneLoadingSignal,
   useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
@@ -21,7 +23,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useDialog } from "../../../ui/dialog";
 import { isPlainKeyboardEvent } from "../../../utils/keyboard";
-import { formatRelativeAge } from "../../../utils/datetime-format";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { requiredGloomberb } from "../../../utils/semver";
 import { VERSION } from "../../../version";
 import { getCurrentPluginTarget, runsExternalPlugins } from "../../current-target";
@@ -124,7 +126,7 @@ function renderCell(
       return { text: versionLabel(entry), color: selected ?? (update ? colors.textBright : colors.textDim) };
     }
     case "status": {
-      if (busyId === entry.id) return { text: "working", color: selected ?? colors.textDim };
+      if (busyId === entry.id) return { text: "Loading...", color: selected ?? colors.textDim };
       const status = statusOf(entry);
       return { text: status.text, color: selected ?? STATUS_COLORS[status.kind] };
     }
@@ -220,7 +222,6 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
 
   const [registry, setRegistry] = useState<RegistryPlugin[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [stale, setStale] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   // Bumped after any local change so the list is re-read from the host.
   const [localRevision, setLocalRevision] = useState(0);
@@ -242,7 +243,6 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     setStatus((current) => (current === "ready" ? current : "loading"));
     void loadRegistry({ force }).then((result) => {
       setRegistry(result.plugins);
-      setStale(result.stale);
       setFetchedAt(result.fetchedAt);
       setStatus(result.error && result.plugins.length === 0 ? "error" : "ready");
     });
@@ -373,7 +373,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     if (!result.ok) {
       setBusy(null);
       setLastError(result.error);
-      notify({ body: `Could not install ${entry.name}: ${result.error}`, type: "error" });
+      notify({ body: `${unavailableText(entry.name)} ${result.error}`, type: "error" });
       return;
     }
     const activated = await activateInstalledPlugin(result.directory, host, manager);
@@ -396,7 +396,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     if (!result.ok) {
       setBusy(null);
       setLastError(result.error);
-      notify({ body: `Could not update ${entry.name}: ${result.error}`, type: "error" });
+      notify({ body: `${unavailableText(entry.name)} ${result.error}`, type: "error" });
       return;
     }
     if (result.kept) {
@@ -438,7 +438,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     if (result.ok) notify({ body: `Removed ${entry.name}.`, type: "success" });
     else {
       setLastError(result.error);
-      notify({ body: `Could not remove ${entry.name}: ${result.error}`, type: "error" });
+      notify({ body: `${unavailableText(entry.name)} ${result.error}`, type: "error" });
     }
   }, [bump, busy, confirmWidth, dialog, host, manager, notify, selected]);
 
@@ -519,20 +519,15 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     if (detailOpen && searchFocused) blurSearch();
   }, [blurSearch, detailOpen, searchFocused]);
 
-  const info = loadingErrorFooterInfo(status === "loading", status === "error" ? "catalog unavailable" : null);
-  if (stale) info.push({ id: "stale", parts: [{ text: "stale catalog", tone: "warning" }] });
-  if (checkingRemotes) info.push({ id: "remote-check", parts: [{ text: "checking unlisted plugins", tone: "muted" }] });
-  if (busy) {
-    const name = entries.find((entry) => entry.id === busy.id)?.name ?? busy.id;
-    info.push({ id: "busy", parts: [{ text: `${busy.verb} ${name}`, tone: "muted" }] });
-  }
+  usePaneLoadingSignal(status === "loading" || busyId != null || checkingRemotes);
+  const info = loadingErrorFooterInfo(false, status === "error" ? "catalog unavailable" : null);
   if (lastError && !busy) info.push({ id: "op-error", parts: [{ text: lastError, tone: "warning" }] });
   const restartCount = entries.filter((entry) => entry.needsRestart).length;
   if (restartCount > 0 && !busy) {
     info.push({ id: "restart", parts: [{ text: "restart to finish loading", tone: "warning" }] });
   }
-  if (status === "ready" && fetchedAt && !stale && !busy) {
-    info.push({ id: "updated", parts: [{ text: formatRelativeAge(fetchedAt), tone: "muted" }] });
+  if (status === "ready" && fetchedAt) {
+    info.push({ id: "updated", parts: [{ text: formatApproximateAge(fetchedAt), tone: "muted" }] });
   }
 
   const hints: PaneHint[] = [];
@@ -589,7 +584,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   if (status === "loading" && entries.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <PaneStatusBody loading align="center" loadingLabel="" />
+        <PaneStatusBody loading align="center" />
       </Box>
     );
   }

@@ -84,7 +84,7 @@ test("linking follows a later list and ignores the list already on screen", () =
   expect(fallbackHeatmapCollectionId({ portfolios: [], watchlists: [{ id: "watchlist" }] })).toBe("watchlist");
 });
 
-test("holdings are sized by market value in the portfolio's currency, and a name without one gets the smallest tile", () => {
+test("portfolio tiles are sized by the square root of market cap, and a name without one gets the smallest tile", () => {
   const rates = new Map([["JPY", 0.0067]]);
   const { assets, omitted } = buildPortfolioHeatmapAssets({
     tickers: [
@@ -103,24 +103,24 @@ test("holdings are sized by market value in the portfolio's currency, and a name
       ticker("GOOGL", { portfolios: ["main"] }),
     ],
     financials: new Map<string, TickerFinancials>([
-      ["AAPL", quote("AAPL", { price: 200, changePercent: -2, change: -4 })],
-      ["7203", quote("7203", { price: 3000, currency: "JPY" })],
+      ["AAPL", { ...quote("AAPL", { price: 200, changePercent: -2, change: -4 }), fundamentals: { marketCap: 1e12, marketCapCurrency: "USD" } }],
+      ["7203", { ...quote("7203", { price: 3000, currency: "JPY" }), fundamentals: { marketCap: 90_000, marketCapCurrency: "JPY" } }],
       ["AAPL 270115C00200000", quote("AAPL 270115C00200000", { price: 5 })],
       ["GOOGL", { ...quote("GOOGL", { price: 340 }), fundamentals: { marketCap: 4e12, marketCapCurrency: "USD" } }],
     ]),
-    collectionId: "main",
-    kind: "portfolio",
     currency: "USD",
     exchangeRates: rates,
   });
   expect(omitted).toBe(0);
-  expect(assets.map((asset) => [asset.symbol, Math.round(asset.weight ?? 0), asset.showSize, asset.sizeCurrency])).toEqual([
-    ["7203", 2010, true, "USD"],
-    ["AAPL", 2000, true, "USD"],
-    ["AAPL 270115C00200000", 1000, true, "USD"],
-    ["GOOGL", 1000, false, "USD"],
+  // 7203 is 90_000 JPY * 0.0067 = 603 USD. Position size does not set the area.
+  expect(assets.map((asset) => [asset.symbol, asset.size, asset.weight, asset.showSize])).toEqual([
+    ["GOOGL", 4e12, 2e6, true],
+    ["AAPL", 1e12, 1e6, true],
+    ["7203", 603, Math.sqrt(603), true],
+    ["AAPL 270115C00200000", null, Math.sqrt(603), false],
   ]);
-  expect(assets[1]).toMatchObject({ sizeCaption: "Value", changePercent: -2, hasChange: true });
+  expect(assets[1]).toMatchObject({ changePercent: -2, hasChange: true, sizeCurrency: "USD" });
+  expect(assets[1]?.sizeCaption).toBeUndefined();
 });
 
 test("watchlist names are sized by the square root of market cap in the base currency", () => {
@@ -130,8 +130,6 @@ test("watchlist names are sized by the square root of market cap in the base cur
       ["SPY", { ...quote("SPY"), fundamentals: { marketCap: 400, marketCapCurrency: "USD" } }],
       ["7203", { ...quote("7203", { currency: "JPY" }), fundamentals: { marketCap: 90_000, marketCapCurrency: "JPY" } }],
     ]),
-    collectionId: "watchlist",
-    kind: "watchlist",
     currency: "USD",
     exchangeRates: new Map([["JPY", 0.01]]),
   });

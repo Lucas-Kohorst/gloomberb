@@ -1,4 +1,6 @@
+import { unavailableText } from "../../../components/ui/status-copy";
 import type { PricePoint } from "../../../types/financials";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import {
   REALIZED_VOLATILITY_WINDOWS, realizedVolatilityCadenceIssue, realizedVolatilityResult, rollingRealizedVolatility, volatilityCone,
   type RealizedVolatilityEstimator, type RollingRealizedVolatilityPoint, type VolatilityConeStatistics,
@@ -120,7 +122,11 @@ export function projectCurrentAtmIv(surface: SurfaceSnapshot): CurrentAtmIvSnaps
   const warnings: string[] = [];
   const candidates = eligible.filter(usable);
   const fresh = candidates.filter((expiry) => !expiry.stale && !expiry.error);
-  if (fresh.length < candidates.length) warnings.push("Stale or failed ATM IV slices excluded from the current reference");
+  if (fresh.length < candidates.length) {
+    const oldest = candidates.filter((expiry) => expiry.stale || expiry.error).map((expiry) => expiry.asOf).filter((date): date is string => !!date).sort()[0];
+    const age = formatObservationAge(oldest);
+    warnings.push(age ? `ATM IV ${age}` : unavailableText("ATM IV"));
+  }
   const dated = fresh.filter((expiry) => expiry.asOf != null && Number.isFinite(Date.parse(expiry.asOf)));
   if (dated.length < fresh.length) warnings.push("Some ATM IV observations have no valid source date");
   dated.sort((a, b) => distance(a) - distance(b) || a.expiration - b.expiration);

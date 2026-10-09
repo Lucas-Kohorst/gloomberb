@@ -10,7 +10,7 @@ import { teamViewsStore } from "../cloud/team/views";
 import { setPaneSettings } from "../../../pane-settings";
 import { customViewInstanceSettings } from "./index";
 import type { DataTableColumn } from "../../../components/ui/data-table/types";
-import { Button, PaneStatusBody, TextPromptDialog, usePaneFooter } from "../../../components";
+import { Button, PaneStatusBody, TextPromptDialog, unavailableText, usePaneFooter } from "../../../components";
 import { useAsyncResource } from "../../../react/async-resource";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -332,7 +332,7 @@ export function CustomViewPane({ focused, width, height }: PaneProps) {
       const team = teams.find((entry) => entry.id === teamId);
       notify({ body: `Published "${name}" to ${team?.name ?? "the team"}. Members find it as ${team ? teamPrefix(team) : ""} ${name}.`, type: "success" });
     } catch (error) {
-      notify({ body: error instanceof Error ? error.message : "Could not publish the view.", type: "error" });
+      notify({ body: error instanceof Error ? error.message : unavailableText("View"), type: "error" });
     }
   }, [dialog, instance, notify, reload, spec]);
 
@@ -363,7 +363,7 @@ export function CustomViewPane({ focused, width, height }: PaneProps) {
   }
 
   if (loading && !data) {
-    return <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading view..." />;
+    return <PaneStatusBody loading align="center" width={width} height={height} />;
   }
   if (error && !data) {
     return (

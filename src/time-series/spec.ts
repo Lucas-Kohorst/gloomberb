@@ -48,6 +48,8 @@ const STUDIES = new Set<ChartStudyKind>([
   "bollinger",
   "rsi",
   "macd",
+  "stochastic",
+  "adx",
   "realized-vol",
   "vwap",
   "anchored-vwap",

@@ -1,4 +1,5 @@
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { loadGamma, loadOpenInterest, positioningSymbol } from "./client";
 import {
   ALL_EXPIRIES,
@@ -60,7 +61,7 @@ export const optionsPositioningHeadless = (initialTab: PositioningTab): Headless
     const changes = openInterest.previousOiDate != null;
     return {
       sections: [
-        { title: `Expiries · OI as of ${openInterest.oiDate ?? "--"}`, columns: [
+        { title: `Expiries · OI ${formatObservationAge(openInterest.oiDate) ?? openInterest.oiDate ?? "--"}`, columns: [
           { key: "date", header: "Expiry" }, { key: "days", header: "Days" },
           { key: "callOI", header: "Call OI", format: count }, { key: "putOI", header: "Put OI", format: count },
           { key: "putCallRatio", header: "P/C", format: (value: unknown) => formatRatio(value as number | null) },

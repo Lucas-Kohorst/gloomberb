@@ -11,7 +11,9 @@ import { colors, priceColor } from "../../../../theme/colors";
 import { formatPercentRaw } from "../../../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice, liveQuoteFormatOptions } from "../../../../market-data/market/format";
 import { getActiveQuoteDisplay } from "../../../../market-data/market/status";
-import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
+import { hasValidQuoteObservationTime, isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
+import { loadingText, unavailableText } from "../../../../components/ui/status-copy";
+import { formatApproximateAge } from "../../../../utils/datetime-format";
 import { useQuoteFlashDirection } from "../../../../components/quote-flash";
 import { appendLiveQuotePoint } from "../../../../time-series/chart-data";
 import {
@@ -43,9 +45,12 @@ function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string, quo
       ? { failed: true, text: `${symbol} not recognized` }
       : { failed: true, text: error.message || "Quote unavailable" };
   }
-  if (isQuoteStaleForCurrentSession(quote)) return { failed: true, text: "Stale quote", stale: true };
+  if (isQuoteStaleForCurrentSession(quote)) {
+    const age = quote && hasValidQuoteObservationTime(quote) ? formatApproximateAge(quote.lastUpdated) : null;
+    return { failed: true, text: age ?? unavailableText("Quote"), stale: true };
+  }
   if (entry?.phase === "ready") return { failed: false, text: "No quote data" };
-  return { failed: false, text: "Loading quote..." };
+  return { failed: false, text: loadingText() };
 }
 
 export function QuoteMonitorCard({
@@ -279,7 +284,7 @@ export function QuoteMonitorCard({
               </Text>
               <Box flexDirection="column">
                 <FigureText fg={changeColor} dim={flashing} style={figureHalo}>
-                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.stale ? "STALE" : "ERROR"}` : priceText}
+                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.stale && quote && hasValidQuoteObservationTime(quote) ? formatApproximateAge(quote.lastUpdated) : "unavailable"}` : priceText}
                 </FigureText>
                 <Box flexDirection="row" gap={1}>
                   <FigureText part="sub" fg={changeColor} dim={flashing} style={figureHalo}>{changePercentText}</FigureText>

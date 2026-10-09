@@ -1,4 +1,6 @@
 import type { QueryEntry } from "../market-data/result-types";
+import { unavailableText } from "../components/ui/status-copy";
+import { formatObservationAge } from "./datetime-format";
 
 export interface FxRateStatus {
   loading: number;
@@ -35,8 +37,9 @@ export function summarizeFxRates(
 export function fxStatusLabel(status: FxRateStatus): string {
   const parts: string[] = [];
   if (status.unavailable) parts.push(`${status.unavailable} unavailable`);
-  if (status.stale) parts.push(`${status.stale} stale`);
   if (status.unknownTime) parts.push(`${status.unknownTime} rate ${status.unknownTime === 1 ? "time" : "times"} unknown`);
-  if (status.oldestAsOf != null) parts.push(`oldest rate ${new Date(status.oldestAsOf).toISOString().slice(0, 16).replace("T", " ")} UTC`);
+  const age = formatObservationAge(status.oldestAsOf);
+  if (status.stale) parts.push(age ?? unavailableText("Rates"));
+  else if (age) parts.push(age);
   return parts.join(" · ");
 }

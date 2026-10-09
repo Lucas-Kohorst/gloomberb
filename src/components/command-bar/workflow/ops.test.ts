@@ -4,6 +4,7 @@ import { createInitialState, type AppState } from "../../../state/app/context";
 import type { PluginRegistry } from "../../../plugins/registry";
 import { PANE_LOCK_SETTING_KEY } from "../../../pane-settings";
 import { createTestDataProvider } from "../../../test-support/data-provider";
+import { storeBriefTables } from "../../../plugins/builtin/daily-brief/sections";
 import { applyPaneSettingFieldValue, createPaneTemplateOrThrow, resolveTickerInput, resolveTickerInputOrThrow, resolveTickerListInput } from "./ops";
 import type { TickerRecord } from "../../../types/ticker";
 import { bringToFront } from "../../../layout/pane-manager/floating-actions";
@@ -166,6 +167,103 @@ describe("createPaneTemplateOrThrow", () => {
     expect(createdSymbol).toBe("MSFT");
   });
 
+  test("an explicit ticker argument stays that symbol while another ticker is focused", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    layout.instances = [{
+      instanceId: "des",
+      paneId: "ticker-detail",
+      binding: { kind: "fixed", symbol: "NVDA" },
+    }] as never;
+    const state = createInitialState({ ...config, layout });
+    state.focusedPaneId = "des";
+    state.tickers.set("NVDA", createTestTicker("NVDA", "NVIDIA", { portfolios: ["main"] }));
+    const created: TickerRecord[] = [];
+    let createdSymbol: string | null | undefined;
+
+    await createPaneTemplateOrThrow("seg", { arg: "AAPL" }, templateDeps(state, {
+      template: {
+        id: "seg",
+        paneId: "revenue-breakdown",
+        label: "Revenue Breakdown",
+        description: "Revenue Breakdown",
+        shortcut: { prefix: "SEG", argPlaceholder: "ticker", argKind: "ticker" },
+        createInstance: (_context: unknown, options: { symbol?: string } | undefined) => {
+          createdSymbol = options?.symbol;
+          return { instanceId: `revenue-breakdown:${options?.symbol}`, binding: { kind: "fixed", symbol: options?.symbol ?? "" } };
+        },
+      },
+      pane: { id: "revenue-breakdown", name: "Revenue Breakdown", component: () => null, defaultPosition: "right" },
+      buildPaneInstance: () => ({ instanceId: "revenue-breakdown:AAPL", paneId: "revenue-breakdown" }),
+      dataProvider: createTestDataProvider({
+        search: async () => [{
+          providerId: "test", symbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ",
+          primaryExchange: "NASDAQ", currency: "USD", type: "EQUITY",
+        }],
+      }),
+      tickerRepository: {
+        loadTicker: async (symbol: string) => state.tickers.get(symbol) ?? null,
+        createTicker: async (metadata: TickerRecord["metadata"]) => {
+          const ticker = { metadata };
+          created.push(ticker);
+          state.tickers.set(metadata.ticker, ticker);
+          return ticker;
+        },
+      } as any,
+      dispatch: (action: any) => {
+        if (action.type === "UPDATE_TICKER") state.tickers.set(action.ticker.metadata.ticker, action.ticker);
+      },
+    }));
+
+    expect(createdSymbol).toBe("AAPL");
+    expect(created[0]?.metadata.ticker).toBe("AAPL");
+  });
+
+  test("a required ticker pane uses the linked ticker when the focused pane has none", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    layout.dockRoot = {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.5,
+      first: { kind: "pane", instanceId: "des" },
+      second: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "chart" },
+        second: { kind: "pane", instanceId: "news" },
+      },
+    };
+    layout.instances = [
+      { instanceId: "des", paneId: "ticker-detail", binding: { kind: "fixed", symbol: "FLUT" } },
+      { instanceId: "chart", paneId: "chart", binding: { kind: "follow", sourceInstanceId: "des" } },
+      { instanceId: "news", paneId: "news-top", binding: { kind: "none" } },
+    ] as never;
+    const state = createInitialState({ ...config, layout });
+    state.focusedPaneId = "news";
+    state.tickers.set("FLUT", createTestTicker("FLUT", "Flutter Entertainment", { broker_contracts: [] }));
+    let createdSymbol: string | undefined;
+
+    await createPaneTemplateOrThrow("seg", undefined, templateDeps(state, {
+      template: {
+        id: "seg",
+        paneId: "revenue-breakdown",
+        label: "Revenue Breakdown",
+        description: "Revenue Breakdown",
+        shortcut: { prefix: "SEG", argPlaceholder: "ticker", argKind: "ticker" },
+        createInstance: (_context: unknown, options: { symbol?: string } | undefined) => {
+          createdSymbol = options?.symbol;
+          return { instanceId: `revenue-breakdown:${options?.symbol}`, binding: { kind: "fixed", symbol: options?.symbol ?? "" } };
+        },
+      },
+      pane: { id: "revenue-breakdown", name: "Revenue Breakdown", component: () => null, defaultPosition: "right" },
+      buildPaneInstance: () => ({ instanceId: "revenue-breakdown:FLUT", paneId: "revenue-breakdown" }),
+    }));
+
+    expect(createdSymbol).toBe("FLUT");
+  });
+
   // JOBS, CALLS and CDS open market-wide when nothing was named, so an empty
   // arg must neither fail to resolve nor quietly inherit the focused ticker.
   test("opens an optional-ticker template unbound, ignoring the focused ticker", async () => {
@@ -204,6 +302,51 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(createdOptions?.symbol).toBeUndefined();
     expect(createdBinding).toBeUndefined();
+  });
+
+  test("an optional ticker pane stays unbound while a linked desk is on screen", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    layout.dockRoot = {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.5,
+      first: { kind: "pane", instanceId: "des" },
+      second: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "chart" },
+        second: { kind: "pane", instanceId: "news" },
+      },
+    };
+    layout.instances = [
+      { instanceId: "des", paneId: "ticker-detail", binding: { kind: "fixed", symbol: "FLUT" } },
+      { instanceId: "chart", paneId: "chart", binding: { kind: "follow", sourceInstanceId: "des" } },
+      { instanceId: "news", paneId: "news-top", binding: { kind: "none" } },
+    ] as never;
+    const state = createInitialState({ ...config, layout });
+    state.focusedPaneId = "news";
+    state.tickers.set("FLUT", createTestTicker("FLUT", "Flutter Entertainment", { broker_contracts: [] }));
+    let createdSymbol: string | undefined = "unset";
+
+    await createPaneTemplateOrThrow("jobs-pane", undefined, templateDeps(state, {
+      template: {
+        id: "jobs-pane",
+        paneId: "jobs",
+        label: "Hiring",
+        description: "Hiring",
+        shortcut: { prefix: "JOBS", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
+        createInstance: (_context: unknown, options: { symbol?: string } | undefined) => {
+          createdSymbol = options?.symbol;
+          return { instanceId: "jobs:home", title: "Hiring" };
+        },
+      },
+      pane: { id: "jobs", name: "Hiring", component: () => null, defaultPosition: "right" },
+      buildPaneInstance: () => ({ instanceId: "jobs:home", paneId: "jobs" }),
+    }));
+
+    expect(createdSymbol).toBeUndefined();
   });
 
   test("passes pane template instance ids through to pane creation", async () => {
@@ -578,6 +721,70 @@ describe("applyPaneSettingFieldValue", () => {
       pluginId: "ai",
       values: { defaultModelId: "", defaultProviderId: "codex" },
     }]);
+  });
+
+  test("a plugin checklist stores the document its field builds, not the id list", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const stored = JSON.stringify({
+      version: 1,
+      sections: [
+        { id: "headlines", builtin: "headlines" },
+        { id: "wire", title: "Wire", spec: {
+          version: 1,
+          source: { kind: "inline", pane: "N" },
+          projection: { columns: ["headline"], filters: [], limit: 4 },
+          presentation: { title: "Wire" },
+        } },
+      ],
+    });
+    config.pluginConfig["daily-brief"] = { sections: stored };
+    const state = createInitialState(config);
+    const updates: unknown[] = [];
+    const pane = findPaneInstance(state.config.layout, "chat:main")!;
+
+    await applyPaneSettingFieldValue("chat:main", {
+      key: "sections",
+      label: "Tables",
+      type: "ordered-multi-select",
+      storage: "plugin",
+      options: [],
+      store: storeBriefTables,
+    }, ["wire"], {
+      ...workflowDeps(state, {
+        resolvePaneSettings: () => ({
+          paneId: "chat:main",
+          pluginId: "daily-brief",
+          pane,
+          paneDef: { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" },
+          settingsDef: { fields: [] },
+          rawSettings: {},
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: "chat:main",
+            paneType: "chat",
+            pane,
+            settings: { sections: ["headlines", "wire"] },
+            paneState: {},
+            activeTicker: null,
+            activeCollectionId: null,
+          },
+        }),
+        getConfigState: () => stored,
+        setConfigStates: async (pluginId: string, values: Record<string, unknown>) => {
+          updates.push({ pluginId, values });
+        },
+      }),
+      persistLayout: () => {},
+    });
+
+    const written = updates[0] as { pluginId: string; values: { sections: string } };
+    expect(written.pluginId).toBe("daily-brief");
+    expect(typeof written.values.sections).toBe("string");
+    const saved = JSON.parse(written.values.sections) as { sections: Array<{ id: string; title?: string; spec?: { source?: { pane?: string } } }> };
+    expect(saved.sections.map((section) => section.id)).toEqual(["wire"]);
+    expect(saved.sections[0]?.title).toBe("Wire");
+    expect(saved.sections[0]?.spec?.source?.pane).toBe("N");
   });
 
   test("clears a pane model override in the same layout update as its provider", async () => {

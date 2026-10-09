@@ -3,7 +3,7 @@ import { Button, PaneStatusBody, PaneFooterScope, usePaneTabs } from "../../../c
 import { usePluginPaneState } from "../../runtime";
 import { EventAlertsPane } from "./events-pane";
 import { AlertHistoryPane } from "./history-pane";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   confirmDialog,
   DataTableView,
@@ -35,13 +35,19 @@ import {
   formatAlertTargetPrice,
   formatCurrentPrice,
   formatQuoteChecked,
+  formatSnoozeRemaining,
   relativeTime,
 } from "./format";
-import type { AlertRule } from "./types";
+import { isQuoteAlertCondition, type AlertRule } from "./types";
 import { useQuoteEntries } from "../../../market-data/hooks";
 import { buildQuoteKey, resolveEntryData } from "../../../market-data/selectors";
 import { alertInstrument, streamedAlertQuote, syncAlertQuoteStream } from "./live";
 import { quoteAlertFields } from "./quotes";
+import {
+  clearPriceAlertFocus,
+  getPriceAlertFocus,
+  subscribePriceAlertFocus,
+} from "./focus";
 
 type AlertColumnId =
   | "status"
@@ -79,6 +85,9 @@ const ALERT_TABS = [
 
 export function AlertsPane(props: PaneProps) {
   const [tab, setTab] = usePluginPaneState<string>("tab", "prices");
+  useEffect(() => subscribePriceAlertFocus(() => {
+    if (getPriceAlertFocus()) setTab("prices");
+  }), [setTab]);
   const { strip: tabStrip, rows: tabRows } = usePaneTabs({
     tabs: ALERT_TABS,
     activeValue: tab,
@@ -100,6 +109,23 @@ export function AlertsPane(props: PaneProps) {
       </PaneFooterScope>
     </Box>
   );
+}
+
+function alertEditText(alert: AlertRule): string {
+  switch (alert.condition) {
+    case "halted":
+      return `${alert.symbol} halted`;
+    case "short_float":
+      return `${alert.symbol} short ${alert.targetPrice}`;
+    case "ex_div":
+      return `${alert.symbol} exdiv ${alert.targetPrice}`;
+    case "pct_day":
+      return `${alert.symbol} day ${alert.targetPrice}`;
+    case "above":
+    case "below":
+    case "crosses":
+      return `${alert.symbol} ${alert.condition} ${alert.targetPrice}`;
+  }
 }
 
 function PriceAlertsPane({ focused, width, height }: PaneProps) {
@@ -124,11 +150,20 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
     };
   }, [alertsJson]);
 
+  const focusedAlertId = useSyncExternalStore(subscribePriceAlertFocus, getPriceAlertFocus, getPriceAlertFocus);
+  useEffect(() => {
+    if (!focusedAlertId) return;
+    const index = rows.findIndex((row) => row.id === focusedAlertId);
+    if (index < 0) return;
+    setSelectedIdx(index);
+    clearPriceAlertFocus();
+  }, [focusedAlertId, rows]);
+
   // The store keeps the last checked price at a coarse cadence; while a
   // symbol streams the table shows its live price instead.
   const liveInstruments = useMemo(() => {
     const unique = new Map(rows
-      .filter((alert) => alert.status === "active")
+      .filter((alert) => alert.status === "active" && isQuoteAlertCondition(alert.condition))
       .map((alert) => [buildQuoteKey(alertInstrument(alert)), alertInstrument(alert)] as const));
     return [...unique.values()];
   }, [rows]);
@@ -140,9 +175,14 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
     syncAlertQuoteStream();
   }, [liveSymbolsKey]);
   const displayRows = useMemo(() => rows.map((alert) => {
-    if (alert.status !== "active") return alert;
+    if (alert.status !== "active" || !isQuoteAlertCondition(alert.condition)) return alert;
     const quote = streamedAlertQuote(resolveEntryData(liveEntries.get(buildQuoteKey(alertInstrument(alert)))));
-    return quote ? { ...alert, ...quoteAlertFields(quote, quote.receivedAt) } : alert;
+    if (!quote) return alert;
+    const live = { ...alert, ...quoteAlertFields(quote, quote.receivedAt) };
+    if (alert.condition === "pct_day") {
+      live.lastCheckedPrice = Number.isFinite(quote.changePercent) ? quote.changePercent : alert.lastCheckedPrice;
+    }
+    return live;
   }), [liveEntries, rows]);
 
   const savePaneAlerts = useCallback((next: AlertRule[] | ((current: AlertRule[]) => AlertRule[])) => {
@@ -198,13 +238,13 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
             type: "text",
             key: "alert",
             label: "Edit alert",
-            description: "SYMBOL above|below|crosses PRICE",
+            description: "SYMBOL above|below|crosses PRICE, halted, short PCT, exdiv DAYS, or day PCT",
             placeholder: "AAPL above 200",
           }}
-          currentValue={`${selected.symbol} ${selected.condition} ${selected.targetPrice}`}
+          currentValue={alertEditText(selected)}
           onApply={async (value) => {
             const parsed = parseAlertCommandValues({ shortcut: value });
-            if (!parsed) throw new Error("Use SYMBOL above|below|crosses PRICE.");
+            if (!parsed) throw new Error("Use SYMBOL above|below|crosses PRICE, halted, short PCT, exdiv DAYS, or day PCT.");
             savePaneAlerts((current) => current.map((alert) => (
               alert.id === selected.id
                 ? editAlert(alert, parsed.symbol, parsed.condition, parsed.price)
@@ -273,12 +313,15 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
     column: AlertColumn,
   ): DataTableCell => {
     switch (column.id) {
-      case "status":
+      case "status": {
+        const snooze = formatSnoozeRemaining(alert);
+        if (snooze) return { text: snooze, color: colors.warning };
         return {
           text: alert.status === "triggered" ? "Triggered" : "Active",
           color: alert.status === "triggered" ? colors.positive : colors.textDim,
           attributes: alert.status === "triggered" ? TextAttributes.BOLD : TextAttributes.NONE,
         };
+      }
       case "symbol":
         return {
           text: alert.symbol,

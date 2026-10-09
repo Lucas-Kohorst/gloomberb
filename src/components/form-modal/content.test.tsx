@@ -177,7 +177,7 @@ describe("form modal", () => {
     await waitForForm("Draft");
 
     await press(ENTER);
-    await waitForFrameToContain("Saving note…");
+    await waitForFrameToContain("Loading...");
     await press(ENTER, { name: "s", ctrl: true, sequence: "\x13" });
     expect(calls).toBe(1);
 

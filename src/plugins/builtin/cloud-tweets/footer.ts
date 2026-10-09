@@ -22,7 +22,7 @@ export function useTwitterFeedFooter({
 }) {
   const info = useMemo<PaneFooterSegment[]>(() => (
     activeFeed?.lastSuccessAt
-      ? [{ id: "last", parts: [{ text: `ran ${formatTimeAgo(new Date(activeFeed.lastSuccessAt))}`, tone: "muted" }] }]
+      ? [{ id: "last", parts: [{ text: formatTimeAgo(new Date(activeFeed.lastSuccessAt)), tone: "muted" }] }]
       : []
   ), [activeFeed?.lastSuccessAt]);
   // The same keys the pane handles; [ and ] stay implicit because the feed

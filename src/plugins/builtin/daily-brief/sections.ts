@@ -4,15 +4,15 @@ import { isRecord } from "../../../utils/guards";
 /** Plugin setting that holds the small-table list. Ask Gloom writes the same JSON. */
 export const BRIEF_SECTIONS_SETTING = "sections";
 
-export const BRIEF_BUILTINS = ["headlines", "today", "earnings"] as const;
-export type BriefBuiltin = (typeof BRIEF_BUILTINS)[number];
+const BRIEF_BUILTINS = ["headlines", "today", "earnings"] as const;
+type BriefBuiltin = (typeof BRIEF_BUILTINS)[number];
 
 /** A brief is a short stack. Past this, it stops being a brief. */
-export const BRIEF_SECTION_CAP = 8;
+const BRIEF_SECTION_CAP = 8;
 /** A table with no limit of its own shows this many rows. */
-export const BRIEF_TABLE_DEFAULT = 8;
+const BRIEF_TABLE_DEFAULT = 8;
 /** Projection limits above this are cut down so an added view stays a small table. */
-export const BRIEF_TABLE_CAP = 12;
+const BRIEF_TABLE_CAP = 12;
 
 const BUILTIN_TITLE: Record<BriefBuiltin, string> = {
   headlines: "Headlines",
@@ -62,6 +62,94 @@ export function serializeBriefLayout(layout: BriefLayout): string {
 export function briefSectionTitle(section: BriefSection): string {
   if (section.kind === "builtin") return section.title ?? BUILTIN_TITLE[section.builtin];
   return section.title;
+}
+
+const BUILTIN_DETAIL: Record<BriefBuiltin, string> = {
+  headlines: "News",
+  today: "Releases today",
+  earnings: "Companies reporting",
+};
+
+/** Blank or broken storage is the default brief. An explicit empty list stays empty. */
+export function resolveBriefLayout(stored: unknown): BriefLayout {
+  const parsed = parseBriefSections(stored ?? "");
+  return "layout" in parsed ? parsed.layout : defaultBriefLayout();
+}
+
+/** Ids the Tables checklist shows as checked, in table order. */
+export function presentBriefTables(stored: unknown): string[] {
+  return resolveBriefLayout(stored).sections.map((section) => section.id);
+}
+
+/**
+ * Checklist rows: the tables already on the brief, then any built-in table
+ * that was turned off so it can be turned back on.
+ */
+export function briefTableChoices(layout: BriefLayout): Array<{ value: string; label: string; description: string }> {
+  const used = new Set(layout.sections.map((section) => section.id));
+  const have = new Set(layout.sections.flatMap((section) => section.kind === "builtin" ? [section.builtin] : []));
+  const choices = layout.sections.map((section) => ({
+    value: section.id,
+    label: briefSectionTitle(section),
+    description: section.kind === "view" ? "View" : BUILTIN_DETAIL[section.builtin],
+  }));
+  for (const builtin of BRIEF_BUILTINS) {
+    if (have.has(builtin)) continue;
+    choices.push({
+      value: cleanId(undefined, builtin, used),
+      label: BUILTIN_TITLE[builtin],
+      description: BUILTIN_DETAIL[builtin],
+    });
+  }
+  return choices;
+}
+
+function builtinForChoiceId(id: string): BriefBuiltin | null {
+  for (const builtin of BRIEF_BUILTINS) {
+    if (id === builtin) return builtin;
+    const rest = id.slice(builtin.length + 1);
+    if (id.startsWith(`${builtin}-`) && /^\d+$/.test(rest)) return builtin;
+  }
+  return null;
+}
+
+/**
+ * The checklist edits ids. A full sections document, the shape `brief.update`
+ * writes, is stored as itself. Ids keep the view spec on a table that stays.
+ */
+export function storeBriefTables(edited: unknown, stored: unknown): string {
+  if (edited == null || edited === "") return serializeBriefLayout(defaultBriefLayout());
+  if (typeof edited === "string" || (isRecord(edited) && !Array.isArray(edited))) {
+    const parsed = parseBriefSections(edited);
+    if ("error" in parsed) throw new Error(parsed.error);
+    return serializeBriefLayout(parsed.layout);
+  }
+  if (!Array.isArray(edited)) throw new Error("Tables need a list.");
+  if (edited.some((entry) => typeof entry !== "string")) {
+    const parsed = parseBriefSections(edited);
+    if ("error" in parsed) throw new Error(parsed.error);
+    return serializeBriefLayout(parsed.layout);
+  }
+  const ids = edited.filter((entry): entry is string => typeof entry === "string");
+  if (ids.length > BRIEF_SECTION_CAP) {
+    throw new Error(`A brief holds at most ${BRIEF_SECTION_CAP} tables.`);
+  }
+  const byId = new Map(resolveBriefLayout(stored).sections.map((section) => [section.id, section]));
+  const sections: BriefSection[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const existing = byId.get(id);
+    if (existing) {
+      sections.push(existing);
+      continue;
+    }
+    const builtin = builtinForChoiceId(id);
+    if (!builtin) throw new Error(`Unknown table "${id}".`);
+    sections.push({ kind: "builtin", id, builtin });
+  }
+  return serializeBriefLayout({ version: 1, sections });
 }
 
 /** Keep an added worksheet short enough to sit under the session chart. */

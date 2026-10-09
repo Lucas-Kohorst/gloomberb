@@ -1,4 +1,5 @@
 import type { PluginModule } from "../plugin-module";
+import { appendNotificationLog } from "../../../notifications/notification-log";
 import { teamChannelId } from "../cloud/team/model";
 import { teamStore } from "../cloud/team/store";
 import { formatChatPaneTitle } from "./channel-labels";
@@ -11,6 +12,7 @@ import {
   parseDmUsernames,
 } from "./channels";
 import { chatController } from "./controller";
+import { formatChannelToast } from "./controller/utils";
 import { ChatPane } from "./pane";
 import { chatSidebarStore } from "./sidebar-store";
 import { ChatStatusWidget } from "./status-widget";
@@ -96,6 +98,18 @@ export const chatModule: PluginModule = {
     chatSidebarStore.attach(ctx.persistence);
     chatController.setNotifier(ctx.notify, (channelId, messageId) => {
       ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId, values: { messageId } });
+    });
+    // Polled messages never toast. Write them straight into the history so a
+    // channel that is not focused still shows up. refId keeps this one row
+    // with the mention or reply toast for the same message.
+    chatController.setOnUnreadMessage((message, channelId) => {
+      const channel = chatController.getChannels().find((entry) => entry.id === channelId);
+      appendNotificationLog({
+        title: formatChatPaneTitle(channel, channelId),
+        body: formatChannelToast(message, channel?.kind === "direct"),
+        type: "info",
+        refId: message.id,
+      }, "chat");
     });
     ctx.registerCommand({
       id: "direct-message",

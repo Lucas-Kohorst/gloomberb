@@ -1,4 +1,5 @@
 import { apiClient } from "../../../api-client";
+import { unavailableText } from "../../../components/ui/status-copy";
 import type { GloomPlugin } from "../../../types/plugin";
 import { teamStore } from "../cloud/team/store";
 import { notesCliCommand } from "./cli";
@@ -66,7 +67,7 @@ export const notesPlugin: GloomPlugin = {
     ctx.on("ticker:removed", ({ symbol }) => {
       registry.personal().delete(symbol).catch((error) => {
         ctx.log.error("Failed to delete ticker note", { symbol, error: error instanceof Error ? error.message : String(error) });
-        ctx.notify({ body: "Failed to delete note.", type: "error" });
+        ctx.notify({ body: unavailableText("Note"), type: "error" });
       });
     });
 
@@ -115,7 +116,7 @@ export const notesPlugin: GloomPlugin = {
           const result = await exportNotesToDirectory(dir, sources);
           ctx.notify({ body: `Exported ${result.files} ${result.files === 1 ? "note" : "notes"} to ${result.dir}`, type: "success" });
         } catch (error) {
-          ctx.notify({ body: error instanceof Error ? error.message : "Could not export notes.", type: "error" });
+          ctx.notify({ body: error instanceof Error ? error.message : unavailableText("Notes"), type: "error" });
         }
       },
     });

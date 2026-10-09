@@ -489,7 +489,7 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   if (!requestedSymbol || !ticker) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
-        <EmptyState title="No ticker selected." hint="Select a ticker or open with KELLY <ticker>." />
+        <EmptyState title="Select a ticker." hint="Select a ticker or open with KELLY <ticker>." />
       </Box>
     );
   }

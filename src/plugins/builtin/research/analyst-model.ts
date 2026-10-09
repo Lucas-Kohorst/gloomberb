@@ -343,7 +343,6 @@ export function buildAnalystStatusSegments(
   const price = (value: number | undefined) => formatAnalystPrice(value, currency);
   const segments: PaneFooterSegment[] = [];
 
-  if (data.stale) segments.push({ id: "analyst-stale", parts: [{ text: "stale", tone: "warning" }] });
 
   if (target && [target.low, target.median, target.high].some((value) => value != null)) {
     segments.push({
@@ -375,10 +374,10 @@ export function buildAnalystStatusSegments(
     });
   }
 
-  if (!data.stale && data.fetchedAt) {
+  if (data.fetchedAt) {
     segments.push({
       id: "analyst-fetched",
-      parts: [{ text: `fetched ${formatRelativeTime(data.fetchedAt)} ago`, tone: "muted" }],
+      parts: [{ text: formatRelativeTime(data.fetchedAt), tone: "muted" }],
     });
   }
 

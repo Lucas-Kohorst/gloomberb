@@ -83,6 +83,12 @@ describe("DOE figures", () => {
     expect(doeSeriesOption("east")?.value).toBe("gas-east");
     expect(doeSeriesOption("crude-commercial")?.tab).toBe("crude");
     expect(doeSeriesOption("brent")).toBeNull();
+    expect(doeSeriesOption("gasoline")?.value).toBe("gasoline");
+    expect(doeSeriesOption("gasoline price")).toMatchObject({ value: "gasoline-price", tab: "products" });
+    expect(doeSeriesOption("diesel")?.value).toBe("diesel-price");
+    expect(doeSeriesOption("diesel-price")?.value).toBe("diesel-price");
+    expect(doeSeriesOption("production")?.value).toBe("crude-production");
+    expect(doeSeriesOption("crude-production")?.value).toBe("crude-production");
   });
 
   test("the seasonal chart leads with the row's year and bands the range in the row's units", () => {

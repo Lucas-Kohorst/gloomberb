@@ -26,13 +26,14 @@ import { filingEventsModule } from "./builtin/filing-events";
 import { riskFactorsModule } from "./builtin/risk-factors";
 import { researchSearchPlugin } from "./builtin/research-search";
 import { alertsPlugin } from "./builtin/alerts";
+import { notificationCenterPlugin } from "./builtin/notification-center";
 import { marketHeatmapPlugin } from "./builtin/market-heatmap";
 import { marketHaltsPlugin } from "./builtin/market-halts";
 import { fearGreedPlugin } from "./builtin/fear-greed";
 import { ipoCalendarPlugin } from "./builtin/ipo-calendar";
-import { dailyBriefPlugin } from "./builtin/daily-brief";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
+import { edgarFilingsPlugin } from "./builtin/edgar-filings";
 import { openFdaPlugin } from "./builtin/openfda";
 import { browserGloomberbCloudPlugin } from "./builtin/cloud/browser";
 import { changelogModule } from "./builtin/changelog";
@@ -73,6 +74,7 @@ import { seasonalityModule } from "./builtin/seasonality";
 import { earningsRippleModule } from "./builtin/earnings-ripple";
 import { reverseDcfModule } from "./builtin/reverse-dcf";
 import { peBandModule } from "./builtin/pe-band";
+import { priceStudiesModule } from "./builtin/price-studies";
 import { macroDayModule } from "./builtin/macro-day";
 import { ivHistoryModule } from "./builtin/iv-history";
 import { backtestModule } from "./builtin/backtest";
@@ -125,6 +127,7 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     earningsRippleModule,
     reverseDcfModule,
     peBandModule,
+    priceStudiesModule,
     macroDayModule,
     ivHistoryModule,
     backtestModule,
@@ -223,12 +226,13 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   marketHaltsPlugin,
   fearGreedPlugin,
   ipoCalendarPlugin,
-  dailyBriefPlugin,
   clinicalTrialsPlugin,
   commentLettersPlugin,
+  edgarFilingsPlugin,
   openFdaPlugin,
   browserMacroPlugin,
   alertsPlugin,
+  notificationCenterPlugin,
   researchSearchPlugin,
 ];
 

@@ -36,6 +36,8 @@ import { useDialog, useDialogKeyboard, type PromptContext } from "../ui/dialog";
 import { useToastHost } from "../ui/toast";
 import { VERSION } from "../version";
 import { Button } from "./ui/button";
+import { Spinner } from "./ui/loading";
+import { loadingText, unavailableText } from "./ui/status";
 import { Checkbox } from "./ui/checkbox";
 import { DialogFrame } from "./ui/frame";
 import { TERMINAL_MESSAGE_KEYS } from "./textarea-keys";
@@ -49,7 +51,7 @@ const TERMINAL_DIALOG_CHROME = 6;
 const MESSAGE_ROWS = 6;
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : t("Couldn't send. Try again.");
+  return error instanceof Error && error.message ? error.message : unavailableText("Feedback");
 }
 
 type KeyLike = KeyChordEventLike & { preventDefault?: () => void };
@@ -154,7 +156,7 @@ function FeedbackDialog({
     try {
       setScreenshot(await captureAppImageScreenshot());
     } catch (errorValue) {
-      setError(errorValue instanceof Error && errorValue.message ? errorValue.message : t("Couldn't take a screenshot."));
+      setError(errorValue instanceof Error && errorValue.message ? errorValue.message : unavailableText("Screenshot"));
     } finally {
       setCapturing(false);
       focusMessage();
@@ -234,9 +236,9 @@ function FeedbackDialog({
             onChange={(checked) => { void setScreenshotAttached(checked); }}
           />
         )}
-        {error ? <Text fg={colors.negative} wrapText width={width}>{error}</Text> : null}
+        {sending ? <Spinner label={loadingText()} /> : error ? <Text fg={colors.negative} wrapText width={width}>{error}</Text> : null}
         <Box flexDirection="row" gap={1} alignItems="center">
-          <Button label={sending ? "Sending..." : "Send"} variant="primary" disabled={sending || capturing} onPress={() => { void send(); }} />
+          <Button label="Send" variant="primary" disabled={sending || capturing} onPress={() => { void send(); }} />
           <Button label="Cancel" variant="secondary" disabled={sending} onPress={dismiss} />
           <Box flexGrow={1} />
           {!signedIn && (

@@ -82,6 +82,7 @@ export async function submitCommandBarWorkflow(options: {
     | "connectSignedInBroker"
     | "createManualPortfolio"
     | "createWatchlist"
+    | "importTickersFromWorkflow"
     | "setPortfolioPositionFromWorkflow"
   >;
   extractBrokerWorkflowValues: (
@@ -168,6 +169,9 @@ export async function submitCommandBarWorkflow(options: {
         }
         case "set-portfolio-position":
           await collectionWorkflowActions.setPortfolioPositionFromWorkflow(route.values);
+          break;
+        case "import-tickers":
+          await collectionWorkflowActions.importTickersFromWorkflow(route.values);
           break;
         default:
           break;

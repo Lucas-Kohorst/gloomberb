@@ -144,8 +144,8 @@ Text that no command claims searches symbols and names, and every result carries
 | `OVME` | Option calculator: European Black-Scholes or American pricing, discrete dividends, Greeks, implied and surface volatility |
 | `HDS <ticker>` | Institutional holders |
 | `DVD <ticker>` | Dividend yield and history |
-| `SI <ticker>` | Short interest |
-| `SIV <ticker>` | FINRA daily off-exchange short-volume ratio, history and percentile |
+| `SI <ticker>` | Short interest. Daily volume is the other tab |
+| `SIV <ticker>` | The short interest pane on its daily volume tab: FINRA off-exchange short-volume ratio, history and percentile |
 | `SIW [tickers]` | Short squeeze watch: short interest as a share of float, days to cover, change since the prior settlement and the 1M price move across your portfolios and watchlists, crowded names that are rising first |
 | `BUZZ <ticker>` | Daily posts on X naming the cashtag, the 30-day median, top posts and their stance |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
@@ -201,13 +201,13 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | Shortcut | Function |
 |----------|----------|
 | `TOP` | The 20 top-ranked market stories |
-| `DAY` | Opens at the start of the day, and again when the laptop wakes from sleep after midnight. Futures, bitcoin, fear and greed, the next Fed meeting, and small tables. Headlines, today's earnings, and economic releases are the default; Ask Gloom or the Tables setting can replace them |
+| `DAY` | Opens at the start of the day, and again when the laptop wakes from sleep after midnight. ES, Nasdaq, crude, the 10-year and 30-year, the 30-year mortgage rate, fear and greed, VIX, and the next Fed meeting, plus small tables. Headlines, today's earnings, and economic releases are the default; Ask Gloom or the Tables setting can replace them |
 | `HM` | Market heatmap for large US stocks, ETFs, and the portfolio pane's selected list |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
 | `HILO` | Session new highs and new lows with 30s/1m/5m momentum |
 | `FLOW` | Unusual options activity: sweeps, blocks, and large premium; Vol/OI divides the contract's day volume by its latest reported open interest. Cloud records every print, for options flow alerts and the assistant |
 | `PM <query>` | Polymarket and Kalshi prediction data ([Prediction Markets plugin](https://github.com/gloom-sh/gloom-prediction-markets)) |
-| `N` | News feed |
+| `FH` / `N` | Firehose, the chronological news feed |
 | `CN <ticker>` | Ticker news |
 | `NI [code]` | News by topic: `MNA`, `CB` (central banks), `ENERGY`, `REG` (regulation), `CRYPTO`, `EARN`, `IPO`, or a sector: `TECH`, `FIN`, `HEALTH`, `INDU`, `CONSD`, `CONSS`, `COMMS`, `MATS`, `UTIL` |
 | `SUB` | Authenticated Substack reader feed ([Substack plugin](https://github.com/gloom-sh/gloom-substack)) |
@@ -242,6 +242,7 @@ The level tool (`Shift+H`, or `═` in the chart toolbar) draws horizontal price
 | `VIX` | VIX 9D through 1Y cash-tenor curve, FRED history and 3M/30D ratio |
 | `VOLS` | Cross-asset volatility indices, daily changes and one-year percentiles |
 | `CRD` | Credit spreads |
+| `CDX` / `SOVR` / `WCDS` | Index and sovereign CDS on one pane. `CDX` opens Index, `SOVR` opens Sovereign |
 | `VAL [indicator]` | Whole-market valuation: Buffett, CAPE, excess CAPE yield, Tobin Q, investor equity allocation, dividend yield, margin debt, cap/profits, cap/M2 |
 | `CDS [ticker]` | Single-name corporate CDS activity: most-active issuers, or one issuer's 5Y spread history and trades |
 | `EVTS` | The market's earnings days, implied against past moves |

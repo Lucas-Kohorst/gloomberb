@@ -31,7 +31,7 @@ function PolicyDetail({ row, width, height, focused }: { row: CentralBankRow; wi
     { id: "range", label: "1Y range", value: `${policyRate(p.min)} to ${policyRate(p.max)}`, detail: row.range ? "midpoint" : undefined },
     { id: "asOf", label: "As of", value: row.asOf ?? "--", tone: row.status === "stale" ? "warning" : undefined,
       detail: [row.publicationFrequency, row.lagDays == null ? null : `${row.lagDays}d lag`,
-        row.confirmedAt ? `confirmed ${row.confirmedAt.slice(0, 10)}` : null, row.status === "stale" ? "stale" : null]
+        row.confirmedAt ? `confirmed ${row.confirmedAt.slice(0, 10)}` : null]
         .filter(Boolean).join(" · ") || undefined },
     { id: "meeting", label: "Next meeting", value: row.nextMeeting?.date ?? "--" },
     { id: "source", label: "Source", value: row.source?.toUpperCase() ?? "--", detail: row.sourceSeriesIds.join(", ") || undefined },

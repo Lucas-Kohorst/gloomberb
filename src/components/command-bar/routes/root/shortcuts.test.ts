@@ -103,6 +103,50 @@ describe("ticker data root shortcuts", () => {
     expect(intent.completionQuery).toBe("GP MSFT");
   });
 
+  test("a required ticker pane uses the prompt ticker when the focused pane has none", () => {
+    const intent = parseRootShortcutIntent({
+      query: "SEG",
+      commands: [],
+      paneTemplates: [tickerTemplate("revenue-breakdown-seg", "SEG")],
+      activeTicker: null,
+      promptTicker: "FLUT",
+    });
+    expect(intent.kind).toBe("inferred-complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.completionQuery).toBe("SEG FLUT");
+  });
+
+  test("a ticker list that needs two names does not borrow the prompt ticker", () => {
+    const comparison: PaneTemplateDef = {
+      ...tickerTemplate("comparison-chart-pane", "CMP"),
+      shortcut: { prefix: "CMP", argPlaceholder: "tickers", argKind: "ticker-list" },
+      canCreate: (_context, options) => (options?.symbols?.length ?? 0) >= 2,
+    };
+    const intent = parseRootShortcutIntent({
+      query: "CMP",
+      commands: [],
+      paneTemplates: [comparison],
+      activeTicker: null,
+      promptTicker: "IE",
+    });
+    expect(intent.kind).toBe("partial");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.completionQuery).toBeNull();
+  });
+
+  test("an optional ticker pane does not take the prompt ticker", () => {
+    const intent = parseRootShortcutIntent({
+      query: "CDS",
+      commands: [],
+      paneTemplates,
+      activeTicker: null,
+      promptTicker: "FLUT",
+    });
+    expect(intent.kind).toBe("partial");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.completionQuery).toBeNull();
+  });
+
   test("GF accepts multiple tickers", () => {
     const intent = parse("GF AMD,NVDA");
     expect(intent.kind).toBe("complete");

@@ -36,6 +36,7 @@ import { resolveHeaderPromptGeometry } from "./shell/chrome";
 import { useWindowFullscreen } from "./window-fullscreen";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 import { Button } from "../ui/button";
+import { loadingText } from "../ui/status";
 
 const UPDATE_NOTICE_DURATION_MS = 5_000;
 
@@ -159,7 +160,15 @@ function HeaderPromptInput({
         cursorColor={colors.textBright}
       />
       {ghostSuffix && (
-        <Box position="absolute" top={0} left={ghostLeft} width={Math.max(0, width - ghostLeft)} height={1}>
+        <Box
+          position="absolute"
+          top={0}
+          left={ghostLeft}
+          width={Math.max(0, width - ghostLeft)}
+          height={1}
+          zIndex={1}
+          style={{ pointerEvents: "none" }}
+        >
           <Text fg={subtleColor}>{truncateToDisplayWidth(ghostSuffix, Math.max(0, width - ghostLeft))}</Text>
         </Box>
       )}
@@ -169,13 +178,11 @@ function HeaderPromptInput({
 
 function HeaderCommandPrompt({
   nativePaneChrome,
-  onOpen,
   open,
   shortcutLabel,
   width,
 }: {
   nativePaneChrome: boolean;
-  onOpen: (event?: HeaderActionEvent) => void;
   open: boolean;
   shortcutLabel: string;
   width: number;
@@ -190,7 +197,6 @@ function HeaderCommandPrompt({
     ? tf("Change {ticker} for the linked panes", { ticker: linkedTicker })
     : instrumentLabel ?? t("Search or run a command");
   const { placeholder, shortcut } = resolveHeaderPromptContent(width, shortcutLabel, instrumentLabel);
-  const idleBg = headerSurface(colors);
   // Open, the prompt takes the sheet's own surface so the two read as one
   // control: the sheet is the prompt, expanded. Closed it fills nothing on
   // either host; the terminal row is already this colour end to end, and on
@@ -205,13 +211,12 @@ function HeaderCommandPrompt({
   // Dimmer than the placeholder it trails: the label is what names the control,
   // the binding is a footnote to it.
   const shortcutColor = blendHex(colors.headerText, colors.header, 0.62);
-  // Desktop hover lifts the prompt off the header itself, which is the only
-  // thing telling the pointer this text is a control. The terminal has no
-  // chrome, so it lifts off the strip fill the whole row already wears.
-  const hoverBg = nativePaneChrome
-    ? blendHex(colors.header, colors.headerText, 0.14)
-    : blendHex(idleBg, colors.headerText, 0.16);
+  const dispatch = useAppDispatch();
   const inputWidth = Math.max(1, width - 2 - PROMPT_CARET.length);
+  const openPrompt = (event: { stopPropagation?: () => void }) => {
+    event.stopPropagation?.();
+    dispatch({ type: "SET_COMMAND_BAR", open: true });
+  };
 
   return (
     <Box
@@ -222,30 +227,32 @@ function HeaderCommandPrompt({
       paddingLeft={1}
       paddingRight={1}
       backgroundColor={backgroundColor}
-      hoverBackgroundColor={open ? undefined : hoverBg}
       data-gloom-role="header-command-prompt"
-      data-gloom-interactive={open ? undefined : "true"}
-      role={open ? undefined : "button"}
-      tabIndex={open ? undefined : 0}
-      aria-label={promptLabel}
-      title={promptLabel}
       aria-keyshortcuts={shortcutLabel}
-      onMouseDown={open ? undefined : onOpen}
-      onKeyDown={open ? undefined : (event: HeaderActionEvent) => {
-        if (event.key === "Enter" || event.key === " ") onOpen(event);
-      }}
-      style={{
-        cursor: open ? undefined : "pointer",
-        ...(nativePaneChrome ? nativePromptSurfaceStyle(colors, open) : {}),
-      }}
+      style={nativePaneChrome ? nativePromptSurfaceStyle(colors, open) : undefined}
     >
-      <Text fg={caretColor} attributes={TextAttributes.BOLD}>{PROMPT_CARET}</Text>
       {open ? (
-        binding ? <HeaderPromptInput binding={binding} nativePaneChrome={nativePaneChrome} width={inputWidth} /> : null
+        <>
+          <Text fg={caretColor} attributes={TextAttributes.BOLD}>{PROMPT_CARET}</Text>
+          {binding ? <HeaderPromptInput binding={binding} nativePaneChrome={nativePaneChrome} width={inputWidth} /> : null}
+        </>
       ) : (
         <>
-          <Text fg={mutedColor}>{placeholder}</Text>
-          {shortcut ? <Text fg={shortcutColor}>{`  ${shortcut}`}</Text> : null}
+          <Box
+            flexDirection="row"
+            alignItems="center"
+            flexShrink={0}
+            width={Math.min(width - 2, (PROMPT_CARET.length + placeholder.length + (shortcut ? shortcut.length + 2 : 0)) * 3)}
+            data-gloom-role="header-command-prompt-target"
+            data-gloom-interactive="true"
+            aria-label={promptLabel}
+            title={promptLabel}
+            onMouseDown={openPrompt}
+          >
+            <Text fg={caretColor} attributes={TextAttributes.BOLD}>{PROMPT_CARET}</Text>
+            <Text fg={mutedColor}>{placeholder}</Text>
+            {shortcut ? <Text fg={shortcutColor}>{`  ${shortcut}`}</Text> : null}
+          </Box>
           <Box flexGrow={1} minWidth={0} />
         </>
       )}
@@ -288,7 +295,7 @@ function UpdateStatus() {
       return (
         <Box flexDirection="row" gap={1}>
           <SpinnerMark name="dots" color={colors.headerText} />
-          <Text fg={colors.headerText}>{t("Installing update...")}</Text>
+          <Text fg={colors.headerText}>{loadingText()}</Text>
         </Box>
       );
     }
@@ -310,7 +317,7 @@ function UpdateStatus() {
     return (
       <Box flexDirection="row" gap={1}>
         <SpinnerMark name="dots" color={colors.headerText} />
-        <Text fg={colors.headerText}>{t("Checking for updates...")}</Text>
+        <Text fg={colors.headerText}>{loadingText()}</Text>
       </Box>
     );
   }
@@ -397,7 +404,6 @@ export function Header({
 }) {
   const colors = useThemeColors();
   const rendererHost = useRendererHost();
-  const dispatch = useAppDispatch();
   const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
   const { width: termWidth } = useViewport();
   const { nativePaneChrome = false, titleBarOverlay, nativeWindowChrome = titleBarOverlay, windowControls } = useUiCapabilities();
@@ -420,16 +426,9 @@ export function Header({
     void rendererHost.startWindowDrag?.();
   }, [nativeWindowChrome, rendererHost, titleBarOverlay]);
 
-  const openCommandBar = useCallback((event?: HeaderActionEvent) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
-  }, [dispatch]);
-
   const commandPrompt = (
     <HeaderCommandPrompt
       nativePaneChrome={nativePaneChrome}
-      onOpen={openCommandBar}
       open={commandBarOpen}
       shortcutLabel={shortcutLabel}
       width={prompt.width}

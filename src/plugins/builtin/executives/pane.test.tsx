@@ -188,7 +188,7 @@ test("cached list and statement failures retain original age behind the warning 
   let frame = tui.frame();
   expect(frame).toContain("ALPHA compensation 2026");
   expect(frame).toContain("filed Apr 01, 2026");
-  expect(frame).toContain("⚠");
+  expect(frame).not.toContain("warning");
   expect(frame).not.toContain("Discovery outage");
   expect(frame).not.toContain("Statement outage");
   expect(persistence.getResource("proxy", "ALPHA:2026", cacheOptions)).toEqual(original);
@@ -205,7 +205,7 @@ test("cached list and statement failures retain original age behind the warning 
   await settle();
   frame = tui.frame();
   expect(frame).toContain("ALPHA compensation 2026");
-  expect(frame).not.toContain("⚠");
+  expect(frame).not.toContain("warning");
   const fresh = await loadProxyStatement("ALPHA", 2026);
   expect(fresh.refreshError).toBeUndefined();
   expect(fresh.fetchedAt).toBeGreaterThan(original.fetchedAt);
@@ -229,7 +229,7 @@ for (const status of [401, 402, 403, 404]) test(`authoritative ${status} respons
   const frame = tui.frame();
   expect(frame).not.toContain("ALPHA compensation");
   expect(frame).not.toContain("pen filing");
-  expect(frame).not.toContain("⚠");
+  expect(frame).not.toContain("warning");
   // A refusal is the wall the plan or the session calls for, not an error.
   expect(frame).toContain({
     401: "Sign in to see executive pay.",
@@ -287,7 +287,7 @@ test("in-memory data survives a transient refresh but is removed when access is 
   await act(async () => tui.setup().mockInput.pressKey("r"));
   await settle();
   expect(tui.frame()).toContain("ALPHA compensation 2026");
-  expect(tui.frame()).toContain("⚠");
+  expect(tui.frame()).not.toContain("warning");
   failure = new ApiRequestError("Pro plan required", 402);
   await act(async () => tui.setup().mockInput.pressKey("r"));
   await settle();
@@ -295,7 +295,7 @@ test("in-memory data survives a transient refresh but is removed when access is 
   expect(frame).toContain("Executive pay is part of Gloom Cloud Pro.");
   expect(frame).not.toContain("ALPHA compensation");
   expect(frame).not.toContain("pen filing");
-  expect(frame).not.toContain("⚠");
+  expect(frame).not.toContain("warning");
 });
 
 test("failed rediscovery after an explicit 404 reports the failure instead of reusing the empty state", async () => {
@@ -309,7 +309,7 @@ test("failed rediscovery after an explicit 404 reports the failure instead of re
   await settle();
   expect(tui.frame()).toContain("Discovery unavailable");
   expect(tui.frame()).not.toContain("No proxy statement on file");
-  expect(tui.frame()).not.toContain("⚠");
+  expect(tui.frame()).not.toContain("warning");
 });
 
 

@@ -101,23 +101,6 @@
       }
     },
     {
-      "id": "daily-brief",
-      "name": "Daily Brief",
-      "description": "Opens at the start of the day. Futures, bitcoin, sentiment, the next Fed meeting, and small tables. Headlines, releases, and earnings are the start; Ask Gloom or the Tables setting can replace those tables with any view.",
-      "categories": [
-        "markets",
-        "news"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "daily-brief"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",
@@ -127,6 +110,22 @@
       "toggleable": true,
       "contributes": {
         "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "edgar-filings",
+      "name": "Latest Filings",
+      "description": "Newest SEC filings as they are accepted, every form. A filing with several filers is listed once for each of them.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "edgar-filings"
+        ],
         "capabilities": [],
         "broker": false
       }
@@ -267,6 +266,20 @@
       }
     },
     {
+      "id": "notification-center",
+      "name": "Notification Center",
+      "description": "Review alert, chat, and app notification history",
+      "categories": [
+        "alerts"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
       "id": "openfda",
       "name": "FDA Reports and Recalls",
       "description": "FDA adverse event reports for drugs and devices, and drug recalls, from openFDA. Search by drug, device, or firm name.",
@@ -358,10 +371,12 @@
           "litigation",
           "macro-day",
           "mna",
+          "momentum",
           "options",
           "options-calculator",
           "options-positioning",
           "options-scenario",
+          "patterns",
           "pe-band",
           "quote-monitor",
           "realized-vol",
@@ -379,6 +394,7 @@
           "thirteenf-funds",
           "ticker-research",
           "time-sales",
+          "trend",
           "vol-surface"
         ],
         "capabilities": [],

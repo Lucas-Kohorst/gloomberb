@@ -12,6 +12,7 @@ function twitterTemplate(): PaneTemplateDef {
     registerTickerResearchTab() {},
     registerPane() {},
     registerCommand() {},
+    registerCapability() {},
     registerPaneTemplate(value: PaneTemplateDef) { template = value; },
   } as unknown as GloomPluginContext);
   if (!template) throw new Error("X Feed template was not registered");

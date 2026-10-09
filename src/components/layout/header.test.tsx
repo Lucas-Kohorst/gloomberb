@@ -13,7 +13,7 @@ afterEach(() => {
   publishCommandBarPrompt(null);
 });
 
-test("opens the command bar by clicking the header prompt", async () => {
+test("a click on the closed command prompt opens the bar, and the empty stretch does not", async () => {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-header-test"));
   const actions: Array<{ type: string; open?: boolean; query?: string }> = [];
   await tui.render(
@@ -24,15 +24,21 @@ test("opens the command bar by clicking the header prompt", async () => {
   );
 
   await tui.setup().renderOnce();
-  const promptX = tui.frame().indexOf(">");
+  const frame = tui.frame();
+  const promptX = frame.indexOf(">");
   expect(promptX).toBeGreaterThanOrEqual(0);
+
+  await act(async () => {
+    await tui.setup().mockMouse.click(119, 0);
+    await tui.setup().renderOnce();
+  });
+  expect(actions).toEqual([]);
 
   await act(async () => {
     await tui.setup().mockMouse.click(promptX + 2, 0);
     await tui.setup().renderOnce();
   });
-
-  expect(actions).toContainEqual({ type: "SET_COMMAND_BAR", open: true, query: "" });
+  expect(actions).toEqual([{ type: "SET_COMMAND_BAR", open: true }]);
 });
 
 /**

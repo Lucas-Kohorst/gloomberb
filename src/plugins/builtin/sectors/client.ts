@@ -1,4 +1,5 @@
 import type { DataProvider } from "../../../types/data-provider";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import type { PricePoint, Quote } from "../../../types/financials";
 import type { SectorDef } from "./sector-data";
 import {
@@ -56,7 +57,7 @@ export async function loadSectorRows(
     const sessionDate = quoteDates.get(sector.etf) ?? null;
     const priceIssue = !quote || lastReportedPrice == null ? "quote unavailable"
       : !sessionDate ? "quote session unknown"
-      : quote.stale ? `stale quote from ${sessionDate}`
+      : quote.stale ? `quote ${formatObservationAge(sessionDate) ?? sessionDate}`
       : sessionDate !== asOfDate ? `quote from ${sessionDate}; shared session is ${asOfDate}`
       : null;
     const price = priceIssue ? null : lastReportedPrice;

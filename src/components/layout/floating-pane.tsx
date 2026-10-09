@@ -1,5 +1,6 @@
 import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
+import type { FloatingResizeCorner } from "../../layout/pane-manager";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./pane/header";
@@ -34,11 +35,19 @@ interface FloatingPaneWrapperProps {
   onCloseMouseDown?: (event: any) => void;
   onRestoreMouseDown?: (event: any) => void;
   fullscreen?: boolean;
-  onResizeMouseDown?: (event: any) => void;
+  onResizeMouseDown?: (event: any, corner: FloatingResizeCorner) => void;
   onResizeMouseDrag?: (event: any) => void;
   onResizeMouseDragEnd?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
+}
+
+const FLOATING_RESIZE_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+
+function floatingResizeCornerStyle(corner: FloatingResizeCorner): Record<string, string | number> {
+  const edge = corner.startsWith("top") ? { top: 0 } : { bottom: 0 };
+  const side = corner.endsWith("left") ? { left: 0 } : { right: 0 };
+  return { ...edge, ...side, width: 18, height: 18 };
 }
 
 function TerminalFloatingPaneBorder({ width, height }: { width: number; height: number }) {
@@ -167,17 +176,18 @@ export function FloatingPaneWrapper({
       {!nativePaneChrome && !focused && <TerminalFloatingPaneBorder width={width} height={height} />}
 
       {nativePaneChrome ? (
-        <Box
-          position="absolute"
-          bottom={0}
-          right={0}
-          width={2}
-          height={1}
-          data-gloom-role="resize-handle"
-          onMouseDown={onResizeMouseDown}
-          onMouseDrag={onResizeMouseDrag}
-          onMouseDragEnd={onResizeMouseDragEnd}
-        />
+        FLOATING_RESIZE_CORNERS.map((corner) => (
+          <Box
+            key={corner}
+            position="absolute"
+            data-gloom-role="resize-handle"
+            data-corner={corner}
+            onMouseDown={onResizeMouseDown ? (event: any) => onResizeMouseDown(event, corner) : undefined}
+            onMouseDrag={onResizeMouseDrag}
+            onMouseDragEnd={onResizeMouseDragEnd}
+            style={floatingResizeCornerStyle(corner)}
+          />
+        ))
       ) : (
         <Box position="absolute" bottom={0} right={0} width={2} height={1}>
           <Text fg={focused ? colors.borderFocused : colors.border} selectable={false}>{"─◢"}</Text>

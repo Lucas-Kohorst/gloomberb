@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { ApiRequestError } from "../../../api-client/errors";
 import type { QueryEntry } from "../../../market-data/result-types";
 import { entryShows, shownIf } from "./research-tab-availability";
-import { offerResearchTabs } from "../ticker-detail/research-tab-loads";
 
 describe("shownIf", () => {
   test("hides an empty payload and a missing dataset", async () => {
@@ -45,31 +44,4 @@ describe("entryShows", () => {
   });
 });
 
-describe("offerResearchTabs", () => {
-  const tabs = [
-    { id: "overview" },
-    { id: "sec", load: async () => true },
-    { id: "holders", load: async () => true },
-  ];
 
-  test("shows unprobed tabs immediately and probed tabs together once every prefetch has answered", () => {
-    const pending = offerResearchTabs(tabs, { key: "AAPL", status: { sec: "pending", holders: "pending" } }, "AAPL", "overview");
-    expect(pending.map((tab) => tab.id)).toEqual(["overview"]);
-
-    const partial = offerResearchTabs(tabs, { key: "AAPL", status: { sec: "ready", holders: "pending" } }, "AAPL", "overview");
-    expect(partial.map((tab) => tab.id)).toEqual(["overview"]);
-
-    const ready = offerResearchTabs(tabs, { key: "AAPL", status: { sec: "ready", holders: "absent" } }, "AAPL", "overview");
-    expect(ready.map((tab) => tab.id)).toEqual(["overview", "sec"]);
-  });
-
-  test("keeps the open tab while its prefetch is still running", () => {
-    const offered = offerResearchTabs(tabs, { key: "AAPL", status: { sec: "pending", holders: "pending" } }, "AAPL", "sec");
-    expect(offered.map((tab) => tab.id)).toEqual(["overview", "sec"]);
-  });
-
-  test("ignores a snapshot from the previous ticker", () => {
-    const offered = offerResearchTabs(tabs, { key: "MSFT", status: { sec: "ready", holders: "ready" } }, "AAPL", "overview");
-    expect(offered.map((tab) => tab.id)).toEqual(["overview"]);
-  });
-});

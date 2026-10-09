@@ -20,6 +20,8 @@ import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { createQuickLookTickerCandidates } from "../routes/ticker-search/results";
 import { useCommandSearchReport } from "../routes/root/search-report";
 import { useAppStateRef } from "../../../state/app/context";
+import { commandPromptTicker } from "../../../layout/selected-ticker";
+import { listingChoiceQuery } from "../../../tickers/search";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
 import { useRootPluginInstallItem } from "../routes/root/plugin-install";
 import { useCommandBarThemePreview } from "../theme-preview";
@@ -223,13 +225,18 @@ export function CommandBar({
     [getAvailablePaneTemplates],
   );
 
+  const promptTickerSymbol = commandPromptTicker(state)?.symbol ?? null;
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
     commands: availableCommands,
     pluginCommands: getAvailablePluginCommands(),
     paneTemplates: getAvailablePaneShortcutTemplates(rootQuery),
     activeTicker: activeTickerSymbol,
-  }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
+    promptTicker: promptTickerSymbol,
+  }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, promptTickerSymbol, rootQuery]);
+  const listingChoice = !currentRoute && rootShortcutIntent.kind === "none"
+    ? listingChoiceQuery(rootQuery)
+    : null;
 
   // Runs the typed text again once a plugin installed from the bar is in, the
   // way a key bound to it would. Not over a dialog opened since: the bar would
@@ -258,6 +265,7 @@ export function CommandBar({
   // Only the root list asks on its own, and only for text the prefix parser
   // could not claim — otherwise the user is mid-command, not mid-question.
   const assistAutoAsk = !currentRoute
+    && !listingChoice
     && planAccess.emailVerified
     && shouldAutoAskAssist({ query: rootQuery, hasShortcutIntent: rootShortcutIntent.kind !== "none" });
   // The server keeps a question unless told not to, so the answer always
@@ -373,8 +381,8 @@ export function CommandBar({
     providers: searchProviders,
     query: rootQuery,
     // A resolved prefix means the user is running a command, so free-text
-    // providers neither ask the network nor add rows.
-    enabled: !currentRoute && rootShortcutIntent.kind === "none",
+    // providers neither ask the network nor add rows. A colon is the venue list.
+    enabled: !currentRoute && rootShortcutIntent.kind === "none" && !listingChoice,
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
   });
@@ -467,6 +475,7 @@ export function CommandBar({
     setActiveListQuery,
   } = useCommandBarSelectionRuntime({
     activeTickerSymbol,
+    promptTickerSymbol,
     availableCommands,
     clearThemePreview,
     closeAll: closeAfterRun,
@@ -475,6 +484,7 @@ export function CommandBar({
     createPluginCommandItem,
     currentRoute,
     deferEnterToExactSymbol: rootSearching && rootShortcutIntent.kind === "none",
+    rootSelectionNavigatedRef,
     currentRouteRef,
     executeCollectionCommand,
     getAvailablePaneShortcutTemplates,

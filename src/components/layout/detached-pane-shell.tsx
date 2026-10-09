@@ -1,6 +1,7 @@
 import { Box, Text, useContextMenu, useRendererHost, useUiCapabilities, useUiHost } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../../i18n";
+import { unavailableText } from "../ui/status";
 import { useShortcut, useViewport } from "../../react/input";
 import { resolveTickerForPane, useAppDispatch, useAppSelector, usePaneAppConfig } from "../../state/app/context";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
@@ -196,7 +197,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
       !locked,
     ).catch((error) => {
       pluginRegistry.notify({
-        body: error instanceof Error ? error.message : "Could not update pane setting.",
+        body: error instanceof Error ? error.message : unavailableText("Pane setting"),
         type: "error",
       });
     });
@@ -206,7 +207,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     focusPane();
     void pluginRegistry.togglePaneQuickSetting(desktopWindowBridge.paneId, key).catch((error) => {
       pluginRegistry.notify({
-        body: error instanceof Error ? error.message : "Could not update pane setting.",
+        body: error instanceof Error ? error.message : unavailableText("Pane setting"),
         type: "error",
       });
     });

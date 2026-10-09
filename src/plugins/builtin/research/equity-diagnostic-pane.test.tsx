@@ -201,7 +201,7 @@ test("renders a stale partial report with severity order, split observation, and
   const frame = tui.frame();
   expect(frame).toContain("Risk skewed");
   expect(frame).toContain("Apple Inc.");
-  expect(frame).toContain("4m ago");
+  expect(frame).toContain("~4m");
   expect(frame).toContain("confidence 72%");
   expect(frame).toContain("Margins slipped");
 
@@ -221,7 +221,7 @@ test("renders a stale partial report with severity order, split observation, and
 
   // Footer carries changing state only, and the model stays an implementation detail.
   expect(frame).toContain("partial");
-  expect(frame).toContain("stale");
+  expect(frame).not.toContain("stale");
   // r refreshes every pane, so the footer carries no refresh hint.
   expect(frame).not.toContain("efresh");
   expect(frame).not.toContain("luna");

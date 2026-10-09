@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { DataTableCell, DataTableColumn } from "../../../components";
+import { unavailableText, type DataTableCell, type DataTableColumn } from "../../../components";
 import { useAsyncResource, useAutoRefresh } from "../../../public/react";
 import { usePaneAppConfig } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -82,7 +82,7 @@ function linesFor(section: BriefViewSection, rows: readonly ViewRow[], error: st
     symbol: null,
     url: null,
     articleId: null,
-    values: { value: error ? "Couldn't load." : "No rows." },
+    values: { value: error ? unavailableText("Rows") : "No rows." },
   }];
 }
 

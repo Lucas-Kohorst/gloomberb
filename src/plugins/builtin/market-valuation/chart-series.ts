@@ -1,4 +1,6 @@
 import { chartSeriesProvider } from "../../../capabilities";
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import type { ChartSeriesCatalogItem, ChartSeriesCapability } from "../../../capabilities";
 import { colors } from "../../../theme/colors";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
@@ -67,10 +69,12 @@ export async function resolveValuationSeries(
   }));
 
   const built = buildValuationSeries(indicator, legs);
-  const warnings = [...legs].flatMap(([key, data]) => data.refreshError
-    ? [`${key}: ${data.refreshError}`]
-    : data.provider?.stale ? [`${key}: source data is stale`]
-    : data.stale ? [`${key}: cached data is stale`] : []);
+  const warnings = [...legs].flatMap(([key, data]) => {
+    if (data.refreshError) return [`${key}: ${data.refreshError}`];
+    if (!data.provider?.stale && !data.stale) return [];
+    const age = formatObservationAge(data.provider?.fetchedAt ?? data.fetchedAt);
+    return [age ? `${key} ${age}` : unavailableText(key)];
+  });
   if (built.points.at(-1)?.ratio == null) {
     warnings.push(`${indicator.label}: latest observation unavailable (${built.points.at(-1)!.date})`);
   }

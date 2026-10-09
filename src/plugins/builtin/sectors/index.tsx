@@ -6,6 +6,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
@@ -326,8 +327,8 @@ function EtfBoard({ collectionId, focused, width, height, rootBefore }: EtfBoard
 
   usePaneFooter("sectors", () => {
     const info = loadingErrorFooterInfo(loading, loadError);
-    if (returnAsOfDate) info.push({ id: "return-as-of", parts: [{ text: `returns as of ${returnAsOfDate}`, tone: "muted" }] });
-    if (updatedAgo) info.push({ id: "updated", parts: [{ text: `checked ${updatedAgo}`, tone: "muted" }] });
+    if (returnAsOfDate) info.push({ id: "return-as-of", parts: [{ text: `returns ${formatObservationAge(returnAsOfDate) ?? returnAsOfDate}`, tone: "muted" }] });
+    if (updatedAgo) info.push({ id: "updated", parts: [{ text: updatedAgo, tone: "muted" }] });
     // Keep the leading current failure readable when the pane is narrow; separate
     // flex children would each shrink it to a few characters beside routine status.
     return { info: info.length > 0 ? [{ id: "status", parts: info.flatMap((segment, index) => [

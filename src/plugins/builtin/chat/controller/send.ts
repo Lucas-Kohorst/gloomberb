@@ -1,4 +1,5 @@
 import type { AppNotificationRequest } from "../../../../types/plugin";
+import { unavailableText } from "../../../../components/ui/status-copy";
 import type { ChatMessage } from "../../../../api-client";
 import { describeChatSendError } from "../attachments/model";
 import { readyDraftAttachments } from "./attachments";
@@ -67,7 +68,7 @@ function openConnection(
   }
   const connection = channel.wsConnection;
   if (!connection) {
-    notify({ body: "Unable to send message right now.", type: "error" });
+    notify({ body: unavailableText("Message"), type: "error" });
     return null;
   }
   return connection;

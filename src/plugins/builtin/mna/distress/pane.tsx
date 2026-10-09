@@ -7,7 +7,7 @@ import {
   SegmentedControl,
   unavailableText,
   usePagedRows,
-  usePaneStatusLinkFooter,
+  usePaneStatusLinkFooter, usePaneLoadingSignal,
   useQueryBarSearch,
   useTableLoadMore,
   type DataTableCell,
@@ -28,6 +28,7 @@ import type {
 } from "../../../../api-client/distress";
 import type { CloudFilingEventPayload } from "../../../../api-client";
 import { useAutoRefresh, usePluginPaneState } from "../../../../public/react";
+import { formatApproximateAge } from "../../../../utils/datetime-format";
 import { useThemeColors } from "../../../../theme/theme-context";
 import { Box, type ScrollBoxRenderable } from "../../../../ui";
 import { usePluginTickerActions } from "../../../runtime";
@@ -380,7 +381,8 @@ function DesignationsList({ kind, exchange, ...props }: ListProps & { kind: stri
     // Exchanges publish these lists daily; the newest sighting says how current the list is.
     footerInfo: (rows) => {
       const seen = rows.reduce((latest, row) => (row.last_seen_at > latest ? row.last_seen_at : latest), "");
-      return seen ? [{ id: "seen", parts: [{ text: `as of ${isoDay(seen)}`, tone: "muted" }] }] : [];
+      const parsed = Date.parse(seen);
+      return Number.isFinite(parsed) ? [{ id: "seen", parts: [{ text: formatApproximateAge(parsed), tone: "muted" }] }] : [];
     },
   }), []);
   return (
@@ -531,9 +533,9 @@ function DistressTable<Row>({
   ], [extraHints, openId, openTicker, ticker]);
   const info = useMemo<PaneFooterSegment[]>(() => [
     ...(spec.footerInfo && rows.length > 0 ? spec.footerInfo(rows) : []),
-    ...(paged.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
     ...(paged.moreError ? [{ id: "more-error", parts: [{ text: paged.moreError.message, tone: "warning" as const }] }] : []),
   ], [paged.loadingMore, paged.moreError, rows, spec]);
+  usePaneLoadingSignal((paged.loadingMore));
   usePaneStatusLinkFooter({
     registrationId: "mna:distress",
     focused,

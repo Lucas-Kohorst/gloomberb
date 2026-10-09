@@ -45,7 +45,7 @@ const TopPane = createNewsPresetPane({
 
 const FeedPane = createNewsPresetPane({
   paneKey: "feed",
-  title: "News Feed",
+  title: "Firehose",
   query: NEWS_QUERY_PRESETS.feed,
   columns: ["time", "source", "title", "tickers", "categories", "sentiment"],
   defaultSort: { columnId: "time", direction: "desc" },
@@ -70,13 +70,13 @@ const newsWirePanes: PluginModule["panes"] = [
     { id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
     {
       id: "news-feed",
-      name: "News Feed",
+      name: "Firehose",
       icon: "N",
       component: FeedPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 35 },
-      settings: (context) => newsMuteSettingsDef(context, "News Feed Settings"),
+      settings: (context) => newsMuteSettingsDef(context, "Firehose Settings"),
     },
     {
       id: "news-industry",
@@ -138,8 +138,8 @@ const newsWirePanes: PluginModule["panes"] = [
 
 const newsWirePaneTemplates: PluginModule["paneTemplates"] = [
   { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" }, headless: topNewsHeadless },
-  // FH is the same combined latest feed, Gloom Cloud with your RSS feeds, so it opens this pane.
-  { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream", "latest"], shortcut: { prefix: "N", aliases: ["FH"] }, headless: newsFeedHeadless },
+  // N still opens this pane. The command bar lists it once, as Firehose.
+  { id: "news-feed-pane", paneId: "news-feed", label: "Firehose", description: "Chronological market news", keywords: ["news", "feed", "firehose", "wire", "stream", "latest", "fh"], shortcut: { prefix: "FH", aliases: ["N"] }, headless: newsFeedHeadless },
   {
     id: "news-industry-pane",
     paneId: "news-industry",

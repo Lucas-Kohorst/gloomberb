@@ -116,11 +116,10 @@ export function SocialMentionsPane({ width, height, focused }: Pick<PaneProps, "
     url: selected?.topPost?.url ?? (symbol ? `https://x.com/search?q=%24${symbol}` : null), showOpenHint: true,
     info: data ? [
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : []),
-      ...(resource.data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
     ] : [],
   });
   if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="social-mentions-signin" action="view social mentions" needsVerification={session.needsVerification} />;
-  if (!listing?.symbol) return <EmptyState title="No ticker selected." message="Select a ticker to view social mentions." />;
+  if (!listing?.symbol) return <EmptyState title="Select a ticker." />;
   if (!symbol) return <EmptyState title="This ticker cannot be searched as a cashtag." message="Use a symbol of up to six letters and digits, starting with a letter." />;
   const latest = summary?.latest ?? null;
   return <Box flexDirection="column" width={width} height={height}>

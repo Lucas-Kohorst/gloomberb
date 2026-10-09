@@ -41,6 +41,8 @@ export const marketOverviewPluginMeta = {
   name: "Market Overview",
   version: "1.0.0",
   toggleable: true,
+  // Oil and Gas Inventories reads retail prices and field production from this host.
+  hosts: ["api.eia.gov"],
 };
 
 export const macroPluginMeta = {

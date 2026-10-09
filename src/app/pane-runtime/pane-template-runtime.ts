@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status";
 import { getPaneTemplateDisplayLabel } from "../../components/command-bar/pane-templates/items";
 import { createPaneTemplateOrThrow } from "../../components/command-bar/workflow/ops";
 import { openFormModal } from "../../components/form-modal";
@@ -71,7 +72,7 @@ export function useAppPaneTemplateRuntime({
       });
     } catch (error) {
       notify(
-        error instanceof Error ? error.message : `Could not create ${getPaneTemplateDisplayLabel(template).toLowerCase()}.`,
+        error instanceof Error ? error.message : unavailableText(getPaneTemplateDisplayLabel(template)),
         { type: "info" },
       );
     }

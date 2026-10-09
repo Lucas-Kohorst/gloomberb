@@ -17,6 +17,7 @@ import { useAsyncResource } from "../../../react/async-resource";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { TextAttributes } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference, nextHeaderSort } from "../../../utils/sort-values";
 import { usePluginPaneState } from "../../runtime";
@@ -36,7 +37,6 @@ import {
   TRADE_SORT_COLUMN_IDS,
   buildIssuerColumns,
   buildTradeColumns,
-  formatAsOf,
   formatBp,
   formatEventTime,
   formatMaturity,
@@ -343,9 +343,9 @@ export function CdsPane({
       onSelect: () => (tradesInFront ? cycleTradeSort : cycleIssuerSort)(-1) },
   ], [cycleIssuerSort, cycleTradeSort, hasActivity, tradesInFront]);
 
-  const asOfLabel = formatAsOf(activity?.asOf ?? null);
+  const asOfLabel = formatObservationAge(activity?.asOf ?? null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
-    ...(asOfLabel ? [{ id: "as-of", parts: [{ text: `as of ${asOfLabel}`, tone: "muted" as const }] }] : []),
+    ...(asOfLabel ? [{ id: "as-of", parts: [{ text: asOfLabel, tone: "muted" as const }] }] : []),
     ...(activity ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
   ], [activity, asOfLabel]);
   usePaneStatusFooter({
@@ -357,7 +357,7 @@ export function CdsPane({
 
   if (status === "loading" && !activity) {
     return (
-      <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading CDS activity..." />
+      <PaneStatusBody loading align="center" width={width} height={height} />
     );
   }
   if (!activity) {

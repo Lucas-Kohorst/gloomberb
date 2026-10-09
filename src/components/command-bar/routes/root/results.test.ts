@@ -3,7 +3,7 @@ import type { PaneTemplateDef } from "../../../../types/plugin";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { PLUGIN_INSTALL_CATEGORY } from "../../view-model";
 import { mergePlainRootTickerResults } from "../ticker-search/results";
-import { buildRootResultModel, shortRootQueryMatches, type RootResultModelOptions } from "./results";
+import { buildRootResultModel, mnemonicListingQuery, shortRootQueryMatches, type RootResultModelOptions } from "./results";
 
 function rootOptions(overrides: Partial<RootResultModelOptions>): RootResultModelOptions {
   const empty = () => [] as ResultItem[];
@@ -166,6 +166,8 @@ describe("provider rows in the root result model", () => {
     expect(shortRootQueryMatches("ALL", reset)).toBe(false);
     expect(shortRootQueryMatches("AI", description)).toBe(false);
     expect(shortRootQueryMatches("DES", description)).toBe(true);
+    expect(mnemonicListingQuery("T", "NIKE")).toBe("NIKE");
+    expect(mnemonicListingQuery("T", null)).toBe("T");
 
     const { items } = buildRootResultModel(rootOptions({
       rootQuery: "ON",

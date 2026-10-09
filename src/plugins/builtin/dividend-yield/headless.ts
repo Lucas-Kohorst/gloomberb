@@ -10,6 +10,7 @@ import { formatDividendYield, toDividendRows } from "./view";
 import { formatDistributionAmount, formatPercent } from "../../../utils/format";
 import { currencyMinorDigits, formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 import type { Quote } from "../../../types/financials";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { dividendPriceStatus, dividendQuotePriceMetadata } from "./reference-price";
 
 const PAYMENT_COLUMNS = [
@@ -86,9 +87,9 @@ export function projectDividendYieldHeadless(
         title: "Dividend metrics",
         entries: [
           { label: "Price", value: data.price, ...(data.price != null && currency ? { formatted: formatMarketPriceWithCurrency(data.price, currency, { minimumFractionDigits: Math.min(2, currencyMinorDigits(currency)) }) } : {}) },
-          ...(data.stale ? [{ label: "History status", value: "Stale cash history; recent distributions may be missing." }] : []),
+          ...(data.stale ? [{ label: "History status", value: "Recent distributions may be missing." }] : []),
           ...(priceStatus ? [{ label: "Price status", value: priceStatus === "stale"
-            ? "Stale reference price; cash yield may be out of date."
+            ? (Number.isFinite(Date.parse(data.priceAsOf ?? "")) ? formatApproximateAge(Date.parse(data.priceAsOf ?? "")) : "Reference price time unavailable")
             : "Reference price time unavailable; cash yield may be out of date." }] : []),
           { label: "Trailing yield", value: metrics.trailingYield, formatted: formatDividendYield(metrics.trailingYield) },
           { label: "Forward yield", value: metrics.forwardYield, formatted: formatDividendYield(metrics.forwardYield) },

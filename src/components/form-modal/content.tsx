@@ -51,6 +51,7 @@ import { Button } from "../ui/button";
 import { ChoiceDialog } from "../ui/choice-dialog";
 import { DialogFrame } from "../ui/frame";
 import { Spinner } from "../ui/loading";
+import { loadingText, unavailableText } from "../ui/status";
 import { revealInScrollBox } from "../ui/reveal-in-scroll-box";
 import { openSelectField, type SelectFieldHandle } from "../ui/select-field";
 import { brokerConnectStep } from "./broker-step";
@@ -88,7 +89,7 @@ export const TERMINAL_DIALOG_INSET = 6;
 const DESKTOP_MODAL_MAX_HEIGHT = "calc(100vh - 50px)";
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : t("Could not complete that action.");
+  return error instanceof Error && error.message ? error.message : unavailableText("Action");
 }
 
 function isCommit(event: KeyEventLike): boolean {
@@ -438,7 +439,7 @@ export function FormModalContent({
   const contentWidth = Math.max(10, modalWidth - TERMINAL_DIALOG_INSET);
   const fieldRowsHeight = formBodyRows(route, contentWidth);
   const errorLines = route.error ? wrapTextLines(route.error, contentWidth).length : 0;
-  const statusRows = errorLines + (route.pending && route.pendingLabel ? 1 : 0);
+  const statusRows = errorLines + (route.pending ? 1 : 0);
   const subtitleRows = route.subtitle ? wrapTextLines(t(route.subtitle), contentWidth).length : 0;
   const availableRows = viewport.height - 2 - TERMINAL_CHROME_ROWS - subtitleRows - (statusRows > 0 ? statusRows + 1 : 0);
   const bodyRows = Math.max(1, Math.min(fieldRowsHeight, availableRows));
@@ -630,7 +631,7 @@ export function FormModalContent({
   const status = (
     <>
       {route.error && <Text fg={colors.negative} wrapText>{t(route.error)}</Text>}
-      {route.pending && route.pendingLabel && <Spinner label={route.pendingLabel} />}
+      {route.pending && <Spinner label={loadingText()} />}
     </>
   );
 
@@ -666,7 +667,7 @@ export function FormModalContent({
               {fieldRows}
             </Box>
           </ScrollBox>
-          {(route.error || (route.pending && route.pendingLabel)) && (
+          {(route.error || route.pending) && (
             <Box flexDirection="column" style={{ marginTop: 10 }}>{status}</Box>
           )}
           <Box style={{ marginTop: 14 }}>{buttons}</Box>

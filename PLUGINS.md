@@ -1424,12 +1424,12 @@ ctx.registerTickerResearchTab({
 
 A tab that would open on an empty state for most tickers should not be visible for them: company filings are `["equity"]`, distributions and 13F ownership `["equity", "fund"]`.
 
-`load` prefetches the same request the tab reads. Ticker Research waits until every such prefetch has answered, then shows the strip once. Return `false` when this company has nothing for the tab, so it is left out. Return `true` when the tab should stay up for a sign-in wall, an upgrade wall, or a failure it can retry. A tab is not added after that strip is shown. Omit `load` when an empty tab is still useful, such as a chart or notes.
+`load` prefetches the same request the tab reads. The strip lists every tab the instrument qualifies for as soon as Ticker Research opens. The boolean does not add or remove a tab. Omit `load` when there is nothing to prefetch, such as a chart or notes.
 
 ```typescript
 load: async ({ symbol, signal }) => {
-  const rows = await loadFilings(symbol, signal);
-  return rows.length > 0;
+  await loadFilings(symbol, signal);
+  return true;
 },
 ```
 

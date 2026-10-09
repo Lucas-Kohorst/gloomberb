@@ -28,6 +28,8 @@ export type CoreKeybindingActionId =
   | "pane-export-csv"
   | "pane-share"
   | "layout-gallery"
+  | "layout-undo"
+  | "layout-redo"
   | "tidy-windows"
   | "window-move-mode"
   | "window-resize-mode";
@@ -223,6 +225,18 @@ export const KEYBINDING_ACTIONS: readonly KeybindingActionDef[] = [
     category: "Pane Management",
     description: "Open layout actions.",
     defaults: ["CmdOrCtrl+Shift+L"],
+  },
+  {
+    id: "layout-undo",
+    category: "Pane Management",
+    description: "Undo the last layout change.",
+    defaults: ["CmdOrCtrl+Z"],
+  },
+  {
+    id: "layout-redo",
+    category: "Pane Management",
+    description: "Redo the last undone layout change.",
+    defaults: ["CmdOrCtrl+Shift+Z"],
   },
   {
     id: "tidy-windows",

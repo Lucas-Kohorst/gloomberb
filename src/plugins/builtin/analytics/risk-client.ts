@@ -1,4 +1,6 @@
 import { apiClient } from "../../../api-client";
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { isAccessDenied } from "../../../api-client/errors";
 import type {
   CloudFredSeriesPayload,
@@ -125,7 +127,7 @@ export function validateRiskHistory(
     instrument.exchange || quote?.listingExchangeName || "",
   );
   if (response.stale || response.providerMeta?.stale)
-    throw new Error("Daily history is stale");
+    throw new Error(unavailableText("Daily history"));
   const meta = response.providerMeta;
   if (meta?.servedResolution && !["1d", "1day"].includes(meta.servedResolution))
     throw new Error("Cloud returned non-daily history");
@@ -398,11 +400,12 @@ export async function loadPortfolioRiskMarket(
     () => fetchPortfolioRiskMarket(instruments),
     { force },
   );
+  const cachedAge = stale ? formatObservationAge(payload.fetchedAt) : null;
   return {
     ...payload,
     warnings: [
       ...payload.warnings,
-      ...(stale ? ["Cached portfolio risk market observations are stale."] : []),
+      ...(stale ? [cachedAge ? `Portfolio risk ${cachedAge}` : unavailableText("Portfolio risk")] : []),
       ...(refreshError ? [refreshError] : []),
     ],
   };

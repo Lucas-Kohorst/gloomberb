@@ -6,6 +6,7 @@ import {
   type DockLeafLayout,
   type DropTarget,
   type FloatingRect,
+  type FloatingResizeCorner,
   type LayoutBounds,
 } from "../../../../layout/pane-manager";
 import type { DesktopDockPreviewState } from "../../../../types/desktop-window";
@@ -54,6 +55,7 @@ export interface PaneDragRectState {
 }
 
 export interface FloatResizeDragState {
+  corner?: FloatingResizeCorner;
   startX: number;
   startY: number;
   origRect: FloatingRect;
@@ -148,11 +150,30 @@ export function resolveFloatResizeRect(
   totalWidth: number,
   totalHeight: number,
 ): FloatingRect {
+  const corner = drag.corner ?? "bottom-right";
+  const dx = pointerX - drag.startX;
+  const dy = pointerY - drag.startY;
+  let left = drag.origRect.x;
+  let top = drag.origRect.y;
+  let right = left + drag.origRect.width;
+  let bottom = top + drag.origRect.height;
+
+  if (corner === "top-left" || corner === "bottom-left") {
+    left = Math.max(0, Math.min(left + dx, right - MIN_FLOAT_WIDTH));
+  } else {
+    right = Math.min(totalWidth, Math.max(right + dx, left + MIN_FLOAT_WIDTH));
+  }
+  if (corner === "top-left" || corner === "top-right") {
+    top = Math.max(0, Math.min(top + dy, bottom - MIN_FLOAT_HEIGHT));
+  } else {
+    bottom = Math.min(totalHeight, Math.max(bottom + dy, top + MIN_FLOAT_HEIGHT));
+  }
+
   return constrainFloatingRectToBounds({
-    x: drag.origRect.x,
-    y: drag.origRect.y,
-    width: Math.max(MIN_FLOAT_WIDTH, Math.min(totalWidth - drag.origRect.x, drag.origRect.width + (pointerX - drag.startX))),
-    height: Math.max(MIN_FLOAT_HEIGHT, Math.min(totalHeight - drag.origRect.y, drag.origRect.height + (pointerY - drag.startY))),
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
     zIndex: drag.origRect.zIndex,
   }, totalWidth, totalHeight);
 }

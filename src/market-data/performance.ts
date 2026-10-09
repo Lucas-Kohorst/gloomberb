@@ -1,6 +1,7 @@
 import type { PricePoint, Quote } from "../types/financials";
 import { pricePointIntegrity } from "../utils/price-history-integrity";
 import { calendarMonthsBefore } from "../utils/calendar-date";
+import { clipPriceHistoryToLineage } from "./price-lineage";
 
 export interface PriceReturnHorizon {
   id: string;
@@ -57,13 +58,13 @@ export function appendQuoteToPriceReturnHistory(
   const latestHistoryTime = history.at(-1)?.date.getTime() ?? Number.NEGATIVE_INFINITY;
   if (quoteDate.getTime() <= latestHistoryTime) return history;
 
-  return [
+  return clipPriceHistoryToLineage([
     ...history,
     {
       date: quoteDate,
       close: quote.price,
     },
-  ];
+  ]);
 }
 
 function subtractHorizon(date: Date, horizon: PriceReturnHorizon): Date {

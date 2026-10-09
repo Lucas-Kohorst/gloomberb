@@ -3,6 +3,7 @@ import type { HeadlessPaneContext } from "../../../types/headless";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { convertMarketCapitalization } from "../../../utils/market-capitalization";
 import { relativeValuationValues } from "./relative-valuation-model";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { relativeValuationHeadless } from "./relative-valuation-headless";
 
 test("fresh quotes do not hide stale fundamentals in a peer research report", async () => {
@@ -21,7 +22,7 @@ test("fresh quotes do not hide stale fundamentals in a peer research report", as
   const report = await relativeValuationHeadless.load(args, ctx);
   expect(report.complete).toBe(false);
   expect(report.metadata?.staleFundamentalsSymbols).toEqual(["BAC"]);
-  expect(report.errors).toEqual(["BAC: Fundamentals stale: retained values may be out of date"]);
+  expect(report.errors).toEqual([`BAC ${formatApproximateAge(Date.parse("2026-09-14T17:23:38.462Z"))}`]);
   expect(report.rows[0]).toMatchObject({ price: 60, trailingPE: 13.94, fundamentalsProvenance: { stale: true } });
   stale = false;
   const refreshed = await relativeValuationHeadless.load(args, ctx);
@@ -165,7 +166,7 @@ test("stale quotes cannot rank as current prices or seed quote-based cash-flow y
   const symbols = ["PLD", "FRESH", "MISSING"];
   const result = await relativeValuationHeadless.load({ symbols, argument: symbols, rawArgument: symbols.join(","), options: {} }, ctx);
   expect(result.complete).toBe(false);
-  expect(result.errors).toContain("PLD: Quote stale: quote-based values unavailable");
+  expect(result.errors).toContain(`PLD ${formatApproximateAge(observed.quote.lastUpdated)}`);
   expect(result.errors).toContain("MISSING: source unavailable");
   expect(result.unavailableSymbols).toEqual(["MISSING"]);
   expect(result.metadata?.staleSymbols).toEqual(["PLD"]);

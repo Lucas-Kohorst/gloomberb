@@ -126,7 +126,8 @@ describe("calculator surface source", () => {
         return { ...ready(chain(expirations[1]!)), staleAt: now - 1 };
       } }));
       expect(result.volatility).toBeNull();
-      expect(result.error).toContain("both tenor brackets are required");
+      expect(result.error).toContain("surface");
+      expect(result.error?.toLowerCase()).not.toContain("stale");
       if (invalid === "failed") expect(result.warnings.some((warning) => warning.includes("Required expiry offline"))).toBe(true);
       if (invalid === "expiry") expect(result.warnings.some((warning) => warning.includes("different expiration"))).toBe(true);
     }

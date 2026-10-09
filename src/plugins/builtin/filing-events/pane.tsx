@@ -5,6 +5,7 @@ import {
   EmptyState,
   ExternalLinkText,
   PaneStatusBody,
+  unavailableText,
   Prose,
   READING_WIDTH,
   SectionHeading,
@@ -227,15 +228,15 @@ function FilingEventsReader({
     return { info, hints };
   }, [loading, error, ticker, selected, openFiling]);
 
-  if (!ticker) return <EmptyState title="Pick a ticker to see its 8-K filings." />;
+  if (!ticker) return <EmptyState title="Select a ticker." />;
   if (loading && !data) {
-    return <PaneStatusBody loading align="center" loadingLabel="Loading 8-Ks..." />;
+    return <PaneStatusBody loading align="center" />;
   }
   if (error && !data) {
     return (
       <PaneStatusBody
-        error={error ?? "Could not load 8-K filings."}
-        errorTitle="Could not load 8-K filings."
+        error={error ?? unavailableText("8-K filings")}
+        errorTitle={error ? unavailableText("8-K filings") : undefined}
       />
     );
   }

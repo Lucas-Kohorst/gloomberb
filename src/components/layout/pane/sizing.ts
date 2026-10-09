@@ -1,4 +1,4 @@
-import { WEB_CELL_HEIGHT, chromeRowPx } from "../../../theme/font-scale";
+import { NATIVE_PANE_FOOTER_TOP_PAD_PX, WEB_CELL_HEIGHT, chromeRowPx } from "../../../theme/font-scale";
 
 const PANE_HEADER_ROWS = 1;
 /** Desktop pane header height in cells: one chrome row (see chromeRowPx). */
@@ -6,16 +6,14 @@ export function nativePaneHeaderRows(): number {
   return chromeRowPx() / WEB_CELL_HEIGHT;
 }
 const PANE_FOOTER_ROWS = 1;
-/**
- * 4px top, 10px bottom, 1px border. The same clearance as the status bar, so
- * a one-cell footer does not sit hint glyphs on the pane's clipped edge.
- * Must stay in sync with `[data-gloom-role="pane-footer"]` in styles.css.
- */
-export const NATIVE_PANE_FOOTER_EXTRA_PX = 15;
 
-/** Desktop pane footer height in cells: one text cell plus the status-bar clearance. */
+/**
+ * Desktop pane footer height in cells: one chrome row plus extra height so the
+ * text can sit with equal padding above and below. Must stay in sync with
+ * `[data-gloom-role="pane-footer"]` in styles.css (`--footer-h`).
+ */
 export function nativePaneFooterRows(): number {
-  return (WEB_CELL_HEIGHT + NATIVE_PANE_FOOTER_EXTRA_PX) / WEB_CELL_HEIGHT;
+  return (chromeRowPx() + NATIVE_PANE_FOOTER_TOP_PAD_PX) / WEB_CELL_HEIGHT;
 }
 
 export function paneHeaderRows(nativePaneChrome: boolean | undefined): number {

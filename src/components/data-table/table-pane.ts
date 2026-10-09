@@ -4,12 +4,11 @@ import type { PaneFooterSegment } from "../layout/pane/footer";
 import { useShortcut } from "../../react/input";
 import { isPlainKey } from "../../utils/keyboard";
 
+/** Footer failure text. In-flight work is a body spinner, not a footer word. */
 export function loadingErrorFooterInfo(loading: boolean, error: string | null | undefined): PaneFooterSegment[] {
+  void loading;
   const message = error?.trim() ?? "";
-  return [
-    ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(message ? [{ id: "error", parts: [{ text: message, tone: "warning" as const }] }] : []),
-  ];
+  return message ? [{ id: "error", parts: [{ text: message, tone: "warning" as const }] }] : [];
 }
 
 export function handleRefreshKey(event: DataTableKeyEvent, reload: () => void, options: { stopPropagation?: boolean } = {}): boolean {

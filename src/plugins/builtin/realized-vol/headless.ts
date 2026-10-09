@@ -1,4 +1,6 @@
+import { unavailableText } from "../../../components/ui/status-copy";
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { createSurfaceDependencies } from "../vol-surface/client";
 import { resolveHeadlessInstrument } from "../shared/headless-market-data";
 import { createRealizedVolatilityDependencies, loadCurrentAtmIv, loadRealizedVolatilityHistory } from "./client";
@@ -28,7 +30,11 @@ export function realizedVolHeadless(initialView: "graph" | "cone"): HeadlessPane
         if (!args.options.showIv) return null;
         try {
           const quote = await ctx.marketData.getQuote(instrument.symbol, instrument.exchange);
-          if (quote.stale || !(quote.price > 0) || !Number.isFinite(quote.price)) throw new Error("Underlying quote is missing or stale");
+          if (!(quote.price > 0) || !Number.isFinite(quote.price)) throw new Error(unavailableText("Underlying quote"));
+          if (quote.stale) {
+            const age = formatObservationAge(quote.lastUpdated);
+            throw new Error(age ? `Underlying quote ${age}` : unavailableText("Underlying quote"));
+          }
           return await loadCurrentAtmIv({ instrument, spot: quote.price, spotAsOf: quote.lastUpdated, signal: ctx.signal },
             createSurfaceDependencies(ctx.marketData, ctx.apiClient));
         } catch (error) {

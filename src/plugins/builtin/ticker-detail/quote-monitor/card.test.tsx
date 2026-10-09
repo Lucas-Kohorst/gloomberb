@@ -37,7 +37,7 @@ async function renderCard(quoteEntry: QueryEntry<Quote> | null): Promise<string>
 describe("QuoteMonitorCard without a quote", () => {
   test("separates loading, unknown symbol and provider failure", async () => {
     expect(await renderCard({ ...createIdleEntry<Quote>(), phase: "loading" }))
-      .toContain("Loading quote");
+      .toContain("Loading...");
 
     expect(await renderCard({
       ...createIdleEntry<Quote>(),

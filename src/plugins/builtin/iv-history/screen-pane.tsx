@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, PaneStatusBody, QueryBar, usePaneFooter, usePaneNoticeFooter, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, PaneStatusBody, QueryBar, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import { useAsyncResource } from "../../../react/async-resource";
 import { usePaneCollection, usePaneSettingValue, usePluginAppActions, useTickers } from "../../../public/react";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -70,8 +70,8 @@ export function IvScreenPane({ width, height, focused }: PaneProps) {
     .filter((value): value is string => !!value);
   usePaneNoticeFooter({ registrationId: "iv-screen-notices", notices, focused });
   const openHistory = (row: RichCheapRow) => createPaneFromTemplate("iv-history-pane", { symbol: row.symbol });
+  usePaneLoadingSignal((resource.loading));
   usePaneFooter("iv-screen", () => ({ info: [
-    ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(shared ? [{ id: "date", parts: [{ text: readingLabel(shared.date, shared.method), tone: "muted" as const }] }]
       : resource.data?.asOf ? [{ id: "date", parts: [{ text: resource.data.asOf, tone: "muted" as const }] }] : []),
   ] }), [resource.loading, shared, resource.data?.asOf]);

@@ -10,8 +10,10 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatMessage,
+  type ChatPresence,
   type PersistedAuthUser,
 } from "../../../../api-client";
+import { unavailableText } from "../../../../components/ui/status-copy";
 import { normalizeSessionUser } from "./persistence";
 import { debugLog } from "../../../../utils/debug-log";
 import {
@@ -75,6 +77,12 @@ import {
 const chatLog = debugLog.createLogger("chat-controller");
 const IMAGE_LINK_REFRESH_INTERVAL_MS = 60_000;
 
+function unseenChannelMessages(messages: ChatMessage[], lastViewedMessageId: string | null): ChatMessage[] {
+  if (!lastViewedMessageId) return messages;
+  const viewedIndex = messages.findIndex((message) => message.id === lastViewedMessageId);
+  return viewedIndex >= 0 ? messages.slice(viewedIndex + 1) : messages;
+}
+
 export type { ChatControllerSnapshot } from "./state";
 
 export class ChatController {
@@ -88,6 +96,7 @@ export class ChatController {
   );
   private notifyFn: (notification: AppNotificationRequest) => AppNotificationDelivery | void = () => {};
   private openMessageFn: ((channelId: string, messageId: string) => void) | undefined;
+  private onUnreadMessage: ((message: ChatMessage, channelId: string) => void) | undefined;
   private notifiedMessageIds = new Set<string>();
 
   private readonly storage = new ChatControllerStorage({
@@ -150,6 +159,75 @@ export class ChatController {
     this.openMessageFn = openMessage;
   }
 
+  setOnUnreadMessage(callback: (message: ChatMessage, channelId: string) => void): void {
+    this.onUnreadMessage = callback;
+  }
+
+  /** Channel that currently holds this message, when its transcript is loaded. */
+  channelIdForMessage(messageId: string): string | null {
+    for (const [channelId, channel] of this.storage.channelStates) {
+      if (channel.messages.some((message) => message.id === messageId)) return channelId;
+    }
+    return null;
+  }
+
+  /** Channel unread summed the same way the status badge does. */
+  totalUnreadCount(): number {
+    let total = 0;
+    for (const channel of this.storage.channelStates.values()) {
+      total += Math.max(0, channel.unreadCount);
+    }
+    return total;
+  }
+
+  /**
+   * Message ids that still count as unseen. When a channel has an unread
+   * count but its transcript is not loaded, the set is short and the pane
+   * falls back to the newest chat log rows.
+   */
+  unreadMessageIds(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    const userId = this.session.user?.id ?? null;
+    for (const channel of this.storage.channelStates.values()) {
+      if (channel.unreadCount <= 0) continue;
+      const unseen = unseenChannelMessages(channel.messages, channel.lastViewedMessageId)
+        .filter((message) => message.user.id !== userId);
+      const ranked = unseen.slice(-channel.unreadCount);
+      for (const message of ranked) ids.add(message.id);
+    }
+    return ids;
+  }
+
+  /**
+   * Clears every channel unread count the status badge is showing.
+   * Mark-all in Notifications has to do this: the log read flag and the
+   * channel unread count are separate, and clearing only the log leaves the badge.
+   */
+  markAllChannelsRead(): void {
+    const pending: string[] = [];
+    let changed = false;
+    for (const [channelId, channel] of this.storage.channelStates) {
+      if (channel.unreadCount <= 0) continue;
+      changed = true;
+      if (channel.messages.length > 0) {
+        this.markViewedThroughLatestMessage(channelId);
+        continue;
+      }
+      channel.unreadCount = 0;
+      this.storage.persistChannelState(channelId);
+      pending.push(channelId);
+    }
+    if (changed) this.emit();
+    for (const channelId of pending) {
+      void this.refreshChannelMessages(channelId).finally(() => {
+        const channel = this.ensureChannelState(channelId);
+        channel.unreadCount = 0;
+        if (channel.messages.length > 0) this.markViewedThroughLatestMessage(channelId);
+        this.emit();
+      });
+    }
+  }
+
   hydrate(): void {
     hydrateChatControllerSession({
       session: this.session,
@@ -172,6 +250,11 @@ export class ChatController {
 
   getSnapshot(channelId = DEFAULT_CHAT_CHANNEL_ID): ChatControllerSnapshot {
     return this.view.getSnapshot(channelId);
+  }
+
+  applyPresence(presence: ChatPresence | { onlineCount: number }): void {
+    this.channelCatalog.applyPresence(presence);
+    this.emit();
   }
 
   /** Channels with unread messages, from the counts and messages already held; no request. */
@@ -573,7 +656,7 @@ export class ChatController {
     } catch (error) {
       const errorMessage = error instanceof Error && error.message
         ? error.message
-        : "Failed to edit message.";
+        : unavailableText("Message");
       this.notifyFn({ body: errorMessage, type: "error" });
       return false;
     }
@@ -650,6 +733,7 @@ export class ChatController {
       options,
       viewActive: this.appActive && channel.focusedViewCount > 0,
       markViewed: (persist) => this.markViewedThroughLatestMessage(channelId, persist),
+      onUnread: (message) => this.onUnreadMessage?.(message, channelId),
     });
     this.storage.persistTranscript(channelId);
     this.emit(channelId);

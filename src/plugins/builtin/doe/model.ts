@@ -12,8 +12,42 @@ export const DOE_TABS: ReadonlyArray<{ value: DoeTab; label: string }> = [
 ];
 
 /**
- * The series Gloom Cloud serves, by the ids its board uses, so `DOE cushing`
- * or `NGS east` can open on one before the board has loaded.
+ * Weekly prices and field production the cloud board does not serve.
+ * `optionLabel` is what `DOE diesel` and `DOE production` match.
+ */
+export const DOE_WEEKLY_SERIES = [
+  {
+    id: "gasoline-price", label: "Regular gasoline", optionLabel: "Gasoline price",
+    unitLabel: "$/gal", decimals: 3, route: "petroleum/pri/gnd", facet: "EMM_EPMR_PTE_NUS_DPG",
+  },
+  {
+    id: "diesel-price", label: "No. 2 diesel", optionLabel: "Diesel",
+    unitLabel: "$/gal", decimals: 3, route: "petroleum/pri/gnd", facet: "EMD_EPD2D_PTE_NUS_DPG",
+  },
+  {
+    id: "crude-production", label: "Field production", optionLabel: "Production",
+    unitLabel: "kb/d", decimals: 0, route: "petroleum/sum/sndw", facet: "WCRFPUS2",
+  },
+] as const;
+
+export type DoeWeeklySeriesId = typeof DOE_WEEKLY_SERIES[number]["id"];
+
+export interface DoeWeeklyRow {
+  id: DoeWeeklySeriesId;
+  label: string;
+  unitLabel: string;
+  decimals: number;
+  weekEnding: string | null;
+  value: number | null;
+  weekChange: number | null;
+  stale: boolean;
+  error: string | null;
+}
+
+/**
+ * The series the pane can open by name, including the three weekly series
+ * beside the cloud product rows, so `DOE cushing` or `DOE diesel` lands
+ * before either request has returned.
  */
 export const DOE_SERIES_OPTIONS: ReadonlyArray<{ value: string; label: string; tab: DoeTab }> = [
   { value: "crude-commercial", label: "Commercial crude", tab: "crude" },
@@ -28,6 +62,7 @@ export const DOE_SERIES_OPTIONS: ReadonlyArray<{ value: string; label: string; t
   { value: "crude-imports", label: "Crude imports", tab: "products" },
   { value: "crude-exports", label: "Crude exports", tab: "products" },
   { value: "product-supplied", label: "Product supplied", tab: "products" },
+  ...DOE_WEEKLY_SERIES.map((series) => ({ value: series.id, label: series.optionLabel, tab: "products" as const })),
   { value: "gas-lower-48", label: "Lower 48", tab: "gas" },
   { value: "gas-east", label: "East", tab: "gas" },
   { value: "gas-midwest", label: "Midwest", tab: "gas" },
@@ -202,6 +237,14 @@ export function doeSeasonalStrip(row: DoeSeriesRow, color: string): ChartStripSp
     value: `${formatDoeLevel(row.unit, row.value)} ${DOE_UNIT_LABEL[row.unit]}`,
     color,
   };
+}
+
+export function formatDoeWeeklyLevel(row: Pick<DoeWeeklyRow, "decimals" | "value">): string {
+  return row.value == null ? "--" : grouped(row.value, row.decimals);
+}
+
+export function formatDoeWeeklyChange(row: Pick<DoeWeeklyRow, "decimals" | "weekChange">): string {
+  return row.weekChange == null ? "--" : signed(row.weekChange, row.decimals);
 }
 
 export const doeAxisFormatter = (unit: DoeUnit) => spanAxisFormatter((value, digits) =>

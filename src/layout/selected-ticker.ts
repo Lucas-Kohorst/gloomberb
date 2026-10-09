@@ -1,5 +1,6 @@
-import { resolveTickerForPane } from "../core/state/app/layout";
+import { resolveCollectionForPane, resolveTickerForPane } from "../core/state/app/layout";
 import type { AppState } from "../core/state/app/types";
+import { getCollectionTickersFromConfig } from "../plugins/builtin/portfolio-list/pane/data";
 import { isPaneInLayout } from "./pane-manager";
 import {
   findPaneInstance,
@@ -18,10 +19,21 @@ export interface SelectedLayoutTicker {
 }
 
 /**
+ * The instrument the command prompt is offering. The focused pane's ticker
+ * when it has one, otherwise the linked desk, so a command that needs a
+ * ticker can use the symbol already on screen.
+ */
+export function commandPromptTicker(state: AppState): { symbol: string; rootInstanceId: string } | null {
+  const selection = selectedLayoutTicker(state);
+  if (!selection) return null;
+  return { symbol: selection.symbol, rootInstanceId: selection.rootInstanceId };
+}
+
+/**
  * The ticker a layout is on. The focused pane's group wins. Otherwise the
  * largest group of two or more visible panes. A lone pane counts only while
- * it is focused, so a news pane does not hide a linked desk, and a desk with
- * no link does not invent one.
+ * it is focused, so a news pane does not hide a linked desk, and an unlinked
+ * desk does not invent a group.
  */
 export function selectedLayoutTicker(state: AppState): SelectedLayoutTicker | null {
   const groups = new Map<string, { symbol: string; count: number; order: number }>();
@@ -68,13 +80,33 @@ export type LayoutTickerTarget =
   };
 
 /**
+ * A portfolio or watchlist can only select a row it holds. Writing anything
+ * else is undone by the list, which puts the cursor back on the first row.
+ * Scanners and other cursor sources accept the symbol they were given.
+ */
+export function cursorSourceHoldsSymbol(state: AppState, rootInstanceId: string, symbol: string): boolean {
+  const root = findPaneInstance(state.config.layout, rootInstanceId);
+  if (!root || root.paneId !== "portfolio-list") return true;
+  const collectionId = resolveCollectionForPane(state, rootInstanceId);
+  if (!collectionId) return true;
+  return getCollectionTickersFromConfig(state.config, state.tickers, collectionId)
+    .some((ticker) => ticker.metadata.ticker === symbol);
+}
+
+/**
  * Where a symbol chosen from the command bar is written. A linked group
  * rewrites its root. A focused research pane with no followers does too.
+ * A list that does not hold the named symbol opens a pane instead.
  * Anything else still opens a pane.
  */
 export function layoutTickerTarget(
   state: AppState,
-  options: { forceNewPane?: boolean; isTickerSource: (paneType: string) => boolean },
+  options: {
+    forceNewPane?: boolean;
+    isTickerSource: (paneType: string) => boolean;
+    /** The symbol being chosen. Omit when only the target kind matters. */
+    symbol?: string;
+  },
 ): LayoutTickerTarget {
   if (options.forceNewPane) return { kind: "open" };
   const selection = selectedLayoutTicker(state);
@@ -85,10 +117,18 @@ export function layoutTickerTarget(
   const keepFocus = focusedRoot === selection.rootInstanceId;
   const research = root.paneId === TICKER_RESEARCH_PANE_ID;
   if (selection.memberCount < 2 && !(keepFocus && research)) return { kind: "open" };
+  const mode = options.isTickerSource(root.paneId) ? "cursor" : research ? "research" : "fixed";
+  if (
+    mode === "cursor"
+    && options.symbol !== undefined
+    && !cursorSourceHoldsSymbol(state, root.instanceId, options.symbol)
+  ) {
+    return { kind: "open" };
+  }
   return {
     kind: "retarget",
     rootInstanceId: root.instanceId,
-    mode: options.isTickerSource(root.paneId) ? "cursor" : research ? "research" : "fixed",
+    mode,
     keepFocus,
   };
 }

@@ -19,7 +19,7 @@ import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { formatPercentileRank } from "../../../utils/format";
 import { usePluginPaneState } from "../../runtime";
-import { formatAsOf } from "../cds/model";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { getCachedCdxBoard, loadCdxBoard } from "./client";
 import {
   axisFormatter,
@@ -87,9 +87,9 @@ export function CdxPane({ focused, width, height }: PaneProps) {
   useAutoRefresh(resource.updatedAt, refresh);
   usePaneRefreshKey(reload, { focused, enabled: !loading });
 
-  const asOf = formatAsOf(payload?.asOf ?? null);
+  const asOf = formatObservationAge(payload?.asOf ?? null);
   const info = useMemo<PaneFooterSegment[]>(() => [
-    ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
+    ...(asOf ? [{ id: "as-of", parts: [{ text: asOf, tone: "muted" as const }] }] : []),
     ...(payload ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
   ], [asOf, payload, resource.data?.stale]);
   usePaneStatusFooter({

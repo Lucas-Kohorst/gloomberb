@@ -68,8 +68,8 @@ const defaultDeps: StorySearchDeps = {
 let warming: Promise<unknown> | null = null;
 
 /**
- * Unless News Feed is open, the app may hold few stories or none, so a lookup
- * first loads the latest feed News Feed reads (the same request, delayed when
+ * Unless Firehose is open, the app may hold few stories or none, so a lookup
+ * first loads the latest feed Firehose reads (the same request, delayed when
  * the account has no live news). The service keeps it for a while after, so
  * later lookups reuse it instead of asking again.
  */

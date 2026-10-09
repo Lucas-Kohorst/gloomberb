@@ -7,6 +7,8 @@ import type {
   HeadlessPaneLoadArgs,
 } from "../../../types/plugin";
 import type { AnalystResearchData } from "../../../types/financials";
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercent } from "../../../utils/format";
 import { loadAnalystResearch } from "./client";
 import {
@@ -154,13 +156,14 @@ export function createAnalystResearchHeadless(
           target: rating.currentPriceTarget ?? rating.priorPriceTarget ?? null,
           currency: currency ?? null,
         }));
+      const researchAge = data.stale ? formatObservationAge(data.fetchedAt) : null;
       const sections: HeadlessBundleSection[] = [
         { title: "Summary", entries: overviewEntries(data) },
         { title: "Recent analyst actions", columns: RATING_COLUMNS, rows: ratings },
       ];
       return {
         sections,
-        errors: data.stale ? ["Analyst research is stale"] : undefined,
+        errors: data.stale ? [researchAge ? `Analyst research ${researchAge}` : unavailableText("Analyst research")] : undefined,
         metadata: {
           symbol: data.symbol || symbol,
           name: data.name ?? null,

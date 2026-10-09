@@ -13,6 +13,7 @@
     "./components": "./src/components/index.ts",
     "./theme": "./src/theme/colors.ts",
     "./capabilities": "./src/capabilities/index.ts",
+    "./cloud": "./src/public/cloud.ts",
     "./utils": "./src/public/utils.ts",
     "./react": "./src/public/react.ts",
     "./test-support": "./src/public/test-support.ts",

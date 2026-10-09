@@ -2,6 +2,7 @@ import type { BrokerDirectoryEntry } from "../../brokers/directory";
 import { tf } from "../../i18n";
 import { buildAddToPortfolioWorkflow } from "../../plugins/builtin/portfolio-list/command-bar";
 import type { PluginRegistry } from "../../plugins/registry";
+import { commandPromptTicker } from "../../layout/selected-ticker";
 import {
   getFocusedCollectionId,
   getFocusedTickerSymbol,
@@ -127,8 +128,10 @@ export function buildPaneTemplateFormRoute(
 ): FormRouteResult {
   const template = pluginRegistry.paneTemplates.get(templateId);
   if (!template) return { kind: "none" };
+  const requiresTicker = (template.shortcut?.argPlaceholder === "ticker" || template.shortcut?.argKind === "ticker")
+    && !template.shortcut?.argOptional;
   const route = buildPaneTemplateWorkflowRoute({
-    activeTicker: getFocusedTickerSymbol(state),
+    activeTicker: (requiresTicker ? commandPromptTicker(state)?.symbol : null) ?? getFocusedTickerSymbol(state),
     arg,
     template,
   });

@@ -4,8 +4,8 @@ import {
   resetFredSeriesPersistence,
 } from "../../../sources/gloomberb-cloud/fred-series";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
-import { loadCreditConditions } from "./client";
-import { CREDIT_SERIES, type CreditSeriesId } from "./model";
+import { loadCreditConditions, loadCreditYields } from "./client";
+import { CREDIT_SERIES, CREDIT_YIELD_SERIES, type CreditSeriesId } from "./model";
 
 function payload(seriesId: CreditSeriesId, count = 3) {
   return {
@@ -118,5 +118,37 @@ describe("loadCreditConditions", () => {
     } finally {
       Date.now = originalNow;
     }
+  });
+
+  test("a rejected yield stays on its row and a missing 10-year blanks the spread", async () => {
+    const spreads = await loadCreditConditions(false, async (seriesId) => payload(seriesId as CreditSeriesId));
+    const yields = await loadCreditYields(false, async (seriesId) => {
+      if (seriesId === "BAMLH0A0HYM2EY") throw new Error("series rejected");
+      return {
+        observations: [
+          { date: "2026-08-17", value: 5.02 },
+          { date: "2026-08-18", value: 5.1 },
+        ],
+        info: {
+          id: seriesId,
+          title: `${seriesId} Effective Yield`,
+          units: "Percent",
+          frequency: "Daily, Close",
+          seasonalAdjustment: "Not Seasonally Adjusted",
+          source: "",
+          notes: "",
+        },
+      };
+    }, async () => {
+      throw new Error("curve down");
+    });
+
+    expect(spreads.rows).toHaveLength(CREDIT_SERIES.length);
+    expect(yields.rows.map((row) => row.seriesId)).toEqual(CREDIT_YIELD_SERIES.map((series) => series.seriesId));
+    expect(yields.rows[0]).toMatchObject({ status: "available", yieldPct: 5.1, spreadVs10YBp: null });
+    expect(yields.rows[1]).toMatchObject({ status: "unavailable" });
+    expect(yields.errors.join(" ")).toContain("BAMLH0A0HYM2EY");
+    expect(yields.errors.join(" ")).toContain("10-year Treasury unavailable");
+    expect(yields.errors.join(" ")).not.toContain("curve down");
   });
 });

@@ -21,6 +21,8 @@ import { useShortcut } from "../../../react/input";
 import { isDetailBackNavigationKey } from "../../../utils/back-navigation";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../../../react/auto-refresh";
+import { useTickerFinancials } from "../../../market-data/hooks";
+import { priceLineageStartMs } from "../../../market-data/price-lineage";
 import { useInlineTickerOpener } from "../../../state/hooks/inline-tickers";
 import {
   type CloudCongressHousePayload,
@@ -229,7 +231,19 @@ export function CongressTradesPane({ focused, width, height, tickerFilter }: Pan
   useAutoRefresh(lastLoadedAt, refresh);
 
   const trades = payload?.trades ?? [];
-  const visibleTrades = useMemo(() => mine ? trades.filter((trade) => trade.ticker && mineTickers.has(trade.ticker)) : trades, [trades, mine, mineTickers]);
+  const tickerFinancials = useTickerFinancials(tickerFilter ?? null, null);
+  const lineageStart = priceLineageStartMs([
+    ...(tickerFinancials?.priceHistory ?? []),
+    ...(tickerFinancials?.quote?.lastUpdated ? [{ date: tickerFinancials.quote.lastUpdated }] : []),
+  ]);
+  const visibleTrades = useMemo(() => {
+    const owned = mine ? trades.filter((trade) => trade.ticker && mineTickers.has(trade.ticker)) : trades;
+    if (lineageStart == null || !tickerFilter) return owned;
+    return owned.filter((trade) => {
+      const time = Date.parse(trade.transactionDate);
+      return Number.isFinite(time) && time >= lineageStart;
+    });
+  }, [trades, mine, mineTickers, lineageStart, tickerFilter]);
   const summaries = useMemo(() => aggregateLoadedCongress(visibleTrades, payload?.members), [visibleTrades, payload?.members]);
   const members = summaries.members;
   const tickerRows = useMemo(() => sortedTickers(summaries.tickers, tickerSort), [summaries.tickers, tickerSort]);

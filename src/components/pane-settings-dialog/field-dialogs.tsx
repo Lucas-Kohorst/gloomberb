@@ -1,5 +1,6 @@
 import { Box, Text, useUiCapabilities } from "../../ui";
 import { t } from "../../i18n";
+import { unavailableText } from "../ui/status";
 import { type AlertContext, useDialogKeyboard } from "../../ui/dialog";
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -108,7 +109,7 @@ function useTextFieldDialogController({
       await onApply(value);
       dismiss();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save this value."));
+      setError(err instanceof Error ? err.message : unavailableText("Value"));
     }
   };
 

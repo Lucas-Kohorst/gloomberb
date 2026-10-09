@@ -17,6 +17,8 @@ const STUDY_DEFAULTS = {
   "volume-profile": { kind: "volume-profile", panelId: "main", parameters: { rows: DEFAULT_PROFILE_ROWS } },
   rsi14: { kind: "rsi", panelId: "rsi", parameters: { period: 14 } },
   macd: { kind: "macd", panelId: "macd", parameters: { fast: 12, slow: 26, signal: 9 } },
+  stoch14: { kind: "stochastic", panelId: "stochastic", parameters: { period: 14, smooth: 3 } },
+  adx14: { kind: "adx", panelId: "adx", parameters: { period: 14 } },
   atr14: { kind: "atr", panelId: "atr", parameters: { period: 14 } },
   "realized-vol": { kind: "realized-vol", panelId: "realized-vol", parameters: { window: 30, estimator: "close-to-close" } },
 } as const satisfies Record<string, {
@@ -72,7 +74,7 @@ export function setBuiltinStudies(spec: ChartSpec, selected: readonly BuiltinStu
 }
 
 /** Builtin studies whose lookback the Indicators dialog lets you change. */
-const PERIOD_STUDIES = new Set<BuiltinStudySelection>(["sma20", "sma50", "sma200", "ema20", "bollinger20", "rsi14", "atr14"]);
+const PERIOD_STUDIES = new Set<BuiltinStudySelection>(["sma20", "sma50", "sma200", "ema20", "bollinger20", "rsi14", "stoch14", "adx14", "atr14"]);
 
 export const STUDY_PERIOD_MIN = 2;
 export const STUDY_PERIOD_MAX = 500;

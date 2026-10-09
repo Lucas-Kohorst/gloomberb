@@ -28,22 +28,28 @@ never goes there.
   then content. On the desktop the title-bar tab takes the colour of whatever
   sits under it, so the tab, the bar and the figures read as one surface.
   No loose text lines, blank rows or button rows above or between them.
-- Footer, registered with `usePaneFooter`: `info` on the left (changing
-  status), `hints` on the right (pane actions with their keys, visible only
-  while focused). When AGENTS.md says "pane status bar" it means this footer.
+- Footer, registered with `usePaneFooter`: the last poll and its cadence
+  (`~5m`, `poll 5m`) sit on the far left and stay up when the pane is not
+  focused. Other `info` (live/delayed, auth) follows that. Loading is not a footer word. Action
+  `hints` sit on the right while the pane is focused. Standing sentences do
+  not. When AGENTS.md says "pane status bar" it means this footer.
 
 ## 2. Where does it go
 
 | You have | It goes | Use |
 |---|---|---|
 | A pane action (add, edit, open source, sync, save search) | Footer hint | `usePaneFooter({ hints })` |
-| Changing status (loading, error, live/delayed, stale, updated 2m ago, saving) | Footer info | `usePaneStatusFooter`, `loadingErrorFooterInfo` |
+| Changing status (live/delayed, auth) | Footer info, on the left | `usePaneStatusFooter` |
+| In flight (first load, refresh, saving, paging) | Body, with the spinning indicator and `Loading...`. Never a footer word | `PaneStatusBody` on the first load, `usePaneStatusFooter({ loading })` while data stays |
+| A hard failure and nothing is on screen | Body. `{thing} unavailable.` | `unavailableText`, `PaneStatusBody` |
+| When data was last polled, and how often | `~5m`, `~1hr`, or `2026-10-09` on the left, `poll 30m` on the right. The poll chip opens 1, 5, 15, or 30 minutes. No other text on the age | `useUpdatedFooterInfo`, `formatApproximateAge`, `useRefreshPollTrailing` |
 | Summary figures for the whole pane or an open detail (VWAP, spread, percentile, range) | Header zone, under the query bar | `StatGrid` |
 | A control that changes what the pane shows (range, window, scope, level) | Query bar, never a cycling footer hint | `QueryBar` |
-| Non-blocking data limitation (missing period, fallback dates, partial source) | One amber `⚠` in the footer, `!` or click opens details | `usePaneNoticeFooter` |
+| Non-blocking data limitation (missing period, fallback dates, partial source) | `!` opens the details. Nothing standing in the footer | `usePaneNoticeFooter` |
 | Nothing can render yet (first load, hard failure, no data) | Body, replacing content | `PaneStatusBody` |
-| No ticker, no selection, empty result | Body | `EmptyState` |
-| Refresh failed but last data exists | Keep the data, failure in footer info | `loading={loading && !data}`, `error={!data ? error : null}` |
+| No ticker | Body. The title is `Select a ticker.` | `EmptyState` |
+| No selection, empty result | Body | `EmptyState` |
+| Refresh failed but last data exists | Keep the data. The age is the staleness. Do not write stale | `loading` stays true only while the request is in flight; the body keeps the rows |
 | Limitation on content still worth reading | Inline beside that content | `Notice` |
 | Account state blocks the pane (signed out, unverified, plan) | Body | `SignInWall` (`cloud/auth-actions.tsx`) |
 | Plan gating that only degrades the pane (delayed data, upgrade hint) | Footer, shared wording | `useCloudAccessFooter` (`shared/cloud-upgrade.ts`) |
@@ -63,7 +69,7 @@ raw feed names or `entry.source` values
 in a footer, status line, header meta, table column, legend, tooltip or
 headless report column. Say what the data is instead: `real-time`,
 `15m delayed`, `settlement`, `daily closes`, `trade closes since …`, `as of`
-date, `stale`. `QueryEntry.source` and `providerId` are for routing, caches
+date. `QueryEntry.source` and `providerId` are for routing, caches
 and tests, never for display. Two things are not providers and may appear:
 the user's own account or imported source (a broker account, a statement
 file), and the official publisher of a statistic in a detail view or its
@@ -76,7 +82,7 @@ the origin of a number. The one count the kit draws is the
 
 - `usePaneFooter(registrationId, factory, deps)` returns `{ order?, info?, hints? }`;
   several registrations in one pane merge by `order`, then id. Wrappers:
-  `usePaneStatusFooter` (loading, error, stale), `usePaneStatusLinkFooter` (plus an
+  `usePaneStatusFooter` (in-flight spinner, error), `usePaneStatusLinkFooter` (plus an
   `o` hint opening the current item's URL), `usePaneNoticeFooter` (warnings).
 - Info is what changes. If a segment reads the same on every render of every
   instance, delete it.
@@ -91,8 +97,10 @@ the origin of a number. The one count the kit draws is the
 - Tabs scope the footer: wrap each tab body in `PaneFooterScope active`, and
   pass `enabled: false` to wrappers for mounted but inactive views.
 - Forms leave the footer alone. When the form shows Save and Cancel, the
-  footer does not repeat them; Enter submits, Esc cancels. It keeps `saving`
-  and the last result message.
+  footer does not repeat them; Enter submits, Esc cancels. In-flight work is
+  `Loading...` with the spinner in the body. The last result stays a footer
+  message only when it is not a failure sentence. A failure with nothing on
+  screen is `{thing} unavailable.` in the body.
 - No toolbars in the body. A row of buttons above a table is a set of footer
   hints. Query controls are the exception: search, filters and sort go in one
   `QueryBar` in `rootBefore` (chart range and interval pickers sit above the
@@ -168,7 +176,7 @@ and starts over when the loader changes (a new query, sort or filter); the
 pane changes `resetScrollKey` with it. Its `loadMore` goes to
 `useTableLoadMore(scrollRef, hasMore && !detailOpen, loadMore)` in
 `onBodyScrollActivity`, which fires within 8 rows of the end. The footer
-shows `loading more` while a page is in flight. Restoring a persisted open
+shows `Loading...` with the spinner in the body while a page is in flight. Restoring a persisted open
 item past the first page expands to that page first. Client-side "reveal
 more of what is loaded" uses the same scroll helper.
 
@@ -235,11 +243,11 @@ range (`formatBpAxis`, `formatPercentAxis`, `spanAxisFormatter`). A daily
 series shorter than two weeks still spans two weeks, so the axis reads days.
 
 **Loading and failure.** While a separate history request loads, the band
-holds its rows (`loading`) so the table does not jump, and figures that come
+holds its rows and the body shows the spinner, so the table does not jump, and figures that come
 with the history hold their place with `--`. A chart that follows the
 selected row keeps its band on a row without history and says so (`empty`),
-so moving through the table never makes it jump. A failed history is a footer
-notice and the band collapses; the table stays.
+so moving through the table never makes it jump. A failed history with nothing
+drawn is `{thing} unavailable.` in the body and the band collapses; the table stays.
 
 **Export.** The table exports what it shows. A column left out only to save
 room (a quote time every row shares) goes into `getExportMetadata`; a column
@@ -280,11 +288,10 @@ header, with the detail's height.
   narrower rules such as a US listing. Never ship a tab that opens on
   "not available for this instrument".
 - A tab with `load` prefetches the request it already reads when the ticker
-  is selected. The strip stays hidden until every prefetch has answered, then
-  appears once with the tabs that have data. A tab does not join the strip
-  later. A sign-in wall, an upgrade wall, or a failure the tab can retry stays
-  listed. Omit `load` when an empty tab is still useful (overview, chart,
-  notes). Do not mount every tab to find out.
+  is selected. The strip lists every tab the instrument qualifies for as soon
+  as the pane opens. `load` warms that tab's cache and does not add or remove
+  a tab. Omit `load` when there is nothing to prefetch. Do not mount every
+  tab to find out.
 - `SegmentedControl` is a mode inside a form or dialog, not a tab strip.
 - Tabs and stacks compose: strip on top, stack below, strip stays while the
   detail is open.
@@ -309,9 +316,11 @@ header, with the detail's height.
   icon set. A long strip of choices above content (expiries, chart ranges) is
   an inline filter in the bar, not a raw `Tabs` row; `Tabs` stays for a
   pane's primary strip and for section switches inside content.
-- On the desktop, pane headers, query bars, detail bars and table header rows
-  share one chrome height (`chromeRowPx()`, `--chrome-h`). Tables and details
-  fill to the pane footer; do not size them with terminal row arithmetic.
+- On the desktop, pane headers, query bars, detail bars, and table header rows
+  share one chrome height (`chromeRowPx()`, `--chrome-h`). A pane footer is
+  that row plus 8px, with the text centered (`--footer-h`). The window status bar is
+  the taller tape (one cell plus the curve pad). Tables and details fill to
+  the pane footer; do not size them with terminal row arithmetic.
 
 ## 7. Tabs with forms
 
@@ -330,7 +339,7 @@ header, with the detail's height.
   any field submits, Esc cancels. Several forms in several tabs means one
   Save per form, never one global Save. `Ctrl+S` in the footer is optional,
   for the primary form only, and never replaces the button.
-- `saving` in footer info while in flight; the last result as a footer
+- `Loading...` with the spinner in the body while in flight; the last result as a footer
   segment with `positive` or `negative` tone. A `Notice` under the form only
   for a field error the user must fix.
 - Fixed metadata (email, plan, visibility) is body, not footer.
@@ -350,10 +359,11 @@ header, with the detail's height.
   `shouldShowPaneSidebar` deciding whether the pane is big enough. Sidebar
   when the user switches items many times a session; stack when they open
   one, read, and go back.
-- Loading: `useAsyncResource` + `useAutoRefresh` + `useUpdatedAgo`, seeded
-  from `createPluginCache`. First load shows `loadingText(subject)`, a hard
+- Loading: `useAsyncResource` + `useAutoRefresh` + `useUpdatedFooterInfo`, seeded
+  from `createPluginCache`. First load shows the spinner and `Loading...`, a hard
   failure `unavailableText(subject)` plus the message; once data exists a
-  refresh never blanks it. Start `loading` at `true` when the first frame
+  refresh never blanks it and the same spinner stays in the body until the
+  request finishes. The footer age is only `formatApproximateAge`. Start `loading` at `true` when the first frame
   would otherwise claim an empty result. `useAutoRefresh` follows the
   configured interval; pass `{ intervalMs }` only for data that moves
   faster (a delayed curve in session). Live quotes go through
@@ -414,11 +424,11 @@ header, with the detail's height.
 1. The title is the only place the pane names itself; the body starts with the header zone (query bar, figures) or content.
 2. Every pane action is a footer hint with a key (or a `usePaneMenuItems` entry) and works by mouse; no button row in the body; nothing is mouse-only.
 3. Footer info is changing state only: no labels, counts, generic hints, `r`.
-4. Warnings via `usePaneNoticeFooter`; blocking states via `PaneStatusBody`/`EmptyState`; refresh failures keep the last data.
+4. Warnings via `usePaneNoticeFooter`; blocking states via `PaneStatusBody`/`EmptyState`; refresh keeps the last data and the age token.
 5. Lists use the kit tables; details open in the stack, keyed by a stable id, persisted with `usePluginPaneState`.
 6. Paged sources load more on scroll, abort stale pages, reset on a new query.
 7. Tabs use `Tabs`, persist the active tab, scope their footers, mount lazily.
-8. Forms use kit fields, one Save per form at its bottom, Enter/Esc, busy and result in the footer, destructive actions confirmed.
+8. Forms use kit fields, one Save per form at its bottom, Enter/Esc, `Loading...` in the body while busy, destructive actions confirmed.
 9. Per-instance configuration is a pane setting; important toggles are `quickSettings`.
 10. Methodology and usage text is in `docs/`.
 11. Data panes have a `headless` definition; fetching is in `client.ts`.

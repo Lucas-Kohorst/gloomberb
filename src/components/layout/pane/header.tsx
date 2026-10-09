@@ -189,6 +189,7 @@ export function PaneHeader({
         data-window-mode-selected={windowModeSelected ? "true" : "false"}
         onMouseMove={onHeaderMouseMove}
         onContextMenu={onHeaderContextMenu}
+        {...chromeHandlers}
         style={{
           // One 1px rule at the bottom, painted inside the header, mirrored by
           // 1px of padding at the top where the pane's divider or floating border
@@ -235,8 +236,11 @@ export function PaneHeader({
             flexShrink={1}
             minWidth={0}
             onMouseDown={(event: any) => {
-              // Tabs select on click; the header must not start a pane drag.
-              event.stopPropagation?.();
+              // A tab or its close control selects. The rest of the strip is the bar.
+              const target = event.target as { closest?: (selector: string) => unknown } | null;
+              if (target?.closest?.("[data-gloom-role='tab-button'], [data-gloom-role='tab-close'], button, a, input, [data-gloom-interactive='true']")) {
+                event.stopPropagation?.();
+              }
             }}
             style={{
               alignSelf: "stretch",

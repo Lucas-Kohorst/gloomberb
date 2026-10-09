@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { capBriefView, defaultBriefLayout, parseBriefSections, serializeBriefLayout } from "./sections";
+import { summarizePaneSettingValue } from "../../../components/pane-settings-dialog/value";
+import {
+  briefTableChoices,
+  capBriefView,
+  defaultBriefLayout,
+  parseBriefSections,
+  presentBriefTables,
+  resolveBriefLayout,
+  serializeBriefLayout,
+  storeBriefTables,
+} from "./sections";
 const tweets = {
   source: { pane: "N", options: { limit: 8 } },
   projection: { columns: ["publishedAt", "source", "headline"], limit: 5 },
@@ -52,6 +62,51 @@ test("a broken view is rejected and does not change the brief", () => {
   expect(parseBriefSections({ version: 2, sections: [] })).toEqual({ error: "Unknown tables version." });
   const tooMany = parseBriefSections(Array.from({ length: 9 }, () => "today"));
   expect(tooMany).toEqual({ error: "A brief holds at most 8 tables." });
+});
+
+test("the checklist shows table names and keeps a view when the order changes", () => {
+  const stored = serializeBriefLayout({
+    version: 1,
+    sections: [
+      { kind: "builtin", id: "headlines", builtin: "headlines" },
+      { kind: "view", id: "wire", title: "Wire", spec: {
+        version: 1,
+        source: { kind: "inline", pane: "N" },
+        projection: { columns: ["headline"], filters: [], limit: 4 },
+        presentation: { title: "Wire" },
+      } },
+    ],
+  });
+  expect(presentBriefTables("")).toEqual(["headlines", "today", "earnings"]);
+  expect(presentBriefTables(serializeBriefLayout({ version: 1, sections: [] }))).toEqual([]);
+  expect(presentBriefTables("{")).toEqual(["headlines", "today", "earnings"]);
+  expect(presentBriefTables(stored)).toEqual(["headlines", "wire"]);
+
+  const parsed = parseBriefSections(stored);
+  if (!("layout" in parsed)) throw new Error("expected a layout");
+  const choices = briefTableChoices(parsed.layout);
+  expect(choices.map((choice) => choice.label)).toEqual(["Headlines", "Wire", "Today", "Earnings"]);
+  expect(choices.find((choice) => choice.label === "Wire")?.description).toBe("View");
+  const defaultLayout = resolveBriefLayout("");
+  expect(summarizePaneSettingValue({
+    key: "sections",
+    label: "Tables",
+    type: "ordered-multi-select",
+    options: briefTableChoices(defaultLayout),
+  }, presentBriefTables(""))).toBe("Headlines, Today, Earnings");
+
+  const reordered = storeBriefTables(["wire", "earnings", "headlines"], stored);
+  const again = parseBriefSections(reordered);
+  if (!("layout" in again)) throw new Error("expected a layout");
+  expect(again.layout.sections.map((section) => section.id)).toEqual(["wire", "earnings", "headlines"]);
+  const wire = again.layout.sections[0];
+  expect(wire?.kind).toBe("view");
+  if (wire?.kind === "view") expect(wire.spec.source).toMatchObject({ pane: "N" });
+  expect(again.layout.sections[1]).toMatchObject({ kind: "builtin", builtin: "earnings" });
+
+  expect(storeBriefTables([], stored)).toBe(serializeBriefLayout({ version: 1, sections: [] }));
+  expect(() => storeBriefTables(["missing"], stored)).toThrow("Unknown table");
+  expect(() => storeBriefTables(Array.from({ length: 9 }, () => "headlines"), stored)).toThrow("at most 8");
 });
 
 test("the stored json round-trips a mixed list", () => {

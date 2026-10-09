@@ -1,11 +1,9 @@
 import { useCallback, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import {
   addPaneFloating,
-  addPaneToLayout,
-  getDockedPaneIds,
   isPaneInLayout,
-  isPaneDocked,
 } from "../../layout/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import { findFixedTickerPaneForSymbol } from "../../layout/ticker-navigation";
@@ -72,7 +70,7 @@ export function useAppTickerOpenRuntime({
         tickerRepository,
       });
       if (!target && canPresentFeedback()) {
-        pluginRegistry.notify({ body: `Could not open ${rawSymbol}.`, type: "error" });
+        pluginRegistry.notify({ body: unavailableText(rawSymbol), type: "error" });
       }
       return target;
     } catch (err) {
@@ -83,7 +81,7 @@ export function useAppTickerOpenRuntime({
           launch: { kind: "ticker-search", query: rawSymbol } });
       }
       const message = err instanceof Error ? err.message : String(err);
-      pluginRegistry.notify({ body: `Failed to open ${rawSymbol}: ${message}`, type: "error" });
+      pluginRegistry.notify({ body: message ? `${rawSymbol}: ${message}` : unavailableText(rawSymbol), type: "error" });
       return null;
     }
   }, [dataProvider, dispatch, pluginRegistry, stateRef, tickerRepository]);
@@ -156,19 +154,7 @@ export function useAppTickerOpenRuntime({
     if (!instance) return;
 
     const { width, height } = pluginRegistry.getTermSize();
-    const shouldFloat = options?.floating ?? true;
-    const nextLayout = shouldFloat
-      ? addPaneFloating(currentLayout, instance, width, height, paneDef)
-      : addPaneToLayout(
-        currentLayout,
-        instance,
-        {
-          relativeTo: currentState.focusedPaneId && isPaneDocked(currentLayout, currentState.focusedPaneId)
-            ? currentState.focusedPaneId
-            : (getDockedPaneIds(currentLayout).at(-1) ?? instance.instanceId),
-          position: "right",
-        },
-      );
+    const nextLayout = addPaneFloating(currentLayout, instance, width, height, paneDef);
     persistLayout(nextLayout);
     if (paneType === TICKER_RESEARCH_PANE_ID && options?.tabId) {
       dispatch({ type: "UPDATE_PANE_STATE", paneId: instance.instanceId, patch: { activeTabId: options.tabId } });

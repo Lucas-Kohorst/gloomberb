@@ -6,8 +6,8 @@ import type {
 import {
   BulletList,
   DataTableView,
-  EmptyState, FigureList, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading,
-  usePaneFooter,
+  EmptyState, FigureList, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, unavailableText,
+  usePaneFooter, usePaneLoadingSignal,
   usePaneNoticeFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -252,7 +252,7 @@ export function ExecutivesPane({
   const { symbol } = useBoundTicker();
   const ticker = symbol ? symbol.toUpperCase() : null;
   if (wall) return wall;
-  if (!ticker) return <EmptyState title="Pick a ticker to see its executives." />;
+  if (!ticker) return <EmptyState title="Select a ticker." />;
   return <ExecutiveResearch key={ticker} ticker={ticker} focused={focused} width={width} nested={nested} guard={guard} />;
 }
 
@@ -306,10 +306,9 @@ function ExecutiveResearch({ ticker, focused, width, nested, guard }: { ticker: 
     refresh,
   });
 
+  usePaneLoadingSignal((loading));
   usePaneFooter(EXECUTIVES_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
-    if (loading)
-      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (statement) {
       info.push({
         id: "filed",
@@ -339,13 +338,13 @@ function ExecutiveResearch({ ticker, focused, width, nested, guard }: { ticker: 
   const proseWidth = Math.min(bodyWidth, READING_WIDTH);
 
   if (list.loading && !list.data?.data) {
-    return <PaneStatusBody loading align="center" loadingLabel="Loading proxy statement..." />;
+    return <PaneStatusBody loading align="center" />;
   }
   if (!list.error && years.length === 0) {
     return <EmptyState title={`No proxy statement on file for ${ticker}.`} />;
   }
   if (list.error && !list.data?.data) {
-    return <PaneStatusBody error={list.error} errorTitle="Could not load executive compensation." />;
+    return <PaneStatusBody error={list.error} errorTitle={unavailableText("Executive compensation")} />;
   }
 
   return (
@@ -404,7 +403,7 @@ function ExecutiveResearch({ ticker, focused, width, nested, guard }: { ticker: 
             )}
           </Box>
         ) : (
-          <PaneStatusBody loading={detail.loading} error={detail.error} errorTitle="Could not load this proxy statement."
+          <PaneStatusBody loading={detail.loading} error={detail.error} errorTitle={unavailableText("Proxy statement")}
             empty={detail.data?.data === null} emptyTitle={`No ${year} proxy statement on file for ${ticker}.`} />
         )}
       </ScrollBox>

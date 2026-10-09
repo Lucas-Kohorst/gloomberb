@@ -194,7 +194,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <PaneStatusBody loading align="center" loadingLabel="Loading trading halts..." />
+        <PaneStatusBody loading align="center" />
       </Box>
     );
   }

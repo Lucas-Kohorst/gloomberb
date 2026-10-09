@@ -3,6 +3,7 @@ import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig } from "../.
 import type { PluginModule } from "../plugin-module";
 import { doeBoardCache } from "./client";
 import { doeHeadless } from "./headless";
+import { doeWeeklyCache } from "./weekly";
 import { DOE_SERIES_OPTIONS, doeSeriesOption } from "./model";
 import { DoePane } from "./pane";
 
@@ -26,7 +27,7 @@ export const doeModule: PluginModule = {
   paneTemplates: [{
     id: "doe-pane", paneId: "doe", label: "Oil and Gas Inventories",
     description: "EIA weekly petroleum and gas storage: builds and draws, year-ago and five-year ranges, seasonal charts.",
-    keywords: ["doe", "eia", "oil", "crude", "cushing", "spr", "gasoline", "distillate", "inventories", "stocks", "refinery"],
+    keywords: ["doe", "eia", "oil", "crude", "cushing", "spr", "gasoline", "distillate", "inventories", "stocks", "refinery", "gasoline price", "diesel", "production"],
     shortcut: shortcut("DOE", null), headless: doeHeadless("all"),
     createInstance: (_context, options) => doeInstance("crude", options),
   }, {
@@ -36,6 +37,12 @@ export const doeModule: PluginModule = {
     shortcut: shortcut("NGS", "gas"), headless: doeHeadless("gas"),
     createInstance: (_context, options) => doeInstance("gas", options),
   }],
-  setup(ctx) { doeBoardCache.attach(ctx.persistence); },
-  dispose() { doeBoardCache.reset(); },
+  setup(ctx) {
+    doeBoardCache.attach(ctx.persistence);
+    doeWeeklyCache.attach(ctx.persistence);
+  },
+  dispose() {
+    doeBoardCache.reset();
+    doeWeeklyCache.reset();
+  },
 };

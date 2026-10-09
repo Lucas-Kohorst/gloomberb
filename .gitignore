@@ -44,5 +44,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .codex/
 paseo.json
 
+# local plans, not shipped
+plans/
+
 # Third-party agent skills restored from skills-lock.json (bunx skills experimental_install)
 .agents/skills/opentui/

@@ -112,7 +112,7 @@ export type { LiveQuoteStreamOptions } from "../state/hooks/live-ticker-financia
 // host's cancellation and stale-response handling.
 export { useAsyncResource } from "../react/async-resource";
 
-// Periodic refresh tied to pane visibility, and the "updated 2m ago" label
+// Periodic refresh tied to pane visibility, and the ~5m / ~1hr / date age.
 // that goes with it, so plugin panes refresh on the same cadence as built-ins
 // and stop while they cannot be seen. `AGE_TICK_MS` is that cadence, for
 // a pane that re-renders its own age column on the same clock.

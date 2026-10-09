@@ -55,7 +55,8 @@ test("a docked pane moves from its grip and its title, and a fullscreen one move
 
   await act(async () => press(grip));
   await act(async () => { release(); press(title()); });
-  expect(paneDrags).toEqual(["pane", "pane"]);
+  await act(async () => { release(); press(container.querySelector("[data-gloom-role='pane-header']") as HTMLElement); });
+  expect(paneDrags).toEqual(["pane", "pane", "pane"]);
   expect(windowDrags).toBe(0);
 
   await act(async () => { release(); });
@@ -65,7 +66,7 @@ test("a docked pane moves from its grip and its title, and a fullscreen one move
     </UiHostProvider>,
   );
   await act(async () => press(fullscreen.querySelector("[data-gloom-role='pane-title']") as HTMLElement));
-  expect(paneDrags).toEqual(["pane", "pane"]);
+  expect(paneDrags).toEqual(["pane", "pane", "pane"]);
   expect(windowDrags).toBe(1);
 });
 

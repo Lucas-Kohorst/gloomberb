@@ -5,6 +5,7 @@ body {
   --cell-w: 8px;
   --cell-h: 18px;
   --chrome-h: 20px;
+  --footer-h: 28px;
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
@@ -64,6 +65,14 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-titlebar-overlay="true"] .electrobun-webkit-app-region-no-drag,
 [data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
   cursor: pointer;
+}
+[data-gloom-role="header-command-prompt-target"] {
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+}
+[data-gloom-role="header-command-prompt-target"]:hover {
+  background: color-mix(in srgb, var(--gloom-header-text, #f2f2f2) 12%, transparent);
 }
 [data-gloom-role="window-controls"] {
   height: 100%;
@@ -136,7 +145,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-header"] {
   align-items: center;
   padding-inline: 7px;
-  cursor: default;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -157,6 +166,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-restore"] {
   cursor: pointer;
 }
+body.gloom-dragging [data-gloom-role="pane-header"],
 body.gloom-dragging [data-gloom-role="pane-grip"],
 body.gloom-dragging [data-gloom-role="pane-header-chrome"] {
   cursor: grabbing;
@@ -238,22 +248,24 @@ body.gloom-dragging {
   min-height: 0;
   max-height: 100%;
 }
-/* Same tape as the status bar: one cell plus 15px. Keep that in
-   NATIVE_PANE_FOOTER_EXTRA_PX so the body stops above this bar. */
+/* A chrome row plus 8px of extra height, split equally above and below the
+   text. Height stays in nativePaneFooterRows() so the body stops above it.
+   The bar is opaque so the last row cannot show through. */
 [data-gloom-role="pane-footer"] {
+  position: relative;
+  z-index: 4;
+  isolation: isolate;
   box-sizing: border-box !important;
-  flex: 0 0 calc(var(--cell-h) + 15px) !important;
-  height: calc(var(--cell-h) + 15px) !important;
-  min-height: calc(var(--cell-h) + 15px) !important;
-  max-height: calc(var(--cell-h) + 15px) !important;
+  flex: 0 0 var(--footer-h) !important;
+  height: var(--footer-h) !important;
+  min-height: var(--footer-h) !important;
+  max-height: var(--footer-h) !important;
   align-items: center;
-  padding-top: 4px;
-  padding-bottom: 10px;
   border-top: 1px solid color-mix(in srgb, var(--pane-footer-border-color, var(--gloom-border)) 72%, transparent);
-  font-size: 11.5px;
-  line-height: 1.15 !important;
-  overflow: visible;
-  /* The corner resize handle sits in this padding. Hints opt back in. */
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  /* Hints and the corner resize handle opt back in. */
   pointer-events: none;
 }
 [data-gloom-role="pane-footer"][data-empty="true"] {
@@ -261,6 +273,8 @@ body.gloom-dragging {
 }
 [data-gloom-role="pane-footer"] span,
 [data-gloom-role="pane-hint"] span {
+  /* pre keeps the gap between pieces. nowrap would collapse it. */
+  white-space: pre !important;
   line-height: 1.15 !important;
 }
 [data-gloom-role="pane-footer"] button,
@@ -277,9 +291,17 @@ body.gloom-dragging {
   background: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
 }
 [data-gloom-role="resize-handle"] {
-  cursor: nwse-resize;
   pointer-events: auto;
-  z-index: 2;
+  /* Above the pane footer, which stacks over table rows. */
+  z-index: 5;
+}
+[data-gloom-role="resize-handle"][data-corner="top-left"],
+[data-gloom-role="resize-handle"][data-corner="bottom-right"] {
+  cursor: nwse-resize;
+}
+[data-gloom-role="resize-handle"][data-corner="top-right"],
+[data-gloom-role="resize-handle"][data-corner="bottom-left"] {
+  cursor: nesw-resize;
 }
 [data-gloom-role="window-mode-status"] {
   border: 1px solid color-mix(in srgb, var(--gloom-border-focused) 76%, transparent);
@@ -402,13 +424,36 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
 [data-gloom-role="resize-handle"]::after {
   content: "";
   position: absolute;
-  right: 4px;
-  bottom: 4px;
   width: 9px;
   height: 9px;
+  opacity: 0;
+}
+[data-gloom-role="resize-handle"]:hover::after {
+  opacity: .75;
+}
+[data-gloom-role="resize-handle"][data-corner="bottom-right"]::after {
+  right: 4px;
+  bottom: 4px;
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
-  opacity: .7;
+}
+[data-gloom-role="resize-handle"][data-corner="bottom-left"]::after {
+  left: 4px;
+  bottom: 4px;
+  border-left: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+}
+[data-gloom-role="resize-handle"][data-corner="top-right"]::after {
+  right: 4px;
+  top: 4px;
+  border-right: 1px solid currentColor;
+  border-top: 1px solid currentColor;
+}
+[data-gloom-role="resize-handle"][data-corner="top-left"]::after {
+  left: 4px;
+  top: 4px;
+  border-left: 1px solid currentColor;
+  border-top: 1px solid currentColor;
 }
 [data-gloom-role="dock-divider"] {
   background: transparent !important;

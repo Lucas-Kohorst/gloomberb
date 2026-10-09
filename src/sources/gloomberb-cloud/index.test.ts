@@ -9,6 +9,7 @@ import { verifiedUser } from "../../test-support/cloud-api";
 
 const originalEnsureVerifiedSession = apiClient.ensureVerifiedSession.bind(apiClient);
 const originalGetCloudSecFilings = apiClient.getCloudSecFilings.bind(apiClient);
+const originalGetCloudSecFilingContent = apiClient.getCloudSecFilingContent.bind(apiClient);
 const originalGetCloudHistory = apiClient.getCloudHistory.bind(apiClient);
 const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
 const originalGetCloudFinancials = apiClient.getCloudFinancials.bind(apiClient);
@@ -86,6 +87,7 @@ function makeCloudNewsPayload(overrides: Partial<CloudNewsPayload> = {}): CloudN
 afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
   apiClient.getCloudSecFilings = originalGetCloudSecFilings;
+  apiClient.getCloudSecFilingContent = originalGetCloudSecFilingContent;
   apiClient.getCloudHistory = originalGetCloudHistory;
   apiClient.getCloudQuote = originalGetCloudQuote;
   apiClient.getCloudFinancials = originalGetCloudFinancials;
@@ -232,6 +234,82 @@ describe("GloomberbCloudProvider", () => {
     }
     provider.subscribeQuotes([targets[0]!], () => { throw new Error("invalid target delivered"); })();
     expect([batchCalls, streamCalls, authCalls]).toEqual([2, 1, 1]);
+  });
+
+  test("prices a numbered crypto id from its latest bar when that id has no quote", async () => {
+    const now = Date.now();
+    apiClient.getCloudQuote = async (symbol) => symbol === "HYPE-USD"
+      ? { status: "success", stale: true, data: {
+        symbol, price: 90, currency: "USD", change: 0, changePercent: 0,
+        lastUpdated: now - 20 * 60 * 60 * 1000, listingExchangeName: "CCC",
+      } }
+      : { status: "retryable_error", data: null, reasonCode: "UPSTREAM_ERROR" };
+    apiClient.getCloudQuotesBatch = async (targets) => ({
+      status: "success",
+      data: { items: targets.map((target) => ({
+        symbol: target.symbol, exchange: target.exchange ?? "", status: "retryable_error" as const, data: null, reasonCode: "UPSTREAM_ERROR",
+      })) },
+    });
+    const recent = new Date(now - 60_000).toISOString();
+    apiClient.getCloudHistory = async (_symbol, _exchange, params) => ({
+      status: "success" as const,
+      data: params?.interval === "1day"
+        ? [{ date: new Date(now - 24 * 60 * 60 * 1000).toISOString(), close: 90 }, { date: recent, close: 93.2 }]
+        : [{ date: recent, close: 93.2 }],
+    });
+    const provider = new GloomberbCloudProvider();
+    const quote = await provider.getQuote("HYPE32196-USD", "CCC");
+    expect(quote).toMatchObject({ symbol: "HYPE32196-USD", price: 93.2, listingExchangeName: "CCC", instrumentType: "CRYPTOCURRENCY" });
+    expect(quote.change).toBeCloseTo(3.2);
+    const batch = await provider.getQuotesBatch([{ symbol: "HYPE32196-USD", exchange: "CCC" }]);
+    expect(batch[0]?.quote).toMatchObject({ symbol: "HYPE32196-USD", price: 93.2 });
+    apiClient.getCloudHistory = async () => ({
+      status: "success",
+      data: [{ date: new Date(now - 3 * 60 * 60 * 1000).toISOString(), close: 93.2 }],
+    });
+    await expect(provider.getQuote("HYPE32196-USD", "CCC")).rejects.toThrow("UPSTREAM_ERROR");
+  });
+
+  test("keeps reading a numbered crypto id's latest bar while it is subscribed", async () => {
+    const now = Date.now();
+    let price = 93.2;
+    const polls: Array<() => void> = [];
+    const setInterval = globalThis.setInterval;
+    globalThis.setInterval = ((fn: () => void) => {
+      polls.push(fn);
+      return 1 as unknown as ReturnType<typeof globalThis.setInterval>;
+    }) as typeof globalThis.setInterval;
+    apiClient.getCloudQuote = async () => ({ status: "retryable_error", data: null, reasonCode: "UPSTREAM_ERROR" });
+    apiClient.ensureVerifiedSession = async () => null;
+    apiClient.subscribeQuotes = () => () => {};
+    apiClient.getCloudHistory = async (_symbol, _exchange, params) => ({
+      status: "success" as const,
+      data: params?.interval === "1day"
+        ? [{ date: new Date(now - 24 * 60 * 60 * 1000).toISOString(), close: 90 }, { date: new Date(now - 30_000).toISOString(), close: price }]
+        : [{ date: new Date(now - 30_000).toISOString(), close: price }],
+    });
+    const quotes: number[] = [];
+    const stop = new GloomberbCloudProvider().subscribeQuotes(
+      [{ symbol: "HYPE32196-USD", exchange: "CCC" }],
+      (_target, quote) => { quotes.push(quote.price); },
+    );
+    const flush = () => new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    try {
+      await flush();
+      expect(quotes).toEqual([93.2]);
+      expect(polls).toHaveLength(1);
+      price = 94;
+      polls[0]!();
+      await flush();
+      expect(quotes).toEqual([93.2, 94]);
+      stop();
+      polls[0]!();
+      await flush();
+      expect(quotes).toEqual([93.2, 94]);
+    } finally {
+      globalThis.setInterval = setInterval;
+      stop();
+    }
   });
 
   test("stale items in a successful quote batch cannot bypass single-quote freshness checks", async () => {
@@ -951,6 +1029,39 @@ describe("GloomberbCloudProvider", () => {
     expect(story?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
     expect(story?.items?.[0]?.publishedAt).toEqual(new Date("2026-04-01T10:05:00.000Z"));
   });
+
+  test("does not ask cloud news for a firehose tweet id", async () => {
+    let requested = false;
+    apiClient.getCloudNewsStory = async () => {
+      requested = true;
+      throw new Error("cloud story should not be requested");
+    };
+    const source = createGloomberbCloudCapabilities().find((capability) => capability.kind === "news") as NewsCapability;
+    await expect(source.provider.fetchNewsStory?.("x:123")).resolves.toBeNull();
+    expect(requested).toBe(false);
+  });
+});
+
+test("cloud filing content previews a large fund document instead of returning it raw", async () => {
+  const huge = `<html><body>${Array.from({ length: 20_000 }, (_, index) => `<p>Holding ${index} shares of issuer ${index}.</p>`).join("")}</body></html>`;
+  apiClient.getCloudSecFilingContent = async () => ({ content: huge, form4: null });
+  const filing = {
+    accessionNumber: "0001410368-26-089410",
+    form: "NPORT-P",
+    filingDate: new Date("2026-08-28T00:00:00Z"),
+    cik: "0000884394",
+    filingUrl: "https://www.sec.gov/Archives/edgar/data/884394/0001410368-26-089410-index.htm",
+    primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/884394/primary_doc.xml",
+  };
+  const preview = await new GloomberbCloudProvider().getSecFilingContent(filing);
+  expect(preview).toContain("Holding 0 shares of issuer 0.");
+  expect(preview!.length).toBeLessThan(20_000);
+  expect(preview).not.toContain("<p>");
+  expect(preview!.endsWith("[truncated]")).toBe(true);
+
+  const xml = "<?xml version=\"1.0\"?><ownershipDocument><issuer><issuerName>Acme</issuerName></issuer></ownershipDocument>";
+  apiClient.getCloudSecFilingContent = async () => ({ content: xml, form4: null });
+  expect(await new GloomberbCloudProvider().getSecFilingContent({ ...filing, form: "4" })).toBe(xml);
 });
 
 test("cloud SEC acceptance keeps timezone-free source values without using the machine timezone", async () => {

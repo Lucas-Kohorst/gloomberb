@@ -9,7 +9,7 @@ import {
   setPairStudies,
 } from "./studies";
 import { createTestResolvedSeries, createTestSeriesPoint } from "../../../test-support/time-series";
-import { chartStudyLabel } from "./settings";
+import { chartStudyLabel, chartStudyOptionsFor } from "./settings";
 import { buildComparisonChartPreset, buildPriceChartPreset } from "./presets";
 
 describe("chart composer studies", () => {
@@ -103,6 +103,20 @@ describe("chart composer studies", () => {
     // An indicator that is not on keeps its default and is left alone.
     expect(setBuiltinStudyPeriod(toggled, "ema20", 9)).toBe(toggled);
     expect(builtinStudyPeriod(toggled, "ema20")).toBe(20);
+  });
+
+  test("stochastic and ADX sit with RSI and MACD and open their own lower panels", () => {
+    const spec = setBuiltinStudies(buildPriceChartPreset("AAPL"), ["stoch14", "adx14"]);
+    expect(getSelectedBuiltinStudies(spec)).toEqual(["stoch14", "adx14"]);
+    expect(spec.studies.map((study) => [study.kind, study.panelId, study.parameters])).toEqual([
+      ["stochastic", "stochastic", { period: 14, smooth: 3 }],
+      ["adx", "adx", { period: 14 }],
+    ]);
+    expect(spec.panels.find((panel) => panel.id === "stochastic")).toMatchObject({ label: "Stochastic", height: 0.28 });
+    expect(spec.panels.find((panel) => panel.id === "adx")).toMatchObject({ label: "ADX", height: 0.28 });
+    const menu = chartStudyOptionsFor(spec).map((option) => option.value);
+    const rsi = menu.indexOf("rsi14");
+    expect(menu.slice(rsi, rsi + 4)).toEqual(["rsi14", "macd", "stoch14", "adx14"]);
   });
 });
 

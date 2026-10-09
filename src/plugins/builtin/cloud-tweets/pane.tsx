@@ -47,7 +47,7 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
   }, [symbol]);
 
   if (!symbol) {
-    return <EmptyState title="No ticker selected." />;
+    return <EmptyState title="Select a ticker." />;
   }
 
   return (

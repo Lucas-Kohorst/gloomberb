@@ -31,7 +31,7 @@ import {
 } from "./curves";
 import { forwardCurve } from "./forward";
 import { loadYieldCurveLookbacks, yieldCurveDate } from "./history";
-import { curveAsOf, isYieldObservationDate, type YieldPoint, yieldCurveErrors } from "./treasury-data";
+import { curveAsOf, isYieldObservationDate, staleCurveNotice, type YieldPoint, yieldCurveErrors } from "./treasury-data";
 import { loadWorldRows, type WorldRow } from "./world";
 
 type GcTab = "curve" | "world";
@@ -234,7 +234,7 @@ function CurveTab({ curve, onCurveChange, focused, width, height }: {
     notices: [
       !asOf && points.some((point) => point.yield != null) ? "The tenors carry mixed or unknown observation dates, so the curve is not one session." : null,
       missingTenors.length ? `Unavailable tenors: ${missingTenors.join(", ")}.` : null,
-      points.some((point) => point.stale) ? "Some tenors are cached values because their refresh failed." : null,
+      staleCurveNotice(points),
       lookbackResource.error ? `1D, 1W and 1M look-backs unavailable: ${lookbackResource.error}` : null,
       ...lookbackFailures,
       compareKey && compareResource.error ? `Compare curve unavailable: ${compareResource.error}` : null,
@@ -340,7 +340,7 @@ function CurveTab({ curve, onCurveChange, focused, width, height }: {
       {queryBar}
       {fieldError ? <Notice tone="negative">{fieldError}</Notice> : null}
       <PaneStatusBody loading={loading && points.length === 0} error={points.length === 0 ? error : null}
-        loadingLabel="Loading yield curve..." subject="yield curve">
+        subject="yield curve">
         <DataTableView<YieldTenorRow>
           focused={focused && !editing} rootWidth={width} rootHeight={bodyHeight}
           columns={columns} items={rows} getItemKey={tenorKey} renderCell={renderCell}
@@ -417,7 +417,7 @@ function WorldTab({ onOpen, focused, width, height }: {
       : { text, color: priceColor(Math.round(value * 100), colors) };
   }, [colors]);
   return (
-    <PaneStatusBody loading={loading && !data} error={!data ? error : null} loadingLabel="Loading world curves..." subject="world curves">
+    <PaneStatusBody loading={loading && !data} error={!data ? error : null} subject="world curves">
       <DataTableView<WorldRow>
         focused={focused} rootWidth={width} rootHeight={height}
         columns={WORLD_COLUMNS} items={rows} getItemKey={worldKey} renderCell={renderCell}

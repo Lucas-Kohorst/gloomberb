@@ -107,14 +107,26 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
 
 const electroview = new Electroview({ rpc });
 
+function nativeBridgeReady(): boolean {
+  const bridge = (window as { __electrobunBunBridge?: { postMessage?: unknown } }).__electrobunBunBridge;
+  return typeof bridge?.postMessage === "function";
+}
+
+/**
+ * Prefer the RPC socket. Electrobun already posts through the native bridge
+ * when that socket is not open, so a socket that never connects must not fail
+ * the request.
+ */
 async function waitForBridgeReady(): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 5_000) {
-    if (electroview.bunSocket?.readyState === WebSocket.OPEN) {
-      return;
-    }
+    const socket = electroview.bunSocket;
+    if (socket?.readyState === WebSocket.OPEN) return;
+    // A closed or missing socket will not open. Stop waiting on it.
+    if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) break;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+  if (electroview.bunSocket?.readyState === WebSocket.OPEN || nativeBridgeReady()) return;
   throw new Error("Electrobun RPC socket did not open in time.");
 }
 

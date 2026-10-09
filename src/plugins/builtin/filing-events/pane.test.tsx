@@ -124,7 +124,7 @@ test("plain refresh retries an initial outage and loads current filings", async 
     ? Response.json({ ticker, events: [event(ticker)] })
     : new Response("Filing outage", { status: 503 }));
   await mount();
-  expect(frame()).toContain("Could not load 8-K filings");
+  expect(frame()).toContain("8-K filings unavailable.");
 
   recovered = true;
   const count = requests.length;

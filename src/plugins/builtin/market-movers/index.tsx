@@ -1,11 +1,12 @@
 import { Box } from "../../../ui";
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, EmptyState, usePaneFooter, usePaneTabs, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, EmptyState, usePaneFooter, usePaneLoadingSignal, usePaneTabs, type DataTableKeyEvent } from "../../../components";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { publicTickerKey } from "../../../utils/exchanges";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePlanAccess } from "../../../api-client/plan-access";
@@ -261,21 +262,21 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
     handleRefreshKey(event, () => loadTab(activeTab, { forceRefresh: true }), { stopPropagation: true })
   ), [activeTab, loadTab]);
 
+  usePaneLoadingSignal((loading));
   usePaneFooter("market-movers", () => ({
     info: [
       ...(loadError ? [{ id: "load-error", parts: [{ text: loadError, tone: "warning" as const }] }] : []),
       ...summaryFooterSegments(summaryQuotes),
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(feedStatus ? [{
         id: "feed",
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
-      ...(moversStale && loadedTab === activeTab ? [{
-        id: "stale",
-        parts: [{ text: "stale", tone: "muted" as const }],
+      ...(moversStale && loadedTab === activeTab && lastLoadedAt != null ? [{
+        id: "updated",
+        parts: [{ text: formatApproximateAge(lastLoadedAt), tone: "muted" as const }],
       }] : []),
     ],
-  }), [activeTab, feedStatus, loadedTab, loadError, loading, moversStale, summaryQuotes]);
+  }), [activeTab, feedStatus, lastLoadedAt, loadedTab, loadError, loading, moversStale, summaryQuotes]);
 
   return (
     <DataTableView<MarketMoverRow, MarketMoverColumn>
@@ -298,7 +299,7 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       onActivate={openSymbol}
       renderCell={renderMarketMoverCell}
       selectedTextOverridesCellColor
-      emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No movers returned."}
+      emptyStateTitle={loading && !loadError ? "" : loadError ?? "No movers returned."}
       emptyContent={loadError ? (
         <Box paddingX={1} paddingY={1}>
           <EmptyState title={loadError} message="Try again in a moment." />

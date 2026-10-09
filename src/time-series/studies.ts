@@ -193,6 +193,10 @@ function studyWarmupPoints(spec: ChartStudySpec): number {
     return studyPeriod(spec, 20) - 1;
   }
   if (spec.kind === "rsi") return studyPeriod(spec, 14);
+  if (spec.kind === "stochastic") {
+    return studyPeriod(spec, 14) + positiveInteger(spec.parameters.smooth, 3) - 2;
+  }
+  if (spec.kind === "adx") return studyPeriod(spec, 14) * 2 - 1;
   if (spec.kind === "macd") {
     const slow = positiveInteger(spec.parameters.slow, 26);
     const signal = positiveInteger(spec.parameters.signal, 9);
@@ -307,6 +311,105 @@ function resolveBollinger(
   ];
 }
 
+/**
+ * Standard stochastic: %K is where the close sits in the period's high-low
+ * range (50 when the range is flat), and %D is an SMA of %K.
+ */
+export function stochastic(
+  bars: readonly { high: number; low: number; close: number }[],
+  period = 14,
+  smooth = 3,
+): { k: IndexedValue[]; d: IndexedValue[] } {
+  if (period <= 0 || smooth <= 0 || bars.length < period) return { k: [], d: [] };
+  const k: IndexedValue[] = [];
+  for (let index = period - 1; index < bars.length; index += 1) {
+    let highest = -Infinity;
+    let lowest = Infinity;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+      const bar = bars[cursor]!;
+      if (bar.high > highest) highest = bar.high;
+      if (bar.low < lowest) lowest = bar.low;
+    }
+    const range = highest - lowest;
+    k.push({ index, value: range === 0 ? 50 : ((bars[index]!.close - lowest) / range) * 100 });
+  }
+  const d = sma(k.map((point) => point.value), smooth).flatMap((point) => {
+    const source = k[point.index];
+    return source ? [{ index: source.index, value: point.value }] : [];
+  });
+  return { k, d };
+}
+
+/**
+ * Wilder ADX. +DI and -DI start after one period; ADX is the smoothed DX and
+ * starts one period after that. A bar with no range leaves the lines empty.
+ */
+export function averageDirectionalIndex(
+  bars: readonly { high: number; low: number; close: number }[],
+  period = 14,
+): { adx: IndexedValue[]; plusDI: IndexedValue[]; minusDI: IndexedValue[] } {
+  const empty = { adx: [], plusDI: [], minusDI: [] };
+  if (period <= 0 || bars.length < period * 2) return empty;
+  const plusDM: number[] = new Array(bars.length).fill(0);
+  const minusDM: number[] = new Array(bars.length).fill(0);
+  const trueRange: number[] = new Array(bars.length).fill(0);
+  for (let index = 1; index < bars.length; index += 1) {
+    const bar = bars[index]!;
+    const previous = bars[index - 1]!;
+    const upMove = bar.high - previous.high;
+    const downMove = previous.low - bar.low;
+    plusDM[index] = upMove > downMove && upMove > 0 ? upMove : 0;
+    minusDM[index] = downMove > upMove && downMove > 0 ? downMove : 0;
+    trueRange[index] = Math.max(bar.high - bar.low, Math.abs(bar.high - previous.close), Math.abs(bar.low - previous.close));
+  }
+  let atr = 0;
+  let smoothPlus = 0;
+  let smoothMinus = 0;
+  for (let index = 1; index <= period; index += 1) {
+    atr += trueRange[index]!;
+    smoothPlus += plusDM[index]!;
+    smoothMinus += minusDM[index]!;
+  }
+  const plusDI: IndexedValue[] = [];
+  const minusDI: IndexedValue[] = [];
+  const dx: number[] = new Array(bars.length).fill(Number.NaN);
+  for (let index = period; index < bars.length; index += 1) {
+    if (index > period) {
+      atr = atr - atr / period + trueRange[index]!;
+      smoothPlus = smoothPlus - smoothPlus / period + plusDM[index]!;
+      smoothMinus = smoothMinus - smoothMinus / period + minusDM[index]!;
+    }
+    if (atr <= 0) continue;
+    const plus = (smoothPlus / atr) * 100;
+    const minus = (smoothMinus / atr) * 100;
+    plusDI.push({ index, value: plus });
+    minusDI.push({ index, value: minus });
+    const sum = plus + minus;
+    dx[index] = sum === 0 ? 0 : (Math.abs(plus - minus) / sum) * 100;
+  }
+  const first = dx.findIndex((value) => !Number.isNaN(value));
+  if (first < 0 || first + period >= bars.length) return { adx: [], plusDI, minusDI };
+  let smoothed = 0;
+  for (let index = first; index < first + period; index += 1) smoothed += dx[index]!;
+  smoothed /= period;
+  const adx: IndexedValue[] = [{ index: first + period - 1, value: smoothed }];
+  for (let index = first + period; index < bars.length; index += 1) {
+    smoothed = (smoothed * (period - 1) + dx[index]!) / period;
+    adx.push({ index, value: smoothed });
+  }
+  return { adx, plusDI, minusDI };
+}
+
+function barPoints(
+  bars: readonly { sample: NumericSample }[],
+  values: readonly IndexedValue[],
+): TimeSeriesPoint[] {
+  return values.flatMap(({ index, value }) => {
+    const bar = bars[index];
+    return bar ? [derivedPoint(bar.sample, value)] : [];
+  });
+}
+
 function resolveRsi(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
   const period = studyPeriod(spec, 14);
   const samples = samplesFor(input);
@@ -362,6 +465,62 @@ function resolveMacd(spec: ChartStudySpec, input: ResolvedSeries, color: string)
       color: STUDY_COLORS[4]!,
       style: "columns",
       axis: "left",
+    }),
+  ];
+}
+
+function resolveStochastic(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const period = studyPeriod(spec, 14);
+  const smooth = positiveInteger(spec.parameters.smooth, 3);
+  const bars = studyBars(input);
+  const calculated = stochastic(bars, period, smooth);
+  const label = `Stoch(${period},${smooth}) ${input.label}`;
+  const oscillator = { unit: "index", unitGroup: "oscillator-0-100", axis: "left" as const };
+  return [
+    outputSeries(spec, input, {
+      id: `${spec.id}:k`,
+      label: `${label} %K`,
+      points: barPoints(bars, calculated.k),
+      color,
+      ...oscillator,
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:d`,
+      label: `${label} %D`,
+      points: barPoints(bars, calculated.d),
+      color: STUDY_COLORS[1]!,
+      ...oscillator,
+    }),
+  ];
+}
+
+function resolveAdx(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const period = studyPeriod(spec, 14);
+  const bars = studyBars(input);
+  const calculated = averageDirectionalIndex(bars, period);
+  const label = `ADX(${period}) ${input.label}`;
+  const oscillator = { unit: "index", unitGroup: "oscillator-0-100", axis: "left" as const };
+  return [
+    outputSeries(spec, input, {
+      id: `${spec.id}:adx`,
+      label,
+      points: barPoints(bars, calculated.adx),
+      color,
+      ...oscillator,
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:plus`,
+      label: `+DI(${period}) ${input.label}`,
+      points: barPoints(bars, calculated.plusDI),
+      color: STUDY_COLORS[1]!,
+      ...oscillator,
+    }),
+    outputSeries(spec, input, {
+      id: `${spec.id}:minus`,
+      label: `-DI(${period}) ${input.label}`,
+      points: barPoints(bars, calculated.minusDI),
+      color: STUDY_COLORS[5]!,
+      ...oscillator,
     }),
   ];
 }
@@ -1081,6 +1240,8 @@ function resolveStudySpecs(
     else if (spec.kind === "ema") outputs = resolveMovingAverage(spec, input, color, true);
     else if (spec.kind === "bollinger") outputs = resolveBollinger(spec, input, color);
     else if (spec.kind === "rsi") outputs = resolveRsi(spec, input, color);
+    else if (spec.kind === "stochastic") outputs = resolveStochastic(spec, input, color);
+    else if (spec.kind === "adx") outputs = resolveAdx(spec, input, color);
     else if (spec.kind === "macd") outputs = resolveMacd(spec, input, color);
     else if (spec.kind === "atr") outputs = resolveAtr(spec, input, color, nameVolumeInput);
     else if (spec.kind === "vwap" || spec.kind === "anchored-vwap" || spec.kind === "volume-profile") {

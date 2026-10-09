@@ -1,5 +1,5 @@
 import { type ReactNode, type Ref } from "react";
-import { Checkbox, FieldLabel, SelectButton, type ChoiceDialogChoice } from "../../../components";
+import { Checkbox, FieldLabel, SelectButton, Spinner, loadingText, type ChoiceDialogChoice } from "../../../components";
 import { Box, Text, TextAttributes, type BoxRenderable } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
@@ -129,13 +129,17 @@ export function PublicAnalyticsGroup({
               </Text>
             </Box>
           );
-        }) : detail ? (
+        }) : detail === loadingText() ? (
+          <Spinner label={loadingText()} />
+        ) : detail ? (
           <Text fg={colors.textMuted}>
             {truncateWithEllipsis(detail, detailWidth)}
           </Text>
         ) : null}
       </Box>
-      {metrics.length === 0 && displayPreview.subtitle ? (
+      {metrics.length === 0 && displayPreview.subtitle === loadingText() ? (
+        <Spinner label={loadingText()} />
+      ) : metrics.length === 0 && displayPreview.subtitle ? (
         <Text fg={colors.textMuted} wrapText width={contentWidth}>
           {displayPreview.subtitle}
         </Text>

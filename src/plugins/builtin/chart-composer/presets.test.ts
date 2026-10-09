@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createPaneInstance } from "../../../types/config";
 import type { ChartSpec } from "../../../time-series/types";
-import { getSelectedBuiltinStudies } from "./studies";
+import { createTestTemplateContext } from "../../../test-support/headless";
+import { getSelectedBuiltinStudies, getSelectedPairStudies } from "./studies";
 import { chartComposerModule } from "./index";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
@@ -60,5 +61,30 @@ describe("chart composer presets", () => {
     expect(canFollow(buildValuationChartPreset(["AAPL"]))).toBe(false);
     expect(canFollow(buildCustomChartPreset("AAPL, AAPL:revenue"))).toBe(false);
     expect(canFollow(buildComparisonChartPreset(["AAPL", "MSFT"]))).toBe(false);
+  });
+
+  test("a spaced slash or minus is a ratio or spread, and a slash inside one series is not", async () => {
+    const ratio = buildCustomChartPreset("gaa / voo");
+    expect(ratio.series.map((series) => series.source)).toEqual([
+      expect.objectContaining({ kind: "security", instrument: { symbol: "GAA" }, fieldId: "market.ohlcv" }),
+      expect.objectContaining({ kind: "security", instrument: { symbol: "VOO" }, fieldId: "market.ohlcv" }),
+    ]);
+    expect(ratio.studies).toEqual([
+      expect.objectContaining({ id: "pair:ratio", kind: "ratio", panelId: "formula" }),
+    ]);
+    expect(getSelectedPairStudies(buildCustomChartPreset("CL=F - ES=F"))).toEqual(["spread"]);
+    expect(buildCustomChartPreset("EUR/USD").series).toHaveLength(1);
+    expect(getSelectedPairStudies(buildCustomChartPreset("EUR/USD"))).toEqual([]);
+    expect(buildCustomChartPreset("AAPL:EV / EBITDA").series[0]?.source).toMatchObject({
+      kind: "security",
+      instrument: { symbol: "AAPL" },
+      fieldId: "valuation.evEbitda",
+    });
+    expect(getSelectedPairStudies(buildCustomChartPreset("AAPL, MSFT"))).toEqual([]);
+
+    const template = chartComposerModule.paneTemplates?.find((entry) => entry.shortcut?.prefix === "G");
+    const instance = await template?.createInstance?.(createTestTemplateContext(), { arg: "gaa / voo" });
+    expect(instance?.title).toBe("G GAA / VOO");
+    expect(getSelectedPairStudies(instance?.settings?.[CHART_SPEC_SETTING_KEY] as ChartSpec)).toEqual(["ratio"]);
   });
 });

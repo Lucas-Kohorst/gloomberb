@@ -5,7 +5,9 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
 } from "../../../types/plugin";
+import { commandPromptTicker } from "../../../layout/selected-ticker";
 import { normalizeTickerInput } from "../../../tickers/search";
+import { unavailableText } from "../../ui/status";
 import { debugLog } from "../../../utils/debug-log";
 import {
   isCollectionCommand,
@@ -109,7 +111,7 @@ export function useCommandBarPaneTemplateActions({
     } catch (error) {
       const displayLabel = getPaneTemplateDisplayLabel(template);
       notify(
-        error instanceof Error ? error.message : `Could not create ${displayLabel.toLowerCase()}.`,
+        error instanceof Error ? error.message : unavailableText(displayLabel),
         { type: "error" },
       );
     }
@@ -121,13 +123,18 @@ export function useCommandBarPaneTemplateActions({
   ) => {
     const trimmedArg = rawArg?.trim() || "";
     const argKind = template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
+    // Required ticker panes use the instrument already in the command prompt
+    // when nothing was typed. Optional panes stay unbound.
+    const promptSymbol = template.shortcut?.argOptional
+      ? null
+      : commandPromptTicker(buildWorkflowDeps().getState())?.symbol ?? null;
     if (argKind === "ticker") {
       if (!trimmedArg && template.shortcut?.argOptional) {
         await openPaneTemplateDirect(template);
         return;
       }
       const resolvedTicker = await resolveTickerInput(
-        trimmedArg || undefined,
+        trimmedArg || promptSymbol || undefined,
         activeTickerSymbol,
         activeCollectionId,
         buildWorkflowDeps(),
@@ -151,7 +158,7 @@ export function useCommandBarPaneTemplateActions({
     }
 
     if (argKind === "ticker-list") {
-      const trimmedList = trimmedArg || normalizeTickerInput(activeTickerSymbol, undefined) || "";
+      const trimmedList = trimmedArg || promptSymbol || normalizeTickerInput(activeTickerSymbol, undefined) || "";
       if (!trimmedList && template.shortcut?.openWithoutArg) {
         await openPaneTemplateDirect(template);
         return;
@@ -171,12 +178,12 @@ export function useCommandBarPaneTemplateActions({
           symbols,
         };
         if (template.canCreate && !template.canCreate(getPaneTemplateContext(), createOptions)) {
-          openPaneTemplateWorkflow(template, { arg: trimmedArg });
+          openPaneTemplateWorkflow(template, { arg: trimmedArg || trimmedList });
           return;
         }
         await openPaneTemplateDirect(template, createOptions);
       } catch {
-        openPaneTemplateWorkflow(template, { arg: trimmedArg });
+        openPaneTemplateWorkflow(template, { arg: trimmedArg || trimmedList });
       }
       return;
     }
@@ -217,7 +224,7 @@ export function useCommandBarPaneTemplateActions({
               instrument: item.instrument, listing: item.listing,
             });
           } catch (error) {
-            notify(error instanceof Error ? error.message : "Could not open the selected listing.", { type: "error" });
+            notify(error instanceof Error ? error.message : unavailableText("Listing"), { type: "error" });
           }
         },
       };
@@ -233,7 +240,7 @@ export function useCommandBarPaneTemplateActions({
             const ticker = await item.resolveTicker!();
             await executeCollectionCommand(commandId, ticker.metadata.ticker, undefined, ticker);
           } catch (error) {
-            notify(error instanceof Error ? error.message : "Could not open the selected listing.", { type: "error" });
+            notify(error instanceof Error ? error.message : unavailableText("Listing"), { type: "error" });
           }
         },
       };

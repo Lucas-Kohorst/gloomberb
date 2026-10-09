@@ -1,5 +1,6 @@
 import { useMemo, type Dispatch, type ReactNode } from "react";
 import { PaneFooterBar, PaneFooterKeys, PaneFooterProvider, type CombinedPaneFooter } from "../components/layout/pane/footer";
+import { PaneBodyLoadingRow } from "../components/layout/pane/frame";
 import { AppContext, PaneInstanceProvider, type AppAction, type AppState } from "../state/app/context";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugins/runtime";
 import { Box } from "../ui";
@@ -51,7 +52,10 @@ export function TestPaneFrame({
     <TestPaneProvider {...provider}>
       <PaneFooterProvider>{(footer) => (
         <Box width={width} height={height} flexDirection="column">
-          <Box width={width} height={body.height} flexShrink={0}>{children(body, footer)}</Box>
+          <Box width={width} height={body.height} flexShrink={0} flexDirection="column">
+            <PaneBodyLoadingRow />
+            {children(body, footer)}
+          </Box>
           <PaneFooterBar footer={footer} focused width={width} />
           {footerKeys ? <PaneFooterKeys paneId={provider.paneId} footer={footer} focused /> : null}
         </Box>

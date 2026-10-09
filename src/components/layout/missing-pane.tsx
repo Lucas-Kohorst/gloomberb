@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { Button } from "../ui/button";
 import { confirmDialog } from "../ui/confirm-dialog";
-import { EmptyState } from "../ui/status";
+import { Spinner } from "../ui/loading";
+import { EmptyState, loadingText } from "../ui/status";
 import { runsExternalPlugins } from "../../plugins/current-target";
 import { activateInstalledPlugin } from "../../plugins/builtin/plugin-marketplace/activation";
 import { installConsent } from "../../plugins/builtin/plugin-marketplace/model";
@@ -131,13 +132,14 @@ function MissingPanePlaceholder({ paneType, width }: PaneProps) {
         hint={notice?.text ?? "Publishing from here keeps this pane for the rest of the team."}
         status={notice?.error ? "error" : "empty"}
         actions={installable ? (
-          <Button
-            label={installing ? "Installing..." : `Install ${pluginLabel}`}
-            variant="primary"
-            compact
-            onPress={() => { void install(); }}
-            disabled={installing}
-          />
+          installing ? <Spinner label={loadingText()} /> : (
+            <Button
+              label={`Install ${pluginLabel}`}
+              variant="primary"
+              compact
+              onPress={() => { void install(); }}
+            />
+          )
         ) : undefined}
       />
     </Box>

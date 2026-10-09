@@ -5,25 +5,23 @@ import { usSessionAt } from "../market-movers/session";
 import type { NewsArticle } from "../../../news/types";
 import { zonedDateKey } from "../../../utils/zoned-date-time";
 
-export const BRIEF_FUTURES = ["ES=F", "NQ=F", "RTY=F", "ZN=F", "CL=F"] as const;
-/** Bitcoin quotes on the same board as the futures, after them. */
-export const BRIEF_BTC = "BTC-USD";
+export const BRIEF_FUTURES = ["ES=F", "NQ=F", "CL=F"] as const;
 const HEADLINE_CAP = 8;
 const NEW_YORK = "America/New_York";
 
-export interface BriefSession {
+interface BriefSession {
   date: string;
   phase: "pre" | "regular" | "post" | "closed";
 }
 
-export interface BriefMarketRow {
+interface BriefMarketRow {
   symbol: string;
   label: string;
   last: number | null;
   changePercent: number | null;
 }
 
-export interface BriefHeadline {
+interface BriefHeadline {
   articleId: string;
   title: string;
   source: string;
@@ -31,7 +29,7 @@ export interface BriefHeadline {
   publishedAt: string;
 }
 
-export interface BriefEvent {
+interface BriefEvent {
   id: string;
   at: string;
   kind: "earnings" | "economic";
@@ -39,6 +37,9 @@ export interface BriefEvent {
   symbol: string | null;
   /** Company name for an earnings row. Empty when the calendar only has the ticker. */
   name: string | null;
+  /** Consensus for an earnings row. Null on a release, and when the calendar has no figure. */
+  epsEstimate: number | null;
+  revenueEstimate: number | null;
 }
 
 export interface Brief {
@@ -49,7 +50,7 @@ export interface Brief {
   events: BriefEvent[];
 }
 
-export interface BriefQuote {
+interface BriefQuote {
   last: number | null;
   changePercent: number | null;
 }
@@ -58,7 +59,7 @@ export interface BriefSlices {
   now: number;
   quotes: ReadonlyMap<string, BriefQuote>;
   articles: readonly NewsArticle[];
-  earnings: readonly (Pick<EarningsCalendarReport, "symbol" | "date" | "timing"> & { name?: string | null })[];
+  earnings: readonly (Pick<EarningsCalendarReport, "symbol" | "date" | "timing" | "epsEstimate" | "revenueEstimate"> & { name?: string | null })[];
   econ: readonly EconEvent[];
   fetchedAt: readonly (number | string | null | undefined)[];
 }
@@ -82,13 +83,13 @@ function oldestIso(values: readonly (number | string | null | undefined)[]): str
 export function assembleBrief(input: BriefSlices): Brief {
   const session = usSessionAt(input.now);
   const contracts = new Map(FUTURES_CONTRACTS.map((contract) => [contract.symbol, contract]));
-  const markets = [...BRIEF_FUTURES, BRIEF_BTC].map((symbol) => {
+  const markets = BRIEF_FUTURES.map((symbol) => {
     const contract = contracts.get(symbol);
-    if (symbol !== BRIEF_BTC && !contract) throw new Error(`missing futures contract ${symbol}`);
+    if (!contract) throw new Error(`missing futures contract ${symbol}`);
     const quote = input.quotes.get(symbol);
     return {
       symbol,
-      label: contract?.code ?? "BTC",
+      label: contract.code,
       last: quote?.last ?? null,
       changePercent: quote?.changePercent ?? null,
     };
@@ -111,6 +112,8 @@ export function assembleBrief(input: BriefSlices): Brief {
       label: company || report.symbol,
       symbol: report.symbol,
       name: company && company !== report.symbol ? company : null,
+      epsEstimate: report.epsEstimate ?? null,
+      revenueEstimate: report.revenueEstimate ?? null,
     });
   }
   // Before the open, during the session, after the close, then a report with no time.
@@ -126,6 +129,8 @@ export function assembleBrief(input: BriefSlices): Brief {
       label: `${event.country} ${event.event}`,
       symbol: null,
       name: null,
+      epsEstimate: null,
+      revenueEstimate: null,
     });
   }
   economic.sort((a, b) => a.at.localeCompare(b.at) || a.label.localeCompare(b.label));

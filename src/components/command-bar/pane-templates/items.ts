@@ -186,7 +186,7 @@ export function buildPaneTemplateItem(options: {
 
   return {
     id: `pane-template:${options.template.id}:${arg || ""}`,
-    label: displayLabel,
+    label: options.shortcutExecution && arg ? `${displayLabel} · ${arg}` : displayLabel,
     detail: [options.template.description, shortcutLabel, aliases.length ? `also ${aliases.join(", ")}` : ""].filter(Boolean).join(" · "),
     category: options.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
     kind: "action",

@@ -1,0 +1,164 @@
+import { describe, expect, test } from "bun:test";
+import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
+import {
+  createXMarketsNewsCapability,
+  normalizeXMarketsTweet,
+  supportsXMarketsNewsQuery,
+} from "./news-capability";
+import { DEFAULT_TWITTER_FEED_QUERY, X_FEED_CONNECTION_ID } from "./model";
+
+function makeTweet(overrides: Partial<CloudTweetPayload> = {}): CloudTweetPayload {
+  return {
+    id: "123",
+    url: "https://x.com/marketsbot/status/123",
+    text: "Markets rally on $NVDA earnings",
+    createdAt: "2026-08-20T12:00:00.000Z",
+    lang: "en",
+    isReply: false,
+    author: { id: "1", userName: "marketsbot", name: "Markets Bot" },
+    metrics: {
+      retweets: 0,
+      replies: 0,
+      likes: 0,
+      quotes: 0,
+      views: 0,
+      bookmarks: 0,
+    },
+    ...overrides,
+  };
+}
+
+function makeSearchResponse(tweets: CloudTweetPayload[]): CloudTweetSearchResponse {
+  return {
+    query: DEFAULT_TWITTER_FEED_QUERY,
+    queryType: "Latest",
+    since: "2026-08-20T06:00:00.000Z",
+    until: "2026-08-20T12:00:00.000Z",
+    limit: 50,
+    hours: 6,
+    cached: false,
+    cacheTtlMs: 0,
+    asOf: "2026-08-20T12:00:00.000Z",
+    tweets,
+  };
+}
+
+describe("normalizeXMarketsTweet", () => {
+  test("maps tweet text, @source, tickers, and an x: id", () => {
+    const article = normalizeXMarketsTweet(makeTweet({
+      media: [{ url: "https://pbs.twimg.com/media/photo.jpg" }],
+    }));
+    expect(article).not.toBeNull();
+    expect(article?.id).toBe("x:123");
+    expect(article?.title).toBe("Markets rally on $NVDA earnings");
+    expect(article?.summary).toBe("Markets rally on $NVDA earnings");
+    expect(article?.source).toBe("@marketsbot");
+    expect(article?.tickers).toEqual(["NVDA"]);
+    expect(article?.url).toBe("https://x.com/marketsbot/status/123");
+    expect(article?.imageUrl).toBe("https://pbs.twimg.com/media/photo.jpg");
+    expect(article?.categories).toEqual(["twitter"]);
+    expect(article?.sentiment).toBeUndefined();
+    expect(article?.items).toEqual([{
+      id: "123",
+      sourceKey: X_FEED_CONNECTION_ID,
+      sourceName: "@marketsbot",
+      title: "Markets rally on $NVDA earnings",
+      url: "https://x.com/marketsbot/status/123",
+      publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+    }]);
+  });
+
+  test("drops tweets without a url, with empty text, or with a bad date", () => {
+    expect(normalizeXMarketsTweet(makeTweet({ url: "" }))).toBeNull();
+    expect(normalizeXMarketsTweet(makeTweet({ url: "   " }))).toBeNull();
+    expect(normalizeXMarketsTweet(makeTweet({ text: "" }))).toBeNull();
+    expect(normalizeXMarketsTweet(makeTweet({ text: "   " }))).toBeNull();
+    expect(normalizeXMarketsTweet(makeTweet({ createdAt: "not-a-date" }))).toBeNull();
+    expect(normalizeXMarketsTweet(makeTweet({ createdAt: "" }))).toBeNull();
+  });
+});
+
+describe("supportsXMarketsNewsQuery", () => {
+  test("supports the latest feed only", () => {
+    expect(supportsXMarketsNewsQuery({ feed: "latest" })).toBe(true);
+    expect(supportsXMarketsNewsQuery({})).toBe(true);
+    expect(supportsXMarketsNewsQuery({ feed: "top" })).toBe(false);
+    expect(supportsXMarketsNewsQuery({ feed: "breaking" })).toBe(false);
+    expect(supportsXMarketsNewsQuery({ feed: "ticker", ticker: "NVDA" })).toBe(false);
+    expect(supportsXMarketsNewsQuery({ scope: "ticker", ticker: "NVDA" })).toBe(false);
+    expect(supportsXMarketsNewsQuery({ feed: "latest", cursor: "next" })).toBe(false);
+  });
+});
+
+describe("createXMarketsNewsCapability", () => {
+  test("returns no articles when the session is unverified", async () => {
+    const capability = createXMarketsNewsCapability({
+      isVerified: () => false,
+      search: async () => {
+        throw new Error("search should not run while unverified");
+      },
+    });
+    await expect(capability.provider.fetchNews({ feed: "latest" })).resolves.toEqual([]);
+    expect(capability.id).toBe("news.x-feed");
+    expect(capability.sourceId).toBe(X_FEED_CONNECTION_ID);
+  });
+
+  test("maps the Markets list when verified and can reopen the tweet without a cloud story", async () => {
+    const searched: string[] = [];
+    const capability = createXMarketsNewsCapability({
+      isVerified: () => true,
+      search: async (query) => {
+        searched.push(query);
+        return makeSearchResponse([
+          makeTweet(),
+          makeTweet({ id: "missing-url", url: "" }),
+          makeTweet({ id: "empty", text: "  " }),
+        ]);
+      },
+    });
+
+    const articles = await capability.provider.fetchNews({ feed: "latest" });
+    expect(searched).toEqual([DEFAULT_TWITTER_FEED_QUERY]);
+    expect(articles).toHaveLength(1);
+    expect(articles[0]?.id).toBe("x:123");
+    expect(articles[0]?.source).toBe("@marketsbot");
+    expect(articles[0]?.tickers).toEqual(["NVDA"]);
+    expect(articles[0]?.items?.length).toBe(1);
+    await expect(capability.provider.fetchNewsStory?.("x:123")).resolves.toMatchObject({
+      id: "x:123",
+      source: "@marketsbot",
+    });
+    await expect(capability.provider.fetchNewsStory?.("story-1")).resolves.toBeNull();
+  });
+
+  test("caps the firehose seed to the query limit", async () => {
+    const capability = createXMarketsNewsCapability({
+      isVerified: () => true,
+      search: async () => makeSearchResponse([
+        makeTweet({ id: "1", url: "https://x.com/marketsbot/status/1" }),
+        makeTweet({ id: "2", url: "https://x.com/marketsbot/status/2" }),
+        makeTweet({ id: "3", url: "https://x.com/marketsbot/status/3" }),
+      ]),
+    });
+    const articles = await capability.provider.fetchNews({ feed: "latest", limit: 2 });
+    expect(articles.map((article) => article.id)).toEqual(["x:1", "x:2"]);
+  });
+
+  test("returns [] on auth errors and rethrows other failures", async () => {
+    const unauthorized = createXMarketsNewsCapability({
+      isVerified: () => true,
+      search: async () => {
+        throw new Error("Unauthorized: verification required");
+      },
+    });
+    await expect(unauthorized.provider.fetchNews({ feed: "latest" })).resolves.toEqual([]);
+
+    const failed = createXMarketsNewsCapability({
+      isVerified: () => true,
+      search: async () => {
+        throw new Error("upstream timeout");
+      },
+    });
+    await expect(failed.provider.fetchNews({ feed: "latest" })).rejects.toThrow("upstream timeout");
+  });
+});

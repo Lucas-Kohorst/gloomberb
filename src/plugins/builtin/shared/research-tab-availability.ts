@@ -6,8 +6,8 @@ import { isCloudSessionRequired } from "./research-cloud-session";
 
 /**
  * Whether a prefetched research tab has something to show.
- * An empty or missing dataset hides the tab. A sign-in wall, an upgrade
- * wall, or a failure the tab can retry stays visible.
+ * An empty or missing dataset is false. A sign-in wall, an upgrade wall,
+ * or a failure the tab can retry is true. The DES strip lists the tab either way.
  */
 export async function shownIf<T>(
   load: () => Promise<T>,
@@ -54,7 +54,7 @@ export function researchEmailVerified(): boolean {
 
 /**
  * A coordinator entry has data when its payload passes `present`.
- * `NO_DATA` / `NOT_FOUND` hides the tab; any other failure keeps it.
+ * `NO_DATA` / `NOT_FOUND` is false. Any other failure is true.
  */
 export function entryShows<T>(entry: QueryEntry<T>, present: (data: T) => boolean): boolean {
   if (entry.data && present(entry.data)) return true;

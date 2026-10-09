@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CloudThesis, ThesisSignal } from "../../../../api-client";
-import { Badge, ListView, openUrl, usePaneFooter, type ListViewItem, type PaneHint } from "../../../../components";
+import { Badge, ListView, openUrl, usePaneFooter, usePaneLoadingSignal, type ListViewItem, type PaneHint } from "../../../../components";
 import { useShortcut } from "../../../../react/input";
 import { colors } from "../../../../theme/colors";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
@@ -340,9 +340,9 @@ export function ThesisDetail({ thesis, width, height, focused, footerId, onDelet
     return list;
   }, [addToSection, challengeSelected, cycleStatus, editMenu, isTeam, openSource, plan.hasProAccess, remove, review, sectionOf, selectedRow]);
 
+  usePaneLoadingSignal((busy));
   usePaneFooter(footerId, () => ({
     info: [
-      ...(busy ? [{ id: "busy", parts: [{ text: "working", tone: "muted" as const }] }] : []),
       ...(thesis.status === "closed" ? [{ id: "closed", parts: [{ text: "closed", tone: "muted" as const }] }] : []),
     ],
     hints,

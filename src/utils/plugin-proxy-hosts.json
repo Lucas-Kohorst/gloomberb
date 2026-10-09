@@ -1,5 +1,6 @@
 {
   "hosts": [
+    "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
     "api.votehub.com",
@@ -9,6 +10,7 @@
     "efts.sec.gov",
     "gamma-api.polymarket.com",
     "nasdaqtrader.com",
-    "production.dataviz.cnn.io"
+    "production.dataviz.cnn.io",
+    "www.sec.gov"
   ]
 }

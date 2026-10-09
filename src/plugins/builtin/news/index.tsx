@@ -96,20 +96,17 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     registrationId: "news",
     focused: listFocused,
     article: detailArticle,
-    // Stale rows stay on screen during a refresh or a failure, so the pane says
-    // so in the footer instead of replacing them.
-    loading: detailLoading || (loading && loaded.length > 0),
+    // Rows stay on screen during a refresh or a failure.
+    loading: detailLoading || loadingSummary || (loading && loaded.length > 0),
     error: [error, detailError].filter(Boolean).join(" ") || null,
-    info: loadingSummary
-      ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }]
-      : undefined,
     onPopOut: readableArticle ? popOutReadable : undefined,
+    updatedAt: newsState.updatedAt,
   });
 
   if (!ticker) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <EmptyState title="No ticker selected." message="Pick a ticker to load its news." />
+        <EmptyState title="Select a ticker." />
       </Box>
     );
   }

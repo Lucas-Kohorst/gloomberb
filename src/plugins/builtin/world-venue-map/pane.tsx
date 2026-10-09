@@ -10,7 +10,7 @@ import {
   QueryBar,
   readStoredPaneSidebarWidth,
   shouldShowPaneSidebar,
-  usePaneFooter,
+  usePaneFooter, usePaneLoadingSignal,
   useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
@@ -120,11 +120,10 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     handleRefreshKey(event, refresh, { stopPropagation: true });
   }, { allowEditable: true, enabled: focused });
 
+  usePaneLoadingSignal((loading && !data));
   usePaneFooter(WORLD_VENUE_MAP_PANE_ID, () => ({
     info: [
-      ...(loading && !data ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(data && !data.stale ? [{ id: "live", parts: [{ text: "live", tone: "positive" as const }] }] : []),
-      ...(data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
@@ -216,7 +215,7 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   );
 
   if (!data && loading) {
-    return <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading world venues..." />;
+    return <PaneStatusBody loading align="center" width={width} height={height} />;
   }
   if (!data) {
     return <EmptyState status={error ? "error" : "empty"} title="World venues unavailable." hint={error ?? "Try again."} />;

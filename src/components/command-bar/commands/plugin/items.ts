@@ -1,3 +1,4 @@
+import { unavailableText } from "../../../ui/status";
 import type { PluginRegistry } from "../../../../plugins/registry";
 import { describeUsageFunction, recordFunctionOpen } from "../../../../telemetry/usage-counts";
 import type { CommandDef, CommandResultDef } from "../../../../types/plugin";
@@ -46,7 +47,7 @@ export async function runPluginCommandDirect(options: {
     options.closeAll({ revertThemePreview: false });
   } catch (error) {
     options.notify(
-      error instanceof Error ? error.message : `Could not run ${options.command.label.toLowerCase()}.`,
+      error instanceof Error ? error.message : unavailableText(options.command.label),
       { type: "error" },
     );
   }
@@ -94,7 +95,7 @@ export function buildPluginCommandItem(options: {
           });
         } catch (error) {
           options.notify(
-            error instanceof Error ? error.message : `Could not parse ${options.command.label.toLowerCase()}.`,
+            error instanceof Error ? error.message : unavailableText(options.command.label),
             { type: "error" },
           );
         }
@@ -108,7 +109,7 @@ export function buildPluginCommandItem(options: {
           );
         } catch (error) {
           options.notify(
-            error instanceof Error ? error.message : `Could not parse ${options.command.label.toLowerCase()}.`,
+            error instanceof Error ? error.message : unavailableText(options.command.label),
             { type: "error" },
           );
         }
@@ -167,7 +168,7 @@ export function buildPluginCommandResultItem(options: {
         options.closeAll({ revertThemePreview: false });
       } catch (error) {
         options.notify(
-          error instanceof Error ? error.message : `Could not run ${options.command.label.toLowerCase()}.`,
+          error instanceof Error ? error.message : unavailableText(options.command.label),
           { type: "error" },
         );
       }

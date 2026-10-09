@@ -1,4 +1,5 @@
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { loadBondBenchmark } from "./client";
 import { bondDraftFromOptions, calculateBond } from "./model";
 
@@ -44,7 +45,7 @@ export const bondCalculatorHeadless: HeadlessPaneDefinition<"bundle"> = {
           { label: "Modified duration", value: a.modifiedDuration, formatted: `${a.modifiedDuration.toFixed(4)} years` },
           { label: "Convexity", value: a.convexity, formatted: a.convexity.toFixed(4) },
           { label: "DV01", value: a.dv01, formatted: a.dv01.toFixed(6) },
-          { label: "Treasury spread", value: result.spread?.spreadBps ?? null, formatted: result.spread ? `${result.spread.spreadBps.toFixed(1)} bp as of ${result.spread.asOf}` : "Unavailable" },
+          { label: "Treasury spread", value: result.spread?.spreadBps ?? null, formatted: result.spread ? `${result.spread.spreadBps.toFixed(1)} bp ${formatObservationAge(result.spread.asOf) ?? result.spread.asOf}` : "Unavailable" },
         ] },
         { title: "Cash flows per 100 face", columns: [{ key: "date", header: "Payment" }, { key: "amount", header: "Cash", format: (n) => Number(n).toFixed(4) }, { key: "presentValue", header: "Present value", format: (n) => Number(n).toFixed(4) }], rows: a.cashFlows.map((flow) => ({ ...flow })) },
         { title: "Yield sensitivity", columns: [{ key: "shiftBps", header: "Shift bp" }, { key: "yieldPercent", header: "Yield %" }, { key: "cleanPrice", header: "Clean price", format: (n) => n == null ? "-" : Number(n).toFixed(4) }, { key: "priceChange", header: "Change", format: (n) => n == null ? "-" : Number(n).toFixed(4) }], rows: result.sensitivity },

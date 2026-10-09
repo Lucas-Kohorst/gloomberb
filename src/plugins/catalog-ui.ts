@@ -5,14 +5,15 @@ import { notesPlugin } from "./builtin/notes";
 import { customViewPlugin } from "./builtin/custom-view";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { alertsPlugin } from "./builtin/alerts";
+import { notificationCenterPlugin } from "./builtin/notification-center";
 import { researchSearchPlugin } from "./builtin/research-search";
 import { marketHeatmapPlugin } from "./builtin/market-heatmap";
 import { marketHaltsPlugin } from "./builtin/market-halts";
 import { fearGreedPlugin } from "./builtin/fear-greed";
 import { ipoCalendarPlugin } from "./builtin/ipo-calendar";
-import { dailyBriefPlugin } from "./builtin/daily-brief";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
+import { edgarFilingsPlugin } from "./builtin/edgar-filings";
 import { openFdaPlugin } from "./builtin/openfda";
 import {
   applicationPlugin,
@@ -37,12 +38,13 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   marketHaltsPlugin,
   fearGreedPlugin,
   ipoCalendarPlugin,
-  dailyBriefPlugin,
   clinicalTrialsPlugin,
   commentLettersPlugin,
+  edgarFilingsPlugin,
   openFdaPlugin,
   macroPlugin,
   alertsPlugin,
+  notificationCenterPlugin,
   researchSearchPlugin,
 ];
 

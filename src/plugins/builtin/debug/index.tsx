@@ -7,6 +7,7 @@ import {
   DataTableStackView,
   isTableScrollNearEnd,
   QueryBar,
+  unavailableText,
   usePaneFooter,
   useQueryBarSearch,
   type DataTableCell,
@@ -34,7 +35,7 @@ async function exportDebugLog(
   try {
     notify({ body: `Exported to ${await saveTextFileToDownloads(filename, text)}`, type: "success" });
   } catch {
-    notify({ body: "Failed to export logs", type: "error" });
+    notify({ body: unavailableText("Logs"), type: "error" });
   }
 }
 

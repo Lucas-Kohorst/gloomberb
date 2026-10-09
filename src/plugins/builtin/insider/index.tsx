@@ -12,6 +12,9 @@ import {
   PaneLinkMenu,
   QueryBar,
   Spinner,
+  loadingText,
+  unavailableText,
+  usePaneLoadingSignal,
   StatGrid,
   sortStackItems,
   useExternalLinkFooter,
@@ -169,7 +172,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     (filingsEntry?.phase === "refreshing" && allFilings.length === 0);
   const error =
     filingsEntry?.phase === "error"
-      ? (filingsEntry.error?.message ?? "Failed to load SEC filings")
+      ? (filingsEntry.error?.message ?? unavailableText("Insider filings"))
       : null;
   // Hosted, the only filings source is Gloom Cloud, which needs an account.
   const cloudSession = useResearchCloudSession();
@@ -311,11 +314,10 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     ],
   } : null), [focused, openAdjacent, openIndex, sortedRows.length]);
 
-  const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
+  usePaneLoadingSignal(pendingCount > 0 && !(loading && allFilings.length === 0));
   const footerInfo = useMemo(() => [
-    ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
     ...(error && allFilings.length > 0 ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-  ], [allFilings.length, error, pendingLabel]);
+  ], [allFilings.length, error]);
   // An unreconciled 4/A or an unread filing is a limitation of the totals on
   // screen, not a status.
   usePaneNoticeFooter({
@@ -349,12 +351,15 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   });
 
   if (!ticker) {
-    return <EmptyState title="No ticker selected." message="Select a ticker to view insider activity." />;
+    return <EmptyState title="Select a ticker." />;
   }
   if (!eligibleTicker) return renderFilingNotice("Insider transactions are only shown for US equities.", width);
   if (authWall) return <SignInWall placement="insider-signin" action="view insider transactions" needsVerification={cloudSession.needsVerification} />;
-  if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
-  if (error && allFilings.length === 0) return <EmptyState title="Insider filings unavailable." message={error} />;
+  if (loading && allFilings.length === 0) return <Spinner label={loadingText()} />;
+  if (error && allFilings.length === 0) {
+    const title = unavailableText("Insider filings");
+    return <EmptyState title={title} message={error === title ? undefined : error} />;
+  }
   if (!loading && form4Filings.length === 0) {
     return renderFilingNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
   }
@@ -364,7 +369,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   const oldestRead = allParsed.findLast((entry) => !entry.isLoading)?.filing.filingDate;
   const since = oldestRead ? ` since ${formatShortDate(oldestRead, { utc: true })}` : "";
   const emptyTitle = typeCounts.all === 0 && (pendingCount > 0 || wantsOlderFilings)
-    ? "Loading Form 4 transactions..."
+    ? ""
     : typeFilter === "trades"
       ? `No open-market buys or sells${nameFilter ? " by this insider" : ""}${since}.`
       : nameFilter ? "No insider transactions for this filter." : "No insider transactions.";

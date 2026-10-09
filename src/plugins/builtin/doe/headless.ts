@@ -14,18 +14,31 @@ import {
   formatDoePosition,
   formatDoeVsFive,
   formatDoeVsYear,
+  formatDoeWeeklyChange,
+  formatDoeWeeklyLevel,
+  type DoeWeeklyRow,
 } from "./model";
+import { isDoeWeeklySeries, loadDoeWeeklySeries } from "./weekly";
 
 const text = (value: unknown) => typeof value === "string" ? value : "--";
 
 /** One row per series, in the pane's words and units; numbers keep their published precision. */
 function reportRow(row: DoeSeriesRow) {
   return {
-    id: row.id, series: row.label, unit: DOE_UNIT_LABEL[row.unit], weekEnding: row.weekEnding,
+    id: row.id, series: row.label, unit: DOE_UNIT_LABEL[row.unit], weekEnding: row.weekEnding, asOf: row.weekEnding ?? "--",
     level: formatDoeLevel(row.unit, row.value), weekChange: formatDoeChange(row.unit, row.weekChange),
     vsYearAgo: formatDoeVsYear(row), vsFiveYear: formatDoeVsFive(row),
     fiveYearLow: formatDoeLevel(row.unit, row.fiveYear?.min ?? null), fiveYearHigh: formatDoeLevel(row.unit, row.fiveYear?.max ?? null),
     position: formatDoePosition(row), read: row.read,
+  };
+}
+
+function reportWeekly(row: DoeWeeklyRow) {
+  return {
+    id: row.id, series: row.label, unit: row.unitLabel, weekEnding: row.weekEnding, asOf: row.weekEnding ?? "--",
+    level: row.error && row.value == null ? "unavailable" : formatDoeWeeklyLevel(row),
+    weekChange: formatDoeWeeklyChange(row),
+    vsYearAgo: "--", vsFiveYear: "--", fiveYearLow: "--", fiveYearHigh: "--", position: "--", read: row.error,
   };
 }
 
@@ -36,6 +49,8 @@ const SUMMARY_COLUMNS = [
   { key: "fiveYearLow", header: "5Y low", align: "right" as const }, { key: "fiveYearHigh", header: "5Y high", align: "right" as const },
   { key: "position", header: "In 5Y range", align: "right" as const }, { key: "read", header: "Read", format: text },
 ];
+
+const AS_OF_COLUMN = { key: "asOf", header: "As of" };
 
 /** The selected series' year, week by week, against last year and the five-year band: the chart as a table. */
 function seasonalRows(row: DoeSeriesRow) {
@@ -61,9 +76,22 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
     async load(args) {
       const data = await fetchDoeBoard();
       const argument = Array.isArray(args.argument) ? args.argument.join(" ") : args.argument;
+      const option = argument ? doeSeriesOption(argument) : null;
+      const tabs = args.options.tab === "all" || args.options.tab == null ? DOE_TABS.map(({ value }) => value) : [doeTab(args.options.tab)];
+      const needsWeekly = (option != null && isDoeWeeklySeries(option.value)) || (!argument && tabs.includes("products"));
+      const weekly = needsWeekly ? await loadDoeWeeklySeries() : null;
       if (argument) {
-        const option = doeSeriesOption(argument);
-        const row = option ? data.series.find((entry) => entry.id === option.value) : null;
+        if (!option) throw new Error("Use a series such as cushing, gasoline, distillate or east");
+        if (isDoeWeeklySeries(option.value)) {
+          const row = weekly?.rows.find((entry) => entry.id === option.value);
+          if (!row || (row.error && row.value == null)) throw new Error(row?.error ?? `${option.label} is unavailable`);
+          return {
+            sections: [{ title: `${row.label} · ${row.weekEnding ?? "no date"}`, columns: [...SUMMARY_COLUMNS, AS_OF_COLUMN], rows: [reportWeekly(row)] }],
+            errors: row.error ? [row.error] : [],
+            metadata: { ...data, series: [], weekly: [row], complete: data.status === "available" && !row.error },
+          };
+        }
+        const row = data.series.find((entry) => entry.id === option.value);
         if (!row) throw new Error("Use a series such as cushing, gasoline, distillate or east");
         return {
           sections: [
@@ -78,15 +106,17 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
           metadata: { ...data, series: [row], complete: data.status === "available" },
         };
       }
-      const tabs = args.options.tab === "all" || args.options.tab == null ? DOE_TABS.map(({ value }) => value) : [doeTab(args.options.tab)];
       return {
         sections: tabs.map((tab) => ({
           title: `${DOE_TABS.find((entry) => entry.value === tab)!.label}${doeHeaderLine(doeReport(data, tab)) ? `: ${doeHeaderLine(doeReport(data, tab))}` : ""}`,
-          columns: SUMMARY_COLUMNS,
-          rows: doeRows(data, tab).map(reportRow),
+          columns: tab === "products" ? [...SUMMARY_COLUMNS, AS_OF_COLUMN] : SUMMARY_COLUMNS,
+          rows: [
+            ...doeRows(data, tab).map(reportRow),
+            ...(tab === "products" ? weekly?.rows.map(reportWeekly) ?? [] : []),
+          ],
         })),
-        errors: data.gaps,
-        metadata: { ...data, complete: data.status === "available" },
+        errors: [...data.gaps, ...(weekly?.errors ?? [])],
+        metadata: { ...data, complete: data.status === "available" && !(weekly?.errors.length) },
       };
     },
   };

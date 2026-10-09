@@ -1,3 +1,4 @@
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { surfaceSheetSnapshot, surfaceSheetTenors, type SurfaceExpiry, type SurfaceSnapshot } from "./model";
 
 /** In session, while visible, a real-time surface reloads at this cadence. */
@@ -42,11 +43,9 @@ export function stableSurfaceSheet<T extends SurfaceSnapshot>(snapshot: T, previ
   return { ...sheet, tenors, axes: held ?? (settled ? { identity, tenors } : null) };
 }
 
-const UTC_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-
 /**
  * What the surface's quotes are and when they were observed: the oldest
- * loaded expiry sets the as-of, so a slow slice is never passed off as fresh.
+ * loaded expiry sets the age, so a slow slice is never passed off as fresh.
  * Real-time only when every loaded slice is; nothing here says "live".
  */
 export function surfaceFreshnessLabel(snapshot: SurfaceSnapshot, defaultDelayMinutes: number): string | null {
@@ -56,5 +55,6 @@ export function surfaceFreshnessLabel(snapshot: SurfaceSnapshot, defaultDelayMin
   const delay = Math.max(0, ...loaded.map((entry) => entry.dataSource === "live" ? 0 : entry.delayMinutes ?? 0)) || defaultDelayMinutes;
   const basis = realtime === loaded.length ? "real-time" : realtime > 0 ? "mixed real-time and delayed" : `${delay}m delayed`;
   const observed = loaded.map((entry) => entry.asOf ? Date.parse(entry.asOf) : Number.NaN).filter(Number.isFinite);
-  return observed.length ? `${basis} · as of ${UTC_TIME.format(Math.min(...observed))} UTC` : basis;
+  const age = observed.length ? formatObservationAge(Math.min(...observed)) : null;
+  return age ? `${basis} · ${age}` : basis;
 }

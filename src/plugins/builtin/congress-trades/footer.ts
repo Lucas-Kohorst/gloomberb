@@ -1,4 +1,4 @@
-import { usePaneFooter } from "../../../components";
+import { usePaneFooter, usePaneLoadingSignal } from "../../../components";
 import { formatTimeAgo } from "../../../utils/datetime-format";
 import type {
   CloudCongressHousePayload,
@@ -44,13 +44,12 @@ export function useCongressTradesFooter({
   selectedTrade: CloudCongressTradePayload | null;
   status: LoadStatus;
 }) {
+  usePaneLoadingSignal((status === "loading") || (loadingMore));
   usePaneFooter(registrationId, () => detailMode?.kind === "member" || detailMode?.kind === "ticker" ? {} : ({
     info: [
       ...(payload ? [
-        { id: "asof", parts: [{ text: `updated ${formatTimeAgo(payload.asOf)}`, tone: "muted" as const }] },
+        { id: "asof", parts: [{ text: formatTimeAgo(payload.asOf), tone: "muted" as const }] },
       ] : []),
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [

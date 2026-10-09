@@ -5,7 +5,7 @@ import type { InstrumentRef } from "../../../market-data/request-types";
 import { buildQuoteKey, resolveEntryData } from "../../../market-data/selectors";
 import { isAppVisible, subscribeAppVisibility } from "../../../state/app/activity";
 import type { Quote } from "../../../types/financials";
-import type { AlertRule } from "./types";
+import { isQuoteAlertCondition, type AlertRule } from "./types";
 
 /** A streamed quote older than this no longer judges an alert; the poll takes the symbol back. */
 const ALERT_STREAM_FRESH_MS = 90_000;
@@ -93,7 +93,8 @@ export function createAlertQuoteStream({
     const next = getSharedMarketDataCoordinator();
     const instruments = new Map<string, InstrumentRef>();
     for (const alert of readAlerts()) {
-      if (alert.status !== "active") continue;
+      // Halt and fundamentals are not quote checks; the poll reads them.
+      if (alert.status !== "active" || !isQuoteAlertCondition(alert.condition)) continue;
       const instrument = alertInstrument(alert);
       instruments.set(buildQuoteKey(instrument), instrument);
     }

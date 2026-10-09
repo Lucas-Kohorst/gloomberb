@@ -5,7 +5,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import type { TickerResearchTabProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { EmptyState, usePaneFooter } from "../../../components";
+import { EmptyState, unavailableText, usePaneFooter } from "../../../components";
 import { usePluginAppActions, usePluginPaneState } from "../../runtime";
 import { debugLog } from "../../../utils/debug-log";
 import { useDialog } from "../../../ui/dialog";
@@ -99,13 +99,13 @@ export function createNotesTab(registry: NotesStoreRegistry) {
             if (cloud && error.current) cloud.acceptCurrent(symbol, error.current);
             lastSavedTextRef.current.set(symbol, text);
             await notesFiles.save(symbol, text).catch((again: unknown) => {
-              notify({ body: again instanceof Error ? again.message : "Could not save the note.", type: "error" });
+              notify({ body: again instanceof Error ? again.message : unavailableText("Note"), type: "error" });
             });
           }
           return;
         }
         notesLog.error("Failed to save ticker note", { symbol, error: error instanceof Error ? error.message : String(error) });
-        notify({ body: error instanceof Error ? error.message : "Failed to save note.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : unavailableText("Note"), type: "error" });
       });
     }, [applyNoteText, dialog, effectiveOwner, notesFiles, notify]);
 

@@ -165,6 +165,13 @@ interface PaneSettingFieldBase {
   storage?: "pane" | "plugin";
   /** Keys in the same storage scope that should be reset when this value changes. */
   clearOnChange?: string[];
+  /**
+   * The control edits a different shape than the stored value. `present` runs
+   * when a dialog reads it. `store` runs when the dialog writes it, with the
+   * previous stored value as the second argument.
+   */
+  present?: (stored: unknown) => unknown;
+  store?: (edited: unknown, stored: unknown) => unknown;
 }
 
 interface PaneSettingToggleField extends PaneSettingFieldBase {
@@ -587,10 +594,10 @@ export interface TickerResearchTabDef {
   /** Narrower checks than `instruments`: a US listing, an options chain, a connected broker. */
   isVisible?: (context: TickerResearchTabVisibilityContext) => boolean;
   /**
-   * Prefetch this tab's data into the cache the tab reads. Return false when
-   * there is nothing to show so the strip omits the tab. Return true for a
-   * sign-in wall, an upgrade wall, or a failure the tab can retry. Omit for
-   * tabs that are useful while empty (overview, chart, notes).
+   * Prefetch this tab's data into the cache the tab reads when the ticker is
+   * selected. The strip already lists every tab this instrument qualifies for.
+   * The boolean does not add or remove a tab. Omit when the tab has nothing
+   * to prefetch.
    */
   load?: (context: TickerResearchTabLoadContext) => Promise<boolean>;
 }
@@ -718,6 +725,16 @@ export interface AppNotificationRequest {
     label: string;
     onClick: () => void;
   };
+  /**
+   * History bucket. Callers set this. The notification center shows Alerts,
+   * Chat, Team, or App. Anything else is shown as App.
+   */
+  source?: string;
+  /**
+   * External key, such as a chat message id. A later notice with the same
+   * refId updates that history row instead of adding another.
+   */
+  refId?: string;
 }
 
 export interface BrokerInstanceUpdateOptions {
@@ -727,6 +744,7 @@ export interface BrokerInstanceUpdateOptions {
 }
 
 export interface PinTickerOptions {
+  /** A new pane opens floating either way. */
   floating?: boolean;
   paneType?: string;
   forceNewPane?: boolean;

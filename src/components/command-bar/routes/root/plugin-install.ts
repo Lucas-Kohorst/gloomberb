@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { unavailableText } from "../../../ui/status";
 import type { PluginRegistry } from "../../../../plugins/registry";
 import { findAbsorbedPlugin } from "../../../../plugins/absorbed";
 import { isOfficialPluginRepo } from "../../../../plugins/auto-update";
@@ -216,7 +217,7 @@ function buildPluginInstallItem(
       tone: "default",
       onConfirm: async () => {
         const result = await manager.install(repo, pin);
-        if (!result.ok) throw new Error(`Could not install ${plugin.name}: ${result.error}`);
+        if (!result.ok) throw new Error(unavailableText(plugin.name));
         const activated = await activateInstalledPlugin(result.directory, host, manager);
         if (!activated.ok) throw new Error(`${plugin.name} installed but did not load: ${activated.error}`);
         if (activated.restart) {

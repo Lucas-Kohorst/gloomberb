@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { DataTableView, EmptyState, PaneStatusBody, usePaneFooter, usePaneNoticeFooter,
+import { DataTableView, EmptyState, PaneStatusBody, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter,
   type DataTableCell, type DataTableColumn, type PaneHint } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { usePlanAccess } from "../../../api-client/plan-access";
@@ -74,6 +74,7 @@ export function EarningsRipplePane({ width, height, focused }: PaneProps) {
     ...(truncated.length ? [`Free preview: top three customers and suppliers for ${truncated.join(", ")}`] : []),
   ] });
   const openSupply = useCallback((row: RippleRow) => createPaneFromTemplate("supply-chain-pane", { symbol: row.holding }), [createPaneFromTemplate]);
+  usePaneLoadingSignal((ripple.loading));
   usePaneFooter("earnings-ripple", () => {
     const hints: PaneHint[] = [
       ...(selected ? [
@@ -83,8 +84,6 @@ export function EarningsRipplePane({ width, height, focused }: PaneProps) {
       ...(truncated.length ? [{ id: "upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: openUpgrade }] : []),
     ];
     return { info: [
-      ...(ripple.loading ? [{ id: "loading", parts: [{ text: "loading disclosures", tone: "muted" as const }] }] : []),
-      ...(ripple.data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
     ], hints };
   }, [ripple.loading, ripple.data?.stale, selected, openSupply, createPaneFromTemplate, truncated.length, openUpgrade]);
 

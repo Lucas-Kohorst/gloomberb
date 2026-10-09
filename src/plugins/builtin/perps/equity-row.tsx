@@ -4,6 +4,7 @@ import { usePlanAccess } from "../../../api-client/plan-access";
 import { ActionRow } from "../../../components";
 import { useAsyncResource, useAutoRefresh, usePluginAppActions } from "../../../public/react";
 import { useResearchCloudSession } from "../shared/research-cloud-session";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { listingIdentity } from "../shared/ticker-request";
 import { loadPerpsEquity } from "./client";
 import { compact, marketLabel, percent, price } from "./model";
@@ -21,8 +22,11 @@ export function PerpEquityRow({ symbol, instrumentType, maxRows = 3 }: { symbol:
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   const rows = resource.data?.payload.rows.filter((row) => !row.delisted) ?? [];
   if (!enabled || !rows.length) return null;
-  return <>{rows.slice(0, maxRows).map((row) => <ActionRow key={row.marketId} height={2}
-    // Funding reads per 8h here as it does in PERP, whatever interval the venue pays on.
-    label={`${marketLabel(row)} perp  ${price(row.markPrice)} ${row.quoteCurrency}  ${percent(row.underlyingPremium, 2)} vs last${row.stale || resource.data?.stale ? " · stale" : ""}\nFunding ${percent(row.fundingRate8h, 4)} / 8h · OI ${compact(row.openInterestUsd)} USD · oracle ${percent(row.premium, 2)}`}
-    onPress={() => createPaneFromTemplate("perps-pane", { arg: row.marketId })} />)}</>;
+  return <>{rows.slice(0, maxRows).map((row) => {
+    const age = row.stale || resource.data?.stale ? formatObservationAge(row.observedAt) : null;
+    return <ActionRow key={row.marketId} height={2}
+      // Funding reads per 8h here as it does in PERP, whatever interval the venue pays on.
+      label={`${marketLabel(row)} perp  ${price(row.markPrice)} ${row.quoteCurrency}  ${percent(row.underlyingPremium, 2)} vs last${age ? ` · ${age}` : ""}\nFunding ${percent(row.fundingRate8h, 4)} / 8h · OI ${compact(row.openInterestUsd)} USD · oracle ${percent(row.premium, 2)}`}
+      onPress={() => createPaneFromTemplate("perps-pane", { arg: row.marketId })} />;
+  })}</>;
 }

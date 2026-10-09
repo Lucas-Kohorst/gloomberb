@@ -25,6 +25,7 @@ import {
 } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
 import { tf } from "../../../i18n";
+import { unavailableText } from "../../ui/status";
 import { getPaneDisplayTitle } from "../pane/title";
 import type { PaneHeaderQuickSetting } from "../pane/header";
 import { getPaneFooter } from "../pane/footer";
@@ -499,7 +500,7 @@ export function Shell({
     focusPane(paneId);
     void pluginRegistry.togglePaneQuickSetting(paneId, key).catch((error) => {
       pluginRegistry.notify({
-        body: error instanceof Error ? error.message : "Could not update pane setting.",
+        body: error instanceof Error ? error.message : unavailableText("Pane setting"),
         type: "error",
       });
     });

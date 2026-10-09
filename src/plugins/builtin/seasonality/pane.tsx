@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { CompositeChart, DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter,
+import { CompositeChart, DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneLoadingSignal,
   usePaneNoticeFooter, usePaneTabs, usePaneTicker, type DataTableCell, type DataTableColumn, type StatItem } from "../../../components";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
 import { staticSeries } from "../../../components/chart/static/series";
@@ -14,6 +14,7 @@ import { useThemeColors } from "../../../theme/theme-context";
 import type { ResolvedSeries } from "../../../time-series/types";
 import type { PaneProps } from "../../../types/plugin";
 import { Box } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { loadSeasonalityHistory } from "./client";
 import { MONTH_LABELS, OVERLAY_YEAR, projectSeasonality, type SeasonalityModel } from "./model";
 
@@ -106,11 +107,12 @@ export function SeasonalityPane({ width, height, focused }: PaneProps) {
 
   usePaneNoticeFooter({ registrationId: "seasonality-notices", focused,
     notices: [...new Set([identityError, history.error, history.data?.error].filter((value): value is string => !!value))] });
+  usePaneLoadingSignal((history.loading));
+  const historyAge = history.data?.stale ? formatObservationAge(history.data.fetchedAt) : null;
   usePaneFooter("seasonality", () => ({ info: [
-    ...(history.loading ? [{ id: "loading", parts: [{ text: "loading history", tone: "muted" as const }] }] : []),
-    ...(history.data?.stale ? [{ id: "stale", parts: [{ text: "stale history", tone: "warning" as const }] }] : []),
+    ...(historyAge ? [{ id: "updated", parts: [{ text: historyAge, tone: "muted" as const }] }] : []),
     ...(model?.asOf ? [{ id: "date", parts: [{ text: `monthly closes to ${model.asOf.toISOString().slice(0, 7)}`, tone: "muted" as const }] }] : []),
-  ] }), [history.loading, history.data?.stale, model?.asOf]);
+  ] }), [history.loading, historyAge, model?.asOf]);
 
   const stats = useMemo((): StatItem[] => {
     if (!model?.asOf || !model.years.length) return [];
@@ -133,7 +135,7 @@ export function SeasonalityPane({ width, height, focused }: PaneProps) {
   return <Box width={width} height={height} flexDirection="column" overflow="hidden">
     {strip}
     <QueryBar width={width} filters={[{ id: "lookback", label: "Lookback", value: String(lookback), options: LOOKBACK_OPTIONS, onChange: setLookback }]} />
-    {!symbol ? <EmptyState title="Choose a ticker." /> : <PaneStatusBody subject="seasonality" loading={history.loading && !model}
+    {!symbol ? <EmptyState title="Select a ticker." /> : <PaneStatusBody subject="seasonality" loading={history.loading && !model}
       error={!model ? history.error ?? identityError ?? null : null} empty={!!model && !model.years.length}>
       {model ? <>
         <StatGrid items={stats} width={width} />

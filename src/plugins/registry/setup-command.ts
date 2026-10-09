@@ -1,4 +1,5 @@
 import type { CommandDef, GloomPlugin, PluginConfigField, WizardStep } from "../../types/plugin";
+import { unavailableText } from "../../components/ui/status-copy";
 
 /**
  * A plugin that declares `configSchema` gets one command bar entry that writes
@@ -77,7 +78,7 @@ export function createPluginSetupCommand(
         await access.setValues(next);
         access.notify(`${plugin.name} is set up.`, "success");
       } catch (error) {
-        access.notify(`Could not save ${plugin.name} settings: ${error instanceof Error ? error.message : String(error)}`, "error");
+        access.notify(`${unavailableText(`${plugin.name} settings`)} ${error instanceof Error ? error.message : String(error)}`, "error");
       }
     },
   };

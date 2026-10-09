@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   confirmDialog,
   TextPromptDialog,
+  unavailableText,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneNoticeFooter,
   usePaneTabs,
   type DataTableKeyEvent,
@@ -29,6 +31,9 @@ import {
   usePaneAppConfig,
 } from "../../../../state/app/context";
 import { scheduleConfigSave } from "../../../../state/config-save-scheduler";
+import { getMostRecentQuoteUpdate } from "../../../../market-data/quotes/time";
+import { pollFooterSegment, useUpdatedFooterInfo } from "../../../../components/layout/pane/freshness-footer";
+import { DEFAULT_QUOTE_POLL_INTERVAL_MS } from "../../../../state/hooks/quote-streaming";
 import { summarizeFxRates, fxStatusLabel } from "../../../../utils/fx-status";
 import { convertCurrency } from "../../../../utils/format";
 import { nextHeaderSort } from "../../../../utils/sort-values";
@@ -470,12 +475,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     accountStatusText: accountsError
       ? `Accounts unavailable: ${accountsError}`
       : isPortfolioTab && currentPortfolio?.brokerInstanceId && !accountState ? "Acct missing" : undefined,
-    financialsMap,
     isPortfolioTab,
     refreshingSize,
-    sortedTickers,
     totals: portfolioSummaryTotals,
-  }), [financialsMap, sortedTickers], [
+  }), [], [
     accountState,
     accountsError,
     currentPortfolio?.brokerInstanceId,
@@ -559,7 +562,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       }
       notify({ type: "success", body: tf("Removed {symbol} from {collection}.", { symbol, collection: collection.name }) });
     } catch {
-      notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol }) });
+      notify({ type: "error", body: unavailableText(symbol) });
     } finally {
       removingRef.current = false;
     }
@@ -612,10 +615,27 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [dialog, dispatch, getState, removalCollection, selectedTicker]);
 
+  const quoteUpdatedAt = useThrottledMemo(
+    () => getMostRecentQuoteUpdate(
+      sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
+    ),
+    [financialsMap, sortedTickers],
+    [sortedTickers],
+    FOOTER_TOTALS_THROTTLE_MS,
+  );
+  // A live book has no poll. With streaming off, quotes refresh once a minute.
+  const updatedInfo = useUpdatedFooterInfo(quoteUpdatedAt ?? fxStatus.latestFetchedAt);
+  const trailingInfo = useMemo(
+    () => (quoteUpdatedAt != null && !liveStreaming
+      ? [pollFooterSegment(DEFAULT_QUOTE_POLL_INTERVAL_MS / 60_000)]
+      : []),
+    [liveStreaming, quoteUpdatedAt],
+  );
+
+  usePaneLoadingSignal(refreshingSize > 0);
   usePaneFooter("portfolio-list", () => ({
-    info: fxStatusText && !fxWarning
-      ? [...summaryFooterInfo, { id: "fx", parts: [{ text: `FX ${fxStatusText}`, tone: "muted" as const }] }]
-      : summaryFooterInfo,
+    info: [...updatedInfo, ...summaryFooterInfo],
+    trailingInfo,
     hints: [
       ...(removalCollection
         ? [{
@@ -658,8 +678,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }), [
     cashDrawerExpanded,
     groupSelectedTicker,
-    fxStatusText,
-    fxWarning,
     isPortfolioTab,
     removalCollection,
     removeSelectedTicker,
@@ -668,6 +686,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     showCashDrawer,
     summaryFooterInfo,
     toggleViewMode,
+    trailingInfo,
+    updatedInfo,
     viewMode,
   ]);
 

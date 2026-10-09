@@ -481,8 +481,8 @@ export function DebtMaturitiesPane({ width, height, focused }: PaneProps) {
   if (!symbol)
     return (
       <EmptyState
-        title="No ticker selected."
-        message="Select a ticker to view debt maturities."
+        title="Select a ticker."
+       
       />
     );
   if (!data && isCloudSessionRequired(resource.error))

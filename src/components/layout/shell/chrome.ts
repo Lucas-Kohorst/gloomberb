@@ -4,8 +4,10 @@ export const DEFAULT_HEADER_HEIGHT = 1;
 export const DEFAULT_STATUS_BAR_HEIGHT = 1;
 /**
  * Extra pixels on the desktop status bar beyond one cell: 4px top, 10px bottom
- * (the last 6 clear the window curve), 1px border. Pane footers use the same
- * 15px. Must stay in sync with `[data-gloom-role="status-bar"]` in styles.css.
+ * (the last 6 clear the window curve), 1px border. Pane footers do not take
+ * this pad; they take NATIVE_PANE_FOOTER_TOP_PAD_PX of extra height, with the
+ * text centered. Must stay
+ * in sync with `[data-gloom-role="status-bar"]` in styles.css.
  */
 export const NATIVE_STATUS_BAR_EXTRA_PX = 15;
 

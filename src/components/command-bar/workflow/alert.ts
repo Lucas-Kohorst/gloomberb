@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { tf } from "../../../i18n";
+import { loadingText } from "../../ui/status";
 import type { DataProvider } from "../../../types/data-provider";
 import type { Quote } from "../../../types/financials";
 import { coerceFieldString } from "../helpers";
@@ -99,7 +100,7 @@ export function useAlertWorkflowQuoteSync({
       return {
         ...route,
         fields: updateAlertWorkflowFieldDescriptions(route.fields, {
-          symbol: tf("Checking {symbol}...", { symbol: alertWorkflowSymbol }),
+          symbol: loadingText(),
           price: "Target fills from the current price after the symbol resolves.",
         }),
         payloadMeta: {

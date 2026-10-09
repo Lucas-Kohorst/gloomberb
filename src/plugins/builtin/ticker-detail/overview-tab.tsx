@@ -10,6 +10,7 @@ import { useFxRatesMap } from "../../../market-data/hooks";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice, liveQuoteFormatOptions } from "../../../market-data/market/format";
 import { exchangeShortName, marketStateColor, marketStateLabel } from "../../../market-data/market/status";
 import { appendQuoteToPriceReturnHistory, buildPriceReturnFields } from "../../../market-data/performance";
+import { clipPriceHistoryToLineage } from "../../../market-data/price-lineage";
 import { useViewport } from "../../../react/input";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
@@ -54,7 +55,7 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab(props: OverviewTabProps) {
-  if (!props.ticker) return <EmptyState title={t("No ticker selected.")} />;
+  if (!props.ticker) return <EmptyState title={t("Select a ticker.")} />;
   return <ResolvedOverviewTab {...props} ticker={props.ticker} />;
 }
 
@@ -98,7 +99,7 @@ function ResolvedOverviewTab({ width, focused = false, ticker, financials, onOpe
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
   const unknownHistoryBasis = hasUnknownBondHistoryBasis(quote, ticker.metadata.assetCategory, financials?.quoteMetadata?.instrumentType);
   const historyQuote = unknownHistoryBasis ? undefined : quote;
-  const chartHistory = appendLiveQuotePoint(financials?.priceHistory ?? [], historyQuote);
+  const chartHistory = clipPriceHistoryToLineage(appendLiveQuotePoint(financials?.priceHistory ?? [], historyQuote));
   const chartDelta = (chartHistory.at(-1)?.close ?? 0) - (chartHistory[0]?.close ?? 0);
   const chartTimeZone = resolveExchangeTimeZone(
     ticker.metadata.exchange || quote?.listingExchangeName || quote?.exchangeName,

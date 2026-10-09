@@ -81,3 +81,41 @@ test("portfolio tab draws the list selected in the portfolio pane", async () => 
   expect(frame).not.toContain("AAPL");
   expect(api).not.toHaveBeenCalled();
 });
+
+test("portfolio names that do not fit collapse into one box", async () => {
+  const api = spyOn(apiClient, "getMarketHeatmap");
+  restore = () => api.mockRestore();
+  const id = "market-heatmap";
+  const Pane = marketHeatmapPlugin.panes![0]!.component;
+  const config = createTestPaneConfig(":memory:", {
+    instanceId: id,
+    paneId: id,
+    settings: { universe: "portfolio", liveStreaming: false },
+  });
+  config.layout.instances.push({
+    instanceId: "portfolio-list:main",
+    paneId: "portfolio-list",
+    params: { collectionId: "watchlist" },
+    binding: { kind: "none" },
+  });
+  const state = createInitialState(config);
+  state.paneState["portfolio-list:main"] = { collectionId: "watchlist" };
+  for (let index = 0; index < 18; index += 1) {
+    const symbol = `T${String(index).padStart(2, "0")}`;
+    state.tickers.set(symbol, createTestTicker(symbol, symbol, { watchlists: ["watchlist"] }));
+  }
+  state.focusedPaneId = id;
+  await act(async () => {
+    await tui.render(
+      <TestPaneFrame state={state} dispatch={() => {}} paneId={id} pluginId={id}
+        runtime={createTestPluginRuntime({ getMarketData: () => null })} width={24} height={8}>
+        {(body) => <Pane paneId={id} paneType={id} focused {...body} />}
+      </TestPaneFrame>,
+      { width: 24, height: 8 },
+    );
+  });
+  await settleFrame(tui.setup(), 8);
+  const frame = tui.frame();
+  expect(frame).toContain("+");
+  expect(frame).not.toContain("T17");
+});

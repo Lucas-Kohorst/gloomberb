@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CompositeChart,
   DataTableView,
+  loadingText,
   PaneStatusBody,
   StatGrid,
   type DataTableColumn,
@@ -288,7 +289,7 @@ export function MnaDealDetail({ id, seed, focused, width, height }: {
               if (column.id === "source") return { text: event.source, color: muted };
               return { text: event.title, color: base };
             }}
-            emptyStateTitle={resource.loading ? "Loading the timeline..." : "No events yet."}
+            emptyStateTitle={resource.loading ? loadingText() : "No events yet."}
           />
         </Box>
       ) : null}

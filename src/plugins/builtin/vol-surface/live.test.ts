@@ -3,6 +3,7 @@ import type { OptionContract, OptionsChain } from "../../../types/financials";
 import { DEFAULT_OPTION_CALC_DRAFT } from "../options-calculator/model";
 import { daysToExpiryFrom, valueOption } from "../shared/volatility";
 import type { YieldPoint } from "../yield-curve/treasury-data";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { stableSurfaceSheet, surfaceFreshnessLabel, type SurfaceSheetAxes } from "./live";
 import { buildSurfaceExpiry, buildSurfaceGrid, DEFAULT_SURFACE_SETTINGS, SURFACE_3D_DELTAS, withSurfaceTermSlopes,
   type SurfaceSnapshot } from "./model";
@@ -88,7 +89,7 @@ test("a reloaded sheet inside the drawn range keeps the box and colour scale", (
 
 test("the footer names the quotes' basis and never calls a delayed or mixed surface real-time", () => {
   const live = snapshot(100);
-  expect(surfaceFreshnessLabel(live, 15)).toBe("real-time · as of 15:00:00 UTC");
+  expect(surfaceFreshnessLabel(live, 15)).toBe(`real-time · ${formatObservationAge(now)}`);
   const mixed = { ...live, expiries: live.expiries.map((entry, index) => index ? entry : { ...entry, dataSource: "delayed" as const, delayMinutes: 15 }) };
   expect(surfaceFreshnessLabel(mixed, 15)).toStartWith("mixed real-time and delayed");
   const delayed = { ...live, expiries: live.expiries.map((entry) => ({ ...entry, dataSource: "delayed" as const, delayMinutes: 20 })) };

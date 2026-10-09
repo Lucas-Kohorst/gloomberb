@@ -1,7 +1,7 @@
 import { canonicalExchange } from "../../../utils/exchanges";
 import { createAlert, deserializeAlerts, readAlertsStoreError, serializeAlerts } from "./alert-engine";
 import { ALERTS_KEY } from "./constants";
-import type { AlertCondition, AlertRule } from "./types";
+import { isPriceAlertCondition, type AlertCondition, type AlertRule } from "./types";
 
 /** Where price alerts are stored: the alerts plugin's synced config, which the server also evaluates. */
 export const PRICE_ALERTS_STORE = { pluginId: "alerts", key: ALERTS_KEY } as const;
@@ -22,7 +22,10 @@ function watches(alert: Pick<AlertRule, "symbol" | "exchange">, target: AlertTar
 export function activePriceAlertsFor(alertsJson: unknown, target: AlertTarget): AlertRule[] {
   if (typeof alertsJson !== "string") return [];
   return deserializeAlerts(alertsJson).filter((alert) => (
-    alert.status === "active" && Number.isFinite(alert.targetPrice) && watches(alert, target)
+    alert.status === "active"
+    && isPriceAlertCondition(alert.condition)
+    && Number.isFinite(alert.targetPrice)
+    && watches(alert, target)
   ));
 }
 
@@ -52,7 +55,10 @@ export function addLevelAlert(
   if (error) return { error };
   const alerts = deserializeAlerts(json);
   const existing = alerts.find((alert) => (
-    alert.status === "active" && alert.targetPrice === level && watches(alert, target)
+    alert.status === "active"
+    && isPriceAlertCondition(alert.condition)
+    && alert.targetPrice === level
+    && watches(alert, target)
   ));
   if (existing) return { json, alert: existing, created: false };
   const alert = createAlert(target.symbol, levelAlertCondition(level, currentPrice), level, target.exchange);

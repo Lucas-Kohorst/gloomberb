@@ -104,7 +104,7 @@ describe("ChartTableHeader", () => {
 
   test("holds the band while the history loads", async () => {
     const lines = await render(<Pane width={80} height={24} chart={{ series: [], loading: true }} />, 80, 24);
-    expect(lines.some((line) => line.includes("Loading history"))).toBe(true);
+    expect(lines.some((line) => line.includes("Loading..."))).toBe(true);
     expect(headerRow(lines)).toBeGreaterThan(8);
   });
 

@@ -13,6 +13,10 @@ import { normalizedHttpUrl } from "../../../utils/url";
 
 export const DEFAULT_TWEET_HOURS = 6;
 export const DEFAULT_TWEET_LIMIT = 50;
+/** X list titled Markets. The firehose reads this list; X Feed stays a free search. */
+export const DEFAULT_TWITTER_FEED_QUERY = "list:2090433878028685747";
+export const DEFAULT_TWITTER_FEED_TITLE = "Markets";
+export const X_FEED_CONNECTION_ID = "x-feed";
 export const TWEET_SEARCH_SCHEMA_VERSION = 1;
 export const TWEET_SEARCH_DEBOUNCE_MS = 450;
 export const TWITTER_FEED_PANE_ID = "twitter-feed";

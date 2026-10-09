@@ -2,10 +2,7 @@ import { useCallback, type Dispatch } from "react";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import {
   addPaneFloating,
-  addPaneToLayout,
   bringToFront,
-  findDockLeaf,
-  getDockedPaneIds,
   isPaneDetached,
   isPaneInLayout,
 } from "../../layout/pane-manager";
@@ -39,7 +36,6 @@ import type { DialogApi } from "../../ui/dialog";
 import {
   resolvePaneShowTarget,
   resolvePaneTarget as resolvePaneTargetInLayout,
-  selectEdgeAnchor,
 } from "./layout-placement";
 import { useAppPaneSettingsRuntime } from "./pane-settings-runtime";
 import { useAppPaneTemplateRuntime } from "./pane-template-runtime";
@@ -170,44 +166,20 @@ export function useAppPaneRuntime({
   const placePaneInstance = useCallback((
     instance: PaneInstanceConfig,
     paneDef: PaneDef,
-    options?: PaneTemplateInstanceConfig,
+    _options?: PaneTemplateInstanceConfig,
   ) => {
     const { width, height } = pluginRegistry.getTermSize();
     // Templates can await ticker resolution before placing their pane, so the
     // layout from the render that started the request may be out of date.
-    const { config: { layout }, focusedPaneId } = stateRef.current;
-    const relativeTo = options?.relativeToPaneId
-      ? resolvePaneTarget(options.relativeToPaneId, layout)
-      : (focusedPaneId && isPaneInLayout(layout, focusedPaneId) ? focusedPaneId : null);
-    const relativePosition = options?.relativePosition ?? "right";
-    let nextLayout = layout;
-    const dockedPaneIds = getDockedPaneIds(nextLayout);
-
-    if (options?.placement === "floating" || (options?.placement !== "docked" && paneDef.defaultMode === "floating")) {
-      nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
-    } else if (relativeTo && findDockLeaf(nextLayout, relativeTo)) {
-      nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo, position: relativePosition });
-    } else if (dockedPaneIds.length === 0) {
-      nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo: instance.instanceId, position: "right" });
-    } else if (paneDef.defaultPosition === "left") {
-      const leftAnchor = selectEdgeAnchor(nextLayout, "left");
-      nextLayout = leftAnchor
-        ? addPaneToLayout(nextLayout, instance, { relativeTo: leftAnchor, position: "below" })
-        : addPaneToLayout(nextLayout, instance, { relativeTo: dockedPaneIds[0]!, position: "left" });
-    } else {
-      const rightAnchor = selectEdgeAnchor(nextLayout, "right");
-      nextLayout = rightAnchor
-        ? addPaneToLayout(nextLayout, instance, { relativeTo: rightAnchor, position: "below" })
-        : addPaneToLayout(nextLayout, instance, { relativeTo: dockedPaneIds[dockedPaneIds.length - 1]!, position: "right" });
-    }
-
+    // A new pane opens floating. Docking it is a later explicit action.
+    const { config: { layout } } = stateRef.current;
+    const nextLayout = addPaneFloating(layout, instance, width, height, paneDef);
     persistLayout(nextLayout);
     activatePane(instance.instanceId);
   }, [
     activatePane,
     persistLayout,
     pluginRegistry,
-    resolvePaneTarget,
     stateRef,
   ]);
 

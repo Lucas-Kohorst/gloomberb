@@ -469,8 +469,9 @@ export function buildMetricTreemapNavigationTiles<T>(
   height: number,
   cellAspect: number,
   mode: MetricTreemapLayoutMode,
+  options?: MetricTreemapLayoutOptions,
 ): Array<MetricTreemapTile<T> | FloatMetricTreemapTile<T>> {
   return mode === "float"
-    ? buildMetricTreemapRects(items, width, height, cellAspect)
-    : buildMetricTreemap(items, width, height, cellAspect);
+    ? buildMetricTreemapRects(items, width, height, cellAspect, options)
+    : buildMetricTreemap(items, width, height, cellAspect, options);
 }

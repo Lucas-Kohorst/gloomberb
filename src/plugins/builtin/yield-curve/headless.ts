@@ -6,7 +6,7 @@ import {
   compareDate, CURVE_OPTIONS, curveIdOf, curveOption, curveSpreadFigures, loadComparePoints, loadCurveData, parseCompareInput,
   parseCurveArgument, type CurveData, type CurveId,
 } from "./curves";
-import { curveAsOf, type YieldPoint, yieldCurveErrors } from "./treasury-data";
+import { curveAsOf, staleCurveNotice, type YieldPoint, yieldCurveErrors } from "./treasury-data";
 import { yieldCurveDate } from "./history";
 import { loadWorldRows, type WorldRow } from "./world";
 
@@ -101,6 +101,7 @@ export function createYieldCurveHeadless(
       const compareAt = (maturity: string) => comparePoints?.find((point) => point.maturity === maturity)?.yield ?? null;
       const rows = [...points].sort((a, b) => a.maturityYears - b.maturityYears);
       const missingTenors = points.filter((point) => point.yield == null).map((point) => point.maturity);
+      const staleNotice = staleCurveNotice(points);
       const spreads = curveSpreadFigures(data, data.lookbacks ?? {});
       const spread = (id: string) => bp(spreads.find((entry) => entry.id === id)?.value ?? null);
       const twosTens = spread("2s10s");
@@ -116,7 +117,7 @@ export function createYieldCurveHeadless(
           ...yieldCurveErrors(points),
           ...(missingTenors.length ? [`Tenors unavailable: ${missingTenors.join(", ")}`] : []),
           ...(!session ? ["Curve has mixed or unknown observation dates."] : []),
-          ...(points.some((point) => point.stale) ? ["Some Treasury sources are stale cached data."] : []),
+          ...(staleNotice ? [staleNotice] : []),
         ],
         metadata: {
           curve,

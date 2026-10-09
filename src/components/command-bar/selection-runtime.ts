@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject, type RefObject } from "react";
 import type { AppState } from "../../state/app/context";
+import type { TickerRecord } from "../../types/ticker";
+import { t } from "../../i18n";
+import { unavailableText } from "../ui/status-copy";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { Command } from "./commands/registry";
 import type {
@@ -30,10 +33,13 @@ type ExecuteCollectionCommandFn = (
   commandId: CollectionCommandId,
   rawInput?: string,
   explicitTargetId?: string | null,
+  selectedTicker?: TickerRecord,
+  directMembership?: boolean,
 ) => Promise<void>;
 
 interface UseCommandBarSelectionRuntimeOptions {
   activeTickerSymbol: string | null;
+  promptTickerSymbol?: string | null;
   availableCommands: Command[];
   clearThemePreview: (themeId: string) => void;
   closeAll: (options?: { revertThemePreview?: boolean }) => void;
@@ -45,8 +51,10 @@ interface UseCommandBarSelectionRuntimeOptions {
     shortcutExecution?: boolean;
   }) => ResultItem;
   createPluginCommandItem: (command: CommandDef, options?: { shortcutArg?: string }) => ResultItem;
-  /** Symbol search has not landed, and no mnemonic owns this query. Enter waits for an exact listing. */
+  /** Symbol search has not landed, and no mnemonic owns this query. An untouched Enter waits for an exact listing. */
   deferEnterToExactSymbol?: boolean;
+  /** True once the user moved the root highlight. That row runs now; a later listing does not take it. */
+  rootSelectionNavigatedRef: RefObject<boolean>;
   currentRoute: CommandBarRoute | null;
   currentRouteRef: MutableRefObject<CommandBarRoute | null>;
   executeCollectionCommand: ExecuteCollectionCommandFn;
@@ -88,8 +96,15 @@ export function resolvePendingEnter(results: readonly ResultItem[], fallback: Re
   return exact ?? fallback;
 }
 
+function enabledAt(results: readonly ResultItem[], index: number | null | undefined): ResultItem | null {
+  if (index == null || index < 0) return null;
+  const item = results[index];
+  return item && item.disabled !== true ? item : null;
+}
+
 export function useCommandBarSelectionRuntime({
   activeTickerSymbol,
+  promptTickerSymbol = null,
   availableCommands,
   clearThemePreview,
   closeAll,
@@ -98,6 +113,7 @@ export function useCommandBarSelectionRuntime({
   createPluginCommandItem,
   currentRoute,
   deferEnterToExactSymbol = false,
+  rootSelectionNavigatedRef,
   currentRouteRef,
   executeCollectionCommand,
   getAvailablePaneShortcutTemplates,
@@ -140,6 +156,7 @@ export function useCommandBarSelectionRuntime({
 
   const resolveImmediateRootSelection = useCallback((query: string): ResultItem | null => buildImmediateRootSelection({
     activeTickerSymbol,
+    promptTickerSymbol,
     availableCommands,
     createPaneTemplateItem,
     createPluginCommandItem,
@@ -156,6 +173,7 @@ export function useCommandBarSelectionRuntime({
     startThemePicker,
   }), [
     activeTickerSymbol,
+    promptTickerSymbol,
     availableCommands,
     createPaneTemplateItem,
     createPluginCommandItem,
@@ -180,6 +198,7 @@ export function useCommandBarSelectionRuntime({
     const query = rootQueryRef.current;
     const accept = () => acceptRootShortcutTabAction({
       activeTickerSymbol,
+      promptTickerSymbol,
       availableCommands,
       createPaneTemplateItem,
       createPluginCommandItem,
@@ -205,6 +224,7 @@ export function useCommandBarSelectionRuntime({
     return accepted;
   }, [
     activeTickerSymbol,
+    promptTickerSymbol,
     availableCommands,
     createPaneTemplateItem,
     createPluginCommandItem,
@@ -298,16 +318,51 @@ export function useCommandBarSelectionRuntime({
       : (!currentRoute && rootQueryRef.current !== rootQuery
         ? resolveImmediateRootSelection(rootQueryRef.current)
         : null);
-    const selected = options?.item ?? typed ?? listState.results[listState.selectedIdx];
+    // The row under the pointer is the one Enter runs, until arrow keys move the highlight.
+    const hovered = options?.item || typed || rootSelectionNavigatedRef.current
+      ? null
+      : enabledAt(listState.results, listState.hoveredIdx);
+    const selected = options?.item ?? typed ?? hovered ?? listState.results[listState.selectedIdx];
+    const choseRow = options?.item != null || hovered != null || rootSelectionNavigatedRef.current;
     if (
       !options?.secondary
+      && !choseRow
       && deferEnterRef.current
       && (selected == null || selected.disabled || (selected.kind !== "ticker" && selected.kind !== "search"))
     ) {
       pendingEnterRef.current = { fallback: selected && !selected.disabled ? selected : null, query: rootQueryRef.current };
       return;
     }
+    pendingEnterRef.current = null;
     if (!selected || selected.disabled) return;
+
+    const addListing = stateRef.current.commandBarLaunchRequest;
+    if (
+      !options?.secondary
+      && addListing?.kind === "add-listing"
+      && (selected.kind === "ticker" || selected.kind === "search")
+      && selected.resolveTicker
+    ) {
+      const launch = addListing;
+      void (async () => {
+        try {
+          const ticker = await selected.resolveTicker!();
+          await executeCollectionCommand(
+            launch.collectionKind === "watchlist" ? "add-watchlist" : "add-portfolio",
+            ticker.metadata.ticker,
+            launch.collectionId,
+            ticker,
+            true,
+          );
+        } catch (error) {
+          pluginRegistry.notify({
+            type: "error",
+            body: error instanceof Error ? error.message : unavailableText("Listing"),
+          });
+        }
+      })();
+      return;
+    }
 
     const run = () => {
       if (options?.secondary && selected.secondaryAction) {
@@ -357,8 +412,10 @@ export function useCommandBarSelectionRuntime({
     resolveImmediateRootSelection,
     rootQuery,
     rootQueryRef,
+    rootSelectionNavigatedRef,
     runRootRow,
     stateConfigLayout,
+    stateRef,
     visibleListStateRef,
   ]);
 

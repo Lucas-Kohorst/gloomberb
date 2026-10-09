@@ -41,6 +41,6 @@ describe("yield curve headless model", () => {
     const result = await createYieldCurveHeadless().load({ ...args, options: { date: "2024-03-02" } }, context);
     expect(calls).toEqual(TREASURY_MATURITIES.map(({ seriesId }) => `${seriesId}:2024-03-02`));
     expect(result.metadata).toMatchObject({ requestedDate: "2024-03-02", asOf: "2024-03-01", spread2Y10YBasisPoints: -35, missingTenors: [], stale: true });
-    expect(result.errors).toEqual(["Some Treasury sources are stale cached data."]);
+    expect(result.errors).toEqual(["Treasury 2024-03-01"]);
   });
 });

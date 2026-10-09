@@ -4,6 +4,7 @@ import { Box, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
   ChartTableHeader,
+  loadingText,
   DetailScrollBody,
   KeyValueRow,
   Prose,
@@ -23,6 +24,7 @@ import type {
 import { blendHex, colors } from "../../../theme/colors";
 import { formatPercent } from "../../../utils/format";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
+import { priceLineageStartMs } from "../../../market-data/price-lineage";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
 import { isUsEquityTicker } from "../../../utils/sec";
@@ -309,7 +311,7 @@ export function buildEventDetail({
     return sections;
   }
   if (secFilingsLoading && !filing) {
-    secFiling.blocks.push(detailNote("Loading recent SEC filings..."));
+    secFiling.blocks.push(detailNote(loadingText()));
     return sections;
   }
   if (!filing) {
@@ -324,7 +326,7 @@ export function buildEventDetail({
 
   const documentBlocks: EventDetailBlock[] = [];
   if (documentsLoading && documents.length === 0) {
-    documentBlocks.push(detailNote("Loading filing documents..."));
+    documentBlocks.push(detailNote(loadingText()));
   } else if (documents.length === 0) {
     documentBlocks.push(detailNote("No filing documents were listed for this filing."));
   } else {
@@ -348,7 +350,7 @@ export function buildEventDetail({
       title: document.type || "Document",
       blocks: [detailNote(described ? `${document.document} | ${document.description}` : document.document), inlineContent.has(key)
         ? content ? { kind: "prose", text: content } : detailNote("Readable document content was not available for this exhibit.")
-        : detailNote("Loading exhibit content...")],
+        : detailNote(loadingText())],
     });
   }
 
@@ -356,7 +358,7 @@ export function buildEventDetail({
     sections.push({
       title: "Primary filing content",
       blocks: [primaryContentLoading
-        ? detailNote("Loading filing content...")
+        ? detailNote(loadingText())
         : primaryContent ? { kind: "prose", text: primaryContent } : detailNote("Readable filing content was not available.")],
     });
   }
@@ -447,9 +449,26 @@ export function CorporateActionsView({
     reload: reloadAnalyst,
   } = useTickerRequest<AnalystResearchData | null>(analystLoader, symbol, exchange);
   const displayCurrency = actionsData?.currency ?? analystData?.currency ?? currency;
+  const lineageStart = priceLineageStartMs([
+    ...(tickerFinancials?.priceHistory ?? []),
+    ...(tickerFinancials?.quote?.lastUpdated ? [{ date: tickerFinancials.quote.lastUpdated }] : []),
+  ]);
+  const lineageActions = useMemo(() => {
+    if (!actionsData || lineageStart == null) return actionsData;
+    const kept = (date: string | undefined) => {
+      const time = date ? Date.parse(date) : Number.NaN;
+      return Number.isFinite(time) && time >= lineageStart;
+    };
+    return {
+      ...actionsData,
+      earnings: actionsData.earnings.filter((earning) => kept(earning.date)),
+      dividends: actionsData.dividends.filter((dividend) => kept(dividend.exDate)),
+      splits: actionsData.splits.filter((split) => kept(split.date)),
+    };
+  }, [actionsData, lineageStart]);
   const allRows = useMemo(() => (
-    buildEventRows(actionsData, analystData, financialsData, displayCurrency)
-  ), [actionsData, analystData, displayCurrency, financialsData]);
+    buildEventRows(lineageActions, analystData, financialsData, displayCurrency)
+  ), [analystData, displayCurrency, financialsData, lineageActions]);
   const rows = useMemo(() => (
     variant === "earnings-estimates"
       ? allRows.filter((row) => EARNINGS_STATUSES.has(row.status))
@@ -643,7 +662,7 @@ export function CorporateActionsView({
       selectedTextOverridesCellColor
       getRowBackgroundColor={rowBackground}
       emptyStateTitle={loading
-        ? (variant === "earnings-estimates" ? "Loading earnings estimates..." : "Loading events...")
+        ? loadingText()
         : error ?? sourceNotice?.text ?? (variant === "earnings-estimates" ? "No earnings estimates" : "No events")}
     />
   );

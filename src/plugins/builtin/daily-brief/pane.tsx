@@ -18,6 +18,7 @@ import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../.
 import {
   useAsyncResource,
   useAutoRefresh,
+  useMarketData,
   usePluginConfigState,
   usePluginPaneState,
   usePluginTickerActions,
@@ -33,7 +34,7 @@ import { formatNumber, formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { compareSortValues, nextHeaderSort, type SortPreference } from "../../../utils/sort-values";
 import { loadEarningsBoard, cachedEarningsCalendar } from "../earnings/client";
-import { TIMING_LABEL } from "../earnings/format";
+import { TIMING_LABEL, epsText, moneyText } from "../earnings/format";
 import { newYorkToday } from "../earnings/board-model";
 import { getCalendarCache, loadCalendar, type EconCalendarLoadResult } from "../econ/calendar-model";
 import { getCachedFearGreedData, loadFearGreed, type FearGreedLoadResult } from "../fear-greed/cache";
@@ -45,9 +46,11 @@ import { NEWS_QUERY_PRESETS } from "../news/wire/news/query-presets";
 import { listingCell } from "../shared/research-cells";
 import { boardErrorMessage, quoteBoardStatus, useQuoteBoard } from "../shared/use-quote-board";
 import { EsSessionChart } from "./chart";
-import { esChartHeight } from "./chart-window";
+import { esChartHeight, esChartStart } from "./chart-window";
+import { loadBriefMarks, type SessionMark } from "./session-history";
 import { briefFooterInfo } from "./footer";
-import { assembleBrief, BRIEF_BTC, BRIEF_FUTURES } from "./model";
+import { assembleBrief, BRIEF_FUTURES } from "./model";
+import { BRIEF_YIELDS, getCachedBriefYields, loadBriefYields, yieldStat } from "./rates";
 import { BriefViewBlock, type BriefViewLine } from "./section-view";
 import {
   BRIEF_SECTIONS_SETTING,
@@ -66,13 +69,23 @@ import {
 } from "./tables";
 
 const BRIEF_VIX = "^VIX";
-const BRIEF_SYMBOLS: string[] = [...BRIEF_FUTURES, BRIEF_BTC, BRIEF_VIX];
+const BRIEF_SYMBOLS: string[] = [...BRIEF_FUTURES, BRIEF_VIX];
+/** Same day cap as the earnings board, so a busy session is not cut after the largest names. */
+const EARNINGS_PER_DAY = 200;
 const PANE_KEY = "daily-brief";
 const UNSORTED: SortPreference<string> = { columnId: null, direction: "asc" };
 
 type HeadlineRow = BriefTableRow & { kind: "headline"; articleId: string; publishedAt: string; source: string; title: string };
 type ReleaseRow = BriefTableRow & { kind: "release"; when: string; country: string; title: string };
-type EarningsRow = BriefTableRow & { kind: "earnings"; when: string; symbol: string; company: string; rank: number };
+type EarningsRow = BriefTableRow & {
+  kind: "earnings";
+  when: string;
+  symbol: string;
+  company: string;
+  rank: number;
+  epsEstimate: number | null;
+  revenueEstimate: number | null;
+};
 type NavLine = HeadlineRow | ReleaseRow | EarningsRow | BriefViewLine;
 
 type BriefTableBlock =
@@ -83,7 +96,7 @@ type BriefTableBlock =
 
 function earningsQuery() {
   const date = newYorkToday();
-  return { from: date, to: date, perDay: 40 };
+  return { from: date, to: date, perDay: EARNINGS_PER_DAY };
 }
 
 function noticeList(values: readonly (string | null | undefined)[]): string[] {
@@ -123,9 +136,11 @@ function releaseSortValue(row: ReleaseRow, column: string): string {
   return row.title;
 }
 
-function earningsSortValue(row: EarningsRow, column: string): string | number {
+function earningsSortValue(row: EarningsRow, column: string): string | number | null {
   if (column === "when") return row.rank;
   if (column === "ticker") return row.symbol;
+  if (column === "eps") return row.epsEstimate;
+  if (column === "sales") return row.revenueEstimate;
   return row.company;
 }
 
@@ -158,7 +173,7 @@ function ordered<T>(rows: readonly T[], sort: SortPreference<string>, value: (ro
 }
 
 function finiteQuotePrice(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 /** The session print. An extended-hours field that is not a real price falls back to the quote's own last. */
@@ -210,6 +225,15 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const econ = useAsyncResource<EconCalendarLoadResult>(loadEcon, { initialData: getCalendarCache });
   const fear = useAsyncResource<FearGreedLoadResult>(loadFearGreed, { initialData: getCachedFearGreedData });
   const rates = useAsyncResource(loadRatePath, { initialData: getCachedRatePath });
+  const loadYields = useCallback((force: boolean) => loadBriefYields(force), []);
+  const yields = useAsyncResource(loadYields, { initialData: getCachedBriefYields });
+  const provider = useMarketData();
+  const loadMarks = useCallback(async () => {
+    if (!provider) return new Map<string, SessionMark>();
+    const end = Date.now();
+    return loadBriefMarks(provider, esChartStart(end), end);
+  }, [provider]);
+  const marks = useAsyncResource(provider ? loadMarks : null, { keepPreviousData: true });
 
   const reload = useCallback(() => {
     setNow(Date.now());
@@ -218,9 +242,11 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
     void econ.reload();
     void fear.reload();
     void rates.reload();
+    void yields.reload();
+    void marks.reload();
     board.refresh();
     void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.top);
-  }, [board.refresh, earnings.reload, econ.reload, fear.reload, rates.reload]);
+  }, [board.refresh, earnings.reload, econ.reload, fear.reload, marks.reload, rates.reload, yields.reload]);
   usePaneRefreshKey(reload, { focused });
   const refreshEarnings = useCallback(() => {
     setNow(Date.now());
@@ -230,37 +256,37 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   useAutoRefresh(econ.updatedAt, () => { void econ.reload(); });
   useAutoRefresh(fear.updatedAt, () => { void fear.reload(); });
   useAutoRefresh(rates.updatedAt, () => { void rates.reload(); });
+  useAutoRefresh(yields.updatedAt, () => { void yields.reload(); });
+  useAutoRefresh(marks.updatedAt, () => { void marks.reload(); });
 
-  const futuresQuoted = BRIEF_FUTURES.every((symbol) => finiteQuotePrice(board.quotes.get(symbol)?.quote?.price));
-  const refreshBoard = board.refresh;
-  // A cache-first board leaves a halted future blank. One refresh reads the live print.
-  useEffect(() => {
-    if (futuresQuoted) return;
-    const timer = setTimeout(() => refreshBoard(), 1_500);
-    return () => clearTimeout(timer);
-  }, [futuresQuoted, refreshBoard]);
-
-  const brief = useMemo(() => {
+  const shownQuotes = useMemo(() => {
     const quotes = new Map<string, { last: number | null; changePercent: number | null }>();
     for (const symbol of BRIEF_SYMBOLS) {
       quotes.set(symbol, quoteLast(board.quotes.get(symbol)?.quote));
     }
-    return assembleBrief({
-      now,
-      quotes,
-      articles: news.articles,
-      earnings: earnings.data?.payload.reports ?? [],
-      econ: econ.data?.data ?? [],
-      fetchedAt: [
-        quoteBoardStatus(board.quotes).latestTs || null,
-        news.updatedAt,
-        earnings.data?.payload.asOf,
-        econ.data?.fetchedAt,
-        fear.data?.fetchedAt,
-        rates.data?.fetchedAt,
-      ],
-    });
-  }, [board.quotes, earnings.data, econ.data, fear.data, news.articles, news.updatedAt, now, rates.data]);
+    for (const [symbol, mark] of marks.data ?? []) {
+      const current = quotes.get(symbol);
+      if (current?.last == null) quotes.set(symbol, mark);
+    }
+    return quotes;
+  }, [board.quotes, marks.data]);
+
+  const brief = useMemo(() => assembleBrief({
+    now,
+    quotes: shownQuotes,
+    articles: news.articles,
+    earnings: earnings.data?.payload.reports ?? [],
+    econ: econ.data?.data ?? [],
+    fetchedAt: [
+      quoteBoardStatus(board.quotes).latestTs || null,
+      news.updatedAt,
+      earnings.data?.payload.asOf,
+      econ.data?.fetchedAt,
+      fear.data?.fetchedAt,
+      rates.data?.fetchedAt,
+      yields.data?.fetchedAt,
+    ],
+  }), [earnings.data, econ.data, fear.data, news.articles, news.updatedAt, now, rates.data, shownQuotes, yields.data]);
 
   const onSort = useCallback((table: string, columnId: string) => {
     setSorts((current) => {
@@ -338,7 +364,16 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const earningsBase = useMemo<EarningsRow[]>(() => brief.events.flatMap((event) => {
     if (!event.symbol) return [];
     const when = eventWhen(event.at);
-    return [{ kind: "earnings" as const, id: event.id, when, symbol: event.symbol, company: event.name ?? "", rank: whenRank(when) }];
+    return [{
+      kind: "earnings" as const,
+      id: event.id,
+      when,
+      symbol: event.symbol,
+      company: event.name ?? "",
+      rank: whenRank(when),
+      epsEstimate: event.epsEstimate,
+      revenueEstimate: event.revenueEstimate,
+    }];
   }), [brief.events]);
 
   const tables = useMemo((): BriefTableBlock[] => layout.sections.map((section) => {
@@ -394,6 +429,7 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
 
   const quoteStatus = quoteBoardStatus(board.quotes);
   const loading = earnings.loading || econ.loading || fear.loading || rates.loading
+    || marks.loading
     || news.phase === "loading" || news.phase === "refreshing"
     || quoteStatus.loading > 0;
   const hasPaint = brief.markets.some((row) => row.last != null)
@@ -401,7 +437,7 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
     || earnings.data != null
     || econ.data != null;
   const failure = earnings.error ?? econ.error ?? news.error ?? boardErrorMessage(board.quotes);
-  const stale = quoteStatus.stale > 0 || !!earnings.data?.stale || !!econ.data?.stale;
+  const stale = quoteStatus.stale > 0 || !!earnings.data?.stale || !!econ.data?.stale || !!yields.data?.stale;
   const selectedHeadline = selected?.kind === "headline" && !selected.placeholder ? selected : null;
   const selectedView = selected?.kind === "view" && !selected.placeholder ? selected : null;
   const link = detailArticle
@@ -414,7 +450,7 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       : { url: selectedView?.url ?? null, source: null };
   const asOf = brief.asOf ? briefFooterInfo({ asOf: brief.asOf }) : "";
   const info = useMemo(
-    () => asOf.startsWith("as of") ? [{ id: "asof", parts: [{ text: asOf, tone: "muted" as const }] }] : [],
+    () => asOf && asOf !== "Live" ? [{ id: "asof", parts: [{ text: asOf, tone: "muted" as const }] }] : [],
     [asOf],
   );
   usePaneStatusLinkFooter({
@@ -439,6 +475,8 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       fear.error,
       fear.data?.refreshError,
       rates.error,
+      yields.error,
+      ...(yields.data?.errors ?? []),
       news.error,
       boardErrorMessage(board.quotes),
       sectionsError,
@@ -448,9 +486,11 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
 
   const mood = fear.data?.data.overall ?? null;
   const meeting = rates.data ? pricedMeeting(rates.data, brief.session.date) : null;
-  const vix = getActiveQuoteDisplay(board.quotes.get(BRIEF_VIX)?.quote);
+  const vix = shownQuotes.get(BRIEF_VIX);
+  const yieldRows = yields.data?.rows ?? BRIEF_YIELDS.map((row) => ({ id: row.id, label: row.label, level: null }));
   const stats: StatItem[] = [
     ...brief.markets.map((row) => priceStat(row.symbol, row.label, row.last, row.changePercent)),
+    ...yieldRows.map(yieldStat),
     {
       id: "fng",
       label: "FNG",
@@ -458,13 +498,13 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
       detail: mood ? ratingLabel(mood.rating) : undefined,
       tone: mood ? ratingTrend(mood.rating) : "neutral",
     },
+    priceStat(BRIEF_VIX, "VIX", vix?.last ?? null, vix?.changePercent ?? null),
     {
       id: "fomc",
       label: "FOMC",
       value: meeting ? moveOddsText(meeting.step) : "--",
       detail: meeting ? meetingLabel(meeting.date) : undefined,
     },
-    priceStat(BRIEF_VIX, "VIX", vix?.price ?? null, vix?.changePercent ?? null),
   ];
   const chartHeight = esChartHeight(height);
   const columns = useMemo(() => ({
@@ -532,6 +572,8 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const renderEarnings = useCallback((row: EarningsRow, column: DataTableColumn, _index: number, state: { selected: boolean }): DataTableCell => {
     if (column.id === "when") return { text: row.when, color: colors.textDim };
     if (column.id === "ticker") return listingCell(row.symbol, colors, state.selected);
+    if (column.id === "eps") return { text: epsText(row.epsEstimate), color: colors.textDim };
+    if (column.id === "sales") return { text: moneyText(row.revenueEstimate), color: colors.textDim };
     return row.company ? { text: row.company, color: colors.text } : EMPTY_TABLE_CELL;
   }, [colors]);
 

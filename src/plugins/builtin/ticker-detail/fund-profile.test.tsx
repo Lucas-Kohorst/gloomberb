@@ -103,8 +103,9 @@ test("quote-free reported capitalization retains source units, zero, and provena
     const text = await buildTickerReport({ symbol: "CLASSA", tickerFile: ticker, financials, config, toBase: async () => Number.NaN });
     if (currency) {
       expect(text).toContain(currency === "GBP" ? "200M GBP" : "0 USD");
-      expect(text).toContain("gloom fundamentals");
-      expect(text).toContain("stale; valuation date unavailable");
+      expect(text).toContain("valuation date unavailable");
+      expect(text).not.toContain("gloom fundamentals");
+      expect(text).not.toContain("stale");
     } else expect(text).not.toContain("Market Cap");
     expect(text).toContain("Quote unavailable.");
     expect(financials.fundamentals?.marketCap).toBe(marketCap);

@@ -4,6 +4,7 @@ import { modalSurfaceStyle } from "../../../../components/ui/frame";
 import { useShortcut } from "../../../../react/input";
 import { colors, hoverBg } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
+import { unavailableText } from "../../../../components/ui/status-copy";
 import { Box, Text, TextAttributes, useUiCapabilities, type InputRenderable } from "../../../../ui";
 import type { ChatUserSummary } from "../../../../api-client";
 import { isPlainKey } from "../../../../utils/keyboard";
@@ -148,7 +149,7 @@ export function NewDmDialog({
     try {
       await onSubmit(submittedUsernames);
     } catch {
-      setError(t("Could not start conversation."));
+      setError(unavailableText("Conversation"));
       setSubmitting(false);
     }
   };

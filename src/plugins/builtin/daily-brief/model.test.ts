@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { EconEvent } from "../econ/types";
 import { FUTURES_CONTRACTS } from "../futures/contracts";
 import type { NewsArticle } from "../../../news/types";
-import { assembleBrief, BRIEF_BTC, BRIEF_FUTURES, type BriefSlices } from "./model";
+import { assembleBrief, BRIEF_FUTURES, type BriefSlices } from "./model";
 
 function article(id: string): NewsArticle {
   return {
@@ -70,15 +70,24 @@ describe("assembleBrief", () => {
     const brief = assembleBrief(slices({
       now: Date.parse("2026-10-05T03:30:00Z"),
       earnings: [
-        { symbol: "AEHR", date: "2026-10-04", timing: "amc", name: "Aehr Test Systems" },
-        { symbol: "MSS", date: "2026-10-04", timing: null, name: "  " },
-        { symbol: "DAL", date: "2026-10-04", timing: "bmo", name: "Delta Air Lines" },
-        { symbol: "NVDA", date: "2026-10-05", timing: "amc", name: "NVIDIA" },
+        { symbol: "AEHR", date: "2026-10-04", timing: "amc", name: "Aehr Test Systems", epsEstimate: 0.12, revenueEstimate: 1_500_000 },
+        { symbol: "MSS", date: "2026-10-04", timing: null, name: "  ", epsEstimate: null, revenueEstimate: null },
+        { symbol: "DAL", date: "2026-10-04", timing: "bmo", name: "Delta Air Lines", epsEstimate: 1.4, revenueEstimate: null },
+        { symbol: "NVDA", date: "2026-10-05", timing: "amc", name: "NVIDIA", epsEstimate: 0.7, revenueEstimate: 30_000_000_000 },
       ],
     }));
     expect(brief.events.map((event) => event.symbol)).toEqual(["DAL", "AEHR", "MSS"]);
-    expect(brief.events.find((event) => event.symbol === "AEHR")?.name).toBe("Aehr Test Systems");
-    expect(brief.events.find((event) => event.symbol === "MSS")?.name).toBeNull();
+    expect(brief.events.find((event) => event.symbol === "AEHR")).toMatchObject({
+      name: "Aehr Test Systems",
+      epsEstimate: 0.12,
+      revenueEstimate: 1_500_000,
+    });
+    expect(brief.events.find((event) => event.symbol === "DAL")?.epsEstimate).toBe(1.4);
+    expect(brief.events.find((event) => event.symbol === "MSS")).toMatchObject({
+      name: null,
+      epsEstimate: null,
+      revenueEstimate: null,
+    });
   });
 
   test("an econ release uses the New York date when UTC has already rolled", () => {
@@ -106,9 +115,9 @@ describe("assembleBrief", () => {
       now: Date.parse("2026-10-05T14:30:00Z"),
       quotes: new Map([["ES=F", { last: null, changePercent: null }]]),
     }));
-    expect(brief.markets.map((row) => row.symbol)).toEqual([...BRIEF_FUTURES, BRIEF_BTC]);
+    expect(brief.markets.map((row) => row.symbol)).toEqual([...BRIEF_FUTURES]);
+    expect(brief.markets.map((row) => row.label)).toEqual(["ES", "NQ", "CL"]);
     expect(brief.markets[0]).toMatchObject({ symbol: "ES=F", label: "ES", last: null });
-    expect(brief.markets.at(-1)).toMatchObject({ symbol: BRIEF_BTC, label: "BTC", last: null });
   });
 
   test("the futures strip is copied from the futures board", () => {

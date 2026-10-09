@@ -1,5 +1,7 @@
+import { unavailableText } from "../../ui/status";
 import { type LayoutConfig, type PaneBinding, type PaneInstanceConfig } from "../../../types/config";
 import type { PaneSettingField, PaneTemplateContext, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, PaneTemplateDef } from "../../../types/plugin";
+import { commandPromptTicker } from "../../../layout/selected-ticker";
 import { getFocusedCollectionId, getFocusedTickerSymbol } from "../../../state/app/context";
 import { resolveInstrumentForPane, resolveListingForPane } from "../../../core/state/app/instrument";
 import { resolveTickerOpenTarget } from "../../../tickers/open-target";
@@ -194,13 +196,20 @@ async function resolvePaneTemplateOptions(
   resolvedOptions: PaneTemplateCreateOptions | undefined;
 }> {
   const state = deps.getState();
+  const focusedSymbol = getFocusedTickerSymbol(state);
+  // A required ticker follows the prompt, including a linked desk the focused
+  // pane does not hold. An optional ticker stays unbound unless one was named.
+  const requiresTicker = (template.shortcut?.argPlaceholder === "ticker" || template.shortcut?.argKind === "ticker")
+    && !template.shortcut?.argOptional;
+  const prompt = requiresTicker ? commandPromptTicker(state) : null;
+  const tickerRootId = prompt?.rootInstanceId ?? state.focusedPaneId;
   const baseContext: PaneTemplateContext = {
     config: state.config,
     layout: state.config.layout,
     focusedPaneId: state.focusedPaneId,
-    activeTicker: getFocusedTickerSymbol(state),
-    activeInstrument: state.focusedPaneId ? resolveInstrumentForPane(state, state.focusedPaneId)?.instrument : undefined,
-    activeListing: state.focusedPaneId ? resolveListingForPane(state, state.focusedPaneId) : undefined,
+    activeTicker: prompt?.symbol ?? focusedSymbol,
+    activeInstrument: tickerRootId ? resolveInstrumentForPane(state, tickerRootId)?.instrument : undefined,
+    activeListing: tickerRootId ? resolveListingForPane(state, tickerRootId) : undefined,
     activeCollectionId: getFocusedCollectionId(state),
   };
 
@@ -216,7 +225,7 @@ async function resolvePaneTemplateOptions(
     if (resolvedOptions?.instrument === null && !resolvedOptions.ticker) {
       const publicTarget = await resolveTickerOpenTarget({ query: resolvedOptions.symbol ?? resolvedOptions.arg ?? baseContext.activeTicker ?? "",
         tickers: state.tickers, tickerRepository: deps.tickerRepository, dataProvider: deps.dataProvider, publicOnly: true });
-      if (!publicTarget) throw new Error("Could not resolve the selected public listing.");
+      if (!publicTarget) throw new Error(unavailableText("Listing"));
       deps.dispatch({ type: "UPDATE_TICKER", ticker: publicTarget.ticker });
       if (publicTarget.created) deps.pluginRegistry.events.emit("ticker:added", { symbol: publicTarget.symbol, ticker: publicTarget.ticker });
       resolvedOptions = { ...resolvedOptions, symbol: publicTarget.symbol, ticker: publicTarget.ticker, listing: resolvedOptions.listing ?? publicTarget.listing };
@@ -412,9 +421,12 @@ export async function applyPaneSettingFieldValue(
     if (!descriptor.pluginId) {
       throw new Error("This pane setting is not owned by a plugin.");
     }
+    const previous = field.store
+      ? deps.pluginRegistry.getConfigState(descriptor.pluginId, field.key)
+      : undefined;
     await deps.pluginRegistry.setConfigStates(descriptor.pluginId, {
       ...clearOnChange,
-      [field.key]: value,
+      [field.key]: field.store ? field.store(value, previous) : value,
     });
     return;
   }

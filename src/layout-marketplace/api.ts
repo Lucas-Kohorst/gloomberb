@@ -20,7 +20,7 @@ export async function getPublicMarketplaceLayout(
     { credentials: "include" },
   );
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error("Could not load shared layout.");
+  if (!response.ok) throw new Error("Shared layout unavailable.");
   let body: unknown;
   try {
     body = await response.json();

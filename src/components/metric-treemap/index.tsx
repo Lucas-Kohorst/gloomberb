@@ -9,6 +9,7 @@ import {
   buildMetricTreemapRects,
   type FloatMetricTreemapTile,
   type MetricTreemapItem,
+  type MetricTreemapLayoutOptions,
   type MetricTreemapTile,
 } from "./layout";
 
@@ -48,6 +49,9 @@ export interface MetricTreemapSurfaceProps<T> {
   selectedId: string | null;
   onSelect: (item: MetricTreemapItem<T>) => void;
   onActivate?: (item: MetricTreemapItem<T>) => void;
+  /** A press activates. Hover still only selects, and a double-click is not a second activate. */
+  activateOnPress?: boolean;
+  layoutOptions?: MetricTreemapLayoutOptions;
   emptyStateTitle?: string;
 }
 
@@ -85,11 +89,12 @@ function visibleLines(item: MetricTreemapItem): string[] {
   ].filter((line): line is string => !!line);
 }
 
-function Tile<T>({ tile, selected, onSelect, onActivate, pointerMoved }: {
+function Tile<T>({ tile, selected, onSelect, onActivate, activateOnPress, pointerMoved }: {
   tile: MetricTreemapTile<T>;
   selected: boolean;
   onSelect: () => void;
   onActivate?: () => void;
+  activateOnPress?: boolean;
   pointerMoved: (event: PointerMoveEvent | undefined) => boolean;
 }) {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
@@ -111,6 +116,7 @@ function Tile<T>({ tile, selected, onSelect, onActivate, pointerMoved }: {
       onMouseDown={(event: PreventableMouseEvent) => {
         event.preventDefault();
         onSelect();
+        if (activateOnPress) onActivate?.();
       }}
       onMouseMove={(event: PointerMoveEvent) => {
         if (pointerMoved(event)) onSelect();
@@ -120,7 +126,7 @@ function Tile<T>({ tile, selected, onSelect, onActivate, pointerMoved }: {
       onMouseOver={(event: PointerMoveEvent & { source?: unknown }) => {
         if (event.source && pointerMoved(event)) onSelect();
       }}
-      onDoubleClick={onActivate}
+      onDoubleClick={activateOnPress ? undefined : onActivate}
     >
       {lines.slice(0, renderHeight).map((line, index) => (
         <Text key={`${tile.item.id}:${index}`} fg={textColor} attributes={attributes}>
@@ -135,7 +141,7 @@ function pct(value: number, total: number): string {
   return `${total > 0 ? value / total * 100 : 0}%`;
 }
 
-function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSelect, onActivate, onHover, pointerMoved }: {
+function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSelect, onActivate, activateOnPress, onHover, pointerMoved }: {
   tile: FloatMetricTreemapTile<T>;
   chartWidth: number;
   chartHeight: number;
@@ -143,6 +149,7 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
   hovered: boolean;
   onSelect: () => void;
   onActivate?: () => void;
+  activateOnPress?: boolean;
   onHover: (hovered: boolean) => void;
   pointerMoved: (event: PointerMoveEvent | undefined) => boolean;
 }) {
@@ -208,8 +215,9 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
       onMouseDown={(event: PreventableMouseEvent) => {
         event.preventDefault();
         onSelect();
+        if (activateOnPress) onActivate?.();
       }}
-      onDoubleClick={onActivate}
+      onDoubleClick={activateOnPress ? undefined : onActivate}
       onMouseOver={() => onHover(true)}
       onMouseMove={moveHover}
       onMouseOut={() => onHover(false)}
@@ -236,13 +244,16 @@ function DesktopTile<T>({ tile, chartWidth, chartHeight, selected, hovered, onSe
   );
 }
 
-function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSelect, onActivate, cellAspect, emptyStateTitle }: MetricTreemapSurfaceProps<T> & {
+function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSelect, onActivate, activateOnPress, layoutOptions, cellAspect, emptyStateTitle }: MetricTreemapSurfaceProps<T> & {
   cellAspect: number;
 }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const pointerMoved = usePointerMoved();
   const chartWidth = Math.max(1, width - 2);
-  const tiles = useMemo(() => buildMetricTreemapRects(items, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, items]);
+  const tiles = useMemo(
+    () => buildMetricTreemapRects(items, chartWidth, height, cellAspect, layoutOptions),
+    [cellAspect, chartWidth, height, items, layoutOptions],
+  );
 
   if (tiles.length === 0) {
     return (
@@ -284,6 +295,7 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
             hovered={tile.item.id === hoveredId}
             onSelect={() => onSelect(tile.item)}
             onActivate={onActivate ? () => onActivate(tile.item) : undefined}
+            activateOnPress={activateOnPress}
             onHover={(isHovered) => setHoveredId((current) => (isHovered ? tile.item.id : current === tile.item.id ? null : current))}
             pointerMoved={pointerMoved}
           />
@@ -300,12 +312,17 @@ export function MetricTreemapSurface<T>({
   selectedId,
   onSelect,
   onActivate,
+  activateOnPress,
+  layoutOptions,
   emptyStateTitle,
 }: MetricTreemapSurfaceProps<T>) {
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const chartWidth = Math.max(1, width - 2);
   const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
-  const tiles = useMemo(() => buildMetricTreemap(items, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, items]);
+  const tiles = useMemo(
+    () => buildMetricTreemap(items, chartWidth, height, cellAspect, layoutOptions),
+    [cellAspect, chartWidth, height, items, layoutOptions],
+  );
   const pointerMoved = usePointerMoved();
 
   if (nativePaneChrome) {
@@ -317,6 +334,8 @@ export function MetricTreemapSurface<T>({
         selectedId={selectedId}
         onSelect={onSelect}
         onActivate={onActivate}
+        activateOnPress={activateOnPress}
+        layoutOptions={layoutOptions}
         cellAspect={cellAspect}
         emptyStateTitle={emptyStateTitle}
       />
@@ -341,6 +360,7 @@ export function MetricTreemapSurface<T>({
             selected={tile.item.id === selectedId}
             onSelect={() => onSelect(tile.item)}
             onActivate={onActivate ? () => onActivate(tile.item) : undefined}
+            activateOnPress={activateOnPress}
             pointerMoved={pointerMoved}
           />
         ))}

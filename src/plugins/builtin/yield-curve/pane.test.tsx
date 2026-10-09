@@ -150,7 +150,7 @@ test("date submission hides the previous curve while pending and keeps controls 
   await frame();
   expect(callsEndingOn("2024-03-02")).toBe(TREASURY_MATURITIES.length);
   expect(tui.frame()).toContain("2024-03-02");
-  expect(tui.frame()).toContain("Loading yield curve");
+  expect(tui.frame()).toContain("Loading...");
   expect(tui.frame()).not.toContain("2026-09-08");
   await act(async () => { rejectHistory(new Error("offline")); });
   await frame();

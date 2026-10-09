@@ -12,6 +12,7 @@ import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, TextAttributes, useRendererHost, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { publicTickerKey } from "../../../utils/exchanges";
 import { truncateToDisplayWidth } from "../../../utils/format";
 import { SignInWall } from "../cloud/auth-actions";
@@ -165,9 +166,10 @@ function AwardsView({ width, height, focused, symbol }: PaneProps & { symbol: st
     ] : []),
     ...(data?.locked ? [{ id: "upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: openUpgrade }] : []),
   ];
+  const awardAge = formatObservationAge(data?.asOf);
   usePaneStatusFooter({ registrationId: "awards", loading: paged.loading || paged.loadingMore,
-    error: data && !denied ? failed?.message ?? null : null, stale: loaded?.stale,
-    info: data?.asOf ? [{ id: "asof", parts: [{ text: `as of ${data.asOf.slice(0, 10)}`, tone: "muted" }] }] : [], hints });
+    error: data && !denied ? failed?.message ?? null : null,
+    info: awardAge ? [{ id: "asof", parts: [{ text: awardAge, tone: "muted" }] }] : [], hints });
   usePaneNoticeFooter({ registrationId: "awards:notices", focused, notices: [
     ...(data?.status === "partial" ? ["Procurement coverage is incomplete for the selected scope."] : []),
     ...(loaded?.refreshError ? [loaded.refreshError] : []),

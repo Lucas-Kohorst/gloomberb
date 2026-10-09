@@ -1,4 +1,5 @@
 import { apiClient } from "../../../../api-client";
+import { unavailableText } from "../../../../components/ui/status-copy";
 import type { CommandResultDef, GloomPluginContext } from "../../../../types/plugin";
 import { requestAuthDialog } from "../auth-dialog";
 import {
@@ -43,7 +44,7 @@ async function inviteFromCommand(ctx: GloomPluginContext, teamId: string, target
       const link = await apiClient.createTeamInviteLink(team.id);
       ctx.notify({ body: `Invite link for ${team.name}: ${link.url}`, type: "success" });
     } catch (error) {
-      ctx.notify({ body: errorText(error, "Could not create an invite link."), type: "error" });
+      ctx.notify({ body: errorText(error, unavailableText("Invite link")), type: "error" });
     }
     return;
   }
@@ -52,7 +53,7 @@ async function inviteFromCommand(ctx: GloomPluginContext, teamId: string, target
       const invitation = await apiClient.inviteTeamMemberByUsername(team.id, target.replace(/^@/, ""));
       ctx.notify({ body: `Invited ${userHandle(invitation.invitee)} to ${team.name}.`, type: "success" });
     } catch (error) {
-      ctx.notify({ body: errorText(error, "Could not send the invitation."), type: "error" });
+      ctx.notify({ body: errorText(error, unavailableText("Invitation")), type: "error" });
     }
     return;
   }

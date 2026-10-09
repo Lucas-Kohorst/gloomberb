@@ -148,13 +148,8 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selected) return [];
     const info: PaneFooterSegment[] = [
-      { id: "as-of", parts: [{ text: `as of ${selected.latest.date}`, tone: "muted" }] },
+      { id: "as-of", parts: [{ text: selected.latest.date, tone: "muted" }] },
     ];
-    // The cached first paint is being replaced; its age only counts once that load fails.
-    const seeding = resource.loading && resource.updatedAt === null && !selected.refreshError;
-    if (selected.observationStale || (selected.cacheStale && !seeding)) {
-      info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });
-    }
     return info;
   }, [resource.loading, resource.updatedAt, selected]);
 
@@ -180,7 +175,7 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
 
   if (!bundle && resource.error === null) {
     return (
-      <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading economic statistics..." />
+      <PaneStatusBody loading align="center" width={width} height={height} />
     );
   }
 

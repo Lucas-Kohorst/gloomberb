@@ -108,11 +108,10 @@ describe("ChatContent channel sidebar", () => {
     });
 
     await flushFrame();
-    expect(tui.frame()).toContain("← Chats");
-    expect(tui.frame()).toContain("#options");
+    expect(tui.frame()).toContain("← Back");
 
     const backLines = tui.frame().split("\n");
-    const backRow = backLines.findIndex((line) => line.includes("← Chats"));
+    const backRow = backLines.findIndex((line) => line.includes("← Back"));
     const backCol = backLines[backRow]?.indexOf("←") ?? -1;
     expect(backRow).toBeGreaterThanOrEqual(0);
     expect(backCol).toBeGreaterThanOrEqual(0);
@@ -124,7 +123,7 @@ describe("ChatContent channel sidebar", () => {
     });
     await flushFrame();
 
-    expect(tui.frame()).not.toContain("← Chats");
+    expect(tui.frame()).not.toContain("← Back");
     expect(tui.frame()).toContain("everyone");
     expect(tui.frame()).toContain("equities");
   });

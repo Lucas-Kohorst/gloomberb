@@ -73,5 +73,6 @@ export function createLiveCollectionActions(
     disconnectBrokerInstance: (instanceId) => current().disconnectBrokerInstance(instanceId),
     setPortfolioPositionFromWorkflow: (values) => current().setPortfolioPositionFromWorkflow(values),
     addTickerMembershipFromWorkflow: (values) => current().addTickerMembershipFromWorkflow(values),
+    importTickersFromWorkflow: (values) => current().importTickersFromWorkflow(values),
   };
 }

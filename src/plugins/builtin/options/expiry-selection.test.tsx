@@ -232,7 +232,7 @@ test("a saved surface seed waits for ticker hydration before claiming its instru
   const f = await fixture(80, 0, false, EXPIRIES[2]);
   expect(f.state.config.layout.instances[0]!.settings?.expirationTargetKey).toBeUndefined();
   // A bound symbol without a saved record (a shared layout) still shows its chain.
-  expect((await f.capture("unsaved-ticker")).frame).not.toContain("No ticker selected");
+  expect((await f.capture("unsaved-ticker")).frame).not.toContain("Select a ticker");
   expect(f.state.config.layout.instances[0]!.settings?.expirationTargetKey).toBeUndefined();
   await f.hydrateTicker();
   expect((await f.capture("hydrated-handoff")).launch?.marketReference?.expiration).toBe(EXPIRIES[2]);

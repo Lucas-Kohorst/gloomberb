@@ -1,53 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { TickerResearchTabDef, TickerResearchTabLoadContext } from "../../../types/plugin";
 
-export type ResearchTabLoadStatus = "pending" | "ready" | "absent";
-
-export interface ResearchTabLoadSnapshot {
-  key: string;
-  status: Readonly<Record<string, ResearchTabLoadStatus>>;
-}
-
-/** Every probed tab has answered for this ticker. The strip waits for this. */
-export function researchLoadsSettled<T extends { id: string; load?: unknown }>(
-  tabs: readonly T[],
-  snapshot: ResearchTabLoadSnapshot,
-  tickerKey: string,
-): boolean {
-  const probed = tabs.filter((tab) => tab.load);
-  if (probed.length === 0) return true;
-  if (!tickerKey || snapshot.key !== tickerKey) return false;
-  return probed.every((tab) => {
-    const state = snapshot.status[tab.id];
-    return state === "ready" || state === "absent";
-  });
-}
-
 /**
- * Probed tabs stay out until every prefetch has answered, then the ones with
- * data appear together. The tab already open stays mounted while that wait
- * runs, so a restored tab does not jump away and back.
+ * Warm every tab's cache when the ticker is selected. The strip already lists
+ * those tabs, so a prefetch never adds or removes one.
  */
-export function offerResearchTabs<T extends { id: string; load?: unknown }>(
-  tabs: readonly T[],
-  snapshot: ResearchTabLoadSnapshot,
-  tickerKey: string,
-  preferredId: string,
-): T[] {
-  const settled = researchLoadsSettled(tabs, snapshot, tickerKey);
-  return tabs.filter((tab) => {
-    if (!tab.load) return true;
-    if (!settled) return tab.id === preferredId;
-    return snapshot.status[tab.id] === "ready";
-  });
-}
-
 export function useResearchTabLoads(
   tabs: readonly TickerResearchTabDef[],
   tickerKey: string,
   context: TickerResearchTabLoadContext | null,
-): ResearchTabLoadSnapshot {
-  const [snapshot, setSnapshot] = useState<ResearchTabLoadSnapshot>({ key: "", status: {} });
+): void {
   const contextRef = useRef(context);
   const tabsRef = useRef(tabs);
   contextRef.current = context;
@@ -56,34 +18,16 @@ export function useResearchTabLoads(
 
   useEffect(() => {
     const current = contextRef.current;
-    if (!tickerKey || !current) {
-      setSnapshot({ key: "", status: {} });
-      return;
-    }
+    if (!tickerKey || !current) return;
     const controller = new AbortController();
-    const key = tickerKey;
     const loading = tabsRef.current.filter((tab) => tab.load);
-    if (loading.length === 0) {
-      setSnapshot({ key, status: {} });
-      return;
-    }
+    if (loading.length === 0) return;
     const loadContext: TickerResearchTabLoadContext = { ...current, signal: controller.signal };
-    const status: Record<string, ResearchTabLoadStatus> = {};
-    let remaining = loading.length;
-    const finish = (id: string, next: ResearchTabLoadStatus) => {
-      if (controller.signal.aborted || status[id]) return;
-      status[id] = next;
-      remaining -= 1;
-      if (remaining === 0) setSnapshot({ key, status: { ...status } });
-    };
     for (const tab of loading) {
       void Promise.resolve()
         .then(() => tab.load!(loadContext))
-        .then((available) => finish(tab.id, available ? "ready" : "absent"))
-        .catch(() => finish(tab.id, "ready"));
+        .catch(() => undefined);
     }
     return () => controller.abort();
   }, [loadKey, tickerKey]);
-
-  return snapshot;
 }

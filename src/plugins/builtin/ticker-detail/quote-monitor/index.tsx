@@ -218,7 +218,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   if (symbols.length === 0) {
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        <EmptyState title="No tickers selected." />
+        <EmptyState title="Select a ticker." />
       </Box>
     );
   }

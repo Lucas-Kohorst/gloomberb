@@ -84,6 +84,11 @@ export function createRootCommandItemBuilder({
         return activeTickerSymbol ? `Remove ${activeTickerSymbol} from Portfolio` : command.label;
       case "set-portfolio-position":
         return activeTickerSymbol ? `Set Position for ${activeTickerSymbol}` : command.label;
+      case "import-tickers": {
+        const name = state.config.watchlists.find((entry) => entry.id === activeCollectionId)?.name
+          ?? state.config.portfolios.find((entry) => entry.id === activeCollectionId && isManualPortfolio(entry))?.name;
+        return name ? `Import Tickers into ${name}` : command.label;
+      }
       default:
         return command.label;
     }
@@ -127,14 +132,14 @@ export function createRootCommandItemBuilder({
         if (state.updateProgress?.phase === "downloading") {
           return `Downloading v${state.updateAvailable?.version}: ${state.updateProgress.percent ?? 0}%`;
         }
-        if (state.updateProgress?.phase === "replacing") return "Installing update";
+        if (state.updateProgress?.phase === "replacing") return "Loading...";
         if (state.updateProgress?.phase === "done") {
           return state.updateProgress.message ?? "Update installed - restart to apply";
         }
         if (state.updateProgress?.phase === "error") {
           return `Update failed: ${state.updateProgress.error}`;
         }
-        if (state.updateCheckInProgress) return "Checking releases now";
+        if (state.updateCheckInProgress) return "Loading...";
         if (state.updateAvailable) {
           return `Latest available: v${state.updateAvailable.version}`;
         }

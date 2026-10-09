@@ -107,6 +107,12 @@ function chartTitle(spec: ChartSpec, prefix = "G"): string {
         : series.label?.trim() || series.source.seriesId
   ));
   if (labels.length === 0) return "Custom Chart";
+  const formulas = spec.studies.filter((study) => (
+    study.id.startsWith("pair:") && (study.kind === "ratio" || study.kind === "spread")
+  ));
+  if (spec.series.length === 2 && labels.length === 2 && formulas.length === 1) {
+    return `${prefix} ${labels[0]} ${formulas[0]!.kind === "ratio" ? "/" : "-"} ${labels[1]}`;
+  }
   const remaining = spec.series.length - labels.length;
   return `${prefix} ${labels.join(" · ")}${remaining > 0 ? ` +${remaining}` : ""}`;
 }
@@ -253,7 +259,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       label: "Chart Series",
       placeholder: "AAPL:price, MSFT:revenue, FRED:CPIAUCSL",
       type: "text",
-      body: ["Enter comma-separated SYMBOL:field or FRED:series expressions."],
+      body: ["Enter comma-separated SYMBOL:field or FRED:series expressions. A / B charts the ratio, A - B the spread."],
     }],
     canCreate: () => true,
     createInstance: (context, options) => {

@@ -5,12 +5,14 @@ import { usePaneAppConfig } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
+import { getNotificationLog, subscribeNotificationLog } from "../../../notifications/notification-log";
+import { notificationCountsOnStatusBadge } from "../notification-center/filter";
 import { InlineAuthActions } from "../cloud/auth-actions";
+import { NOTIFICATION_CENTER_TEMPLATE_ID } from "../notification-center/filter";
 import {
   getPreferredChatOpenChannelId,
 } from "./channels";
 import { chatController, type ChatController } from "./controller";
-import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
   controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
@@ -20,6 +22,17 @@ type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
 
 function getTotalUnreadCount(snapshot: ChatStatusSnapshot) {
   return snapshot.channelStates.reduce((total, state) => total + Math.max(0, state.unreadCount), 0);
+}
+
+/**
+ * Unread history that is not already on a chat or team chip. Chat and team
+ * rows carry their own refIds. A price or catalyst fire does too, and still counts.
+ */
+function getUnreadNonChatLogCount(): number {
+  return getNotificationLog().reduce(
+    (total, entry) => total + (notificationCountsOnStatusBadge(entry) ? 1 : 0),
+    0,
+  );
 }
 
 function CloudStatusIcon() {
@@ -53,7 +66,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const unreadCount = getTotalUnreadCount(snapshot);
+  const [logUnreadCount, setLogUnreadCount] = useState(getUnreadNonChatLogCount);
+  const unreadCount = getTotalUnreadCount(snapshot) + logUnreadCount;
 
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
@@ -65,17 +79,21 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const openUnread = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    createPaneFromTemplate(UNREAD_INBOX_TEMPLATE_ID);
+    createPaneFromTemplate(NOTIFICATION_CENTER_TEMPLATE_ID);
   };
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe((nextSnapshot) => {
+    const unsubscribeChat = controller.subscribe((nextSnapshot) => {
       setSnapshot(nextSnapshot);
       setUsername(nextSnapshot.user?.username ?? null);
       setHasSavedSession(nextSnapshot.hasSavedSession);
     });
+    const unsubscribeLog = subscribeNotificationLog(() => setLogUnreadCount(getUnreadNonChatLogCount()));
     void controller.refreshSession().catch(() => {});
-    return unsubscribe;
+    return () => {
+      unsubscribeChat();
+      unsubscribeLog();
+    };
   }, [controller]);
 
   return (
@@ -100,7 +118,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           </Button>
           {unreadCount > 0 ? (
             <Button
-              label={`Open ${unreadCount} unread chat messages`}
+              label={`Open ${unreadCount} unread`}
               variant="plain"
               compact
               stopPropagation

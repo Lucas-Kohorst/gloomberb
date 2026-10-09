@@ -11,9 +11,11 @@ import {
   CHART_FIELD_IDS,
   normalizeInstrument,
   parseChartExpression,
+  parseSeriesExpression,
   resolveChartFieldAlias,
+  type ParsedSeriesExpression,
 } from "./series-expression";
-import { setBuiltinStudies } from "./studies";
+import { setBuiltinStudies, setPairStudies, type PairStudySelection } from "./studies";
 
 function chartSpec(
   series: ChartSeriesSpec[],
@@ -33,7 +35,25 @@ export function buildEmptyChartPreset(): ChartSpec {
   return chartSpec([]);
 }
 
+/**
+ * `GAA / VOO` and `CL=F - ES=F` are a ratio and a spread of two series.
+ * A slash or minus inside one token stays part of that token (`EUR/USD`,
+ * `AAPL:EV / EBITDA`), and a comma-separated list stays a list of series.
+ */
+function derivedPair(expression: string): { series: ParsedSeriesExpression[]; formula: PairStudySelection } | null {
+  const trimmed = expression.trim();
+  if (!trimmed || /[;,\n]/.test(trimmed) || parseSeriesExpression(trimmed)) return null;
+  const match = /^(.*?)\s+(\/|-)\s+(.*)$/.exec(trimmed);
+  if (!match) return null;
+  const left = parseSeriesExpression(match[1]!);
+  const right = parseSeriesExpression(match[3]!);
+  if (!left || !right) return null;
+  return { series: [left, right], formula: match[2] === "/" ? "ratio" : "spread" };
+}
+
 export function buildCustomChartPreset(expression: string, fallbackSymbol?: string | null): ChartSpec {
+  const derived = derivedPair(expression);
+  if (derived) return setPairStudies(chartSpec(buildCustomSeries(derived.series)), [derived.formula]);
   const parsed = parseChartExpression(expression);
   if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
   return chartSpec(buildCustomSeries(parsed));

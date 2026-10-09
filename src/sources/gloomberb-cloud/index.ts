@@ -38,6 +38,7 @@ import type { NewsArticle, NewsQuery } from "../../types/news-source";
 import { normalizeNewsFeed } from "../../news/news-model";
 import { resolveCurrencyUnit } from "../../utils/currency-units";
 import { canonicalExchange, canonicalTickerKey, parsePublicTickerKey } from "../../utils/exchanges";
+import { extractFilingContent } from "../sec-edgar/content";
 import { normalizePriceHistory, priceHistoryIntervalMs, reachesLatestSettledSession } from "../../utils/price-history";
 import { createProviderMiss } from "../provider-errors";
 import { publicListingTarget } from "../listing-target";
@@ -80,6 +81,19 @@ const CLOUD_PROVIDER_MISS_PATTERNS = [
   /figi.*missing or invalid/i,
   /error in the query/i,
 ];
+
+/** The filings pane parses these itself. Everything else is shown as text, so the raw file must not reach the view. */
+const RAW_OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
+
+function previewCloudFilingContent(filing: SecFilingItem, content: string): string | null {
+  if (RAW_OWNERSHIP_FORMS.has(filing.form.trim().toUpperCase())) return content;
+  const preview = extractFilingContent(content, "", {
+    form: filing.form,
+    sourceUrl: filing.primaryDocumentUrl ?? filing.filingUrl,
+  });
+  if (preview) return preview;
+  return content.length > 16_000 ? null : content;
+}
 
 function mapCloudSecFiling(item: {
   accessionNumber: string;
@@ -310,6 +324,29 @@ function retainRequestedQuoteSymbol(quote: Quote, ticker: string): Quote {
   return parsePublicTickerKey(ticker).exchange || tickerHasListingSuffix(ticker) ? { ...quote, symbol: ticker } : quote;
 }
 
+/** Search stores HYPE32196-USD. That quote id fails; the same id's bars are current. */
+const NUMBERED_CRYPTO_PAIR = /^([A-Z]{2,12})\d{2,}-(USD|USDT|USDC|EUR|GBP|JPY|BTC|ETH)$/;
+
+function plainCryptoPair(symbol: string): string | null {
+  const match = NUMBERED_CRYPTO_PAIR.exec(symbol.trim().toUpperCase());
+  return match ? `${match[1]}-${match[2]}` : null;
+}
+
+function acceptsPlainCryptoQuote(quote: Quote, plain: string): boolean {
+  if (!(Number.isFinite(quote.price) && quote.price > 0)) return false;
+  const symbol = quote.symbol.trim().toUpperCase();
+  if (symbol && symbol !== plain) return false;
+  const listing = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
+  if (!listing) return true;
+  if (listing === "CCC") return true;
+  const type = (quote.instrumentType ?? "").toUpperCase().replace(/[\s_-]/g, "");
+  return type === "CRYPTO" || type === "CRYPTOCURRENCY" || type === "DIGITALCURRENCY";
+}
+
+function stampedCryptoQuote(quote: Quote, ticker: string): Quote {
+  return quote.symbol === ticker ? quote : { ...quote, symbol: ticker };
+}
+
 function retainRequestedFinancialsSymbol(financials: TickerFinancials, ticker: string): TickerFinancials {
   return financials.quote
     ? { ...financials, quote: retainRequestedQuoteSymbol(financials.quote, ticker) }
@@ -324,6 +361,134 @@ function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, messag
     throw createProviderMiss(response.reasonCode ?? message);
   }
   throw new Error(response.reasonCode ?? message);
+}
+
+async function loadCloudQuote(ticker: string, exchange: string): Promise<Quote> {
+  const target = cloudInstrumentTarget(ticker, exchange);
+  const response = await apiClient.getCloudQuote(target.symbol, target.exchange);
+  if (isStaleCloudResponse(response)) {
+    throw createProviderMiss(`Cloud quotes are stale for ${ticker}`);
+  }
+  return retainRequestedQuoteSymbol(mapQuote(
+    unwrapRequiredCloudResponse(response, `Cloud quotes are unavailable for ${ticker}`),
+    response.providerMeta,
+  ), ticker);
+}
+
+async function recoverPlainCryptoQuote(ticker: string, exchange: string, cause: unknown): Promise<Quote | null> {
+  if (cause instanceof Error && /stale/i.test(cause.message)) return null;
+  const plain = plainCryptoPair(parsePublicTickerKey(ticker).symbol);
+  if (!plain) return null;
+  try {
+    const quote = await loadCloudQuote(plain, exchange || "CCC");
+    if (acceptsPlainCryptoQuote(quote, plain)) return stampedCryptoQuote(quote, ticker);
+  } catch {
+    // The short pair can be stale while the id's own bars are current.
+  }
+  return quoteFromNumberedCryptoHistory(ticker, exchange);
+}
+
+/** CCC drops a quote older than two hours, so an older bar cannot fill the row. */
+const NUMBERED_CRYPTO_BAR_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+/** The numbered id is subscribed with everything else, and the tape never prints it. */
+const NUMBERED_CRYPTO_QUOTE_POLL_MS = 60_000;
+
+async function refreshNumberedCryptoQuote(ticker: string, exchange: string): Promise<Quote | null> {
+  try {
+    return await loadCloudQuote(ticker, exchange);
+  } catch (error) {
+    return recoverPlainCryptoQuote(ticker, exchange, error);
+  }
+}
+
+async function quoteFromNumberedCryptoHistory(ticker: string, exchange: string): Promise<Quote | null> {
+  let target: ReturnType<typeof cloudInstrumentTarget>;
+  try { target = cloudInstrumentTarget(ticker, exchange || "CCC"); }
+  catch { return null; }
+  const venue = target.exchange || "CCC";
+  const now = new Date();
+  let minutes: Array<{ date: string; close: number }> = [];
+  let days: Array<{ date: string; close: number }> = [];
+  try {
+    const [minuteResponse, dayResponse] = await Promise.all([
+      apiClient.getCloudHistory(target.symbol, venue, {
+        interval: "1min",
+        startDate: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(),
+        endDate: now.toISOString(),
+      }),
+      apiClient.getCloudHistory(target.symbol, venue, {
+        interval: "1day",
+        startDate: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        endDate: now.toISOString(),
+      }),
+    ]);
+    if ((minuteResponse.status === "success" || minuteResponse.status === "partial") && minuteResponse.data) minutes = minuteResponse.data;
+    if ((dayResponse.status === "success" || dayResponse.status === "partial") && dayResponse.data) days = dayResponse.data;
+  } catch {
+    return null;
+  }
+  const last = minutes.at(-1);
+  const observed = last ? new Date(last.date).getTime() : Number.NaN;
+  const price = last?.close;
+  if (!last || !Number.isFinite(observed) || now.getTime() - observed > NUMBERED_CRYPTO_BAR_MAX_AGE_MS) return null;
+  if (!(typeof price === "number" && Number.isFinite(price) && price > 0)) return null;
+  const prior = days.length >= 2 ? days[days.length - 2]?.close : undefined;
+  const change = typeof prior === "number" && Number.isFinite(prior) ? price - prior : 0;
+  const changePercent = typeof prior === "number" && Number.isFinite(prior) && prior !== 0
+    ? (change / Math.abs(prior)) * 100
+    : 0;
+  return {
+    symbol: ticker,
+    price,
+    currency: "USD",
+    change,
+    changePercent,
+    lastUpdated: observed,
+    listingExchangeName: "CCC",
+    exchangeName: "CCC",
+    instrumentType: "CRYPTOCURRENCY",
+  };
+}
+
+async function fillNumberedCryptoQuotes(
+  results: QuoteBatchResult[],
+  mode: "cache-first" | "refresh",
+): Promise<QuoteBatchResult[]> {
+  const pending = results.flatMap((result, index) => {
+    if (result.quote) return [];
+    if (result.error instanceof Error && /stale/i.test(result.error.message)) return [];
+    const plain = plainCryptoPair(parsePublicTickerKey(result.target.symbol).symbol);
+    return plain ? [{ index, plain, exchange: result.target.exchange }] : [];
+  });
+  if (pending.length === 0) return results;
+  const quotes = new Map<string, Quote>();
+  try {
+    const response = await apiClient.getCloudQuotesBatch(
+      pending.map(({ plain, exchange }) => cloudInstrumentTarget(plain, exchange)),
+      mode,
+    );
+    if (!isStaleCloudResponse(response)) {
+      for (const item of response.data?.items ?? []) {
+        if (item.stale === true || (item.status !== "success" && item.status !== "partial") || !item.data) continue;
+        const quote = mapQuote(item.data);
+        const plain = quote.symbol.trim().toUpperCase();
+        if (acceptsPlainCryptoQuote(quote, plain)) quotes.set(plain, quote);
+      }
+    }
+  } catch {
+    // The id's own bars can still price it when the short pair cannot.
+  }
+  await Promise.all(pending.map(async (job) => {
+    if (quotes.has(job.plain)) return;
+    const quote = await quoteFromNumberedCryptoHistory(results[job.index]!.target.symbol, job.exchange ?? "");
+    if (quote) quotes.set(`history:${job.index}`, quote);
+  }));
+  if (quotes.size === 0) return results;
+  return results.map((result, index) => {
+    const job = pending.find((entry) => entry.index === index);
+    const quote = job ? quotes.get(job.plain) ?? quotes.get(`history:${index}`) : undefined;
+    return quote ? { target: result.target, quote: stampedCryptoQuote(quote, result.target.symbol) } : result;
+  });
 }
 
 export class GloomberbCloudProvider implements AssetDataProvider {
@@ -398,20 +563,15 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
-    const target = cloudInstrumentTarget(ticker, exchange);
-    return withCloudFallback(
-      async () => {
-        const response = await apiClient.getCloudQuote(target.symbol, target.exchange);
-        if (isStaleCloudResponse(response)) {
-          throw createProviderMiss(`Cloud quotes are stale for ${ticker}`);
-        }
-        return retainRequestedQuoteSymbol(mapQuote(
-          unwrapRequiredCloudResponse(response, `Cloud quotes are unavailable for ${ticker}`),
-          response.providerMeta,
-        ), ticker);
-      },
-      `Cloud quotes are unavailable for ${ticker}`,
-    );
+    return withCloudFallback(async () => {
+      try {
+        return await loadCloudQuote(ticker, exchange);
+      } catch (error) {
+        const recovered = await recoverPlainCryptoQuote(ticker, exchange, error);
+        if (!recovered) throw error;
+        return recovered;
+      }
+    }, `Cloud quotes are unavailable for ${ticker}`);
   }
 
   async getQuoteMetadata(ticker: string, exchange = ""): Promise<QuoteMetadata | null> {
@@ -441,7 +601,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       }
       const payload = unwrapRequiredCloudResponse(response, "Cloud quotes are unavailable");
       const { matched, missing } = matchCloudBatchItems(submitted, payload.items);
-      return [...rejected, ...matched.map(({ target, item }) => {
+      const results = [...rejected, ...matched.map(({ target, item }) => {
         // A successful batch can contain an expired cache fallback for only
         // one listing. Match the single-quote freshness boundary and let the
         // normal router retry that item without discarding its healthy peers.
@@ -460,6 +620,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
           error: mapBatchError(item, `Cloud quotes are unavailable for ${target.symbol}`),
         };
       }), ...missing.map((target) => ({ target, quote: null, error: createProviderMiss(`Cloud quotes are unavailable for ${target.symbol}`) }))];
+      return fillNumberedCryptoQuotes(results, options.forceRefresh ? "refresh" : "cache-first");
     }, "Cloud quotes are unavailable");
   }
 
@@ -516,7 +677,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
         primaryDocumentUrl: filing.primaryDocumentUrl,
         filingUrl: filing.filingUrl,
       });
-      return response.content;
+      return response.content ? previewCloudFilingContent(filing, response.content) : null;
     }, "Cloud SEC filing content is unavailable");
   }
 
@@ -675,8 +836,9 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       targetMap.set(key, matches);
     }
     const requested = new Set(targetMap.keys());
+    const numbered = valid.filter(({ target }) => plainCryptoPair(parsePublicTickerKey(target.symbol).symbol));
 
-    return apiClient.subscribeQuotes(
+    const stopStream = apiClient.subscribeQuotes(
       valid.map(({ target, request }) => ({
         ...request,
         surface: target.surface,
@@ -696,6 +858,25 @@ export class GloomberbCloudProvider implements AssetDataProvider {
         }
       },
     );
+    if (numbered.length === 0) return stopStream;
+
+    let stopped = false;
+    let pending = false;
+    const publishNumbered = () => {
+      if (stopped || pending) return;
+      pending = true;
+      void Promise.all(numbered.map(async ({ target }) => {
+        const quote = await refreshNumberedCryptoQuote(target.symbol, target.exchange ?? "");
+        if (!stopped && quote) onQuote(target, quote);
+      })).finally(() => { pending = false; });
+    };
+    publishNumbered();
+    const timer = setInterval(publishNumbered, NUMBERED_CRYPTO_QUOTE_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      stopStream();
+    };
   }
 }
 
@@ -732,6 +913,8 @@ export function createGloomberbCloudCapabilities(provider = createGloomberbCloud
           return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
         },
         async fetchNewsStory(storyId: string): Promise<NewsArticle | null> {
+          // Firehose tweets use x: ids. They are not cloud news stories.
+          if (storyId.startsWith("x:")) return null;
           const story = await withCloudFallback(
             () => apiClient.getCloudNewsStory(storyId),
             "Cloud news story is unavailable",

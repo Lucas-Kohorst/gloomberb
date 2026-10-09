@@ -29,8 +29,7 @@ export function useAccountManagementFooter({
 
   usePaneFooter("account-management", () => (enabled ? {
     info: [
-      ...(busy ? [{ id: "busy", parts: [{ text: t("saving"), tone: "muted" as const }] }] : []),
-      ...(message ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const }] }] : []),
+      ...(message && message.tone !== "info" ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : "positive" as const }] }] : []),
     ],
     hints: footerHints,
   } : null), [busy, enabled, footerHints, language, message]);

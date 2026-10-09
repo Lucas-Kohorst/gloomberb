@@ -55,3 +55,40 @@ test("a relayout under a resting pointer leaves the keyboard's selection alone",
   expect(selected).toEqual(["a"]);
 
 });
+
+test("activateOnPress opens on the first click and a hover only selects", async () => {
+  const selected: string[] = [];
+  const activated: string[] = [];
+  function Harness() {
+    const [selectedId, updateSelectedId] = useState("a");
+    return (
+      <MetricTreemapSurface
+        items={items([3, 1])}
+        width={40}
+        height={6}
+        selectedId={selectedId}
+        activateOnPress
+        onSelect={(item) => {
+          selected.push(item.id);
+          updateSelectedId(item.id);
+        }}
+        onActivate={(item) => activated.push(item.id)}
+      />
+    );
+  }
+  await tui.render(<Harness />, { width: 40, height: 6 });
+  await act(async () => tui.setup().renderOnce());
+
+  await act(async () => {
+    await tui.setup().mockMouse.moveTo(5, 2);
+    await tui.setup().renderOnce();
+  });
+  expect(selected).toEqual(["a"]);
+  expect(activated).toEqual([]);
+
+  await act(async () => {
+    await tui.setup().mockMouse.click(5, 2);
+    await tui.setup().renderOnce();
+  });
+  expect(activated).toEqual(["a"]);
+});

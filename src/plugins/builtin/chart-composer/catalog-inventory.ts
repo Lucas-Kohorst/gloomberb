@@ -379,7 +379,7 @@ export function catalogEmptyCopy(
   loading: boolean,
   searchQuery: string,
 ): { title: string; hint?: string } {
-  if (loading) return { title: "Loading catalog…" };
+  if (loading) return { title: "" };
   const query = searchQuery.trim();
   if (query) return { title: `No series matching "${query}"`, hint: "Press / to search." };
   return { title: "No series", hint: "Press / to search." };

@@ -1,4 +1,6 @@
 import type { MoneyMarketRow, MoneyMarketsPayload } from "../../../api-client/money-markets";
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercentAxis, spanAxisFormatter } from "../../../components/chart-table";
 import type { CompositeAxisDomain } from "../../../components/chart/composite/types";
 import type { CurvePalette, CurveSeries } from "../../../components/chart/curve/model";
@@ -17,12 +19,17 @@ export function moneyMarketAxis(unit: MoneyMarketRow["unit"]): (value: number, d
 /** A move in a bill's discount yield, in basis points like the board's change column. */
 export const moneyMarketRateChange = (value: number) => moneyMarketChange(value * 100, "basis-points");
 
+function observationNotice(label: string, asOf: string | null | undefined): string {
+  const age = formatObservationAge(asOf);
+  return age ? `${label} ${age}` : unavailableText(label);
+}
+
 export function moneyMarketNotices(data: MoneyMarketsPayload): string[] {
   const notices = [...data.rows, data.netLiquidity].flatMap((row) => row.status === "unavailable"
     ? [`${row.label}: ${(row.unavailableReason ?? "unavailable").replaceAll("-", " ")}.`]
-    : row.status === "stale" ? [`${row.label}: stale, last observation ${row.asOf ?? "unknown"}.`] : []);
+    : row.status === "stale" ? [observationNotice(row.label, row.asOf)] : []);
   if (data.billsCurve.status === "unavailable") notices.push("Bills curve: no common observation date across all four tenors.");
-  else if (data.billsCurve.status === "stale") notices.push(`Bills curve: stale, last common observation ${data.billsCurve.asOf}.`);
+  else if (data.billsCurve.status === "stale") notices.push(observationNotice("Bills curve", data.billsCurve.asOf));
   for (const ghost of data.billsCurve.comparisons) if (!ghost.points.length) notices.push(`Bills ${ghost.period}: no common observation within seven days before ${ghost.targetDate ?? "the comparison date"}.`);
   return notices;
 }

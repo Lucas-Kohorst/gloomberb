@@ -30,6 +30,7 @@ interface NewsArticleStackOptions {
   /** Rows stay on screen while a refresh runs, so the footer says it is loading. */
   refreshing: boolean;
   error: string | null;
+  updatedAt?: number | null;
 }
 
 /**
@@ -45,6 +46,7 @@ export function useNewsArticleStack({
   defaultSort,
   refreshing,
   error,
+  updatedAt,
 }: NewsArticleStackOptions) {
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
@@ -94,6 +96,7 @@ export function useNewsArticleStack({
     loading: detailLoading || refreshing,
     error: [error, detailError].filter(Boolean).join(" ") || null,
     onPopOut: readableArticle ? popOutReadable : undefined,
+    updatedAt,
   });
 
   return {
@@ -166,6 +169,7 @@ export function NewsPresetPane({
     defaultSort,
     refreshing: loading && persisted.length > 0,
     error,
+    updatedAt: newsState.updatedAt,
   });
   const emptyCopy = newsListEmptyCopy({
     query: searchQuery,

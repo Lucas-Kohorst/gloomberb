@@ -64,7 +64,7 @@ async function deliver(payload: ScannerHiloPayload) {
 test("the window bars wait for the first payload instead of showing zero counts", async () => {
   await renderPane(80);
   let frame = tui.frame();
-  expect(frame).toContain("Waiting for the scanner");
+  expect(frame).toContain("Loading...");
   expect(frame).not.toContain("5 min");
   expect(frame).not.toContain("30 sec");
 

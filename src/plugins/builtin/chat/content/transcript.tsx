@@ -1,3 +1,4 @@
+import { Spinner, loadingText } from "../../../../components";
 import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../../ui";
 import type { Dispatch, SetStateAction } from "react";
 import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
@@ -104,12 +105,12 @@ export function ChatTranscript({
       >
         {loadingOlderMessages && (
           <Box alignItems="center" justifyContent="center" height={1} width={contentWidth}>
-            <Text fg={colors.textDim}>{t("Loading earlier messages...")}</Text>
+            <Spinner label={loadingText()} />
           </Box>
         )}
         {loading && messages.length === 0 ? (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
-            <Text fg={colors.textDim}>{t("Loading...")}</Text>
+            <Spinner label={loadingText()} />
           </Box>
         ) : messagesError && messages.length === 0 ? (
           // A failed load must not read as an empty channel.

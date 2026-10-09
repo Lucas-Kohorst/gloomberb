@@ -50,14 +50,21 @@ function DesktopValuePill({ value }: { value: string }) {
     <Box
       flexDirection="row"
       alignItems="center"
+      flexShrink={1}
+      minWidth={0}
       backgroundColor={desktopSubtleSurface()}
       style={{
         border: `1px solid ${colors.border}`,
         borderRadius: 6,
         padding: "1px 7px",
+        overflow: "hidden",
       }}
     >
-      <Text fg={colors.textDim} style={desktopText(600)}>{value}</Text>
+      <Text
+        fg={colors.textDim}
+        wrapText={false}
+        style={{ ...desktopText(600), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      >{value}</Text>
     </Box>
   );
 }
@@ -144,7 +151,7 @@ function DesktopSettingsRow({
   ) : field.type === "action" ? (
     <DesktopActionPill disabled={disabled} label={summary} />
   ) : (
-    <Box flexDirection="row" alignItems="center" gap={1}>
+    <Box flexDirection="row" alignItems="center" gap={1} flexShrink={1} minWidth={0}>
       <DesktopValuePill value={summary} />
       <Text fg={colors.textMuted} style={desktopText(600)}>Edit</Text>
     </Box>
@@ -176,10 +183,12 @@ function DesktopSettingsRow({
       }}
     >
       <Box flexDirection="row" alignItems="center" width="100%">
-        <Box flexDirection="row" flexGrow={1} minWidth={0} style={{ paddingRight: 12 }}>
+        <Box flexDirection="row" flexShrink={0} style={{ paddingRight: 12 }}>
           <Text fg={colors.text} style={desktopText(650)}>{field.label}</Text>
         </Box>
-        {control}
+        <Box flexGrow={1} flexShrink={1} minWidth={0} flexDirection="row" justifyContent="flex-end">
+          {control}
+        </Box>
       </Box>
       {field.description && (
         <Text fg={colors.textMuted} wrapText style={desktopText()}>

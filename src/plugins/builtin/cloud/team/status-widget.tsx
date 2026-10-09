@@ -5,14 +5,16 @@ import { Box, Span, Text, TextAttributes, useCommandBarShortcut } from "../../..
 import { usePluginAppActions } from "../../../runtime";
 import { chatController } from "../../chat/controller";
 import { countTeamUpdates, teamAccentHex, teamIdFromChannelId } from "./model";
+import { NOTIFICATION_CENTER_TEMPLATE_ID, requestNotificationCenterFilter } from "../../notification-center/filter";
 import { openTeamPane } from "./pane-request";
 import { teamStore } from "./store";
 
 /**
  * One chip per team in the status bar, in the team's accent, with the unread
  * chat count and the number of pending cards (invites, layout updates). Hidden
- * teams under FOCUS keep their chip so the lens is visible, dimmed. A click
- * opens the team pane on that team.
+ * teams under FOCUS keep their chip so the lens is visible, dimmed. A chip
+ * with pending cards opens Notifications on the team view. Otherwise it
+ * opens the team pane.
  */
 export function TeamStatusWidget() {
   const { createPaneFromTemplate } = usePluginAppActions();
@@ -60,7 +62,14 @@ export function TeamStatusWidget() {
             variant="plain"
             compact
             stopPropagation
-            onPress={() => openTeamPane(createPaneFromTemplate, { teamId: team.id })}
+            onPress={() => {
+              if (cards > 0) {
+                requestNotificationCenterFilter("team");
+                createPaneFromTemplate(NOTIFICATION_CENTER_TEMPLATE_ID);
+                return;
+              }
+              openTeamPane(createPaneFromTemplate, { teamId: team.id });
+            }}
           >
             <Text fg={muted ? colors.textMuted : accent} attributes={count > 0 && !muted ? TextAttributes.BOLD : 0}>
               <Span fg={muted ? colors.textMuted : accent}>●</Span>

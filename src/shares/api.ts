@@ -46,7 +46,7 @@ export async function createShare(payload: SharePayload, fetchImpl?: ShareFetch)
     if (!response.ok) {
       if (response.status === 401) throw new Error("Sign in to Gloom Cloud to share.");
       if (response.status === 403) throw new Error("Verify your Gloom Cloud email to share.");
-      throw new Error("Could not create share.");
+      throw new Error("Share unavailable.");
     }
     body = await readJson(response);
   } else {
@@ -80,7 +80,7 @@ export async function getShare(
     credentials: "include",
   });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error("Could not load share.");
+  if (!response.ok) throw new Error("Share unavailable.");
   const body = await readJson(response);
   if (!body || typeof body !== "object") return null;
   const object = body as Record<string, unknown>;
@@ -103,7 +103,7 @@ export async function deleteShare(id: string, fetchImpl: ShareFetch = fetch): Pr
   if (response.status !== 204) {
     throw new Error(response.status === 401 || response.status === 403
       ? "Only the signed-in owner can delete this share."
-      : "Could not delete share.");
+      : "Share unavailable.");
   }
 }
 

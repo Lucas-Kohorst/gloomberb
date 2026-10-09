@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableStackView, DataTableView, KeyValueRow, QueryBar, usePaneNoticeFooter, useQueryBarSearch, useTableLoadMore, type DataTableColumn } from "../../../components";
+import { DataTableStackView, DataTableView, KeyValueRow, loadingText, QueryBar, usePaneNoticeFooter, useQueryBarSearch, useTableLoadMore, type DataTableColumn } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import { Box, type ScrollBoxRenderable } from "../../../ui";
@@ -96,7 +96,7 @@ export function FundOverlapView({ data, focused, width }: { data: FundDetailData
         sortColumnId={sort.id} sortDirection={sort.desc ? "desc" : "asc"}
         onHeaderClick={id => { if (id === "weight" || id === "comparedWeight") setSort(current => ({ id, desc: current.id === id ? !current.desc : true })); }}
         renderCell={(row, column, _index, state) => ({ text: column.id === "mine" ? mine.has(row.ticker) ? "yes" : "" : column.id === "weight" ? formatWeightMaybe(row.weight) : column.id === "comparedWeight" ? formatWeightMaybe(row.comparedWeight) : String(row[column.id as keyof FundOverlapRow]), color: state.selected ? colors.selectedText : colors.text })}
-        emptyStateTitle={loading ? "Loading fund positions..." : mismatch ? "Matching reporting quarters unavailable." : "No shared positions."}
+        emptyStateTitle={loading ? loadingText() : mismatch ? "Matching reporting quarters unavailable." : "No shared positions."}
       />
     </Box>}
     scrollRef={scrollRef} onBodyScrollActivity={onScroll} resetScrollKey={query}
@@ -106,6 +106,6 @@ export function FundOverlapView({ data, focused, width }: { data: FundDetailData
     onActivate={fund => { blurSearch(); setTarget(fund); }}
     rootBefore={<QueryBar width={width} search={{ value: query, onChange: setQuery, placeholder: "Second fund name or CIK", focused, ...searchProps, debounceMs: 250 }} />}
     renderCell={(row, column, _index, state) => ({ text: column.id === "name" ? row.name : row.cik, color: state.selected ? colors.selectedText : colors.text })}
-    emptyStateTitle={loading ? "Searching funds..." : query ? "No matching funds." : "Search for a second fund."}
+    emptyStateTitle={loading ? loadingText() : query ? "No matching funds." : "Search for a second fund."}
   />;
 }

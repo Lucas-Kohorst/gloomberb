@@ -10,6 +10,7 @@ import {
   type DeviceAuthStartResponse,
   type DeviceAuthTokenResponse,
 } from "../../../api-client";
+import { unavailableText } from "../../../components/ui/status-copy";
 import { chatController } from "../chat/controller";
 
 export type DeviceSignInPhase =
@@ -62,7 +63,7 @@ function defaultClientPlatform(): string | undefined {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message.trim();
-  return "Could not reach Gloomberb Cloud.";
+  return unavailableText("Gloom Cloud");
 }
 
 export function parseDeviceCodeExpiryMs(expiresAt: unknown, now: number): number {

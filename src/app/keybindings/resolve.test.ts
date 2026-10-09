@@ -17,6 +17,9 @@ describe("resolveKeybindings", () => {
     expect(matchKeybinding(resolved, { ...base, name: "w", ctrl: true, alt: true })).toMatchObject({ id: "close-floating-panes" });
     expect(matchKeybinding(resolved, { ...base, name: "w", ctrl: true })).toMatchObject({ id: "pane-close" });
     expect(matchKeybinding(resolved, { ...base, name: "x" })).toBeNull();
+    expect(matchKeybinding(resolved, { ...base, name: "z", meta: true })).toMatchObject({ id: "layout-undo" });
+    expect(matchKeybinding(resolved, { ...base, name: "z", ctrl: true })).toMatchObject({ id: "layout-undo" });
+    expect(matchKeybinding(resolved, { ...base, name: "z", meta: true, shift: true })).toMatchObject({ id: "layout-redo" });
   });
 
   test("overrides replace defaults, null unbinds, and the rest stay put", () => {

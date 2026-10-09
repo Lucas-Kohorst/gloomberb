@@ -7,10 +7,10 @@ import { formatRelativeAge } from "../utils/datetime-format";
 export const AGE_TICK_MS = 30_000;
 
 /**
- * How old a pane's data is, as a footer-ready label that keeps ageing on its
+ * How old a pane's data is (`~5m`, `~1hr`, or a date), kept ageing on its
  * own. Returns null before the first successful load so callers can leave the
- * footer empty instead of claiming a freshness they do not have. The clock
- * rests while the pane cannot be seen and catches up when it can.
+ * footer empty. The clock rests while the pane cannot be seen and catches up
+ * when it can.
  */
 export function useUpdatedAgo(lastUpdated: number | null): string | null {
   const visible = usePaneVisible();

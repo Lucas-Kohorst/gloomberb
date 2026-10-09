@@ -1,4 +1,4 @@
-import type { CommandDef, PaneTemplateDef } from "../../../../types/plugin";
+import type { CommandDef, PaneTemplateContext, PaneTemplateDef } from "../../../../types/plugin";
 import { getCommandPrefixes, type Command } from "../../commands/registry";
 import { getPaneTemplateDisplayLabel, paneTemplateShortcutPrefixes } from "../../pane-templates/items";
 
@@ -80,6 +80,26 @@ function inferShortcutArg(argKind: RootShortcutArgKind | null, activeTicker: str
   return null;
 }
 
+/**
+ * A ticker list that rejects one symbol (a comparison, a correlation matrix)
+ * must not borrow the prompt ticker. Enter would not open that one name.
+ */
+function tickerListOpensWithOneSymbol(template: PaneTemplateDef, symbol: string): boolean {
+  if (!template.canCreate) return true;
+  const context: PaneTemplateContext = {
+    config: {} as PaneTemplateContext["config"],
+    layout: { dockRoot: null, instances: [], floating: [], detached: [] },
+    focusedPaneId: null,
+    activeTicker: symbol,
+    activeCollectionId: null,
+  };
+  try {
+    return template.canCreate(context, { arg: symbol, symbol, symbols: [symbol] });
+  } catch {
+    return true;
+  }
+}
+
 function buildShortcutCandidates(
   commands: Command[],
   pluginCommands: CommandDef[],
@@ -127,12 +147,15 @@ export function parseRootShortcutIntent({
   pluginCommands = [],
   paneTemplates,
   activeTicker,
+  promptTicker = null,
 }: {
   query: string;
   commands: Command[];
   pluginCommands?: CommandDef[];
   paneTemplates: PaneTemplateDef[];
   activeTicker: string | null;
+  /** The command prompt's instrument, used when a pane requires a ticker and the focused pane has none. */
+  promptTicker?: string | null;
 }): ShortcutIntent {
   const trimmed = query.trim();
   if (!trimmed) return { kind: "none" };
@@ -145,9 +168,18 @@ export function parseRootShortcutIntent({
   if (!match) return { kind: "none" };
 
   const argText = trimmed.slice(match.prefix.length).trim();
-  const inferredArg = match.source === "pane-template" && match.template?.shortcut?.argOptional
+  // A pane that requires a ticker takes the one already in the prompt. An
+  // optional ticker stays unbound, and other commands keep the focused ticker.
+  const inferFrom = match.source === "pane-template"
+    ? (match.template?.shortcut?.argOptional ? null : (promptTicker ?? activeTicker))
+    : activeTicker;
+  const inferred = inferShortcutArg(match.argKind, inferFrom);
+  const inferredArg = inferred
+    && match.argKind === "ticker-list"
+    && match.template
+    && !tickerListOpensWithOneSymbol(match.template, inferred)
     ? null
-    : inferShortcutArg(match.argKind, activeTicker);
+    : inferred;
   const completionQuery = inferredArg ? `${match.prefix} ${inferredArg}` : null;
 
   let kind: Exclude<ShortcutIntentKind, "none">;

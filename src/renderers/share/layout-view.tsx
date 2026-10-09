@@ -12,7 +12,7 @@ const PANE_NAMES: Record<string, string> = {
   "market-halts": "Market Halts",
   "market-heatmap": "Market Heatmap",
   "news-breaking": "Breaking News",
-  "news-feed": "News Feed",
+  "news-feed": "Firehose",
   "news-industry": "Topic News",
   "news-top": "Top News",
   "options-calculator": "Options Calculator",

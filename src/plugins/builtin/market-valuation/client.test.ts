@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, spyOn } from "bun:test";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import { valuationCache } from "./cache";
 import { createValuationSeriesLoader, getCachedValuationBundle, loadValuationBundle, requiredSeries, type ValuationSeriesLoader } from "./client";
@@ -279,5 +280,7 @@ test("cloud-declared stale legs remain usable and stale after a cache restart", 
   expect(calls).toBe(2);
   expect(cached.builds[0]!.sourceStale).toBe(true);
   expect(cached.sources!.TNWMVBSNNCB!.provider).toEqual(bundle.sources!.TNWMVBSNNCB!.provider);
-  expect((await resolveValuationSeries("tobins-q", loader)).warning).toContain("source data is stale");
+  const warning = (await resolveValuationSeries("tobins-q", loader)).warning ?? "";
+  expect(warning).toContain(formatObservationAge("2026-09-10T12:00:00Z") ?? "unavailable");
+  expect(warning).not.toContain("stale");
 });

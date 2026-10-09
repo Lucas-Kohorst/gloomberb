@@ -11,12 +11,13 @@ import { MemoryPluginPersistence } from "../../../test-support/plugin-persistenc
 import { appReducer, createInitialState } from "../../../state/app/context";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { TestPaneFrame, createTestPaneConfig } from "../../../test-support/pane";
-import { CREDIT_SERIES } from "./model";
+import { CREDIT_SERIES, CREDIT_YIELD_SERIES } from "./model";
 import { CreditConditionsPane } from "./index";
 
 const tui = createOpenTuiTestHarness();
 let persistence: MemoryPluginPersistence;
 let requestSpy: ReturnType<typeof spyOn> | undefined;
+let curveSpy: ReturnType<typeof spyOn> | undefined;
 
 function entry(seriesId: string, index: number): FredSeriesCacheEntry {
   return {
@@ -66,13 +67,37 @@ beforeEach(() => {
       { sourceKey: "gloomberb-cloud", schemaVersion: 2 },
     );
   }
+  for (const { seriesId } of CREDIT_YIELD_SERIES) {
+    persistence.seedResource(
+      "fred-series",
+      `${seriesId}:limit=300:sort=desc`,
+      {
+        observations: [
+          { date: "2026-08-17", value: 5.02 },
+          { date: "2026-08-18", value: 5.1 },
+        ],
+        info: {
+          id: seriesId,
+          title: `${seriesId} Effective Yield`,
+          units: "Percent",
+          frequency: "Daily, Close",
+          seasonalAdjustment: "Not Seasonally Adjusted",
+          source: "",
+          notes: "",
+        },
+      },
+      { sourceKey: "gloomberb-cloud", schemaVersion: 2 },
+    );
+  }
   attachFredSeriesPersistence(persistence);
 });
 
 afterEach(() => {
   resetFredSeriesPersistence();
   requestSpy?.mockRestore();
+  curveSpy?.mockRestore();
   requestSpy = undefined;
+  curveSpy = undefined;
 });
 
 function Harness({ width }: { width: number }) {
@@ -90,9 +115,30 @@ test.each([80, 120])("mixed cached observation dates stay attached to credit val
     { sourceKey: "gloomberb-cloud", schemaVersion: 2 });
   requestSpy = spyOn(apiClient, "getCloudFredSeries").mockImplementation(async (seriesId) => {
     const index = CREDIT_SERIES.findIndex((definition) => definition.seriesId === seriesId);
-    if (index < 0) throw new Error("Unknown fixture series");
-    return entry(seriesId, index).data;
+    if (index >= 0) return entry(seriesId, index).data;
+    const yieldIndex = CREDIT_YIELD_SERIES.findIndex((definition) => definition.seriesId === seriesId);
+    if (yieldIndex >= 0) {
+      return {
+        observations: [
+          { date: "2026-08-17", value: 5.02 },
+          { date: "2026-08-18", value: 5.1 },
+        ],
+        info: {
+          id: seriesId,
+          title: `${seriesId} Effective Yield`,
+          units: "Percent",
+          frequency: "Daily, Close",
+          seasonalAdjustment: "Not Seasonally Adjusted",
+          source: "",
+          notes: "",
+        },
+      };
+    }
+    throw new Error("Unknown fixture series");
   });
+  curveSpy = spyOn(apiClient, "getCloudYieldCurve").mockResolvedValue([
+    { maturity: "10Y", maturityYears: 10, yield: 4.2, asOf: "2026-08-18" },
+  ]);
   await tui.render(<Harness width={width} />, { width, height: 18 });
   await settle();
 
@@ -106,6 +152,6 @@ test.each([80, 120])("mixed cached observation dates stay attached to credit val
   await act(async () => { tui.setup().mockInput.pressKey("r"); });
   await settle();
   const common = tui.frame();
-  expect(requestSpy).toHaveBeenCalledTimes(CREDIT_SERIES.length);
+  expect(requestSpy).toHaveBeenCalledTimes(CREDIT_SERIES.length + CREDIT_YIELD_SERIES.length);
   expect(rowLine(common, "BBB")).toContain("08-18");
 });

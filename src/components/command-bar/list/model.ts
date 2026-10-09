@@ -1,3 +1,4 @@
+import { loadingText } from "../../ui/status";
 import type { CommandBarResultLine } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerContractRef, TickerListingRef } from "../../../types/instrument";
@@ -249,13 +250,13 @@ export function resolveListRowWindow(
 
 export function buildNativeListRows(listState: ListScreenState, rows: CommandBarListRow[]): CommandBarListRow[] {
   if (listState.searching && rows.length === 0) {
-    return [{ kind: "spinner", id: "searching", label: "Searching…" }];
+    return [{ kind: "spinner", id: "searching", label: loadingText() }];
   }
   if (rows.length === 0) {
     return [{ kind: "message", id: "empty", label: listState.emptyLabel }];
   }
   if (listState.searching) {
-    return [...rows, { kind: "spinner", id: "searching", label: "Searching…" }];
+    return [...rows, { kind: "spinner", id: "searching", label: loadingText() }];
   }
   return rows;
 }

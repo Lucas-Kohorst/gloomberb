@@ -53,6 +53,8 @@ const CHART_STUDY_NAMES: Record<BuiltinStudySelection, { name: string; short?: s
   "volume-profile": { name: "Volume profile", description: "Volume at each price over the bars in view, with its point of control and 70% value area." },
   rsi14: { name: "Relative strength index", short: "RSI", description: "Relative Strength Index in a lower panel." },
   macd: { name: "MACD", short: "12, 26, 9", description: "12/26/9 MACD in a lower panel." },
+  stoch14: { name: "Stochastic oscillator", short: "Stoch", description: "%K and a 3-period %D in a lower panel." },
+  adx14: { name: "Average directional index", short: "ADX", description: "ADX with +DI and -DI in a lower panel." },
   atr14: { name: "Average true range", short: "ATR", description: "Average true range in a lower panel." },
   "realized-vol": { name: "Realized volatility", description: "Annualized daily volatility in a lower panel." },
 };
@@ -191,7 +193,9 @@ function replaceChartSeriesFromExpression(
     study.inputSeriesIds.every((seriesId) => seriesIds.has(seriesId))
   ));
   const builtinStudies = getSelectedBuiltinStudies(spec);
-  const pairStudies = getSelectedPairStudies(spec);
+  // `GAA / VOO` names the formula. A list of series keeps whatever was already on.
+  const authoredPairs = getSelectedPairStudies(authored);
+  const pairStudies = authoredPairs.length > 0 ? authoredPairs : getSelectedPairStudies(spec);
   const panels = reconcileBasePanels(spec.panels, authored.panels, series, retainedStudies);
   const base: ChartSpec = {
     ...spec,

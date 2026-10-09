@@ -6,6 +6,9 @@ import {
   FieldLabel,
   StatGrid,
   TextField,
+  loadingText,
+  unavailableText,
+  usePaneLoadingSignal,
   usePaneTabs,
   type DataTableCell,
   type DataTableColumn,
@@ -203,6 +206,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [sessionMarker, setSessionMarker] = useState(() => buildAccountSessionMarker());
   const [hasSession, setHasSession] = useState(() => apiClient.isSignedIn());
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(() => apiClient.isSignedIn());
   const [pricing, setPricing] = useState<CloudPricing | null>(null);
   // Null until the server says; only a confirmed trial is offered.
   const [trialAvailable, setTrialAvailable] = useState<boolean | null>(null);
@@ -213,6 +217,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   );
   const [message, setMessage] = useState<{ tone: "info" | "success" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState<AccountBusy>(null);
+  usePaneLoadingSignal(activeTab !== "calendar" && (!!busy || profileLoading));
 
   // A requested tab switches the open pane; one requested before it mounted wins over the restored tab once.
   useEffect(() => subscribeRequestedAccountManagementTab((tab) => {
@@ -402,7 +407,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       savedProfilePublic: profile?.profilePublic === true,
       savedSharedPortfolioId: profile?.sharedPortfolioId ?? "",
       selectedPortfolioId: draft.sharedPortfolioId,
-      syncing: syncStatus.phase === "syncing",
     }),
     [
       draft.profilePublic,
@@ -410,12 +414,11 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       language,
       profile,
       selectedAnalyticsPortfolio,
-      syncStatus.phase,
     ],
   );
   const profileAnalyticsDetail = useMemo(() => {
     if (!draft.sharedPortfolioId) return t("No public portfolio analytics");
-    if (!profile) return t("Loading published metrics");
+    if (!profile) return "";
     if (
       draft.profilePublic !== profile.profilePublic
       || draft.sharedPortfolioId !== (profile.sharedPortfolioId ?? "")
@@ -423,8 +426,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       return t("Save profile to update published metrics");
     }
     if (profile.profilePublic !== true) return t("Public profile is off");
-    if (syncStatus.phase === "syncing") return t("Syncing published metrics");
-    if (!profile.portfolioAnalytics) return t("Waiting for published metrics");
+    if (syncStatus.phase === "syncing" || !profile.portfolioAnalytics) return loadingText();
     return t("Published public metrics");
   }, [
     draft.profilePublic,
@@ -447,10 +449,11 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     if (!apiClient.isSignedIn()) {
       setProfile(null);
       setDraft(profileToDraft(null));
+      setProfileLoading(false);
       return;
     }
 
-    setMessage({ tone: "info", text: t("Loading account profile...") });
+    setProfileLoading(true);
     try {
       const nextProfile = await apiClient.getAccountProfile();
       setProfile(nextProfile);
@@ -459,8 +462,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : t("Failed to load account profile."),
+        text: error instanceof Error && error.message ? error.message : unavailableText("Account profile"),
       });
+    } finally {
+      setProfileLoading(false);
     }
   }, []);
 
@@ -540,14 +545,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {...context}
           onChangePassword={async (currentPassword, newPassword) => {
             setBusy("password");
-            setMessage({ tone: "info", text: t("Changing password...") });
             try {
               await apiClient.changePassword(currentPassword, newPassword);
               setMessage({ tone: "success", text: t("Password changed.") });
             } catch (error) {
               setMessage({
                 tone: "error",
-                text: error instanceof Error ? error.message : t("Failed to change password."),
+                text: error instanceof Error && error.message ? error.message : unavailableText("Password change"),
               });
               throw error;
             } finally {
@@ -585,7 +589,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     }
 
     setBusy("profile");
-    setMessage({ tone: "info", text: t("Saving account profile...") });
     try {
       const nextProfile = await apiClient.updateAccountProfile({
         username: current.username,
@@ -609,7 +612,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : t("Failed to save account profile."),
+        text: error instanceof Error && error.message ? error.message : unavailableText("Account profile"),
       });
     } finally {
       setBusy(null);
@@ -619,7 +622,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const turnOffEmailAlerts = useCallback(async () => {
     setActiveField("emailAlertsOffAction");
     setBusy("alerts");
-    setMessage({ tone: "info", text: t("Turning off email alerts...") });
     try {
       const nextProfile = await apiClient.updateAccountProfile({
         chatEmailNotificationsEnabled: false,
@@ -637,7 +639,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : t("Failed to update alert settings."),
+        text: error instanceof Error && error.message ? error.message : unavailableText("Alert settings"),
       });
     } finally {
       setBusy(null);
@@ -657,7 +659,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       onOpening: () => {
         opening = true;
         setBusy("billing");
-        setMessage({ tone: "info", text: t("Opening Pro upgrade...") });
       },
     }).finally(() => {
       if (!opening) return;
@@ -682,7 +683,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     if (!confirmed) return;
 
     setBusy("delete");
-    setMessage({ tone: "info", text: t("Deleting account...") });
     try {
       await apiClient.deleteAccount();
       setProfile(null);
@@ -693,7 +693,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : t("Failed to delete account."),
+        text: error instanceof Error && error.message ? error.message : unavailableText("Account"),
       });
     } finally {
       setBusy(null);
@@ -844,7 +844,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               />
 
               <Box flexDirection="row" gap={1}>
-                <Button label={busy === "profile" ? t("Saving...") : t("Save Profile")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+                <Button label={t("Save Profile")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
           ) : null}
@@ -883,7 +883,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               />
               <Box ref={fieldNodeRef("emailAlertsOffAction")} flexDirection="row" gap={1} style={{ marginTop: 8 }}>
                 <Button
-                  label={busy === "alerts" ? t("Turning Off...") : t("Turn Off All")}
+                  label={t("Turn Off All")}
                   active={activeField === "emailAlertsOffAction"}
                   onPress={() => { void turnOffEmailAlerts(); }}
                   disabled={!!busy || (
@@ -892,7 +892,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                     && !draft.positionAlertsEnabled
                   )}
                 />
-                <Button label={busy === "profile" ? t("Saving...") : t("Save")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+                <Button label={t("Save")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
           ) : null}
@@ -910,7 +910,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               />
               <Box ref={fieldNodeRef("upgradeAction")} flexDirection="row">
                 <Button
-                  label={planAccess.isPayingPro ? t("Manage Pro") : busy === "billing" ? t("Opening...") : t("Upgrade to Pro")}
+                  label={planAccess.isPayingPro ? t("Manage Pro") : t("Upgrade to Pro")}
                   variant={planAccess.isPayingPro ? "secondary" : "primary"}
                   active={activeField === "upgradeAction"}
                   onPress={openUpgrade}
@@ -933,7 +933,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                   disabled={!!busy}
                 />
                 <Button
-                  label={busy === "delete" ? t("Deleting...") : t("Delete Account")}
+                  label={t("Delete Account")}
                   variant="danger"
                   active={activeField === "deleteAccountAction"}
                   onPress={() => { void deleteAccount(); }}

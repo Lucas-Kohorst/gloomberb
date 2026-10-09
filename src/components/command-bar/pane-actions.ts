@@ -9,7 +9,6 @@ import {
 } from "../../types/config";
 import {
   addPaneFloating,
-  addPaneToLayout,
 } from "../../layout/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PinTickerOptions } from "../../types/plugin";
@@ -105,6 +104,7 @@ export function useCommandBarPaneActions({
     const target = layoutTickerTarget(currentState, {
       forceNewPane: options?.forceNewPane,
       isTickerSource: (paneType) => pluginRegistry.panes.get(paneType)?.tickerSource === true,
+      symbol,
     });
     if (target.kind === "open") {
       openFixedTickerPane(symbol, options);
@@ -142,9 +142,7 @@ export function useCommandBarPaneActions({
     });
 
     const { width, height } = pluginRegistry.getTermSize();
-    const nextLayout = currentState.config.layout.floating.some((entry) => entry.instanceId === paneId)
-      ? addPaneFloating(currentState.config.layout, duplicate, width, height, paneDef)
-      : addPaneToLayout(currentState.config.layout, duplicate, { relativeTo: paneId, position: "right" });
+    const nextLayout = addPaneFloating(currentState.config.layout, duplicate, width, height, paneDef);
     persistLayoutChange(nextLayout);
     dispatch({ type: "FOCUS_PANE", paneId: duplicate.instanceId });
   }, [dispatch, persistLayoutChange, pluginRegistry, stateRef]);

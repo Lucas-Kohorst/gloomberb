@@ -3,6 +3,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import {
   buildSetPortfolioPositionWorkflow,
 } from "../../../plugins/builtin/portfolio-list/command-bar";
+import { isManualPortfolio } from "../../../plugins/builtin/portfolio-list/mutations";
 import type { CommandBarFieldOption, CommandBarWorkflowField, CommandBarWorkflowRoute } from "./types";
 import { buildCommandBarWorkflowRoute } from "./route-builder";
 import { teamPrefix } from "../../../plugins/builtin/cloud/team/model";
@@ -159,6 +160,38 @@ export function buildBuiltInWorkflowRoute(options: {
           values: workflow.values,
           submitLabel: "Save Position",
           pendingLabel: workflow.pendingLabel,
+          payload: { kind: "builtin", actionId },
+        }),
+      };
+    }
+
+    case "import-tickers": {
+      const watchlist = config.watchlists.find((entry) => entry.id === activeCollectionId);
+      const portfolio = config.portfolios.find((entry) => entry.id === activeCollectionId);
+      const manualPortfolio = portfolio && isManualPortfolio(portfolio) ? portfolio : null;
+      const collection = watchlist ?? manualPortfolio;
+      if (!collection) {
+        return { kind: "notice", message: "Select a watchlist or manual portfolio first." };
+      }
+      return {
+        kind: "route",
+        route: buildCommandBarWorkflowRoute({
+          workflowId: "builtin:import-tickers",
+          title: "Import Tickers",
+          subtitle: `Paste symbols to add to "${collection.name}".`,
+          description: watchlist
+            ? ["Separate symbols with commas, spaces, or new lines."]
+            : ["Separate symbols with commas, spaces, or new lines. Use symbol, shares, average cost rows to set manual positions."],
+          fields: [{
+            id: "tickers",
+            label: "Tickers",
+            type: "textarea",
+            placeholder: watchlist ? "AAPL, MSFT, NVDA" : "AAPL, 10, 180.50\nMSFT, 5, 400",
+            required: true,
+          }],
+          values: { tickers: "" },
+          submitLabel: "Import Tickers",
+          pendingLabel: "Importing tickers…",
           payload: { kind: "builtin", actionId },
         }),
       };
