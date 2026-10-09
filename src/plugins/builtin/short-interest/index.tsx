@@ -1,4 +1,7 @@
+import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { failsToDeliverHeadless } from "../fails-to-deliver/headless";
+import { failSymbol } from "../fails-to-deliver/model";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   attachShortInterestHealth,
@@ -14,6 +17,20 @@ import { isKnownNonUsListing } from "../../../utils/sec";
 
 
 let disposeConnection: (() => void) | null = null;
+
+function failsInstance(options?: PaneTemplateCreateOptions): PaneTemplateInstanceConfig {
+  const symbol = failSymbol(options?.arg ?? options?.symbol ?? "");
+  return {
+    placement: "floating",
+    binding: { kind: "none" },
+    settings: { shortInterestView: "fails", ...(symbol ? { symbol } : {}) },
+    ...(symbol ? {
+      instanceId: `fails-to-deliver:${symbol}`,
+      title: `Fails ${symbol}`,
+      params: { symbol },
+    } : { instanceId: "fails-to-deliver" }),
+  };
+}
 
 export const shortInterestModule: PluginModule = {
   setup(ctx) {
@@ -99,6 +116,16 @@ export const shortInterestModule: PluginModule = {
         placement: "floating" as const,
         settings: options?.symbols?.length ? { scope: "custom", symbols: options.symbols.join(",") } : { scope: "mine" },
       }),
+    },
+    {
+      id: "fails-to-deliver-pane",
+      paneId: "short-interest",
+      label: "Fails to Deliver",
+      description: "The largest outstanding share-delivery fails. A ticker shows that symbol only.",
+      keywords: ["fails", "ftd", "fail to deliver", "delivery", "settlement", "short"],
+      shortcut: { prefix: "FTD", argKind: "text", argPlaceholder: "ticker", argOptional: true },
+      headless: failsToDeliverHeadless,
+      createInstance: (_context, options) => failsInstance(options),
     },
   ],
 };

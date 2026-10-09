@@ -7,6 +7,7 @@ import { formatNumber } from "../../../utils/format";
 import { formatMarketPriceWithCurrency, stablePriceFractionDigits } from "../../../market-data/market/format";
 import type { DataTableColumn } from "../../../components";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import type { CanadaListing } from "../canada-listings/model";
 import { MARKET_SUMMARY_SYMBOLS, convertScreenerPriceUnit, screenerNumber, screenerVolume, screenerVolumeRatio, type MarketSummaryQuote, type ScreenerCategory, type ScreenerQuote } from "./screener";
 
 /** Lists ranked from day screeners and trending symbols. */
@@ -43,6 +44,27 @@ type MarketMoverColumnId =
   | "marketCap";
 export type MarketMoverColumn = DataTableColumn & { id: MarketMoverColumnId };
 export type MarketMoverRow = ScreenerQuote & { rank: number };
+
+/** Most-active Toronto rows join the same board. The payload has no currency, average, or range. */
+export function torontoListingQuote(listing: CanadaListing): ScreenerQuote {
+  return {
+    symbol: listing.symbol,
+    name: listing.name,
+    price: listing.last,
+    change: listing.change,
+    changePercent: listing.changePercent,
+    volume: listing.volume,
+    avgVolume: null,
+    volumeRatio: null,
+    marketCap: undefined,
+    currency: "",
+    fiftyTwoWeekHigh: undefined,
+    fiftyTwoWeekLow: undefined,
+    dayHigh: undefined,
+    dayLow: undefined,
+    exchange: "TSX",
+  };
+}
 
 export interface MarketMoverSortPreference {
   columnId: MarketMoverColumnId | null;

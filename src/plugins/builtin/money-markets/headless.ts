@@ -1,4 +1,5 @@
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import { treasuryDailyHeadless } from "../treasury-daily/headless";
 import { fetchMoneyMarkets } from "./client";
 import { moneyMarketChange, moneyMarketNotices, moneyMarketRows, moneyMarketValue } from "./model";
 
@@ -7,9 +8,10 @@ export const moneyMarketsHeadless: HeadlessPaneDefinition<"bundle"> = {
     limitations: ["Published daily and weekly observations", "Treasury bill discount yields", "Net liquidity is a same-date proxy"] },
   shape: "bundle", argument: { kind: "none" },
   freshness: { source: "FRED", status: "not-a-feed", basis: "published daily and weekly data" },
-  options: [{ key: "tab", type: "enum", description: "Money-market view.", values: [{ value: "rates" }, { value: "bills" }, { value: "liquidity" }], defaultValue: "rates" }],
+  options: [{ key: "tab", type: "enum", description: "Money-market view.", values: [{ value: "rates" }, { value: "bills" }, { value: "liquidity" }, { value: "treasury" }], defaultValue: "rates" }],
   describe: "US money markets",
   async load(args, ctx) {
+    if (args.options.tab === "treasury") return treasuryDailyHeadless.load(args, ctx);
     const data = await fetchMoneyMarkets(ctx.apiClient);
     const rows = moneyMarketRows(data, String(args.options.tab));
     const errors = moneyMarketNotices(data);

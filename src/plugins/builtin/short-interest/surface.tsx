@@ -1,17 +1,29 @@
 import { useEffect, useState } from "react";
 import { Box } from "../../../ui";
 import { PaneFooterScope, usePaneFooter, usePaneTabs } from "../../../components";
-import { usePluginPaneState } from "../../../public/react";
+import { usePaneSettingValue, usePluginPaneState } from "../../../public/react";
 import type { PaneProps } from "../../../types/plugin";
+import { FailsToDeliverPane } from "../fails-to-deliver/pane";
 import { ShortVolumePane } from "../short-volume/pane";
 import { ShortInterestView } from "./pane";
 
-const TABS = [{ value: "interest", label: "Interest" }, { value: "volume", label: "Daily volume" }];
+const TABS = [
+  { value: "interest", label: "Interest" },
+  { value: "volume", label: "Daily volume" },
+  { value: "fails", label: "Fails" },
+];
+
+function nextView(tab: string): string {
+  if (tab === "interest") return "volume";
+  if (tab === "volume") return "fails";
+  return "interest";
+}
 export function ShortInterestSurface({ nested = false, ...props }: Pick<PaneProps, "width" | "height" | "focused"> & {
   /** Inside Ticker Research, whose own tab strip keeps h/l and the arrows. */
   nested?: boolean;
 }) {
-  const [tab, setTab] = usePluginPaneState("short-interest:tab", "interest");
+  const [openingView] = usePaneSettingValue("shortInterestView", "interest");
+  const [tab, setTab] = usePluginPaneState("short-interest:tab", openingView === "fails" || openingView === "volume" ? openingView : "interest");
   const [mounted, setMounted] = useState(() => new Set([tab]));
   useEffect(() => { setMounted((current) => current.has(tab) ? current : new Set([...current, tab])); }, [tab]);
   // Nested in Ticker Research the title bar belongs to the research tabs, so
@@ -23,7 +35,7 @@ export function ShortInterestSurface({ nested = false, ...props }: Pick<PaneProp
   // The strip answers h/l only where it is the pane's own strip; `v` switches
   // views everywhere, including under Ticker Research's strip.
   usePaneFooter("short-interest:view", () => ({
-    hints: [{ id: "view", key: "v", label: "iew", onPress: () => setTab(tab === "interest" ? "volume" : "interest") }],
+    hints: [{ id: "view", key: "v", label: "iew", onPress: () => setTab(nextView(tab)) }],
   }), [setTab, tab]);
   const height = Math.max(1, props.height - tabRows);
   return <Box width={props.width} height={props.height} flexDirection="column">
@@ -31,6 +43,7 @@ export function ShortInterestSurface({ nested = false, ...props }: Pick<PaneProp
     {TABS.map(({ value }) => mounted.has(value) || value === tab ? <Box key={value} visible={value === tab} height={height} flexGrow={1} flexBasis={0} overflow="hidden">
       <PaneFooterScope active={value === tab}>
         {value === "volume" ? <ShortVolumePane {...props} height={height} focused={props.focused && value === tab} />
+          : value === "fails" ? <FailsToDeliverPane {...props} height={height} focused={props.focused && value === tab} />
           : <ShortInterestView {...props} height={height} focused={props.focused && value === tab} />}
       </PaneFooterScope>
     </Box> : null)}

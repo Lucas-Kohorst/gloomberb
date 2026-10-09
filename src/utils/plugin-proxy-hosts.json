@@ -1,6 +1,5 @@
 {
   "hosts": [
-    "api.congress.gov",
     "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
@@ -8,7 +7,6 @@
     "api.nasdaq.com",
     "api.publisher.jodidata.org",
     "api.votehub.com",
-    "app-money.tmx.com",
     "apps.fas.usda.gov",
     "banks.data.fdic.gov",
     "clinicaltrials.gov",

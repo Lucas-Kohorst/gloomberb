@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
+  useQueryBarSearch,
   type DataTableCell,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, usePaneInstance, usePluginPaneState, usePluginTickerActions } from "../../../public/react";
+import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
@@ -20,6 +23,7 @@ import {
   buildFailColumns,
   failSymbolFilter,
   formatFailPrice,
+  resolveFailSymbol,
   sortFails,
   type FailColumn,
   type FailColumnId,
@@ -29,10 +33,14 @@ import {
 
 const NO_ROWS: FailRow[] = [];
 
-export function FailsToDeliverPane({ focused, width, height }: PaneProps) {
+export function FailsToDeliverPane({ focused, width, height }: Pick<PaneProps, "width" | "height" | "focused">) {
   const colors = useThemeColors();
   const { pinTicker } = usePluginTickerActions();
-  const symbol = failSymbolFilter(usePaneInstance());
+  const commandSymbol = failSymbolFilter(usePaneInstance());
+  const { symbol: linkedSymbol } = usePaneTickerIdentity();
+  const [search, setSearch] = usePluginPaneState("fail-symbol", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const symbol = resolveFailSymbol(search, commandSymbol, linkedSymbol ?? "");
   // Posted twice a month, so this loads on open and on r, not on the poll interval.
   const request = useCallback(() => fetchFails(symbol), [symbol]);
   const resource = useAsyncResource(request);
@@ -48,7 +56,7 @@ export function FailsToDeliverPane({ focused, width, height }: PaneProps) {
   }, [rows, selectedId, setSelectedId]);
 
   const refresh = useCallback(() => { void resource.reload(); }, [resource.reload]);
-  usePaneRefreshKey(refresh, { focused });
+  usePaneRefreshKey(refresh, { focused, enabled: !searchActive });
 
   const info = useMemo(() => (
     report?.settlementDate
@@ -95,16 +103,32 @@ export function FailsToDeliverPane({ focused, width, height }: PaneProps) {
     }
   }, [colors]);
 
+  const symbolBar = (
+    <QueryBar
+      width={Math.max(1, width - 2)}
+      search={{
+        ...searchProps,
+        value: search,
+        onChange: setSearch,
+        placeholder: "symbol",
+        focused,
+      }}
+    />
+  );
+  const bodyHeight = Math.max(1, height - 1);
+
   if (!report && resource.loading) {
     return (
-      <Box width={width} height={height}>
+      <Box width={width} height={height} flexDirection="column">
+        {symbolBar}
         <PaneStatusBody loading align="center" />
       </Box>
     );
   }
   if (!report && resource.error) {
     return (
-      <Box width={width} height={height}>
+      <Box width={width} height={height} flexDirection="column">
+        {symbolBar}
         <PaneStatusBody error={resource.error} subject="fails" />
       </Box>
     );
@@ -112,10 +136,11 @@ export function FailsToDeliverPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
+      {symbolBar}
       <DataTableView<FailRow, FailColumn>
         focused={focused}
         rootWidth={width}
-        rootHeight={height}
+        rootHeight={bodyHeight}
         columns={columns}
         items={rows}
         getItemKey={(row) => row.id}

@@ -2,8 +2,10 @@ import { useCallback, useMemo } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
@@ -30,7 +32,7 @@ const TABS = [
   { label: "Gas", value: "gas" },
 ];
 
-export function JodiPane({ focused, width, height }: PaneProps) {
+export function JodiPane({ focused, width, height, nested = false }: Pick<PaneProps, "width" | "height" | "focused"> & { nested?: boolean }) {
   const colors = useThemeColors();
   const loader = useCallback(() => fetchBalances(), []);
   const resource = useAsyncResource(loader);
@@ -40,8 +42,15 @@ export function JodiPane({ focused, width, height }: PaneProps) {
   const [storedTab, setTab] = usePluginPaneState<string>("commodity", "oil");
   const tab: BalanceCommodity = gas && storedTab === "gas" ? "gas" : "oil";
   const board = tab === "gas" ? gas : balances?.oil ?? null;
-  const rows = board?.rows ?? EMPTY_ROWS;
-  const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
+  const [search, setSearch] = usePluginPaneState(nested ? "balance-query" : "country", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const all = board?.rows ?? EMPTY_ROWS;
+    return needle ? all.filter((row) => row.country.toLowerCase().includes(needle)) : all;
+  }, [board?.rows, needle]);
+  const queryBar = <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "country", focused, ...searchProps }} />;
+  const [selectedId, setSelectedId] = usePluginPaneState<string | null>(nested ? "balance" : "selected", null);
   const columns = useMemo(() => balanceColumns(tab), [tab]);
   const refresh = useCallback(() => {
     resource.reload();
@@ -49,7 +58,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
   const onRootKeyDown = useCallback((event: DataTableKeyEvent) => {
     return handleRefreshKey(event, refresh, { stopPropagation: true });
   }, [refresh]);
-  usePaneRefreshKey(refresh, { focused });
+  usePaneRefreshKey(refresh, { focused, enabled: !searchActive });
   const selectTab = useCallback((value: string) => {
     setTab(value === "gas" ? "gas" : "oil");
   }, [setTab]);
@@ -60,6 +69,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
     focused,
     compact: true,
     variant: "underline",
+    keyboardNavigation: !nested,
   } : null);
   const info = useMemo(
     () => (resource.error || !board ? [] : [{ id: "month", parts: [{ text: formatBalanceMonth(board.month) }] }]),
@@ -116,9 +126,10 @@ export function JodiPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       <DataTableView
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={Math.max(1, height - tabRows)}
+        rootBefore={queryBar}
         columns={columns}
         items={rows}
         getItemKey={(row) => row.country}
@@ -133,7 +144,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
         onRootKeyDown={onRootKeyDown}
         renderCell={renderCell}
         selectedTextOverridesCellColor
-        emptyStateTitle="No balances for this month."
+        emptyStateTitle={needle ? "No matching countries." : "No balances for this month."}
       />
     </Box>
   );

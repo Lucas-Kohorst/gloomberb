@@ -18,7 +18,8 @@ type PluginMetadataKey =
   | "isConfigured";
 type PluginMetadata = Pick<GloomPlugin, PluginMetadataKey>;
 
-// Brokers and declared hosts belong to external plugins; no built-in module contributes them.
+// A module has no broker and no hosts. The composite declares hosts when one of
+// its panes fetches a public site the web app has to proxy.
 export type PluginModule = Omit<GloomPlugin, PluginMetadataKey | "broker" | "hosts">;
 
 const HANDLED_MODULE_KEYS = [
@@ -37,6 +38,7 @@ void ALL_MODULE_KEYS_HANDLED;
 
 interface CompositePluginOptions extends PluginMetadata {
   modules: readonly PluginModule[];
+  hosts?: readonly string[];
 }
 
 function composeSlots(modules: readonly PluginModule[]): GloomPlugin["slots"] {

@@ -1,5 +1,6 @@
 import type { DoeSeriesRow, DoeTab } from "../../../api-client/doe";
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
+import { jodiHeadless } from "../jodi/headless";
 import { fetchDoeBoard } from "./client";
 import {
   DOE_TABS,
@@ -53,13 +54,16 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
   return {
     shape: "bundle",
     argument: { kind: "free-text", optional: true, placeholder: "series", description: "A series such as cushing, gasoline or east; omit for the tables." },
-    options: [{ key: "tab", type: "enum", values: [{ value: "all" }, ...DOE_TABS.map(({ value }) => ({ value }))], defaultValue: defaultTab,
-      description: "Crude, products, gas storage, or all three." }],
+    options: [{ key: "tab", type: "enum", values: [{ value: "all" }, ...DOE_TABS.map(({ value }) => ({ value })), { value: "world" }], defaultValue: defaultTab,
+      description: "Crude, products, gas storage, world balances, or all three weekly reports." }],
     discovery: { aliases: ["DOE", "NGS"], dataRequirements: ["Gloom Cloud EIA weekly history"],
       limitations: ["Weekly data, published Wednesday (petroleum) and Thursday (gas) at 10:30 ET, moved by holidays",
         "Five-year ranges read earlier years on the same calendar day", "A range holds fewer than five years where a series is younger"] },
     describe: "EIA weekly petroleum and natural gas storage",
-    async load(args) {
+    async load(args, ctx) {
+      if (args.options.tab === "world") {
+        return jodiHeadless.load({ ...args, options: { commodity: "oil" } }, ctx);
+      }
       const data = await fetchDoeBoard();
       // EIA's weekly reports; once the next one is a day overdue the tables have missed it.
       const freshness = { source: "EIA", status: "not-a-feed" as const, basis: "weekly release",

@@ -37,6 +37,11 @@ export function failSymbolFilter(source: {
   return failSymbol(fromParams ?? fromSettings);
 }
 
+/** A typed symbol wins, then the command argument, then the linked ticker. */
+export function resolveFailSymbol(search: string, command: string, linked: string): string {
+  return failSymbol(search) || failSymbol(command) || failSymbol(linked);
+}
+
 export function formatFailPrice(value: number | null): string {
   return value == null ? "—" : formatNumber(value, 2);
 }

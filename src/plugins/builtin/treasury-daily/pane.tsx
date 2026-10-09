@@ -33,11 +33,11 @@ function scaledCell(value: number | null, text: string, muted: string): DataTabl
   return value == null ? { text, value, color: muted } : { text, value };
 }
 
-export function TreasuryDailyPane({ width, height, focused }: PaneProps) {
+export function TreasuryDailyPane({ width, height, focused, nested = false }: Pick<PaneProps, "width" | "height" | "focused"> & { nested?: boolean }) {
   const colors = useThemeColors();
   const request = useCallback(() => fetchTreasuryDaily(), []);
   const resource = useAsyncResource(request);
-  const [storedTab, setTab] = usePluginPaneState<string>("tab", "cash");
+  const [storedTab, setTab] = usePluginPaneState<string>(nested ? "treasury-tab" : "tab", "cash");
   const tab: TreasuryTab = storedTab === "debt" ? "debt" : "cash";
   const data = resource.data;
   const cashRows = data?.cash.rows ?? EMPTY_CASH;
@@ -56,6 +56,7 @@ export function TreasuryDailyPane({ width, height, focused }: PaneProps) {
     onSelect: setTab,
     focused,
     dense: true,
+    keyboardNavigation: !nested,
   });
   useAutoRefresh(resource.updatedAt, resource.load);
   usePaneRefreshKey(() => void resource.reload(), { focused });

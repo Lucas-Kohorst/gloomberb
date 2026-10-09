@@ -1,6 +1,7 @@
 import type { DoeTab } from "../../../api-client/doe";
 import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { jodiHeadless } from "../jodi/headless";
 import { doeBoardCache } from "./client";
 import { doeHeadless } from "./headless";
 import { DOE_SERIES_OPTIONS, doeSeriesOption } from "./model";
@@ -35,6 +36,12 @@ export const doeModule: PluginModule = {
     keywords: ["ngs", "natural gas", "storage", "working gas", "injection", "withdrawal", "eia"],
     shortcut: shortcut("NGS", "gas"), headless: doeHeadless("gas"),
     createInstance: (_context, options) => doeInstance("gas", options),
+  }, {
+    id: "jodi-pane", paneId: "doe", label: "Oil and Gas Balances",
+    description: "Latest monthly crude oil and natural gas production, demand, trade and stocks for the largest countries.",
+    keywords: ["oil", "crude", "gas", "natural gas", "petroleum", "production", "imports", "exports", "stocks", "balance", "balances", "jodi"],
+    shortcut: { prefix: "JODI" }, headless: jodiHeadless,
+    createInstance: () => ({ placement: "floating", settings: { tab: "world" } }),
   }],
   setup(ctx) { doeBoardCache.attach(ctx.persistence); },
   dispose() { doeBoardCache.reset(); },

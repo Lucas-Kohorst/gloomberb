@@ -1,12 +1,15 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChartTableHeader,
   CompositeChart,
   formatBpAxis,
   MarketBoardStack,
+  NestedPaneTabs,
+  PaneFooterScope,
   PaneStatusBody,
   usePaneFooter,
   usePaneNoticeFooter,
+  usePaneTabs,
   type MarketBoardRow,
   type PaneFooterSegment,
   type StatItem,
@@ -17,7 +20,11 @@ import { StatChartDetail } from "../../../components/market-board";
 import { useAsyncResource } from "../../../react/async-resource";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
+import { Box } from "../../../ui";
 import { formatPercentileRank } from "../../../utils/format";
+import { loanSurveyHeadless } from "../loan-survey/headless";
+import { LoanSurveyPane } from "../loan-survey/pane";
+import { usePaneSettingValue } from "../../../state/app/context";
 import { usePluginPaneState } from "../../runtime";
 import type { PluginModule } from "../plugin-module";
 import { useAutoRefresh } from "../../../react/auto-refresh";
@@ -28,6 +35,10 @@ import { CREDIT_SERIES, type CreditConditionRow } from "./model";
 
 const EMPTY_ROWS: CreditConditionRow[] = [];
 const PANELS = [{ id: "main" }];
+const CREDIT_TABS = [
+  { value: "spreads", label: "Spreads" },
+  { value: "survey", label: "Survey" },
+];
 
 function formatBp(value: number | null, signed = false): string {
   if (value == null) return "--";
@@ -85,6 +96,11 @@ function SpreadDetail({ row, width, height, focused }: { row: CreditConditionRow
 }
 
 export function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
+  const [openingView] = usePaneSettingValue("creditView", "spreads");
+  const [tab, setTab] = usePluginPaneState("credit-tab", openingView === "survey" ? "survey" : "spreads");
+  const survey = tab === "survey";
+  const [mounted, setMounted] = useState(() => new Set([tab]));
+  useEffect(() => { setMounted((current) => current.has(tab) ? current : new Set([...current, tab])); }, [tab]);
   const resource = useAsyncResource(loadCreditConditions, { initialData: getCachedCreditConditions });
   const { loading, load: refresh, reload } = resource;
   const stale = resource.data?.stale ?? false;
@@ -95,44 +111,52 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   const mixedDates = new Set(rows.map((row) => row.date)).size > 1;
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
   const [openId, setOpenId] = usePluginPaneState<string | null>("open", null);
+  const { strip, rows: tabRows } = usePaneTabs({ tabs: CREDIT_TABS, activeValue: survey ? "survey" : "spreads", onSelect: setTab, focused, dense: true });
+  const bodyHeight = Math.max(1, height - tabRows);
   // The shared FRED cache decides whether a tick actually hits the network, so
   // the pane can follow the global cadence without refetching daily data.
   useAutoRefresh(lastUpdated, refresh);
 
-  usePaneRefreshKey(reload, { focused, enabled: !loading });
+  usePaneRefreshKey(reload, { focused, enabled: !loading && !survey });
   const partial = rows.length > 0 && rows.length < CREDIT_SERIES.length;
   // Each row carries its own date in the AS OF column; a spread between
   // indexes from different sessions is a limitation behind the warning.
   usePaneNoticeFooter({
     registrationId: "credit-conditions:notices",
     focused,
-    notices: mixedDates ? ["The indexes carry different observation dates, so the spreads are not one session."] : [],
+    notices: survey || !mixedDates ? [] : ["The indexes carry different observation dates, so the spreads are not one session."],
   });
-  const footerInfo = useMemo<PaneFooterSegment[]>(() => [
+  const footerInfo = useMemo<PaneFooterSegment[]>(() => survey ? [] : [
     ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(partial ? [{ id: "partial", parts: [{ text: `PARTIAL ${rows.length}/${CREDIT_SERIES.length}`, tone: "warning" as const, bold: true }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...loadingErrorFooterInfo(loading, error),
-  ], [error, loading, partial, rows.length, stale]);
+  ], [error, loading, partial, rows.length, stale, survey]);
   usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
-  if (rows.length === 0) {
-    return (
-      <PaneStatusBody loading={loading} error={error} empty={!loading && !error}
-        loadingLabel="Loading credit spreads..." subject="Credit spreads" align="center" width={width} height={height} />
-    );
-  }
-
-  // Like the funding boards, the selected index's year sits above the board;
-  // the legend names the index, so the chart reads without the highlighted row.
   const selected = boardRows.find((row) => row.id === selectedId) ?? boardRows[0];
   return (
-    <MarketBoardStack rows={boardRows} width={width} height={height} focused={focused}
-      rootBefore={({ columns }) => <ChartTableHeader width={width} height={height} tableRows={boardRows.length}
-        tableColumns={columns} chart={selected ? spreadChart(selected.spread) : null} />}
-      selectedId={selectedId} onSelectedIdChange={setSelectedId} openId={openId} onOpenIdChange={setOpenId}
-      labelHeader="INDEX" labelWidth={10} valueLabel="OAS" valueWidth={10}
-      renderDetail={(row) => <SpreadDetail row={row.spread} width={width} height={Math.max(5, height - 2)} focused={focused} />} />
+    <Box width={width} height={height} flexDirection="column">
+      {strip}
+      {mounted.has("survey") ? <Box visible={survey} width={width} height={bodyHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+        <NestedPaneTabs>
+          <PaneFooterScope active={survey}>
+            <LoanSurveyPane nested width={width} height={bodyHeight} focused={focused && survey} />
+          </PaneFooterScope>
+        </NestedPaneTabs>
+      </Box> : null}
+      {survey ? null : rows.length === 0 ? (
+        <PaneStatusBody loading={loading} error={error} empty={!loading && !error}
+          loadingLabel="Loading credit spreads..." subject="Credit spreads" align="center" width={width} height={bodyHeight} />
+      ) : (
+        <MarketBoardStack rows={boardRows} width={width} height={bodyHeight} focused={focused}
+          rootBefore={({ columns }) => <ChartTableHeader width={width} height={bodyHeight} tableRows={boardRows.length}
+            tableColumns={columns} chart={selected ? spreadChart(selected.spread) : null} />}
+          selectedId={selectedId} onSelectedIdChange={setSelectedId} openId={openId} onOpenIdChange={setOpenId}
+          labelHeader="INDEX" labelWidth={10} valueLabel="OAS" valueWidth={10}
+          renderDetail={(row) => <SpreadDetail row={row.spread} width={width} height={Math.max(5, bodyHeight - 2)} focused={focused} />} />
+      )}
+    </Box>
   );
 }
 
@@ -154,5 +178,11 @@ export const creditConditionsModule: PluginModule = {
     keywords: ["credit", "spread", "oas", "corporate", "high yield", "investment grade", "macro"],
     shortcut: { prefix: "CRD" },
     headless: creditConditionsHeadless,
+  }, {
+    id: "loan-survey-pane", paneId: "credit-conditions", label: "Loan Officer Survey",
+    description: "Net percent of banks tightening standards for large-firm C&I loans and credit cards.",
+    keywords: ["sloo", "sloos", "loan officer", "lending standards", "tightening", "credit", "c&i"],
+    shortcut: { prefix: "SLOO" }, headless: loanSurveyHeadless,
+    createInstance: () => ({ placement: "floating", settings: { creditView: "survey" } }),
   }],
 };

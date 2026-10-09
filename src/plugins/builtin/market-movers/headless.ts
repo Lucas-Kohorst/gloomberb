@@ -9,8 +9,9 @@ import type {
   CloudSessionMoversPayload,
   CloudSessionMoversSide,
 } from "../../../api-client/market-movers";
+import { fetchCanadaListings } from "../canada-listings/client";
 import { loadMarketMoverTab, loadSessionMovers, type MarketMoverTabResult } from "./client";
-import { createRows, fiftyTwoWeekPositionPercent, formatMoverPrice, moverReferencePrice, type MarketMoverRow, type ScreenerTabId, type TabId } from "./model";
+import { createRows, fiftyTwoWeekPositionPercent, formatMoverPrice, moverReferencePrice, torontoListingQuote, type MarketMoverRow, type ScreenerTabId, type TabId } from "./model";
 import { isSessionTab, resolveSide } from "./session";
 
 const COLUMNS = [
@@ -111,13 +112,29 @@ export function createMarketMoversHeadless(
       ],
       defaultValue: "up",
       pluginState: { pluginId: "market-overview", key: "sessionSide" },
+    }, {
+      key: "exchange",
+      description: "Most active list: US or Toronto.",
+      type: "enum",
+      values: [{ value: "us" }, { value: "tsx", aliases: ["toronto"] }],
+      defaultValue: "us",
+      pluginState: { pluginId: "market-overview", key: "listingExchange" },
     }],
     columns: COLUMNS,
     describe: (args) => isSessionTab(String(args.options.list))
       ? `Market Movers | ${String(args.options.list)} ${resolveSide(args.options.list as CloudSessionMoversCategory, String(args.options.side))}`
-      : `Market Movers | ${String(args.options.list)}`,
+      : args.options.list === "actives" && args.options.exchange === "tsx"
+        ? "Market Movers | actives Toronto"
+        : `Market Movers | ${String(args.options.list)}`,
     async load(args, ctx) {
       const tab = args.options.list as TabId;
+      if (!isSessionTab(tab) && tab === "actives" && args.options.exchange === "tsx") {
+        const rows = createRows((await fetchCanadaListings()).map(torontoListingQuote)).map((row) => ({
+          ...row,
+          rangePositionPercent: fiftyTwoWeekPositionPercent(row.price, row.fiftyTwoWeekLow, row.fiftyTwoWeekHigh),
+        }));
+        return { rows, metadata: { list: tab, exchange: "tsx", stale: false } };
+      }
       if (isSessionTab(tab)) {
         const side = resolveSide(tab, String(args.options.side));
         const payload = await dependencies.loadSession(tab, side);

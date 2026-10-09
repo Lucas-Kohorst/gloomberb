@@ -160,6 +160,7 @@ export const brokerPlugin = composeBuiltinPlugin({
 
 export const marketOverviewPlugin = composeBuiltinPlugin({
   ...marketOverviewPluginMeta,
+  hosts: ["app-money.tmx.com", "www.jodidata.org", "api.publisher.jodidata.org"],
   description: "Global indices, movers, scanners, sectors, FX, futures, and correlations.",
   modules: [
     correlationModule,
@@ -185,6 +186,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
 
 export const macroPlugin = composeBuiltinPlugin({
   ...macroPluginMeta,
+  hosts: ["api.fiscaldata.treasury.gov"],
   description: "Economic calendar, rates, volatility, credit spreads, single-name, index and sovereign CDS, Treasury auctions, and earnings.",
   modules: [
     macroSharedResourcesModule,

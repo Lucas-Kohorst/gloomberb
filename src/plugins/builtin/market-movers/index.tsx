@@ -1,13 +1,15 @@
 import { Box } from "../../../ui";
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, EmptyState, usePaneFooter, usePaneTabs, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, EmptyState, QueryBar, usePaneFooter, usePaneTabs, useQueryBarSearch, type DataTableKeyEvent } from "../../../components";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
 import type { PaneProps } from "../../../types/plugin";
+import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig } from "../../../types/plugin";
+import { canadaListingsHeadless } from "../canada-listings/headless";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { publicTickerKey } from "../../../utils/exchanges";
-import { usePaneSettingValue } from "../../../state/app/context";
+import { usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
 import { usePlanAccess } from "../../../api-client/plan-access";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
@@ -30,12 +32,14 @@ import {
   resolveTabs,
   sortRows,
   summaryQuoteFromQuote,
+  torontoListingQuote,
   type MarketMoverColumn,
   type MarketMoverRow,
   type MarketMoverSortPreference,
   type ScreenerTabId,
   type TabId,
 } from "./model";
+import { fetchCanadaListings } from "../canada-listings/client";
 import { loadMarketMoverTab } from "./client";
 import { summaryFooterSegments } from "./footer";
 import { isSessionTab, resolveActiveTab, usSessionAt, type UsSession } from "./session";
@@ -83,7 +87,8 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   // which holds until the user picks a tab, whatever session is trading.
   const [savedTab, setSavedTab] = usePluginPaneState<TabId>("activeTab", tabs[0]!.id);
   const [pickedIn, setPickedIn] = usePluginPaneState<string | null>("activeTabSession", null);
-  const [requestedTab, setRequestedTab] = usePluginPaneState<TabId | null>("requestedTab", null);
+  const [openingList] = usePaneSettingValue<string | null>("requestedList", null);
+  const [requestedTab, setRequestedTab] = usePluginPaneState<TabId | null>("requestedTab", openingList as TabId | null);
   const access = usePlanAccess();
   const session = useUsSession();
   const tabIds = useMemo(() => tabs.map((tab) => tab.id), [tabs]);
@@ -153,8 +158,18 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
   const dataProvider = useAssetData();
   const { pinTicker } = usePluginTickerActions();
   const [quotes, setQuotes] = useState<ScreenerQuote[]>([]);
-  const [loadedTab, setLoadedTab] = useState<TabId | null>(null);
-  const visibleQuotes = loadedTab === activeTab ? quotes : NO_QUOTES;
+  const [openingExchange] = usePaneSettingValue("listingExchange", "us");
+  const [exchange, setExchange] = usePluginPaneState("listingExchange", openingExchange === "tsx" ? "tsx" : "us");
+  const instance = usePaneInstance();
+  const rawSymbol = instance?.params?.symbol ?? instance?.settings?.symbol;
+  const openingSymbol = typeof rawSymbol === "string" ? rawSymbol.trim() : "";
+  const [search, setSearch] = usePluginPaneState("listingQuery", openingSymbol);
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = activeTab === "actives" ? search.trim().toLowerCase() : "";
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const boardKey = activeTab === "actives" ? `${activeTab}:${exchange}` : activeTab;
+  const visibleQuotes = loadedKey === boardKey ? quotes : NO_QUOTES;
+  const toronto = activeTab === "actives" && exchange === "tsx";
   // The first load starts before the effect runs; an empty board is not "no data".
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -166,8 +181,8 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
   const fetchGenRef = useRef(0);
 
   const quoteTargets = useMemo(
-    () => buildScreenerQuoteTargets(visibleQuotes, selectedSymbol),
-    [visibleQuotes, selectedSymbol],
+    () => toronto ? [] : buildScreenerQuoteTargets(visibleQuotes, selectedSymbol),
+    [toronto, visibleQuotes, selectedSymbol],
   );
   const {
     entries: liveQuoteEntries,
@@ -190,7 +205,10 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
   );
   const columns = useMemo(() => buildMarketMoverColumns(width), [width]);
   const rankedRows = useMemo(() => createRows(resolvedQuotes), [resolvedQuotes]);
-  const rows = useMemo(() => sortRows(rankedRows, sortPreference), [rankedRows, sortPreference]);
+  const rows = useMemo(() => sortRows(
+    needle ? rankedRows.filter((row) => `${row.symbol} ${row.name}`.toLowerCase().includes(needle)) : rankedRows,
+    sortPreference,
+  ), [needle, rankedRows, sortPreference]);
   const selectedIdx = selectedSymbol
     ? rows.findIndex((row) => moverKey(row) === selectedSymbol)
     : -1;
@@ -215,27 +233,41 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       setLoadError(null);
     }
 
+    const boardKey = tab === "actives" ? `${tab}:${exchange}` : tab;
     try {
+      if (tab === "actives" && exchange === "tsx") {
+        const listings = await fetchCanadaListings();
+        if (fetchGenRef.current !== gen) return;
+        setQuotes(listings.map(torontoListingQuote));
+        setLoadedKey(boardKey);
+        setMoversStale(false);
+        if (!options?.background) setSelectedSymbol(null);
+        setLoadError(null);
+        setLastLoadedAt(Date.now());
+        return;
+      }
       const result = await loadMarketMoverTab(tab, dataProvider, {
         forceRefresh: options?.forceRefresh,
       });
       if (fetchGenRef.current !== gen) return;
 
       setQuotes(result.quotes);
-      setLoadedTab(tab);
+      setLoadedKey(boardKey);
       setMoversStale(result.stale);
       if (!options?.background) setSelectedSymbol(null);
       setLoadError(null);
       setLastLoadedAt(Date.now());
-    } catch {
+    } catch (error) {
       if (fetchGenRef.current !== gen) return;
       setMoversStale(true);
-      setLoadError("Market movers temporarily unavailable");
+      setLoadError(tab === "actives" && exchange === "tsx" && error instanceof Error
+        ? error.message
+        : "Market movers temporarily unavailable");
     }
     finally {
       if (fetchGenRef.current === gen && !options?.background) setLoading(false);
     }
-  }, [dataProvider]);
+  }, [dataProvider, exchange]);
 
   useEffect(() => {
     setSelectedSymbol(null);
@@ -270,16 +302,16 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
         id: "feed",
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
-      ...(moversStale && loadedTab === activeTab ? [{
+      ...(moversStale && loadedKey === boardKey ? [{
         id: "stale",
         parts: [{ text: "stale", tone: "muted" as const }],
       }] : []),
     ],
-  }), [activeTab, feedStatus, loadedTab, loadError, loading, moversStale, summaryQuotes]);
+  }), [boardKey, feedStatus, loadedKey, loadError, loading, moversStale, summaryQuotes]);
 
   return (
     <DataTableView<MarketMoverRow, MarketMoverColumn>
-      focused={focused}
+      focused={focused && !searchActive}
       selection={{
         kind: "id",
         selectedId: selectedSymbol,
@@ -287,7 +319,22 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
         onChange: (symbol) => setSelectedSymbol(symbol),
       }}
       onRootKeyDown={handleTableKeyDown}
-      resetScrollKey={activeTab}
+      resetScrollKey={boardKey}
+      rootBefore={activeTab === "actives" ? (
+        <QueryBar
+          width={Math.max(1, width - 2)}
+          search={{ value: search, onChange: setSearch, placeholder: "symbol", focused, ...searchProps }}
+          filters={[{
+            id: "exchange",
+            label: "Exchange",
+            inline: true,
+            value: exchange,
+            defaultValue: "us",
+            options: [{ value: "us", label: "US" }, { value: "tsx", label: "Toronto" }],
+            onChange: setExchange,
+          }]}
+        />
+      ) : undefined}
       sortable
       columns={columns}
       items={rows}
@@ -298,7 +345,7 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       onActivate={openSymbol}
       renderCell={renderMarketMoverCell}
       selectedTextOverridesCellColor
-      emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No movers returned."}
+      emptyStateTitle={loading ? "Loading movers..." : loadError ?? (needle ? "No matching symbols." : "No movers returned.")}
       emptyContent={loadError ? (
         <Box paddingX={1} paddingY={1}>
           <EmptyState title={loadError} message="Try again in a moment." />
@@ -306,6 +353,15 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       ) : undefined}
     />
   );
+}
+
+function torontoInstance(options?: PaneTemplateCreateOptions): PaneTemplateInstanceConfig {
+  const symbol = options?.arg?.trim().toUpperCase() ?? "";
+  return {
+    placement: "floating",
+    settings: { listingExchange: "tsx", requestedList: "actives", ...(symbol ? { symbol } : {}) },
+    ...(symbol ? { params: { symbol }, title: `Toronto ${symbol}` } : {}),
+  };
 }
 
 export const marketMoversModule: PluginModule = {
@@ -364,6 +420,16 @@ export const marketMoversModule: PluginModule = {
       keywords: ["movers", "gainers", "losers", "active", "trending", "screener", "top", "premarket", "pre-market", "after-hours", "gaps", "gap"],
       shortcut: { prefix: "MOST" },
       headless: marketMoversHeadless,
+    },
+    {
+      id: "canada-listings-pane",
+      paneId: "market-movers",
+      label: "Canada Listings",
+      description: "Most active Toronto Stock Exchange listings by session volume, with last, change and volume.",
+      keywords: ["canada", "toronto", "tsx", "listing", "listings", "most active", "volume"],
+      shortcut: { prefix: "TMX", argKind: "text", argPlaceholder: "symbol", argOptional: true },
+      headless: canadaListingsHeadless,
+      createInstance: (_context, options) => torontoInstance(options),
     },
   ],
 };

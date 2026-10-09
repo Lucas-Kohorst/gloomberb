@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DoeBoardPayload, DoeSeriesRow, DoeTab } from "../../../api-client/doe";
 import {
   ChartTableHeader,
   CompositeChart,
   DataTableView,
+  NestedPaneTabs,
+  PaneFooterScope,
   PaneStatusBody,
   QueryBar,
   usePaneNoticeFooter,
@@ -20,6 +22,7 @@ import type { ResolvedSeries } from "../../../time-series/types";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text } from "../../../ui";
 import { truncateToDisplayWidth } from "../../../utils/format";
+import { JodiPane } from "../jodi/pane";
 import { DOE_NOT_AVAILABLE, getCachedDoeBoard, loadDoeBoard } from "./client";
 import {
   DOE_TABS,
@@ -41,6 +44,7 @@ import {
 } from "./model";
 import { DoeRangeBar } from "./range-bar";
 
+const REPORT_TABS = [...DOE_TABS, { value: "world", label: "World" }];
 const COLUMNS: DataTableColumn[] = [
   { id: "name", label: "Series", width: 20, align: "left", flexGrow: 1 },
   { id: "level", label: "Level", width: 9, align: "right" },
@@ -122,26 +126,37 @@ export function DoePane({ width, height, focused }: PaneProps) {
   // The template, `--tab` and the settings menu choose the first tab; the strip moves it after.
   const [openingTab] = usePaneSettingValue<string>("tab", "crude");
   const [storedTab, setTab] = usePluginPaneState<string>("tab", openingTab);
-  const tab = doeTab(storedTab);
+  const world = storedTab === "world";
+  const tab = doeTab(world ? "crude" : storedTab);
+  const [mounted, setMounted] = useState(() => new Set([storedTab]));
+  useEffect(() => { setMounted((current) => current.has(storedTab) ? current : new Set([...current, storedTab])); }, [storedTab]);
   const initialSeries = usePaneInstance()?.params?.series ?? null;
   const resource = useAsyncResource(loadDoeBoard, { initialData: getCachedDoeBoard });
   const data = resource.data?.payload ?? null;
   // The server not serving the board yet is a state of the data, not a failure.
   const notAvailable = !data && resource.error === DOE_NOT_AVAILABLE;
-  const { strip, rows: tabRows } = usePaneTabs(data ? { tabs: [...DOE_TABS], activeValue: tab, onSelect: setTab, focused, dense: true } : null);
+  const { strip, rows: tabRows } = usePaneTabs({ tabs: REPORT_TABS, activeValue: world ? "world" : tab, onSelect: setTab, focused, dense: true });
+  const bodyHeight = Math.max(1, height - tabRows);
   useAutoRefresh(resource.updatedAt, resource.load);
-  usePaneRefreshKey(() => void resource.reload(), { focused });
+  usePaneRefreshKey(() => void resource.reload(), { focused, enabled: !world });
   usePaneNoticeFooter({ registrationId: "doe:notices", focused,
-    notices: [...(data?.gaps ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
-  usePaneStatusFooter({ registrationId: "doe", loading: resource.loading, error: notAvailable ? null : resource.error,
-    stale: !!data && resource.data?.stale });
+    notices: world ? [] : [...(data?.gaps ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
+  usePaneStatusFooter({ registrationId: "doe", loading: world ? false : resource.loading, error: world || notAvailable ? null : resource.error,
+    stale: world ? false : !!data && resource.data?.stale });
   return (
     <Box width={width} height={height} flexDirection="column">
       {strip}
-      <PaneStatusBody loading={resource.loading && !data} error={!data && !notAvailable ? resource.error : null}
+      {mounted.has("world") ? <Box visible={world} width={width} height={bodyHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+        <NestedPaneTabs>
+          <PaneFooterScope active={world}>
+            <JodiPane nested width={width} height={bodyHeight} focused={focused && world} />
+          </PaneFooterScope>
+        </NestedPaneTabs>
+      </Box> : null}
+      {world ? null : <PaneStatusBody loading={resource.loading && !data} error={!data && !notAvailable ? resource.error : null}
         empty={notAvailable} emptyTitle={DOE_NOT_AVAILABLE} subject="oil and gas inventories">
-        {data ? <DoeBoard payload={data} tab={tab} initialSeries={initialSeries} width={width} height={Math.max(3, height - tabRows)} focused={focused} /> : null}
-      </PaneStatusBody>
+        {data ? <DoeBoard payload={data} tab={tab} initialSeries={initialSeries} width={width} height={bodyHeight} focused={focused} /> : null}
+      </PaneStatusBody>}
     </Box>
   );
 }

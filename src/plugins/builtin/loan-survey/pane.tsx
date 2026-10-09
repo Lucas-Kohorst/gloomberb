@@ -3,8 +3,10 @@ import {
   DataTableStackView,
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneNoticeFooter,
   usePaneStatusFooter,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
@@ -89,13 +91,20 @@ function historyCell(row: LoanSurveyQuarter, columnId: string): DataTableCell {
   }
 }
 
-export function LoanSurveyPane({ focused, width, height }: PaneProps) {
+export function LoanSurveyPane({ focused, width, height, nested = false }: Pick<PaneProps, "width" | "height" | "focused"> & { nested?: boolean }) {
   const resource = useAsyncResource(fetchLoanSurvey);
-  const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
-  const [openId, setOpenId] = usePluginPaneState<string | null>("open", null);
+  const [selectedId, setSelectedId] = usePluginPaneState<string | null>(nested ? "survey-selected" : "selected", null);
+  const [openId, setOpenId] = usePluginPaneState<string | null>(nested ? "survey-open" : "open", null);
   const [historyIndex, setHistoryIndex] = useState(0);
   const histories = resource.data?.series ?? EMPTY_SERIES;
-  const rows = useMemo(() => loanSurveyRows(histories), [histories]);
+  const [search, setSearch] = usePluginPaneState(nested ? "survey-query" : "series", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const all = loanSurveyRows(histories);
+    return needle ? all.filter((row) => row.name.toLowerCase().includes(needle)) : all;
+  }, [histories, needle]);
+  const queryBar = <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "series", focused, ...searchProps }} />;
   const quarter = surveyAsOf(rows);
   const openRow = rows.find((row) => row.id === openId) ?? null;
 
@@ -113,7 +122,7 @@ export function LoanSurveyPane({ focused, width, height }: PaneProps) {
     void resource.reload();
   }, [resource.reload]);
   useAutoRefresh(resource.updatedAt, reload);
-  usePaneRefreshKey(reload, { focused });
+  usePaneRefreshKey(reload, { focused, enabled: !searchActive });
   usePaneNoticeFooter({
     registrationId: "loan-survey:notices",
     focused,
@@ -133,7 +142,7 @@ export function LoanSurveyPane({ focused, width, height }: PaneProps) {
     historyCell(row, column.id)
   ), []);
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !needle) {
     return (
       <Box width={width} height={height} flexDirection="column">
         <PaneStatusBody
@@ -149,7 +158,8 @@ export function LoanSurveyPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableStackView<LoanSurveyRow>
-      focused={focused}
+      focused={focused && !searchActive}
+      rootBefore={queryBar}
       detailOpen={openRow != null}
       onBack={() => setOpenId(null)}
       detailTitle={openRow?.name}
@@ -189,7 +199,7 @@ export function LoanSurveyPane({ focused, width, height }: PaneProps) {
       sortColumnId={null}
       sortDirection="desc"
       selectedTextOverridesCellColor
-      emptyStateTitle="No survey observations."
+      emptyStateTitle={needle ? "No matching series." : "No survey observations."}
     />
   );
 }

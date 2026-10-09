@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box } from "../../../ui";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginPaneState, useUpdatedAgo } from "../../../public/react";
-import { ChartTableHeader, CompositeChart, CurveSurface, curveGhostColors, EmptyState, formatPercentAxis, MarketBoardStack, PaneStatusBody, useChartTableSelection, usePaneNoticeFooter, usePaneStatusLinkFooter, usePaneTabs, type ChartTableChart, type MarketBoardRow, type StatItem } from "../../../components";
+import { ChartTableHeader, CompositeChart, CurveSurface, curveGhostColors, EmptyState, formatPercentAxis, MarketBoardStack, NestedPaneTabs, PaneFooterScope, PaneStatusBody, useChartTableSelection, usePaneNoticeFooter, usePaneStatusLinkFooter, usePaneTabs, type ChartTableChart, type MarketBoardRow, type StatItem } from "../../../components";
+import { TreasuryDailyPane } from "../treasury-daily/pane";
 import { curveStrip, curveSurfaceMinRows } from "../../../components/chart/curve";
 import { colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -16,7 +17,7 @@ import { useResearchCloudSession } from "../shared/research-cloud-session";
 import { getCachedMoneyMarkets, loadMoneyMarkets } from "./client";
 import { moneyMarketAxis, moneyMarketChange, moneyMarketCurves, moneyMarketNotices, moneyMarketObservations, moneyMarketRateChange, moneyMarketRows, moneyMarketValue } from "./model";
 
-const TABS = [{ value: "rates", label: "Rates" }, { value: "bills", label: "Bills" }, { value: "liquidity", label: "Liquidity" }];
+const TABS = [{ value: "rates", label: "Rates" }, { value: "bills", label: "Bills" }, { value: "liquidity", label: "Liquidity" }, { value: "treasury", label: "Treasury" }];
 const PANELS = [{ id: "main" }];
 const BILLS_CAPTION = "Discount yield % by bill tenor";
 const formatRate = (value: number) => moneyMarketValue(value, "percent");
@@ -64,6 +65,9 @@ export function MoneyMarketsPane({ width, height, focused }: PaneProps) {
   const loader = useCallback((force: boolean) => loadMoneyMarkets(force), [session.requestKey]);
   const resource = useAsyncResource(loader, { initialData: getCachedMoneyMarkets, clearOnError: isAccessDenied });
   const [tab, setTab] = usePaneSettingValue("tab", "rates");
+  const treasury = tab === "treasury";
+  const [mounted, setMounted] = useState(() => new Set([tab]));
+  useEffect(() => { setMounted((current) => current.has(tab) ? current : new Set([...current, tab])); }, [tab]);
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
   const [openId, setOpenId] = usePluginPaneState<string | null>("open", null);
   const data = resource.data?.payload;
@@ -120,23 +124,30 @@ export function MoneyMarketsPane({ width, height, focused }: PaneProps) {
   const { strip: tabStrip, rows: tabRows } = usePaneTabs({ tabs: TABS, activeValue: tab, onSelect: setTab, focused, dense: true });
   const bodyHeight = Math.max(3, height - tabRows);
   useAutoRefresh(resource.updatedAt, resource.load);
-  usePaneRefreshKey(() => void resource.reload(), { focused });
+  usePaneRefreshKey(() => void resource.reload(), { focused, enabled: !treasury });
   usePaneNoticeFooter({ registrationId: "money-markets:notices", focused,
-    notices: [...(data ? moneyMarketNotices(data) : []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
-  usePaneStatusLinkFooter({ registrationId: "money-markets", focused, loading: resource.loading, error: resource.error,
-    url: selected?.observation.sourceUrl ?? null, showOpenHint: true,
-    info: data && updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : [],
-    stale: !!data && resource.data?.stale,
+    notices: treasury ? [] : [...(data ? moneyMarketNotices(data) : []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
+  usePaneStatusLinkFooter({ registrationId: "money-markets", focused, loading: treasury ? false : resource.loading, error: treasury ? null : resource.error,
+    url: treasury ? null : selected?.observation.sourceUrl ?? null, showOpenHint: !treasury,
+    info: !treasury && data && updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : [],
+    stale: treasury ? false : !!data && resource.data?.stale,
   });
   return <Box width={width} height={height} flexDirection="column">
     {tabStrip}
-    <PaneStatusBody loading={resource.loading && !data} error={!data ? resource.error : null}
+    {mounted.has("treasury") ? <Box visible={treasury} width={width} height={bodyHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+      <NestedPaneTabs>
+        <PaneFooterScope active={treasury}>
+          <TreasuryDailyPane nested width={width} height={bodyHeight} focused={focused && treasury} />
+        </PaneFooterScope>
+      </NestedPaneTabs>
+    </Box> : null}
+    {treasury ? null : <PaneStatusBody loading={resource.loading && !data} error={!data ? resource.error : null}
       empty={!resource.loading && !resource.error && !data} subject="money markets">
       {data ? <MarketBoardStack rows={rows} width={width} height={bodyHeight} focused={focused}
         selectedId={selectedRow?.id ?? null} onSelectedIdChange={setSelectedId} openId={openId} onOpenIdChange={setOpenId}
         changeLabel="Δ OBS" renderDetail={(row) => <ObservationDetail row={row.observation} width={width} height={Math.max(5, bodyHeight - 2)} focused={focused} />}
         rootBefore={({ columns }) => <ChartTableHeader width={width} height={bodyHeight} figures={figures} chart={chart}
           tableRows={rows.length} tableColumns={columns} />} /> : null}
-    </PaneStatusBody>
+    </PaneStatusBody>}
   </Box>;
 }
