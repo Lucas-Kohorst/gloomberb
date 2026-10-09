@@ -98,6 +98,9 @@ describe("energy outlook parsing", () => {
     expect(outlook.searchParams.get("api_key")).toBe("DEMO_KEY");
     expect(outlook.searchParams.get("frequency")).toBe("monthly");
     expect(outlook.searchParams.getAll("facets[seriesId][]")).toEqual(["BREPUUS"]);
+    const board = new URL(outlookDataUrl(["BREPUUS", "WTIPUUS", "COPRPUS", "MGTCPUSX", "DFTCPUS"]));
+    expect(board.searchParams.get("length")).toBe("10");
+    expect(board.searchParams.getAll("facets[seriesId][]")).toEqual(["BREPUUS", "WTIPUUS", "COPRPUS", "MGTCPUSX", "DFTCPUS"]);
     for (const url of [importDataUrl({ length: 1 }), importDataUrl({ length: 1000, offset: 1000, period: "2026-07" }), outageDataUrl("facility-nuclear-outages", 200)]) {
       const length = Number(new URL(url).searchParams.get("length"));
       expect(length).toBeGreaterThan(0);

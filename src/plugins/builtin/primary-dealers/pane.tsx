@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
 } from "../../../components";
 import { handleRefreshKey, usePaneRefreshKey } from "../../../components/data-table/table-pane";
@@ -40,15 +42,22 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
   const [storedTab, setTab] = usePluginPaneState<string>("tab", "positions");
   const tab: DealerTab = storedTab === "fails" ? "fails" : "positions";
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const rows = tab === "fails" ? data?.fails ?? EMPTY_ROWS : data?.positions ?? EMPTY_ROWS;
+  const source = tab === "fails" ? data?.fails ?? EMPTY_ROWS : data?.positions ?? EMPTY_ROWS;
+  const [search, setSearch] = usePluginPaneState("position", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const rows = useMemo(
+    () => (needle ? source.filter((row) => `${row.label} ${row.unit ?? ""}`.toLowerCase().includes(needle)) : source),
+    [needle, source],
+  );
   const asOf = useMemo(() => {
     let best: string | null = null;
-    for (const row of rows) {
+    for (const row of source) {
       if (row.asOf && (best == null || row.asOf > best)) best = row.asOf;
     }
     return best;
-  }, [rows]);
-  const showUnit = rows.some((row) => row.unit != null);
+  }, [source]);
+  const showUnit = source.some((row) => row.unit != null);
   const columns = useMemo(() => buildDealerColumns(width, showUnit), [showUnit, width]);
   const footerInfo = useMemo(
     () => asOf ? [{ id: "as-of", parts: [{ text: asOf, tone: "muted" as const }] }] : [],
@@ -62,7 +71,7 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
 
   const refresh = useCallback(() => { void load(); }, [load]);
   const selectTab = useCallback((value: string) => setTab(value === "fails" ? "fails" : "positions"), [setTab]);
-  usePaneRefreshKey(refresh, { focused });
+  usePaneRefreshKey(refresh, { focused, enabled: !searchActive });
 
   const { strip: tabs, rows: tabRows } = usePaneTabs({
     tabs: TABS,
@@ -129,9 +138,10 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       <DataTableView<DealerRow, DealerColumn>
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={Math.max(1, height - tabRows)}
+        rootBefore={<QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "position", focused, ...searchProps }} />}
         selection={{
           kind: "id",
           selectedId,
@@ -145,7 +155,7 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
         sortDirection="asc"
         getItemKey={(row) => row.keyid}
         renderCell={renderCell}
-        emptyStateTitle={tab === "fails" ? "No fails in this release." : "No positions in this release."}
+        emptyStateTitle={needle ? "No matching rows." : tab === "fails" ? "No fails in this release." : "No positions in this release."}
       />
     </Box>
   );

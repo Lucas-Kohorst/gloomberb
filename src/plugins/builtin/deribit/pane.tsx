@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type PaneFooterSegment,
 } from "../../../components";
@@ -52,7 +54,12 @@ function currencyOf(value: unknown): "BTC" | "ETH" | null {
 
 export function DeribitPane({ focused, width, height }: PaneProps) {
   const instance = usePaneInstance();
-  const currency = currencyOf(instance?.params?.currency);
+  const launched = currencyOf(instance?.params?.currency) ?? "BTC";
+  const [storedCurrency, setStoredCurrency] = usePluginPaneState("currency", launched);
+  const currency = currencyOf(storedCurrency) ?? launched;
+  const [search, setSearch] = usePluginPaneState("instrument", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
   const loadBook = useCallback(() => {
     if (!currency) return Promise.reject(new Error("Use BTC or ETH"));
     return fetchDerivatives(currency);
@@ -67,12 +74,12 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
   const [optionId, setOptionId] = useState<string | null>(null);
 
   const futures = useMemo(
-    () => sortFutures(futureRows(data?.futures ?? NO_ROWS), futureSort),
-    [data?.futures, futureSort],
+    () => sortFutures(futureRows(data?.futures ?? NO_ROWS), futureSort).filter((row) => !needle || row.instrument.toLowerCase().includes(needle)),
+    [data?.futures, futureSort, needle],
   );
   const options = useMemo(
-    () => sortOptions(optionExpiryRows(data?.options ?? NO_ROWS), optionSort),
-    [data?.options, optionSort],
+    () => sortOptions(optionExpiryRows(data?.options ?? NO_ROWS), optionSort).filter((row) => !needle || row.expiry.toLowerCase().includes(needle)),
+    [data?.options, needle, optionSort],
   );
 
   useEffect(() => {
@@ -87,7 +94,7 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
   const palette = useThemeColors();
   const refresh = useCallback(() => { void resource.reload(); }, [resource.reload]);
   useAutoRefresh(resource.updatedAt, refresh);
-  usePaneRefreshKey(refresh, { focused: focused && currency != null });
+  usePaneRefreshKey(refresh, { focused: focused && !searchActive });
 
   const { strip: tabs, rows: tabRows } = usePaneTabs(currency ? {
     tabs: TABS,
@@ -153,7 +160,22 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
     }
   }, [palette]);
 
-  const tableHeight = Math.max(1, height - tabRows);
+  const tableHeight = Math.max(1, height - tabRows - 1);
+  const queryBar = (
+    <QueryBar
+      width={width}
+      search={{ value: search, onChange: setSearch, placeholder: "instrument", focused, ...searchProps }}
+      filters={[{
+        id: "currency",
+        label: "Currency",
+        inline: true,
+        value: currency,
+        defaultValue: launched,
+        options: [{ value: "BTC", label: "BTC" }, { value: "ETH", label: "ETH" }],
+        onChange: setStoredCurrency,
+      }]}
+    />
+  );
   let body = null;
   if (!currency) {
     body = <PaneStatusBody error="Use BTC or ETH." />;
@@ -164,7 +186,7 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
   } else if (tab === "futures") {
     body = (
       <DataTableView<FutureRow>
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={tableHeight}
         columns={FUTURE_COLUMNS}
@@ -176,13 +198,13 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
         selectedTextOverridesCellColor
         selection={{ kind: "id", selectedId: futureId, getId: (row) => row.id, onChange: setFutureId }}
         renderCell={renderFuture}
-        emptyStateTitle="No futures."
+        emptyStateTitle={needle ? "No matching instruments." : "No futures."}
       />
     );
   } else {
     body = (
       <DataTableView<OptionExpiryRow>
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={tableHeight}
         columns={OPTION_COLUMNS}
@@ -194,14 +216,15 @@ export function DeribitPane({ focused, width, height }: PaneProps) {
         selectedTextOverridesCellColor
         selection={{ kind: "id", selectedId: optionId, getId: (row) => row.id, onChange: setOptionId }}
         renderCell={renderOption}
-        emptyStateTitle="No options."
+        emptyStateTitle={needle ? "No matching expiries." : "No options."}
       />
     );
   }
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {currency ? tabs : null}
+      {tabs}
+      {queryBar}
       {body}
     </Box>
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataTableView, PaneStatusBody, usePaneStatusFooter, type DataTableCell } from "../../../components";
+import { DataTableView, PaneStatusBody, QueryBar, usePaneStatusFooter, useQueryBarSearch, type DataTableCell } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
-import { useAsyncResource } from "../../../public/react";
+import { useAsyncResource, usePluginPaneState } from "../../../public/react";
 import { usePaneInstance } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
@@ -58,7 +58,10 @@ function HoldingsTable({ data, width, height, focused }: { data: FundPortfolio; 
 }
 
 export function FundPortfolioPane({ width, height, focused }: PaneProps) {
-  const ticker = (usePaneInstance()?.params?.ticker ?? "").trim().toUpperCase();
+  const commandTicker = (usePaneInstance()?.params?.ticker ?? "").trim().toUpperCase();
+  const [search, setSearch] = usePluginPaneState("ticker", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const ticker = (search.trim() || commandTicker).toUpperCase();
   const loadPortfolio = useCallback(() => fetchFundPortfolio(ticker), [ticker]);
   const resource = useAsyncResource(ticker ? loadPortfolio : null);
   const data = resource.data;
@@ -67,7 +70,7 @@ export function FundPortfolioPane({ width, height, focused }: PaneProps) {
     () => (period ? [{ id: "period", parts: [{ text: period, tone: "muted" as const }] }] : []),
     [period],
   );
-  usePaneRefreshKey(resource.reload, { focused });
+  usePaneRefreshKey(resource.reload, { focused, enabled: !searchActive });
   usePaneStatusFooter({
     registrationId: "fund-portfolio",
     loading: resource.loading,
@@ -76,15 +79,16 @@ export function FundPortfolioPane({ width, height, focused }: PaneProps) {
   });
   return (
     <Box width={width} height={height} flexDirection="column">
+      <QueryBar width={width} search={{ value: search, onChange: (value) => setSearch(value.toUpperCase()), placeholder: "ticker", focused, debounceMs: 300, ...searchProps }} />
       <PaneStatusBody
         align="center"
         width={width}
-        height={height}
+        height={Math.max(1, height - 1)}
         loading={resource.loading && !data}
         empty={!data && !resource.loading}
         emptyTitle={ticker ? "Fund holdings unavailable." : "Enter a ticker."}
       >
-        {data ? <HoldingsTable data={data} width={width} height={height} focused={focused} /> : null}
+        {data ? <HoldingsTable data={data} width={width} height={Math.max(1, height - 1)} focused={focused && !searchActive} /> : null}
       </PaneStatusBody>
     </Box>
   );

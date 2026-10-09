@@ -58,6 +58,17 @@ export function filterBondsByIssuer(bonds: readonly CorporateBond[], query: stri
   return bonds.filter((bond) => bond.issuerName.toLowerCase().includes(needle));
 }
 
+const GRADE_LABELS: Record<string, string> = { I: "Investment grade", H: "High yield" };
+
+export function bondGradeLabel(code: string): string {
+  return GRADE_LABELS[code] ?? code;
+}
+
+export function filterBondsByGrade(bonds: readonly CorporateBond[], grade: string): CorporateBond[] {
+  if (!grade || grade === "all") return [...bonds];
+  return bonds.filter((bond) => bond.traceGradeCode === grade);
+}
+
 export function latestTradeDate(bonds: readonly CorporateBond[]): string | null {
   let latest: string | null = null;
   for (const bond of bonds) {

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   unavailableText,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
@@ -39,10 +41,16 @@ export function PortwatchPane({ focused, width, height }: PaneProps) {
   const tab = shippingTab(savedTab);
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
   const [sort, setSort] = useState<SortPreference<ShippingColumnId>>(DEFAULT_SORT);
+  const [search, setSearch] = usePluginPaneState("place", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
   const layer = tab === "chokepoints" ? data?.chokepoints : data?.ports;
   const columns = useMemo(() => shippingColumns(layer), [layer]);
   const activeSort = useMemo(() => visibleShippingSort(sort, columns), [columns, sort]);
-  const rows = useMemo(() => sortShippingRows(layer?.rows ?? [], activeSort), [activeSort, layer]);
+  const rows = useMemo(() => sortShippingRows(
+    (layer?.rows ?? []).filter((row) => !needle || `${row.name} ${row.country}`.toLowerCase().includes(needle)),
+    activeSort,
+  ), [activeSort, layer, needle]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -51,7 +59,7 @@ export function PortwatchPane({ focused, width, height }: PaneProps) {
 
   const refresh = useCallback(() => { void load(); }, [load]);
   useAutoRefresh(updatedAt, refresh);
-  usePaneRefreshKey(refresh, { focused });
+  usePaneRefreshKey(refresh, { focused, enabled: !searchActive });
   const handleKey = useCallback((event: DataTableKeyEvent) => {
     return handleRefreshKey(event, refresh, { stopPropagation: true });
   }, [refresh]);
@@ -107,7 +115,7 @@ export function PortwatchPane({ focused, width, height }: PaneProps) {
 
   if (!data && !error) return body("loading");
   if (!data) return body("error", error, unavailableText("Shipping volumes"));
-  if (rows.length === 0 && layer?.error) {
+  if (rows.length === 0 && !needle && layer?.error) {
     return body("error", layer.error, unavailableText(tab === "ports" ? "Ports" : "Chokepoints"));
   }
 
@@ -115,9 +123,10 @@ export function PortwatchPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {strip}
       <DataTableView<ShippingRow, ShippingColumn>
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={Math.max(1, height - tabRows)}
+        rootBefore={<QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "place", focused, ...searchProps }} />}
         selectedTextOverridesCellColor
         selection={{
           kind: "id",
@@ -133,7 +142,7 @@ export function PortwatchPane({ focused, width, height }: PaneProps) {
         onHeaderClick={onHeaderClick}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
-        emptyStateTitle={tab === "ports" ? "No ports reported." : "No chokepoints reported."}
+        emptyStateTitle={needle ? "No matching places." : tab === "ports" ? "No ports reported." : "No chokepoints reported."}
       />
     </Box>
   );

@@ -3,8 +3,10 @@ import {
   DataTableView,
   EmptyState,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type PaneFooterSegment,
 } from "../../../components";
@@ -48,9 +50,19 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
   const tab: NordicRatesTab = storedTab === "bond" ? "bond" : "mortgage";
   const [mortgageId, setMortgageId] = useState<string | null>(null);
   const [bondId, setBondId] = useState<string | null>(null);
-  const mortgages = data?.mortgages ?? EMPTY_MORTGAGES;
-  const bondYields = data?.yields ?? EMPTY_YIELDS;
+  const [search, setSearch] = usePluginPaneState("rate", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const mortgages = useMemo(() => {
+    const all = data?.mortgages ?? EMPTY_MORTGAGES;
+    return needle ? all.filter((row) => `${row.lender} ${row.term}`.toLowerCase().includes(needle)) : all;
+  }, [data?.mortgages, needle]);
+  const bondYields = useMemo(() => {
+    const all = data?.yields ?? EMPTY_YIELDS;
+    return needle ? all.filter((row) => `${row.segment} ${row.maturity}`.toLowerCase().includes(needle)) : all;
+  }, [data?.yields, needle]);
   const mortgageTab = tab === "mortgage";
+  const queryBar = <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: mortgageTab ? "lender" : "segment", focused, ...searchProps }} />;
   const rows = mortgageTab ? mortgages : bondYields;
   const selectedId = mortgageTab ? mortgageId : bondId;
   const setSelectedId = mortgageTab ? setMortgageId : setBondId;
@@ -65,7 +77,7 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
     void resource.reload();
   }, [resource.reload]);
   useAutoRefresh(resource.updatedAt, refresh);
-  usePaneRefreshKey(refresh, { focused });
+  usePaneRefreshKey(refresh, { focused, enabled: !searchActive });
 
   // Mortgage quotes publish no date. The bond grid's reporting date is the footer.
   const info = useMemo<PaneFooterSegment[]>(() => (
@@ -119,7 +131,7 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
       ? <Box width={width} height={bodyHeight} alignItems="center" justifyContent="center"><EmptyState title="Nordic rates unavailable." /></Box>
       : <PaneStatusBody loading align="center" width={width} height={bodyHeight} />);
   }
-  if (tabError && rows.length === 0) {
+  if (tabError && rows.length === 0 && !needle) {
     return frame(
       <Box width={width} height={bodyHeight} alignItems="center" justifyContent="center">
         <EmptyState title={mortgageTab ? "Mortgage rates unavailable." : "Bond yields unavailable."} />
@@ -129,9 +141,10 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
 
   return frame(mortgageTab ? (
     <DataTableView
-      focused={focused}
+      focused={focused && !searchActive}
       rootWidth={width}
       rootHeight={bodyHeight}
+      rootBefore={queryBar}
       selection={{ kind: "id", selectedId, getId: (row) => row.id, onChange: setMortgageId }}
       columns={[...MORTGAGE_COLUMNS]}
       items={mortgages}
@@ -139,13 +152,14 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
       sortDirection="asc"
       getItemKey={(row) => row.id}
       renderCell={renderMortgageCell}
-      emptyStateTitle="No mortgage rates published."
+      emptyStateTitle={needle ? "No matching lenders." : "No mortgage rates published."}
     />
   ) : (
     <DataTableView
-      focused={focused}
+      focused={focused && !searchActive}
       rootWidth={width}
       rootHeight={bodyHeight}
+      rootBefore={queryBar}
       selection={{ kind: "id", selectedId, getId: (row) => row.id, onChange: setBondId }}
       columns={[...BOND_COLUMNS]}
       items={bondYields}
@@ -153,7 +167,7 @@ export function NordicRatesPane({ focused, width, height }: PaneProps) {
       sortDirection="asc"
       getItemKey={(row) => row.id}
       renderCell={renderBondCell}
-      emptyStateTitle="No bond yields published."
+      emptyStateTitle={needle ? "No matching yields." : "No bond yields published."}
     />
   ));
 }

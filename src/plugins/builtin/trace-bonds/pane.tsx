@@ -24,7 +24,9 @@ import {
   DEFAULT_BOND_SORT,
   TRACE_BONDS_PANE_ID,
   bondChangeColor,
+  bondGradeLabel,
   buildBondColumns,
+  filterBondsByGrade,
   filterBondsByIssuer,
   firstBondSortDirection,
   formatBondChange,
@@ -48,6 +50,7 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
   const { data, loading, error, updatedAt, load, reload } = useAsyncResource(request);
   const bonds = data ?? NO_BONDS;
   const [query, setQuery] = usePluginPaneState("issuer", presetIssuer);
+  const [grade, setGrade] = usePluginPaneState("grade", "all");
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selectedId", null);
   const [sort, setSort] = usePluginPaneState<BondSort>("sort", DEFAULT_BOND_SORT);
   const { active: searchActive, focus: focusSearch, searchProps } = useQueryBarSearch();
@@ -56,9 +59,14 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
   usePaneRefreshKey(() => void reload(), { focused, enabled: !searchActive });
 
   const rows = useMemo(
-    () => sortBonds(filterBondsByIssuer(bonds, query), sort),
-    [bonds, query, sort],
+    () => sortBonds(filterBondsByGrade(filterBondsByIssuer(bonds, query), grade), sort),
+    [bonds, grade, query, sort],
   );
+  const gradeOptions = useMemo(() => {
+    const codes = [...new Set(bonds.flatMap((bond) => bond.traceGradeCode ? [bond.traceGradeCode] : []))].sort();
+    const values = grade !== "all" && !codes.includes(grade) ? [...codes, grade] : codes;
+    return [{ value: "all", label: "All" }, ...values.map((code) => ({ value: code, label: bondGradeLabel(code) }))];
+  }, [bonds, grade]);
   const columns = useMemo(() => buildBondColumns(width), [width]);
   const tradeDate = latestTradeDate(bonds);
   const footerInfo = useMemo(
@@ -164,6 +172,15 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
             focused,
             ...searchProps,
           }}
+          filters={gradeOptions.length > 1 ? [{
+            id: "grade",
+            label: "Grade",
+            inline: gradeOptions.length <= 4,
+            value: grade,
+            defaultValue: "all",
+            options: gradeOptions,
+            onChange: setGrade,
+          }] : undefined}
         />
       )}
       onRootKeyDown={handleRootKeyDown}
@@ -181,11 +198,11 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
       onSortChange={(columnId, direction) => {
         if (isBondColumnId(columnId)) setSort({ columnId, direction });
       }}
-      resetScrollKey={`${needle}:${sort.columnId ?? ""}:${sort.direction}`}
+      resetScrollKey={`${needle}:${grade}:${sort.columnId ?? ""}:${sort.direction}`}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
       selectedTextOverridesCellColor
-      emptyStateTitle={needle ? "No matching issuers." : "No recent sales."}
+      emptyStateTitle={needle || grade !== "all" ? "No matching bonds." : "No recent sales."}
     />
   );
 }

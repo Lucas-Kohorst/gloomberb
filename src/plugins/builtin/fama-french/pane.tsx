@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
   type PaneFooterSegment,
@@ -46,14 +48,22 @@ export function FactorReturnsPane({ width, height, focused }: PaneProps) {
   const request = useCallback(() => fetchFactorReturns(), []);
   const resource = useAsyncResource(request);
   const data = resource.data;
-  const months = data?.months ?? [];
+  const [search, setSearch] = usePluginPaneState("month", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const months = useMemo(() => {
+    const all = data?.months ?? [];
+    if (!needle) return all;
+    const digits = needle.replaceAll("-", "");
+    return all.filter((row) => formatFactorMonth(row.month).toLowerCase().includes(needle) || row.month.includes(digits));
+  }, [data, needle]);
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
   useEffect(() => {
     if (selectedId && months.some((row) => row.month === selectedId)) return;
     setSelectedId(months[0]?.month ?? null);
   }, [months, selectedId, setSelectedId]);
   useAutoRefresh(resource.updatedAt, resource.load);
-  usePaneRefreshKey(() => void resource.reload(), { focused });
+  usePaneRefreshKey(() => void resource.reload(), { focused, enabled: !searchActive });
   const info = useMemo<PaneFooterSegment[]>(() => (
     data?.vintage ? [{ id: "vintage", parts: [{ text: data.vintage, tone: "muted" as const }] }] : []
   ), [data?.vintage]);
@@ -83,9 +93,10 @@ export function FactorReturnsPane({ width, height, focused }: PaneProps) {
           <DataTableView
             columns={COLUMNS}
             items={months}
-            focused={focused}
+            focused={focused && !searchActive}
             rootWidth={width}
             rootHeight={height}
+            rootBefore={<QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "month", focused, ...searchProps }} />}
             selection={{
               kind: "id",
               selectedId,
@@ -99,7 +110,7 @@ export function FactorReturnsPane({ width, height, focused }: PaneProps) {
             renderCell={renderCell}
             selectedTextOverridesCellColor
             getExportMetadata={() => [["vintage", data.vintage]]}
-            emptyStateTitle="No monthly returns."
+            emptyStateTitle={needle ? "No matching months." : "No monthly returns."}
           />
         ) : null}
       </PaneStatusBody>

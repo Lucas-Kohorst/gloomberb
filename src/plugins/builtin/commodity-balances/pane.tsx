@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
@@ -67,14 +69,21 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
   const [priceSort, setPriceSort] = usePluginPaneState("priceSort", PRICE_SORT);
   const [balanceId, setBalanceId] = usePluginPaneState<string | null>("selectedBalance", null);
   const [priceId, setPriceId] = usePluginPaneState<string | null>("selectedPrice", null);
+  const [search, setSearch] = usePluginPaneState("crop", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
   const prices = data?.prices ?? EMPTY_PRICES;
   const showPrices = prices.length > 0;
   const activeTab = showPrices && tab === "prices" ? "prices" : "balances";
   const balanceRows = useMemo(
-    () => sortBalanceRows(data?.rows ?? EMPTY_ROWS, balanceSort),
-    [balanceSort, data?.rows],
+    () => sortBalanceRows((data?.rows ?? EMPTY_ROWS).filter((row) => !needle || `${row.crop} ${row.country} ${row.attribute}`.toLowerCase().includes(needle)), balanceSort),
+    [balanceSort, data?.rows, needle],
   );
-  const priceRows = useMemo(() => sortPriceRows(prices, priceSort), [priceSort, prices]);
+  const priceRows = useMemo(
+    () => sortPriceRows(prices.filter((row) => !needle || `${row.crop} ${row.season}`.toLowerCase().includes(needle)), priceSort),
+    [needle, priceSort, prices],
+  );
+  const queryBar = <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: activeTab === "prices" ? "crop" : "crop or country", focused, ...searchProps }} />;
   const { strip, rows: tabRows } = usePaneTabs(showPrices ? {
     tabs: TABS,
     activeValue: activeTab,
@@ -89,7 +98,7 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
   }, [data?.marketYear]);
 
   useAutoRefresh(updatedAt, load);
-  usePaneRefreshKey(load, { focused });
+  usePaneRefreshKey(load, { focused, enabled: !searchActive });
   usePaneStatusFooter({
     registrationId: PANE_ID,
     loading,
@@ -174,9 +183,10 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
       {strip}
       {activeTab === "prices" ? (
         <DataTableView<PriceForecast, PriceColumn>
-          focused={focused}
+          focused={focused && !searchActive}
           rootWidth={width}
           rootHeight={tableHeight}
+          rootBefore={queryBar}
           columns={PRICE_COLUMNS}
           items={priceRows}
           getItemKey={(row) => row.id}
@@ -192,14 +202,15 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
             onChange: (id) => setPriceId(id),
           }}
           renderCell={renderPriceCell}
-          emptyStateTitle="No price forecasts."
+          emptyStateTitle={needle ? "No matching crops." : "No price forecasts."}
           resetScrollKey={activeTab}
         />
       ) : (
         <DataTableView<BalanceRow, BalanceColumn>
-          focused={focused}
+          focused={focused && !searchActive}
           rootWidth={width}
           rootHeight={tableHeight}
+          rootBefore={queryBar}
           columns={BALANCE_COLUMNS}
           items={balanceRows}
           getItemKey={(row) => row.id}
@@ -215,7 +226,7 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
             onChange: (id) => setBalanceId(id),
           }}
           renderCell={renderBalanceCell}
-          emptyStateTitle="No crop balances."
+          emptyStateTitle={needle ? "No matching crops." : "No crop balances."}
           resetScrollKey={activeTab}
         />
       )}

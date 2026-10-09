@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
   usePaneTabs,
+  useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
@@ -17,8 +19,8 @@ import {
   formatEnergyValue,
   type EnergyTab,
   type ImportRow,
-  type OutageRow,
   type OutlookRow,
+  type OutageRow,
 } from "./model";
 
 const OUTLOOK_COLUMNS: DataTableColumn[] = [
@@ -60,6 +62,12 @@ function tabEmpty(tab: EnergyTab): string {
   return "No outlook figures.";
 }
 
+function rowLabel(row: OutlookRow | ImportRow | OutageRow): string {
+  if ("origin" in row) return row.origin;
+  if ("facility" in row) return row.facility;
+  return row.name;
+}
+
 function EnergyTable<T extends { id: string }>({
   columns, rows, selectedId, onSelect, focused, width, height, emptyTitle, renderCell,
 }: {
@@ -93,13 +101,15 @@ function EnergyTable<T extends { id: string }>({
 
 export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
   const colors = useThemeColors();
-  const loadBoard = useCallback(() => fetchEnergyOutlook(), []);
-  const resource = useAsyncResource(loadBoard);
+  const [savedTab, setTab] = usePluginPaneState<EnergyTab>("tab", "outlook");
+  const [search, setSearch] = usePluginPaneState("query", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const loadBoard = useCallback(() => fetchEnergyOutlook(undefined, savedTab), [savedTab]);
+  const resource = useAsyncResource(loadBoard, { keepPreviousData: true });
   const data = resource.data;
   useAutoRefresh(resource.updatedAt, resource.load);
-  usePaneRefreshKey(() => { void resource.reload(); }, { focused });
+  usePaneRefreshKey(() => { void resource.reload(); }, { focused, enabled: !searchActive });
 
-  const [savedTab, setTab] = usePluginPaneState<EnergyTab>("tab", "outlook");
   const [outlookId, setOutlookId] = usePluginPaneState<string | null>("outlook-row", null);
   const [importId, setImportId] = usePluginPaneState<string | null>("import-row", null);
   const [outageId, setOutageId] = usePluginPaneState<string | null>("outage-row", null);
@@ -121,7 +131,12 @@ export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
   const imports = data?.imports.rows ?? [];
   const outages = data?.outages.rows ?? [];
   const selectedId = active === "imports" ? importId : active === "outages" ? outageId : outlookId;
-  const rows = active === "imports" ? imports : active === "outages" ? outages : outlook;
+  const source = active === "imports" ? imports : active === "outages" ? outages : outlook;
+  const needle = search.trim().toLowerCase();
+  const rows = needle ? source.filter((row) => rowLabel(row).toLowerCase().includes(needle)) : source;
+  const queryBar = (
+    <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: active === "imports" ? "origin" : active === "outages" ? "plant" : "series", focused, ...searchProps }} />
+  );
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
     const next = rows[0]?.id ?? null;
@@ -140,7 +155,7 @@ export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
     : active === "imports" ? data.imports.error
       : active === "outages" ? data.outages.error
         : data.outlook.error;
-  const showRows = rows.length > 0;
+  const showRows = source.length > 0;
   const info = useMemo(
     () => period && showRows ? [{ id: "period", parts: [{ text: period, tone: "muted" as const }] }] : [],
     [period, showRows],
@@ -152,7 +167,7 @@ export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
     info,
   });
 
-  const bodyHeight = Math.max(1, height - tabRows);
+  const bodyHeight = Math.max(1, height - tabRows - 1);
   const renderOutlook = useCallback((row: OutlookRow, column: DataTableColumn): DataTableCell => {
     const number = (value: number | null): DataTableCell => ({ text: formatEnergyValue(value), value, color: colors.text });
     switch (column.id) {
@@ -197,8 +212,9 @@ export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
   return (
     <Box width={width} height={height} flexDirection="column" overflow="hidden">
       {strip}
+      {queryBar}
       <PaneStatusBody
-        loading={resource.loading && !data}
+        loading={resource.loading && !showRows}
         error={!data ? resource.error : failed ? sectionError : null}
         empty={empty}
         emptyTitle={tabEmpty(active)}
@@ -207,16 +223,16 @@ export function EnergyOutlookPane({ width, height, focused }: PaneProps) {
         height={bodyHeight}
       >
         {data && active === "outlook" ? (
-          <EnergyTable columns={OUTLOOK_COLUMNS} rows={outlook} selectedId={outlookId} onSelect={setOutlookId}
-            focused={focused} width={width} height={bodyHeight} emptyTitle={tabEmpty("outlook")} renderCell={renderOutlook} />
+          <EnergyTable columns={OUTLOOK_COLUMNS} rows={rows as OutlookRow[]} selectedId={outlookId} onSelect={setOutlookId}
+            focused={focused && !searchActive} width={width} height={bodyHeight} emptyTitle={needle ? "No matching series." : tabEmpty("outlook")} renderCell={renderOutlook} />
         ) : null}
         {data && active === "imports" ? (
-          <EnergyTable columns={IMPORT_COLUMNS} rows={imports} selectedId={importId} onSelect={setImportId}
-            focused={focused} width={width} height={bodyHeight} emptyTitle={tabEmpty("imports")} renderCell={renderImport} />
+          <EnergyTable columns={IMPORT_COLUMNS} rows={rows as ImportRow[]} selectedId={importId} onSelect={setImportId}
+            focused={focused && !searchActive} width={width} height={bodyHeight} emptyTitle={needle ? "No matching origins." : tabEmpty("imports")} renderCell={renderImport} />
         ) : null}
         {data && active === "outages" ? (
-          <EnergyTable columns={OUTAGE_COLUMNS} rows={outages} selectedId={outageId} onSelect={setOutageId}
-            focused={focused} width={width} height={bodyHeight} emptyTitle={tabEmpty("outages")} renderCell={renderOutage} />
+          <EnergyTable columns={OUTAGE_COLUMNS} rows={rows as OutageRow[]} selectedId={outageId} onSelect={setOutageId}
+            focused={focused && !searchActive} width={width} height={bodyHeight} emptyTitle={needle ? "No matching plants." : tabEmpty("outages")} renderCell={renderOutage} />
         ) : null}
       </PaneStatusBody>
     </Box>

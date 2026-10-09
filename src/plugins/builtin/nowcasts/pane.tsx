@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  QueryBar,
   usePaneStatusFooter,
+  useQueryBarSearch,
   type DataTableCell,
   type PaneFooterSegment,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
-import { useAsyncResource } from "../../../react/async-resource";
+import { useAsyncResource, usePluginPaneState } from "../../../public/react";
 import { useAutoRefresh } from "../../../react/auto-refresh";
 import { priceColor } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -30,15 +32,22 @@ export function NowcastsPane({ focused, width, height }: PaneProps) {
   const colors = useThemeColors();
   const resource = useAsyncResource(fetchNowcasts);
   const rows = resource.data ?? EMPTY_ROWS;
+  const [search, setSearch] = usePluginPaneState("measure", "");
+  const { active: searchActive, searchProps } = useQueryBarSearch();
+  const needle = search.trim().toLowerCase();
+  const shown = useMemo(
+    () => (needle ? rows.filter((row) => row.measure.toLowerCase().includes(needle)) : rows),
+    [needle, rows],
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedId && rows.some((row) => row.id === selectedId)) return;
-    setSelectedId(rows[0]?.id ?? null);
-  }, [rows, selectedId]);
+    if (selectedId && shown.some((row) => row.id === selectedId)) return;
+    setSelectedId(shown[0]?.id ?? null);
+  }, [shown, selectedId]);
 
   useAutoRefresh(resource.updatedAt, resource.load);
-  usePaneRefreshKey(() => void resource.reload(), { focused });
+  usePaneRefreshKey(() => void resource.reload(), { focused, enabled: !searchActive });
 
   const asOf = newestAsOf(rows);
   const info = useMemo<PaneFooterSegment[]>(
@@ -76,27 +85,34 @@ export function NowcastsPane({ focused, width, height }: PaneProps) {
     }
   }, [colors]);
 
+  const queryBar = (
+    <QueryBar width={width} search={{ value: search, onChange: setSearch, placeholder: "measure", focused, ...searchProps }} />
+  );
   if (rows.length === 0) {
     return (
-      <PaneStatusBody
-        loading={resource.loading}
-        empty={!resource.loading}
-        emptyTitle="Nowcasts unavailable."
-        align="center"
-        width={width}
-        height={height}
-      />
+      <Box flexDirection="column" width={width} height={height}>
+        {queryBar}
+        <PaneStatusBody
+          loading={resource.loading}
+          empty={!resource.loading}
+          emptyTitle="Nowcasts unavailable."
+          align="center"
+          width={width}
+          height={Math.max(1, height - 1)}
+        />
+      </Box>
     );
   }
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       <DataTableView<NowcastRow, NowcastColumn>
-        focused={focused}
+        focused={focused && !searchActive}
         rootWidth={width}
         rootHeight={height}
+        rootBefore={queryBar}
         columns={NOWCAST_COLUMNS}
-        items={rows}
+        items={shown}
         getItemKey={(row) => row.id}
         sortColumnId={null}
         sortDirection="asc"
@@ -107,7 +123,7 @@ export function NowcastsPane({ focused, width, height }: PaneProps) {
           onChange: (id) => setSelectedId(id),
         }}
         renderCell={renderCell}
-        emptyStateTitle="Nowcasts unavailable."
+        emptyStateTitle={needle ? "No matching measures." : "Nowcasts unavailable."}
       />
     </Box>
   );

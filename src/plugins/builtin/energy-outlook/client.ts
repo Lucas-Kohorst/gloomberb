@@ -5,6 +5,7 @@ import {
   outageRows,
   outlookRows,
   OUTLOOK_SERIES,
+  type EnergyTab,
   type ImportRow,
   type OutageRow,
   type OutlookRow,
@@ -31,7 +32,8 @@ const OUTAGE_FAILURE = "Nuclear outage figures could not be loaded.";
 
 const eiaFetch = createThrottledFetch({
   requestsPerMinute: 20,
-  maxRetries: 2,
+  // The shared demo key answers 429 with a long retry-after. Waiting it out stalls the pane.
+  maxRetries: 0,
   timeoutMs: 15_000,
   backoffBaseMs: 500,
   dedupeGetRequests: true,
@@ -137,9 +139,13 @@ function assertShort(length: number): number {
   return length;
 }
 
-export function outlookDataUrl(seriesId: string): string {
-  const length = assertShort(OUTLOOK_LENGTH);
-  return `${EIA_ROOT}/steo/data/?frequency=monthly&data[0]=value&facets[seriesId][]=${encodeURIComponent(seriesId)}&sort[0][column]=period&sort[0][direction]=desc&length=${length}&api_key=${EIA_API_KEY}`;
+export function outlookDataUrl(seriesId: string | readonly string[]): string {
+  const ids = typeof seriesId === "string" ? [seriesId] : seriesId;
+  if (ids.length === 0) throw new Error("An outlook series is required.");
+  // length counts rows, not series. Two months times the series, or the page is only the first series.
+  const length = assertShort(OUTLOOK_LENGTH * ids.length);
+  const facets = ids.map((id) => `facets[seriesId][]=${encodeURIComponent(id)}`).join("&");
+  return `${EIA_ROOT}/steo/data/?frequency=monthly&data[0]=value&${facets}&sort[0][column]=period&sort[0][direction]=desc&length=${length}&api_key=${EIA_API_KEY}`;
 }
 
 export function importDataUrl(options: { length: number; offset?: number; period?: string }): string {
@@ -176,8 +182,8 @@ async function loadRoute(url: string, failure: string, signal?: AbortSignal): Pr
 
 async function loadOutlook(signal?: AbortSignal): Promise<OutlookSection> {
   try {
-    const pages = await Promise.all(OUTLOOK_SERIES.map((series) => loadRoute(outlookDataUrl(series.id), OUTLOOK_FAILURE, signal)));
-    return { rows: outlookRows(pages.flatMap((page) => page.rows)), error: null };
+    const page = await loadRoute(outlookDataUrl(OUTLOOK_SERIES.map((series) => series.id)), OUTLOOK_FAILURE, signal);
+    return { rows: outlookRows(page.rows), error: null };
   } catch (error) {
     if (aborted(error)) throw error;
     return { rows: [], error: failureMessage(error, OUTLOOK_FAILURE) };
@@ -244,17 +250,21 @@ function retainRows<T extends { rows: readonly unknown[]; error: string | null }
   return next;
 }
 
-export async function fetchEnergyOutlook(signal?: AbortSignal): Promise<EnergyOutlookData> {
-  const [outlook, imports, outages] = await Promise.all([
-    loadOutlook(signal),
-    loadImports(signal),
-    loadOutages(signal),
-  ]);
-  const board: EnergyOutlookData = {
-    outlook: retainRows(outlook, lastBoard?.outlook),
-    imports: retainRows(imports, lastBoard?.imports),
-    outages: !outages.available ? outages : retainRows(outages, lastBoard?.outages.available ? lastBoard.outages : undefined),
-  };
+/** One section per call. The shared demo key rejects a burst of every section at once. */
+export async function fetchEnergyOutlook(signal?: AbortSignal, tab: EnergyTab = "outlook"): Promise<EnergyOutlookData> {
+  const outlook = tab === "outlook"
+    ? retainRows(await loadOutlook(signal), lastBoard?.outlook)
+    : lastBoard?.outlook ?? { rows: [], error: null };
+  const imports = tab === "imports"
+    ? retainRows(await loadImports(signal), lastBoard?.imports)
+    : lastBoard?.imports ?? { rows: [], period: null, error: null };
+  const freshOutages = tab === "outages" ? await loadOutages(signal) : null;
+  const outages = freshOutages == null
+    ? lastBoard?.outages ?? { available: true, rows: [], period: null, error: null }
+    : !freshOutages.available
+      ? freshOutages
+      : retainRows(freshOutages, lastBoard?.outages.available ? lastBoard.outages : undefined);
+  const board: EnergyOutlookData = { outlook, imports, outages };
   lastBoard = board;
   return board;
 }

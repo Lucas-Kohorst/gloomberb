@@ -80,7 +80,7 @@ export const energyOutlookHeadless: HeadlessPaneDefinition<"bundle"> = {
   describe: "Energy outlook, crude import origins, and nuclear outages",
   async load(args, ctx) {
     const tab = tabOf(args.options.tab);
-    const data = await fetchEnergyOutlook(ctx.signal);
+    const data = await fetchEnergyOutlook(ctx.signal, tab);
     const section = sectionFor(data, tab);
     const missing = tab === "outages" && !data.outages.available;
     return {
