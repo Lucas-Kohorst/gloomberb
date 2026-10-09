@@ -147,7 +147,9 @@ CSV. A table that colors its cells passes `selectedTextOverridesCellColor`
 so the selected row reads in the selection color without each cell checking
 `rowState.selected`; a cell whose tone must survive the selection sets
 `keepColorWhenSelected`. Custom `content` still takes its colors from
-`rowState`.
+`rowState`. Artwork before a label on the desktop and web, such as a flag,
+goes in a cell's `leading` or a column's `headerLeading`: the terminal skips
+it, the text keeps its own selection color, and exports read only the text.
 
 **Table + detail.** `DataTableStackView` is the "list, then open one" shape:
 Enter or click calls `onActivate`, the pane sets the open item, the stack
@@ -271,6 +273,10 @@ header, with the detail's height.
   draws `strip` as the first row of the body. Subtract `rows`. Never in the
   footer. Register `null` while a sign-in wall or any state makes every tab
   show the same thing.
+- A chart you pan and draw on sits one level below a tab strip: the strip
+  keeps Left, Right, `h` and `l`; Down, Enter, a click or a chart tool moves
+  into the chart, and Esc or Up hands the keys back, with `[Esc]tabs` in the
+  footer while inside. `Tabs` and `CompositeChart` do this; a pane adds nothing.
 - A strip inside content that already has a title-bar strip (a Ticker
   Research tab, a stack detail) becomes a `QueryBar` view (`usePaneTabs`
   with `queryBarWidth`) or inline filter on the desktop; the terminal keeps
@@ -389,7 +395,7 @@ header, with the detail's height.
   opens, Esc/Backspace back, `r` refresh, `Shift+R` refresh all, `!`
   warnings, `o` open source, `/` search, `.` pane menu, Tab/Shift+Tab next
   pane or field, `h`/`l` tabs, `?` help, F1 the pane's help card, `` ` `` ticker search, `q` quit (terminal),
-  `u` install update, `$` Pro upgrade, Ctrl+P command bar. `q`, `u`, `r`,
+  `u` restart into a downloaded update or retry a failed one, `$` Pro upgrade, Ctrl+P command bar. `q`, `u`, `r`,
   `Shift+R`, `?` and `` ` `` reach the app before any pane. Table keys go
   through `onRootKeyDown` and `onDetailKeyDown` (return `true` when handled);
   global shortcuts through `registerShortcut` so Help lists them.
@@ -431,7 +437,7 @@ header, with the detail's height.
 8. Forms use kit fields, one Save per form at its bottom, Enter/Esc, `Loading...` in the body while busy, destructive actions confirmed.
 9. Per-instance configuration is a pane setting; important toggles are `quickSettings`.
 10. Methodology and usage text is in `docs/`.
-11. Data panes have a `headless` definition; fetching is in `client.ts`.
+11. Data panes have a `headless` definition; fetching is in `client.ts`. It declares `freshness` (source, status, schedule) wherever "Gloom Cloud" and the status read from the rows would be wrong, so the report's source, as-of and status line is true.
 12. No `@opentui`, Electrobun or DOM imports; no cell-drawn chrome on the desktop.
 13. A missing repeated pattern went into the kit with its callers migrated, not into the pane.
 14. On the desktop tables and charts fill with flex, not terminal row arithmetic; nothing ends in a dead band above the footer.

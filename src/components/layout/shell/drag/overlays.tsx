@@ -1,21 +1,54 @@
-import { Box } from "../../../../ui";
+import { Box, useUiCapabilities } from "../../../../ui";
 import { colors } from "../../../../theme/colors";
-import type { FloatingRect } from "../../../../layout/pane-manager";
-import type { DragPreview, HoverOverlay } from "./index";
+import type { DockLeafLayout } from "../../../../layout/pane-manager";
+import type { DragPreview } from "./index";
+import { useLiveDrag, useLiveHoverOverlay, type LiveDragGeometry, type LiveDragStore } from "./live";
+import { slideStyle } from "./slide";
+
+/** A docked pane on the move is drawn as an outline at its floating size, until it is over a drop target. */
+function DockedDragOutline({ live }: { live: LiveDragStore }) {
+  const rect = useLiveDrag(live, selectDockedOutline);
+  const { nativePaneChrome } = useUiCapabilities();
+  if (!rect) return null;
+  // The desktop slides it from the corner on the compositor; the terminal redraws it in place.
+  const slide = nativePaneChrome === true;
+  return (
+    <Box
+      position="absolute"
+      left={slide ? 0 : rect.x}
+      top={slide ? 0 : rect.y}
+      style={slide ? slideStyle(rect.x, rect.y) : undefined}
+      width={rect.width}
+      height={rect.height}
+      border
+      borderStyle="single"
+      borderColor={colors.borderFocused}
+      backgroundColor={colors.panel}
+      zIndex={95}
+    />
+  );
+}
+
+function selectDockedOutline(geometry: LiveDragGeometry) {
+  const { paneDrag, floating } = geometry;
+  return paneDrag?.mode === "docked" && floating?.paneId === paneDrag.paneId ? floating.rect : null;
+}
+
+const selectDockPreview = (geometry: LiveDragGeometry) => geometry.dockPreview;
 
 export function ShellDragOverlays({
-  activeHoverOverlay,
-  activePaneDrag,
-  dockPreview,
-  dragFloatingRect,
-  effectiveDockPreview,
+  dockLeafLayouts,
+  externalDockPreview,
+  live,
 }: {
-  activeHoverOverlay: HoverOverlay | null;
-  activePaneDrag: { paneId: string; mode: "docked" | "floating" } | null;
-  dockPreview: DragPreview | null;
-  dragFloatingRect: { paneId: string; rect: FloatingRect } | null;
-  effectiveDockPreview: DragPreview | null;
+  dockLeafLayouts: DockLeafLayout[];
+  /** A pane from another window over this one's edge. */
+  externalDockPreview: DragPreview | null;
+  live: LiveDragStore;
 }) {
+  const activeHoverOverlay = useLiveHoverOverlay(live, dockLeafLayouts);
+  const dockPreview = useLiveDrag(live, selectDockPreview);
+  const effectiveDockPreview = dockPreview ?? externalDockPreview;
   return (
     <>
       {activeHoverOverlay && activeHoverOverlay.cells.map((cell) => {
@@ -40,24 +73,7 @@ export function ShellDragOverlays({
         );
       })}
 
-      {activePaneDrag
-        && activePaneDrag.mode === "docked"
-        && dragFloatingRect?.paneId === activePaneDrag.paneId
-        && !effectiveDockPreview
-        && (
-          <Box
-            position="absolute"
-            left={dragFloatingRect.rect.x}
-            top={dragFloatingRect.rect.y}
-            width={dragFloatingRect.rect.width}
-            height={dragFloatingRect.rect.height}
-            border
-            borderStyle="single"
-            borderColor={colors.borderFocused}
-            backgroundColor={colors.panel}
-            zIndex={95}
-          />
-        )}
+      {!effectiveDockPreview && <DockedDragOutline live={live} />}
 
       {effectiveDockPreview && (
         <Box

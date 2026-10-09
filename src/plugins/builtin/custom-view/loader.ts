@@ -303,7 +303,7 @@ export async function loadViewSource(
   return finishLoaded(spec, {
     rows,
     columns,
-    errors: (loaded.result.errors ?? []).filter(Boolean),
+    errors: [...(loaded.result.errors ?? []), ...(loaded.result.notes ?? [])].filter(Boolean),
     sourceLabel: resolved.label,
   }, config, signal, deps);
 }

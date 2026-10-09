@@ -209,6 +209,7 @@ export function MultiSelectFieldDialog({
       selectedValues={coerceSelectedPaneSettingValues(currentValue)}
       onChange={onApply}
       ordered={field.type === "ordered-multi-select"}
+      searchable={field.searchable}
     />
   );
 }

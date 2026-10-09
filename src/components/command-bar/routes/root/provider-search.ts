@@ -222,10 +222,10 @@ export function useRootProviderSearch(options: {
   const rootSectionOrder: CommandBarSectionOrder = listingSuffix != null
     ? "ranked"
     : rootPlainTickerSearchArg
-    ? "app-first"
-    : rootTickerSearchArg
-      ? "ranked"
-      : "default";
+      ? "app-first"
+      : rootTickerSearchArg
+        ? "ranked"
+        : "default";
   const orderedRootResults = useMemo(
     () => orderListResults(rootResults, { sectionOrder: rootSectionOrder, categoryPriorities }),
     [categoryPriorities, rootResults, rootSectionOrder],

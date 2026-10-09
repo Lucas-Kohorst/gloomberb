@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DataTableView,
   usePaneFooter, usePaneLoadingSignal,
@@ -8,34 +8,42 @@ import {
   type PaneFooterSegment,
 } from "../../../components";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
+import { CountryFlag } from "../../../components/ui/country-flag";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { resolveEntryData } from "../../../market-data/selectors";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { TextAttributes } from "../../../ui";
+import { TextAttributes, useUiCapabilities } from "../../../ui";
 import { useAssetData } from "../../runtime";
 import { summarizeFxRates, fxStatusLabel } from "../../../utils/fx-status";
 import type { PluginModule } from "../plugin-module";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
-import { isStreamCarryingQuote } from "../shared/use-quote-board";
-import { fxLegQuoteKey, fxLegReferenceRate, fxLegTargets, fxLegs, liveFxLegEntry } from "./live-legs";
-import { MAJOR_CURRENCIES, formatRate, resolveCurrencies, type MajorCurrency } from "./pairs";
+import { fxLegQuoteKey, fxLegReferenceRate, fxLegTargets, fxLegs, fxLegsBehind, liveFxLegEntry } from "./live-legs";
+import { CURRENCY_FLAG_REGIONS, FX_CURRENCIES, formatRate, resolveCurrencies, type FxCurrency } from "./pairs";
+import { crossMovePercent, directionTint, nextTintLevel } from "./direction";
+import { fxMatrixSettings } from "./settings";
 import { createFxExportMetadata } from "./export";
 
 const FX_MATRIX_PANE_ID = "fx-matrix";
 /** Stable identity: a fresh literal here would reload the board every render. */
 const NO_SAVED_CURRENCIES: string[] = [];
 const BASE_COLUMN_WIDTH = 5;
+/** Room for a flag, a space and the code once the desktop draws the flag. */
+const FLAGGED_BASE_COLUMN_WIDTH = 6;
+const CURRENCY_FLAGS = new Map<string, ReactNode>(
+  FX_CURRENCIES.map((currency) => [currency, <CountryFlag region={CURRENCY_FLAG_REGIONS[currency]} />]),
+);
 const RATE_COLUMN_WIDTH = 10;
 /** Snapshot rates reload at this pace while the feed is not carrying every leg. */
 const FX_FALLBACK_REFRESH_MS = 60_000;
 
 function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
+  const flagged = useUiCapabilities().nativePaneChrome === true;
   const [savedCurrencies] = usePaneSettingValue<string[]>("currencies", NO_SAVED_CURRENCIES);
   const currencies = useMemo(() => resolveCurrencies(savedCurrencies), [savedCurrencies]);
   const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
@@ -80,6 +88,22 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
     }
     return references;
   }, [legEntries, legs, rates]);
+  // A cell's direction is its cross against the pair's previous close. Only a
+  // leg whose rate is the live quote's and whose quote carries a previous close
+  // counts, USD (the base) as 1: the first rate this pane drew is no daily
+  // reference, and a snapshot rate or a stale quote has no previous close to
+  // read against.
+  const directionReferences = useMemo(() => {
+    const references = new Map<string, number>([["USD", 1]]);
+    for (const leg of legs) {
+      if (!liveEntries.has(leg.currency)) continue;
+      const reference = fxLegReferenceRate(leg, legEntries.get(fxLegQuoteKey(leg)));
+      if (reference != null) references.set(leg.currency, reference);
+    }
+    return references;
+  }, [legEntries, legs, liveEntries]);
+  // The step each cell showed last, which a tick near a boundary keeps.
+  const tintLevels = useRef(new Map<string, number>());
   // Export the provenance of this render's rates, even if a provider response
   // arrives before React commits the next render and the user exports now.
   const rateEntries = new Map(currencies.map((currency) => {
@@ -99,47 +123,59 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
   // current relaxes the snapshot reload: a quote another pane loaded, or one
   // the stream stopped sending, would otherwise freeze the matrix. With
   // streaming off, the legs' own quote poll is the feed.
-  const allLegsLive = legs.every((leg) => {
-    const entry = legEntries.get(fxLegQuoteKey(leg));
-    if (!liveStreaming) return liveEntries.has(leg.currency) && (entry?.fetchedAt ?? 0) >= subscriptionStartedAt;
-    return isStreamCarryingQuote(entry, subscriptionStartedAt, freshnessNow);
+  const legsBehind = fxLegsBehind(legs, legEntries, {
+    liveStreaming,
+    liveCurrencies: new Set(liveEntries.keys()),
+    startedAt: subscriptionStartedAt,
+    now: freshnessNow,
   });
+  const allLegsLive = legsBehind.length === 0;
 
-  const refresh = useCallback(() => {
+  const reload = useCallback((codes: readonly string[]) => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator) return;
-    for (const currency of currencies) {
+    for (const currency of codes) {
       if (currency === "USD") continue;
       void coordinator.loadFxRate(currency, { forceRefresh: true }).catch(() => {});
     }
-  }, [currencies]);
+  }, []);
+  const refresh = useCallback(() => reload(currencies), [currencies, reload]);
 
-  useAutoRefresh(snapshotFetchedAt || null, refresh, { intervalMs: allLegsLive ? null : FX_FALLBACK_REFRESH_MS });
+  // The reload that stands in for the feed asks only for the legs it is
+  // behind on: a thin pair that rarely ticks must not make every selected
+  // currency reload each minute.
+  useAutoRefresh(snapshotFetchedAt || null, () => reload(allLegsLive ? currencies : legsBehind), {
+    intervalMs: allLegsLive ? null : FX_FALLBACK_REFRESH_MS,
+  });
 
   const columns = useMemo<DataTableColumn[]>(() => [
-    { id: "base", label: "", width: BASE_COLUMN_WIDTH, align: "left" },
+    { id: "base", label: "", width: flagged ? FLAGGED_BASE_COLUMN_WIDTH : BASE_COLUMN_WIDTH, align: "left" },
     ...currencies.map((currency) => ({
       id: currency,
       label: currency,
       width: RATE_COLUMN_WIDTH,
       align: "right" as const,
+      headerLeading: flagged ? CURRENCY_FLAGS.get(currency) : undefined,
     })),
-  ], [currencies]);
+  ], [currencies, flagged]);
 
   const renderCell = useCallback((
-    row: MajorCurrency,
+    row: FxCurrency,
     column: DataTableColumn,
+    _index: number,
+    rowState: { selected: boolean },
   ): DataTableCell => {
     if (column.id === "base") {
       return {
         text: row,
         color: colors.textBright,
         attributes: TextAttributes.BOLD,
+        leading: flagged ? CURRENCY_FLAGS.get(row) : undefined,
       };
     }
 
-    const quoteCurrency = column.id as MajorCurrency;
-    if (row === quoteCurrency) return { text: formatRate(1, quoteCurrency), color: colors.textDim };
+    const quoteCurrency = column.id as FxCurrency;
+    if (row === quoteCurrency) return { text: formatRate(1), color: colors.textDim };
 
     const base = rates.get(row);
     const quote = rates.get(quoteCurrency);
@@ -150,8 +186,21 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
       return { text: pending ? "…" : "—", color: colors.textDim };
     }
     const reference = (referenceRates.get(row) ?? base) / (referenceRates.get(quoteCurrency) ?? quote);
-    return { text: formatRate(base / quote, quoteCurrency, reference), color: colors.text };
-  }, [rates, referenceRates, status.loading]);
+    const rowReference = directionReferences.get(row);
+    const columnReference = directionReferences.get(quoteCurrency);
+    const level = nextTintLevel(
+      tintLevels.current,
+      `${row}/${quoteCurrency}`,
+      rowReference != null && columnReference != null
+        ? crossMovePercent(base, rowReference, quote, columnReference)
+        : null,
+    );
+    // The cursor row keeps its selection colours; the tint leans on them.
+    const backgroundColor = rowState.selected
+      ? directionTint(level, { background: colors.selected, text: colors.selectedText })
+      : directionTint(level, { background: colors.bg, text: colors.text });
+    return { text: formatRate(base / quote, reference), color: colors.text, backgroundColor };
+  }, [directionReferences, flagged, rates, referenceRates, status.loading]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => handleRefreshKey(event, refresh), [refresh]);
 
@@ -166,7 +215,7 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
   }, [status.loading, statusText, updatedAgo]);
 
   return (
-    <DataTableView<MajorCurrency>
+    <DataTableView<FxCurrency>
       focused={focused}
       selection={{
         kind: "id",
@@ -203,18 +252,7 @@ export const fxMatrixModule: PluginModule = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 105, height: 14 },
       tableExport: true,
-      settings: (context) => ({
-        title: "FX Cross Rates Settings",
-        values: {
-          currencies: resolveCurrencies(context.settings.currencies as string[] | undefined),
-        },
-        fields: [{
-          key: "currencies",
-          label: "Currencies",
-          type: "ordered-multi-select",
-          options: MAJOR_CURRENCIES.map((currency) => ({ value: currency, label: currency })),
-        }],
-      }),
+      settings: fxMatrixSettings,
     },
   ],
 

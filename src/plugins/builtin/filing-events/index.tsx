@@ -33,6 +33,7 @@ export const filingEventsModule: PluginModule = {
   panes: [
     {
       id: FILING_EVENTS_PANE_ID,
+      reportFreshness: { source: "SEC EDGAR", status: "not-a-feed", basis: "filed data" },
       name: "8-K Filings",
       icon: "K",
       component: FilingEventsPane,

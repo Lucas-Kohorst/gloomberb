@@ -250,7 +250,8 @@ export function useCommandBarRootRuntime({
   // finds NVDA without the backtick. Skipped when a local row already carries
   // that exact name, since an "Exact Match" symbol would otherwise outrank it.
   // A bare mnemonic (`T`, `CN`) still searches that symbol. Enter stays on the
-  // command; the listing is listed under it. `NET:` is that symbol's venue dropdown.
+  // command; the listing is listed under it. `NET:` is that symbol's venue
+  // dropdown, and the search itself is the bare symbol.
   const bareMnemonic = rootShortcutIntent.kind !== "none" && rootShortcutIntent.argText === ""
     ? rootShortcutIntent.prefix
     : null;
@@ -261,11 +262,12 @@ export function useCommandBarRootRuntime({
   const rootPlainTickerSearchArg = useMemo(() => {
     if (currentRoute || activeMatch) return null;
     if (rootShortcutIntent.kind !== "none" && !bareMnemonic) return null;
+    // An explicit venue choice also searches one-letter symbols and names shared with local actions.
+    if (rootListingChoice) return rootListingChoice.symbol;
     const trimmed = rootQuery.trim();
-    const symbolQuery = rootListingChoice?.symbol
-      ?? (bareMnemonic
-        ? mnemonicListingQuery(bareMnemonic, activeTickerSymbol || commandPromptTicker(state)?.symbol)
-        : symbolSearchQuery(trimmed));
+    const symbolQuery = bareMnemonic
+      ? mnemonicListingQuery(bareMnemonic, activeTickerSymbol || commandPromptTicker(state)?.symbol)
+      : symbolSearchQuery(trimmed);
     if (!bareMnemonic && symbolQuery.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(symbolQuery);
     // The install row for "TV" is labelled TV, but it leads on purpose and

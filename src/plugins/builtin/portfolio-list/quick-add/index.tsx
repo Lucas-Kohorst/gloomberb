@@ -59,7 +59,7 @@ function QuickAddPreview({
   }
 
   if (validation.status === "choose") {
-    return <Text fg={colors.textMuted}> </Text>;
+    return <Text fg={colors.textMuted}>{t("Multiple listings")}</Text>;
   }
 
   if (validation.status === "duplicate") {
@@ -226,7 +226,7 @@ export function QuickAddTickerInput({
         ? validation
         : await validateQuery(query);
       if (currentValidation.status === "choose") {
-        handOffListingChoice(query);
+        handOffListingChoice(`${query}:`);
         return;
       }
       setValidation(currentValidation);

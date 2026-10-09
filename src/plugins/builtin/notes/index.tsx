@@ -80,6 +80,7 @@ export const notesPlugin: GloomPlugin = {
 
     ctx.registerPane({
       id: "quick-notes",
+      reportFreshness: { source: "Your notes", status: "not-a-feed", basis: "your notes" },
       name: "Notes",
       icon: "N",
       component: QuickNotesPane,

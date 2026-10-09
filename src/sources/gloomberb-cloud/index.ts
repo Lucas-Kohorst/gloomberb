@@ -41,6 +41,8 @@ import { canonicalExchange, canonicalTickerKey, parsePublicTickerKey } from "../
 import { extractFilingContent } from "../sec-edgar/content";
 import { normalizePriceHistory, priceHistoryIntervalMs, reachesLatestSettledSession } from "../../utils/price-history";
 import { createProviderMiss } from "../provider-errors";
+import { assertSecRegistrantMatches } from "../sec-registrant";
+import { nonUsSecListingVenue } from "../../utils/sec";
 import { publicListingTarget } from "../listing-target";
 import { canonicalHistoryInterval, HistoryRetentionError, parseHistoryRecoveryCandidate, parseHistoryRetention, type HistoryRetention } from "../history-retention";
 import { getRouterEntityKey } from "../provider-router/cache";
@@ -209,7 +211,7 @@ function mapCloudPriceHistory(
       `Cloud chart data is unavailable for ${ticker}`,
     ).map((point) => mapPricePoint(point, divisor, exchange)),
   );
-  if (stale && !reachesLatestSettledSession(points, Date.now(), { exchange, intervalMs: priceHistoryIntervalMs(interval) })) {
+  if (stale && !reachesLatestSettledSession(points, Date.now(), { symbol: ticker, exchange, intervalMs: priceHistoryIntervalMs(interval) })) {
     throw createProviderMiss(`Cloud chart data is stale for ${ticker}`);
   }
   if (
@@ -647,11 +649,30 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     );
   }
 
-  async getSecFilings(ticker: string, count = 15): Promise<SecFilingItem[]> {
-    return withCloudFallback(async () => {
-      const response = await apiClient.getCloudSecFilings({ ticker, limit: count, offset: 0 });
+  async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
+    const venue = nonUsSecListingVenue(ticker, exchange);
+    const name = venue ? context?.listingName?.trim() || await this.listingName(ticker, venue) || undefined : undefined;
+    const filings = await withCloudFallback(async () => {
+      const response = await apiClient.getCloudSecFilings({ ticker, exchange, name, limit: count, offset: 0 });
       return response.filings.map(mapCloudSecFiling);
     }, `Cloud SEC filings are unavailable for ${ticker}`);
+    if (!venue || filings.length === 0) return filings;
+    const symbol = parsePublicTickerKey(ticker).symbol;
+    // Without the listing's company the filings cannot be told apart from another company's.
+    if (!name) throw createProviderMiss(`SEC filings for ${symbol} could not be matched to its ${venue} listing`);
+    assertSecRegistrantMatches(filings, { symbol, exchange: venue, name });
+    return filings;
+  }
+
+  /** The company a listing belongs to, from its own quote; null when the quote prices another venue. */
+  private async listingName(ticker: string, venue: string): Promise<string | null> {
+    try {
+      const quote = await this.getQuote(ticker, venue);
+      const quoteVenue = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
+      return quoteVenue === venue ? quote.name?.trim() || null : null;
+    } catch {
+      return null;
+    }
   }
 
   async getSecFilingDocuments(filing: SecFilingItem): Promise<SecFilingDocument[]> {

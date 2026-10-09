@@ -1,7 +1,7 @@
 import { compareSemver } from "../utils/semver";
 import { GITHUB_LATEST_RELEASE_API_URL } from "./github-releases";
 
-function getRuntimeProcess(): Pick<NodeJS.Process, "platform" | "arch" | "argv" | "execPath"> | null {
+function getRuntimeProcess(): Pick<NodeJS.Process, "platform" | "arch" | "argv" | "execPath" | "getBuiltinModule"> | null {
   return (globalThis as { process?: NodeJS.Process }).process ?? null;
 }
 
@@ -17,10 +17,18 @@ export interface ReleaseInfo {
 }
 
 export interface UpdateProgress {
-  phase: "downloading" | "replacing" | "done" | "error";
+  /**
+   * `ready`: the new version is downloaded and waiting. The terminal binary is
+   * already swapped and runs on the next launch; the desktop app applies it
+   * when `canRestart` is set and the user asks. Nothing restarts by itself.
+   * `done` is for a finished action that has nothing left to wait for.
+   */
+  phase: "downloading" | "ready" | "replacing" | "done" | "error";
   percent?: number;
   error?: string;
   message?: string;
+  /** With `ready`: this host can apply the update and relaunch on request. */
+  canRestart?: boolean;
 }
 
 export type UpdateAction =
@@ -43,7 +51,10 @@ export type UpdateCheckResult =
 
 export interface UpdateHost {
   checkForUpdateDetailed(currentVersion: string): Promise<UpdateCheckResult>;
+  /** Downloads and stages the update, ending in `ready` (or `error`). It never relaunches the app. */
   performUpdate(release: ReleaseInfo, onProgress: (p: UpdateProgress) => void): Promise<void>;
+  /** Installs the staged update and relaunches the app. Only runs on an explicit request. */
+  applyUpdate?(onProgress: (p: UpdateProgress) => void): Promise<void>;
 }
 
 let updateHost: UpdateHost | null = null;
@@ -255,6 +266,11 @@ export function canSelfUpdate(release: Pick<ReleaseInfo, "updateAction"> | null 
   return release?.updateAction.kind === "self" || release?.updateAction.kind === "desktop";
 }
 
+/** A downloaded update this host can install and relaunch into when the user asks. */
+export function canRestartToApply(progress: UpdateProgress | null | undefined): boolean {
+  return progress?.phase === "ready" && progress.canRestart === true;
+}
+
 export async function checkForUpdateDetailed(
   currentVersion: string,
 ): Promise<UpdateCheckResult> {
@@ -339,6 +355,15 @@ export async function checkForUpdate(
   return result.kind === "available" ? result.release : null;
 }
 
+/** Installs the downloaded update and relaunches. Callers gate it on `canRestartToApply`. */
+export async function applyUpdate(onProgress: (p: UpdateProgress) => void): Promise<void> {
+  if (!updateHost?.applyUpdate) {
+    onProgress({ phase: "error", error: "Restarting to apply an update is unavailable in this runtime." });
+    return;
+  }
+  await updateHost.applyUpdate(onProgress);
+}
+
 export async function performUpdate(
   release: ReleaseInfo,
   onProgress: (p: UpdateProgress) => void,
@@ -389,17 +414,15 @@ export async function performUpdate(
   let unlinkUpdatePath: ((path: string) => void) | null = null;
 
   try {
-    const fsModulePath = "fs";
-    const zlibModulePath = "zlib";
-    const cryptoModulePath = "crypto";
-    const {
-      renameSync,
-      unlinkSync,
-      chmodSync,
-    } = await import(fsModulePath) as typeof import("fs");
+    // Not import(): Bun folds even a specifier held in a variable and bundles
+    // browser polyfills for all three into the web and desktop view builds,
+    // which never reach this path. Self-update only runs in the compiled
+    // terminal binary, where the process is always there.
+    const runtime = getRuntimeProcess()!;
+    const { renameSync, unlinkSync, chmodSync } = runtime.getBuiltinModule("fs");
     unlinkUpdatePath = unlinkSync;
-    const { gunzipSync } = await import(zlibModulePath) as typeof import("zlib");
-    const { createHash } = await import(cryptoModulePath) as typeof import("crypto");
+    const { gunzipSync } = runtime.getBuiltinModule("zlib");
+    const { createHash } = runtime.getBuiltinModule("crypto");
 
     onProgress({ phase: "downloading", percent: 0 });
 
@@ -458,7 +481,9 @@ export async function performUpdate(
       unlinkSync(oldPath);
     } catch {}
 
-    onProgress({ phase: "done" });
+    // The new binary is in place; the running process keeps the old one until
+    // the user restarts it, which this process never does for them.
+    onProgress({ phase: "ready" });
   } catch (err: unknown) {
     // Clean up temp file on failure
     try {

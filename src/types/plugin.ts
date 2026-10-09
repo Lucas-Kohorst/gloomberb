@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
-import type { HeadlessPaneDefinition } from "./headless";
+import type { HeadlessPaneDefinition, HeadlessPaneFreshness } from "./headless";
 
 export type {
   HeadlessBundleResult,
   HeadlessBundleSection,
+  HeadlessFreshnessStatus,
   HeadlessPaneApiClient,
   HeadlessPaneArgumentDef,
   HeadlessPaneArgumentKind,
@@ -12,6 +13,7 @@ export type {
   HeadlessPaneContext,
   HeadlessPaneDefinition,
   HeadlessPaneEntry,
+  HeadlessPaneFreshness,
   HeadlessPaneLoadArgs,
   HeadlessPaneOptionDef,
   HeadlessPaneOptionType,
@@ -124,20 +126,40 @@ export interface PaneDef {
   tickerFollower?: boolean | ((pane: PaneInstanceConfig) => boolean);
   /** Renderer-neutral data model used by CLI functions, automation, and hosted tools. */
   headless?: HeadlessPaneDefinition;
+  /**
+   * Source and status a rendered-view report (`fn` on a pane without a
+   * `headless` model) cites, when "Gloom Cloud" with the state the footer
+   * shows would be wrong: local data, a calculator, filed records.
+   */
+  reportFreshness?: Pick<HeadlessPaneFreshness, "source" | "status" | "basis">;
   /** Add an Excel-compatible CSV action for the pane's single active DataTable. */
   tableExport?: true;
   settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
   /** Portable sharing is public by default; list the few pane-owned fields that must remain local. */
   portableShare?: PanePortableShareDef;
-  /** Compact controls surfaced next to the pane title. Toggle keys reference toggle fields in settings. */
+  /**
+   * Compact controls surfaced next to the pane title. A key references a
+   * toggle field in settings, or a two-option select field when `onValue` is set.
+   */
   quickSettings?: readonly PaneQuickSettingDef[];
 }
 
 export interface PaneQuickSettingDef {
   type: "toggle";
   key: string;
-  icon: "zap";
+  icon: "zap" | "sqrt";
   label?: string;
+  /**
+   * For a two-option select field: the option the control turns on. Turning
+   * it off picks the field's other option.
+   */
+  onValue?: string;
+  /**
+   * Shows the control only where it changes something, for a setting that
+   * applies to some of what the pane can show. The field stays in the
+   * settings dialog either way.
+   */
+  visible?: (context: PaneSettingsContext) => boolean;
 }
 
 export interface PaneSettingsContext {
@@ -191,11 +213,15 @@ interface PaneSettingSelectField extends PaneSettingFieldBase {
 interface PaneSettingMultiSelectField extends PaneSettingFieldBase {
   type: "multi-select";
   options: PaneSettingOption[];
+  /** A long list: a filter box, each description beside its label. */
+  searchable?: boolean;
 }
 
 interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
   type: "ordered-multi-select";
   options: PaneSettingOption[];
+  /** A long list: a filter box, each description beside its label and each selection's position. */
+  searchable?: boolean;
 }
 
 export interface PaneSettingActionContext extends PaneSettingsContext {
@@ -259,6 +285,11 @@ interface PaneTemplateShortcut {
   aliases?: readonly string[];
   argPlaceholder?: string;
   argKind?: "text" | "ticker" | "ticker-list";
+  /**
+   * For a ticker list, entries kept as typed instead of resolved as tickers:
+   * CORR keeps map series (`GEO:HORMUZ`) beside its tickers.
+   */
+  keepArgToken?: (token: string) => boolean;
   argOptional?: boolean;
   /**
    * With no argument typed and none to infer from the active ticker, open

@@ -31,7 +31,9 @@ A plugin listed at [gloom.sh/plugins](https://gloom.sh/plugins) is installed at
 the tag and commit the registry reviewed, not at whatever the default branch
 holds that day, and `update` moves it to the next reviewed one. A plugin
 installed from a repository the registry does not list follows the remote's
-default branch instead.
+default branch instead. A plugin that builds on another, such as IBKR Gateway
+on Interactive Brokers, brings that one along from the registry, from the
+Plugins pane and the CLI alike.
 
 Either way the Plugins pane says when an update is waiting. For a listed
 plugin that is the reviewed commit; for an unlisted one, including a private
@@ -161,6 +163,12 @@ in the pane as `errors (n)`, with the last message in the detail view and the
 `d` key opening the debug log filtered to that plugin. Log real failures there
 rather than swallowing them; it is how a user finds out that a plugin which
 loaded fine is failing at runtime.
+
+A pane that throws while it renders stays inside its own frame: its body
+becomes a short failure card with Reload pane and Close pane, the rest of the
+app keeps running, and the error counts toward the plugin's errors. Only
+render errors are caught this way; errors in event handlers, effects and async
+code are still yours to catch and log.
 
 ## Plugin structure
 
@@ -503,7 +511,7 @@ ctx.registerContextMenuProvider({
 });
 ```
 
-Available context kinds are `pane`, `ticker`, `link`, `editable-text`, `selected-text`, `layout`, and `app`. Return `null` or an empty array when your plugin has nothing useful for a context. Keep actions renderer-neutral: call plugin context methods such as `ctx.openCommandBar()`, `ctx.selectTicker()`, `ctx.pinTicker()`, `ctx.focusPane()`, and `ctx.notify()` instead of using renderer-specific APIs.
+Available context kinds are `pane`, `ticker`, `link`, `editable-text`, `selected-text`, `layout`, `chat-user` (a name or @mention in the chat, with its user id and username), and `app`. Return `null` or an empty array when your plugin has nothing useful for a context. Keep actions renderer-neutral: call plugin context methods such as `ctx.openCommandBar()`, `ctx.selectTicker()`, `ctx.pinTicker()`, `ctx.focusPane()`, and `ctx.notify()` instead of using renderer-specific APIs.
 
 ### Command-bar shortcut discovery
 
@@ -961,6 +969,8 @@ Available field types:
 - `multi-select`
 - `ordered-multi-select`
 
+Give a long `multi-select` or `ordered-multi-select` (dozens of options) `searchable: true`: its dialog gets a filter box that narrows rows by label and description, shows each option's `description` beside its label and, when ordered, each selection's position. Arrows move, Space picks and `[` / `]` reorder while the box has focus.
+
 Every pane also gets a built-in **Lock Pane** toggle, so a pane with no `settings` of its own still opens a settings dialog. A locked pane stays in the layout when the close shortcut (`CmdOrCtrl+W`, `CmdOrCtrl+Alt+W`, or double `Esc`) is pressed; explicit closes still work. It is also offered in the pane action menu next to Close Pane. It is stored on the pane instance under the reserved `pane.locked` key, never in pane settings, so `applyValue` never sees it and a published layout never carries it. Do not register a field with a `pane.`-prefixed key.
 
 Imperative pane settings access is available on the plugin context:
@@ -1039,6 +1049,8 @@ function LivePricesPane() {
 ```
 
 Quick settings currently support toggle fields with the `zap` icon. Unknown keys and non-toggle fields are ignored.
+
+A setting that only applies to some of what the pane shows can say where with `visible(context)`, which gets the same context as `settings`: the control is left out of the header and the pane menu where it returns false, and the field stays in the settings dialog.
 
 ### Events
 
@@ -1180,6 +1192,7 @@ Choose the existing control that owns the interaction you need:
 | Dialog content | `DialogFrame`, `ChoiceDialog`, `ConfirmDialog` (`confirmDialog` asks and resolves a boolean; `status` and `busy` show work the confirm started), `TextPromptDialog`, `PriceSelectorDialog` |
 | Section and document headings | `Section`, `SectionHeading` (`wrap` for long headings) |
 | Labeled values and badges | `KeyValueRow`, `Badge` |
+| Inline bars | `RatioBar` (a value against a scale: a count against the largest row, a move against a full-scale move), `RangeTrack` (where a value sits between a low and a high) |
 | Paragraphs, bullets and separators | `Prose`, `BulletList`, `FigureList` (value-first figure lines), `READING_WIDTH`, `Divider` |
 | Loading, empty states, inline feedback | `Spinner`, `EmptyState`, `PaneStatusBody`, `Notice` |
 | External links | `ExternalLink`, `ExternalLinkText` |
@@ -1197,11 +1210,11 @@ Everything that narrows or reorders a list sits in one `QueryBar` above it: `sea
 
 A pane's summary figures (a VWAP, a spread, a percentile, a range) go in a `StatGrid` directly under the `QueryBar`: one band of label, value and muted detail cells that the desktop draws like the query bar, so the title-bar tab, the bar and the figures read as one surface. Use it at the top of a stack detail too. Do not stack `KeyValueRow`s or text lines above a table for this. `statGridRows(items, width)` gives the rows it takes for terminal height budgeting.
 
-Table header labels and `SectionHeading` titles are uppercased by the kit. Pass `onHeaderClick` only when the table sorts; without it the headers are not interactive.
+Table header labels are uppercased by the kit; `SectionHeading` titles use title case. Pass `onHeaderClick` only when the table sorts; without it the headers are not interactive.
 
 A pane that computes an answer from inputs (a calculator, a sizer) puts its mode switches in a `QueryBar` (inline filters) and its inputs in a `FieldGrid`: one aligned sheet of label, value and unit cells. The pane owns which field is active; while one is being edited the grid walks its cells with Tab and leaves on Esc. Icon-only actions use `IconButton` with a name from the shared icon set; never draw an SVG or glyph button yourself.
 
-Every menu, dropdown and pop-up list uses `MenuPopover` (or `Menu` inside a `Popover`): filter menus, select fields, multi-selects, suggestions and the pane menu share one look and keyboard model. There is no other floating surface; extend these rather than positioning an absolute box.
+Every menu, dropdown and pop-up list uses `MenuPopover` (or `Menu` inside a `Popover`): filter menus, select fields, multi-selects, suggestions and the pane menu share one look and keyboard model. There is no other floating surface; extend these rather than positioning an absolute box. A card that opens beside something on the page, such as a name under the pointer, passes that element's `Box` ref as the `Popover`'s `anchor` (below it, above it when there is no room, `boundary="pane"` to stay inside the pane) and keeps itself open with `onPointerEnter` and `onPointerLeave`.
 
 `PaneStatusBody` replaces the body only when the caller passes a loading, error, or empty state. Preserve existing data during refresh by passing `loading={loading && !data}` and `error={!data ? error : null}`. Use `Notice` for inline refresh errors. It supports centered states, custom loading labels, and retry `actions`:
 

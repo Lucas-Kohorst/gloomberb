@@ -226,6 +226,25 @@
           "world-indices",
           "world-venue-map"
         ],
+        "capabilities": [
+          "geo-series"
+        ],
+        "broker": false
+      }
+    },
+    {
+      "id": "members",
+      "name": "Index and ETF members",
+      "description": "ETF holdings, member returns, contributions and index changes",
+      "categories": [
+        "markets",
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "members"
+        ],
         "capabilities": [],
         "broker": false
       }

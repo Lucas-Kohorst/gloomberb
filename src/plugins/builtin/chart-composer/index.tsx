@@ -259,7 +259,9 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       label: "Chart Series",
       placeholder: "AAPL:price, MSFT:revenue, FRED:CPIAUCSL",
       type: "text",
-      body: ["Enter comma-separated SYMBOL:field or FRED:series expressions. A / B charts the ratio, A - B the spread."],
+      // Empty falls back to the active ticker in createInstance, as `G` with no argument does.
+      required: false,
+      body: ["Enter comma-separated SYMBOL:field or FRED:series expressions, or leave empty to chart the active ticker. A / B charts the ratio, A - B the spread."],
     }],
     canCreate: () => true,
     createInstance: (context, options) => {

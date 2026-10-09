@@ -18,6 +18,7 @@ import {
   formatDoeWeeklyLevel,
   type DoeWeeklyRow,
 } from "./model";
+import { newestReportTime, oldestReportTime } from "../../../utils/utc-time";
 import { isDoeWeeklySeries, loadDoeWeeklySeries } from "./weekly";
 
 const text = (value: unknown) => typeof value === "string" ? value : "--";
@@ -75,6 +76,10 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
     describe: "EIA weekly petroleum and natural gas storage",
     async load(args) {
       const data = await fetchDoeBoard();
+      // EIA's weekly reports; once the next one is a day overdue the tables have missed it.
+      const freshness = { source: "EIA", status: "not-a-feed" as const, basis: "weekly release",
+        asOf: newestReportTime(data.reports.map((report) => report.releasedAt)),
+        nextExpectedAt: oldestReportTime(data.reports.map((report) => report.nextReleaseAt)) };
       const argument = Array.isArray(args.argument) ? args.argument.join(" ") : args.argument;
       const option = argument ? doeSeriesOption(argument) : null;
       const tabs = args.options.tab === "all" || args.options.tab == null ? DOE_TABS.map(({ value }) => value) : [doeTab(args.options.tab)];
@@ -88,6 +93,7 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
           return {
             sections: [{ title: `${row.label} · ${row.weekEnding ?? "no date"}`, columns: [...SUMMARY_COLUMNS, AS_OF_COLUMN], rows: [reportWeekly(row)] }],
             errors: row.error ? [row.error] : [],
+            freshness,
             metadata: { ...data, series: [], weekly: [row], complete: data.status === "available" && !row.error },
           };
         }
@@ -103,6 +109,7 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
               rows: seasonalRows(row) },
           ],
           errors: data.gaps,
+          freshness,
           metadata: { ...data, series: [row], complete: data.status === "available" },
         };
       }
@@ -116,6 +123,7 @@ export function doeHeadless(defaultTab: DoeTab | "all"): HeadlessPaneDefinition<
           ],
         })),
         errors: [...data.gaps, ...(weekly?.errors ?? [])],
+        freshness,
         metadata: { ...data, complete: data.status === "available" && !(weekly?.errors.length) },
       };
     },

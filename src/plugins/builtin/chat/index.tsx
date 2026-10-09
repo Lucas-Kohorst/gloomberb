@@ -33,6 +33,7 @@ export const chatModule: PluginModule = {
     },
   }, {
     id: UNREAD_INBOX_PANE_ID,
+    reportFreshness: { status: "not-a-feed", basis: "chat messages" },
     name: "Unread",
     icon: "U",
     component: UnreadInboxPane,

@@ -192,11 +192,6 @@ function withLeadingCompanyName(query: string, instruments: ResultItem[], rootIt
   return instruments.map((item, itemIndex) => itemIndex === index ? { ...item, category: "Exact Match" } : item);
 }
 
-/**
- * Up to the cap, in this order: the first exact row of each security, the
- * exact symbol's other exchanges, then looser hits. The rows keep their
- * ranked order. Exchanges of one security share its issuer name and class.
- */
 function venueMatchesSuffix(item: ResultItem, suffix: string): boolean {
   if (!suffix) return true;
   const displayed = (item.right ?? "").trim().toUpperCase();
@@ -223,6 +218,11 @@ export function venueDropdownResults(symbol: string, items: ResultItem[], suffix
   return rows;
 }
 
+/**
+ * Up to the cap, in this order: the first exact row of each security, the
+ * exact symbol's other exchanges, then looser hits. The rows keep their
+ * ranked order. Exchanges of one security share its issuer name and class.
+ */
 function pickRootInstruments(candidates: ResultItem[], isExact: (item: ResultItem) => boolean): ResultItem[] {
   if (candidates.length <= ROOT_INSTRUMENTS_LIMIT) return candidates;
   const exact = candidates.filter(isExact);

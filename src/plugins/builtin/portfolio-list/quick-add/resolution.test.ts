@@ -44,8 +44,8 @@ afterEach(() => {
   setSharedRegistryForTests(undefined);
 });
 
-describe("quick-add venue resolution", () => {
-  test("a bare symbol previews the busiest venue, not the saved company's quote", async () => {
+describe("quick-add listing resolution", () => {
+  test("a bare symbol previews the saved listing, not another venue's quote", async () => {
     install([lse, nyse]);
     const saved = createTestTicker("NET", "Netcall Plc", {
       exchange: "LSE", currency: "GBP", watchlists: ["watchlist"],
@@ -57,12 +57,55 @@ describe("quick-add venue resolution", () => {
       tickers: new Map([[saved.metadata.ticker, saved]]),
       financials: new Map([["NET", { quote: quoteFor("LSE") }]]),
     });
+    expect(validation.status).toBe("duplicate");
+    if (validation.status !== "duplicate") return;
+    expect(validation.ticker).toBe(saved);
+    expect(validation.quote?.price).toBe(1.26);
+    expect(tickerNameFromValidation(validation)).toBe("Netcall Plc");
+    expect(exchangeLabelFromValidation(validation)).toBe("LSE");
+  });
+
+  test("a symbol whose default listing is unknown asks which one instead of failing", async () => {
+    setSharedRegistryForTests({
+      marketData: createTestDataProvider({
+        search: async () => [lse, nyse],
+        getQuote: async () => { throw new Error("quote unavailable"); },
+      }),
+    } as PluginRegistry);
+    const validation = await resolveQuickAddValidation({
+      query: "NET",
+      collectionId: "watchlist",
+      collectionKind: "watchlist",
+      tickers: new Map(),
+      financials: new Map(),
+    });
+    expect(validation).toEqual({ status: "choose", query: "NET" });
+  });
+
+  test("a qualified listing neither borrows nor duplicates another listing saved under its symbol", async () => {
+    setSharedRegistryForTests({
+      marketData: createTestDataProvider({
+        search: async () => [lse, nyse],
+        getQuote: async (_symbol, exchange) => createTestQuote({
+          symbol: "NET", listingExchangeName: exchange, currency: exchange === "NYSE" ? "USD" : "GBP",
+          price: exchange === "NYSE" ? 200 : 1.26,
+        }),
+      }),
+    } as PluginRegistry);
+    const saved = createTestTicker("NET", "Cloudflare", { exchange: "NYSE", currency: "USD", watchlists: ["watchlist"] });
+    const validation = await resolveQuickAddValidation({
+      query: "NET.LON",
+      collectionId: "watchlist",
+      collectionKind: "watchlist",
+      tickers: new Map([[saved.metadata.ticker, saved]]),
+      financials: new Map([["NET", { quote: createTestQuote({ symbol: "NET", price: 200, currency: "USD" }) }]]),
+    });
     expect(validation.status).toBe("ready");
     if (validation.status !== "ready") return;
     expect(validation.ticker).toBeNull();
-    expect(validation.quote?.price).toBe(200);
-    expect(tickerNameFromValidation(validation)).toBe("Cloudflare");
-    expect(exchangeLabelFromValidation(validation)).toBe("NYSE");
+    expect(validation.quote?.price).toBe(1.26);
+    expect(tickerNameFromValidation(validation)).toBe("Netcall Plc");
+    expect(exchangeLabelFromValidation(validation)).toBe("LSE");
   });
 
   test("a trailing colon lists the venues and an exchange prefix narrows to one", async () => {
@@ -77,9 +120,9 @@ describe("quick-add venue resolution", () => {
       financials: new Map(),
     });
     expect(listed.status).toBe("choose");
-    if (listed.status !== "choose") return;
-    expect(listed.listings.map((listing) => listing.exchange)).toEqual(["NYSE", "LSE"]);
-    expect(listed.listings.map((listing) => listing.id)).toEqual(["NET:XNYS", "NET:XLON"]);
+    if (listed.status !== "choose" || !("listings" in listed)) return;
+    expect(listed.listings.map((listing) => listing.exchange)).toEqual(["LSE", "NYSE"]);
+    expect(listed.listings.map((listing) => listing.id)).toEqual(["NET:XLON", "NET:XNYS"]);
 
     const narrowed = await resolveQuickAddValidation({
       query: "NET:N",
@@ -101,8 +144,8 @@ describe("quick-add venue resolution", () => {
       financials: new Map(),
     });
     expect(both.status).toBe("choose");
-    if (both.status !== "choose") return;
-    expect(both.listings.map((listing) => listing.exchange)).toEqual(["NYSE", "LSE"]);
+    if (both.status !== "choose" || !("listings" in both)) return;
+    expect(both.listings.map((listing) => listing.exchange)).toEqual(["LSE", "NYSE"]);
   });
 
   test("rejects a colon only when it is not a listing prompt", () => {

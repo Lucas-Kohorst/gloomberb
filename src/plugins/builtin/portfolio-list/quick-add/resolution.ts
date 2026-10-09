@@ -38,6 +38,8 @@ export type QuickAddValidation =
   | { status: "checking"; query: string }
   | (ResolvedQuickAdd & { status: "ready" })
   | (ResolvedQuickAdd & { status: "duplicate" })
+  /** The symbol names several listings and none is the default: the add row asks which. */
+  | { status: "choose"; query: string }
   | { status: "choose"; query: string; symbol: string; listings: QuickAddListingChoice[] }
   | { status: "missing"; query: string; message: string }
   | { status: "error"; query: string; message: string };
@@ -209,7 +211,10 @@ export async function resolveQuickAddValidation({
   };
 
   const chooseFrom = async (error: AmbiguousTickerError): Promise<QuickAddValidation> => {
-    const suffix = colonQuery(query)?.suffix ?? "";
+    // A bare symbol with no default listing asks which one. The colon menu lists venues.
+    const colon = colonQuery(query);
+    if (!colon) return { status: "choose", query };
+    const suffix = colon.suffix;
     const listings = listingChoices(error).filter((choice) => choiceMatchesSuffix(choice, suffix));
     if (listings.length === 0) {
       return { status: "missing", query, message: "No exact ticker match" };
@@ -221,7 +226,6 @@ export async function resolveQuickAddValidation({
           activeTicker: null,
           tickers,
           dataProvider: registry.marketData,
-          preferHighestVolume: true,
         });
         if (resolved) return describe(resolved);
       } catch {
@@ -232,7 +236,7 @@ export async function resolveQuickAddValidation({
     return {
       status: "choose",
       query,
-      symbol: colonQuery(query)?.symbol || symbolSearchQuery(query),
+      symbol: colon.symbol || symbolSearchQuery(query),
       listings,
     };
   };
@@ -242,7 +246,6 @@ export async function resolveQuickAddValidation({
     activeTicker: null,
     tickers,
     dataProvider: registry.marketData,
-    preferHighestVolume: true,
   });
 
   const colon = colonQuery(query);

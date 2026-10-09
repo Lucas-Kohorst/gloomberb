@@ -24,6 +24,7 @@ const gamma = (value: unknown) => formatGamma(typeof value === "number" ? value 
 /** OPX opens on Strikes, GEX on its own tab; the report carries every section either way. */
 export const optionsPositioningHeadless = (initialTab: PositioningTab): HeadlessPaneDefinition<"bundle"> => ({
   shape: "bundle",
+  freshness: { status: "not-a-feed", basis: "daily open interest", cadence: "daily" },
   argument: { kind: "ticker", optional: true, description: "US option underlying, or SPX; SPY when omitted" },
   describe: (args) => `${initialTab === "gex" ? "GEX" : "OPX"} ${args.symbols[0] ?? "SPY"}`,
   discovery: {
@@ -60,6 +61,8 @@ export const optionsPositioningHeadless = (initialTab: PositioningTab): Headless
     ];
     const changes = openInterest.previousOiDate != null;
     return {
+      // Open interest is published once a day for the prior session; the spot beside it is context.
+      freshness: { asOf: openInterest.oiDate },
       sections: [
         { title: `Expiries · OI ${formatObservationAge(openInterest.oiDate) ?? openInterest.oiDate ?? "--"}`, columns: [
           { key: "date", header: "Expiry" }, { key: "days", header: "Days" },

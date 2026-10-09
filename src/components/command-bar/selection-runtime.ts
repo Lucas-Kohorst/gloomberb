@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, type MutableRefObject, type RefObject }
 import type { AppState } from "../../state/app/context";
 import type { TickerRecord } from "../../types/ticker";
 import { t } from "../../i18n";
-import { unavailableText } from "../ui/status-copy";
+import { listingChoiceQuery } from "../../tickers/search";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { Command } from "./commands/registry";
 import type {
@@ -336,10 +336,14 @@ export function useCommandBarSelectionRuntime({
     pendingEnterRef.current = null;
     if (!selected || selected.disabled) return;
 
+    // Opened from an add row: a venue picked from the colon list joins that
+    // collection. Any other text or screen runs as usual.
     const addListing = stateRef.current.commandBarLaunchRequest;
     if (
       !options?.secondary
       && addListing?.kind === "add-listing"
+      && !currentRoute
+      && listingChoiceQuery(rootQueryRef.current)
       && (selected.kind === "ticker" || selected.kind === "search")
       && selected.resolveTicker
     ) {
@@ -357,7 +361,7 @@ export function useCommandBarSelectionRuntime({
         } catch (error) {
           pluginRegistry.notify({
             type: "error",
-            body: error instanceof Error ? error.message : unavailableText("Listing"),
+            body: error instanceof Error ? error.message : t("Could not add the selected listing."),
           });
         }
       })();

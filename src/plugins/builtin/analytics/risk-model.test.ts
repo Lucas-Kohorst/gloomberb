@@ -1,12 +1,30 @@
 import { expect, test } from "bun:test";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
-import { buildPortfolioRisk } from "./risk-model";
 import {
+  buildPortfolioRisk,
+  portfolioRiskRequests,
+  portfolioRiskTickers,
+  riskCoverageNotices,
+  riskCoverageShortfall,
+  riskCoverageText,
+} from "./risk-model";
+import {
+  BEYOND_SIZE_REASON,
+  fetchPortfolioRiskMarket,
   RISK_FACTOR_INSTRUMENTS,
+  RISK_HISTORY_LIMIT,
   validateRiskHistory,
   type RiskMarketSnapshot,
 } from "./risk-client";
-import { riskHistory, riskQuote, now } from "./risk-test-data";
+import {
+  BROKER_PORTFOLIO,
+  brokerFixtureHoldings,
+  brokerFixtureTickers,
+  brokerRiskClient,
+  riskHistory,
+  riskQuote,
+  now,
+} from "./risk-test-data";
 import { portfolioOptionGreeks } from "./risk-options";
 import { parsePortfolioRiskEvidence } from "./risk-evidence";
 import { createTestTicker } from "../../../test-support/ticker";
@@ -41,33 +59,112 @@ function market(staleQuotes: readonly string[] = []): RiskMarketSnapshot {
     fetchedAt: now.toISOString(),
   };
 }
-test("missing holdings block complete-book risk without renormalizing the surviving book", () => {
-  const complete = buildPortfolioRisk(
-    portfolio,
-    [holding("SPY"), holding("IWM")],
-    market(),
+async function brokerModel(holdings = brokerFixtureHoldings(), fx = false) {
+  const tickers = brokerFixtureTickers(holdings);
+  const client = brokerRiskClient(now, holdings, { fx });
+  const market = await fetchPortfolioRiskMarket(
+    portfolioRiskRequests(portfolioRiskTickers(tickers, BROKER_PORTFOLIO.id), BROKER_PORTFOLIO.id),
+    client as never,
+    now,
   );
-  expect(complete.complete).toBe(true);
-  expect(complete.holdings.map((row) => row.weight)).toEqual([0.5, 0.5]);
-  expect(complete.metrics[2]!.value).toBeCloseTo(0, 8);
-  const missing = buildPortfolioRisk(
-    portfolio,
-    [holding("SPY"), holding("MISSING")],
-    market(),
+  return { model: buildPortfolioRisk(BROKER_PORTFOLIO, tickers, market), client };
+}
+test("a broker account estimates on the holdings that qualify and lists every other with its reason", async () => {
+  const { model, client } = await brokerModel();
+  // Without daily FX closes a foreign listing is quoted for its value but never requests its own history.
+  expect(client.calls.histories.filter((symbol) => /^(EUR|GBP|HKD|JPY|TWD)\d$/.test(symbol))).toEqual([]);
+  expect(client.calls.rates.toSorted()).toEqual(["EUR", "GBP", "HKD", "JPY", "TWD"]);
+  // 85 US listings worth $365,500 of $468,560: foreign listings at the load's rates, the rest at the broker's value.
+  expect(model.coverage).toMatchObject({ holdings: 94, covered: 85, unvalued: 0, marketValue: 468_560, coveredValue: 365_500, sufficient: true });
+  expect(model.coverage.share).toBeCloseTo(365_500 / 468_560, 10);
+  expect(riskCoverageText(model.coverage)).toBe("covers 78% of market value \u00b7 9 holdings left out");
+  expect(riskCoverageNotices(model.coverage)).toEqual([
+    "EUR2 (4.3% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "TWD1 (4.0% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "EUR1 (3.5% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "GBP1 (2.7% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "HKD1 (2.2% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "JPY1 (2.2% of market value) is excluded from the risk estimate: foreign holdings: daily FX closes unavailable.",
+    "UNQ1 (1.7% of market value) is excluded from the risk estimate: daily history unavailable.",
+    "UNQ2 (1.1% of market value) is excluded from the risk estimate: daily history unavailable.",
+    "UNQ3 (0.4% of market value) is excluded from the risk estimate: daily history unavailable.",
+  ]);
+  // Weights renormalize over the basket; nothing left out carries one.
+  const weights = new Map(model.holdings.map((row) => [row.symbol, row.weight]));
+  expect(weights.get("US85")).toBeCloseTo(8_500 / 365_500, 12);
+  expect(weights.get("EUR2")).toBeNull();
+  expect(model.holdings.reduce((sum, row) => sum + (row.weight ?? 0), 0)).toBeCloseTo(1, 12);
+  expect(model.metrics.every((row) => row.value != null)).toBe(true);
+  expect(model.factors.every((row) => row.value != null)).toBe(true);
+  expect(model.rows.correlation).toHaveLength((85 * 84) / 2);
+  expect(model.rows.holdings.find((row) => row.label === "TWD1")).toMatchObject({ value: null, leftOut: "Foreign holdings: daily FX closes unavailable" });
+  expect(model.complete).toBe(false);
+
+  // A left-out holding nothing values makes the share an upper bound.
+  const unvalued = brokerFixtureHoldings().map((row) => (row.symbol === "UNQ3" ? { ...row, brokerValue: undefined } : row));
+  const bound = (await brokerModel(unvalued)).model.coverage;
+  expect(bound.unvalued).toBe(1);
+  expect(riskCoverageText(bound)).toBe("covers at most 78% of market value \u00b7 9 holdings left out");
+  expect(riskCoverageNotices(bound).at(-1)).toBe("UNQ3 (value unknown) is excluded from the risk estimate: daily history unavailable.");
+});
+
+test("foreign listings with daily FX closes enter the basket in USD and the footer says so", async () => {
+  const { model, client } = await brokerModel(brokerFixtureHoldings(), true);
+  // One FX history per currency, however many holdings convert with it.
+  expect(client.calls.histories.filter((symbol) => symbol.endsWith("=X")).toSorted())
+    .toEqual(["EURUSD=X", "GBPUSD=X", "HKD=X", "JPY=X", "TWD=X"]);
+  // $365,500 of US listings plus $88,060 of foreign ones at the current rates.
+  expect(model.coverage).toMatchObject({ covered: 91, converted: 6, coveredValue: 453_560, sufficient: true });
+  expect(riskCoverageText(model.coverage)).toBe(
+    "covers 96% of market value \u00b7 3 holdings left out \u00b7 6 holdings converted from local currency",
   );
-  expect(missing.complete).toBe(false);
-  expect(missing.metrics.every((row) => row.value === null)).toBe(true);
-  expect(missing.holdings.every((row) => row.weight === null)).toBe(true);
-  const noHistory = market();
-  noHistory.histories[1]!.returns = [];
-  noHistory.histories[1]!.error = "History unavailable";
-  const partial = buildPortfolioRisk(
-    portfolio,
-    [holding("SPY"), holding("IWM")],
-    noHistory,
+  const jpy = model.holdings.find((row) => row.symbol === "JPY1")!;
+  // 500 shares at 3,000 JPY, marked at the current rate of 0.0068 USD per yen.
+  expect(jpy).toMatchObject({ convertedFrom: "JPY", currency: "USD", leftOut: null });
+  expect(jpy.value).toBeCloseTo(10_200, 6);
+  // Pence convert through GBP: 500 shares at 2,000p and 1.25 USD per pound.
+  expect(model.holdings.find((row) => row.symbol === "GBP1")!.value).toBeCloseTo(12_500, 6);
+  // Converted returns sit on the basket's calendar, so the estimates still have 60 matched sessions.
+  expect(model.metrics.every((row) => row.value != null)).toBe(true);
+  expect(model.rows.holdings.find((row) => row.label === "JPY1")?.detail).toContain("from JPY at daily FX");
+  // Closes at another time than the US session read low against US holdings, and the pane says so.
+  expect(model.notes).toContain(
+    "Converted holdings are matched to the US close of the same date; where their market closes at another time, correlations and betas to US holdings read lower than they are.",
   );
-  expect(partial.holdings[0]!.weight).toBe(0.5);
-  expect(partial.complete).toBe(false);
+});
+test("past the size limit the largest holdings by value are modelled and the rest left out", async () => {
+  // Listed smallest first, so the limit has to rank by value rather than keep the order.
+  const holdings = Array.from({ length: RISK_HISTORY_LIMIT + 10 }, (_, index) => ({
+    symbol: `H${String(index).padStart(3, "0")}`,
+    exchange: "NASDAQ",
+    currency: "USD",
+    quantity: index + 1,
+    price: 100,
+  }));
+  const { model, client } = await brokerModel(holdings);
+  expect(new Set(client.calls.histories).size).toBe(RISK_HISTORY_LIMIT + RISK_FACTOR_INSTRUMENTS.length);
+  expect(model.coverage.leftOut.map((row) => row.symbol)).toEqual(
+    holdings.slice(0, 10).map((row) => row.symbol).reverse(),
+  );
+  expect(new Set(model.coverage.leftOut.map((row) => row.reason))).toEqual(new Set([BEYOND_SIZE_REASON]));
+  // Quantities 11 to 160 of 1 to 160, all at $100.
+  expect(model.coverage.share).toBeCloseTo(12_825 / 12_880, 12);
+  expect(model.coverage.covered).toBe(RISK_HISTORY_LIMIT);
+});
+test("below half of market value the basket views estimate nothing and say why", async () => {
+  // Ten US listings worth $5,500 against $103,060 left out.
+  const holdings = brokerFixtureHoldings().filter((row) => row.currency !== "USD" || !/^US(?:[2-9]\d|1[1-9])$/.test(row.symbol));
+  const { model } = await brokerModel(holdings);
+  expect(model.coverage).toMatchObject({ covered: 10, coveredValue: 5_500, marketValue: 108_560, sufficient: false });
+  expect(model.metrics.every((row) => row.value == null)).toBe(true);
+  expect(model.factors.every((row) => row.value == null)).toBe(true);
+  expect(model.rows.correlation).toEqual([]);
+  expect(model.book).toBeNull();
+  expect(model.holdings.every((row) => row.weight == null)).toBe(true);
+  expect(riskCoverageShortfall(model.coverage)).toEqual({
+    title: "Qualifying holdings cover 5% of market value; basket estimates need 50%.",
+    message: "Most of what is left out: Foreign holdings: daily FX closes unavailable (81.1% of market value).",
+  });
   expect(() =>
     buildPortfolioRisk(portfolio, [], market(), {
       version: 1,
@@ -96,7 +193,7 @@ test("only held positions marked at a close raise the close-mark warning", () =>
   // Factor proxies with no current quote never weight a holding.
   const snapshot = market(["IWM", "IWD", "IWF", "MTUM", "IEF", "HYG"]);
   const warning = (model: ReturnType<typeof buildPortfolioRisk>) =>
-    model.warnings.filter((row) => row.includes("no current quote"));
+    model.notes.filter((row) => row.includes("no current quote"));
   expect(
     warning(buildPortfolioRisk(portfolio, [holding("SPY")], snapshot)),
   ).toEqual([]);
@@ -108,16 +205,31 @@ test("only held positions marked at a close raise the close-mark warning", () =>
     "1 holding had no current quote; weighted at the latest completed close.",
   ]);
 });
-test("signed equity exposure remains in concentration while shorts block the unfinanced basket", () => {
+test("a short is left out of the basket with its reason and counts in the market value", () => {
   const model = buildPortfolioRisk(
     portfolio,
     [holding("SPY", 3), holding("IWM", -1)],
     market(),
   );
-  expect(model.book?.net).toBe(220);
-  expect(model.book?.gross).toBe(440);
-  expect(model.holdings[1]!.weight).toBe(0.25);
-  expect(model.complete).toBe(false);
+  expect(model.coverage.share).toBe(0.75);
+  expect(model.coverage.leftOut).toEqual([
+    { id: "ARCA:IWM", symbol: "IWM", reason: "Short positions: signed exposure history required", value: 110, share: 0.25 },
+  ]);
+  expect(model.holdings.map((row) => row.weight)).toEqual([1, null]);
+  expect(model.book?.gross).toBe(330);
+  expect(model.metrics[2]!.value).toBeCloseTo(0, 8);
+});
+test("a crypto holding is excluded by name with its reason, not folded into the equity basket", () => {
+  const eth = createTestTicker("ETH-USD", "Ethereum USD", {
+    exchange: "CCC",
+    portfolios: ["local"],
+    positions: [{ portfolio: "local", shares: 2, broker: "manual" }],
+  });
+  const model = buildPortfolioRisk(portfolio, [holding("SPY", 3), eth], market());
+  expect(model.holdings.map((row) => [row.symbol, row.weight])).toEqual([["SPY", 1], ["ETH-USD", null]]);
+  expect(riskCoverageNotices(model.coverage)).toEqual([
+    "ETH-USD (value unknown) is excluded from the risk estimate: crypto is not covered by the equity basket.",
+  ]);
 });
 test("imported option snapshots use signed dollar sensitivities, preserve scope and reject stale or mixed currencies", () => {
   const position = {

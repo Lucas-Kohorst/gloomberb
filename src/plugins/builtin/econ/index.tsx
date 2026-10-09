@@ -360,6 +360,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
 export const economicCalendarModule: PluginModule = {
   panes: [{
     id: "econ-calendar",
+    reportFreshness: { status: "not-a-feed", basis: "calendar" },
     name: "Economic Calendar",
     icon: "E",
     component: EconCalendarPane,

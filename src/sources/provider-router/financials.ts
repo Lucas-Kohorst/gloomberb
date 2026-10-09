@@ -7,7 +7,14 @@ import { redactUnavailableFundamentals, RETRACTABLE_VALUATION_FIELDS } from "../
 import { isExtendedHoursExchange, isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
 import { mergeQuoteMetadata, quoteMetadataFromQuote, quoteMetadataMatchesTarget } from "../../market-data/quotes/metadata";
 import { parsePublicTickerKey } from "../../utils/exchanges";
-import { activeUsMarketSession, isUsPriorSessionPremarketQuote } from "../../market-data/market/freshness";
+import {
+  activeUsMarketSession,
+  delayedFeedLagMs,
+  isMiddayBreakPrint,
+  isRegularSessionTime,
+  isUsPriorSessionPremarketQuote,
+  latestRegularSessionOpen,
+} from "../../market-data/market/freshness";
 import {
   mergeQuoteContributionMaps,
   isQuoteContributionStaleForCurrentSession,
@@ -92,7 +99,7 @@ export function sanitizeCachedFinancials(
 }
 
 export function quoteWithFreshnessExchange(quote: Quote, exchange?: string): Quote {
-  if (!exchange || quote.listingExchangeName || quote.exchangeName) return quote;
+  if (!exchange || quote.priceObservation != null || quote.listingExchangeName || quote.exchangeName) return quote;
   return {
     ...quote,
     listingExchangeName: exchange,
@@ -122,19 +129,53 @@ function isQuoteInActiveSession(quote: Quote, now: number): boolean {
   return false;
 }
 
-function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now()): boolean {
+// An opening auction can print before the continuous open (Hong Kong's at 09:20).
+const OPENING_AUCTION_MS = 15 * 60_000;
+
+/**
+ * Whether Gloom Cloud vouches that a delayed quote is current, however long
+ * ago its last trade was. The service judges more than that trade's age: it
+ * knows when it asked for the quote and how often the listing trades, so a
+ * thinly traded listing's hour-old trade can be the current price while its
+ * venue trades. Its verdict stands in for the age bound when:
+ * - the service answered on this request, or a cache entry still inside its
+ *   TTL holds that answer (`recentAnswer`); a copy past the TTL is not vouched for;
+ * - the answer says `stale: false`. One without the flag vouches for nothing,
+ *   and one flagged stale never gets this far;
+ * - the quote is delayed. The service bounds a delayed quote's feed age itself
+ *   but not a real-time one's, so real-time quotes keep the age bound;
+ * - it reports the regular session, the venue's session is in progress as
+ *   the delayed feed shows it, and the trade belongs to that session.
+ * The answer says nothing about how often a listing trades, so a liquid
+ * listing the service wrongly vouches for is accepted too. The service's own
+ * bound for liquid listings, about twenty minutes, is tighter than this one.
+ */
+function isVouchedCurrentByService(quote: Quote, exchange: string | undefined, now: number): boolean {
+  if (quote.providerId !== "gloomberb-cloud" || quote.stale !== false
+    || quote.dataSource !== "delayed" || quote.marketState !== "REGULAR") return false;
+  const feedTime = now - delayedFeedLagMs(exchange);
+  if (isRegularSessionTime(exchange, feedTime) !== true) return false;
+  const open = latestRegularSessionOpen(exchange, feedTime);
+  return open != null && quote.lastUpdated >= open - OPENING_AUCTION_MS;
+}
+
+function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now(), recentAnswer = false): boolean {
+  // The shared freshness predicate already validates and dates a daily NAV.
+  if (quote.priceObservation === "nav") return false;
   if (!isQuoteInActiveSession(quote, now)) return false;
   // A prior-session close before any pre-market trade has no in-session print
   // to age; the session-date rules bound it instead.
-  if (isUsPriorSessionPremarketQuote(quote.lastUpdated, quote.listingExchangeName || quote.exchangeName, quote.marketState, now)) {
+  const exchange = quote.listingExchangeName || quote.exchangeName;
+  if (isUsPriorSessionPremarketQuote(quote.lastUpdated, exchange, quote.marketState, now)) {
     return false;
   }
   if (!Number.isFinite(quote.lastUpdated)) return false;
-  const maxAge =
-    quote.dataSource === "delayed"
-      ? ACTIVE_DELAYED_PROVIDER_QUOTE_MAX_AGE_MS
-      : ACTIVE_PROVIDER_QUOTE_MAX_AGE_MS;
-  return now - quote.lastUpdated > maxAge;
+  const delayed = quote.dataSource === "delayed";
+  const maxAge = delayed ? ACTIVE_DELAYED_PROVIDER_QUOTE_MAX_AGE_MS : ACTIVE_PROVIDER_QUOTE_MAX_AGE_MS;
+  if (now - quote.lastUpdated <= maxAge) return false;
+  // While the venue pauses at midday, the morning's last print is the current price.
+  if (isMiddayBreakPrint(quote.lastUpdated, exchange, now, delayed ? delayedFeedLagMs(exchange) : 0)) return false;
+  return !(recentAnswer && isVouchedCurrentByService(quote, exchange, now));
 }
 
 export function providerQuoteMatchesTarget(quote: Quote | null | undefined, symbol?: string, exchange?: string): quote is Quote {
@@ -154,11 +195,21 @@ export function providerQuoteMatchesTarget(quote: Quote | null | undefined, symb
   return true;
 }
 
-export function isProviderQuoteUsableForCurrentSession(quote: Quote | null | undefined, exchange?: string, symbol?: string): quote is Quote {
+/**
+ * `recentAnswer`: the source answered with this quote on this request, or a
+ * cache entry still inside its TTL holds it. Only then can the source's own
+ * verdict on a delayed quote stand in for the age bound.
+ */
+export function isProviderQuoteUsableForCurrentSession(
+  quote: Quote | null | undefined,
+  exchange?: string,
+  symbol?: string,
+  options: { recentAnswer?: boolean } = {},
+): quote is Quote {
   if (!providerQuoteMatchesTarget(quote, symbol, exchange)) return false;
   const normalized = quoteWithFreshnessExchange(quote, exchange);
   if (isQuoteStaleForCurrentSession(normalized)) return false;
-  if (isActiveProviderQuoteTooOld(normalized)) return false;
+  if (isActiveProviderQuoteTooOld(normalized, Date.now(), options.recentAnswer === true)) return false;
   // Futures may trade or settle at zero or negative prices. Require explicit
   // source type metadata; an alias alone cannot establish the price domain.
   const futures = ["FUT", "FUTURE", "FUTURES"].includes(normalized.instrumentType?.trim().toUpperCase() ?? "");
@@ -185,8 +236,12 @@ export function providerFinancialsMatchTarget(value: TickerFinancials, symbol: s
   return quoteMetadataMatchesTarget(metadata, hasListing ? symbol : parsePublicTickerKey(symbol).symbol, hasListing ? exchange : undefined);
 }
 
-export function dropUnusableProviderQuote(value: TickerFinancials, exchange?: string): TickerFinancials {
-  if (!value.quote || isProviderQuoteUsableForCurrentSession(value.quote, exchange)) {
+export function dropUnusableProviderQuote(
+  value: TickerFinancials,
+  exchange?: string,
+  options: { recentAnswer?: boolean } = {},
+): TickerFinancials {
+  if (!value.quote || isProviderQuoteUsableForCurrentSession(value.quote, exchange, undefined, options)) {
     return value;
   }
 

@@ -1,7 +1,8 @@
 import { withConfigData } from "../../../cli/scoped-context";
 import { CLI_COMMAND_GROUPS } from "../../../cli/help";
 import { dryRunNote } from "../../../cli/helpers";
-import { requireArg } from "../../../cli/commands/command-utils";
+import { requireArg, takeOption } from "../../../cli/commands/command-utils";
+import { EXCHANGE_OPTION, requireListingArg } from "../../../cli/listing-arg";
 import { saveConfig } from "../../../data/config/store";
 import type { CliCommandContext, CliCommandDef } from "../../../types/plugin";
 import { cliStyles } from "../../../utils/cli-output";
@@ -44,10 +45,14 @@ export const alertsCliCommand: CliCommandDef = {
       "alerts delete <id>",
       "alerts rearm <id>",
     ],
-    examples: ["alerts", "alerts add AAPL above 250", "alerts add AAPL halted", "alerts add AAPL ex_div 7", "alerts add AAPL pct_day 5", "alerts add AAPL short_float 5"],
+    options: [EXCHANGE_OPTION],
+    examples: ["alerts", "alerts add AAPL above 250", "alerts add SAN:EPA below 70", "alerts add BTC-USD below 60000", "alerts add AAPL halted", "alerts add AAPL ex_div 7", "alerts add AAPL pct_day 5", "alerts add AAPL short_float 5"],
   },
-  execute: async (args, ctx) => {
+  execute: async (rawArgs, ctx) => {
+    const args = [...rawArgs];
+    const exchange = takeOption(args, "--exchange");
     const action = args[0] ?? "list";
+    const listing = action === "add" && args[1] ? await requireListingArg(args[1], exchange, ctx) : null;
     await withConfigData(ctx, async (config) => {
       const raw = config.config.pluginConfig[ALERTS_PLUGIN_ID]?.[ALERTS_KEY];
       const alerts = deserializeAlerts(typeof raw === "string" ? raw : "[]");
@@ -83,13 +88,13 @@ export const alertsCliCommand: CliCommandDef = {
       }
       if (action === "add") {
         const usage = "Usage: gloomberb alerts add <symbol> <above|below|crosses|halted|ex_div|pct_day|short_float> [target]";
-        const symbol = requireArg(args[1]?.toUpperCase(), usage, ctx);
+        const symbol = requireArg(listing?.key, usage, ctx);
         const condition = parseAlertCondition(requireArg(args[2], usage, ctx));
         if (!condition) {
           return ctx.fail("Condition must be above, below, crosses, halted, ex_div, pct_day, or short_float.");
         }
         const price = alertAddTarget(condition, args[3], usage, ctx);
-        const alert = createAlert(symbol, condition, price);
+        const alert = createAlert(symbol, condition, price, listing?.exchange);
         await saveAlerts([...alerts, alert]);
         ctx.printResult({ data: { changed: !ctx.cliOptions.dryRun, dryRun: ctx.cliOptions.dryRun, alert } }, {
           text: (data) => `Added alert ${data.alert.id}: ${formatAlertDescription(data.alert)}.${dryRunNote(data.dryRun)}`,

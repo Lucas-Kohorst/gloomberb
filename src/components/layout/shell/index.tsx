@@ -42,11 +42,10 @@ import { tickerLinkMenuItems } from "./ticker-link-menu";
 import {
   makeSnapGuides,
   resolveExternalDockPreview,
-  resolveHoverOverlay,
 } from "./drag";
 import { resolveAppHeaderHeightCells, resolveAppStatusBarHeightCells } from "./chrome";
 import { useShellWindowMode } from "./window-mode";
-import { useShellNativeSurfaceWindowState } from "./native/surfaces";
+import { ShellNativeSurfaceSync } from "./native/surfaces";
 import { ShellWindowModeOverlays } from "./window-mode/overlays";
 import { ShellPaneLayers } from "./pane/layers";
 import { paneMenuButtonAnchor, ShellActionMenuOverlay, type ActionMenuState } from "./action-menu-overlay";
@@ -136,10 +135,6 @@ export function Shell({
   const layout = useAppSelector((state) => state.config.layout);
   const dialogOpen = useDialogState((dialog) => dialog.isOpen);
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null);
-  const setHoveredPaneIfChanged = useCallback((paneId: string | null) => {
-    if (commandBarOpen) return;
-    setHoveredPaneId((current) => (current === paneId ? current : paneId));
-  }, [commandBarOpen]);
   const [menuState, setMenuState] = useState<ActionMenuState | null>(null);
   const [transientFocusLayoutState, setTransientFocusLayoutState] = useState<TransientFocusLayoutState | null>(null);
   const transientFocusLayoutStateRef = useRef<TransientFocusLayoutState | null>(null);
@@ -167,20 +162,19 @@ export function Shell({
     if (commandBarOpen) setHoveredPaneId(null);
   }, [commandBarOpen]);
 
-  const dragRuntime = useShellDragRuntimeState({
-    contentHeight,
-    throttleFloatingPreview: nativePaneChrome,
-    width,
-  });
+  const dragRuntime = useShellDragRuntimeState({ contentHeight, width });
   const {
     cancelActiveDrag,
-    dividerPreview,
-    dockPreview,
-    dragCursor,
-    dragFloatingRect,
-    dragRef,
     hasActiveDrag,
+    live,
   } = dragRuntime;
+
+  // A pane dragged across other headers is not hovering them: re-rendering
+  // the layout for their menu buttons would only cost frames.
+  const setHoveredPaneIfChanged = useCallback((paneId: string | null) => {
+    if (commandBarOpen || hasActiveDrag()) return;
+    setHoveredPaneId((current) => (current === paneId ? current : paneId));
+  }, [commandBarOpen, hasActiveDrag]);
 
   const { disabledPaneIds, visibleLayout } = useShellVisibleLayout({
     disabledPlugins: config.disabledPlugins,
@@ -263,9 +257,10 @@ export function Shell({
     pluginRegistry,
     width,
   });
-  const cursorOcclusionRects = useMemo(() => resolveShellCursorOcclusionRects({
+  // Read when the terminal draws a frame, so a pane on the move is covered where it is now.
+  const resolveCursorOcclusionRects = useCallback(() => resolveShellCursorOcclusionRects({
     contentHeight,
-    dragFloatingRect,
+    dragFloatingRect: live.get().floating,
     nativePaneChrome,
     overlayOpen,
     transientFocusActive,
@@ -273,7 +268,7 @@ export function Shell({
     width,
   }), [
     contentHeight,
-    dragFloatingRect,
+    live,
     nativePaneChrome,
     overlayOpen,
     transientFocusActive,
@@ -281,7 +276,7 @@ export function Shell({
     width,
   ]);
   useShellCursorOcclusionGuard({
-    occlusionRects: cursorOcclusionRects,
+    resolveOcclusionRects: resolveCursorOcclusionRects,
     shellRef,
   });
 
@@ -462,29 +457,6 @@ export function Shell({
     () => resolveExternalDockPreview(desktopDockPreview, bounds),
     [bounds, desktopDockPreview],
   );
-  const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
-  const activeHoverOverlay = activePaneDrag && dragCursor
-    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
-    : null;
-  const effectiveDockPreview = dockPreview ?? externalDockPreview;
-  useShellNativeSurfaceWindowState({
-    activeHoverOverlay,
-    activePaneDrag,
-    appHeaderHeight,
-    commandBarNativeOccluder,
-    contentHeight,
-    dialogOpen,
-    dividerPreview,
-    dockDividerLayouts: screenDividerLayouts,
-    dockedPanes: screenDockedPanes,
-    dragFloatingRect,
-    effectiveDockPreview,
-    menuState,
-    nativeWindowModePanelRect,
-    visibleFloatingPanes: screenFloatingPanes,
-    width,
-    windowModeDockMovePreview,
-  });
 
   const titleState = useMemo(
     () => ({ config, paneState }) as Parameters<typeof resolveTickerForPane>[0],
@@ -826,12 +798,27 @@ export function Shell({
         </Box>
       </Box>
 
+      <ShellNativeSurfaceSync
+        appHeaderHeight={appHeaderHeight}
+        commandBarNativeOccluder={commandBarNativeOccluder}
+        contentHeight={contentHeight}
+        dialogOpen={dialogOpen}
+        dockDividerLayouts={screenDividerLayouts}
+        dockedPanes={screenDockedPanes}
+        dockLeafLayouts={dockLeafLayouts}
+        externalDockPreview={externalDockPreview}
+        live={live}
+        menuState={menuState}
+        nativeWindowModePanelRect={nativeWindowModePanelRect}
+        visibleFloatingPanes={screenFloatingPanes}
+        width={width}
+        windowModeDockMovePreview={windowModeDockMovePreview}
+      />
+
       <ShellPaneLayers
         contentHeight={contentHeight}
-        dividerPreview={dividerPreview}
         dockDividerLayouts={dockDividerLayouts}
         dockLeafLayouts={dockLeafLayouts}
-        dragFloatingRect={dragFloatingRect}
         focusedPaneId={focusedPaneId}
         getPaneTitle={getPaneTitle}
         getPaneQuickSettings={getPaneQuickSettings}
@@ -847,6 +834,7 @@ export function Shell({
         handleNativePaneMouseDown={handleNativePaneMouseDown}
         handlePaneAction={handlePaneAction}
         hoveredPaneId={hoveredPaneId}
+        live={live}
         menuPaneId={menuState?.paneId ?? null}
         nativeContextMenu={nativeContextMenu}
         nativePaneChrome={nativePaneChrome}
@@ -870,9 +858,9 @@ export function Shell({
         contentHeight={contentHeight}
         dockGeometryOptions={dockGeometryOptions}
         dockLeafLayouts={screenDockLeafLayouts}
-        dragFloatingRect={dragFloatingRect}
         focusedPaneId={focusedPaneId}
         getPaneTitle={getPaneTitle}
+        live={live}
         menuOpen={!!menuState}
         nativePaneChrome={nativePaneChrome}
         nativeWindowModePanelRect={nativeWindowModePanelRect}
@@ -885,11 +873,9 @@ export function Shell({
       />
 
       <ShellDragOverlays
-        activeHoverOverlay={activeHoverOverlay}
-        activePaneDrag={activePaneDrag}
-        dockPreview={dockPreview}
-        dragFloatingRect={dragFloatingRect}
-        effectiveDockPreview={effectiveDockPreview}
+        dockLeafLayouts={dockLeafLayouts}
+        externalDockPreview={externalDockPreview}
+        live={live}
       />
 
       <ShellActionMenuOverlay

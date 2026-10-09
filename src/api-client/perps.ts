@@ -71,6 +71,7 @@ interface PerpCandle {
 
 interface UnderlyingReference {
   symbol: string
+  listingExchange?: string
   price: number
   currency: string
   asOf: string
@@ -78,7 +79,30 @@ interface UnderlyingReference {
   sourceUrl: string
 }
 
+/**
+ * The venue's latest long/short account reading for one contract, in its own hourly bucket. Shares are
+ * fractions and may sum to less than one (flat accounts); OKX publishes only the ratio, so its shares are derived.
+ */
+export interface PerpLongShortRatio {
+  venue: string
+  /** Key of what is counted, such as `accounts_all`; `definitionText` says it in words. */
+  definition: string
+  definitionText: string
+  period: string
+  longShare: number
+  shortShare: number
+  ratio: number | null
+  derived: boolean
+  bucketAt: string
+  observedAt: string
+  /** The bucket is more than three hours old. */
+  stale: boolean
+}
+/** Why a row has no reading: the venue publishes none, collection is off, or nothing is stored yet. */
+type PerpLongShortReason = "unsupported" | "off" | "collecting"
+
 export interface PerpBoardRow extends PerpMarket {
+  equityMatch?: { listing: PerpEquityListing; underlying: PerpEquityListing; basis: "listing" | "issuer" }
   stale: boolean
   oiChange1h: number | null
   oiChange24h: number | null
@@ -87,6 +111,19 @@ export interface PerpBoardRow extends PerpMarket {
   underlying: UnderlyingReference | null
   underlyingPremium: number | null
   closedMarketPremium: number | null
+  /** Absent from servers older than the long/short series: read as null. */
+  longShortRatio?: PerpLongShortRatio | null
+  longShortRatioReason?: PerpLongShortReason | null
+}
+
+export type PerpLongShortPoint = {
+  time: string
+  definition: string
+  longShare: number
+  shortShare: number
+  ratio: number | null
+  derived: boolean
+  observedAt: string
 }
 
 type PerpHistoryPoint = {
@@ -105,11 +142,15 @@ type PerpHistoryPoint = {
 }
 
 export interface PerpBoardPayload {
+  listing?: PerpEquityListing | null;
   status: string; asOf: string | null; rows: PerpBoardRow[]; total: number; locked: number;
   access: "pro" | "preview"; sources?: unknown[];
 }
+export interface PerpEquityListing { symbol: string; exchange: string }
 export interface PerpHistoryPayload {
   status: string; marketId: string; rows: PerpHistoryPoint[]; funding: PerpFunding[]; candles: PerpCandle[];
+  /** Absent from servers older than the long/short series: read as empty. */
+  longShortRatio?: PerpLongShortPoint[];
   locked: boolean; access: "pro" | "preview"; asOf: string | null;
   from?: string; to?: string; resolution?: "minute" | "hour" | "day"; truncated?: boolean;
 }

@@ -1,14 +1,20 @@
 import { loadPortfolioOptionBook } from "./risk-options";
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
-import { fetchPortfolioRiskMarket } from "./risk-client";
+import { fetchPortfolioRiskMarket, RISK_HISTORY_LIMIT } from "./risk-client";
 import { parsePortfolioRiskEvidence } from "./risk-evidence";
 import {
+  BASKET_VIEWS,
   buildPortfolioRisk,
+  portfolioRiskRequests,
   portfolioRiskTickers,
+  riskCoverageNotices,
+  riskCoverageShortfall,
+  riskCoverageText,
   RISK_VIEWS,
   riskPercentile,
   riskValue,
   type PortfolioRiskModel,
+  type RiskCoverage,
   type RiskDisplayRow,
   type RiskView,
 } from "./risk-model";
@@ -41,39 +47,37 @@ function isRiskView(value: unknown): value is RiskView {
   return typeof value === "string" && (RISK_VIEWS as readonly string[]).includes(value);
 }
 
-/** Why a holding that does not list in USD drops out of the basket, once per message. */
-const FOREIGN_LISTING_WARNINGS = new Set([
-  "Current USD listing identity unavailable",
-  "Foreign holdings: historical FX returns required",
-]);
-const LISTED_FOREIGN_SYMBOLS = 12;
+/** Left-out holdings listed in the compact result; the full report lists every one. */
+const COMPACT_LEFT_OUT_LIMIT = 40;
 
-/**
- * "6 foreign listings skipped: 1211, 2337, 700, 7203, ASML, SHEL" in place of
- * two warnings per holding, at the position of the first one.
- */
-function groupForeignListingWarnings(warnings: readonly string[]): string[] {
-  const symbols: string[] = [];
-  const rest: string[] = [];
-  let position = -1;
-  for (const warning of warnings) {
-    const match = /^(\S{1,24}):\s+(.+)$/.exec(warning);
-    if (!match || !FOREIGN_LISTING_WARNINGS.has(match[2]!)) {
-      rest.push(warning);
-      continue;
-    }
-    if (position < 0) position = rest.length;
-    if (!symbols.includes(match[1]!)) symbols.push(match[1]!);
-  }
-  if (symbols.length === 0) return [...warnings];
-  const listed = symbols.slice(0, LISTED_FOREIGN_SYMBOLS).join(", ");
-  const more = symbols.length - LISTED_FOREIGN_SYMBOLS;
-  rest.splice(
-    position,
-    0,
-    `${symbols.length} foreign listing${symbols.length === 1 ? "" : "s"} skipped: ${listed}${more > 0 ? ` and ${more} more` : ""}`,
-  );
-  return rest;
+/** What the basket views cover, so a report never reads as the whole account when it is not. */
+function coverageSummary(coverage: RiskCoverage, limit = Infinity) {
+  return {
+    share: coverage.share,
+    shareIsUpperBound: coverage.unvalued > 0,
+    minimumShare: coverage.minimumShare,
+    estimated: coverage.sufficient,
+    currency: coverage.currency,
+    marketValue: coverage.marketValue,
+    coveredValue: coverage.coveredValue,
+    holdings: coverage.holdings,
+    covered: coverage.covered,
+    convertedFromLocalCurrency: coverage.converted,
+    leftOut: coverage.leftOut
+      .slice(0, limit)
+      .map((row) => ({ symbol: row.symbol, reason: row.reason, share: row.share })),
+    ...(coverage.leftOut.length > limit ? { moreLeftOut: coverage.leftOut.length - limit } : {}),
+  };
+}
+
+/** One line for the whole coverage in place of a note per left-out holding. */
+function coverageLine(coverage: RiskCoverage | undefined): { error?: string; note?: string } {
+  const shortfall = riskCoverageShortfall(coverage);
+  // No estimate at all is a failure; an estimate that leaves holdings out is a caveat.
+  if (shortfall) return { error: `Basket estimates unavailable: ${shortfall.title} ${shortfall.message}`.trim() };
+  return coverage?.leftOut.length
+    ? { note: `Basket ${riskCoverageText(coverage)}; metadata.coverage lists each with its reason.` }
+    : {};
 }
 
 /** One view, its strongest or first rows, and the portfolio's totals instead of the model. */
@@ -100,6 +104,7 @@ function compactRiskRows(model: PortfolioRiskModel, view: RiskView): { rows: Ris
 
 export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
   shape: "bundle",
+  freshness: { source: "Local portfolio and Gloom Cloud", status: "not-a-feed", basis: "risk model on daily closes" },
   argument: {
     kind: "free-text",
     optional: true,
@@ -114,7 +119,8 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
       "Explicit local evidence for account returns and attribution",
     ],
     limitations: [
-      "Fixed-current-weight USD equity basket; no account performance inferred",
+      `Fixed-current-weight USD equity basket over the holdings that qualify, largest ${RISK_HISTORY_LIMIT} by value; foreign listings convert to USD at daily FX closes; metadata.coverage states the covered share of market value and each holding left out`,
+      "No account performance inferred",
       "ETF price-return factor proxies",
       "Historical percentiles need 20 rolling samples",
     ],
@@ -199,12 +205,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
             fetchedAt: new Date().toISOString(),
           })
         : fetchPortfolioRiskMarket(
-            tickers
-              .slice(0, 80)
-              .map((row) => ({
-                symbol: row.metadata.ticker,
-                exchange: row.metadata.exchange,
-              })),
+            portfolioRiskRequests(tickers, id),
             ctx.apiClient,
             new Date(),
             ctx.signal,
@@ -226,6 +227,8 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
         volatility: Number(args.options["vol-shift"] ?? 10),
       },
     );
+    // A basket view is complete only when the basket covers every holding.
+    const covered = model.coverage.leftOut.length === 0;
     const complete =
       view === "performance"
         ? model.performance != null
@@ -234,19 +237,22 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
           : view === "greeks"
             ? model.greeks?.complete === true
             : view === "holdings"
-              ? model.book != null
+              ? model.book != null && covered
               : view === "factors"
-                ? model.factors.every((row) => row.value != null)
+                ? covered && model.factors.every((row) => row.value != null)
                 : model.complete;
+    // A basket view with too little covered shows no estimate, and the report says why rather than leaving dashes.
+    const shortfall = BASKET_VIEWS.has(view as RiskView) ? coverageLine(model.coverage).error : undefined;
     return {
       complete,
-      errors: model.warnings,
+      errors: [...(shortfall ? [shortfall] : []), ...model.warnings],
+      notes: [...riskCoverageNotices(model.coverage), ...model.notes],
       sections: RISK_VIEWS.map((view) => ({
         title: view,
         columns: RISK_COLUMNS,
         rows: model.rows[view].map(displayRow),
       })),
-      metadata: { model },
+      metadata: { coverage: coverageSummary(model.coverage), model },
     };
   },
   compact(result, args) {
@@ -254,10 +260,16 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
     if (!model?.rows) return result;
     const view = isRiskView(args.options.view) ? args.options.view : "risk";
     const { rows, notices } = compactRiskRows(model, view);
-    const valued = model.holdings.filter((holding) => holding.value != null).length;
+    // Each left-out holding is in metadata.coverage; the notes keep one line for all of them.
+    const perHolding = new Set(riskCoverageNotices(model.coverage));
+    const basketView = BASKET_VIEWS.has(view);
+    const coverage = basketView ? coverageLine(model.coverage) : {};
+    const errors = [...new Set([...(coverage.error ? [coverage.error] : []), ...(result.errors ?? [])])];
+    const notes = [...(coverage.note ? [coverage.note] : []), ...(result.notes ?? []).filter((note) => !perHolding.has(note))];
     return {
       complete: result.complete,
-      ...(result.errors?.length ? { errors: groupForeignListingWarnings(result.errors) } : {}),
+      ...(errors.length ? { errors } : {}),
+      ...(notes.length ? { notes } : {}),
       sections: [{ title: view, columns: RISK_COLUMNS, rows: rows.map(displayRow) }],
       metadata: {
         portfolio: {
@@ -266,9 +278,9 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
           currency: model.portfolio.currency,
         },
         view,
-        holdings: model.holdings.length,
-        valuedHoldings: valued,
-        ...(model.book ? { grossValue: model.book.gross, netValue: model.book.net } : {}),
+        ...(basketView && model.coverage
+          ? { coverage: coverageSummary(model.coverage, COMPACT_LEFT_OUT_LIMIT) }
+          : {}),
         asOf: model.fetchedAt,
         ...(notices.length ? { notices } : {}),
       },
