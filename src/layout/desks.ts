@@ -138,10 +138,9 @@ export const DESKS: readonly Desk[] = [
       { fn: "GC" },
       { fn: "BTMM" },
       { fn: "CDX" },
-      { fn: "SOVR" },
       { fn: "CBR" },
     ],
-    dock: column(0.5, row(0.4, pane(1), row(0.5, pane(2), pane(3))), row(0.34, pane(4), row(0.5, pane(5), pane(6)))),
+    dock: column(0.5, row(0.4, pane(1), row(0.5, pane(2), pane(3))), row(0.5, pane(4), pane(5))),
   },
   {
     key: "fx",

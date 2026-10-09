@@ -116,7 +116,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }), [cloudSessionRequired, error, status, latestSettlements]);
 
   if (!ticker || !symbol) {
-    return <EmptyState title="No ticker selected." message="Select a ticker to view short interest." />;
+    return <EmptyState title="Select a ticker." />;
   }
 
   const noRecords = records.length === 0;

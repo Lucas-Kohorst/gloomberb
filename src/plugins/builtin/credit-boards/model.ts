@@ -10,7 +10,6 @@ import type { MarketBoardRow } from "../../../components/market-board";
 import type { PricePoint } from "../../../types/financials";
 
 export const CDX_PANE_ID = "cdx-board";
-export const SOVR_PANE_ID = "sovr-board";
 
 const YEAR_DAYS = 365;
 /** A level older than this is not the current market. */
