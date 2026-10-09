@@ -420,11 +420,13 @@ export function eventSourceNotice(state: EventSourceState): EventSourceNotice | 
 
   if (state.actions?.stale) {
     const age = formatObservationAge(state.actions.fetchedAt);
-    notices.push(age ? `Corporate actions ${age}` : unavailableText("Corporate actions"));
+    if (age) notices.push(`Corporate actions ${age}`);
+    else if (!state.actionsError && unavailableSections.length === 0) notices.push(unavailableText("Corporate actions"));
   }
   if (state.estimates?.stale) {
     const age = formatObservationAge(state.estimates.fetchedAt);
-    notices.push(age ? `Analyst estimates ${age}` : unavailableText("Analyst estimates"));
+    if (age) notices.push(`Analyst estimates ${age}`);
+    else if (!state.estimatesError) notices.push(unavailableText("Analyst estimates"));
   }
 
   if (state.estimatesError) {
