@@ -1036,6 +1036,7 @@ export const es: Record<string, string> = {
   "Unreal": "Latente",
   "Init": "Inicial",
   "Maint": "Mant.",
+  "Margin Lev": "Apal. margen",
   "NAME": "NOMBRE",
   "TYPE": "TIPO",
   "EXCH": "EXCH",

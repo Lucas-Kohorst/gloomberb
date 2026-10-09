@@ -102,8 +102,9 @@ describe("fold short volume and sovereign CDS", () => {
       ],
     }, "/tmp");
 
-    expect(result.config.configVersion).toBe(25);
+    expect(result.config.configVersion).toBe(26);
     expect(result.applied).toContain("fold-short-volume-and-sovereign-cds");
+    expect(result.applied).toContain("open-analytics-overview-panes-on-performance");
     const open = result.config.layout as LayoutConfig;
     expect(open.instances[0]).toMatchObject({ instanceId: "short-interest:TSLA", paneId: "short-interest", params: { tab: "volume" } });
     const saved = result.config.layouts as Array<{ name: string; paneState: Record<string, unknown>; focusedPaneId: string | null; layout: LayoutConfig }>;

@@ -8,10 +8,13 @@ import {
 } from "../portfolio-list/position-metrics";
 import type { DatedReturn } from "./metrics";
 import {
+  computeDatedBeta,
+  computeSharpeRatio,
   computeWeightedPortfolioReturns,
   syntheticPositionUnsupportedReason,
 } from "./metrics";
 import {
+  compoundReturns,
   concentration,
   pairedReturns,
   regressReturns,
@@ -124,11 +127,65 @@ export interface RiskShifts {
   rates: number;
   volatility: number;
 }
-const DEFAULT_RISK_SHIFTS: RiskShifts = {
+export const DEFAULT_RISK_SHIFTS: RiskShifts = {
   equity: -10,
   rates: 100,
   volatility: 10,
 };
+
+function drawdownPath(values: readonly number[]) {
+  let wealth = 1,
+    peak = 1;
+  return values.map((value) => {
+    wealth *= 1 + value;
+    peak = Math.max(peak, wealth);
+    return wealth / peak - 1;
+  });
+}
+
+function sampleVolatility(values: readonly number[]): number | null {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return (
+    Math.sqrt(
+      values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+        (values.length - 1),
+    ) * Math.sqrt(252)
+  );
+}
+
+/** Statistics of the account's own daily returns, as the broker measured them. */
+export interface AccountReturnStatistics {
+  startDate: string;
+  endDate: string;
+  twr: number;
+  maxDrawdown: number;
+  sharpe: number | null;
+  beta: number | null;
+  volatility: number | null;
+  points: Array<{ date: string; wealth: number }>;
+}
+function accountReturnStatistics(
+  returns: DatedReturn[],
+  benchmark: DatedReturn[],
+): AccountReturnStatistics | null {
+  if (!returns.length) return null;
+  const values = returns.map((row) => row.value);
+  let wealth = 1;
+  return {
+    startDate: returns[0]!.startDateKey,
+    endDate: returns.at(-1)!.dateKey,
+    twr: compoundReturns(values),
+    maxDrawdown: Math.min(0, ...drawdownPath(values)),
+    sharpe: computeSharpeRatio(values),
+    beta: computeDatedBeta(returns, benchmark),
+    volatility: sampleVolatility(values),
+    points: [
+      { date: returns[0]!.startDateKey, wealth },
+      ...returns.map((row) => ({ date: row.dateKey, wealth: (wealth *= 1 + row.value) })),
+    ],
+  };
+}
 
 function fredChanges(data: RiskMarketSnapshot["yields"]): DatedReturn[] {
   const rows = (data?.observations ?? [])
@@ -279,7 +336,8 @@ export function riskCoverageShortfall(
 /**
  * Basket estimates use the holdings that qualify, reweighted among themselves.
  * Every other holding stays listed with its reason and counts in the market
- * value they are measured against.
+ * value they are measured against. `accountReturns` are the broker's own daily
+ * time-weighted returns, when it reports them.
  */
 export function buildPortfolioRisk(
   portfolio: Portfolio,
@@ -287,6 +345,7 @@ export function buildPortfolioRisk(
   market: RiskMarketSnapshot,
   evidence: PortfolioRiskEvidence | null = null,
   shifts: RiskShifts = DEFAULT_RISK_SHIFTS,
+  accountReturns: DatedReturn[] | null = null,
 ) {
   if (
     ![shifts.equity, shifts.rates, shifts.volatility].every(Number.isFinite) ||
@@ -472,6 +531,10 @@ export function buildPortfolioRisk(
   const benchmark = proxy("SPY"),
     sample = pairedReturns(basket, benchmark);
   const metrics = rollingBasketRisk(sample);
+  // The one-year horizon repeats only the return and Sharpe; the rest stay on 60 sessions.
+  const yearMetrics = rollingBasketRisk(sample, 252)
+    .filter((row) => (row.id === "return" || row.id === "sharpe") && row.value != null)
+    .map((row) => ({ ...row, id: `${row.id}-252` }));
   const factors = [
     { id: "market", label: "Market (SPY)", series: benchmark },
     {
@@ -499,6 +562,10 @@ export function buildPortfolioRisk(
     ...rollingBeta(basket, factor.series, factor.label, factor.id),
     regression: regressReturns(basket.slice(-60), factor.series),
   }));
+  const yearMarket = {
+    ...rollingBeta(basket, benchmark, "Market (SPY) 252D", "market-252", 252),
+    regression: regressReturns(basket.slice(-252), benchmark, 252),
+  };
   const correlation = members.flatMap((left, index) =>
     members.slice(index + 1).map((right) => {
       const regression = regressReturns(left.returns.slice(-60), right.returns);
@@ -550,6 +617,7 @@ export function buildPortfolioRisk(
   const performance = evidence?.performance
     ? calculateAccountPerformance(evidence.performance)
     : null;
+  const account = accountReturns ? accountReturnStatistics(accountReturns, benchmark) : null;
   const attribution = evidence?.attribution
     ? calculateBrinson(evidence.attribution)
     : null;
@@ -565,13 +633,14 @@ export function buildPortfolioRisk(
     : null;
   warnings.push(...(greeks?.warnings ?? []));
   const rows: Record<RiskView, RiskDisplayRow[]> = {
-    risk: metrics.map((row) => ({
+    // Each label names its window, so every row shares this evidence.
+    risk: [...metrics, ...yearMetrics].map((row) => ({
       ...row,
       percentile: row.rank.percentile,
       // The method (price returns at fixed current weights) is in docs; the footer keeps room for coverage.
       detail: `${row.samples} sessions`,
     })),
-    factors: factors.map((row) => ({
+    factors: [...factors, yearMarket].map((row) => ({
       ...row,
       percentile: row.rank.percentile,
       detail: `${row.samples} sessions; R² ${row.regression?.rSquared?.toFixed(2) ?? "--"}; independent ETF proxy`,
@@ -609,7 +678,8 @@ export function buildPortfolioRisk(
       asOf: row.regression?.asOf ?? null,
       detail: `${row.regression?.samples ?? 0} sessions; R² ${row.regression?.rSquared?.toFixed(2) ?? "--"}; ${row.source}`,
     })),
-    performance: performance
+    performance: [
+      ...(performance
       ? [
           {
             id: "twr",
@@ -639,7 +709,32 @@ export function buildPortfolioRisk(
           asOf: performance.endDate,
           detail: `${performance.startDate} to ${performance.endDate}; ${row.detail}`,
         }))
-      : [],
+      : []),
+      ...(account
+        ? [
+            // Evidence with flows already states the return and drawdown.
+            ...(performance
+              ? []
+              : [
+                  { id: "twr", label: "TWR", value: account.twr * 100, unit: "%" },
+                  { id: "drawdown", label: "Account max drawdown", value: account.maxDrawdown * 100, unit: "%" },
+                ]),
+            { id: "account-sharpe", label: "Account Sharpe", value: account.sharpe, unit: "ratio" },
+            { id: "account-beta", label: "Account beta (SPY)", value: account.beta, unit: "beta" },
+            {
+              id: "account-volatility",
+              label: "Account volatility",
+              value: account.volatility == null ? null : account.volatility * 100,
+              unit: "%",
+            },
+          ].map((row) => ({
+            ...row,
+            percentile: null,
+            asOf: account.endDate,
+            detail: `${account.startDate} to ${account.endDate}; broker daily time-weighted returns`,
+          }))
+        : []),
+    ],
     attribution: attribution
       ? attribution.rows.map((row) => ({
           id: row.sector,
@@ -750,6 +845,7 @@ export function buildPortfolioRisk(
     correlation,
     stresses,
     performance,
+    account,
     attribution,
     greeks,
     evidence,
