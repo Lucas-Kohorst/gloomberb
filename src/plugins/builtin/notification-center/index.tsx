@@ -37,12 +37,10 @@ import { compareSortValues, nextHeaderSort, type SortPreference } from "../../..
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import {
   NOTIFICATION_CENTER_TEMPLATE_ID,
-  consumeRequestedNotificationCenterFilter,
   catalystEventIdFromRef,
   notificationSourceLabel,
   notificationSourceVisible,
   priceAlertIdFromRef,
-  subscribeRequestedNotificationCenterFilter,
   type NotificationSourceFilter,
 } from "./filter";
 
@@ -100,16 +98,14 @@ function notificationSortValue(entry: NotificationLogEntry, column: Notification
   return `${entry.title ?? ""} ${entry.body}`;
 }
 
-export function NotificationCenterPane({ focused, width, height }: PaneProps) {
+function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const search = useQueryBarSearch();
   const { createPaneFromTemplate, showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
   const [chatUnread, setChatUnread] = useState<NotificationChatUnread>(readChatUnread);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<NotificationSourceFilter>(
-    () => consumeRequestedNotificationCenterFilter() ?? "all",
-  );
+  const [sourceFilter, setSourceFilter] = useState<NotificationSourceFilter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortPreference<NotificationColumnId>>({
     columnId: "date",
@@ -118,10 +114,6 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => subscribeNotificationLog(() => setEntries(getNotificationLog())), []);
   useEffect(() => chatController.subscribe(() => setChatUnread(readChatUnread())), []);
-  useEffect(() => subscribeRequestedNotificationCenterFilter((filter) => {
-    setSourceFilter(filter);
-    setSelectedRowId(null);
-  }), []);
 
   const unreadIds = useMemo(
     () => notificationIdsThatAppearUnread(entries, chatUnread),
@@ -358,5 +350,3 @@ export const notificationCenterPlugin: GloomPlugin = {
     configureNotificationLog(null);
   },
 };
-
-export default notificationCenterPlugin;
