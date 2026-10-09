@@ -9,7 +9,9 @@ import { shortInterestHeadless } from "./headless";
 import { ShortInterestResearchTab, ShortInterestSurface } from "./surface";
 import { shortWatchHeadless } from "./watch-headless";
 import { SHORT_WATCH_SCOPE_OPTIONS, ShortWatchPane } from "./watch-pane";
+import { withCommandTab } from "../shared/command-tab";
 import { followsWithoutFinraOverride, shortVolumeSettings } from "../short-volume";
+import { shortVolumeHeadless } from "../short-volume/headless";
 import { isKnownNonUsListing } from "../../../utils/sec";
 
 
@@ -75,16 +77,29 @@ export const shortInterestModule: PluginModule = {
 
   paneTemplates: [
     {
-      ...createTickerSurfacePaneTemplate({
+      ...withCommandTab(createTickerSurfacePaneTemplate({
         id: "short-interest-pane",
         paneId: "short-interest",
         label: "Short Interest",
         // The current snapshot only carries the current and prior settlement dates.
-        description: "Bi-monthly short interest settlements from FINRA with days to cover and average daily volume.",
+        description: "Bi-monthly short interest settlements from FINRA with days to cover and average daily volume. Daily volume is the other tab.",
         keywords: ["short", "interest", "si", "shorts", "borrow", "days", "cover"],
         shortcut: "SI",
-      }),
+      }), "interest"),
       headless: shortInterestHeadless,
+    },
+    {
+      // The same pane on Daily volume. The template id stays, so an older share still restores.
+      ...withCommandTab(createTickerSurfacePaneTemplate({
+        id: "short-volume-pane",
+        paneId: "short-interest",
+        label: "Daily Short Volume",
+        description: "The short interest pane on Daily volume: FINRA daily off-exchange short-volume ratios, historical percentile and reported share quantities.",
+        keywords: ["daily", "short", "volume", "finra", "siv"],
+        shortcut: "SIV",
+        publicShare: true,
+      }), "volume"),
+      headless: shortVolumeHeadless,
     },
     {
       id: "short-watch-pane",

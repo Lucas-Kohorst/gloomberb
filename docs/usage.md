@@ -145,8 +145,8 @@ Text that no command claims searches symbols and names, and every result carries
 | `OVME` | Option calculator: European Black-Scholes or American pricing, discrete dividends, Greeks, implied and surface volatility |
 | `HDS <ticker>` | Institutional holders, and 13D/13G beneficial owners over 5% |
 | `DVD <ticker>` | Dividend yield and history |
-| `SI <ticker>` | Short interest |
-| `SIV <ticker>` | FINRA daily off-exchange short-volume ratio, history and percentile |
+| `SI <ticker>` | Short interest. Daily volume is the other tab |
+| `SIV <ticker>` | The short interest pane on Daily volume, FINRA off-exchange short-volume ratio, history and percentile |
 | `SIW [tickers]` | Short squeeze watch: short interest as a share of float, days to cover, change since the prior settlement and the 1M price move across your portfolios and watchlists, crowded names that are rising first |
 | `BUZZ <ticker>` | Daily posts on X naming the cashtag, the 30-day median, top posts and their stance |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |

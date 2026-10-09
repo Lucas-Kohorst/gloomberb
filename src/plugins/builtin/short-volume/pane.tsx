@@ -87,7 +87,7 @@ export function ShortVolumePane({ width, height, focused }: Pick<PaneProps, "wid
     stale: !!data && resource.data?.stale,
   });
   if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="short-volume-signin" action="view daily short volume" needsVerification={session.needsVerification} />;
-  if (!symbol) return <EmptyState title="No ticker selected." message="Select a ticker to view daily short volume." />;
+  if (!symbol) return <EmptyState title="Select a ticker." />;
   return <Box flexDirection="column" width={width} height={height}>
     <PaneStatusBody loading={resource.loading && !data} error={!data ? resource.error : null} subject="daily short volume"
       empty={!resource.loading && !resource.error && !!data && !data.history.length} emptyTitle="Daily short volume is awaiting source history.">
