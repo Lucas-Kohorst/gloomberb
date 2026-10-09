@@ -21,14 +21,14 @@ import { normalizeSymbol } from "../../../utils/exchanges";
 import { colors, priceColor } from "../../../theme/colors";
 import { compareSortValues, nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { formatCompact, formatCurrency, formatLevelPercent, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
-import { parseDisplayDate } from "../../../utils/datetime-format";
+import { formatObservationAge, parseDisplayDate } from "../../../utils/datetime-format";
 import { convertMarketCapitalization } from "../../../utils/market-capitalization";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, useClampSelectedIndex } from "../../../components/data-table/table-pane";
 import { useAsyncResource } from "../../../react/async-resource";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 import { useFxRatesMap } from "../../../market-data/hooks";
-import { RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE, relativeValuationValues, withLiveQuote } from "./relative-valuation-model";
+import { relativeValuationValues, withLiveQuote } from "./relative-valuation-model";
 
 type RelativeColumnId = "symbol" | "price" | "changePercent" | "marketCap" | "trailingPE" | "forwardPE" | "evSales" | "fcfYield" | "revenueGrowth" | "operatingMargin";
 type RelativeColumn = DataTableColumn & { id: RelativeColumnId };
@@ -173,15 +173,20 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     [comparableRows, order],
   );
 
-  const staleSymbols = rows.filter((row) => row.quoteStale).map((row) => row.symbol);
+  const staleQuotes = rows.filter((row) => row.quoteStale).map((row) => {
+    const age = formatObservationAge(row.quoteAsOf);
+    return age ? `${row.symbol} ${age}` : row.symbol;
+  });
   const rowErrors = rows.filter((row) => row.error).map((row) => `${row.symbol}: ${row.error}`);
-  const status = [error, ...rowErrors, staleSymbols.length ? `Stale quotes: ${staleSymbols.join(", ")}` : null,
+  const status = [error, ...rowErrors, staleQuotes.length ? staleQuotes.join(", ") : null,
     missingFx ? "Market-cap FX unavailable" : null].filter(Boolean).join(" · ") || null;
 
   usePaneNoticeFooter({
     registrationId: "relative-valuation-notices",
-    notices: rows.filter((row) => row.fundamentalsProvenance?.stale)
-      .map((row) => `${row.symbol}: ${RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE}.`),
+    notices: rows.filter((row) => row.fundamentalsProvenance?.stale).map((row) => {
+      const age = formatObservationAge(row.fundamentalsProvenance?.retrievedAt);
+      return age ? `${row.symbol} ${age}` : row.symbol;
+    }),
     focused,
   });
 
@@ -248,7 +253,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
         [row.symbol, "Quote as of", parseDisplayDate(row.quoteAsOf)?.toISOString() ?? "unavailable", "Stale", String(row.quoteStale ?? "unknown")],
         [row.symbol, "Fundamentals retrieved", row.fundamentalsProvenance?.retrievedAt ?? "unavailable",
           "Stale", String(row.fundamentalsProvenance?.stale ?? "unknown")],
-        ...(row.fundamentalsProvenance?.stale ? [[row.symbol, RELATIVE_VALUATION_STALE_FUNDAMENTALS_NOTICE]] : []),
+        ...(row.fundamentalsProvenance?.stale ? [[row.symbol, formatObservationAge(row.fundamentalsProvenance.retrievedAt) ?? row.symbol]] : []),
       ])}
       emptyStateTitle={loading ? "Loading peers..." : error ?? "No peers"}
     />

@@ -10,7 +10,9 @@ import { daysToExpiryFrom, extractImpliedForward, optionMid, solveImpliedVolatil
 import type { YieldPoint } from "../yield-curve/treasury-data";
 import { parseLegs, validatePosition, type ScenarioControls, type ScenarioLeg, type ScenarioPosition } from "./model";
 import { abortable, abortError } from "../../../utils/async-deadline";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { errorMessage } from "../../../utils/errors";
+import { unavailableText } from "../../../components/ui/status-copy";
 
 export interface ScenarioMarketSnapshot {
   symbol: string;
@@ -111,7 +113,10 @@ export async function loadScenarioMarket(
     warnings.push("Selected expiration unavailable in the returned options chain"); chain = null;
   }
   if (!chain) warnings.push("Options chain unavailable");
-  else if (chainEntry?.error || (chainEntry?.staleAt != null && chainEntry.staleAt <= now)) warnings.push("Options chain is stale");
+  else if (chainEntry?.error || (chainEntry?.staleAt != null && chainEntry.staleAt <= now)) {
+    const age = formatObservationAge(chain.asOf);
+    warnings.push(age ? `Options chain ${age}` : unavailableText("Options chain"));
+  }
   const rateExpiration = request.rateExpiration ?? request.expiration ?? expirationDates[0];
   const curve = curveResult.status === "fulfilled" ? curveResult.value : [];
   if (curveResult.status === "rejected") warnings.push(`Treasury: ${errorMessage(curveResult.reason)}`);
@@ -151,6 +156,10 @@ function dateSetting(settings: Record<string, unknown>, key: string): number | u
 }
 
 /** Pane settings and CLI flags use percentage units; all model fields use decimals. */
+export function optionsChainUnusable(warnings: readonly string[]): boolean {
+  return warnings.some((warning) => warning === "Options chain is stale" || warning === unavailableText("Options chain") || /^Options chain (~\d+m|~\d+hr|\d{4}-\d{2}-\d{2})$/.test(warning));
+}
+
 export function scenarioPositionFromSettings(
   settings: Record<string, unknown>, market?: ScenarioMarketSnapshot | null,
 ): ScenarioPosition | null {
@@ -177,7 +186,7 @@ export function scenarioPositionFromSettings(
   let legs = legText.trim() ? parseLegs(legText) : [];
   if (!legs.length && supplied(settings.strategy)) {
     if (settings.strategy !== "vertical" && settings.strategy !== "straddle") throw new Error("strategy must be vertical or straddle");
-    if (!market?.chain || market.warnings.includes("Options chain is stale")) throw new Error("A current options chain is required to seed a strategy");
+    if (!market?.chain || optionsChainUnusable(market.warnings)) throw new Error("A current options chain is required to seed a strategy");
     if (spot == null) throw new Error("A current underlying price or explicit --spot is required");
     // Leg IVs are solved at the market's own spot and time, never at a what-if override.
     const pricing = market.spot != null && rate != null ? { spot: market.spot, asOf: market.asOf, rate } : null;

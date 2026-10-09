@@ -3,7 +3,7 @@ import {
   DataTableView,
   PaneStatusBody,
   usePagedRows,
-  usePaneFooter,
+  usePaneFooter, usePaneLoadingSignal,
   useTableLoadMore,
   type DataTableColumn,
   type PageRequest,
@@ -45,17 +45,17 @@ export function AlertHistoryPane({ focused, width, height }: PaneProps) {
     { id: "title", label: "Alert", width: Math.max(16, Math.min(28, width - 60)), align: "left" },
     ...(width >= 70 ? [{ id: "body", label: "Detail", width: 20, flexGrow: 1, align: "left" as const }] : []),
   ];
+  usePaneLoadingSignal((loadingMore));
   usePaneFooter(
     "alert-history",
     () => ({
       info: data
         ? [
-            ...(loadingMore ? [{ id: "more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
             {
               id: "device",
               parts: [
                 {
-                  text: `${data.deviceEnabled ? "phone connected" : "no phone connected"} · checked ${relativeTime(Date.parse(data.asOf))}`,
+                  text: `${data.deviceEnabled ? "phone connected" : "no phone connected"} · ${relativeTime(Date.parse(data.asOf))}`,
                   tone: data.deviceEnabled ? ("muted" as const) : ("warning" as const),
                 },
               ],

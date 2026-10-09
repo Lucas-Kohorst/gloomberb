@@ -10,6 +10,7 @@ import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, useRendererHost, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { SignInWall } from "../cloud/auth-actions";
 import { CLOUD_PLAN_KEY, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { Blurred, LockedOverlay, UpgradeLabel } from "../shared/locked-rows";
@@ -161,8 +162,9 @@ function CompanyView({ symbol, mode, width, height, focused }: PaneProps & { sym
     { id: "financials", label: "Financial Analysis (FA)", onSelect: () => createPaneFromTemplate("financial-analysis-pane", { symbol }) },
     { id: "price-chart", label: "Price Chart (G)", onSelect: () => createPaneFromTemplate("chart-composer-pane", { arg: symbol }) },
   ] : null, [symbol, createPaneFromTemplate]);
-  usePaneStatusFooter({ registrationId: "company-kpis", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale,
-    info: data?.asOf ? [{ id: "as-of", parts: [{ text: `as of ${data.asOf.slice(0, 10)}`, tone: "muted" as const }] }] : [], hints });
+  const disclosureAge = formatObservationAge(data?.asOf);
+  usePaneStatusFooter({ registrationId: "company-kpis", loading: resource.loading, error: data ? resource.error : null,
+    info: disclosureAge ? [{ id: "as-of", parts: [{ text: disclosureAge, tone: "muted" as const }] }] : [], hints });
   usePaneNoticeFooter({ registrationId: "company-kpis:notices", focused, notices: [resource.data?.refreshError,
     data?.truncated && data.access === "full" ? "The response reached its stored-record limit. Narrow the metric or date range in a CLI or REST query." : null,
     data?.coverage.conflicts ? "Conflicting disclosures are retained in Evidence and excluded from comparable trends." : null].filter((value): value is string => !!value) });

@@ -135,12 +135,9 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selectedView) return [];
     const info: PaneFooterSegment[] = [
-      { id: "as-of", parts: [{ text: `as of ${selectedView.asOf}`, tone: "muted" }] },
+      { id: "as-of", parts: [{ text: selectedView.asOf, tone: "muted" }] },
       ...(width >= 80 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ];
-    if (selectedView.observationStale) {
-      info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });
-    }
     return info;
   }, [selectedView, width]);
 
@@ -153,7 +150,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
 
   if (!bundle && resource.error === null) {
     return (
-      <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading market valuation..." />
+      <PaneStatusBody loading align="center" width={width} height={height} />
     );
   }
 

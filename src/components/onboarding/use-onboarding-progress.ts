@@ -5,7 +5,7 @@ import type { SyncBrokerInstanceResult } from "../../brokers/sync-broker-instanc
 import { saveConfigImmediately } from "../../state/config-save-scheduler";
 import type { AppConfig, OnboardingProgress } from "../../types/config";
 import type { useAppDispatch, useAppStateRef } from "../../state/app/context";
-import { t } from "../../i18n";
+import { unavailableText } from "../ui/status";
 import type { PluginRegistry } from "../../plugins/registry";
 import { resolvePlanAccess } from "../../api-client/plan-access";
 import type { PortfolioSub } from "./onboarding-steps";
@@ -55,7 +55,7 @@ export function useOnboardingProgress({
           return nextConfig;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          setPersistenceError(message || t("Unable to save onboarding progress."));
+          setPersistenceError(message || unavailableText("Onboarding"));
           throw error;
         }
       });

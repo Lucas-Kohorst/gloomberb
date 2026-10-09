@@ -7,6 +7,8 @@ import { displayWidth, truncateToDisplayWidth } from "../../utils/format";
 import { CompositeChart } from "../chart/composite";
 import type { CompositeAxisDomain, CompositeChartProps } from "../chart/composite/types";
 import { PriceSparkline } from "../price-sparkline/view";
+import { Spinner } from "../ui/loading";
+import { loadingText } from "../ui/status";
 import { StatGrid, type StatItem } from "../ui/stat-grid";
 import type { TableWidthColumn } from "../ui/table-layout";
 import { CHART_COMPACT_ROWS, chartTableChromeRows, chartTableLayout, type ChartTableLayout } from "./layout";
@@ -216,7 +218,7 @@ export function ChartTableHeader(props: ChartTableHeaderProps) {
       <Box height={layout.chartRows} flexShrink={0} overflow="hidden">
         {!ready ? (
           <Box width={size.width} height={size.height} justifyContent="center" alignItems="center">
-            <Text fg={colors.textMuted}>{chart.loading ? "Loading history..." : chart.empty ?? ""}</Text>
+            {chart.loading ? <Spinner label={loadingText()} /> : <Text fg={colors.textMuted}>{chart.empty ?? ""}</Text>}
           </Box>
         ) : chart.render ? chart.render(size) : (
           <CompositeChart
@@ -248,7 +250,7 @@ export function ChartTableHeader(props: ChartTableHeaderProps) {
     // The strip's row is held while the history loads, and on a row without one.
     band = (
       <Box height={1} flexShrink={0} paddingX={1}>
-        <Text fg={colors.textMuted}>{chart.loading ? "Loading history..." : chart.empty}</Text>
+        {chart.loading ? <Spinner label={loadingText()} /> : <Text fg={colors.textMuted}>{chart.empty}</Text>}
       </Box>
     );
   }

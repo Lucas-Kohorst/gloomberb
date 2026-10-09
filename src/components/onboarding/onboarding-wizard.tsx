@@ -22,6 +22,8 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { formatCloudPrice, monthsFreeYearly } from "../../plugins/builtin/account-management/model";
 import { proStepCopy } from "../../plugins/builtin/cloud/upgrade-dialog";
 import { Button, SegmentedControl } from "../ui";
+import { Spinner } from "../ui/loading";
+import { loadingText } from "../ui/status";
 import { AccountStep, PortfolioStep } from "./onboarding-steps";
 import {
   ONBOARDING_DESKTOP,
@@ -433,7 +435,7 @@ export function OnboardingWizard(props: OnboardingWizardProps) {
               <OnboardingButton label="Back" variant="ghost" disabled={isBrokerCommitting} onPress={backPortfolio} />
               {!desktop || portfolioSub !== "choose" ? (
                 <OnboardingButton
-                  label={portfolioSub === "broker-sync" ? (isBrokerSyncing ? t("Importing...") : t("Retry")) : t("Continue")}
+                  label={portfolioSub === "broker-sync" ? t("Retry") : t("Continue")}
                   variant="primary"
                   disabled={isBrokerSyncing}
                   onPress={continuePortfolio}
@@ -720,12 +722,13 @@ export function OnboardingWizard(props: OnboardingWizardProps) {
           variant="ghost"
           onPress={() => goToSection(progress.accountStatus === "signed-in" ? "pro" : "cloud")}
         />
-        <OnboardingButton
-          label={isFinishing ? "Opening workspace..." : "Start exploring"}
-          variant="primary"
-          disabled={isFinishing}
-          onPress={() => { void finish(); }}
-        />
+        {isFinishing ? <Spinner label={loadingText()} /> : (
+          <OnboardingButton
+            label="Start exploring"
+            variant="primary"
+            onPress={() => { void finish(); }}
+          />
+        )}
       </OnboardingActions>
     </OnboardingModal>
   );

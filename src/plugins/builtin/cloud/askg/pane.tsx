@@ -31,6 +31,7 @@ import {
   QueryBar,
   shouldShowPaneSidebar,
   Spinner,
+  loadingText,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -167,9 +168,11 @@ export function ToolTimelineRow({
   const marker = hasRows ? (expanded ? "▾" : "▸") : "·";
   const tier = tierLabel(row);
   const status = describeToolStatus(row);
+  const spinning = row.status === "running" || row.status === "pending";
+  const statusLabel = spinning ? loadingText() : status;
   const { label, summary } = toolRowHeadline(row);
   const undoLabel = row.undo?.status === "running"
-    ? "undoing…"
+    ? loadingText()
     : row.undo?.status === "done"
       ? "undone"
       : row.undo?.status === "failed"
@@ -180,7 +183,7 @@ export function ToolTimelineRow({
   // The row lays its parts out with a one-cell gap between each: marker, name,
   // "  " + summary, spacer, tier, status, server mark. A summary that leaves no
   // room for them pushes the row onto two lines, over the note below it.
-  const parts = [marker, label, "  ", "", ...(tier ? [`${tier}  `] : []), status, ...(row.origin === "server" ? [" · Gloom"] : [])];
+  const parts = [marker, label, "  ", "", ...(tier ? [`${tier}  `] : []), statusLabel, ...(row.origin === "server" ? [" · Gloom"] : [])];
   const fixedWidth = parts.reduce((total, part) => total + part.length, 0) + parts.length;
   const summaryWidth = Math.max(6, width - fixedWidth);
 
@@ -198,8 +201,8 @@ export function ToolTimelineRow({
         ) : null}
         <Box flexGrow={1} />
         {tier ? <Text fg={row.writeTier === "ui-write" ? colors.textMuted : colors.warning}>{`${tier}  `}</Text> : null}
-        {row.status === "running" || row.status === "pending" ? (
-          <Spinner label={status} />
+        {spinning ? (
+          <Spinner label={statusLabel} />
         ) : (
           <Text fg={statusColor(row)}>{status}</Text>
         )}
@@ -468,7 +471,7 @@ function TurnView({
           />
         </Box>
       ) : turn.status === "streaming" && turn.tools.length === 0 ? (
-        <Box paddingTop={1}><Spinner label="Gloom is thinking…" /></Box>
+        <Box paddingTop={1}><Spinner label={loadingText()} /></Box>
       ) : null}
       {turn.error ? (
         <Box flexDirection="column" paddingTop={1}>
@@ -1076,9 +1079,6 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
 
   usePaneFooter(`askg:${paneId}`, () => ({
     info: [
-      ...(running
-        ? [{ id: "streaming", parts: [{ text: "Streaming", tone: "positive" as const, bold: true }] }]
-        : []),
       ...(confirmation
         ? [{ id: "confirm", parts: [{ text: "Waiting for approval", tone: "warning" as const }] }]
         : []),

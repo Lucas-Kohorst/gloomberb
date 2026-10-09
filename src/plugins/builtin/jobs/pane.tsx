@@ -11,12 +11,13 @@ import {
   DataTableView,
   EmptyState,
   PaneStatusBody,
+  unavailableText,
   SectionHeading,
   scalarPoint,
   staticSeries,
   Tabs,
   useChartTableLayout,
-  usePaneFooter,
+  usePaneFooter, usePaneLoadingSignal,
   usePaneNoticeFooter,
   useTableLoadMore,
   type ChartTableHeaderProps,
@@ -353,16 +354,13 @@ function CompanyView({
     }
   });
 
+  usePaneLoadingSignal(more.loadingMore || status === "loading");
   usePaneFooter(registrationId, () => {
     const info: PaneFooterSegment[] = [];
-    if (loading) info.push({ id: "loading", parts: [{ text: "refreshing", tone: "muted" }] });
-    if (more.loadingMore) info.push({ id: "loading-more", parts: [{ text: "loading more roles", tone: "muted" }] });
     if (error) info.push({ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" }] });
-    // The careers platform is where the roles were read, not what they are,
-    // so the footer says only when; `c` opens the company's own site.
     const collected = formatCollectedAgo(summary.coverage.lastCollectedAt);
     if (collected) {
-      info.push({ id: "source", parts: [{ text: `read ${collected}`, tone: "muted" }] });
+      info.push({ id: "source", parts: [{ text: collected, tone: "muted" }] });
     }
     if (summary.coverage.daysObserved > 1) {
       info.push({ id: "history", parts: [{ text: `${summary.coverage.daysObserved}d of history`, tone: "muted" }] });
@@ -553,19 +551,15 @@ function CompanyPanel({
     return <SignInWall placement="jobs-detail-signin" width={width} height={height} symbol={symbol} exchange={exchange} action="see who is hiring" needsVerification={data.status === 403} />;
   }
   if ((status === "idle" || status === "loading") && !data) {
-    return <PaneStatusBody loading align="center" loadingLabel={`Loading ${symbol} hiring...`} />;
+    return <PaneStatusBody loading align="center" />;
   }
   if (status === "error" && !data) {
-    return <PaneStatusBody error={error ?? "Could not load hiring data."} errorTitle="Could not load hiring data." actions={<Button label="Try again" onPress={reload} />} />;
+    return <PaneStatusBody error={error ?? unavailableText("Hiring data")} errorTitle={error ? unavailableText("Hiring data") : undefined} actions={<Button label="Try again" onPress={reload} />} />;
   }
   if (!data) return null;
   if (data.kind === "pending") {
     return (
-      <PaneStatusBody
-        loading
-        align="center"
-        loadingLabel={`Looking for ${symbol}'s careers system. First read lands within a few minutes.`}
-      />
+      <PaneStatusBody loading align="center" />
     );
   }
   if (data.kind === "uncovered") {
@@ -653,8 +647,6 @@ function HomeView({ width, height, focused, registrationId }: { width: number; h
     info: detailOpen
       ? []
       : [
-          ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-          ...(more.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more companies", tone: "muted" as const }] }] : []),
           ...(error ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }] : []),
         ],
     hints: open || selected
@@ -683,8 +675,8 @@ function HomeView({ width, height, focused, registrationId }: { width: number; h
     }
   }, []);
 
-  if (status === "loading" && !data) return <PaneStatusBody loading align="center" loadingLabel="Loading hiring data..." />;
-  if (status === "error" && !data) return <PaneStatusBody error={error ?? "Could not load hiring data."} errorTitle="Could not load hiring data." actions={<Button label="Try again" onPress={reload} />} />;
+  if (status === "loading" && !data) return <PaneStatusBody loading align="center" />;
+  if (status === "error" && !data) return <PaneStatusBody error={error ?? unavailableText("Hiring data")} errorTitle={error ? unavailableText("Hiring data") : undefined} actions={<Button label="Try again" onPress={reload} />} />;
 
   const tableHeight = Math.max(3, height - (nativePaneChrome ? 1 : 0));
   return (
@@ -750,7 +742,7 @@ function JobsView({ width, height, focused, companyOnly = false }: JobsViewProps
   if (!access.hasProAccess) return <HiringProWall symbol={symbol} exchange={exchange} width={width} height={height} />;
 
   if (!symbol) {
-    if (companyOnly) return <EmptyState title="No ticker selected." message="Select a ticker to see its hiring." />;
+    if (companyOnly) return <EmptyState title="Select a ticker." />;
     return <HomeView width={width} height={height} focused={focused} registrationId={registrationId} />;
   }
   return (

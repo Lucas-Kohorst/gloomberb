@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status-copy";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import {
   addPaneFloating,
@@ -72,7 +73,7 @@ export function useAppTickerOpenRuntime({
         tickerRepository,
       });
       if (!target && canPresentFeedback()) {
-        pluginRegistry.notify({ body: `Could not open ${rawSymbol}.`, type: "error" });
+        pluginRegistry.notify({ body: unavailableText(rawSymbol), type: "error" });
       }
       return target;
     } catch (err) {
@@ -83,7 +84,7 @@ export function useAppTickerOpenRuntime({
           launch: { kind: "ticker-search", query: rawSymbol } });
       }
       const message = err instanceof Error ? err.message : String(err);
-      pluginRegistry.notify({ body: `Failed to open ${rawSymbol}: ${message}`, type: "error" });
+      pluginRegistry.notify({ body: message ? `${rawSymbol}: ${message}` : unavailableText(rawSymbol), type: "error" });
       return null;
     }
   }, [dataProvider, dispatch, pluginRegistry, stateRef, tickerRepository]);

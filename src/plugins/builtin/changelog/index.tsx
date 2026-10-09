@@ -5,6 +5,7 @@ import {
   DataTableStackView,
   DetailScrollBody,
   PaneStatusBody,
+  unavailableText,
   useExternalLinkFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -124,7 +125,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       if (!timedOut && abortRef.current !== controller) return;
       setError(timedOut
         ? "GitHub did not answer in time"
-        : loadError instanceof Error ? loadError.message : "Failed to load changelog");
+        : loadError instanceof Error ? loadError.message : unavailableText("Changelog"));
       setStatus("error");
     } finally {
       clearTimeout(timer);

@@ -4,7 +4,7 @@ import {
   DataTableStackView,
   PaneStatusBody,
   QueryBar,
-  usePaneFooter,
+  usePaneFooter, usePaneLoadingSignal,
   useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
@@ -341,7 +341,6 @@ export function ThesisBoardPane({ focused, width, height }: PaneProps) {
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const segments: PaneFooterSegment[] = [];
-    if (snapshot.loading) segments.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (snapshot.offline) segments.push({ id: "offline", parts: [{ text: "offline copy", tone: "warning" }] });
     if (snapshot.error && !snapshot.offline) segments.push({ id: "error", parts: [{ text: snapshot.error, tone: "warning" }] });
     if (exposure.bookValue > 0 && snapshot.theses.length > 0) {
@@ -372,6 +371,7 @@ export function ThesisBoardPane({ focused, width, height }: PaneProps) {
       : []),
   ], [focusSearch, selectedUntracked, startFor]);
 
+  usePaneLoadingSignal((snapshot.loading));
   usePaneFooter("thesis-board", () => (openId || !signedIn ? null : { info: footerInfo, hints }), [footerInfo, hints, openId, signedIn]);
 
   const handleDetailKeyDown = useCallback((_event: DataTableKeyEvent) => false, []);

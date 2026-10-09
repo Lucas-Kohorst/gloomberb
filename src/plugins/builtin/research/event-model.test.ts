@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AnalystResearchData } from "../../../types/financials";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { buildEventRows, eventSourceNotice, formatEventMetric } from "./event-model";
 
 test("ADR reported EPS and company revenue keep their distinct currencies", () => {
@@ -113,7 +114,12 @@ test("partial and stale corporate data are not described as an empty event histo
   const notice = eventSourceNotice({ variant: "corporate-actions", symbol: "RIVN", actionsError: null, estimatesError: null, estimates: null,
     actions: { symbol: "RIVN", dividends: [], splits: [], earnings: [], coverage: { earnings: "unavailable", dividends: "available" }, stale: true },
   });
-  expect(notice).toEqual({ text: "Unavailable: earnings   Corporate actions stale", failed: true });
+  expect(notice).toEqual({ text: "Unavailable: earnings", failed: true });
+  const fetchedAt = "2026-10-08T12:00:00Z";
+  const dated = eventSourceNotice({ variant: "corporate-actions", symbol: "RIVN", actionsError: null, estimatesError: null, estimates: null,
+    actions: { symbol: "RIVN", dividends: [], splits: [], earnings: [], coverage: { earnings: "unavailable", dividends: "available" }, stale: true, fetchedAt },
+  });
+  expect(dated).toEqual({ text: `Unavailable: earnings   Corporate actions ${formatObservationAge(fetchedAt)}`, failed: true });
 });
 
 test("EE ignores dividends, adjustments and pending announcements when assessing reported earnings coverage", () => {

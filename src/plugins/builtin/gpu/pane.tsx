@@ -10,12 +10,13 @@ import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginAppActi
 import { usePaneInstance } from "../../../state/app/context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box } from "../../../ui";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { GpuBoard } from "./board";
 import { getCachedGpuBoard, gpuCacheScope, GPU_NOT_AVAILABLE, loadGpuBoard } from "./client";
 import { GpuChanges } from "./changes";
 import { GpuEquities } from "./equities";
 import { GpuHistory } from "./history";
-import { GPU_TABS, gpuTab, gpuTime } from "./model";
+import { GPU_TABS, gpuTab } from "./model";
 
 export function GpuPane(props: PaneProps) {
   usePlanAccess();
@@ -39,7 +40,7 @@ function GpuView({ width, height, focused }: PaneProps) {
   const signIn = !data && (session.needsVerification || isCloudSessionRequired(resource.error));
   const notAvailable = !data && resource.error === GPU_NOT_AVAILABLE;
   usePaneStatusFooter({ registrationId: "gpu", loading: resource.loading, error: notAvailable || signIn ? null : resource.error,
-    stale: !!data && (data.stale || resource.data?.stale), info: data?.asOf ? [{ id: "asof", parts: [{ text: `as of ${gpuTime(data.asOf)}`, tone: "muted" }] }] : [] });
+    info: formatObservationAge(data?.asOf) ? [{ id: "asof", parts: [{ text: formatObservationAge(data?.asOf)!, tone: "muted" }] }] : [] });
   usePaneNoticeFooter({ registrationId: "gpu:notices", focused,
     notices: [...(data?.gaps ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
   usePaneFooter("gpu:actions", () => ({ info: data?.access?.preview ? [{ id: "preview", parts: [{ text: "Free preview", tone: "muted" }] }] : [],

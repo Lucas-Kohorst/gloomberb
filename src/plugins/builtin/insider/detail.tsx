@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { Box, Text, type ScrollBoxRenderable } from "../../../ui";
-import { DetailScrollBody, KeyValueRow } from "../../../components";
+import { DetailScrollBody, KeyValueRow, loadingText, unavailableText } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { wrapTextLines } from "../../../utils/text-wrap";
 import {
@@ -32,7 +32,7 @@ function fullTitle(row: InsiderTableRow): string {
 }
 
 export function insiderDetailTitle(row: InsiderTableRow): string {
-  if (row.entry.isLoading) return `Loading ${formatFilingFormLabel(row.entry.filing.form)} filing...`;
+  if (row.entry.isLoading) return loadingText();
   return insiderDisplayName(row.entry) ?? row.name;
 }
 
@@ -72,11 +72,11 @@ function detailText(row: InsiderTableRow): string {
   const { entry } = row;
   const disclosureText = buildInsiderDisclosureText(entry);
   if (entry.transaction) return disclosureText;
-  if (entry.isLoading) return "Loading filing content...";
+  if (entry.isLoading) return loadingText();
   if (disclosureText) return disclosureText;
   return isInsiderDisclosureOnly(entry)
     ? "No transaction lines reported."
-    : "This Form 4 filing could not be parsed into a transaction summary.";
+    : unavailableText("Transaction summary");
 }
 
 const FIELD_LABEL_WIDTH = 20;

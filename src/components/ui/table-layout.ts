@@ -7,6 +7,8 @@ export interface TableWidthColumn {
   flexGrow?: number;
   align?: string;
   label?: string;
+  /** Extra blank cells before this column, on top of the regular gap. */
+  leadGap?: number;
 }
 
 const TRAILING_COLUMN_GUTTER_WIDTH = 1;
@@ -32,7 +34,8 @@ export function tableColumnLeadGap(
   if (index <= 0 || columnGap <= 0) return 0;
   const previous = columns[index - 1];
   const column = columns[index];
-  return previous?.align === "right" && (column?.align ?? "left") === "left" ? 1 : 0;
+  const paired = previous?.align === "right" && (column?.align ?? "left") === "left" ? 1 : 0;
+  return paired + Math.max(0, column?.leadGap ?? 0);
 }
 
 /**

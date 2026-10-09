@@ -8,6 +8,7 @@ import { getRouterEntityKey } from "../sources/provider-router/cache";
 import { publicListingTarget } from "../sources/listing-target";
 import { fetchHistoryResult } from "../sources/history-result";
 import type { HistorySession, PriceHistoryResult } from "../types/price-history";
+import { formatObservationAge } from "../utils/datetime-format";
 import { FINANCIAL_VINTAGE_NOTICE, SEC_EPS_BASIS_NOTICE } from "../utils/financial-statements";
 import { appendLiveQuotePoint, hasUnknownBondHistoryBasis } from "./chart-data";
 import { LiveBarAccumulator } from "./live-bars";
@@ -1144,7 +1145,9 @@ function baseCapabilitySeries(
 
 function staleFredWarning(loaded: FredSeriesLoadResult): string | null {
   if (!loaded.stale) return null;
-  return `FRED refresh failed${loaded.refreshError ? ` (${loaded.refreshError})` : ""}; showing cached data fetched ${new Date(loaded.fetchedAt).toISOString().slice(0, 10)}.`;
+  const age = formatObservationAge(new Date(loaded.fetchedAt).getTime());
+  const reason = loaded.refreshError ? ` (${loaded.refreshError})` : "";
+  return `FRED refresh failed${reason}${age ? `; FRED ${age}` : ""}.`;
 }
 
 function assignAxes(

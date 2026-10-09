@@ -1,4 +1,5 @@
 import { useCallback, useEffect, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status-copy";
 import { loadPersistedBrokerAccountMap } from "../../brokers/account-cache";
 import type { AppSessionSnapshot } from "../../core/state/session-persistence";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
@@ -126,7 +127,7 @@ export function useAppStartupRuntime({
         } catch (error) {
           appLog.error("Failed to load persisted broker accounts", { error: error instanceof Error ? error.message : String(error) });
           pluginRegistry.notify({
-            body: "Failed to load saved broker account data. Check local storage permissions.",
+            body: unavailableText("Saved broker accounts"),
             type: "error",
           });
         }

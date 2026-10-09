@@ -5,6 +5,8 @@ import { CHART_COMPOSER_PANE_ID, LEGACY_TICKER_DETAIL_PANE_ID } from "../../type
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { normalizeTickerInput } from "../../tickers/search";
 import type { MarketContext } from "../types";
+import { unavailableText } from "../../components/ui/status-copy";
+import { formatObservationAge } from "../../utils/datetime-format";
 import { cleanTickerInput } from "./options";
 import { parsePublicTickerKey, publicTickerKey } from "../../utils/exchanges";
 import type { ResolvedPaneFunction } from "./resolver";
@@ -77,7 +79,8 @@ export async function withShotSeasonalityHistory(
 ): Promise<TickerFinancials> {
   const monthly = await loadSeasonalityHistory({ instrument, forceRefresh: context.refresh }, context.dataProvider);
   if (monthly.error || monthly.stale) {
-    throw new Error(`${instrument.symbol}: ${monthly.error ?? "monthly price history is stale"}`);
+    const age = formatObservationAge(monthly.fetchedAt);
+    throw new Error(`${instrument.symbol}: ${monthly.error ?? (age ? `Monthly price history ${age}` : unavailableText("Monthly price history"))}`);
   }
   return { ...financials, priceHistory: monthly.history, priceHistoryResolution: SEASONALITY_HISTORY_RESOLUTION };
 }
@@ -126,11 +129,11 @@ export async function withShotPeriodEndHistory(
     { ...toMarketDataContext(instrument), ...(context.refresh ? { cacheMode: "refresh" as const } : {}) })
     .catch((error: unknown) => { throw fail(error instanceof Error ? error.message : String(error)); });
   const last = priceHistory.reduce((latest, point) => Math.max(latest, new Date(point.date).getTime() || -Infinity), -Infinity);
-  if (!Number.isFinite(last)) throw fail("daily price history is unavailable");
+  if (!Number.isFinite(last)) throw fail(unavailableText("Daily price history"));
   const lastClose = new Date(last).toISOString().slice(0, 10);
   const newest = latestFinancialPeriodEnd(statements)!;
   if (lastClose < newest && periodEndClose(priceHistory, newest) === undefined) {
-    throw fail(`daily price history is stale: the last close is ${lastClose}, before the ${newest} period end`);
+    throw fail(`Daily price history ${lastClose}`);
   }
   return { ...financials, priceHistory, priceHistoryResolution: PERIOD_END_HISTORY_RESOLUTION };
 }

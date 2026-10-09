@@ -75,7 +75,7 @@ for (const outcome of ["success", "disjoint", "empty", "failed"] as const) {
     await waitFor(() => requested.size === 2);
     expect(latest?.loading).toBe(true);
     expect(latest?.priceComparison?.start).toBeNull();
-    expect(tui.frame()).toContain("Loading chart data");
+    expect(tui.frame()).toContain("Loading...");
     expect(tui.frame()).not.toContain("Comparison unavailable");
 
     await act(async () => { first.resolve(history); await Bun.sleep(2); });
@@ -88,7 +88,7 @@ for (const outcome of ["success", "disjoint", "empty", "failed"] as const) {
     });
     await waitFor(() => latest?.loading === false);
     const settled = tui.frame();
-    expect(settled).not.toContain("Loading chart data");
+    expect(settled).not.toContain("Loading...");
     if (outcome === "success") {
       expect(latest?.series.map((series) => series.points.length)).toEqual([2, 2]);
       expect(settled).not.toContain("Comparison unavailable");
@@ -112,7 +112,7 @@ for (const outcome of ["success", "disjoint", "empty", "failed"] as const) {
       await waitFor(() => requested.size === 2);
       expect(latest?.loading).toBe(true);
       const refreshing = tui.frame();
-      expect(refreshing).toContain("Loading chart data");
+      expect(refreshing).toContain("Loading...");
       expect(refreshing).not.toContain("Comparison unavailable");
       expect(refreshing).not.toContain("no observations in the selected date range");
       await act(async () => { first.resolve(history); second.resolve(secondHistory); });

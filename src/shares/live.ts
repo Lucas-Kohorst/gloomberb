@@ -1,3 +1,4 @@
+import { unavailableText } from "../components/ui/status";
 import type { AppNotificationRequest } from "../types/plugin";
 import { createShare, openLiveShareUrl } from "./api";
 import type { SharePayload } from "./payload";
@@ -20,7 +21,7 @@ export async function copyLivePaneShare(
     host.notify({ body: "Share link copied to clipboard", type: "success" });
   } catch (error) {
     host.notify({
-      body: error instanceof Error ? error.message : "Could not share this pane.",
+      body: error instanceof Error ? error.message : unavailableText("Share"),
       type: "error",
     });
   }

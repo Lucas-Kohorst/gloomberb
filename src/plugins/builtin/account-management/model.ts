@@ -2,6 +2,7 @@ import type { ChoiceDialogChoice } from "../../../components";
 import type { AccountProfile, CloudPricing, PublicPortfolioAnalytics } from "../../../api-client";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import { formatNumber } from "../../../utils/format";
+import { loadingText } from "../../../components/ui/status-copy";
 import { t, tf } from "../../../i18n";
 import { compoundReturns } from "../analytics/risk-math";
 
@@ -302,7 +303,6 @@ export function buildPublishedProfileAnalyticsPreview({
   savedProfilePublic,
   savedSharedPortfolioId,
   selectedPortfolioId,
-  syncing,
 }: {
   analytics: PublicPortfolioAnalytics | null | undefined;
   draftProfilePublic: boolean;
@@ -311,7 +311,6 @@ export function buildPublishedProfileAnalyticsPreview({
   savedProfilePublic: boolean;
   savedSharedPortfolioId: string;
   selectedPortfolioId: string;
-  syncing: boolean;
 }): ProfileAnalyticsPreview {
   if (!selectedPortfolioId) {
     return {
@@ -337,7 +336,7 @@ export function buildPublishedProfileAnalyticsPreview({
     return {
       status: "pending",
       title: portfolio.name,
-      subtitle: t("Loading published metrics."),
+      subtitle: "",
       metrics: [],
       publicAnalytics: null,
     };
@@ -368,7 +367,7 @@ export function buildPublishedProfileAnalyticsPreview({
     return {
       status: "pending",
       title: portfolio.name,
-      subtitle: syncing ? t("Syncing published metrics.") : t("Waiting for published metrics."),
+      subtitle: loadingText(),
       metrics: [],
       publicAnalytics: null,
     };

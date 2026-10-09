@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { formatApproximateAge } from "./datetime-format";
 import { selectMarketCapitalization, describeFundamentalMarketCap } from "./market-capitalization";
 import type { Quote } from "../types/financials";
 
@@ -11,8 +12,9 @@ test("a lightweight quote preserves the separately sourced capitalization and re
   const selected = selectMarketCapitalization(quote, fundamentals)!;
   expect(selected).toEqual({ value: fundamentals.marketCap, currency: "USD",
     provenance: { kind: "fundamentals", source: "gloom", retrievedAt: fundamentals.fetchedAt, stale: false } });
-  expect(describeFundamentalMarketCap(selected.provenance)).toContain("retrieved 2026-09-11 15:23:57 UTC");
+  expect(describeFundamentalMarketCap(selected.provenance)).toContain(formatApproximateAge(Date.parse(fundamentals.fetchedAt)));
   expect(describeFundamentalMarketCap(selected.provenance)).toContain("valuation date unavailable");
+  expect(describeFundamentalMarketCap(selected.provenance)).not.toContain("gloom");
   expect(selectMarketCapitalization(undefined, fundamentals)).toEqual(selected);
   expect(quote.marketCap).toBeUndefined();
 });
@@ -33,6 +35,6 @@ test.each([NaN, Infinity, -1])("unusable capitalization %s is not ranked", (mark
 
 test("stale and undated fundamental provenance remains explicit", () => {
   const selected = selectMarketCapitalization(quote, { ...fundamentals, fetchedAt: undefined, stale: true })!;
-  expect(describeFundamentalMarketCap(selected.provenance)).toContain("retrieval time unavailable, stale");
+  expect(describeFundamentalMarketCap(selected.provenance)).toBe("valuation date unavailable");
   expect(selected.provenance.retrievedAt).toBeUndefined();
 });

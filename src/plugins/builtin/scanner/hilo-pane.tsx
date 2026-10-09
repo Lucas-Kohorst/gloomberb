@@ -170,7 +170,7 @@ function HiloPane({ focused, width, height }: PaneProps) {
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={RENDER_ROW[side]}
       selectedTextOverridesCellColor
-      emptyContent={feed.payload ? undefined : <PaneStatusBody loading loadingLabel="Waiting for the scanner..." />}
+      emptyContent={feed.payload ? undefined : <PaneStatusBody loading />}
       emptyStateTitle="Nothing above the price filter yet."
     />
   );

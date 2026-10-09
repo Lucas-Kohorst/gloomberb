@@ -120,7 +120,7 @@ test.each(["ambiguous", "missing"])("%s ticker feedback waits for current naviga
     ? [{ type: "SET_COMMAND_BAR", open: true, query: "GLD", launch: { kind: "ticker-search", query: "GLD" } }]
     : []);
   expect(notifications).toHaveLength(1);
-  expect(notifications[0]).toContain(mode === "ambiguous" ? "Multiple listings match GLD" : "Could not open GLD");
+  expect(notifications[0]).toContain(mode === "ambiguous" ? "Multiple listings match GLD" : "GLD unavailable.");
 });
 
 test.each(["floating", "docked", "only-floating"])("ticker research opens visibly from a %s source", async (mode) => {

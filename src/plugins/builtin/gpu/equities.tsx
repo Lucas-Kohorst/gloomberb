@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { GpuBoardRow } from "../../../api-client/gpu";
 import {
-  buildSectionedRows, DataTableView, EMPTY_TABLE_CELL, isSectionedItemRow, renderSectionedRowHeader, usePaneFooter, usePaneNoticeFooter,
+  buildSectionedRows, DataTableView, EMPTY_TABLE_CELL, isSectionedItemRow, renderSectionedRowHeader, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter,
   type DataTableCell, type DataTableColumn, type SectionedRow,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
@@ -59,6 +59,7 @@ export function GpuEquities({ board, model, setModel, reloadBoard, width, height
     items: rows.filter((row) => (group.roles as readonly string[]).includes(row.role)) })), (row) => row.symbol), [rows]);
   const historyMap = useMemo(() => new Map(history.data?.map((entry) => [entry.symbol, entry]) ?? []), [history.data]);
   const ends = [...new Set(history.data?.flatMap((entry) => entry.asOf ? [entry.asOf] : []) ?? [])].sort();
+  usePaneLoadingSignal(quoteBoardStatus(quotes).loading > 0);
   usePaneFooter("gpu:equity-status", () => ({ info: [...quoteBoardFooterInfo(quoteBoardStatus(quotes)),
     ...(ends.length === 1 ? [{ id: "five-asof", parts: [{ text: `5D closes through ${ends[0]}`, tone: "muted" as const }] }] : [])] }), [quotes, ends.join(",")]);
   usePaneNoticeFooter({ registrationId: "gpu:equity-notices", focused,

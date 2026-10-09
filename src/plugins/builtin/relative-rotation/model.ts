@@ -1,3 +1,5 @@
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { publishedWeekClose } from "../analytics/sharpe-cadence";
 import { historyStatistics } from "../../../components/chart/curve/model";
 import type { CloudPricePointPayload } from "../../../api-client/types";
@@ -7,6 +9,11 @@ import {
   normalizeSymbol,
   parsePublicTickerKey,
 } from "../../../utils/exchanges";
+
+function historyNotice(label: string, asOf: string | null): string {
+  const age = formatObservationAge(asOf);
+  return age ? `${label} ${age}` : unavailableText(label);
+}
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
@@ -210,7 +217,7 @@ export function buildRotation(
       : !weekly.has(lastFriday)
         ? `Benchmark week ending ${lastFriday} is missing its verified ${expectedClose} close.`
         : null,
-    benchmark.stale ? "Benchmark history is stale." : null,
+    benchmark.stale ? historyNotice("Benchmark history", benchmark.asOf) : null,
     !benchmark.currency ? "Benchmark currency is unavailable." : null,
     asOf && Date.parse(today) - Date.parse(asOf) > 10 * DAY
       ? `Benchmark weekly history ends ${asOf}.`
@@ -221,7 +228,7 @@ export function buildRotation(
     const closes = rotationCloses(source.points, through);
     const gaps = [
       source.error,
-      source.stale ? "History is stale." : null,
+      source.stale ? historyNotice("History", source.asOf) : null,
       source.currency !== benchmark.currency || !source.currency
         ? "Price currency does not match the benchmark."
         : null,

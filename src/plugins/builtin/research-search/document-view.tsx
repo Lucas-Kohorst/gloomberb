@@ -5,7 +5,7 @@ import type {
   CloudSearchDocumentChunk,
   CloudSearchHit,
 } from "../../../api-client";
-import { Button, PaneStatusBody } from "../../../components";
+import { Button, PaneStatusBody, unavailableText } from "../../../components";
 import { openUrl } from "../../../components/ui/external-link";
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
@@ -217,7 +217,7 @@ export function SearchDocumentView({
 
   if (loading && !document) {
     return (
-      <PaneStatusBody loading align="center" loadingLabel="Loading document..." />
+      <PaneStatusBody loading align="center" />
     );
   }
   if (error && !document) {
@@ -227,7 +227,7 @@ export function SearchDocumentView({
     return (
       <PaneStatusBody
         error={error}
-        errorTitle={hit.url ? "Could not load the indexed copy." : "Could not load this document."}
+        errorTitle={unavailableText(hit.url ? "Indexed copy" : "Document")}
         actions={hit.url ? <Button label="Open original" variant="secondary" onPress={() => openUrl(hit.url)} /> : undefined}
       />
     );

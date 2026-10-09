@@ -17,6 +17,7 @@ import {
   QueryBar,
   TextField,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneNoticeFooter,
   usePaneTabs,
   useTableLoadMore,
@@ -44,6 +45,7 @@ import {
   type ScreenRow,
 } from "../../../api-client/equity-screener";
 import type { PaneProps } from "../../../types/plugin";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercentileRank } from "../../../utils/format";
 import { useResearchCloudSession } from "../shared/research-cloud-session";
 import { INITIAL_STREAM_RANGE, streamWindowRows } from "../shared/use-quote-board";
@@ -485,25 +487,13 @@ function EquityScreenView({
                 disabled: !selected,
               },
             ];
+  usePaneLoadingSignal(results.loading || results.loadingMore || saving || exporting);
   usePaneFooter(
     "equity-screener",
-    () => ({
+    () => {
+      const snapshotAge = data?.snapshot ? formatObservationAge(data.snapshot.assembledAt) : null;
+      return {
       info: [
-        ...(results.loading || results.loadingMore
-          ? [
-              {
-                id: "loading",
-                parts: [
-                  {
-                    text: results.loadingMore
-                      ? "loading more"
-                      : "loading screen",
-                    tone: "muted" as const,
-                  },
-                ],
-              },
-            ]
-          : []),
         ...(data?.snapshot
           ? [
               {
@@ -513,29 +503,18 @@ function EquityScreenView({
                     text: `${data.universe.matched.toLocaleString("en-US")} of ${data.universe.covered.toLocaleString("en-US")} covered`,
                   },
                   {
-                    text: `· ${data.definition.currency ?? "native currencies"} · snapshot ${data.snapshot.assembledAt.slice(0, 16).replace("T", " ")} UTC`,
+                    text: `· ${data.definition.currency ?? "native currencies"}${snapshotAge ? ` · ${snapshotAge}` : ""}`,
                     tone: "muted" as const,
                   },
                 ],
               },
             ]
           : []),
-        ...(saving || exporting
-          ? [
-              {
-                id: "busy",
-                parts: [
-                  {
-                    text: saving ? "saving" : "exporting",
-                    tone: "muted" as const,
-                  },
-                ],
-              },
-            ]
-          : []),
+
       ],
       hints,
-    }),
+      };
+    },
     [
       results.loading,
       results.loadingMore,

@@ -9,7 +9,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/display";
 import { Spinner } from "../components/ui/loading";
 import { QueryBar } from "../components/ui/query-bar";
-import { EmptyState } from "../components/ui/status";
+import { EmptyState, loadingText } from "../components/ui/status";
 import { useShortcut } from "../react/input";
 import { t, tf } from "../i18n";
 import { useThemeColors } from "../theme/theme-context";
@@ -164,7 +164,6 @@ function EntryRow({
 }
 
 function DiscoverStatus({ controller }: { controller: LayoutGalleryController }) {
-  const colors = useThemeColors();
   const { discover } = controller;
 
   if (!controller.signedIn) {
@@ -182,8 +181,7 @@ function DiscoverStatus({ controller }: { controller: LayoutGalleryController })
   if (discover.state.status === "loading" || discover.state.status === "idle") {
     return (
       <Box flexDirection="row" alignItems="center" paddingX={1} flexShrink={0}>
-        <Spinner />
-        <Text fg={colors.textDim}>{` ${t("Loading…")}`}</Text>
+        <Spinner label={loadingText()} />
       </Box>
     );
   }
@@ -212,7 +210,7 @@ function DiscoverStatus({ controller }: { controller: LayoutGalleryController })
 
 function TeamStatus({ controller }: { controller: LayoutGalleryController }) {
   const { state, refresh } = controller.teamLayouts;
-  if (state.status === "loading") return <SidebarNote>{t("Loading team layouts…")}</SidebarNote>;
+  if (state.status === "loading") return <SidebarState><Spinner label={loadingText()} /></SidebarState>;
   if (state.status === "error") {
     return (
       <SidebarState>

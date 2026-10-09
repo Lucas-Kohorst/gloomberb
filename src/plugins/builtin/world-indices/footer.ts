@@ -1,4 +1,4 @@
-import { usePaneFooter, type PaneFooterSegment } from "../../../components";
+import { usePaneFooter, usePaneLoadingSignal, type PaneFooterSegment } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import {
   boardErrorMessage,
@@ -12,6 +12,7 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
   const errorMessage = boardErrorMessage(quotes);
 
   usePaneRefreshKey(onRefresh, { focused });
+  usePaneLoadingSignal(status.loading > 0);
 
   usePaneFooter(
     "world-indices",

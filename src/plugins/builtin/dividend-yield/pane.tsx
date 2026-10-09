@@ -4,12 +4,14 @@ import {
   ChartTableHeader,
   chartTableLayout,
   DataTableView,
+  PaneStatusBody,
   scalarPoint,
   spanAxisFormatter,
   statGridColumns,
   staticSeries,
   useChartTableSelection,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneNoticeFooter,
   usePaneTicker,
   type DataTableCell,
@@ -37,6 +39,7 @@ import {
   type DividendSortPreference,
 } from "./model";
 import type { DividendMetrics } from "./types";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { dividendPriceAsOf, dividendPriceStatus, dividendQuotePriceMetadata } from "./reference-price";
 
 function formatRate(value: number | null, currency: string): string {
@@ -165,22 +168,27 @@ export function DividendYieldPane({ focused, width, height, loadData = fetchDivi
   const priceAsOf = dividendPriceAsOf(Date.parse(priceMetadata?.priceAsOf ?? ""));
   const priceStatus = dividendPriceStatus(currentPrice, priceAsOf, priceMetadata?.priceStale);
 
+  const priceStamp = Date.parse(priceMetadata?.priceAsOf ?? "");
+  const priceAge = Number.isFinite(priceStamp) ? formatApproximateAge(priceStamp) : "";
+  const historyStamp = historyData?.fetchedAt ? Date.parse(historyData.fetchedAt) : NaN;
+  const historyAge = Number.isFinite(historyStamp) ? formatApproximateAge(historyStamp) : "";
+  usePaneLoadingSignal(loading && !!data);
   usePaneFooter("dividend-yield", () => {
     const active = loadingErrorFooterInfo(loading, authWall ? null : error ?? data?.historyError ?? data?.summaryError ?? null);
     if (active.length > 0) return { info: active };
-    const priceText = priceStatus === "unknown-time" ? "Reference price time unavailable"
-      : priceStatus === "stale" ? `Stale price${priceAsOf ? ` ${priceAsOf}` : ""}`
-      : currentPrice != null && priceAsOf ? `Price ${priceAsOf}` : "";
-    const historyText = historyData?.fetchedAt ? `History fetched ${historyData.fetchedAt}` : "";
+    const priceText = priceStatus === "unknown-time" || (priceStatus === "stale" && !priceAge)
+      ? "Reference price time unavailable"
+      : priceAge;
+    const historyText = historyAge && historyAge !== priceText ? historyAge : "";
     const showHistory = historyText && (!priceText || priceText.length + historyText.length + 3 <= width - 4);
     return { info: priceText || showHistory ? [{ id: "source-time", parts: [
       ...(priceText ? [{ text: priceText, tone: priceStatus ? "warning" as const : "muted" as const }] : []),
       ...(showHistory ? [{ text: `${priceText ? " · " : ""}${historyText}`, tone: "muted" as const }] : []),
     ] }] : [] };
-  }, [authWall, currentPrice, historyData?.fetchedAt, data?.historyError, data?.summaryError, error, loading, priceAsOf, priceStatus, width]);
+  }, [authWall, historyAge, data?.historyError, data?.summaryError, error, loading, priceAge, priceStatus, width]);
 
   const sourceWarnings = [
-    ...(data?.stale ? ["Stale cash history; recent distributions may be missing."] : []),
+    ...(data?.stale ? ["Recent distributions may be missing."] : []),
   ];
   usePaneNoticeFooter({
     registrationId: "dividend-yield-notices",
@@ -240,12 +248,11 @@ export function DividendYieldPane({ focused, width, height, loadData = fetchDivi
   ), [refresh]);
 
   const emptyTitle = !symbol
-    ? "No ticker selected."
-    : loading
-      ? "Loading dividends..."
-      : error ?? (data?.historyAvailable ? "No cash distributions reported." : "Dividend history unavailable.");
+    ? "Select a ticker."
+    : error ?? (data?.historyAvailable ? "No cash distributions reported." : "Dividend history unavailable.");
 
   if (authWall) return <SignInWall placement="dividend-yield-signin" action="view dividend history" needsVerification={cloudSession.needsVerification} />;
+  if (loading && !data) return <PaneStatusBody loading align="center" width={width} height={height} />;
 
   return (
     <DataTableView<DividendRow, DividendColumn>

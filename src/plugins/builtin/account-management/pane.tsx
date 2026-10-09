@@ -405,7 +405,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       savedProfilePublic: profile?.profilePublic === true,
       savedSharedPortfolioId: profile?.sharedPortfolioId ?? "",
       selectedPortfolioId: draft.sharedPortfolioId,
-      syncing: syncStatus.phase === "syncing",
     }),
     [
       draft.profilePublic,
@@ -413,7 +412,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       language,
       profile,
       selectedAnalyticsPortfolio,
-      syncStatus.phase,
     ],
   );
   const profileAnalyticsDetail = useMemo(() => {

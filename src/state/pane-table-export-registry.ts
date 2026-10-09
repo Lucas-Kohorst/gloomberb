@@ -1,3 +1,4 @@
+import { unavailableText } from "../components/ui/status-copy";
 import { createCsvExportFilename } from "../utils/csv";
 
 export type PaneTableExporter = (filename: string) => Promise<string>;
@@ -45,6 +46,6 @@ export async function exportPaneTableCsv(
     const location = await exportPaneTable(paneId, createCsvExportFilename(title));
     notify({ body: `Exported to ${location}`, type: "success" });
   } catch {
-    notify({ body: "Failed to export CSV", type: "error" });
+    notify({ body: unavailableText("CSV export"), type: "error" });
   }
 }

@@ -10,6 +10,7 @@ import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
 import { colors, priceColor } from "../../../theme/colors";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { MarketState, Quote } from "../../../types/financials";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { formatPercentRaw } from "../../../utils/format";
 import { useAssetData } from "../../runtime";
 
@@ -378,20 +379,13 @@ export function quoteBoardStatus(quotes: BoardQuoteMap): QuoteBoardStatus {
 /** Board footer status: everything here changes as loads succeed or fail. */
 export function quoteBoardFooterInfo(status: QuoteBoardStatus): PaneFooterSegment[] {
   const info: PaneFooterSegment[] = [];
-  if (status.loading > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
-  if (status.stale > 0) {
-    info.push({ id: "stale", parts: [{ text: `${status.stale} stale`, tone: "warning" }] });
-  }
   if (status.unavailable > 0) {
     info.push({ id: "error", parts: [{ text: `${status.unavailable} unavailable`, tone: "warning" }] });
   }
   if (status.latestTs > 0) {
     info.push({
       id: "fresh",
-      parts: [{
-        text: new Date(status.latestTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        tone: "muted",
-      }],
+      parts: [{ text: formatApproximateAge(status.latestTs), tone: "muted" }],
     });
   }
   return info;

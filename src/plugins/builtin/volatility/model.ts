@@ -1,5 +1,12 @@
 import type { CloudFredObservationPayload, CloudFredSeriesInfoPayload } from "../../../api-client";
+import { unavailableText } from "../../../components/ui/status-copy";
 import type { PricePoint } from "../../../types/financials";
+import { formatObservationAge } from "../../../utils/datetime-format";
+
+function cachedAge(label: string, timestamp: string | null | undefined): string {
+  const age = formatObservationAge(timestamp);
+  return age ? `${label} ${age}` : unavailableText(label);
+}
 
 export const VOLATILITY_SERIES = [
   { seriesId: "VIXCLS", label: "VIX", tenor: "30D", days: 30 },
@@ -174,10 +181,10 @@ function fredHistory(inputs: VolatilityInputs["fred"]): FredVolatilityHistory {
   const metrics = VOLATILITY_SERIES.map((definition): VolatilityMetric => {
     const input = inputs?.[definition.seriesId];
     const normalized = normalizeHistory(input?.observations ?? [], true);
+    const latest = normalized.history.at(-1);
     warnings.push(...normalized.warnings.map((warning) => `${definition.seriesId}: ${warning}`));
     if (input?.error) warnings.push(`${definition.seriesId}: ${input.error}`);
-    if (input?.stale) warnings.push(`${definition.seriesId}: cached source is stale`);
-    const latest = normalized.history.at(-1);
+    if (input?.stale) warnings.push(cachedAge(definition.seriesId, latest?.date));
     return { ...definition, title: input?.info?.title ?? definition.label, value: latest?.value ?? null,
       date: latest?.date ?? null, history: normalized.history,
       missingDates: normalized.rows.filter((row) => row.value == null).map((row) => row.date),
@@ -242,7 +249,7 @@ function boardRow(definition: typeof VOLATILITY_INDICES[number], input: Volatili
   if (latest && latest.date !== normalized.rows.at(-1)?.date) warnings.push("Latest supplied close unavailable; showing last valid observation");
   if (latest && !adjacent) warnings.push("1D change unavailable: previous daily close missing or too far apart");
   if (latest && !broadCoverage) warnings.push(`1Y percentile unavailable: ${history.length} observations across ${coverageDays} days`);
-  if (input?.stale) warnings.push("Cached daily history is stale");
+  if (input?.stale) warnings.push(cachedAge("Daily history", latest?.date));
   if (input?.error) warnings.push(input.error);
   return { ...definition, unit: "index points", value: latest?.value ?? null, date: latest?.date ?? null,
     source: input?.source ?? null, previousDate: previous?.date ?? null, change1d,
@@ -279,7 +286,7 @@ function alignedCurve(board: readonly VolatilityBoardRow[], fred: FredVolatility
   const spot = points[1]!.value, threeMonth = points[2]!.value;
   const warnings = points.flatMap((point, index) => [
     ...(point.value == null ? [`${point.label}: no close aligned to ${date ?? "a common date"}`] : []),
-    ...(point.value != null && rows[index]!.stale ? [`${point.label}: aligned close is from stale cached history`] : []),
+    ...(point.value != null && rows[index]!.stale ? [cachedAge(point.label, date)] : []),
   ]);
   const ratio = spot != null && threeMonth != null ? threeMonth / spot : null;
   const context = ratioPercentile(fred, ratio, date);

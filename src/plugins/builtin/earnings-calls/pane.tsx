@@ -17,6 +17,7 @@ import {
   type PaneFooterSegment
 } from "../../../components";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
@@ -683,13 +684,15 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       }
       const visibleLookup = lookup && (lookup.ticker === lookupTicker || (detailOpen && selected?.ticker === lookup.ticker)) ? lookup : null;
       if (visibleLookup?.stale) {
-        info.push({ id: "lookup-stale", parts: [{ text: `${visibleLookup.ticker} stale cache`, tone: "warning" }] });
+        const age = formatObservationAge(visibleLookup.fetchedAt);
+        if (age) info.push({ id: "lookup-stale", parts: [{ text: `${visibleLookup.ticker} ${age}`, tone: "muted" }] });
       }
       if (visibleLookup?.refreshError && lookupState !== "error") {
         info.push({ id: "lookup-error", parts: [{ text: `${visibleLookup.ticker}: ${visibleLookup.refreshError}`, tone: "warning" }] });
       }
       if (stale) {
-        info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
+        const age = formatObservationAge(listFetchedAt);
+        if (age) info.push({ id: "stale", parts: [{ text: age, tone: "muted" }] });
       }
       if (listError) {
         info.push({ id: "error", parts: [{ text: listError.message, tone: "warning" }] });
@@ -721,6 +724,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       lookupTicker,
       lookup,
       stale,
+      listFetchedAt,
       listError,
       proRequired,
       transcriptProRequired,
@@ -773,7 +777,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   // for the company, or it has nothing to search for.
   if (ticker && calls.length === 0) {
     return listPending ? (
-      <PaneStatusBody loading align="center" loadingLabel={`Looking for ${ticker}'s earnings calls...`} />
+      <PaneStatusBody loading align="center" />
     ) : (
       <EmptyState
         title={`No earnings calls found for ${ticker}.`}

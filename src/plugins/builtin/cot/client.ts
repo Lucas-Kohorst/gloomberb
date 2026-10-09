@@ -3,6 +3,8 @@ import type { CotBoardPayload, CotClass, CotClassSummary, CotContractPayload, Co
 import { createPluginCache } from "../../../data/plugin-cache";
 import { loadCloudResource, unavailableOnServer } from "../shared/cloud-resource";
 import type { PricePoint } from "../../../types/financials";
+import { unavailableText } from "../../../components/ui/status-copy";
+import { formatObservationAge } from "../../../utils/datetime-format";
 import { COT_CLASSES, cotPriceMapping } from "./model";
 
 export const cotBoardCache = createPluginCache<CotBoardPayload>({ kind: "cot-board", source: "gloom-cloud", schemaVersion: 1,
@@ -93,7 +95,9 @@ export async function loadCotDetail(contractCode: string, family: CotFamily, cli
         && (!start || time >= Date.parse(start))) seen.set(time, { date: new Date(time), close: point.close });
     }
     const price = [...seen.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
-    return { payload, price, priceSymbol: mapping.priceSymbol, priceAsOf: price.at(-1)?.date.toISOString().slice(0, 10) ?? null,
-      priceWarning: result.stale ? "Front-price history is stale." : price.length ? null : "Front-price history unavailable." };
+    const priceAsOf = price.at(-1)?.date.toISOString().slice(0, 10) ?? null;
+    const priceAge = result.stale ? formatObservationAge(priceAsOf) : null;
+    return { payload, price, priceSymbol: mapping.priceSymbol, priceAsOf,
+      priceWarning: result.stale ? priceAge ? `Front price ${priceAge}` : unavailableText("Front-price history") : price.length ? null : unavailableText("Front-price history") };
   } catch { return { payload, price: [], priceSymbol: mapping.priceSymbol, priceAsOf: null, priceWarning: "Front-price history unavailable. Positioning remains available." }; }
 }

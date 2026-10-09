@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status";
 import { apiClient } from "../../api-client";
 import { getDockedPaneIds } from "../../layout/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -424,7 +425,7 @@ function handleCreateAlert(
     return;
   }
   void Promise.resolve(command.execute(action.values)).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to create alert.");
+    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Alert"));
   });
 }
 
@@ -445,7 +446,7 @@ function handleOpenChatChannel(
   void pluginRegistry.createPaneFromTemplateAsync("new-chat-pane", options).then(() => {
     notifySuccess(pluginRegistry, action.message);
   }).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open chat.");
+    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Chat"));
   });
 }
 
@@ -461,7 +462,7 @@ function handleOpenChatDm(
   void Promise.resolve(command.execute({ participants: action.participants })).then(() => {
     notifySuccess(pluginRegistry, action.message);
   }).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open DM.");
+    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Direct message"));
   });
 }
 
@@ -477,7 +478,7 @@ function handleOpenNews(
     void pluginRegistry.createPaneFromTemplateAsync("ticker-news-pane", { symbol: action.symbol }).then(() => {
       notifySuccess(pluginRegistry, action.message);
     }).catch((error) => {
-      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open ticker news.");
+      notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Ticker news"));
     });
     return;
   }
@@ -564,12 +565,12 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
       return;
     case "open-share":
       void handleOpenShare(action, options.pluginRegistry).catch((error) => {
-        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared pane.");
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : unavailableText("Shared pane"));
       });
       return;
     case "open-layout":
       void handleOpenLayout(action, options).catch((error) => {
-        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared layout.");
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : unavailableText("Shared layout"));
       });
       return;
   }

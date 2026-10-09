@@ -19,6 +19,7 @@ import {
 } from "./model";
 import { useAppLanguage } from "../../../../i18n/react";
 import type { ContextMenuItem } from "../../../../types/context-menu";
+import { PaneBodyLoadingProvider, usePaneBodyLoadingApi } from "../body-loading";
 
 const usePaneFooterRegistrationEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
@@ -33,6 +34,28 @@ const PaneFooterContext = createContext<PaneFooterContextValue | null>(null);
 /** Also gates non-footer interaction owned by an inactive pane/tab. */
 export function usePaneFooterScopeActive(): boolean {
   return useContext(PaneFooterContext) !== null;
+}
+
+function usePaneLoadingClaim(active: boolean, kind: "signal" | "cover") {
+  const api = usePaneBodyLoadingApi();
+  const scopeActive = usePaneFooterScopeActive();
+  const id = useId();
+  const on = active && scopeActive;
+  const notify = kind === "signal" ? api?.signal : api?.cover;
+  usePaneFooterRegistrationEffect(() => {
+    notify?.(id, on);
+    return () => notify?.(id, false);
+  }, [id, notify, on]);
+}
+
+/** An in-flight load. The body draws the spinner unless a full-body status already does. */
+export function usePaneLoadingSignal(active: boolean) {
+  usePaneLoadingClaim(active, "signal");
+}
+
+/** The body is already the loading spinner, so the shell must not draw a second one. */
+export function usePaneLoadingCover(active: boolean) {
+  usePaneLoadingClaim(active, "cover");
 }
 
 export function PaneFooterProvider({
@@ -81,7 +104,7 @@ export function PaneFooterProvider({
   return (
     <PaneFooterContext.Provider value={value}>
       <PaneArrowContext.Provider value={arrowValue}>
-        {children(footer)}
+        <PaneBodyLoadingProvider>{children(footer)}</PaneBodyLoadingProvider>
       </PaneArrowContext.Provider>
     </PaneFooterContext.Provider>
   );

@@ -8,51 +8,62 @@ export function parseDisplayDate(value: DisplayDateValue): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/**
- * Whole minutes, hours or days in an age, the one ladder every relative-time
- * label reads from. Null under a minute, which includes a time in the future.
- */
-function elapsedUnits(ageMs: number): { count: number; unit: "m" | "h" | "d" } | null {
-  if (!(ageMs >= 60_000)) return null;
-  const minutes = Math.floor(ageMs / 60_000);
-  if (minutes < 60) return { count: minutes, unit: "m" };
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { count: hours, unit: "h" };
-  return { count: Math.floor(hours / 24), unit: "d" };
-}
-
-/** Age for a narrow column: "<1m", "5m", "3h", "2d". */
+/** Age for a narrow column. Same token as `formatApproximateAge`. `fallback` when the value does not parse. */
 export function formatRelativeTime(value: DisplayDateValue, now = Date.now(), fallback = "-"): string {
   const date = parseDisplayDate(value);
   if (!date) return fallback;
-
-  const ms = now - date.getTime();
-  if (!Number.isFinite(ms)) return fallback;
-  const elapsed = elapsedUnits(ms);
-  return elapsed ? `${elapsed.count}${elapsed.unit}` : "<1m";
+  return formatApproximateAge(date.getTime(), now);
 }
 
-/** Age of an epoch-ms timestamp: "just now", "5m ago", "3h ago", "2d ago"; `empty` when unset. */
+/** Age of an epoch-ms timestamp. Same token as `formatApproximateAge`. `empty` when unset. */
 export function formatRelativeAge(timestamp: number | undefined, now = Date.now(), empty = "never"): string {
   if (!timestamp) return empty;
-  const elapsed = elapsedUnits(now - timestamp);
-  return elapsed ? `${elapsed.count}${elapsed.unit} ago` : "just now";
+  return formatApproximateAge(timestamp, now);
+}
+
+function formatStatusDay(timestamp: number): string {
+  const date = new Date(timestamp);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /**
- * Relative time that turns into a date ("1/5/26") after a week, for feeds read
- * by recency: "just now", "5m ago", "3h ago", "2d ago". `short` drops the
- * "ago" for a narrow column ("<1m", "5m").
+ * Status age and nothing else: `~0m` under a minute, `~5m`, `~1hr`, and the
+ * local calendar day `YYYY-MM-DD` once the age reaches 24 hours. A missing or
+ * future time clamps to `~0m`.
  */
-export function formatTimeAgo(date: Date | string, { short = false }: { short?: boolean } = {}): string {
+export function formatApproximateAge(timestamp: number | null | undefined, now = Date.now()): string {
+  if (timestamp == null || !Number.isFinite(timestamp)) return "~0m";
+  const elapsed = now - timestamp;
+  if (!(elapsed >= 60_000)) return "~0m";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return `~${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `~${hours}hr`;
+  return formatStatusDay(timestamp);
+}
+
+/**
+ * The age token when `timestamp` is a real observation. A missing, zero, or
+ * far-future time returns null so a pane does not invent `~0m`.
+ */
+export function formatObservationAge(timestamp: number | string | null | undefined, now = Date.now()): string | null {
+  // A named calendar day has no clock. Printing it avoids a UTC-midnight shift into the previous local day.
+  if (typeof timestamp === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timestamp)) return timestamp;
+  const parsed = typeof timestamp === "number" ? timestamp : typeof timestamp === "string" && timestamp ? Date.parse(timestamp) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > now + 60_000) return null;
+  return formatApproximateAge(parsed, now);
+}
+
+/**
+ * Age of a feed or chat timestamp. Same token as `formatApproximateAge`.
+ * `short` is accepted so existing callers keep compiling.
+ */
+export function formatTimeAgo(date: Date | string, _options: { short?: boolean } = {}): string {
   const ts = toTimestampMillis(date);
   if (Number.isNaN(ts)) return "unknown";
-  const elapsed = elapsedUnits(Date.now() - ts);
-  if (!elapsed) return short ? "<1m" : "just now";
-  if (elapsed.unit === "d" && elapsed.count >= 7) {
-    return new Date(ts).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
-  }
-  return `${elapsed.count}${elapsed.unit}${short ? "" : " ago"}`;
+  return formatApproximateAge(ts);
 }
 
 export interface ShortDateOptions {

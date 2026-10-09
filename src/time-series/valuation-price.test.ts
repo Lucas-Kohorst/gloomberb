@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { formatObservationAge } from "../utils/datetime-format";
 import type { TickerFinancials } from "../types/financials";
 import { createTestDataProvider } from "../test-support/data-provider";
 import { createDefaultConfig } from "../types/config";
@@ -115,7 +116,7 @@ test("actual resolver/export retain stale-source diagnostics and historical valu
   const model = await load(data);
   expect(model.series[0]?.points.map((point) => point.value)).toEqual([5.5]);
   expect(model.complete).toBe(false);
-  expect(model.metadata?.warnings).toEqual(expect.arrayContaining([expect.stringContaining("source quote is stale")]));
+  expect(model.metadata?.warnings).toEqual(expect.arrayContaining([expect.stringContaining(`Current valuation ${formatObservationAge(data.quote!.lastUpdated)}`)]));
   expect(model.metadata?.valuationPriceIssues).toEqual([expect.objectContaining({ seriesId: "pe", issues: [
     expect.objectContaining({ reason: "stale", quote: expect.objectContaining({ price: 60, lastUpdated: data.quote!.lastUpdated, stale: true }) }),
   ] })]);
@@ -251,11 +252,11 @@ test.each(["NaN", "future"] as const)("actual live quote status and %s timestamp
     emit(target, { ...valid, stale: true, receivedAt: 3 });
     await waitForCount(3);
     expect(results.at(-1)?.series[0]?.points.map((point) => point.value)).toEqual([5.5]);
-    expect(results.at(-1)?.warnings.some((warning) => warning.includes("source quote is stale"))).toBe(true);
+    expect(results.at(-1)?.warnings.some((warning) => warning.includes(`Current valuation ${formatObservationAge(valid.lastUpdated)}`))).toBe(true);
     emit(target, { ...valid, stale: false, receivedAt: 4 });
     await waitForCount(4);
     expect(results.at(-1)?.series[0]?.points.at(-1)?.value).toBe(6);
-    expect(results.at(-1)?.warnings.some((warning) => warning.includes("source quote is stale"))).toBe(false);
+    expect(results.at(-1)?.warnings.some((warning) => warning.includes(`Current valuation ${formatObservationAge(valid.lastUpdated)}`))).toBe(false);
   } finally { stop(); }
   for (const invalid of [NaN, Infinity, 0, -1, 9e20, Date.now() + 86_400_000]) {
     data.quote!.lastUpdated = invalid;

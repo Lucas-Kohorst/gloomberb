@@ -9,7 +9,7 @@ import {
   type TeamSummary,
 } from "../../../../api-client";
 import { ApiRequestError } from "../../../../api-client/errors";
-import { QueryBar, loadingText, useFieldRing, usePaneFooter, usePaneMenuItems, usePaneTabs, type PaneFooterSegment, type PaneHint } from "../../../../components";
+import { QueryBar, loadingText, unavailableText, useFieldRing, usePaneFooter, usePaneLoadingSignal, usePaneMenuItems, usePaneTabs, type PaneFooterSegment, type PaneHint } from "../../../../components";
 import { useShortcut } from "../../../../react/input";
 import { colors } from "../../../../theme/colors";
 import type { PaneProps } from "../../../../types/plugin";
@@ -127,7 +127,7 @@ function useTeamDetails(team: TeamSummary | null) {
       setDetails({ members: membersResult.members, invitations, links, loading: false, error: null });
     } catch (error) {
       if (generation.current !== current) return;
-      setDetails((previous) => ({ ...previous, loading: false, error: errorText(error, "Could not load the team.") }));
+      setDetails((previous) => ({ ...previous, loading: false, error: errorText(error, unavailableText("Team")) }));
     }
   }, [allowMemberInvites, role, teamId]);
 
@@ -539,9 +539,9 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     return list;
   }, [dirty, draft, openChannel, saveSettings, section, showCreate, signedIn, snapshot.teams.length, team]);
   const result = message ?? (details.error ? { tone: "error" as const, text: details.error } : null);
+  usePaneLoadingSignal(!!busy);
   usePaneFooter(TEAM_PANE_ID, () => ({
     info: [
-      ...(busy ? [{ id: "busy", parts: [{ text: "working", tone: "muted" as const }] }] : []),
       ...(details.loading && !busy ? [{ id: "loading", parts: [{ text: "syncing", tone: "muted" as const }] }] : []),
       ...(result && !busy ? [{
         id: "result",

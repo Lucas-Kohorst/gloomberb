@@ -5,7 +5,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { confirmDialog, EmptyState, TextField, usePaneFooter, usePaneTabs } from "../../../components";
+import { confirmDialog, EmptyState, TextField, unavailableText, usePaneFooter, usePaneTabs } from "../../../components";
 import { useDialog } from "../../../ui/dialog";
 import { usePluginAppActions, usePluginPaneState } from "../../runtime";
 import { debugLog } from "../../../utils/debug-log";
@@ -75,7 +75,7 @@ export function createQuickNotesPane(registry: NotesStoreRegistry) {
         if (store.readOnly) continue;
         store.saveQuickNotesIndex(bucket?.entries ?? []).catch((error) => {
           notesLog.error("Failed to save notes index", { error: error instanceof Error ? error.message : String(error) });
-          notify({ body: error instanceof Error ? error.message : "Failed to save notes index.", type: "error" });
+          notify({ body: error instanceof Error ? error.message : unavailableText("Notes index"), type: "error" });
         });
       }
     }, [notify, owners, storeFor]);
@@ -121,13 +121,13 @@ export function createQuickNotesPane(registry: NotesStoreRegistry) {
             if (cloud && error.current) cloud.acceptCurrent(key, error.current);
             lastSavedTextRef.current.set(tabId, text);
             await store.save(key, text).catch((again: unknown) => {
-              notify({ body: again instanceof Error ? again.message : "Could not save the note.", type: "error" });
+              notify({ body: again instanceof Error ? again.message : unavailableText("Note"), type: "error" });
             });
           }
           return;
         }
         notesLog.error("Failed to save note", { error: error instanceof Error ? error.message : String(error) });
-        notify({ body: error instanceof Error ? error.message : "Failed to save note.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : unavailableText("Note"), type: "error" });
       });
 
       const updatedAt = Date.now();
@@ -265,7 +265,7 @@ export function createQuickNotesPane(registry: NotesStoreRegistry) {
       const store = storeFor(owner);
       store.delete(store.quickNoteKey(id)).catch((error) => {
         notesLog.error("Failed to delete note", { error: error instanceof Error ? error.message : String(error) });
-        notify({ body: error instanceof Error ? error.message : "Failed to delete note.", type: "error" });
+        notify({ body: error instanceof Error ? error.message : unavailableText("Note"), type: "error" });
       });
       setEditing(false);
       setRenaming(false);

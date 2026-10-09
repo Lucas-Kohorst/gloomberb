@@ -60,8 +60,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
         { text: `${formatScore(data.overall.score)} ${ratingLabel(data.overall.rating)}`, color: ratingColor(data.overall.rating), bold: true },
       ],
     }] : []),
-    ...(stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
-    ...(updatedAgo ? [{ id: "age", parts: [{ text: `updated ${updatedAgo}`, tone: "value" as const }] }] : []),
+    ...(updatedAgo ? [{ id: "age", parts: [{ text: updatedAgo, tone: "value" as const }] }] : []),
   ], [data, stale, updatedAgo]);
   usePaneStatusFooter({ registrationId: paneId, loading, error, info: footerInfo });
 
@@ -70,7 +69,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   if (loading && !data) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <PaneStatusBody loading align="center" loadingLabel="Loading Fear & Greed..." />
+        <PaneStatusBody loading align="center" />
       </Box>
     );
   }

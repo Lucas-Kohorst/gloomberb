@@ -11,6 +11,7 @@ import { TestPaneProvider, createTestPaneConfig, createTestTicker } from "../../
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { Quote, TickerFinancials } from "../../../types/financials";
+import { formatApproximateAge } from "../../../utils/datetime-format";
 import { TickerResearchPane } from "./pane";
 
 const paneId = "research:status";
@@ -25,6 +26,7 @@ afterEach(() => {
   setSharedMarketDataCoordinator(null);
 });
 
+const quoteAge = formatApproximateAge(asOf, now);
 const quote = (symbol = "9988", stale = true): Quote => ({
   symbol, price: 107.5, currency: "HKD", change: 0.6, changePercent: 0.56,
   listingExchangeName: "HKEX", marketState: "CLOSED", dataSource: "delayed", lastUpdated: asOf, stale,
@@ -80,20 +82,21 @@ for (const plan of ["free", "pro"] as const) for (const width of [48, 80, 120]) 
   test(`parent footer exposes stale quote and clears after recovery and ticker change: ${plan}/${width}`, async () => {
     const stale = await render(plan, width);
     expect(stale).toContain("HK$107.5");
-    expect(stale).toContain("Stale quote");
-    expect(footer.info.filter((segment) => segment.parts.some((part) => part.text.includes("Stale quote")))).toHaveLength(1);
-    if (plan === "pro" || width >= 80) expect(stale).toContain("2026-09-11 08:08Z");
+    expect(stale).toContain(quoteAge);
+    expect(stale).not.toContain("Stale quote");
+    expect(stale).not.toContain("2026-09-11 08:08Z");
+    expect(footer.info.filter((segment) => segment.id === "ticker-research-stale")).toHaveLength(1);
     expect(stale.match(/\[\$\]upgrade/g)?.length ?? 0).toBe(plan === "free" ? 1 : 0);
     if (plan === "free") expect(footer.info.find((segment) => segment.id === "ticker-research-access")?.onPress).toBeFunction();
 
-    expect(await replaceQuote(quote("9988", false))).not.toContain("Stale quote");
-    expect(await replaceQuote(quote())).toContain("Stale quote");
+    expect(await replaceQuote(quote("9988", false))).not.toContain(quoteAge);
+    expect(await replaceQuote(quote())).toContain(quoteAge);
     await act(async () => { update((state) => ({ ...state, config: { ...state.config, layout: { ...state.config.layout,
       instances: state.config.layout.instances.map((instance) => ({ ...instance, binding: { kind: "fixed", symbol: "1211" } })),
     } } })); });
     const switched = await frame();
     expect(switched).toContain("BYD Company");
-    expect(switched).not.toContain("Stale quote");
+    expect(switched).not.toContain(quoteAge);
     expect(switched).not.toContain("2026-09-11 08:08Z");
   });
 }
@@ -102,10 +105,10 @@ test("unknown source timestamps do not become fabricated dates and nonquote tabs
   await render("pro", 80);
   for (const lastUpdated of [NaN, Infinity, 0, -1, 9e15]) {
     const result = await replaceQuote({ ...quote(), lastUpdated });
-    expect(result).toContain("Stale quote");
+    expect(result).not.toContain("Stale quote");
     expect(result).not.toContain("Invalid Date");
     expect(result).not.toContain("1970-");
-    expect(footer.info.find((segment) => segment.id === "ticker-research-stale")?.parts).toHaveLength(1);
+    expect(footer.info.find((segment) => segment.id === "ticker-research-stale")).toBeUndefined();
   }
   await act(async () => { update((state) => ({ ...state, paneState: { ...state.paneState, [paneId]: { activeTabId: "financials" } } })); });
   const financial = await frame();

@@ -1,4 +1,5 @@
 import type { Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status-copy";
 import {
   applyPaneSettingFieldValue as applyPaneSettingFieldValueShared,
   createPaneTemplateOrThrow,
@@ -326,7 +327,7 @@ export function bindAppPanePluginRegistry({
         } catch (err) {
           if (!canPresentFeedback()) return;
           const message = err instanceof Error ? err.message : String(err);
-          pluginRegistry.notify({ body: `Failed to navigate to ${rawSymbol}: ${message}`, type: "error" });
+          pluginRegistry.notify({ body: message ? `${rawSymbol}: ${message}` : unavailableText(rawSymbol), type: "error" });
         } finally {
           if (ownsRequest()) requests.delete(sourcePaneId);
         }

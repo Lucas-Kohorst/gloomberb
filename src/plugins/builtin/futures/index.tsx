@@ -5,6 +5,7 @@ import {
   PaneStatusBody,
   QueryBar,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneMenuItems,
   useQueryBarSearch,
   type DataTableKeyEvent,
@@ -201,6 +202,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   // Every load came back empty: a board of dashes reads as broken, so the
   // body says so once and offers a retry. One quote is enough to keep rows.
   const noQuotes = !!dataProvider && quotes.size > 0 && status.unavailable === quotes.size;
+  usePaneLoadingSignal(status.loading > 0);
   usePaneFooter(FUTURES_PANE_ID, () => {
     if (noQuotes) return { info: [], hints: [] };
     const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);

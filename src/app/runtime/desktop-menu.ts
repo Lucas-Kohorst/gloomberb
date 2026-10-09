@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch } from "react";
+import { unavailableText } from "../../components/ui/status-copy";
 import { tidyWindows } from "../../layout/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
@@ -48,7 +49,7 @@ export function useDesktopApplicationMenuRuntime({
         case "open-url":
           void rendererHost.openExternal(command.url).catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
-            pluginRegistry.notify({ body: `Failed to open link: ${message}`, type: "error" });
+            pluginRegistry.notify({ body: message.trim() ? message : unavailableText("Link"), type: "error" });
           });
           break;
         case "check-for-updates":

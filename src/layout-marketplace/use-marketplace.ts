@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { unavailableText } from "../components/ui/status";
 import { apiClient, type TeamSummary } from "../api-client";
 import type { CloudLayoutEntry } from "./cloud";
 import { linkedLayoutUpdates } from "./linked";
@@ -45,7 +46,7 @@ export function useLayoutMarketplace(active: boolean, signedIn: boolean): Layout
         setState((current) => ({
           status: "error",
           items: current.items,
-          error: error instanceof Error ? error.message : "Could not load layouts.",
+          error: error instanceof Error ? error.message : unavailableText("Layouts"),
         }));
       });
     return () => controller.abort();
@@ -105,7 +106,7 @@ export function useTeamLayouts(active: boolean, teams: readonly TeamSummary[]): 
         setState((current) => ({
           status: "error",
           items: current.items,
-          error: error instanceof Error ? error.message : "Could not load team layouts.",
+          error: error instanceof Error ? error.message : unavailableText("Team layouts"),
         }));
       });
     return () => controller.abort();

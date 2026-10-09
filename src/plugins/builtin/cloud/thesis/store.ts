@@ -1,4 +1,5 @@
 import { apiClient, type CloudNoteScope, type CloudThesis, type ThesisPatch, type ThesisSignal } from "../../../../api-client";
+import { unavailableText } from "../../../../components/ui/status-copy";
 import type { AppNotificationDelivery, AppNotificationRequest, PluginPersistence } from "../../../../types/plugin";
 import { computeHealth } from "./model";
 
@@ -141,7 +142,7 @@ class ThesisStore {
         this.update({
           loading: false,
           loaded: true,
-          error: error instanceof Error ? error.message : "Could not load theses.",
+          error: error instanceof Error ? error.message : unavailableText("Theses"),
           offline: this.snapshot.theses.length > 0,
         });
       } finally {

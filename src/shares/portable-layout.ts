@@ -645,7 +645,7 @@ export function materializeMarketplaceLayout(
     instance.instanceId,
     createId(instance.paneId, index),
   ]));
-  if (new Set(ids.values()).size !== ids.size) throw new Error("Could not create unique pane ids for this layout.");
+  if (new Set(ids.values()).size !== ids.size) throw new Error("Layout unavailable.");
   const layout: LayoutConfig = {
     dockRoot: mapDockNode(payload.layout.dockRoot, ids),
     instances: payload.layout.instances.map((instance) => ({

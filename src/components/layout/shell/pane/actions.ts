@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { unavailableText } from "../../../ui/status";
 import type { DesktopWindowBridge } from "../../../../types/desktop-window";
 import {
   applyDrop,
@@ -80,7 +81,7 @@ export function useShellPaneActions({
       await rendererHost.copyPngImage(screenshot.pngBase64);
       pluginRegistry.notify({ body: "Pane screenshot copied", type: "success" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not copy pane screenshot.";
+      const message = error instanceof Error ? error.message : unavailableText("Screenshot");
       pluginRegistry.notify({ body: message, type: "error" });
     }
   }, [closePaneMenu, pluginRegistry, rendererHost]);

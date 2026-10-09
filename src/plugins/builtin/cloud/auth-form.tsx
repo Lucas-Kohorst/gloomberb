@@ -7,7 +7,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { apiClient, type AuthUser } from "../../../api-client";
 import { matchesKeyChord, parseKeyChord } from "../../../app/keybindings";
-import { Button, Spinner, TextField } from "../../../components";
+import { Button, Spinner, TextField, unavailableText } from "../../../components";
 import { t, tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { colors } from "../../../theme/colors";
@@ -120,7 +120,7 @@ export function AuthForm({
       .then(() => setResetState("sent"))
       .catch(() => {
         setResetState("idle");
-        setSubmitError({ message: t("Could not send the reset email."), kind: "retry" });
+        setSubmitError({ message: unavailableText("Reset email"), kind: "retry" });
       });
   }, [clearErrors, email, resetState, setSubmitError, setValidationError, submitting]);
 

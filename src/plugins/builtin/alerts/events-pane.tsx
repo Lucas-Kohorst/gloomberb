@@ -7,6 +7,7 @@ import {
   DataTableView,
   PaneStatusBody,
   usePaneFooter,
+  usePaneLoadingSignal,
   type DataTableColumn,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
@@ -110,23 +111,23 @@ export function EventAlertsPane({ focused, width, height }: PaneProps) {
           : JSON.stringify(result.rules.filter((rule) => rule.id !== id));
       });
   }, [dialog, selectedRule, setJson]);
+  const syncing = !error && !sync.error && sync.phase !== "disabled" && (sync.phase === "syncing" || !sync.lastSyncAt);
+  usePaneLoadingSignal(syncing);
   const status =
     error ??
     (selectedRule?.kind === "catalyst" ? catalystStatus : null) ??
     sync.error ??
     (sync.phase === "disabled"
       ? "Cloud sync disabled"
-      : sync.phase === "syncing"
-        ? "Syncing alert rules"
-        : sync.lastSyncAt
-          ? `Synced ${relativeTime(Date.parse(sync.lastSyncAt))}`
-          : "Waiting for Cloud sync");
+      : sync.lastSyncAt
+        ? relativeTime(Date.parse(sync.lastSyncAt))
+        : null);
   usePaneFooter(
     "event-alerts",
     () => ({
-      info: [
+      info: status ? [
         { id: "sync", parts: [{ text: status, tone: error || sync.error ? "warning" : "muted" }] },
-      ],
+      ] : [],
       hints: [
         { id: "add", key: "a", label: "dd event", onPress: add, disabled: !!error },
         {

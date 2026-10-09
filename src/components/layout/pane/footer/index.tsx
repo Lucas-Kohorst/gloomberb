@@ -32,6 +32,7 @@ export {
   PaneFooterProvider,
   PaneFooterScope,
   usePaneFooter,
+  usePaneLoadingSignal,
   usePaneMenuItems,
 } from "./registration";
 

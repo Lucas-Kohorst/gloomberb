@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { unavailableText } from "../components/ui/status";
 import { usePaneFooter, type PaneHint } from "../components/layout/pane/footer";
 import { ChoiceDialog } from "../components/ui/choice-dialog";
 import { confirmDialog } from "../components/ui/confirm-dialog";
@@ -311,7 +312,7 @@ export function LayoutMarketplaceGallery({
       teamLayouts.upsert(cloud);
       pluginRegistry.notify({ body: `Pulled "${cloud.name}" r${cloud.revision}`, type: "success" });
     } catch (error) {
-      pluginRegistry.notify({ body: error instanceof Error ? error.message : "Could not pull the team layout.", type: "error" });
+      pluginRegistry.notify({ body: error instanceof Error ? error.message : unavailableText("Team layout"), type: "error" });
     } finally {
       setPublishing(false);
     }
@@ -397,7 +398,7 @@ export function LayoutMarketplaceGallery({
       teamLayouts.upsert(published);
       pluginRegistry.notify({ body: `Published "${name}" to ${team.name}. This tab is now linked.`, type: "success" });
     } catch (error) {
-      pluginRegistry.notify({ body: error instanceof Error ? error.message : "Could not publish to the team.", type: "error" });
+      pluginRegistry.notify({ body: error instanceof Error ? error.message : unavailableText("Team layout"), type: "error" });
     } finally {
       setPublishing(false);
     }
@@ -473,7 +474,7 @@ export function LayoutMarketplaceGallery({
     void renderer.copyText(publicMarketplaceLayoutUrl(entry.marketplaceId)).then(() => {
       pluginRegistry.notify({ body: "Layout link copied", type: "success" });
     }).catch(() => {
-      pluginRegistry.notify({ body: "Could not copy the layout link.", type: "error" });
+      pluginRegistry.notify({ body: unavailableText("Layout link"), type: "error" });
     });
   }, [pluginRegistry, renderer]);
 
@@ -508,7 +509,7 @@ export function LayoutMarketplaceGallery({
       }
     } catch (error) {
       pluginRegistry.notify({
-        body: error instanceof Error ? error.message : "Could not publish this layout.",
+        body: error instanceof Error ? error.message : unavailableText("Layout"),
         type: "error",
       });
     } finally {
