@@ -12,6 +12,7 @@ import { debtMaturitiesModule } from "./builtin/debt-maturities";
 import { revenueBreakdownModule } from "./builtin/revenue-breakdown";
 import { mnaModule } from "./builtin/mna";
 import { cryptoBoardModule } from "./builtin/crypto-board";
+import { shortInterestModule } from "./builtin/short-interest";
 import { shortVolumeModule } from "./builtin/short-volume";
 import { socialMentionsModule } from "./builtin/social-mentions";
 import { timeSalesModule } from "./builtin/time-sales";
@@ -131,6 +132,8 @@ const browserTickerResearchPlugin = composeBuiltinPlugin({
     timeSalesModule,
     estimateRevisionsModule,
     researchModule,
+    // Daily volume shares open this pane.
+    shortInterestModule,
     shortVolumeModule,
     socialMentionsModule,
     debtMaturitiesModule,
