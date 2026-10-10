@@ -19,7 +19,8 @@ export const creditBoardsModule: PluginModule = {
   panes: [
     {
       id: CDX_PANE_ID,
-      name: "CDS",
+      // The single-name pane already opens titled "CDS".
+      name: "CDS Boards",
       icon: "X",
       component: CreditBoardsPane,
       defaultPosition: "right",

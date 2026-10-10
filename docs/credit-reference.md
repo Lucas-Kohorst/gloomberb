@@ -2,7 +2,7 @@
 
 [Research data conventions](research-data.md) · [User guide](usage.md)
 
-`CDX` shows the on-the-run 5Y CDX IG, CDX HY, CDX EM, iTraxx Main and iTraxx Crossover. `SOVR` (also `WCDS`) shows sovereign 5Y CDS ranked by the month's move, beside the local currency's month against the dollar. Both are daily levels built from the trades DTCC publicly disseminates: the CFTC credit files for indexes and the SEC credit files for sovereigns. Intraday files update the current day as they land, so today's level is partial until the day's file closes it. History starts with the oldest daily file DTCC still serves (about two years).
+`CDX`, `SOVR` and `WCDS` open one CDS Boards pane. `CDX` opens Index, the on-the-run 5Y CDX IG, CDX HY, CDX EM, iTraxx Main and iTraxx Crossover. `SOVR` and `WCDS` open Sovereign, sovereign 5Y CDS ranked by the month's move, beside the local currency's month against the dollar. Both are daily levels built from the trades DTCC publicly disseminates: the CFTC credit files for indexes and the SEC credit files for sovereigns. Intraday files update the current day as they land, so today's level is partial until the day's file closes it. History starts with the oldest daily file DTCC still serves (about two years).
 
 ## Which prints count
 
