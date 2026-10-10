@@ -643,6 +643,9 @@ class GloomApiClient {
   connectChannel = this.chat.connectChannel.bind(this.chat);
   subscribeChatNotifications = this.chat.subscribeNotifications.bind(this.chat);
   subscribeChatPresence = this.chat.subscribePresence.bind(this.chat);
+  getChatDiscordLink = this.chat.getDiscordLink.bind(this.chat);
+  unlinkChatDiscord = this.chat.unlinkDiscord.bind(this.chat);
+  setChatDiscordMirror = this.chat.setDiscordMirror.bind(this.chat);
   subscribeQuotes = this.socket.subscribeQuotes.bind(this.socket);
 
   listTeams = this.teams.listTeams.bind(this.teams);
@@ -735,6 +738,7 @@ class GloomApiClient {
   getCloudEarningsCalendar = this.data.getCloudEarningsCalendar.bind(this.data);
   getCloudEarningsHistory = this.data.getCloudEarningsHistory.bind(this.data);
   getCloudFredSeries = this.data.getCloudFredSeries.bind(this.data);
+  getCloudFredSeriesCatalog = this.data.getCloudFredSeriesCatalog.bind(this.data);
   getCloudCryptoMarkets = this.data.getCloudCryptoMarkets.bind(this.data);
   getCloudCentralBankRates = this.data.getCloudCentralBankRates.bind(this.data);
   getMobileAlertHistory = this.data.getMobileAlertHistory.bind(this.data);

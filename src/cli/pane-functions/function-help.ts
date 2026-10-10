@@ -81,6 +81,8 @@ const SEARCH = key("/", "search");
 const OPEN_SOURCE = key("o", "pen source");
 const POP_OUT = key("p", "op out");
 const STEP = key("←/→", " step");
+/** THEM and MEMB members: open them in RRG, CORR, SIW or RIPL, or save them as a watchlist. */
+const MEMBERS_MENU = key(".", " open members in, save as watchlist");
 const CHART_KEYS = [key("s", "eries"), key("i", "ndicators"), key("t", "imeframe"), key("f", "ormulas")];
 
 export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
@@ -220,7 +222,8 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["EQS"],
   },
   OMON: {
-    summary: "Calls and puts by expiry with bid, ask, volume, open interest, implied volatility and Greeks.",
+    summary: "Calls and puts by expiry with bid, ask, spread, volume, open interest, implied volatility, Greeks and extrinsic per year. "
+      + "The Strikes filter lists every strike, a count either side of the money, or a delta band such as .70 to .90 for deep in-the-money LEAPS.",
     usage: ["OMON NVDA"],
     keys: [key("c", "alc"), key("a", "dd to OSA"), key("s", "urface")],
     data: OPTIONS,
@@ -589,7 +592,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
   ASKG: {
     summary: "Ask a question about what is on screen and watch the tools Gloom runs to answer it.",
     usage: ["ASKG why is NVDA down today"],
-    keys: [key("n", "ew conversation"), key("t", "ickers"), key("o", "pen pane")],
+    keys: [key("n", "ew conversation"), key("g", "ood answer"), key("b", "ad answer"), key("t", "ickers"), key("o", "pen pane")],
     data: null,
     bloomberg: ["ASKB"],
   },
@@ -663,14 +666,14 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
   MEMB: {
     summary: "ETF holdings with weights, shares, member returns, daily contributions and index changes. SPX and SPY use IVV holdings.",
     usage: ["MEMB", "MEMB SPY", "MEMB IWM"],
-    keys: [TABS, OPEN],
+    keys: [TABS, OPEN, MEMBERS_MENU],
     data: same("Dated fund holdings and partial delayed member returns. Nasdaq-100 is not covered."),
     bloomberg: ["MEMB", "MRR", "IMOV"],
   },
   THEM: {
     summary: "Curated thematic baskets with equal-weight returns and breadth. Open a theme to see its members, leaders and laggards. The Themes tab of BI.",
     usage: ["THEM", "THEM nuclear"],
-    keys: [TABS, OPEN, key("Esc", "back")],
+    keys: [TABS, OPEN, key("Esc", "back"), MEMBERS_MENU],
     data: same("Updated every 15 minutes"),
     bloomberg: ["IMAP", "custom baskets"],
   },
@@ -689,7 +692,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["IMAP"],
   },
   FXC: {
-    summary: "A cross-rate matrix for the major currencies, or for any of 45 chosen in its settings.",
+    summary: "A cross-rate matrix for the major currencies, or for any of 45 chosen in its settings or with --currencies from the command line (gloomberb fn FXC --currencies USD,ZAR,NGN).",
     usage: ["FXC"],
     keys: [],
     data: FX,

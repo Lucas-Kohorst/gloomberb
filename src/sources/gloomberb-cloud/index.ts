@@ -39,13 +39,13 @@ import { normalizeNewsFeed } from "../../news/news-model";
 import { resolveCurrencyUnit } from "../../utils/currency-units";
 import { canonicalExchange, canonicalTickerKey, parsePublicTickerKey } from "../../utils/exchanges";
 import { normalizePriceHistory, priceHistoryIntervalMs, reachesLatestSettledSession } from "../../utils/price-history";
-import { createProviderMiss } from "../provider-errors";
+import { createProviderMiss, providerMissReason } from "../provider-errors";
 import { assertSecRegistrantMatches } from "../sec-registrant";
 import { nonUsSecListingVenue } from "../../utils/sec";
 import { publicListingTarget } from "../listing-target";
 import { canonicalHistoryInterval, HistoryRetentionError, parseHistoryRecoveryCandidate, parseHistoryRetention, type HistoryRetention } from "../history-retention";
 import { getRouterEntityKey } from "../provider-router/cache";
-import { tickerHasListingSuffix } from "../listing-symbols";
+import { hongKongListingCode, tickerHasListingSuffix } from "../listing-symbols";
 import { parseSecAcceptanceTime } from "../sec-edgar/acceptance-time";
 import { hasMalformedIntradayHistory } from "../../time-series/history-quality";
 import {
@@ -124,7 +124,7 @@ async function withCloudFallback<T>(load: () => Promise<T>, message: string): Pr
     return await load();
   } catch (error) {
     if (isCloudProviderMiss(error)) {
-      throw createProviderMiss(message);
+      throw createProviderMiss(message, providerMissReason(error));
     }
     throw error;
   }
@@ -237,7 +237,7 @@ function cloudHistoryResolution(interval: string): ManualChartResolution | null 
 }
 
 function quoteTargetKey(symbol: string, exchange?: string): string {
-  const target = publicListingTarget(symbol, exchange);
+  const target = cloudInstrumentTarget(symbol, exchange);
   const base = target.exchange && tickerHasListingSuffix(target.symbol) ? target.symbol.slice(0, target.symbol.indexOf(".")) : target.symbol;
   return canonicalTickerKey(base, target.exchange);
 }
@@ -251,7 +251,14 @@ function cloudResponseTargetKey(key: string, requested: Set<string>): string | u
     ? symbol : undefined;
 }
 
-const cloudInstrumentTarget = publicListingTarget;
+/**
+ * The listing as Gloom Cloud knows it. A Hong Kong code goes out with its four
+ * digits: Cloud has no 700 or 5 on HKEX, only 0700 and 0005.
+ */
+function cloudInstrumentTarget(symbol: string, exchange?: string) {
+  const target = publicListingTarget(symbol, exchange);
+  return target.exchange ? { ...target, symbol: hongKongListingCode(target.symbol, target.exchange) } : target;
+}
 
 function cloudHistoryRecovery(
   context: MarketDataRequestContext | undefined,
@@ -323,7 +330,7 @@ function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, messag
     return response.data;
   }
   if (isEmptyCloudStatus(response.status)) {
-    throw createProviderMiss(response.reasonCode ?? message);
+    throw createProviderMiss(response.reasonCode ?? message, response.message);
   }
   throw new Error(response.reasonCode ?? message);
 }

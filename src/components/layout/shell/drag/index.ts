@@ -63,6 +63,10 @@ const DOCK_DIVIDER_SIZE = 1;
 export const PANE_DRAG_THRESHOLD = 2;
 export const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
 
+export function sameRect(a: LayoutBounds, b: LayoutBounds): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 export function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
   return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
@@ -212,6 +216,16 @@ function makeOverlayCellRects(rect: LayoutBounds): HoverOverlay["cells"] {
   return cells;
 }
 
+/** The drop grid drawn over a docked pane while another pane is dragged onto it. */
+export function hoverOverlayForLeaf(leaf: DockLeafLayout): HoverOverlay {
+  const overlayRect = compactOverlayRect(leaf.rect);
+  return {
+    targetId: leaf.instanceId,
+    rect: overlayRect,
+    cells: makeOverlayCellRects(overlayRect),
+  };
+}
+
 export function resolveHoverOverlay(
   x: number,
   y: number,
@@ -220,13 +234,8 @@ export function resolveHoverOverlay(
 ): HoverOverlay | null {
   const targetLeaf = leaves.find((leaf) => leaf.instanceId !== draggedPaneId && pointInRect(leaf.rect, x, y));
   if (!targetLeaf) return null;
-  const overlayRect = compactOverlayRect(targetLeaf.rect);
-  if (!pointInRect(overlayRect, x, y)) return null;
-  return {
-    targetId: targetLeaf.instanceId,
-    rect: overlayRect,
-    cells: makeOverlayCellRects(overlayRect),
-  };
+  const overlay = hoverOverlayForLeaf(targetLeaf);
+  return pointInRect(overlay.rect, x, y) ? overlay : null;
 }
 
 export function resolveDividerPreviewRect(

@@ -388,6 +388,8 @@ A pane with `headless` automatically gets:
 
 The definition is the only structured report contract. Optional `discovery` metadata supplies semantic aliases, a stable capability ID, limitations, and screenshot readiness; the catalog derives argument cardinality and options directly. No central pane capability map or report switch is needed.
 
+A pane without `headless` still answers `fn` and `shot` as a rendered view, read from the drawn pane. Every `--key value` becomes the pane setting of that key. To document and check the settings that matter, list them in the `PaneDef`'s `reportOptions` (the option schema above, plus `placeholder` for the value's name in the catalog, an `example` such as `--currencies USD,ZAR,NGN`, `normalize(value)`, which returns the setting or throws an `Error` naming what is wrong, and `settingKey` when the flag is named differently from the setting it sets). `reportNotices(settings)` returns lines the report prints above its table, such as what the default view leaves out; `--json` carries them in `data.metadata.notices`. FXC's `--currencies` is the example.
+
 ### Definition contract
 
 ```typescript
@@ -1200,7 +1202,7 @@ Choose the existing control that owns the interaction you need:
 
 [The component exports](src/components/index.ts) are the complete public surface, including the entire basic UI kit. Built-in and external panes must use these components for basic UI. Shared components own appearance, theme updates, focus, keyboard/mouse behavior, disabled state, and automation semantics. A pane supplies its data and domain behavior.
 
-Use `Box` and `ScrollBox` to arrange content. Custom chart surfaces, order-book visualizations, rich inline ticker content, and specialized editors can use lower-level primitives. Do not recreate a button with a clickable `Box`, a section heading with styled `Text`, or a field with raw `Input`. Add a missing repeated pattern to the kit and migrate the callers together. Keep domain calculations and formatting with the pane.
+Use `Box` and `ScrollBox` to arrange content. A `ScrollBox` scrolls vertically unless it says `scrollY={false}`, and the focused pane's arrow keys, PageUp, PageDown, Home and End move it. Custom chart surfaces, order-book visualizations, rich inline ticker content, and specialized editors can use lower-level primitives. Do not recreate a button with a clickable `Box`, a section heading with styled `Text`, or a field with raw `Input`. Add a missing repeated pattern to the kit and migrate the callers together. Keep domain calculations and formatting with the pane.
 
 `Button` supports a compact layout and a separate `displayLabel` for short/icon actions; `label` remains the full accessible and automation name. Use `stopPropagation` for actions nested inside a row. `ActionRow` owns an expandable row's interaction and disclosure affordance. `SelectButton` opens the kit menu on the desktop and a choice dialog in the terminal; a `SelectControl` ref can open it without knowing the renderer.
 
