@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { BOARD_COLUMNS, boardColumns, compareColumns, fundingSpread, historyCell, historyChange, historyColumns, historyRows, percent } from "./model";
-import { perpHistory, venueRow } from "./test-fixture";
+import { BOARD_COLUMNS, boardColumns, compareColumns, dayChange, fundingSpread, historyCaption, historyCell, historyChange, historyColumns, historyRows, percent, perpCellText } from "./model";
+import { longShort, longShortPoint, perpHistory, perpRow, venueRow } from "./test-fixture";
 
 test("paid funding normalizes each interval independently and stays separate from snapshots", () => {
   const time = "2026-10-03T01:00:00Z";
@@ -51,4 +51,33 @@ test("a narrow pane gives up figures before the venue, which alone tells one mar
   expect(boardColumns(41).map((column) => [column.id, column.width])).toEqual([["market", 10], ["venue", 11], ["fundingRate", 14]]);
   expect(ids(boardColumns(40))).toEqual(["market", "fundingRate"]);
   expect(ids(compareColumns(44))).toEqual(["venue", "symbol", "fundingRate8h"]);
+});
+
+test("a 100-column board and comparison keep the long share, which the annualised funding follows, and its history reads in points", () => {
+  const ids = (columns: ReturnType<typeof boardColumns>) => columns.map((column) => column.id);
+  expect(ids(boardColumns(100))).toEqual(["market", "venue", "markPrice", "fundingRate", "premium", "openInterestUsd", "longShare"]);
+  expect(ids(compareColumns(100))).toEqual(["venue", "symbol", "markPrice", "fundingRate8h", "premium", "openInterestUsd", "longShare"]);
+  // Wide enough for all of them, the annualised funding follows the long share and the observation time stays last.
+  expect(ids(boardColumns(200)).slice(-4)).toEqual(["longShare", "fundingApr", "priceChange24h", "observedAt"]);
+  expect(ids(compareColumns(200)).slice(-3)).toEqual(["longShare", "fundingApr", "observedAt"]);
+  expect(perpCellText(venueRow("binance", { longShortRatio: longShort() }), "longShare")).toBe("61.8%");
+  // A venue that publishes none, and a server older than the series, show a dash, never a number.
+  expect(perpCellText(perpRow({ longShortRatio: null, longShortRatioReason: "unsupported" }), "longShare")).toBe("--");
+  expect(perpCellText(perpRow(), "longShare")).toBe("--");
+
+  const day = "2026-10-08T11:00:00.000Z";
+  const data = perpHistory({ longShortRatio: [longShortPoint(day, 0.6, { derived: true }), longShortPoint("2026-10-09T10:00:00.000Z", 0.631, { derived: true }),
+    longShortPoint("2026-10-09T11:00:00.000Z", 0.6183, { ratio: null, derived: true })] });
+  const rows = historyRows(data, "long-short");
+  expect(rows.map((row) => row.value)).toEqual([0.6, 0.631, 0.6183]);
+  expect(historyColumns("long-short", "USDT").map((column) => column.label)).toEqual(["Time (UTC)", "Long %", "Change pp", "Short %", "Ratio", "Observation basis"]);
+  expect([historyCell(rows[2]!, "value", "long-short").text, historyCell(rows[2]!, "change", "long-short").text, historyCell(rows[2]!, "ratio", "long-short").text])
+    .toEqual(["61.83%", "-1.27pp", "--"]);
+  expect(historyCell(rows[2]!, "change", "long-short").value).toBeCloseTo(-1.27);
+  expect(historyCaption(data, "long-short")).toBe("All accounts net long, from ratio");
+  // The day's move needs a point a day back; the first day of collection has none.
+  expect(dayChange(rows)).toBeCloseTo(0.0183);
+  expect(dayChange(rows.slice(1))).toBeNull();
+  // Older servers send no long/short array: an empty series, not a failure.
+  expect(historyRows(perpHistory(), "long-short")).toEqual([]);
 });

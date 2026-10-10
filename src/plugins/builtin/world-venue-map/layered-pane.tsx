@@ -49,10 +49,13 @@ import type { GeoLayerState } from "./feed";
 import { geoLayerColor, type GeoMapLayer, type GeoMapOverlay, type GeoMapSelection } from "./geo-draw";
 import { WORLD_VENUE_MAP_PANE_ID } from "./ids";
 import {
+  entityOpenZoom,
+  entityTableBbox,
   featureAnchor,
   formatGeoValue,
   formatTickerLinks,
   isChangeColumn,
+  LAYERS_SETTING_KEY,
   readVenuesSetting,
   sameGeoView,
   tickerLinkKey,
@@ -61,6 +64,7 @@ import {
   type GeoView,
 } from "./layers";
 import { WorldVenueMap, type WorldMapFocus } from "./map";
+import { usesClassTones } from "./map-symbols";
 import { filterWorldVenues } from "./model";
 import { useGeoLayerFeed } from "./use-geo";
 import { SelectedVenueHeader } from "./venue-header";
@@ -70,6 +74,8 @@ interface LayeredMapViewProps extends PaneProps {
   layers: GeoLayerInfo[];
   /** The layer ids or groups the pane was asked for. */
   tokens: readonly string[];
+  /** A plain MAP: venues show unless the pane turned them off. */
+  plain?: boolean;
 }
 
 interface OpenEntity {
@@ -79,15 +85,9 @@ interface OpenEntity {
 
 type SortState = { key: string | null; dir: "asc" | "desc" };
 
-/**
- * Zoom an opened entity is shown at: 16 times the world (the server's zoom 4,
- * where dense point layers stop clustering) for a ship or a port, wider for a
- * pipeline or a field.
- */
-function openZoom(layer: GeoLayerInfo): number {
-  return layer.geometry === "point" ? 16 : 4;
-}
 const NO_SORT: SortState = { key: null, dir: "asc" };
+/** How long the map rests before a table that follows it asks again. */
+const TABLE_VIEW_SETTLE_MS = 600;
 /** Layers go closer than venues: 64 times the world is the server's zoom 6, where flights and single ports show. */
 const LAYERED_MAX_ZOOM = 64;
 
@@ -164,7 +164,7 @@ const SelectedEntityHeader = memo(function SelectedEntityHeader({
   );
 });
 
-export function LayeredMapView({ focused, width, height, layers, tokens }: LayeredMapViewProps) {
+export function LayeredMapView({ focused, width, height, layers, tokens, plain = false }: LayeredMapViewProps) {
   const colors = useThemeColors();
   const dark = relativeLuminance(colors.text) > relativeLuminance(colors.bg);
   const { nativePaneChrome } = useUiCapabilities();
@@ -173,7 +173,7 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
   const { hasProAccess } = usePlanAccess();
   const upgrade = useCloudUpgradeAction("map-layers");
   const [venuesSetting] = usePaneSettingValue<boolean | undefined>(VENUES_SETTING_KEY, undefined);
-  const venuesOn = readVenuesSetting({ [VENUES_SETTING_KEY]: venuesSetting }, layers.length);
+  const venuesOn = readVenuesSetting(plain ? { [VENUES_SETTING_KEY]: venuesSetting } : { [VENUES_SETTING_KEY]: venuesSetting, [LAYERS_SETTING_KEY]: tokens }, layers.length);
   const { data: venueData } = useAsyncResource(venuesOn ? loadWorldVenues : null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -188,10 +188,15 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
   const canAccess = useCallback((layer: GeoLayerInfo) => layer.access !== "pro" || hasProAccess, [hasProAccess]);
   const states = useGeoLayerFeed(layers, view, visible, { canAccess });
 
+  // A layer coloured by class (ships) takes the first colour, so its own never meets the class colours.
+  const colorOrder = useMemo(
+    () => [...layers].sort((left, right) => Number(usesClassTones(right.id)) - Number(usesClassTones(left.id))),
+    [layers],
+  );
   const colorFor = useCallback((layerId: string) => {
-    const index = layers.findIndex((layer) => layer.id === layerId);
+    const index = colorOrder.findIndex((layer) => layer.id === layerId);
     return geoLayerColor(Math.max(0, index), dark);
-  }, [dark, layers]);
+  }, [colorOrder, dark]);
 
   const [savedTableLayer, setTableLayer] = usePluginPaneState<string | null>("map:table", null);
   const tableLayer = layers.find((layer) => layer.id === savedTableLayer)
@@ -208,16 +213,28 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
   const [selectedMic, setSelectedMic] = useState<string | null>(null);
   const [headerSubject, setHeaderSubject] = useState<"entity" | "venue">("entity");
   const [focus, setFocus] = useState<WorldMapFocus | null>(null);
+  // Kept per pane, so docking, undocking, popping out or reloading reopens the map where it was.
+  const [savedViewport, setSavedViewport] = usePluginPaneState<unknown>("map:viewport", null);
   const { active: searchFocused, focus: focusSearch, searchProps } = useQueryBarSearch();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const tableLocked = !canAccess(tableLayer) || tableState?.phase === "locked";
   const tableReadable = tableLayer.status !== "unavailable" && tableState?.phase !== "unavailable" && !tableLocked;
+  // The table follows the map once the view rests, not every frame of a pan.
+  const [tableView, setTableView] = useState<GeoView>(view);
+  useEffect(() => {
+    if (sameGeoView(tableView, view)) return;
+    const timer = setTimeout(() => setTableView(view), TABLE_VIEW_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [tableView, view]);
+  const tableBbox = entityTableBbox(tableLayer, tableView);
+  const tableBboxKey = tableBbox?.join(",") ?? "";
   const loadPage = useCallback(async ({ offset, signal }: PageRequest) => {
     const page = await loadEntityPage(tableLayer.id, {
       q: query,
       ...(sort.key ? { sort: sort.key, dir: sort.dir } : {}),
+      ...(tableBbox ? { bbox: tableBbox } : {}),
       offset,
     }, signal);
     const rows = page.rows ?? [];
@@ -228,7 +245,7 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
       hasMore: rows.length >= ENTITY_PAGE_SIZE && (total === null || offset + rows.length < total),
       nextOffset: offset + rows.length,
     };
-  }, [query, sort.dir, sort.key, tableLayer.id]);
+  }, [query, sort.dir, sort.key, tableBboxKey, tableLayer.id]);
   const pages = usePagedRows(tableReadable ? loadPage : null, { getId: (row) => row.id });
   const rows = pages.rows;
   useWorldMapEvidence(tokens, states, rows.length, pages.loading);
@@ -295,7 +312,7 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
     const lats = trail.map(([, lat]) => lat);
     const span = Math.max(Math.max(...lons) - Math.min(...lons), (Math.max(...lats) - Math.min(...lats)) * 2, 0.05);
     const last = trail.at(-1)!;
-    setFocus({ key: trailKey, longitude: last[0], latitude: last[1], zoom: Math.min(LAYERED_MAX_ZOOM, Math.max(openZoom(tableLayer), 360 / (span * 3))) });
+    setFocus({ key: trailKey, longitude: last[0], latitude: last[1], zoom: Math.min(LAYERED_MAX_ZOOM, Math.max(entityOpenZoom(tableLayer), 360 / (span * 3))) });
   }, [trailKey]);
   const overlay = useMemo<GeoMapOverlay>(() => ({ layers: mapLayers, selected: selection, trail }), [mapLayers, selection, trail]);
 
@@ -466,7 +483,7 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
         setHeaderSubject("entity");
         selectRow(row.id);
         setOpen({ layer: tableLayer.id, id: row.id });
-        setFocus({ key: `open:${tableLayer.id}:${row.id}`, longitude: row.lon, latitude: row.lat, zoom: openZoom(tableLayer) });
+        setFocus({ key: `open:${tableLayer.id}:${row.id}`, longitude: row.lon, latitude: row.lat, zoom: entityOpenZoom(tableLayer) });
       }}
       detailOpen={detailOpen}
       onBack={() => setOpen(null)}
@@ -491,7 +508,7 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
   );
 
   const map = (
-    <Box flexDirection="column" width={mapWidth} height={mapSectionHeight} overflow="hidden">
+    <Box key="map" flexDirection="column" width={mapWidth} height={mapSectionHeight} overflow="hidden">
       {headerSubject === "venue" && selectedVenue && venueData ? (
         <SelectedVenueHeader venue={selectedVenue} checkedAt={venueData.checkedAt} now={now} width={mapWidth} />
       ) : (
@@ -511,6 +528,8 @@ export function LayeredMapView({ focused, width, height, layers, tokens }: Layer
         onSelectGeo={onSelectGeo}
         onViewChange={onViewChange}
         focus={focus}
+        savedViewport={savedViewport}
+        onViewportSettled={setSavedViewport}
       />
     </Box>
   );

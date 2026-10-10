@@ -220,6 +220,44 @@ describe("US history between sessions", () => {
   });
 });
 
+describe("TASE history between sessions", () => {
+  // Israel is on UTC+3 until 25 October. Monday to Thursday the cash market closes at 17:30 (14:30Z) and
+  // Friday at 13:50 (10:50Z). Cloud's last bar of each session opens before the closing auction: 17:09
+  // and 13:29 local at 5m, 16:50 and 12:50 at 1h.
+  const stale = (last: string, at: string, interval: "5m" | "1h" = "5m") =>
+    isPriceHistoryStaleForCurrentWindow([{ date: new Date(last), close: 100 }], Date.parse(at),
+      { exchange: "TASE", symbol: "LUMI", intervalMs: priceHistoryIntervalMs(interval) });
+  const FRIDAY = { "5m": "2026-10-09T10:29:00Z", "1h": "2026-10-09T09:50:00Z" } as const;
+  const THURSDAY = { "5m": "2026-10-08T14:09:00Z", "1h": "2026-10-08T13:50:00Z" } as const;
+
+  test("a complete Friday session answers after its early close, over the weekend and into Monday's open", () => {
+    for (const interval of ["5m", "1h"] as const) {
+      // 14:30 and 18:09 Friday, Saturday, Sunday, Monday 08:00, and Monday 10:20 before its first delayed bar is due.
+      for (const at of ["2026-10-09T11:30:00Z", "2026-10-09T15:09:00Z", "2026-10-10T12:00:00Z", "2026-10-11T12:00:00Z",
+        "2026-10-12T05:00:00Z", "2026-10-12T07:20:00Z"]) {
+        expect(stale(FRIDAY[interval], at, interval), `${interval} ${at}`).toBe(false);
+      }
+    }
+  });
+
+  test("a Friday copy that stopped at midday is behind once the market closed", () => {
+    expect(stale("2026-10-09T09:04:00Z", "2026-10-09T11:30:00Z")).toBe(true);
+    expect(stale("2026-10-09T09:04:00Z", "2026-10-09T15:09:00Z")).toBe(true);
+    expect(stale("2026-10-09T07:50:00Z", "2026-10-09T15:09:00Z", "1h")).toBe(true);
+  });
+
+  test("Monday to Thursday keep the 17:30 close, which Friday's early close does not move", () => {
+    for (const interval of ["5m", "1h"] as const) {
+      for (const at of ["2026-10-08T15:30:00Z", "2026-10-09T05:00:00Z"]) {
+        expect(stale(THURSDAY[interval], at, interval), `${interval} ${at}`).toBe(false);
+      }
+    }
+    // Where a Friday copy would end, a Thursday one has missed the afternoon.
+    expect(stale(FRIDAY["5m"].replace("-09T", "-08T"), "2026-10-08T15:30:00Z")).toBe(true);
+    expect(stale("2026-10-08T11:00:00Z", "2026-10-08T15:30:00Z")).toBe(true);
+  });
+});
+
 describe("round-the-clock coin history", () => {
   // 07:29Z on a Friday: the US market closed 11 hours ago and opens in six.
   const now = Date.parse("2026-10-09T07:29:00Z");
@@ -345,10 +383,12 @@ describe("calendar history fetched copies", () => {
     expect(outdated(bars("2026-09-17T00:00:00Z", "2026-09-18T00:00:00Z"), "2026-09-22T21:00:00Z", "2026-09-23T12:00:00Z", { exchange: "" })).toBe(false);
     // The feed labels BSE bars at the 09:15 IST open, the previous New York date.
     expect(outdated(bars("2026-09-21T03:45:00Z", "2026-09-22T03:45:00Z"), "2026-09-22T21:00:00Z", "2026-09-23T02:00:00Z", { exchange: "" })).toBe(false);
-    // KRX is closed for Chuseok 09-24 to 09-26 and publishes no calendar here:
-    // one refetch after each weekday close it cannot tell from a session.
-    const krx = bars("2026-09-22T00:00:00Z", "2026-09-23T00:00:00Z");
-    expect(polls(krx, "2026-09-23T08:00:00Z", "2026-09-24T00:00:00Z", "2026-09-28T00:00:00Z", "KRX")).toBe(2);
+    // The JSE is closed for Heritage Day on 09-24 and publishes no calendar here:
+    // one refetch after each weekday close, the holiday's included.
+    const toWednesday = bars("2026-09-22T00:00:00Z", "2026-09-23T00:00:00Z");
+    expect(polls(toWednesday, "2026-09-23T16:00:00Z", "2026-09-24T00:00:00Z", "2026-09-28T00:00:00Z", "JSE")).toBe(2);
+    // KRX Chuseok, 09-24 to 09-26, is covered: no missing session before Monday.
+    expect(polls(toWednesday, "2026-09-23T08:00:00Z", "2026-09-24T00:00:00Z", "2026-09-28T00:00:00Z", "KRX")).toBe(0);
     // SSE Golden Week, Oct 1-7, is covered: no missing session before Oct 8 opens.
     const sse = bars("2026-09-29T00:00:00Z", "2026-09-30T00:00:00Z");
     expect(polls(sse, "2026-09-30T08:00:00Z", "2026-10-01T00:00:00Z", "2026-10-08T00:00:00Z", "SSE")).toBe(0);

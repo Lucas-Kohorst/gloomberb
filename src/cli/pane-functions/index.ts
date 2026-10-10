@@ -23,6 +23,7 @@ import {
 import { accessGateStatus, incompleteReportGateMessage } from "./access-gate";
 import { withPersistedCloudSession } from "./cloud-session";
 import { loadForListing } from "../listing-arg";
+import { selectReportTables } from "../report-tables";
 
 async function withPaneRuntime<T>(
   ctx: CliCommandContext,
@@ -33,7 +34,7 @@ async function withPaneRuntime<T>(
     registry: PaneFunctionCatalog;
     resolved: ResolvedPaneFunction;
   }) => Promise<T>,
-  settings: { strictHeadlessOptions?: boolean } = {},
+  settings: { strictHeadlessOptions?: boolean; tableSection?: boolean } = {},
 ): Promise<T> {
   return withMarketData(ctx, async (market) => {
     const context: MarketContext = ctx.cliOptions.refresh ? { ...market, refresh: true } : market;
@@ -59,6 +60,11 @@ export async function runPaneFunction(args: string[], ctx: CliCommandContext) {
           + `Use "gloomberb catalog ${resolved.token}" to inspect readiness.`,
         );
       }
+      const tabular = ctx.cliOptions.format === "csv" || ctx.cliOptions.format === "ndjson";
+      if (resolved.tableSection !== undefined && !tabular) {
+        throw new Error("--section picks one table of --csv or --ndjson output.");
+      }
+      if (resolved.tableSection === true) throw new Error("--section needs a section title or number.");
       // A report that fails or comes back empty for an exchange the symbol is not listed on says so.
       const report = await withPersistedCloudSession(
         context,
@@ -82,8 +88,9 @@ export async function runPaneFunction(args: string[], ctx: CliCommandContext) {
       }
       ctx.printResult({ data: report.data }, {
         text: () => report.text,
+        ...(tabular ? { tables: selectReportTables(report.tables, resolved.tableSection) } : {}),
       });
-    }, { strictHeadlessOptions: true });
+    }, { strictHeadlessOptions: true, tableSection: true });
   });
 }
 
@@ -131,6 +138,7 @@ export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) 
             ["Status", issues.length > 0 ? cliStyles.warning(issues.join(", ")) : cliStyles.success("complete")],
           ];
           if (data.unusableReason) stats.push(["Reason", data.unusableReason]);
+          if (data.notices?.length) stats.push(["Notes", data.notices.join(" ")]);
           if (data.unavailableSymbols.length > 0) stats.push(["No data for", data.unavailableSymbols.join(", ")]);
           if (data.render.emptyStateMarkers.length > 0) stats.push(["Empty states", data.render.emptyStateMarkers.join(", ")]);
           if (data.render.missingExpectedText.length > 0) stats.push(["Missing text", data.render.missingExpectedText.join(", ")]);
