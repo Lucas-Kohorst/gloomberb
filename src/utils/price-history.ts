@@ -211,15 +211,12 @@ export function isPriceHistoryStaleForCurrentWindow(
     intervalMs != null ? 2 * intervalMs + DELAYED_HISTORY_ALLOWANCE_MS : 0);
   if (age <= allowedLag) return false;
   const exchange = options.exchange || "NASDAQ";
-  if (
-    resolveExchangeTimeZone(exchange)
-    && isTimestampStaleForExchangeSession(latestTime, exchange, now)
-  ) {
-    return true;
-  }
   // Bars that reach the close of the venue's latest session stay current
   // once it has closed, so a closed market keeps its last session until the
   // next one opens. A copy taken earlier in that session is still behind.
+  // Asked before the quote rule below, which reads any US bar dated before
+  // today as behind from 04:00 ET: right for a last price, wrong for bars
+  // waiting for the next session's first one.
   const regularSession = isRegularSessionTime(exchange, now);
   if (regularSession !== null) {
     const open = latestRegularSessionOpen(exchange, now);
@@ -229,6 +226,12 @@ export function isPriceHistoryStaleForCurrentWindow(
       // After the next open they answer until its first delayed bar is due.
       if (regularSession && close < open && latestTime < open && now - open <= allowedLag) return false;
     }
+  }
+  if (
+    resolveExchangeTimeZone(exchange)
+    && isTimestampStaleForExchangeSession(latestTime, exchange, now)
+  ) {
+    return true;
   }
   const hasExchangeSession = Boolean(resolveExchangeTimeZone(exchange));
   if (age <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) return hasExchangeSession;
@@ -311,7 +314,7 @@ function isBarBeforeSession(latestTime: number, session: string, intervalMs: num
  * A daily or coarser series changes at every close. A copy fetched before the
  * latest settled close is outdated whatever its cache TTL. A copy fetched
  * after it but without its bar is behind only where the venue's closures are
- * published (US venues, JPX): elsewhere, and for a bare symbol whose venue is
+ * published (hasPublishedSessionCalendar): elsewhere, and for a bare symbol whose venue is
  * unknown, a local holiday would read as a missing session. A copy of a 24/7
  * series goes out of date within the hour.
  */

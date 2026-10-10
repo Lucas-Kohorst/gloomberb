@@ -18,7 +18,7 @@ import {
   type HttpProxyRequestEnvelope,
   type HttpProxyResponseEnvelope,
 } from "../../utils/http-proxy-response";
-import { getTheme, getThemeIds } from "../../theme/themes";
+import { requireThemeId } from "../commands/themes";
 import { isRecord } from "../../utils/guards";
 
 const DEFAULT_SHOT_DEVICE_SCALE_FACTOR = 2;
@@ -73,6 +73,8 @@ import { collectExternalPluginBundles } from "../../renderers/electrobun/bun/ext
 import type { ResolvedSeries } from "../../time-series/types";
 import { getQuoteMonitorPaneSettings } from "../../plugins/builtin/ticker-detail/settings";
 import { accessGateSentence } from "./access-gate";
+import { findCollection } from "../../plugins/builtin/portfolio-list/cli/render";
+import { peekCachedBrokerAccounts } from "../../plugins/builtin/portfolio-list/cached-account";
 import {
   paneEvidenceMismatches,
   paneScreenshotEvidenceHook,
@@ -91,6 +93,7 @@ import {
   withShotPriceHistory,
   withShotSeasonalityHistory,
 } from "./data";
+import { renderedReportNotices } from "./report-notices";
 import {
   financialRatioRenderMismatches,
   financialRatioShotEvidence,
@@ -424,6 +427,8 @@ export interface PaneScreenshotResult {
   usable: boolean;
   unusableReason: string | null;
   dataEvidence: PaneScreenshotDataEvidence | null;
+  /** What the pane says its view leaves out, such as OMON's "21 of 145 strikes". */
+  notices?: string[];
   outputPath: string;
   render: DesktopPaneShotRenderResult & {
     expectedText: string[];
@@ -491,7 +496,7 @@ export async function buildDesktopShotPayload(
   };
   const config = stripDesktopShotCredentials<AppConfig>({
     ...context.config,
-    ...(theme ? { theme: resolveShotTheme(theme) } : {}),
+    ...(theme ? { theme: requireThemeId(theme) } : {}),
     layout,
     layouts: [{
       name: "CLI Shot",
@@ -624,6 +629,9 @@ export async function buildDesktopShotPayload(
     deviceScaleFactor,
     watermark,
     tickers,
+    ...(COLLECTION_PANE_IDS.has(resolved.pane.id)
+      ? { brokerAccounts: peekCachedBrokerAccounts(context.config, context.persistence?.resources) }
+      : {}),
     financials,
     ...(instrumentFinancials?.length ? { instrumentFinancials } : {}),
     ...(historyVariants?.length ? { historyVariants } : {}),
@@ -652,23 +660,13 @@ async function collectShotSymbolsWithCollections(
   context: MarketContext,
   rawArg: string,
 ): Promise<string[]> {
-  const symbols = collectShotSymbols(resolved, rawArg);
-  if (!COLLECTION_PANE_IDS.has(resolved.pane.id)) return symbols;
+  if (!COLLECTION_PANE_IDS.has(resolved.pane.id)) return collectShotSymbols(resolved, rawArg);
+  // `shot PF Retirement` names a portfolio, not a ticker to fetch.
+  const symbols = rawArg.trim() && findCollection(context.config, rawArg) ? [] : collectShotSymbols(resolved, rawArg);
   const members = (await context.store.loadAllTickers())
     .filter(({ metadata }) => metadata.portfolios.length > 0 || metadata.watchlists.length > 0)
     .map(({ metadata }) => metadata.ticker);
   return [...new Set([...symbols, ...members])];
-}
-
-function resolveShotTheme(requested: string): string {
-  const normalized = requested.trim().toLowerCase().replace(/[\s_]+/g, "-");
-  const ids = getThemeIds();
-  const match = ids.find((id) => id.toLowerCase() === normalized)
-    ?? ids.find((id) => getTheme(id).name.toLowerCase().replace(/[\s_]+/g, "-") === normalized);
-  if (!match) {
-    throw new Error(`Unknown theme "${requested}". Available themes: ${ids.join(", ")}`);
-  }
-  return match;
 }
 
 function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
@@ -801,6 +799,7 @@ export function assessPaneScreenshot(
   const unusableReason = usable
     ? null
     : shotUnusableReasonFor(resolved, payload, render, unavailableSymbols, semanticMismatch);
+  const { notices } = renderedReportNotices(render.semanticUi ?? []);
   return {
     kind: "pane-screenshot",
     target: resolved.token,
@@ -821,6 +820,7 @@ export function assessPaneScreenshot(
     usable,
     unusableReason,
     dataEvidence,
+    ...(notices.length > 0 ? { notices } : {}),
     outputPath,
     render: {
       ...stripDesktopShotCredentials(render),

@@ -6,6 +6,7 @@ import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-ti
 import type { ContextMenuItem } from "../../../../types/context-menu";
 import { useRendererHost, useUiCapabilities } from "../../../../ui";
 import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
+import { chatAuthorName, isDiscordGhost } from "../ghost-user";
 import { chatMessageOpenTargets, type ChatOpenTarget } from "./open-targets";
 import { openChatImageViewer } from "../attachments/desktop";
 
@@ -105,7 +106,7 @@ export function useChatFooter({
         attachments: selectedMessage.attachments,
         index: target.index,
         caption: selectedMessage.content,
-        author: selectedMessage.user.username ?? "anon",
+        author: chatAuthorName(selectedMessage.user),
       });
       return;
     }
@@ -135,7 +136,8 @@ export function useChatFooter({
     if (target) openTarget(target);
   }, [dialog, openTarget, openTargets]);
 
-  const author = selectedMessage?.user ?? null;
+  // A Discord ghost has no card to show.
+  const author = selectedMessage && !isDiscordGhost(selectedMessage.user) ? selectedMessage.user : null;
   // A card opened from the keyboard follows the selection: moving on closes it.
   const keyboardProfileRef = useRef(false);
   const toggleAuthorProfile = useCallback(() => {
@@ -215,7 +217,7 @@ export function useChatFooter({
       else if (canSend) hints.push({ id: "reply", key: "Enter", label: "reply", title: "Reply", onPress: () => latest.current.beginReplyTo(latest.current.selectedIdx, { deferFocus: true }) });
       if (canEdit) hints.push({ id: "edit", key: "e", label: "dit", title: "Edit Message", onPress: () => { latest.current.beginEditMessage(latest.current.selectedIdx, { deferFocus: true }); } });
       if (openTargets.length > 0) hints.push({ id: "open", key: "o", label: "pen", title: openTargetTitle, onPress: () => { void latest.current.openSelectedTargets(); } });
-      // Every author has a card, if only their name and a way to write to them.
+      // Every author but a Discord ghost has a card, if only their name and a way to write to them.
       if (author) hints.push({ id: "profile", key: "p", label: "rofile", title: "Show Profile", onPress: () => latest.current.toggleAuthorProfile() });
     } else if (!composing && canSend) {
       hints.push({ id: "compose", key: "i", label: " compose", title: "Compose", onPress: () => queueMicrotask(() => latest.current.focusComposer()) });

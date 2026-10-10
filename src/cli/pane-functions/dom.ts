@@ -7,6 +7,8 @@ import type { ResolvedPaneFunction } from "./resolver";
 import { collectShotSymbols } from "./data";
 import { renderDesktopShot, type PaneScreenshotResult } from "./screenshot";
 import { deriveRenderedFreshness, formatFreshnessLine, type ReportFreshness } from "./freshness";
+import { exportTextTable, reportFooterLines, type CliReportTables } from "../report-tables";
+import { renderedReportNotices } from "./report-notices";
 
 const DOM_REPORT_WIDTH = 1280;
 const DOM_REPORT_HEIGHT = 720;
@@ -15,12 +17,6 @@ const DOM_LIMITATION =
 
 function rowsContainEllipsis(rows: DesktopPaneShotRenderedRow[]): boolean {
   return rows.some((row) => row.cells.some((cell) => /\u2026|\.\.\./.test(cell.text)));
-}
-
-function isDomReportTruncated(
-  render: Pick<PaneScreenshotResult["render"], "rows" | "truncated">,
-): boolean {
-  return render.truncated || rowsContainEllipsis(render.rows);
 }
 
 /** Column identity per cell; a repeated label within one row stays distinct. */
@@ -42,7 +38,13 @@ function cellText(cell: DesktopPaneShotRenderedRow["cells"][number]): string {
   return cell.instant ? formatUtcTime(cell.instant) || cell.text : cell.text;
 }
 
-function renderDomTables(rows: DesktopPaneShotRenderedRow[]): string[] {
+interface DomTable {
+  tableIndex: number;
+  columns: Array<{ key: string; header: string }>;
+  rows: Array<Map<string, DesktopPaneShotRenderedRow["cells"][number]>>;
+}
+
+function domTables(rows: DesktopPaneShotRenderedRow[]): DomTable[] {
   const byTable = new Map<number, DesktopPaneShotRenderedRow[]>();
   for (const row of rows) {
     const tableRows = byTable.get(row.tableIndex) ?? [];
@@ -50,7 +52,7 @@ function renderDomTables(rows: DesktopPaneShotRenderedRow[]): string[] {
     byTable.set(row.tableIndex, tableRows);
   }
 
-  return [...byTable.entries()].flatMap(([tableIndex, tableRows], index) => {
+  return [...byTable.entries()].map(([tableIndex, tableRows]) => {
     // Captured rows omit blank cells, so a cell's position is not its column.
     const columns: Array<{ key: string; header: string }> = [];
     for (const row of tableRows) {
@@ -66,20 +68,53 @@ function renderDomTables(rows: DesktopPaneShotRenderedRow[]): string[] {
         previous = position;
       }
     }
-    const output = renderTable(
+    return {
+      tableIndex,
       columns,
-      tableRows.map((row) => {
+      rows: tableRows.map((row) => {
         const keys = domCellKeys(row);
-        const textByKey = new Map(row.cells.map((cell, cellIndex) => [keys[cellIndex]!, cellText(cell)]));
-        return columns.map((column) => textByKey.get(column.key) ?? "");
+        return new Map(row.cells.map((cell, cellIndex) => [keys[cellIndex]!, cell]));
       }),
-    );
-    return [
-      ...(index > 0 ? [""] : []),
-      ...(byTable.size > 1 ? [renderSection(`Rendered table ${tableIndex + 1}`)] : []),
-      output,
-    ];
+    };
   });
+}
+
+function domTableTitle(table: DomTable): string {
+  return `Rendered table ${table.tableIndex + 1}`;
+}
+
+function renderDomTables(rows: DesktopPaneShotRenderedRow[]): string[] {
+  const tables = domTables(rows);
+  return tables.flatMap((table, index) => [
+    ...(index > 0 ? [""] : []),
+    ...(tables.length > 1 ? [renderSection(domTableTitle(table))] : []),
+    renderTable(
+      table.columns,
+      table.rows.map((cells) => table.columns.map((column) => {
+        const cell = cells.get(column.key);
+        return cell ? cellText(cell) : "";
+      })),
+    ),
+  ]);
+}
+
+/** The rendered tables as `--csv` writes them, with the instant behind a shortened time. */
+function domReportTables(
+  rows: DesktopPaneShotRenderedRow[],
+  title: string,
+  freshness: ReportFreshness,
+  incomplete: boolean | string,
+  notices: readonly string[],
+): CliReportTables {
+  const tables = domTables(rows);
+  return {
+    tables: tables.map((table) => exportTextTable(
+      tables.length > 1 ? domTableTitle(table) : title,
+      table.columns.map((column) => column.header),
+      table.rows.map((cells) => table.columns.map((column) => cells.get(column.key))),
+    )),
+    footer: reportFooterLines({ freshness, incomplete, notes: notices }),
+  };
 }
 
 function renderedFailureReason(
@@ -99,8 +134,10 @@ function renderedFailureReason(
   return null;
 }
 
+/** The rows a report reads: every row of a table that publishes them all, else what the viewport shows. */
 function reportRows(result: PaneScreenshotResult): DesktopPaneShotRenderedRow[] {
-  if (result.render.rows.length > 0) return result.render.rows;
+  const rows = result.render.reportRows ?? result.render.rows;
+  if (rows.length > 0) return rows;
   if (
     result.render.loadingStateDetected
     || result.render.errorStateDetected
@@ -122,15 +159,20 @@ export function buildDomPaneReportFromRender(
   result: PaneScreenshotResult,
 ): PaneFunctionReport {
   const rows = reportRows(result);
-  const hasStructuredRows = result.render.rows.length > 0;
-  const truncated = isDomReportTruncated({ ...result.render, rows });
-  const truncationReasons = [...result.render.truncationReasons];
+  const hasStructuredRows = (result.render.reportRows ?? result.render.rows).length > 0;
+  // A table that reported every row is whole, whatever the viewport cut from the capture.
+  const truncationReasons = [...(result.render.reportTruncationReasons ?? result.render.truncationReasons)];
   if (rowsContainEllipsis(rows) && !truncationReasons.includes("one or more cells are visibly clipped")) {
     truncationReasons.push("one or more cells are visibly clipped");
   }
+  const truncated = truncationReasons.length > 0
+    || (result.render.reportTruncationReasons ? false : result.render.truncated);
   const failureReason = renderedFailureReason(result, rows);
   const unavailableSymbols = failureReason && result.symbols.length > 0 ? result.symbols : [];
-  const textLines = [resolved.label, ""];
+  // What the view leaves out and how to see more: FXC's other currencies, OMON's strikes outside its window.
+  const rendered = renderedReportNotices(result.render.semanticUi ?? []);
+  const notices = [...(resolved.pane.reportNotices?.(resolved.instance.settings ?? {}) ?? []), ...rendered.notices];
+  const textLines = [resolved.label, "", ...notices, ...(notices.length > 0 ? [""] : [])];
   if (hasStructuredRows) {
     textLines.push(...renderDomTables(rows));
   } else if (result.render.visibleText) {
@@ -144,6 +186,7 @@ export function buildDomPaneReportFromRender(
     cellTimes: rows.flatMap((row) => row.cells.flatMap((cell) => cell.instant ?? [])),
   });
 
+  const complete = failureReason === null && !truncated;
   return {
     data: {
       kind: "rendered-view",
@@ -153,7 +196,7 @@ export function buildDomPaneReportFromRender(
       options: resolved.options,
       rowCount: rows.length,
       empty: rows.length === 0,
-      complete: failureReason === null && !truncated,
+      complete,
       unavailableSymbols,
       rows,
       visibleText: result.render.visibleText,
@@ -161,9 +204,17 @@ export function buildDomPaneReportFromRender(
       truncationReasons,
       limitation: DOM_LIMITATION,
       ...(failureReason ? { reason: failureReason } : {}),
+      ...(notices.length > 0 ? { metadata: { ...rendered.facts, notices } } : {}),
       freshness,
     },
     text: textLines.join("\n").trimEnd(),
+    tables: domReportTables(
+      rows,
+      resolved.label,
+      freshness,
+      !complete && (failureReason ?? (truncationReasons.length > 0 ? truncationReasons.join("; ") : true)),
+      notices,
+    ),
   };
 }
 
@@ -173,13 +224,18 @@ export function appendDomReportFooter(
   truncated: boolean,
   freshness: ReportFreshness,
 ): string {
-  const clipping = truncated ? "The rendered view is clipped." : "The rendered view may be clipped.";
   return [
     text,
     "",
-    `Rendered view: values come from the visible pane. ${clipping} Render time: ${elapsedMs} ms.`,
+    domReportNote(elapsedMs, truncated),
     cliStyles.muted(formatFreshnessLine(freshness)),
   ].join("\n");
+}
+
+/** What a rendered-view report says about where its values come from. */
+export function domReportNote(elapsedMs: number, truncated: boolean): string {
+  const clipping = truncated ? "The rendered view is clipped." : "The rendered view may be clipped.";
+  return `Rendered view: values come from the visible pane. ${clipping} Render time: ${elapsedMs} ms.`;
 }
 
 function failedDomReport(
@@ -193,6 +249,7 @@ function failedDomReport(
     .trim();
   const reason = `The rendered view could not be read: ${message || "unknown renderer error"}`;
   const symbols = collectShotSymbols(resolved, rawArg);
+  const freshness = deriveRenderedFreshness(resolved.pane.reportFreshness, { footerText: "", cellTimes: [] });
   return {
     data: {
       kind: "rendered-view",
@@ -210,9 +267,10 @@ function failedDomReport(
       truncationReasons: [],
       limitation: DOM_LIMITATION,
       reason,
-      freshness: deriveRenderedFreshness(resolved.pane.reportFreshness, { footerText: "", cellTimes: [] }),
+      freshness,
     },
     text: [resolved.label, "", reason].join("\n"),
+    tables: { tables: [], footer: reportFooterLines({ freshness, incomplete: reason }) },
   };
 }
 
