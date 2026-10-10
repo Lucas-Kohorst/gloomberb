@@ -11,7 +11,6 @@ import { daysToExpiryFrom, interpolateTotalVariance, logForwardMoneyness } from 
 import type { YieldPoint } from "../yield-curve/treasury-data";
 import { isFiniteNumber } from "../../../utils/guards";
 import { abortable, abortError } from "../../../utils/async-deadline";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { errorMessage } from "../../../utils/errors";
 
 export interface CalculatorSurfaceRequest {
@@ -96,8 +95,7 @@ export function projectCalculatorSurfaceVol(
     const expiry = selected[index];
     if (!expiry || expiry.stale || expiry.error || expiry.state !== "ready" || !expiry.fit
       || !positive(expiry.forward) || !isFiniteNumber(expiry.rate) || !isFiniteNumber(expiry.dividendYield)) {
-      const age = expiry?.stale ? formatObservationAge(expiry.asOf) : null;
-      return empty(`${expiryLabel(brackets[index]!)} surface is ${age ?? "unavailable"}; both tenor brackets are required`, warnings);
+      return empty(`${expiryLabel(brackets[index]!)} surface is ${expiry?.stale ? "stale" : "unavailable"}; both tenor brackets are required`, warnings);
     }
   }
   const left = selected[0]!, right = selected.at(-1)!;

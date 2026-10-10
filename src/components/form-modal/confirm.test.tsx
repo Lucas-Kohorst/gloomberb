@@ -88,7 +88,7 @@ describe("confirm modal", () => {
     await waitForForm("Reset Layout");
 
     await press(ENTER, ENTER, { name: "n", sequence: "n" });
-    await waitForFrameToContain("Loading...");
+    await waitForFrameToContain("Working…");
     expect(calls).toBe(1);
 
     await act(async () => { settleCall!.reject(new Error("Layout is locked.")); });
@@ -151,7 +151,7 @@ describe("confirm modal", () => {
     await waitForForm("Reset Layout");
 
     await press(ENTER);
-    await waitForFrameToContain("Loading...");
+    await waitForFrameToContain("Working…");
     await press(ESC);
     await act(async () => {
       expect(openFormModal({ kind: "builtin", actionId: "new-layout" })).toBe(true);

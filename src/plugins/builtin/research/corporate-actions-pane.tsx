@@ -4,7 +4,6 @@ import { Box, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
   ChartTableHeader,
-  loadingText,
   DetailScrollBody,
   KeyValueRow,
   Prose,
@@ -310,7 +309,7 @@ export function buildEventDetail({
     return sections;
   }
   if (secFilingsLoading && !filing) {
-    secFiling.blocks.push(detailNote(loadingText()));
+    secFiling.blocks.push(detailNote("Loading recent SEC filings..."));
     return sections;
   }
   if (!filing) {
@@ -325,7 +324,7 @@ export function buildEventDetail({
 
   const documentBlocks: EventDetailBlock[] = [];
   if (documentsLoading && documents.length === 0) {
-    documentBlocks.push(detailNote(loadingText()));
+    documentBlocks.push(detailNote("Loading filing documents..."));
   } else if (documents.length === 0) {
     documentBlocks.push(detailNote("No filing documents were listed for this filing."));
   } else {
@@ -349,7 +348,7 @@ export function buildEventDetail({
       title: document.type || "Document",
       blocks: [detailNote(described ? `${document.document} | ${document.description}` : document.document), inlineContent.has(key)
         ? content ? { kind: "prose", text: content } : detailNote("Readable document content was not available for this exhibit.")
-        : detailNote(loadingText())],
+        : detailNote("Loading exhibit content...")],
     });
   }
 
@@ -357,7 +356,7 @@ export function buildEventDetail({
     sections.push({
       title: "Primary filing content",
       blocks: [primaryContentLoading
-        ? detailNote(loadingText())
+        ? detailNote("Loading filing content...")
         : primaryContent ? { kind: "prose", text: primaryContent } : detailNote("Readable filing content was not available.")],
     });
   }
@@ -644,7 +643,7 @@ export function CorporateActionsView({
       selectedTextOverridesCellColor
       getRowBackgroundColor={rowBackground}
       emptyStateTitle={loading
-        ? loadingText()
+        ? (variant === "earnings-estimates" ? "Loading earnings estimates..." : "Loading events...")
         : error ?? sourceNotice?.text ?? (variant === "earnings-estimates" ? "No earnings estimates" : "No events")}
     />
   );

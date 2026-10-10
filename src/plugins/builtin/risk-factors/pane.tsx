@@ -3,13 +3,12 @@ import type {
   CloudRiskNotePayload,
 } from "../../../api-client";
 import {
-  BulletList, EmptyState, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, Spinner, StatGrid, unavailableText,
-  usePaneFooter, usePaneLoadingSignal,
+  BulletList, EmptyState, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, Spinner, StatGrid,
+  usePaneFooter,
   type PaneFooterSegment,
   type PaneHint,
 } from "../../../components";
 import { useAsyncResource } from "../../../react/async-resource";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { colors } from "../../../theme/colors";
 import {
   Box,
@@ -146,13 +145,18 @@ function RiskFactorsReader({
     refresh,
   });
 
-  usePaneLoadingSignal((list.loading || detail.loading));
   usePaneFooter(RISK_FACTORS_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
-    const fetchedAt = report?.fetchedAt ?? list.data?.fetchedAt;
-    if (fetchedAt) info.push({ id: "updated", parts: [{ text: formatApproximateAge(fetchedAt), tone: "muted" }] });
-    if (listError) info.push({ id: "list-error", parts: [{ text: listError, tone: "warning" }] });
-    if (reportError) info.push({ id: "report-error", parts: [{ text: reportError, tone: "warning" }] });
+    if (list.loading || detail.loading)
+      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    if (listError) info.push({ id: "list-error", parts: [{ text: `Report list: ${listError}`, tone: "warning" }] });
+    if (reportError) info.push({ id: "report-error", parts: [{ text: `${year} report: ${reportError}`, tone: "warning" }] });
+    if ((listError || list.data?.stale) && list.data) {
+      info.push({ id: "list-stale", parts: [{ text: `List cached ${new Date(list.data.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
+    if ((reportError || report?.stale) && report) {
+      info.push({ id: "report-stale", parts: [{ text: `Report cached ${new Date(report.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
     const hints: PaneHint[] = report?.docUrl
       ? [{ id: "open", key: "o", label: "pen filing", onPress: openFiling }]
       : [];
@@ -164,8 +168,8 @@ function RiskFactorsReader({
   const proseWidth = Math.min(bodyWidth, READING_WIDTH);
 
   if (!ticker) return <EmptyState title="Select a ticker." />;
-  if (!list.data && list.loading) return <PaneStatusBody loading align="center" />;
-  if (!list.data && listError && year === null) return <PaneStatusBody error={listError} errorTitle={unavailableText("Risk reports")} />;
+  if (!list.data && list.loading) return <PaneStatusBody loading align="center" loadingLabel="Loading risk factors..." />;
+  if (!list.data && listError && year === null) return <PaneStatusBody error={listError} errorTitle="Could not load risk reports." />;
   if (year === null) return <EmptyState title={`No 10-K risk factors on file for ${ticker}.`} />;
 
   const diff = report?.diff ?? null;
@@ -293,7 +297,7 @@ function RiskFactorsReader({
 
           </Box>
         ) : reportError ? (
-          <PaneStatusBody error={reportError} errorTitle={unavailableText(`${year} risk report`)} />
+          <PaneStatusBody error={reportError} errorTitle={`Could not load ${year} risk report.`} />
         ) : (
           <Spinner label="Loading..." />
         )}

@@ -1,6 +1,4 @@
 import { apiClient } from "../../../api-client";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 
 export interface YieldPoint {
   maturity: string;      // "1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"
@@ -16,13 +14,6 @@ export function isYieldObservationDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
-}
-
-export function staleCurveNotice(points: readonly YieldPoint[]): string | null {
-  if (!points.some((point) => point.stale)) return null;
-  const oldest = points.flatMap((point) => point.stale && point.asOf ? [point.asOf] : []).sort()[0];
-  const age = formatObservationAge(oldest);
-  return age ? `Treasury ${age}` : unavailableText("Treasury");
 }
 
 export function yieldCurveErrors(points: readonly YieldPoint[]): string[] {

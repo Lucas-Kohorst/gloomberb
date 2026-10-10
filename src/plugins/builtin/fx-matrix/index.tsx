@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DataTableView,
   usePaneFooter,
-  usePaneLoadingSignal,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -21,7 +20,7 @@ import { useAssetData } from "../../runtime";
 import { summarizeFxRates, fxStatusLabel } from "../../../utils/fx-status";
 import type { PluginModule } from "../plugin-module";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
-import { useAutoRefresh } from "../../../react/auto-refresh";
+import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { fxLegQuoteKey, fxLegReferenceRate, fxLegTargets, fxLegs, fxLegsBehind, liveFxLegEntry } from "./live-legs";
 import { CURRENCY_FLAG_REGIONS, FX_CURRENCIES, formatRate, resolveCurrencies, type FxCurrency } from "./pairs";
@@ -205,12 +204,15 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => handleRefreshKey(event, refresh), [refresh]);
 
-  usePaneLoadingSignal(status.loading > 0);
+  const updatedAgo = useUpdatedAgo(status.latestFetchedAt || null);
+
   usePaneFooter(FX_MATRIX_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
+    if (status.loading > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (statusText) info.push({ id: "rates", parts: [{ text: statusText, tone: status.stale || status.unknownTime || status.unavailable ? "warning" : "muted" }] });
+    if (updatedAgo) info.push({ id: "updated", parts: [{ text: `fetched ${updatedAgo}`, tone: "muted" }] });
     return { info };
-  }, [statusText]);
+  }, [status.loading, statusText, updatedAgo]);
 
   return (
     <DataTableView<FxCurrency>

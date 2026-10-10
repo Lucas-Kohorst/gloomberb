@@ -90,12 +90,11 @@ test("explicit stale cached quote is identified while its provider refresh is pe
   const pending = new Promise<Quote>((resolve) => { complete = resolve; });
   const retained = await render(80, () => pending, { ...quote(), stale: true });
   expect(retained).toContain("$1.160227");
-  expect(retained).toContain("~0m");
-  expect(retained).not.toContain("Stale quote");
+  expect(retained).toContain("Stale quote");
   await act(async () => { complete(quote(1.170227)); });
   const recovered = await frame();
   expect(recovered).toContain("$1.170227");
-  expect(recovered).not.toContain("~0m");
+  expect(recovered).not.toContain("Stale quote");
 });
 
 test.each(["NaN", "Infinity", "future"] as const)("retained quote with %s source time stays visibly stale until a valid observation arrives", async kind => {
@@ -105,13 +104,12 @@ test.each(["NaN", "Infinity", "future"] as const)("retained quote with %s source
   const cached = { ...quote(), lastUpdated: invalidTime, receivedAt: Date.now() };
   const retained = await render(80, () => pending, cached);
   expect(retained).toContain("$1.160227");
-  expect(retained).toContain("Quote unavailable.");
-  expect(retained).not.toContain("Stale quote");
+  expect(retained).toContain("Stale quote");
   expect(Object.is(cached.lastUpdated, invalidTime)).toBe(true);
   await act(async () => { complete(quote(1.170227)); });
   const recovered = await frame();
   expect(recovered).toContain("$1.170227");
-  expect(recovered).not.toContain("Quote unavailable.");
+  expect(recovered).not.toContain("Stale quote");
 });
 
 // Dense boards can allocate only three rows to a narrow card. The failure must
@@ -126,9 +124,9 @@ test.each(["error", "stale"] as const)("compact retained card identifies %s with
   expect(result).toContain(longSymbol);
   expect(result).toContain("-0.07");
   expect(result).toContain("$14.23");
-  expect(result).toContain(kind === "stale" ? "~0m" : "unavailable");
+  expect(result).toContain(kind === "stale" ? "STALE" : "ERROR");
   if (kind === "stale") {
     await act(async () => { finish({ ...optionQuote, price: 14.5, lastUpdated: Date.now() }); });
-    expect(await frame()).not.toContain("~0m");
+    expect(await frame()).not.toContain("STALE");
   }
 });

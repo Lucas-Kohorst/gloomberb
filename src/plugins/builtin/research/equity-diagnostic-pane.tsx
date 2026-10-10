@@ -9,7 +9,7 @@ import type {
 } from "../../../api-client";
 import { apiClient } from "../../../api-client";
 import { ApiRequestError } from "../../../api-client/errors";
-import { Button, ChoiceDialog, EmptyState, PaneStatusBody, SectionHeading, Spinner, loadingText, usePaneFooter, usePaneLoadingSignal, usePaneMenuItems } from "../../../components";
+import { Button, ChoiceDialog, EmptyState, PaneStatusBody, SectionHeading, Spinner, usePaneFooter, usePaneMenuItems } from "../../../components";
 import { ExternalLinkText, PaneLinkMenu } from "../../../components/ui";
 import { t, tf } from "../../../i18n";
 import { useShortcut } from "../../../react/input";
@@ -30,6 +30,13 @@ const REFRESH_SCOPE = "equity-diagnostic:refresh";
 const LABEL_WIDTH = 10;
 const STACK_BELOW_WIDTH = 44;
 const COVERAGE_LABEL_WIDTH = 16;
+const LOADING_STEPS = [
+  "Market data",
+  "SEC EDGAR filings",
+  "FINRA short interest",
+  "News",
+  "Reviewing evidence",
+] as const;
 
 interface DiagnosticFailure {
   status?: number;
@@ -57,8 +64,9 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
   const [state, setState] = useState<{
     report: CloudEquityDiagnosticResponse | null;
     loading: boolean;
+    loadingStep: number;
     failure: DiagnosticFailure | null;
-  }>({ report: null, loading: false, failure: null });
+  }>({ report: null, loading: false, loadingStep: 0, failure: null });
   const generationRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,19 +80,23 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
     clearPoll();
     generationRef.current += 1;
     const generation = generationRef.current;
-    setState((current) => ({ ...current, loading: true, failure: null }));
+    setState((current) => ({ ...current, loading: true, loadingStep: 1, failure: null }));
 
     const request = (nextMode: CloudEquityDiagnosticMode) => {
       apiClient.getCloudEquityDiagnostic(symbol, exchange || undefined, nextMode)
         .then((result) => {
           if (generationRef.current !== generation) return;
           if (result.status === "generating") {
+            setState((current) => ({
+              ...current,
+              loadingStep: Math.min(LOADING_STEPS.length, current.loadingStep + 1),
+            }));
             const retryAfterMs = Math.max(10, Math.min(5_000, result.retryAfterMs));
             pollTimerRef.current = setTimeout(() => request("cache-first"), retryAfterMs);
             return;
           }
           clearPoll();
-          setState({ report: result, loading: false, failure: null });
+          setState({ report: result, loading: false, loadingStep: 0, failure: null });
         })
         .catch((error: unknown) => {
           if (generationRef.current !== generation) return;
@@ -92,6 +104,7 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
           setState((current) => ({
             report: current.report,
             loading: false,
+            loadingStep: 0,
             failure: toFailure(error),
           }));
         });
@@ -104,7 +117,7 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
     // A report belongs to one company, so drop it rather than show it under the next.
     generationRef.current += 1;
     clearPoll();
-    setState({ report: null, loading: false, failure: null });
+    setState({ report: null, loading: false, loadingStep: 0, failure: null });
     load("cache-first");
     return clearPoll;
   }, [clearPoll, load]);
@@ -229,8 +242,16 @@ function Paragraph({ text: value, width, color, bold }: {
   );
 }
 
-function DiagnosticLoading() {
-  return <Spinner label={loadingText()} />;
+function DiagnosticLoading({ step }: { step: number }) {
+  const visible = LOADING_STEPS.slice(0, Math.max(1, step));
+  return (
+    <Box flexDirection="column" gap={1}>
+      {visible.slice(0, -1).map((label) => (
+        <Text key={label} fg={colors.textDim}>{t(label)}</Text>
+      ))}
+      <Spinner label={`${t(visible.at(-1) ?? LOADING_STEPS[0])}...`} />
+    </Box>
+  );
 }
 
 /** Label plus body text, stacked instead of columned once the pane gets narrow. */
@@ -459,7 +480,7 @@ export function EquityDiagnosticView({ focused, width, height }: {
   const { nativePaneChrome } = useUiCapabilities();
 
   const requestEnabled = access.emailVerified;
-  const { report, loading, failure, load } = useEquityDiagnostic(
+  const { report, loading, loadingStep, failure, load } = useEquityDiagnostic(
     symbol,
     exchange,
     requestEnabled,
@@ -516,19 +537,21 @@ export function EquityDiagnosticView({ focused, width, height }: {
     { id: "manage-account", label: t("Manage account"), onSelect: openPlan },
   ] : null, [openPlan, openUpgrade, previewShown]);
 
-  usePaneLoadingSignal(loading);
   usePaneFooter(FOOTER_ID, () => ({
     info: [
+      ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(failure ? [{ id: "error", parts: [{ text: failureText(failure), tone: "warning" as const }] }] : []),
       ...(report?.access === "full" && report.status === "partial"
         ? [{ id: "partial", parts: [{ text: t("partial"), tone: "warning" as const }] }]
         : []),
-      ...(report ? [{ id: "generated", parts: [{ text: formatTimeAgo(report.generatedAt), tone: "muted" as const }] }] : []),
+      ...(report?.stale ? [{ id: "stale", parts: [{ text: t("stale"), tone: "warning" as const }] }] : []),
+      ...(report?.cached && !report.stale ? [{ id: "cached", parts: [{ text: t("cached"), tone: "muted" as const }] }] : []),
+      ...(report ? [{ id: "generated", parts: [{ text: tf("generated {age}", { age: formatTimeAgo(report.generatedAt) }), tone: "muted" as const }] }] : []),
     ],
     hints: sources.length > 0
       ? [{ id: "source", key: "o", label: "pen source", title: sources.length > 1 ? "Open Source…" : "Open Source", onPress: openSource }]
       : [],
-  }), [failure, openSource, report, sources.length]);
+  }), [failure, loading, openSource, report, sources.length]);
 
   const contentWidth = Math.max(12, width - 2);
 
@@ -552,7 +575,7 @@ export function EquityDiagnosticView({ focused, width, height }: {
     );
   }
   if (loading && !report) {
-    return <Box paddingX={1} paddingY={1}><DiagnosticLoading /></Box>;
+    return <Box paddingX={1} paddingY={1}><DiagnosticLoading step={loadingStep} /></Box>;
   }
   if (!report) {
     const retryAction = <Button label="Retry" variant="secondary" onPress={retry} />;

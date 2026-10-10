@@ -1,5 +1,4 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { act, useCallback, useState } from "react";
 import { apiClient } from "../../../api-client";
 import type { RateMeeting, RatePathPayload } from "../../../api-client/rates";
@@ -60,7 +59,7 @@ test("the path fits the body: short panes give the meetings the room instead of 
     expect(frame).not.toContain("TENOR");
     expect(frame).toContain("MEETING");
     expect(frame).toContain("2026-10-28");
-    expect(lines.findIndex((line) => line.includes(formatObservationAge("2026-09-22T14:00:00Z")!))).toBe(height - 1);
+    expect(lines.findIndex((line) => line.includes("as of 2026-09-22 14:00 UTC"))).toBe(height - 1);
   }
   // With room the chart draws above the meetings, and the last meeting sits on the footer.
   const lines = await render(84, 29);

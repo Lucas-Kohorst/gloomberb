@@ -34,7 +34,7 @@ test("retained heatmap rows stay visible with a stale footer until a fresh snaps
     </TestPaneFrame>, { width: 100, height: 16 }); });
   await settleFrame(tui.setup(), 8);
   expect(tui.frame()).toContain("ACME");
-  expect(JSON.stringify(footer)).toContain('"text":"~1hr"');
+  expect(JSON.stringify(footer)).toContain('"text":"stale","tone":"warning"');
 
   api.mockResolvedValue({ status: "success", data: { ...result, stale: false, fetchedAt: Date.now() } });
   await tui.emitKeypress({ name: "r", sequence: "r" });

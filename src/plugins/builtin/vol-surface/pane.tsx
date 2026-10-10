@@ -12,7 +12,6 @@ import { usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "..
 import { blendHex } from "../../../theme/color-utils";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
-import { unavailableText } from "../../../components/ui/status-copy";
 import { Box, type ScrollBoxRenderable } from "../../../ui";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
@@ -321,7 +320,7 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
     ...(activeTab === "surface" && sheet?.omitted.length ? [`3D sheet omits ${sheet.omitted.map((entry) => expiryLabel(entry.expiration)).join(", ")}: smile fit fell back to interpolation (shown in Table)`] : []),
     ...[...expiryWarnings].map(([warning, expirations]) => `${expirations.length > 1 && expirations.length === snapshot?.expiries.length
       ? "All expiries" : expirations.map(expiryLabel).join(", ")}: ${warning}`),
-    ...(!spotAvailable && symbol && !historyDate ? [unavailableText("Underlying price")] : []),
+    ...(!spotAvailable && symbol && !historyDate ? ["Underlying price unavailable or stale"] : []),
     ...(historyDate && !stored.loading && !stored.data && !stored.error ? [`No stored ${underlying} surface for ${historyDate}`] : []),
     ...(fallbackDate ? [`Live chain has no two-sided quotes; showing the ${fallbackDate} close`] : []),
     ...(expiration != null && snapshot && !resource.loading && !snapshot.catalogue.includes(expiration)
@@ -343,6 +342,7 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
       ...(active.loading ? [{ id: "loading", parts: [{ text: snapshot && snapshot.loaded < snapshot.requested
         ? `loading ${snapshot.loaded}/${snapshot.requested} expiries` : "loading", tone: "muted" as const }] }] : []),
       ...(freshness ? [{ id: "source", parts: [{ text: freshness, tone: "muted" as const }] }] : []),
+      ...(snapshot?.expiries.some((entry) => entry.stale) ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
       ...(selectedExpiry?.fit && activeTab === "smile" ? [{ id: "fit", parts: [{ text: `${selectedExpiry.fit.method} · RMSE ${(selectedExpiry.fit.residual * 100).toFixed(3)} vol pts`, tone: "muted" as const }] }] : []),
       ...(selectionStatus ? [{ id: "selection", parts: [{ text: selectionStatus, tone: "muted" as const }] }] : []),
     ],

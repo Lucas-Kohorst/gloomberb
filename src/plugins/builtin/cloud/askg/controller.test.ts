@@ -393,7 +393,7 @@ describe("ASKGSessionController", () => {
 
     const row = harness.controller.getState().turns[0]?.tools[0];
     expect(row?.status).toBe("error");
-    expect(row?.note).toBe("Gloom unavailable.");
+    expect(row?.note).toBe("Could not send this result to Gloom, so it answered without it.");
 
     harness.emit({ seq: 2, type: "done", turnId: "turn-1", reason: "complete" });
     await harness.streamed;

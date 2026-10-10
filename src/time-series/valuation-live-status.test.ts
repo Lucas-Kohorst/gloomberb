@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { formatObservationAge } from "../utils/datetime-format";
 import { createTestDataProvider } from "../test-support/data-provider";
 import { resolveChartSpecData } from "./resolve";
 import { getLiveChartQuoteTargets, observeLiveChartQuotes } from "./live-quotes";
@@ -42,11 +41,11 @@ for (const receivedAt of [undefined, 42]) {
       await send({ ...quote, stale: true });
       expect(results).toHaveLength(2);
       expect(results.at(-1)?.series[0]?.points.map(point => point.value)).toEqual([5.5]);
-      expect(results.at(-1)?.warnings.some(warning => warning.includes(`Current valuation ${formatObservationAge(quote.lastUpdated)}`))).toBe(true);
+      expect(results.at(-1)?.warnings.some(warning => warning.includes("source quote is stale"))).toBe(true);
       await send({ ...quote, stale: false });
       expect(results).toHaveLength(3);
       expect(results.at(-1)?.series[0]?.points.map(point => point.value)).toEqual([5.5, 6]);
-      expect(results.at(-1)?.warnings.some(warning => warning.includes(`Current valuation ${formatObservationAge(quote.lastUpdated)}`))).toBe(false);
+      expect(results.at(-1)?.warnings.some(warning => warning.includes("source quote is stale"))).toBe(false);
       // An older source observation must remain rejected even with a newer receipt.
       await send({ ...quote, lastUpdated: quote.lastUpdated - 60_000, stale: true, receivedAt: 500 });
       expect(results).toHaveLength(3);

@@ -6,9 +6,7 @@ import {
   EmptyState,
   QueryBar,
   usePaneFooter,
-  usePaneLoadingSignal,
   usePaneNoticeFooter,
-  loadingText,
   type PaneFooterPressEvent,
 } from "../../../components";
 import {
@@ -891,11 +889,12 @@ function ChartComposerSurface({
   }, [anchoredVwapOn]);
   const anchorable = anchoredVwapOn && !pickingAnchor;
   const footerAnchor = useCallback(() => setPickingAnchor(true), []);
-  usePaneLoadingSignal(resolution.loading);
   usePaneFooter(footerId, () => ({
-    info: pickingAnchor
-      ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
-      : [],
+    info: resolution.loading
+      ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
+      : pickingAnchor
+        ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
+        : [],
     hints: [
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
@@ -970,7 +969,7 @@ function ChartComposerSurface({
   const emptyMessage = spec.series.length === 0
     ? "Add a series to start the chart"
     : resolution.loading
-      ? loadingText()
+      ? "Loading chart data"
       : statusErrorNotice ?? comparisonUnavailable ?? "No observations in this range";
 
   return (

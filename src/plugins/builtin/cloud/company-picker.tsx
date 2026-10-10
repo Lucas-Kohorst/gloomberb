@@ -26,8 +26,6 @@ import {
   OnboardingTitle,
 } from "../../../components/onboarding/onboarding-frame";
 import { Button } from "../../../components/ui/button";
-import { Spinner } from "../../../components/ui/loading";
-import { loadingText } from "../../../components/ui/status";
 import { TextField } from "../../../components/ui/fields";
 import { ListView, type ListViewItem } from "../../../components/ui/list-view";
 import { t, tf } from "../../../i18n";
@@ -502,10 +500,10 @@ export function CompanyPicker({
                   );
                 }}
               />
-            ) : searching ? (
-              <Spinner label={loadingText()} />
             ) : (
-              <Text fg={colors.textMuted} style={{ padding: "8px 2px" }}>{tf("No company matches {query}.", { query: query.trim() })}</Text>
+              <Text fg={colors.textMuted} style={{ padding: "8px 2px" }}>
+                {searching ? t("Searching…") : tf("No company matches {query}.", { query: query.trim() })}
+              </Text>
             )
           ) : (
             <Box style={{ display: "grid", gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`, gap: 8 }}>
@@ -557,10 +555,8 @@ export function CompanyPicker({
                 <Text fg={colors.textMuted}>{result.name}</Text>
               </Box>
             );
-          }) : searching ? (
-            <Spinner label={loadingText()} />
-          ) : (
-            <Text fg={colors.textMuted}>{tf("No company matches {query}.", { query: query.trim() })}</Text>
+          }) : (
+            <Text fg={colors.textMuted}>{searching ? t("Searching…") : tf("No company matches {query}.", { query: query.trim() })}</Text>
           )}
         </Box>
       ) : (

@@ -59,19 +59,17 @@ test("historical stale flags do not warn for a fresh board, but an old snapshot 
   await tui.render(<TestPaneFrame state={state} paneId="themes" pluginId="market-overview" runtime={createTestPluginRuntime()} width={90} height={20}>
     {(body) => <SectorPane paneId="themes" paneType="sectors" focused {...body} />}
   </TestPaneFrame>, { width: 90, height: 20 });
-  await tui.waitForFrameToContain("15m delayed /");
-  expect(tui.frame()).not.toContain("15m delayed ·");
+  await tui.waitForFrameToContain("snapshot");
   expect(tui.frame()).not.toContain("stale");
 
   asOf = new Date(Date.now() - 31 * 60_000).toISOString();
   await tui.emitKeypress({ name: "r", sequence: "r" });
-  await tui.waitForFrameToContain("~31m");
-  expect(tui.frame()).not.toContain("stale");
+  await tui.waitForFrameToContain("stale");
   asOf = new Date().toISOString();
   await tui.emitKeypress({ name: "r", sequence: "r" });
-  await tui.waitForFrameToExclude("~31m");
+  await tui.waitForFrameToExclude("stale");
   fail = true;
   await tui.emitKeypress({ name: "r", sequence: "r" });
-  await tui.waitForFrameToContain("Service unavailable");
+  await tui.waitForFrameToContain("stale");
   expect(tui.frame()).toContain("Nuclear & uranium");
 });

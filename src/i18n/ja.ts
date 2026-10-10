@@ -1007,6 +1007,7 @@ export const ja: Record<string, string> = {
   "Ticker add failed": "銘柄の追加に失敗しました",
   "Ticker symbol is required.": "銘柄コードを入力してください。",
   "No ticker selected.": "銘柄が選択されていません。",
+  "Select a ticker.": "銘柄を選択してください。",
   "No comparison tickers configured.": "比較銘柄が設定されていません。",
   "Loading chart...": "チャートを読み込み中...",
   "updating": "更新中",

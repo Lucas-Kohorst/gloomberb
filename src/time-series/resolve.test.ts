@@ -1,6 +1,5 @@
 import { FINANCIAL_VINTAGE_NOTICE } from "../utils/financial-statements";
 import { describe, expect, spyOn, test } from "bun:test";
-import { formatObservationAge } from "../utils/datetime-format";
 import { chartSeriesSourceKey } from "../capabilities";
 import type { FredSeriesData, FredSeriesLoadResult } from "../sources/gloomberb-cloud/fred-series";
 import { buildCustomChartPreset } from "../plugins/builtin/chart-composer/presets";
@@ -1396,9 +1395,8 @@ describe("resolveChartSpecData", () => {
     expect(revenue.points[0]?.date.toISOString().slice(0, 10)).toBe("2026-02-15");
     expect(revenue.axis).toBe("right");
     expect(result.series.find((entry) => entry.id === "cpi")?.panelId).toBe("macro");
-    const age = formatObservationAge(Date.parse("2026-03-15T00:00:00Z"));
-    expect(result.warnings[0]).toContain(age ? `FRED ${age}` : "FRED unavailable.");
-    expect(result.warnings[0]).toContain("network unavailable");
+    expect(result.warnings[0]).toContain("FRED refresh failed (network unavailable)");
+    expect(result.warnings[0]).toContain("cached data fetched 2026-03-15");
     expect(result.warnings.some((warning) => warning.includes("FRED vintage dates"))).toBe(true);
     expect(result.viewport).toEqual({
       start: new Date("2025-03-31T00:00:00.000Z"),

@@ -4,9 +4,8 @@ import { Box, ScrollBox, Text, useRendererHost, type ScrollBoxRenderable } from 
 import {
   DataTableView,
   KeyValueRow,
-  loadingText,
   StatGrid,
-  usePaneFooter, usePaneLoadingSignal,
+  usePaneFooter,
   usePaneNoticeFooter,
   useTableLoadMore,
   type DataTableKeyEvent,
@@ -250,9 +249,10 @@ export function MemberTradesDetail({
     focused,
   });
 
-  usePaneLoadingSignal((status === "loading") || (loadingMore));
   usePaneFooter(`${CONGRESS_TRADES_PANE_ID}:member-detail`, () => ({
     info: [
+      ...(status === "loading" ? [{ id: "member-loading", parts: [{ text: "loading member trades", tone: "muted" as const }] }] : []),
+      ...(loadingMore ? [{ id: "member-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "member-error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
@@ -291,7 +291,7 @@ export function MemberTradesDetail({
   ];
   const summary = <StatGrid items={summaryItems} width={width} />;
   const emptyTitle = status === "loading"
-    ? loadingText()
+    ? "Loading member trades..."
     : error ?? "No trades for this member.";
 
   return (

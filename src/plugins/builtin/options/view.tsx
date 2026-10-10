@@ -11,13 +11,11 @@ import { useChartQueries, useOptionsQuery, useResolvedEntryValue, useTickerFinan
 import {
   DataTableView,
   EmptyState,
-  usePaneFooter, usePaneLoadingSignal,
+  usePaneFooter,
   usePaneMenuItems,
   usePaneNoticeFooter,
   QueryBar,
   Spinner,
-  loadingText,
-  unavailableText,
   StatGrid,
   statGridColumns,
   statGridRows,
@@ -26,7 +24,6 @@ import {
   type DataTableVisibleRange,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { useOptionalDialog, type AlertContext } from "../../../ui/dialog";
 import { useLiveQuoteEntries, useQuoteUpdates } from "../../../state/hooks/quote-streaming";
 import { buildChartKey } from "../../../market-data/selectors";
@@ -319,7 +316,7 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
   const error = (expirationUnavailable ? "Selected expiration unavailable." : null)
     ?? initialChainEntry?.error?.message ?? expirationChainEntry?.error?.message
     ?? (initialChainEntry?.phase === "error" || expirationChainEntry?.phase === "error"
-      ? unavailableText("Options") : null);
+      ? "Failed to load options" : null);
 
   const selectExpiration = useCallback((expiration: number) => {
     updatePaneSettings({ expiration, expirationTargetKey: selectionTargetKey });
@@ -510,11 +507,11 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
       content: (ctx: AlertContext) => <AnalyticsAsOfDialog {...ctx} rows={rows} />,
     }).catch(() => {});
   }, [dialog, enrichment]);
-  usePaneLoadingSignal((enrichmentState.loading));
   usePaneFooter("options-enrichment", () => ({ info: [
+    ...(enrichmentState.loading ? [{ id: "enrichment-loading", parts: [{ text: "loading analytics", tone: "muted" as const }] }] : []),
     ...(enrichment?.asOf ? [{ id: "enrichment-asof",
       title: analyticsAsOfRows(enrichment).map((row) => `${row.label}: ${row.value}`).join("\n"),
-      parts: [{ text: formatApproximateAge(Date.parse(enrichment.asOf)), tone: "muted" as const }] }] : []),
+      parts: [{ text: `Analytics ${enrichment.asOf.slice(0, 16).replace("T", " ")} UTC`, tone: "muted" as const }] }] : []),
   ] }), [enrichmentState.loading, enrichment]);
   const optionQuoteCoverage = useMemo(
     () => resolveOptionQuoteCoverage(
@@ -655,7 +652,7 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
 
   useOptionsAccessFooter({
     chain,
-    error: [error, underlyingStale ? unavailableText("Greeks") : null,
+    error: [error, underlyingStale ? "Underlying quote stale: Greeks and calculator unavailable" : null,
       selectedContract && strikeChain && !selectedContractAvailable
         ? `Selected ${formatStrikeLabel(selectedContract.strike)} ${selectedContract.side} unavailable` : null,
       summary?.historicalVolatilityUnavailableReason, dailyHistoryEntry?.error?.message].filter(Boolean).join(" · ") || null,
@@ -719,7 +716,7 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
   if (!ticker) {
     return <EmptyState title="Select a ticker." />;
   }
-  if (loading && !chain) return <Spinner label={loadingText()} />;
+  if (loading && !chain) return <Spinner label="Loading options chain..." />;
   if (error && !chain) return <EmptyState title="Options chain unavailable." message={error} />;
   if (!chain || expirationDates.length === 0) {
     return <EmptyState title={`No options available for ${effectiveTicker}.`} />;
@@ -795,7 +792,7 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
         getItemKey={(row) => String(row.strike)}
         renderCell={renderCell}
         selectedTextOverridesCellColor
-        emptyStateTitle={error && !strikeChain ? "Selected expiration unavailable." : strikesLoading ? loadingText()
+        emptyStateTitle={error && !strikeChain ? "Selected expiration unavailable." : strikesLoading ? "Loading strikes..."
           : strikeWindowResult.total > 0 ? "No strikes in this window." : "No strikes available."}
         reportEveryRow
         rootWidth={Math.max(1, width - 2 + inset * 2)}

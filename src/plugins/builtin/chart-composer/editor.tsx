@@ -1,6 +1,5 @@
 import { Box, Text, useNativeRenderer, useUiCapabilities } from "../../../ui";
-import { DialogFrame, ListView, Spinner, TextField } from "../../../components/ui";
-import { loadingText } from "../../../components/ui/status-copy";
+import { DialogFrame, ListView, TextField } from "../../../components/ui";
 import type { PromptContext } from "../../../ui/dialog";
 import { colors } from "../../../theme/colors";
 import type { ChartSpec } from "../../../time-series/types";
@@ -137,10 +136,10 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
                 onActivate={(_, index) => { beginQuickAdd(); addCatalogSuggestion(quickAddSuggestions[index]); }}
               />
             </Box>
-          ) : quickAddLoading ? (
-            <Spinner label={loadingText()} />
           ) : (
-            <Text fg={colors.textMuted}>No matching security or metric.</Text>
+            <Text fg={colors.textMuted}>
+              {quickAddLoading ? "Searching instruments…" : "No matching security or metric."}
+            </Text>
           )
         )}
 

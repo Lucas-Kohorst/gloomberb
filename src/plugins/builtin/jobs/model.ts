@@ -7,7 +7,6 @@ import type {
   CloudJobsPosting,
   CloudJobsSummaryPayload,
 } from "../../../api-client/types";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { formatCompact, formatNumber } from "../../../utils/format";
 import { compareSortValues } from "../../../utils/sort-values";
 
@@ -136,7 +135,11 @@ export function formatAge(posted: string | null, precision: string | null, now =
 
 export function formatCollectedAgo(iso: string | null, now = new Date()): string {
   if (!iso) return "";
-  return formatApproximateAge(new Date(iso).getTime(), now.getTime());
+  const minutes = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 // Postings table ------------------------------------------------------------

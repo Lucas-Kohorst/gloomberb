@@ -5,7 +5,7 @@ import type {
   CloudSessionMoversSide,
 } from "../../../api-client/market-movers";
 import { usePlanAccess } from "../../../api-client/plan-access";
-import { DataTableView, EmptyState, QueryBar, usePaneFooter, usePaneLoadingSignal, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, EmptyState, QueryBar, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
 import {
   buildScreenerQuoteTargets,
@@ -15,7 +15,6 @@ import { useAutoRefresh } from "../../../react/auto-refresh";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { Box } from "../../../ui";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { publicTickerKey } from "../../../utils/exchanges";
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
@@ -99,7 +98,6 @@ function SessionMoversTable({ view, session, focused, width, summaryQuotes, live
   const [loaded, setLoaded] = useState<LoadedList | null>(null);
   // The first frame would otherwise claim an empty list.
   const [loading, setLoading] = useState(true);
-  usePaneLoadingSignal(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -174,22 +172,19 @@ function SessionMoversTable({ view, session, focused, width, summaryQuotes, live
   }, [rows, selectedId]);
 
   const sessionLabel = payload ? earlierSessionLabel(payload.session, session) : null;
-  const observedAt = payload?.stale ? Date.parse(payload.asOf) : Number.NaN;
   usePaneFooter("market-movers", () => ({
     info: [
       ...(loadError ? [{ id: "load-error", parts: [{ text: loadError, tone: "warning" as const }] }] : []),
       ...summaryFooterSegments(summaryQuotes),
       ...(sessionLabel ? [{ id: "session", parts: [{ text: sessionLabel, tone: "muted" as const }] }] : []),
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(feedStatus ? [{
         id: "feed",
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
-      ...(Number.isFinite(observedAt) && observedAt > 0 ? [{
-        id: "updated",
-        parts: [{ text: formatApproximateAge(observedAt), tone: "muted" as const }],
-      }] : []),
+      ...(payload?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "muted" as const }] }] : []),
     ],
-  }), [feedStatus, loadError, observedAt, sessionLabel, summaryQuotes]);
+  }), [feedStatus, loadError, loading, payload?.stale, sessionLabel, summaryQuotes]);
 
   const openRow = useCallback((row: SessionMoverRow) => {
     pinTicker(rowKey(row), { floating: true, paneType: TICKER_RESEARCH_PANE_ID, instrument: null });
@@ -204,7 +199,7 @@ function SessionMoversTable({ view, session, focused, width, summaryQuotes, live
   const sides = sessionSides(view);
   // Until this list's first answer the table is loading, including the frame
   // between a change of list and its request going out.
-  const emptyTitle = payload ? "No movers yet." : loadError ?? (loading ? "" : "No movers returned.");
+  const emptyTitle = payload ? "No movers yet." : loadError ?? "Loading movers...";
   return (
     <DataTableView<SessionMoverRow, SessionMoverColumn>
       focused={focused}

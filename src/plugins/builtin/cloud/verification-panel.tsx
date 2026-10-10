@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient, type AuthUser } from "../../../api-client";
 import { Button } from "../../../components/ui/button";
-import { unavailableText } from "../../../components/ui/status-copy";
 import { useShortcut } from "../../../react/input";
 import { Box, Text } from "../../../ui";
 import { colors } from "../../../theme/colors";
@@ -42,7 +41,7 @@ export function CloudVerificationPanel({ onVerified, onContinueFree }: {
     setSending(true);
     void apiClient.sendVerification().then(() => {
       setCooldown(true); setStatus("Confirmation link sent. Check your inbox and spam folder.");
-    }).catch((error) => setStatus(error instanceof Error ? error.message : unavailableText("Email")))
+    }).catch((error) => setStatus(error instanceof Error ? error.message : "Couldn't send email. Try again."))
       .finally(() => setSending(false));
   }, [cooldown, sending]);
   // Each button has a key, shown beside its label.

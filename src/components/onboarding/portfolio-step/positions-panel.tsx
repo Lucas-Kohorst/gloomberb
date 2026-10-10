@@ -6,8 +6,6 @@ import { t, tf } from "../../../i18n";
 import { formatMarketPrice } from "../../../market-data/market/format";
 import { formatPercentRaw } from "../../../utils/format";
 import { Button, NumberField, TextField } from "../../ui";
-import { Spinner } from "../../ui/loading";
-import { loadingText } from "../../ui/status";
 import { ONBOARDING_DESKTOP } from "../onboarding-frame";
 import {
   POSITION_FIELDS,
@@ -46,7 +44,7 @@ function PreviewLine({ preview, error }: Pick<OnboardingPositionsState, "preview
   if (error) return <Text fg={colors.negative} wrapText>{error}</Text>;
   if (preview.status === "idle") return null;
   if (preview.status === "checking") {
-    return <Spinner label={loadingText()} />;
+    return <Text fg={colors.textDim}>{tf("{query} checking...", { query: preview.query })}</Text>;
   }
   if (preview.status === "missing") return <Text fg={colors.textMuted}>{preview.message}</Text>;
   const price = preview.quote?.price;
@@ -197,7 +195,7 @@ function DesktopPositionsPanel({
         </Box>
         <Box style={{ flexShrink: 0 }}>
           <Button
-            label="Add"
+            label={state.submitting ? "Adding..." : "Add"}
             variant="secondary"
             height="26px"
             disabled={state.submitting}
@@ -206,7 +204,7 @@ function DesktopPositionsPanel({
         </Box>
       </Box>
       <Box style={{ minHeight: 18, marginTop: 8 }}>
-        {state.submitting ? <Spinner label={loadingText()} /> : <PreviewLine preview={state.preview} error={state.error} />}
+        <PreviewLine preview={state.preview} error={state.error} />
       </Box>
       {state.positions.length > 0 ? (
         <Box flexDirection="column" style={{ marginTop: 16, maxHeight: 200, overflowY: "auto" }}>
@@ -289,7 +287,7 @@ function TuiPositionsPanel({ state, inputRef, editing, selectedSymbol, shortcut 
         {state.error ? (
           <Text fg={colors.negative}>{state.error}</Text>
         ) : state.submitting ? (
-          <Spinner label={loadingText()} />
+          <Text fg={colors.textDim}>{t("adding...")}</Text>
         ) : (
           <Text fg={colors.textMuted}>
             {editing

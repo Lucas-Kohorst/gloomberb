@@ -228,7 +228,7 @@ test("keeps table geometry and scroll steady while a cold expiry loads", async (
   await renderSettled();
   await act(async () => { tui.setup().mockInput.pressKey("l"); });
   await renderSettled();
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Loading strikes");
   expect(tableHeight()).toBe(before);
   await act(async () => { finishNext({ ...initial,
     calls: initial.calls.map((c) => ({ ...c, expiration: nextExpiry, contractSymbol: c.contractSymbol.replace("260619", "260626") })),
@@ -236,7 +236,7 @@ test("keeps table geometry and scroll steady while a cold expiry loads", async (
   }); });
   await renderSettled();
   expect(tableHeight()).toBe(before);
-  expect(tui.frame()).not.toContain("Loading...");
+  expect(tui.frame()).not.toContain("Loading strikes");
   expect((tui.setup().renderer.root.findDescendantById("options-table-body-scroll") as ScrollBoxRenderable).scrollTop).toBeGreaterThan(0);
 });
 
@@ -538,7 +538,7 @@ test("starts at a held contract's expiry and preserves a researcher-selected rol
   // holding again, rather than retain that intermediate target's index zero.
   await act(async () => { selectTicker(makeTicker("MSFT")); });
   await renderSettled();
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Loading options chain");
   await act(async () => { selectTicker(ticker); });
   await renderSettled();
   expect(tui.frame()).toMatch(/33\.95\s+34\.05\s+34\.00\s+.*340/);
@@ -589,7 +589,7 @@ test("stale underlying preserves contract observations but cannot seed current G
   await renderSettled();
   const frame = tui.frame();
   expect(frame).toMatch(/ATM IV\s+--/);
-  expect(frame).toContain("Greeks unavailable.");
+  expect(frame).toContain("Underlying quote stale");
   expect(frame).not.toContain("[c]alc");
   await exportPaneTable(TEST_PANE_ID, "stale-options.csv");
   const saved = takeSavedTextFile()!.text;
@@ -603,7 +603,7 @@ test("stale underlying preserves contract observations but cannot seed current G
   const recovered = tui.frame();
   expect(recovered).toMatch(/ATM IV\s+90\.1%/);
   expect(recovered).toContain("[c]alc");
-  expect(recovered).not.toContain("Greeks unavailable.");
+  expect(recovered).not.toContain("Underlying quote stale");
 });
 
 

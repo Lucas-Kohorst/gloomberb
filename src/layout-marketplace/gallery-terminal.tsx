@@ -38,7 +38,7 @@ function discoverStatusRow(controller: LayoutGalleryController): GalleryRow | nu
   switch (controller.discover.state.status) {
     case "idle":
     case "loading":
-      return { id: "discover:loading", label: "Loading...", disabled: true, entry: null };
+      return { id: "discover:loading", label: "Loading community layouts…", disabled: true, entry: null };
     case "error":
       return {
         id: "discover:retry",
@@ -116,7 +116,7 @@ export function LayoutGalleryTerminal({
         ...(teamLayouts.state.status === "error" && entries.length === 0
           ? [{ id: `team:${team.id}:retry`, label: "Retry", detail: teamLayouts.state.error, entry: null, action: teamLayouts.refresh }]
           : teamLayouts.state.status === "loading" && entries.length === 0
-            ? [{ id: `team:${team.id}:loading`, label: "Loading...", disabled: true, entry: null }]
+            ? [{ id: `team:${team.id}:loading`, label: "Loading team layouts…", disabled: true, entry: null }]
             : entries.length === 0
               ? [{ id: `team:${team.id}:empty`, label: "No team layouts yet.", disabled: true, entry: null }]
               : entries.map((entry): GalleryRow => ({

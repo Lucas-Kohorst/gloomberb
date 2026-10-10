@@ -44,7 +44,7 @@ describe("classifyAccountError", () => {
       kind: "retry",
     });
     expect(classifyAccountError(new Error("Invalid email or password"), "login").kind).toBe("retry");
-    expect(classifyAccountError({}, "login").message).toBe("Sign-in unavailable.");
+    expect(classifyAccountError({}, "login").message).toBe("Could not sign you in.");
   });
 });
 

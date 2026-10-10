@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FieldGrid, KeyValueRow, QueryBar, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, type GridField } from "../../../components";
+import { FieldGrid, KeyValueRow, QueryBar, usePaneFooter, usePaneNoticeFooter, type GridField } from "../../../components";
 import { useAsyncResource, useInputCapture } from "../../../public/react";
 import { useShortcut } from "../../../react/input";
 import { useAppSelector, usePaneInstance, usePaneStateValue } from "../../../state/app/context";
@@ -264,11 +264,11 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
     scope: "options-calculator:fields",
   });
 
-  usePaneLoadingSignal((surfaceSource && surfaceResource.loading));
   usePaneFooter(OPTIONS_CALCULATOR_PANE_ID, () => ({
     info: [
       ...(problem ? [{ id: "input", parts: [{ text: problem, tone: "warning" as const }] }] : []),
       ...(implied.note ? [{ id: "iv", parts: [{ text: implied.note, tone: "warning" as const }] }] : []),
+      ...(surfaceSource && surfaceResource.loading ? [{ id: "loading", parts: [{ text: "loading surface", tone: "muted" as const }] }] : []),
       ...(surfaceSource && surface?.asOf ? [{ id: "surface-asof", parts: [{ text: `surface · ${surface.asOf}`, tone: "muted" as const }] }] : []),
       ...(effectiveSteps && effectiveSteps !== (draft.steps ?? 400) ? [{ id: "refined", parts: [{ text: `tree refined to ${effectiveSteps} steps`, tone: "muted" as const }] }] : []),
       ...(liveInputs ? [{ id: "market", parts: [{ text: liveInputs.delayed ? "delayed market" : "real-time market", tone: "muted" as const }] }] : []),

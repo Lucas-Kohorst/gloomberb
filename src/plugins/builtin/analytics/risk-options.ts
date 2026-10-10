@@ -4,12 +4,9 @@ import { scenarioValue, validatePosition } from "../options-scenario/model";
 import {
   createScenarioDependencies,
   loadScenarioMarket,
-  optionsChainUnusable,
   type ScenarioLoaderDependencies,
 } from "../options-scenario/client";
 import { createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { canonicalExchange } from "../../../utils/exchanges";
 
 export interface PortfolioOptionBook {
@@ -109,7 +106,7 @@ export async function loadPortfolioOptionBook(
         market.dividendYield == null ||
         market.currency !== portfolio.currency ||
         !market.chain ||
-        optionsChainUnusable(market.warnings) ||
+        market.warnings.includes("Options chain is stale") ||
         !market.underlyingQuote?.lastUpdated ||
         Math.abs(
           (dependencies.now?.() ?? Date.now()) -
@@ -208,9 +205,7 @@ export function portfolioOptionGreeks(
           error ??
           (position.currency !== currency
             ? "Option currency differs"
-            : position.asOf > now
-              ? "Option input is future-dated."
-              : formatObservationAge(position.asOf) ? `Option input ${formatObservationAge(position.asOf)}` : unavailableText("Option input")),
+            : "Option input snapshot is stale or future-dated"),
       };
     }
     const value = scenarioValue(position, position.spot, position.asOf, 0);

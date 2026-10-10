@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiClient } from "../../../api-client";
 import { Button } from "../../../components/ui/button";
-import { unavailableText } from "../../../components/ui/status-copy";
 import { t, tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { useAppActive } from "../../../state/app/activity";
@@ -56,7 +55,7 @@ export function CloudVerificationStatusWidget() {
         toast.success(email ? tf("Verification link sent to {email}.", { email }) : t("Verification link sent."));
       })
       .catch((error) => {
-        toast.error(error instanceof Error && error.message ? error.message : unavailableText("Email"));
+        toast.error(error instanceof Error && error.message ? error.message : t("Couldn't send the email. Try again."));
       })
       .finally(() => setSending(false));
   };

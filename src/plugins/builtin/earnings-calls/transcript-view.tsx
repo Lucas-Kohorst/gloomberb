@@ -183,7 +183,7 @@ export function TranscriptView({
 
   if (loading && !transcript) {
     return (
-      <PaneStatusBody loading align="center" />
+      <PaneStatusBody loading align="center" loadingLabel="Loading transcript..." />
     );
   }
 

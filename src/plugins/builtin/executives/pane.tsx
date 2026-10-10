@@ -6,8 +6,8 @@ import type {
 import {
   BulletList,
   DataTableView,
-  EmptyState, FigureList, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, unavailableText,
-  usePaneFooter, usePaneLoadingSignal,
+  EmptyState, FigureList, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading,
+  usePaneFooter,
   usePaneNoticeFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -315,9 +315,10 @@ function ExecutiveResearch({ ticker, listing, focused, width, nested, guard }: {
     refresh,
   });
 
-  usePaneLoadingSignal((loading));
   usePaneFooter(EXECUTIVES_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
+    if (loading)
+      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (statement) {
       info.push({
         id: "filed",
@@ -347,13 +348,13 @@ function ExecutiveResearch({ ticker, listing, focused, width, nested, guard }: {
   const proseWidth = Math.min(bodyWidth, READING_WIDTH);
 
   if (list.loading && !list.data?.data) {
-    return <PaneStatusBody loading align="center" />;
+    return <PaneStatusBody loading align="center" loadingLabel="Loading proxy statement..." />;
   }
   if (!list.error && years.length === 0) {
     return <EmptyState title={`No proxy statement on file for ${ticker}.`} />;
   }
   if (list.error && !list.data?.data) {
-    return <PaneStatusBody error={list.error} errorTitle={unavailableText("Executive compensation")} />;
+    return <PaneStatusBody error={list.error} errorTitle="Could not load executive compensation." />;
   }
 
   return (
@@ -412,7 +413,7 @@ function ExecutiveResearch({ ticker, listing, focused, width, nested, guard }: {
             )}
           </Box>
         ) : (
-          <PaneStatusBody loading={detail.loading} error={detail.error} errorTitle={unavailableText("Proxy statement")}
+          <PaneStatusBody loading={detail.loading} error={detail.error} errorTitle="Could not load this proxy statement."
             empty={detail.data?.data === null} emptyTitle={`No ${year} proxy statement on file for ${ticker}.`} />
         )}
       </ScrollBox>

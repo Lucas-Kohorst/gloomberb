@@ -8,7 +8,6 @@ import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { DividendYieldPane } from "./pane";
 import { fetchDividendData } from "./client";
 import { chartResponse, marketTransport } from "./test-fixture";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 
 const tui = createOpenTuiTestHarness();
 const realNow = Date.now;
@@ -104,8 +103,8 @@ test.each([48, 80, 120])("native dividend refresh keeps the selected price's tim
   await mountDividendPane("FUND", width);
   const before = await frame();
   expect(before).toContain("4.00%");
-  expect(before).toContain(formatApproximateAge(oldTime * 1000));
-  expect(before).not.toContain("Stale price");
+  expect(before).toContain(new Date(oldTime * 1000).toISOString());
+  expect(before.match(/Stale price/g)).toHaveLength(1);
   expect(before).not.toContain("cash yield may be out of date");
 
   priceTime = undefined;
@@ -119,10 +118,10 @@ test.each([48, 80, 120])("native dividend refresh keeps the selected price's tim
   await tui.emitKeypress({ name: "r", sequence: "r" });
   const fresh = await frame();
   expect(fresh).toContain("4.00%");
-  expect(fresh).toContain(formatApproximateAge(sourceTime * 1000));
+  expect(fresh).toContain(new Date(sourceTime * 1000).toISOString());
   expect(fresh).not.toContain("Stale price");
   expect(fresh).not.toContain("time unavailable");
-  expect(fresh).not.toContain("History fetched");
+  if (width >= 80) expect(fresh).toContain("History fetched");
 
   fail = true;
   await tui.emitKeypress({ name: "r", sequence: "r" });

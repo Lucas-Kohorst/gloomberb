@@ -1,62 +1,51 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
-import { formatFeedTime, formatObservationAge, formatRelativeAge, formatRelativeTime, formatShortDate, formatTimeAgo } from "./datetime-format";
+import { formatFeedTime, formatRelativeAge, formatRelativeTime, formatShortDate, formatTimeAgo } from "./datetime-format";
 
 afterEach(() => setSystemTime());
 
-function statusDay(timestamp: number): string {
-  const date = new Date(timestamp);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
 describe("relative time", () => {
-  // The public age helpers all print the same token: ~5m, ~1hr, or a date.
+  // formatRelativeAge and formatTimeAgo are public plugin API; they share one
+  // ladder, so a change for one style must not move the other's text.
   test("every style reads the same minute, hour and day boundaries", () => {
     const now = Date.UTC(2026, 8, 23, 12);
     setSystemTime(now);
-    const cases: Array<[ageMs: number, age: string]> = [
-      [-60_000, "~0m"],
-      [59_999, "~0m"],
-      [60_000, "~1m"],
-      [3_599_999, "~59m"],
-      [3_600_000, "~1hr"],
-      [86_399_999, "~23hr"],
-      [6 * 86_400_000, statusDay(now - 6 * 86_400_000)],
+    const cases: Array<[ageMs: number, age: string, short: string]> = [
+      [-60_000, "just now", "<1m"],
+      [59_999, "just now", "<1m"],
+      [60_000, "1m ago", "1m"],
+      [3_599_999, "59m ago", "59m"],
+      [3_600_000, "1h ago", "1h"],
+      [86_399_999, "23h ago", "23h"],
+      [6 * 86_400_000, "6d ago", "6d"],
     ];
-    for (const [ageMs, age] of cases) {
+    for (const [ageMs, age, short] of cases) {
       const iso = new Date(now - ageMs).toISOString();
       expect(formatRelativeAge(now - ageMs, now)).toBe(age);
       expect(formatTimeAgo(iso)).toBe(age);
-      expect(formatTimeAgo(iso, { short: true })).toBe(age);
-      expect(formatRelativeTime(iso, now)).toBe(age);
+      expect(formatTimeAgo(iso, { short: true })).toBe(short);
+      expect(formatRelativeTime(iso, now)).toBe(short);
     }
 
+    // Only the feed style turns into a (local) date after a week.
     const weekAgo = now - 7 * 86_400_000;
-    expect(formatRelativeAge(weekAgo, now)).toBe(statusDay(weekAgo));
-    expect(formatRelativeTime(weekAgo, now)).toBe(statusDay(weekAgo));
-    expect(formatTimeAgo(new Date(weekAgo))).toBe(statusDay(weekAgo));
+    expect(formatRelativeAge(weekAgo, now)).toBe("7d ago");
+    expect(formatRelativeTime(weekAgo, now)).toBe("7d");
+    expect(formatTimeAgo(new Date(weekAgo))).toMatch(/^9\/1[67]\/26$/);
+    expect(formatTimeAgo(new Date(weekAgo), { short: true })).toMatch(/^9\/1[67]\/26$/);
 
     expect(formatRelativeAge(undefined, now)).toBe("never");
     expect(formatRelativeTime("not a date", now)).toBe("-");
     expect(formatTimeAgo("not a date")).toBe("unknown");
-    expect(formatObservationAge(now - 3_600_000, now)).toBe("~1hr");
-    expect(formatObservationAge(new Date(now - 3_600_000).toISOString(), now)).toBe("~1hr");
-    expect(formatObservationAge(undefined, now)).toBeNull();
-    expect(formatObservationAge(0, now)).toBeNull();
-    expect(formatObservationAge(Number.NaN, now)).toBeNull();
-    expect(formatObservationAge(now + 3_600_000, now)).toBeNull();
-    expect(formatObservationAge("2026-10-06", now)).toBe("2026-10-06");
   });
 
   test("handles UTC ISO timestamps with explicit offsets", () => {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "+00:00");
-    expect(formatTimeAgo(fiveMinutesAgo)).toBe("~5m");
+    expect(formatTimeAgo(fiveMinutesAgo)).toBe("5m ago");
   });
 
   test("treats space-separated chat timestamps without a timezone as UTC", () => {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString().replace("T", " ").replace("Z", "");
-    expect(formatTimeAgo(fiveMinutesAgo)).toBe("~5m");
+    expect(formatTimeAgo(fiveMinutesAgo)).toBe("5m ago");
   });
 });
 

@@ -5,7 +5,7 @@ import type {
   TeamSentInvitation,
   TeamSummary,
 } from "../../../../api-client";
-import { Button, Spinner, loadingText } from "../../../../components";
+import { Button } from "../../../../components";
 import { colors } from "../../../../theme/colors";
 import { Box, Text, TextAttributes } from "../../../../ui";
 import { WallTeaser } from "../../shared/wall-teaser";
@@ -213,10 +213,7 @@ export function InvitesSection({
                 </AccentRow>
               );
             })}
-            <Box flexDirection="row" gap={1} alignItems="center">
-              <PaneButton id="new-link" label="New link" disabled={busy === "link"} onPress={onNewLink} />
-              {busy === "link" ? <Spinner label={loadingText()} /> : null}
-            </Box>
+            <PaneButton id="new-link" label={busy === "link" ? "Creating…" : "New link"} disabled={busy === "link"} onPress={onNewLink} />
           </>
         ) : (
           <Muted width={width}>
@@ -296,8 +293,7 @@ export function ChannelsSection({
             onChange={onChannelNameChange}
             onSubmit={onCreate}
           />
-          <PaneButton id="channel-create" label="Create" variant="primary" disabled={busy === "channel" || !normalized} onPress={onCreate} />
-          {busy === "channel" ? <Spinner label={loadingText()} /> : null}
+          <PaneButton id="channel-create" label={busy === "channel" ? "Creating…" : "Create"} variant="primary" disabled={busy === "channel" || !normalized} onPress={onCreate} />
         </Box>
         <Box paddingLeft={LABEL_WIDTH + 1}>
           <Muted>
@@ -407,12 +403,11 @@ export function SettingsSection({
           <Box flexDirection="row" gap={1} alignItems="center">
             <PaneButton
               id="save"
-              label="Save changes"
+              label={busy === "save" ? "Saving…" : "Save changes"}
               variant="primary"
               disabled={busy === "save" || !dirty || !!problem}
               onPress={onSave}
             />
-            {busy === "save" ? <Spinner label={loadingText()} /> : null}
             {problem && dirty ? <Text fg={colors.negative}>{problem}</Text> : null}
           </Box>
         </>
@@ -492,16 +487,13 @@ export function CreateTeamForm({
       <TeamDraftFields draft={draft} width={width} onChange={onChange} onSubmit={onCreate} editable={false} />
       <Box flexDirection="row" gap={1} alignItems="center">
         {hasPro ? (
-          <>
-            <PaneButton
-              id="create"
-              label="Create team"
-              variant="primary"
-              disabled={busy || !!problem}
-              onPress={onCreate}
-            />
-            {busy ? <Spinner label={loadingText()} /> : null}
-          </>
+          <PaneButton
+            id="create"
+            label={busy ? "Creating…" : "Create team"}
+            variant="primary"
+            disabled={busy || !!problem}
+            onPress={onCreate}
+          />
         ) : (
           <PaneButton id="create" label="Upgrade to Pro to create teams" variant="primary" onPress={onUpgrade} />
         )}

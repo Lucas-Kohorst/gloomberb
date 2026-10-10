@@ -1,5 +1,4 @@
 import { createPluginCache } from "../../../data/plugin-cache";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import type { DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { fetchEconCalendar } from "./calendar-source";
@@ -154,7 +153,12 @@ export function formatCountdown(ms: number): string {
 }
 
 export function formatStaleness(fetchedAt: number, now: number): string {
-  return formatApproximateAge(fetchedAt, now);
+  const elapsed = now - fetchedAt;
+  if (elapsed < 60_000) return "updated just now";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return `updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `updated ${hours}h ago`;
 }
 
 function serializeEvents(events: EconEvent[]): PersistedEconEvent[] {

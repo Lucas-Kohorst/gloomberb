@@ -1,10 +1,17 @@
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { formatMarketPrice } from "../../../market-data/market/format";
 import { formatQuoteAgeWithSource } from "../../../market-data/quotes/time";
 import type { AlertCondition, AlertRule } from "./types";
 
 export function relativeTime(ts: number): string {
-  return formatApproximateAge(ts);
+  const diff = Date.now() - ts;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 export function formatCurrentPrice(alert: AlertRule, maxWidth = 9): string {

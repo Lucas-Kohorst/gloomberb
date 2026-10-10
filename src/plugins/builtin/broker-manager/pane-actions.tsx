@@ -9,7 +9,7 @@ import { brokerProfileRemovalConfirm, removeBrokerProfile } from "../../../broke
 import { signedInBrokerForProfile } from "../../../brokers/signed-in/connect";
 import { isSignedInBrokerProfile } from "../../../brokers/signed-in/profile";
 import { requestBrokerSignIn } from "../../../brokers/signed-in/sign-in-dialog";
-import { confirmDialog, loadingText, unavailableText } from "../../../components";
+import { confirmDialog } from "../../../components";
 import { openConfirmModal } from "../../../components/form-modal";
 import { useAppGetState } from "../../../state/app/context";
 import type { BrokerProfileAction } from "../../../types/broker";
@@ -91,7 +91,7 @@ export function useBrokerManagerActions({
     }
 
     try {
-      setBusy(loadingText());
+      setBusy(t("Saving…"));
       const nextConfig = buildBrokerProfileConfig(selectedRow.adapter, editDraft.values, selectedRow.instance);
       await updateBrokerInstance(selectedRow.id, nextConfig, {
         label,
@@ -101,7 +101,7 @@ export function useBrokerManagerActions({
       setEditDraft(null);
       setMessage(infoMessage(tf("Saved {label}.", { label })));
     } catch (error) {
-      setMessage(errorMessage(error, unavailableText("Broker profile")));
+      setMessage(errorMessage(error, t("Failed to save broker profile.")));
     } finally {
       setBusy(null);
     }
@@ -113,28 +113,28 @@ export function useBrokerManagerActions({
       // Connecting happens in the browser, then the profile syncs what it can now see.
       const broker = signedInBrokerForProfile(selectedRow.instance, selectedRow.brokerName);
       try {
-        setBusy(loadingText());
+        setBusy(t("Connecting…"));
         if (!await requestBrokerSignIn(broker)) {
-          setMessage(infoMessage(unavailableText(broker.name)));
+          setMessage(infoMessage(tf("{broker} was not connected.", { broker: broker.name })));
           return;
         }
         await syncBrokerInstance(selectedRow.id);
         refreshStatuses();
         setMessage(infoMessage(tf("Connected {broker}.", { broker: broker.name })));
       } catch (error) {
-        setMessage(errorMessage(error, unavailableText(selectedRow.label)));
+        setMessage(errorMessage(error, tf("Failed to sync {label}.", { label: selectedRow.label })));
       } finally {
         setBusy(null);
       }
       return;
     }
     try {
-      setBusy(loadingText());
+      setBusy(t("Testing…"));
       await connectBrokerInstance(selectedRow.id);
       refreshStatuses();
       setMessage(infoMessage(tf("Tested {label}.", { label: selectedRow.label })));
     } catch (error) {
-      setMessage(errorMessage(error, unavailableText(selectedRow.label)));
+      setMessage(errorMessage(error, tf("Failed to test {label}.", { label: selectedRow.label })));
     } finally {
       setBusy(null);
     }
@@ -143,12 +143,12 @@ export function useBrokerManagerActions({
   const syncSelected = useCallback(async () => {
     if (!selectedRow) return;
     try {
-      setBusy(loadingText());
+      setBusy(t("Syncing…"));
       await syncBrokerInstance(selectedRow.id);
       refreshStatuses();
       setMessage(infoMessage(tf("Synced {label}.", { label: selectedRow.label })));
     } catch (error) {
-      setMessage(errorMessage(error, unavailableText(selectedRow.label)));
+      setMessage(errorMessage(error, tf("Failed to sync {label}.", { label: selectedRow.label })));
     } finally {
       setBusy(null);
     }
@@ -179,7 +179,7 @@ export function useBrokerManagerActions({
       if (!instance) return;
       const nextSelectedId = neighbourBrokerProfileId(instances, id);
       try {
-        setBusy(loadingText());
+        setBusy(t("Disconnecting…"));
         const removal = await removeBrokerProfile(instance, brokerName, removeBrokerInstance);
         setEditDraft(null);
         setDetailOpen(false);
@@ -203,7 +203,7 @@ export function useBrokerManagerActions({
       try {
         await confirm.onConfirm();
       } catch (error) {
-        setMessage(errorMessage(error, unavailableText(label)));
+        setMessage(errorMessage(error, tf("Failed to remove {label}.", { label })));
       }
     })();
   }, [dialog, getState, notify, removeBrokerInstance, selectedRow, setDetailOpen, setEditDraft, setSelectedId]);

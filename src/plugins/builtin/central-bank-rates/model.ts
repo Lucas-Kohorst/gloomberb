@@ -1,7 +1,5 @@
 import type { CentralBankRatesPayload, CentralBankRow } from "../../../api-client/central-bank-rates";
 import type { MarketBoardRow } from "../../../components/market-board";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 
 // Two decimals like published policy rates, a third only for eighths such as a 3.875% midpoint.
 const percentText = (value: number) => Math.abs(Number(value.toFixed(2)) - value) < 1e-9 ? value.toFixed(2) : `${Number(value.toFixed(3))}`;
@@ -13,14 +11,8 @@ export const policyChange = (row: CentralBankRow) => row.changeBps == null ? "--
 export const hasNoPolicyRate = (row: CentralBankRow) => row.status === "unavailable"
   && (row.unavailableReason === "no-policy-rate" || row.unavailableReason === "no-unified-rate");
 export function policyNotices(data: CentralBankRatesPayload): string[] {
-  return data.rows.filter((row) => !hasNoPolicyRate(row)).flatMap((row) => {
-    if (row.status === "stale") {
-      const age = formatObservationAge(row.asOf);
-      return [age ? `${row.label} ${age}` : unavailableText(row.label)];
-    }
-    if (row.status === "unavailable") return [`${row.label}: ${(row.unavailableReason ?? "unavailable").replaceAll("-", " ")}.`];
-    return [];
-  });
+  return data.rows.filter((row) => !hasNoPolicyRate(row)).flatMap((row) => row.status === "stale" ? [`${row.label}: stale, latest observation ${row.asOf ?? "unknown"}${row.lagDays == null ? "" : ` (${row.lagDays} days old)`}.`]
+    : row.status === "unavailable" ? [`${row.label}: ${(row.unavailableReason ?? "unavailable").replaceAll("-", " ")}.`] : []);
 }
 export function policyHistory(row: CentralBankRow) {
   return row.history.filter((point) => (!row.percentile.windowStart || point.date >= row.percentile.windowStart)

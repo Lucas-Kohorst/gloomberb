@@ -9,7 +9,6 @@ import { TestPaneProvider, createTestPaneConfig } from "../../../test-support/pa
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { exportPaneTable } from "../../../state/pane-table-export-registry";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { RelativeValuationPane } from "./relative-valuation-pane";
 
 const tui = createOpenTuiTestHarness();
@@ -44,10 +43,8 @@ test("stale peer remains inspectable with contextual failure, excluded quote val
   } })));
   await act(async () => { await tui.render(<Harness width={120} />, { width: 120, height: 16 }); });
   await settle();
-  const quoteAge = formatApproximateAge(1789167600002);
   const frame = tui.frame();
-  expect(frame).toContain(`PLD ${quoteAge}`);
-  expect(frame).not.toContain("Stale quotes:");
+  expect(frame).toContain("Stale quotes: PLD");
   expect(frame).toContain("MISSING: source unavailable");
   expect(frame).toContain("PLD");
   expect(frame).toContain("$200.00");
@@ -60,7 +57,6 @@ test("stale peer remains inspectable with contextual failure, excluded quote val
   await settle();
   const recovered = tui.frame();
   expect(recovered).toContain("$135.75");
-  expect(recovered).not.toContain(`PLD ${quoteAge}`);
   expect(recovered).not.toContain("Stale quotes:");
   expect(recovered).toContain("MISSING: source unavailable");
 });
@@ -74,20 +70,18 @@ test("stale fundamentals retain their disclosure and export provenance with a fr
   }) })));
   await tui.render(<Harness width={120} />, { width: 120, height: 16 });
   await settle();
-  const fundamentalsAge = formatApproximateAge(Date.parse("2026-09-11T23:52:16.139Z"));
   expect(tui.frame()).toContain("$135.75");
   expect(tui.frame()).not.toContain("Fundamentals stale");
   await act(async () => tui.setup().mockInput.pressKey("!"));
   await settle();
-  expect(tui.frame()).toContain(`PLD ${fundamentalsAge}`);
+  expect(tui.frame()).toContain("PLD: Fundamentals stale");
   await act(async () => tui.setup().mockInput.pressKey("escape"));
   await settle();
   await exportPaneTable(paneId, "rv-stale-fundamentals.csv");
   const csv = takeSavedTextFile()!.text;
   expect(csv).toContain("PLD,Fundamentals retrieved,2026-09-11T23:52:16.139Z,Stale,true");
   expect(csv).not.toContain("gloom");
-  expect(csv).toContain(`PLD,${fundamentalsAge}`);
-  expect(csv).not.toContain("Fundamentals stale");
+  expect(csv).toContain("PLD,Fundamentals stale");
   stale = false;
   await act(async () => tui.setup().mockInput.pressKey("r"));
   await settle();

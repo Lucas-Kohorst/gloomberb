@@ -4,7 +4,6 @@ import { DataTableView, FieldGrid, KeyValueRow, Notice, QueryBar, Section, usePa
 import { usePaneSettingValue, usePaneStateValue, useShortcut } from "../../../public/react";
 import { useAsyncResource } from "../../../react/async-resource";
 import { colors } from "../../../theme/colors";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneStatusFooter } from "../../../components/layout/pane/status-footer";
 import { useAutoRefresh } from "../../../react/auto-refresh";
@@ -142,7 +141,7 @@ export function BondCalculatorPane({ focused, width, height }: PaneProps) {
           <Section title="Per 100 face">
             {metricRows.map((row, index) => <Box key={index} flexDirection={paired ? "row" : "column"}>{row.map((metric) => <KeyValueRow key={metric.label} {...metric} width={metricWidth} color={index === 0 ? colors.textBright : undefined} />)}</Box>)}
           </Section>
-          <Section title={result.spread ? `Treasury · ${formatObservationAge(result.spread.asOf) ?? result.spread.asOf}` : "Treasury"}>
+          <Section title={result.spread ? `Treasury · as of ${result.spread.asOf}` : "Treasury"}>
             <KeyValueRow label="Spread" value={result.spread ? `${result.spread.spreadBps >= 0 ? "+" : ""}${fixed(result.spread.spreadBps, 1)} bp` : "Unavailable"} width={availableWidth} color={result.spread ? colors.borderFocused : colors.textMuted} />
             {result.spread ? <KeyValueRow label="Par yield" value={`${fixed(result.spread.benchmarkPercent)}%`} width={availableWidth} /> : null}
           </Section>

@@ -1,5 +1,4 @@
 import type { Fundamentals, Quote } from "../types/financials";
-import { formatApproximateAge } from "./datetime-format";
 
 export interface MarketCapitalization {
   value: number;
@@ -36,9 +35,12 @@ export function selectMarketCapitalization(
 }
 
 export function describeFundamentalMarketCap(provenance: MarketCapitalization["provenance"]): string {
+  const source = provenance.source ?? "source unavailable";
   const parsed = provenance.retrievedAt ? Date.parse(provenance.retrievedAt) : NaN;
-  const age = Number.isFinite(parsed) ? formatApproximateAge(parsed) : null;
-  return [age, "valuation date unavailable"].filter(Boolean).join("; ");
+  const retrieval = Number.isFinite(parsed)
+    ? `retrieved ${new Date(parsed).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC")}`
+    : "retrieval time unavailable";
+  return `${source} fundamentals, ${retrieval}${provenance.stale ? ", stale" : ""}; valuation date unavailable`;
 }
 
 export function convertMarketCapitalization(

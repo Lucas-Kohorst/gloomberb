@@ -26,7 +26,7 @@ test("content replacing the loading body sits at the pane origin without the sta
 
   await tui.render(<Harness />, { width: 24, height: 6 });
   await act(async () => { await tui.setup().renderOnce(); });
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Loading prices...");
 
   await act(async () => { setLoading(false); });
   await act(async () => {

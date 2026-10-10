@@ -4,7 +4,6 @@ import { ApiRequestError } from "../../../api-client/errors";
 import type { HeadlessPaneContext } from "../../../types/plugin";
 import { fetchCentralBankRates, validateCentralBankRates } from "./client";
 import { centralBankRatesHeadless } from "./headless";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { policyBoardRow, policyHistory, policyNotices } from "./model";
 
 function row(overrides: Partial<CentralBankRow> = {}): CentralBankRow {
@@ -75,7 +74,7 @@ describe("central bank policy boundary", () => {
   test("stale observations retain their original date and numeric rate", () => {
     const data = payload(); data.rows = [row({ status: "stale", lagDays: 61 })];
     expect(validateCentralBankRates(data).rows[0]!.value).toBe(0);
-    expect(policyNotices(data)[0]).toBe(`United States ${formatObservationAge("2026-09-21")}`);
+    expect(policyNotices(data)[0]).toContain("2026-09-21");
   });
   test("missing endpoint is distinct from denied access", async () => {
     await expect(fetchCentralBankRates({ getCloudCentralBankRates: async () => { throw new ApiRequestError("not found", 404); } })).rejects.toThrow("not available yet");

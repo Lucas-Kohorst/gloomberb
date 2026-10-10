@@ -7,9 +7,7 @@ import {
   Spinner,
   StatGrid,
   loadingText,
-  unavailableText,
   usePaneFooter,
-  usePaneLoadingSignal,
   type PaneHint,
   type StatItem,
 } from "../../../components";
@@ -53,7 +51,7 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
       const next = await apiClient.getCalendarFeed();
       if (isCurrent()) setFeed(next);
     } catch (error) {
-      if (isCurrent()) setLoadError(errorText(error, unavailableText("Calendar link")));
+      if (isCurrent()) setLoadError(errorText(error, t("Failed to load the calendar link.")));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -104,7 +102,7 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
     setFeed(current);
     setLoadError(null);
     await copy(current.url, t("Link copied."));
-  }, unavailableText("Calendar link")), [copy, feed, run]);
+  }, t("Failed to create the calendar link.")), [copy, feed, run]);
 
   const regenerateLink = useCallback(async () => {
     if (!feed || busyRef.current) return;
@@ -122,7 +120,7 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
       const next = await apiClient.rotateCalendarFeed();
       setFeed(next);
       await copy(next.url, t("New link copied. The old one no longer works."));
-    }, unavailableText("Calendar link"));
+    }, t("Failed to regenerate the calendar link."));
   }, [copy, dialog, feed, run]);
 
   const hints = useMemo<PaneHint[]>(() => {
@@ -135,9 +133,9 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
     ];
   }, [busy, copyLink, feed, language, loadError, loading, regenerateLink]);
 
-  usePaneLoadingSignal(busy);
   usePaneFooter("account-management:calendar", () => ({
     info: [
+      ...(busy ? [{ id: "busy", parts: [{ text: t("working"), tone: "muted" as const }] }] : []),
       ...(message && !busy ? [{
         id: "status",
         parts: [{
@@ -160,7 +158,7 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
     },
   ] : [], [feed, language]);
 
-  if (loading && !feed) return <Spinner label={loadingText()} />;
+  if (loading && !feed) return <Spinner label={loadingText(t("calendar link"))} />;
 
   if (loadError && !feed) {
     return (
@@ -179,7 +177,7 @@ export function CalendarAccountTab({ width, sessionMarker }: { width: number; se
         hint={t("Updates on its own.")}
         actions={(
           <Button
-            label={t("Copy Calendar Link")}
+            label={busy ? t("Creating...") : t("Copy Calendar Link")}
             variant="primary"
             onPress={() => { void copyLink(); }}
             disabled={busy}

@@ -1,5 +1,3 @@
-import { unavailableText } from "../components/ui/status-copy";
-import { formatObservationAge } from "../utils/datetime-format";
 import type { PricePoint, Quote } from "../types/financials";
 import { hasValidQuoteObservationTime } from "../market-data/quotes/freshness";
 import { mergePriceHistoryIntegrity, pricePointIntegrity } from "../utils/price-history-integrity";
@@ -61,14 +59,10 @@ export function valuationPriceAtOrBefore(history: readonly PricePoint[], date: s
 }
 
 export function valuationPriceWarning(issues: readonly ValuationPriceIssue[]): string | undefined {
-  const messages = issues.map((issue) => {
-    if (issue.kind === "history") return "Historical valuation unavailable: source price is invalid.";
-    if (issue.reason === "stale") {
-      const age = formatObservationAge(issue.quote.lastUpdated);
-      return age ? `Current valuation ${age}` : unavailableText("Current valuation");
-    }
-    if (issue.reason === "invalid-price") return "Current valuation unavailable: source quote price is invalid.";
-    return "Current valuation unavailable: source quote timestamp is unavailable.";
-  });
+  const messages = issues.map((issue) => issue.kind === "history"
+    ? "Historical valuation unavailable: source price is invalid."
+    : issue.reason === "stale" ? "Current valuation unavailable: source quote is stale."
+      : issue.reason === "invalid-price" ? "Current valuation unavailable: source quote price is invalid."
+        : "Current valuation unavailable: source quote timestamp is unavailable.");
   return messages.length ? [...new Set(messages)].join(" ") : undefined;
 }

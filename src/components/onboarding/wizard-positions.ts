@@ -14,7 +14,6 @@ import { resolveTickerSearch, upsertTickerFromSearchResult, type ResolvedTickerS
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { t } from "../../i18n";
-import { unavailableText } from "../ui/status";
 import { debugLog } from "../../utils/debug-log";
 import {
   getOnboardingPortfolioId,
@@ -306,7 +305,7 @@ export function useOnboardingPositions({
       resetDraft();
       return true;
     } catch (caught) {
-      const message = caught instanceof Error && caught.message.trim() ? caught.message.trim() : unavailableText("Position");
+      const message = caught instanceof Error && caught.message.trim() ? caught.message.trim() : t("Could not add that position.");
       onboardingLog.error("Onboarding position failed", { query, error: message });
       setFieldIdx(0);
       setError(message);

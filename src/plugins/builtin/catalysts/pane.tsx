@@ -9,7 +9,6 @@ import { buildSectionedRows, DataTableView, EmptyState, EMPTY_TABLE_CELL, PageSt
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "../../../public/react";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
@@ -109,7 +108,7 @@ export function CatalystView({ width, height, focused, symbol, litigation = fals
     ...(data?.access && data.access.lockedRows > 0 ? [{ id: "upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: openUpgrade }] : []),
   ];
   usePaneStatusFooter({ registrationId: "catalysts", enabled: !openId, loading: resource.loading || resource.loadingMore, error: data ? error?.message ?? page?.refreshError : null, stale: page?.stale,
-    info: data?.asOf && Number.isFinite(Date.parse(data.asOf)) ? [{ id: "as-of", parts: [{ text: formatApproximateAge(Date.parse(data.asOf)), tone: "muted" }] }] : [], hints });
+    info: data?.asOf ? [{ id: "as-of", parts: [{ text: `as of ${data.asOf.slice(0, 16).replace("T", " ")} UTC`, tone: "muted" }] }] : [], hints });
   usePaneNoticeFooter({ registrationId: "catalysts:notice", focused, notices: [
     ...(page?.refreshError ? [page.refreshError] : []),
     ...(data?.coverage.sources.filter((source) => source.enabled && source.state?.lastError).map((source) => `${source.agency} records are delayed. Last successful collection: ${source.state?.lastOkAt?.slice(0, 16).replace("T", " ") ?? "not yet available"}.`) ?? []),

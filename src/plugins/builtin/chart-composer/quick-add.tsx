@@ -7,8 +7,8 @@ import {
   type BoxRenderable,
   type InputRenderable,
 } from "../../../ui";
-import { InlineQuickAddRow, ListView, MenuPopover, Spinner, type ListViewItem } from "../../../components/ui";
-import { loadingText, usePaneMenuItems } from "../../../components";
+import { InlineQuickAddRow, ListView, MenuPopover, type ListViewItem } from "../../../components/ui";
+import { usePaneMenuItems } from "../../../components";
 import { getRenderableCellRect } from "../../../components/chart/native/surface/visibility";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -124,10 +124,9 @@ export function ChartSeriesQuickAdd({
   const controlWidth = active
     ? Math.max(8, Math.min(ACTIVE_QUICK_ADD_WIDTH, width))
     : Math.max(8, Math.min(IDLE_QUICK_ADD_WIDTH, width));
-  const searching = loading && suggestions.length === 0 && !error && !searchError;
   const drawerStatus = error
-    ?? (searching
-      ? loadingText()
+    ?? (loading && suggestions.length === 0
+      ? "Searching instruments..."
       // A failed lookup is not zero matches, so it keeps its own message.
       : searchError && suggestions.length === 0
         ? searchError
@@ -443,9 +442,7 @@ export function ChartSeriesQuickAdd({
               overflow="hidden"
               backgroundColor={colors.panel}
             >
-              {searching
-                ? <Spinner label={loadingText()} />
-                : <Text fg={error ? colors.warning : colors.textDim}>{drawerStatus}</Text>}
+              <Text fg={error ? colors.warning : colors.textDim}>{drawerStatus}</Text>
             </Box>
           ) : (
             <ListView

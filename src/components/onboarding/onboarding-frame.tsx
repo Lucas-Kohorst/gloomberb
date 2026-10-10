@@ -5,8 +5,6 @@ import { blendHex } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { t } from "../../i18n";
 import { Button, ListView, type ListViewItem } from "../ui";
-import { Spinner } from "../ui/loading";
-import { loadingText } from "../ui/status";
 import type { ButtonProps } from "../ui/button";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../layout/titlebar-overlay";
 
@@ -329,15 +327,13 @@ export function OnboardingHeader({
       <Box height={1} flexDirection="row" justifyContent="space-between">
         <Text fg={colors.textMuted}>{t("GLOOMBERB SETUP")}</Text>
         {showDismiss ? (
-          dismissing ? <Spinner label={loadingText()} /> : (
-            <Button
-              label="Skip setup"
-              variant="ghost"
-              disabled={dismissDisabled}
-              shortcut={dismissShortcut}
-              onPress={onDismiss}
-            />
-          )
+          <Button
+            label={dismissing ? "Closing..." : "Skip setup"}
+            variant="ghost"
+            disabled={dismissing || dismissDisabled}
+            shortcut={dismissShortcut}
+            onPress={onDismiss}
+          />
         ) : null}
       </Box>
     );
@@ -384,16 +380,14 @@ export function OnboardingHeader({
       </Box>
       {showDismiss ? (
         <Box flexDirection="row" style={{ marginLeft: 12, marginTop: -6, flexShrink: 0 }}>
-          {dismissing ? <Spinner label={loadingText()} /> : (
-            <Button
-              label="Skip setup"
-              variant="plain"
-              height={1}
-              disabled={dismissDisabled}
-              shortcut={dismissShortcut}
-              onPress={onDismiss}
-            />
-          )}
+          <Button
+            label={dismissing ? "Closing..." : "Skip setup"}
+            variant="plain"
+            height={1}
+            disabled={dismissing || dismissDisabled}
+            shortcut={dismissShortcut}
+            onPress={onDismiss}
+          />
         </Box>
       ) : null}
     </Box>

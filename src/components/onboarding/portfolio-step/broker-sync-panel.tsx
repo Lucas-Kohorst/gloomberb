@@ -1,9 +1,7 @@
 import { Box, Text, useUiCapabilities } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { t } from "../../../i18n";
+import { t, tf } from "../../../i18n";
 import type { ListViewItem } from "../../ui";
-import { Spinner } from "../../ui/loading";
-import { loadingText, unavailableText } from "../../ui/status";
 import { getBrokerLabel } from "./utils";
 
 export function BrokerSyncPanel({
@@ -23,11 +21,11 @@ export function BrokerSyncPanel({
   return (
     <Box flexDirection="column" paddingX={desktop ? 0 : 2} style={desktop ? { marginTop: 14 } : undefined}>
       <Box height={desktop ? 1 : 2} overflow="hidden">
-        {brokerSyncing ? <Spinner label={loadingText()} /> : (
-          <Text fg={colors.negative} wrapText={!desktop}>
-            {brokerSyncError || unavailableText(brokerLabel.trim() || "Broker")}
-          </Text>
-        )}
+        <Text fg={brokerSyncing ? colors.text : colors.negative} wrapText={!desktop}>
+          {brokerSyncing
+            ? tf("Connecting to {broker} and importing accounts and positions...", { broker: brokerLabel })
+            : brokerSyncError || tf("Unable to sync {broker}.", { broker: brokerLabel })}
+        </Text>
       </Box>
       <Box height={1} />
       <Box height={desktop ? 1 : 2} overflow="hidden">

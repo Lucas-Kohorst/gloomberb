@@ -1,9 +1,6 @@
 import type { ReactNode } from "react";
 import { Box } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { Spinner } from "../../ui/loading";
-import { loadingText } from "../../ui/status";
-import { usePaneBodySpinner } from "./body-loading";
 import { PaneSurfaceContext } from "./surface";
 
 export function getPaneWindowAttributes({
@@ -42,17 +39,6 @@ export function getPaneWindowAttributes({
   return attributes;
 }
 
-/** Refresh and other in-flight work. A full-body status spinner covers this row. */
-export function PaneBodyLoadingRow() {
-  const show = usePaneBodySpinner();
-  if (!show) return null;
-  return (
-    <Box paddingX={1} flexShrink={0}>
-      <Spinner label={loadingText()} />
-    </Box>
-  );
-}
-
 export function PaneBodyFrame({
   layoutProps,
   backgroundColor,
@@ -64,10 +50,7 @@ export function PaneBodyFrame({
 }) {
   return (
     <Box {...layoutProps} overflow="hidden" backgroundColor={backgroundColor} data-gloom-role="pane-body">
-      <PaneSurfaceContext.Provider value={backgroundColor}>
-        <PaneBodyLoadingRow />
-        {children}
-      </PaneSurfaceContext.Provider>
+      <PaneSurfaceContext.Provider value={backgroundColor}>{children}</PaneSurfaceContext.Provider>
     </Box>
   );
 }

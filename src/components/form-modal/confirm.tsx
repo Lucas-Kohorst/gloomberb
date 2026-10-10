@@ -9,7 +9,6 @@ import type { AlertContext } from "../../ui/dialog";
 import { useDialogIsTopmost } from "../../ui/dialog-context";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Spinner } from "../ui/loading";
-import { loadingText, unavailableText } from "../ui/status";
 import { TERMINAL_DIALOG_INSET, type FormModalRuntime } from "./content";
 import type { ConfirmModalOptions } from "./request";
 
@@ -17,7 +16,7 @@ import type { ConfirmModalOptions } from "./request";
 export const CONFIRM_MODAL_WIDTH = 60;
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : unavailableText("Action");
+  return error instanceof Error && error.message ? error.message : t("Could not complete that action.");
 }
 
 /**
@@ -117,7 +116,7 @@ export function ConfirmModalContent({
   const contentWidth = Math.max(10, Math.min(width, Math.max(1, viewport.width - 2)) - TERMINAL_DIALOG_INSET);
   const status = error
     ? <Text fg={colors.negative} wrapText>{t(error)}</Text>
-    : pending ? <Spinner label={loadingText()} /> : null;
+    : pending ? <Spinner label={t("Working…")} /> : null;
 
   // The kit's confirm, with the work it starts shown in it, framed as the
   // modal's forms are: no key-hint line, the desktop close button, and Cancel

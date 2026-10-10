@@ -10,7 +10,6 @@ import { CLOUD_PLAN_KEY, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { fetchAppRank, loadAppRank } from "./client";
 import { attentionSeries, count, type AppFocus } from "./model";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 
 type Point = AppRankPayload["rankHistory"][number];
 const id = (point: Point) => `${point.revisionId}:${point.date}`;
@@ -52,7 +51,7 @@ export function AppRankView({ focus, accessKey, width, height, focused }: { focu
   const { strip, rows: tabRows } = usePaneTabs({ tabs: [{ value: "chart", label: "Chart" }, { value: "evidence", label: "Evidence" }], activeValue: tab, onSelect: setTab, focused, dense: true, queryBarWidth: width });
   usePaneRefreshKey(() => { void resource.reload(); pages.reload(); }, { focused });
   usePaneStatusFooter({ registrationId: `apps-rank:${key}`, loading: resource.loading || pages.loadingMore, error: resource.error ?? resource.data?.refreshError ?? pages.moreError?.message ?? pages.error?.message, stale: resource.data?.stale,
-    info: [...(points[0] && Number.isFinite(Date.parse(points[0].observedAt)) ? [{ id: "observed", parts: [{ text: formatApproximateAge(Date.parse(points[0].observedAt)), tone: "muted" as const }] }] : []), ...(data?.access === "preview" ? [{ id: "preview", parts: [{ text: "Pro preview", tone: "warning" as const }] }] : [])],
+    info: [...(points[0] ? [{ id: "observed", parts: [{ text: `as of ${points[0].observedAt.slice(0, 10)}`, tone: "muted" as const }] }] : []), ...(data?.access === "preview" ? [{ id: "preview", parts: [{ text: "Pro preview", tone: "warning" as const }] }] : [])],
     hints: [...(selected ? [{ id: "source", key: "o", label: "pen source", onPress: () => void host.openExternal(selected.sourceUrl) }] : []), ...(data?.access === "preview" ? [{ id: "upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: upgrade }] : [])] });
   const tableColumns = tab === "evidence" ? [...columns, { id: "present", label: "In chart", width: 10, align: "left" as const }, { id: "sourceUpdatedAt", label: "Published (UTC)", width: 17, align: "left" as const }, { id: "revisionId", label: "Revision", width: 30, align: "left" as const }] : columns;
   return <Box flexDirection="column" width={width} height={height}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, usePaneTabs,
+import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneNoticeFooter, usePaneTabs,
   usePaneTicker, type DataTableColumn, type StatItem } from "../../../components";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteUpdates } from "../../../state/hooks/quote-streaming";
@@ -9,8 +9,6 @@ import { usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "..
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, useUiCapabilities } from "../../../ui";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { compareSortValues, nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
@@ -114,7 +112,7 @@ export function RealizedVolPane({ width, height, focused }: PaneProps) {
   [model, quote?.currency, showIv, iv.data]);
   const notices = [identityError, history.error, history.data?.error, iv.error, iv.data?.error,
     ...(model?.warnings ?? []), ...(showIv ? iv.data?.warnings ?? [] : []),
-    ...(showIv && symbol && !spotAvailable ? [unavailableText("Current ATM IV")] : []),
+    ...(showIv && symbol && !spotAvailable ? ["Current ATM IV unavailable: underlying quote is missing or stale"] : []),
   ].filter((value): value is string => !!value);
   usePaneNoticeFooter({ registrationId: "realized-vol-notices", notices: [...new Set(notices)], focused });
   const cycleView = () => setView(view === "graph" ? "cone" : "graph");
@@ -128,17 +126,17 @@ export function RealizedVolPane({ width, height, focused }: PaneProps) {
     void history.reload();
     if (showIv) void iv.reload();
   }, { focused });
-  usePaneLoadingSignal((history.loading) || (showIv && iv.loading));
-  const historyAge = history.data?.stale ? formatObservationAge(history.data.fetchedAt) : null;
   usePaneFooter("realized-vol", () => ({ info: [
-    ...(historyAge ? [{ id: "updated", parts: [{ text: historyAge, tone: "muted" as const }] }] : []),
+    ...(history.loading ? [{ id: "loading", parts: [{ text: "loading history", tone: "muted" as const }] }] : []),
+    ...(history.data?.stale ? [{ id: "stale", parts: [{ text: "stale history", tone: "warning" as const }] }] : []),
     ...(history.data ? [{ id: "cadence", parts: [{ text: "daily closes", tone: "muted" as const }] }] : []),
     ...(model?.asOf ? [{ id: "date", parts: [{ text: model.asOf.toISOString().slice(0, 10), tone: "muted" as const }] }] : []),
+    ...(showIv && iv.loading ? [{ id: "iv-loading", parts: [{ text: "loading ATM IV", tone: "muted" as const }] }] : []),
   ], hints: [
     { id: "view", key: "v", label: "iew", onPress: cycleView },
     { id: "iv", key: "i", label: showIv ? "v off" : "v on", onPress: () => setShowIv(!showIv) },
     ...(symbol ? [{ id: "surface", key: "s", label: "urface", onPress: openSurface }] : []),
-  ] }), [history.loading, history.data, historyAge, model?.asOf, iv.loading, showIv, view, symbol, iv.data]);
+  ] }), [history.loading, history.data, model?.asOf, iv.loading, showIv, view, symbol, iv.data]);
   const evidence: RealizedVolEvidenceStatus = {
     symbol: model?.symbol ?? symbol ?? "", view: view === "cone" ? "cone" : "graph", estimator,
     windows, lookbackYears: Number(lookback) === 2 ? 2 : 1, showIv,
@@ -146,7 +144,7 @@ export function RealizedVolPane({ width, height, focused }: PaneProps) {
     stale: history.data?.stale ?? false, source: history.data?.source ?? null,
     asOf: model?.asOf?.toISOString() ?? null,
     errors: [...new Set([history.error, history.data?.error, ...(model?.warnings ?? []),
-      ...(showIv ? [iv.error, iv.data?.error, !iv.data?.reference ? unavailableText("Current ATM IV") : null] : []),
+      ...(showIv ? [iv.error, iv.data?.error, !iv.data?.reference ? "Current ATM IV unavailable" : null] : []),
     ].filter((value): value is string => !!value))],
     currentIv: showIv && iv.data?.reference ? { value: iv.data.reference.value * 100,
       date: iv.data.reference.date.toISOString(), label: iv.data.reference.label,

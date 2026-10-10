@@ -10,7 +10,6 @@ import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, useUiCapabilities } from "../../../ui";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { SignInWall } from "../cloud/auth-actions";
 import { CLOUD_PLAN_KEY, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { Blurred, LockedOverlay, UpgradeLabel } from "../shared/locked-rows";
@@ -112,11 +111,11 @@ function CreditView({ symbol, width, height, focused, accessKey, needsVerificati
     ] : []),
     ...(locked || preview ? [{ id: "credit:upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: openUpgrade }] : []),
   ];
-  const observed = formatObservationAge(tab === "screen" ? screenData?.asOf : data?.asOf);
+  const asOf = tab === "screen" ? screenData?.asOf : data?.asOf;
   const notices = [...(data?.warnings ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : []), ...(screenData?.truncated ? ["Screen results reached the result limit; narrow the thresholds."] : [])];
   // A narrow footer keeps the upgrade and the first links; the rest stay bound
   // and move to the pane menu, so the status on the left never gets cut.
-  const footerBudget = width - 2 - (observed ? observed.length + 1 : 0) - (notices.length ? 5 : 0) - (openInstrument ? 14 : 0);
+  const footerBudget = width - 2 - (asOf ? 17 : 0) - (notices.length ? 5 : 0) - (openInstrument ? 14 : 0);
   const { shown: hints, folded } = useMemo(() => {
     const keep = new Set(allHints.map((hint) => hint.id));
     let used = allHints.reduce((total, hint) => total + hintCells(hint), 0);
@@ -128,8 +127,8 @@ function CreditView({ symbol, width, height, focused, accessKey, needsVerificati
     }
     return { shown: allHints.filter((hint) => keep.has(hint.id)), folded: allHints.filter((hint) => !keep.has(hint.id)) };
   }, [allHints.map((hint) => hint.id).join(), footerBudget, target, openUpgrade, createPaneFromTemplate]);
-  usePaneStatusFooter({ registrationId: "credit-documents", loading, error: available ? currentError : null,
-    info: observed ? [{ id: "as-of", parts: [{ text: observed, tone: "muted" as const }] }] : [], hints });
+  usePaneStatusFooter({ registrationId: "credit-documents", loading, error: available ? currentError : null, stale: resource.data?.stale,
+    info: asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf.slice(0, 10)}`, tone: "muted" as const }] }] : [], hints });
   usePaneFooter("credit:folded", () => folded.length ? { keys: folded, menu: folded.map((hint) => ({ id: `credit:menu:${hint.id}`, label: hint.title ?? hint.label, accelerator: hint.key, onSelect: () => hint.onPress?.() })) } : null, [folded]);
   usePaneNoticeFooter({ registrationId: "credit:notices", focused, notices });
   useCreditEvidence(data, screenData ?? null, instrumentSnapshot, tab, view, rows.map(rowId), openInstrument?.id ?? null, openFactId);

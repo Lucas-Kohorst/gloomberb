@@ -15,8 +15,6 @@ export type DataTableColumn = Pick<
    */
   headerLeading?: ReactNode;
   flexGrow?: number;
-  /** Extra blank cells before this column, on top of the regular gap. */
-  leadGap?: number;
 };
 
 export interface DataTableCell {

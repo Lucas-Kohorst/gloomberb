@@ -4,7 +4,6 @@ import {
   chartTableChromeRows,
   ChartTableHeader,
   DataTableView,
-  loadingText,
   scalarPoint,
   spanAxisFormatter,
   staticSeries,
@@ -313,7 +312,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
         getItemKey={(row, index) => `${row.date}:${row.firm}:${index}`}
         renderCell={renderCell}
         selectedTextOverridesCellColor
-        emptyStateTitle={loading ? loadingText() : error ?? "No analyst data"}
+        emptyStateTitle={loading ? "Loading analyst data..." : error ?? "No analyst data"}
       />
     </>
   );

@@ -7,7 +7,6 @@ import { createDividendYieldHeadless, projectDividendYieldHeadless } from "./hea
 import { fetchProviderDividendData } from "./provider-client";
 import { chartResponse, marketTransport } from "./test-fixture";
 import { useRegularMarketSession } from "../../../test-support/market-session";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 
 useRegularMarketSession();
 
@@ -65,7 +64,7 @@ test("old, missing and recovered source times do not alter the cash numerator or
       expect(status).toBeUndefined();
     } else if (timestamp === fresh - 10 * 86_400) {
       expect(data.priceStale).toBe(true);
-      expect(status).toBe(formatApproximateAge(timestamp * 1000));
+      expect(status).toContain("Stale reference price");
     } else {
       expect(data.priceAsOf).toBeUndefined();
       expect(data.priceStale).toBeUndefined();

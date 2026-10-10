@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
-import { t } from "../../i18n";
-import { usePaneLoadingCover } from "../layout/pane/footer/registration";
+import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
-import { loadingText, unavailableText } from "./status-copy";
-
-export { loadingText, unavailableText };
 import { Box, Text, useUiCapabilities } from "../../ui";
 import { Spinner } from "./loading";
 import { ButtonActionScope } from "./action-scope";
@@ -51,6 +47,16 @@ export function Notice({ children, tone = "warning" }: NoticeProps) {
   );
 }
 
+/** The one loading phrasing: "Loading ..." with three dots, never the ellipsis glyph. */
+export function loadingText(thing?: string): string {
+  return thing ? tf("Loading {thing}...", { thing }) : t("Loading...");
+}
+
+/** The one failure phrasing: "<Thing> unavailable." */
+export function unavailableText(thing: string): string {
+  return tf("{thing} unavailable.", { thing });
+}
+
 export interface PaneStatusBodyProps {
   loading?: boolean;
   error?: string | null;
@@ -85,7 +91,6 @@ export function PaneStatusBody({
   children,
 }: PaneStatusBodyProps) {
   const status = error ? "error" : loading ? "loading" : empty ? "empty" : null;
-  usePaneLoadingCover(status === "loading");
   if (!status) return <>{children}</>;
   // Keyed so content that starts with a bare Box never reuses this padded node.
   return (
@@ -101,7 +106,7 @@ export function PaneStatusBody({
       data-gloom-status={status}
       data-gloom-ui="pane-status"
     >
-      {status === "loading" ? <Spinner label={loadingLabel ?? loadingText()} /> : (
+      {status === "loading" ? <Spinner label={loadingLabel ?? loadingText(subject)} /> : (
         <EmptyState
           status={status}
           title={status === "error" ? errorTitle ?? (subject ? unavailableText(subject) : error!) : emptyTitle ?? t("Nothing to show yet.")}

@@ -12,7 +12,6 @@ import {
   type ThesisStatus,
 } from "../../../../api-client";
 import { ApiRequestError } from "../../../../api-client/errors";
-import { unavailableText } from "../../../../components/ui/status-copy";
 import type { AppNotificationRequest } from "../../../../types/plugin";
 import { confirmDialog } from "../../../../components";
 import type { DialogApi } from "../../../../ui/dialog";
@@ -80,7 +79,7 @@ export async function savePatch(
       if (choice === "reload" && error.current) thesisStore.upsert(error.current);
       return undefined;
     }
-    return failed(ctx, error, unavailableText("Thesis"));
+    return failed(ctx, error, "Could not save the thesis.");
   }
 }
 
@@ -139,7 +138,7 @@ export async function startThesis(ctx: FlowContext, input: StartThesisInput): Pr
       document,
     });
   } catch (error) {
-    return failed(ctx, error, unavailableText("Thesis"));
+    return failed(ctx, error, "Could not create the thesis.");
   }
   if (!ctx.hasProAccess) {
     ctx.notify({ body: `Thesis started for ${who}. Add what must stay true and what would make you sell.`, type: "success" });
@@ -467,7 +466,7 @@ export async function deleteThesis(ctx: FlowContext, thesis: CloudThesis): Promi
     await thesisStore.remove(thesis.id);
     return true;
   } catch (error) {
-    failed(ctx, error, unavailableText("Thesis"));
+    failed(ctx, error, "Could not delete the thesis.");
     return false;
   }
 }
@@ -503,7 +502,7 @@ export async function resolveSignal(ctx: FlowContext, thesis: CloudThesis, signa
     });
     return result.thesis;
   } catch (error) {
-    return failed(ctx, error, unavailableText("Signal"));
+    return failed(ctx, error, "Could not resolve the signal.");
   }
 }
 
@@ -528,7 +527,7 @@ export async function challenge(ctx: FlowContext, thesis: CloudThesis, target: D
     });
     return true;
   } catch (error) {
-    failed(ctx, error, unavailableText("Challenge"));
+    failed(ctx, error, "Could not file the challenge.");
     return false;
   }
 }

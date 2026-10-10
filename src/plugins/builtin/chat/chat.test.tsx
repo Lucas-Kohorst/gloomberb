@@ -778,7 +778,7 @@ describe("ChatContent", () => {
       createdAt,
       user: { id: "u0", username: "ada", displayName: "Ada" },
       clientStatus,
-      clientError: clientStatus === "failed" ? "Message unavailable." : null,
+      clientError: clientStatus === "failed" ? "Failed to send message." : null,
     });
 
     function bodyColor(text: string): string | undefined {
@@ -793,7 +793,7 @@ describe("ChatContent", () => {
 
       const frame = tui.frame();
       expect(frame).toContain("hello pending");
-      expect(frame).toContain("~0m");
+      expect(frame).toContain("just now");
       expect(frame).not.toContain("sending...");
       expect(bodyColor("hello pending")).toBe(hexToRgbaInts(colors.text));
     });

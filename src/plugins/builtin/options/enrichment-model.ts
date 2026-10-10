@@ -2,8 +2,6 @@ import type { InstrumentRef } from "../../../market-data/request-types";
 import type { QueryEntry } from "../../../market-data/result-types";
 import { buildOptionsKey, resolveEntryData } from "../../../market-data/selectors";
 import type { OptionsChain } from "../../../types/financials";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { normalizeSymbol, parsePublicTickerKey } from "../../../utils/exchanges";
 import { daysToExpiryFrom, volatilityTermSlope, type ExpectedMove } from "../shared/volatility";
 import { buildSurfaceExpiry, evaluateSurfaceSmile, type SurfaceExpiry } from "../vol-surface/model";
@@ -81,10 +79,7 @@ function chainIssue(entry: QueryEntry<OptionsChain> | null | undefined, instrume
     !== parsePublicTickerKey(normalizeSymbol(instrument.symbol)).symbol) {
     return `Options chain does not match underlying ${normalizeSymbol(instrument.symbol)}`;
   }
-  if (entry?.staleAt != null && entry.staleAt <= now) {
-    const age = formatObservationAge(chain.asOf);
-    return age ? `Options chain ${age}` : unavailableText("Options chain");
-  }
+  if (entry?.staleAt != null && entry.staleAt <= now) return "Options chain is stale";
   if ([...chain.calls, ...chain.puts].some((contract) => contract.expiration !== expiration)) {
     return "Options chain does not match the selected expiration";
   }

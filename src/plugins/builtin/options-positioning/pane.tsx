@@ -33,7 +33,6 @@ import { useThemeColors } from "../../../theme/theme-context";
 import type { ResolvedSeries } from "../../../time-series/types";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text } from "../../../ui";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
@@ -267,7 +266,7 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   });
   const info = useMemo<PaneFooterSegment[]>(() => [
     ...(accessSegment ? [accessSegment] : []),
-    ...(data?.oiDate ? [{ id: "oi-date", parts: [{ text: `OI ${formatObservationAge(data.oiDate) ?? shortDate(data.oiDate)}`, tone: "muted" as const }] }] : []),
+    ...(data?.oiDate ? [{ id: "oi-date", parts: [{ text: `OI as of ${shortDate(data.oiDate)}`, tone: "muted" as const }] }] : []),
     ...(changes && tab !== "gex" ? [{ id: "oi-change", parts: [{ text: `chg since ${shortDate(data!.previousOiDate!)}`, tone: "muted" as const }] }] : []),
   ], [accessSegment, changes, data?.oiDate, data?.previousOiDate, tab]);
   const activeResource = tab === "gex" ? gamma : openInterest;

@@ -1,5 +1,4 @@
 import { ApiRequestError } from "../../../../api-client/errors";
-import { unavailableText } from "../../../../components/ui/status-copy";
 import type { ChatAttachment, ChatMessage } from "../../../../api-client";
 
 /** What the server takes: four images a message, each up to 5 MB, as PNG, JPEG, WebP or GIF. */
@@ -161,5 +160,5 @@ export function describeChatSendError(error: unknown): string {
   if (error instanceof ApiRequestError && error.code && UPLOAD_ERROR_SENTENCES[error.code]) {
     return describeChatImageError(error);
   }
-  return error instanceof Error && error.message ? error.message : unavailableText("Message");
+  return error instanceof Error && error.message ? error.message : "Failed to send message.";
 }

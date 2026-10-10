@@ -166,7 +166,7 @@ export function buildColumns(width: number, requestedIds: NewsColumnId[]): NewsT
   const headlineWidth = () => width + 1 - getTableWidth(columnIds.map((id) => (
     id === "title"
       ? { width: 1, align: columnAlign(id) }
-      : { width: widths[id], label: COLUMN_LABELS[id], align: columnAlign(id), leadGap: id === "tickers" ? 1 : 0 }
+      : { width: widths[id], label: COLUMN_LABELS[id], align: columnAlign(id) }
   )));
 
   if (columnIds.includes("title")) {
@@ -188,7 +188,6 @@ export function buildColumns(width: number, requestedIds: NewsColumnId[]): NewsT
     width: id === "title" ? titleWidth : widths[id],
     align: columnAlign(id),
     flexGrow: id === "title" ? 1 : undefined,
-    leadGap: id === "tickers" ? 1 : undefined,
   }));
 }
 

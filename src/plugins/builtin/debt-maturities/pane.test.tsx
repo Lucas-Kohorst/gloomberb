@@ -89,7 +89,7 @@ test("a short or narrow maturity pane keeps the table's rows, and the chart shri
   expect(lines[2]).toMatch(/^ ● Due next 12 months .*%/);
   expect(lines[3]).toContain("MATURITY");
   expect(lines.filter((line) => /^ In(NextTwelve|Year)/.test(line))).toHaveLength(5);
-  expect(lines[9]).toContain("~0m");
+  expect(lines[9]).toContain("just now");
 });
 
 test("the filing history names its bars and puts each year under its own bar", async () => {

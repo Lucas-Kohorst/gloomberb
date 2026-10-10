@@ -1,5 +1,4 @@
 import type { ChatMessage } from "../../../../api-client";
-import { unavailableText } from "../../../../components/ui/status-copy";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,
@@ -50,7 +49,7 @@ export class ChatControllerMessageLoading {
       .catch((error: unknown) => {
         channel.messagesError = error instanceof Error && error.message.trim()
           ? error.message
-          : unavailableText("Messages");
+          : "Could not load messages.";
         this.options.persistChannelState(channelId);
       })
       .finally(() => {

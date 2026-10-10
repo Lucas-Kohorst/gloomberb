@@ -3,7 +3,7 @@ import { Box, TextAttributes } from "../../../ui";
 import {
   DataTableView,
   PaneStatusBody,
-  usePaneFooter, usePaneLoadingSignal,
+  usePaneFooter,
   usePaneNoticeFooter,
   usePaneTabs,
   type DataTableCell,
@@ -173,10 +173,10 @@ export function CryptoBoardPane({ width, height, focused }: PaneProps) {
     focused,
     notices: [...(data?.warnings ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])],
   });
-  usePaneLoadingSignal((resource.loading && !data));
   usePaneFooter("crypto-board", () => ({
     info: [
       // Background refreshes run every 15s; only the first load is worth a label.
+      ...(resource.loading && !data ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(data && resource.error ? [{ id: "refresh", parts: [{ text: "refresh failed", tone: "warning" as const }] }] : []),
       ...(latestUpdate != null ? [{
         id: "updated",

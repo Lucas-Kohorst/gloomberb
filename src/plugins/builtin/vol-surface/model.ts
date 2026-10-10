@@ -1,6 +1,4 @@
-import { unavailableText } from "../../../components/ui/status-copy";
 import type { OptionContract, OptionsChain } from "../../../types/financials";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import {
   daysToExpiryFrom, detectButterflyArbitrage, detectCalendarArbitrage, evaluateSmile, expectedMove,
   extractImpliedForward, fitVolatilitySmile, FIXED_VOLATILITY_TENORS,
@@ -168,11 +166,7 @@ export function surfaceTreasuryRate(curve: readonly YieldPoint[], years: number)
   }
   if (asOf.length === 0) warnings.push("Treasury observation date unavailable");
   if (asOf.length > 1) warnings.push("Treasury interpolation uses different source dates");
-  if (left.stale || right.stale) {
-    const oldest = [left.stale ? left.asOf : null, right.stale ? right.asOf : null].filter((date): date is string => !!date).sort()[0];
-    const age = formatObservationAge(oldest);
-    warnings.push(age ? `Treasury ${age}` : unavailableText("Treasury"));
-  }
+  if (left.stale || right.stale) warnings.push("Treasury source is stale");
   return { rate, method, asOf, warnings };
 }
 

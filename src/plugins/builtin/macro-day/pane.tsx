@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter,
+import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneNoticeFooter,
   usePaneTicker, type DataTableCell, type DataTableColumn, type StatItem } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { instrumentFromTicker } from "../../../market-data/request-types";
@@ -9,7 +9,6 @@ import { useAutoRefresh } from "../../../react/auto-refresh";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box } from "../../../ui";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { loadMacroDayHistory } from "./client";
 import { projectMacroDays, type MacroDayEvent, type MacroDayModel } from "./model";
 import { MACRO_EVENT_KINDS, MACRO_EVENT_LABELS, type MacroEventKind } from "./releases";
@@ -81,12 +80,11 @@ export function MacroDayPane({ width, height, focused }: PaneProps) {
 
   usePaneNoticeFooter({ registrationId: "macro-day-notices", focused,
     notices: [...new Set([identityError, history.error, history.data?.error].filter((value): value is string => !!value))] });
-  usePaneLoadingSignal((history.loading));
-  const historyAge = history.data?.stale ? formatObservationAge(history.data.fetchedAt) : null;
   usePaneFooter("macro-day", () => ({ info: [
-    ...(historyAge ? [{ id: "updated", parts: [{ text: historyAge, tone: "muted" as const }] }] : []),
+    ...(history.loading ? [{ id: "loading", parts: [{ text: "loading history", tone: "muted" as const }] }] : []),
+    ...(history.data?.stale ? [{ id: "stale", parts: [{ text: "stale history", tone: "warning" as const }] }] : []),
     ...(model?.asOf ? [{ id: "date", parts: [{ text: `daily closes ${model.start} to ${model.asOf}`, tone: "muted" as const }] }] : []),
-  ] }), [history.loading, historyAge, model?.start, model?.asOf]);
+  ] }), [history.loading, history.data?.stale, model?.start, model?.asOf]);
 
   const renderCell = useCallback((event: MacroDayEvent, column: DataTableColumn): DataTableCell => {
     if (column.id === "date") return { text: event.session === event.date ? event.date : `${event.date} → ${event.session.slice(5)}`, value: event.date };

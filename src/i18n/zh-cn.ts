@@ -1007,6 +1007,7 @@ export const zhCN: Record<string, string> = {
   "Ticker add failed": "添加股票代码失败",
   "Ticker symbol is required.": "必须输入股票代码。",
   "No ticker selected.": "未选择股票。",
+  "Select a ticker.": "请选择股票。",
   "No comparison tickers configured.": "尚未配置对比股票。",
   "Loading chart...": "正在加载图表...",
   "updating": "更新中",

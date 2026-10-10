@@ -4,7 +4,6 @@ import {
   type ASKGToolResultOutcome,
   type ASKGTransport,
 } from "../../../../api-client/askg";
-import { unavailableText } from "../../../../components/ui/status-copy";
 import type { ASKGToolExecutor } from "./executor";
 import {
   activeTurn,
@@ -96,7 +95,7 @@ function undeliveredResult(payload: ToolResultPayload): ToolResultPayload {
   return {
     ...payload,
     status: "error",
-    note: unavailableText("Gloom"),
+    note: "Could not send this result to Gloom, so it answered without it.",
   };
 }
 

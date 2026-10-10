@@ -7,7 +7,7 @@ import {
   EmptyState,
   PaneStatusBody,
   QueryBar,
-  usePaneFooter, usePaneLoadingSignal,
+  usePaneFooter,
   usePaneNoticeFooter,
   usePaneTabs,
   usePaneTicker,
@@ -133,9 +133,9 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
   const notices = [identityError, history.error, rules.error, run.error, ...(result?.warnings ?? [])]
     .filter((value): value is string => !!value);
   usePaneNoticeFooter({ registrationId: "backtest-notices", notices: [...new Set(notices)], focused });
-  usePaneLoadingSignal((history.loading));
   usePaneFooter("backtest", () => ({
     info: [
+      ...(history.loading ? [{ id: "loading", parts: [{ text: "loading history", tone: "muted" as const }] }] : []),
       ...(result ? [{ id: "window", parts: [{ text: `${result.start} to ${result.end} · ${result.sessions} sessions`, tone: "muted" as const }] }] : []),
     ],
     hints: [

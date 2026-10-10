@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { TeamAccentColor } from "../../../../api-client";
-import { Badge, Button, Checkbox, FieldLabel, SectionHeading, Spinner, TextField, loadingText, type ButtonVariant } from "../../../../components";
+import { Badge, Button, Checkbox, FieldLabel, SectionHeading, TextField, type ButtonVariant } from "../../../../components";
 import { colors } from "../../../../theme/colors";
 import { Box, Span, Text, TextAttributes, type BoxRenderable } from "../../../../ui";
 import { TEAM_ACCENT_COLORS, teamAccentHex, teamPrefix } from "./model";
@@ -278,7 +278,7 @@ export function ConfirmAction({
       <Text fg={colors.text}>{question}</Text>
       <PaneButton
         id={id}
-        label={confirmLabel}
+        label={busy ? "Working…" : confirmLabel}
         variant={variant}
         disabled={busy}
         onPress={() => {
@@ -286,7 +286,6 @@ export function ConfirmAction({
           setArmed(false);
         }}
       />
-      {busy ? <Spinner label={loadingText()} /> : null}
       <Button label="Cancel" variant="ghost" compact stopPropagation onPress={() => setArmed(false)} />
     </Box>
   );

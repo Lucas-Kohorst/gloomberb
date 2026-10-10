@@ -1,4 +1,3 @@
-import { unavailableText } from "../../../../components/ui/status-copy";
 import type { AppNotificationRequest } from "../../../../types/plugin";
 import {
   apiClient,
@@ -58,7 +57,7 @@ export function updateChatChannelNotifications({
     ensureOpenChannelConnections();
     emit();
     notify({
-      body: error instanceof Error ? error.message : unavailableText("Channel notifications"),
+      body: error instanceof Error ? error.message : "Failed to update channel notifications.",
       type: "error",
     });
   });

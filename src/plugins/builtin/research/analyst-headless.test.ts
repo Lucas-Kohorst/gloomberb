@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import type { AnalystResearchData } from "../../../types/financials";
 import type { HeadlessPaneLoadArgs } from "../../../types/plugin";
@@ -38,7 +37,7 @@ describe("analyst research headless model", () => {
     expect(result.sections[0]?.entries?.slice(0, 3)).toMatchObject([
       { label: "Average target", value: 0 }, { label: "Target upside", value: -1 }, { label: "Upside reference price", value: 2 },
     ]);
-    expect(result.errors).toEqual([`Analyst research ${formatObservationAge("2026-09-09T16:00:00Z")}`]);
+    expect(result.errors).toEqual(["Analyst research is stale"]);
     expect(result.metadata).toMatchObject({ stale: true, fetchedAt: "2026-09-09T16:00:00Z" });
   });
   test("projects summary and ratings while applying sort and limit", async () => {

@@ -5,7 +5,6 @@ import {
   type TeamSummary,
   type TeamUpdatedEvent,
 } from "../../../../api-client";
-import { unavailableText } from "../../../../components/ui/status-copy";
 import type { AppNotificationDelivery, AppNotificationRequest, PluginPersistence } from "../../../../types/plugin";
 import { describeTeamNotification, findTeam, teamIdFromChannelId } from "./model";
 
@@ -237,7 +236,7 @@ export class TeamStore {
         this.update({
           loading: false,
           loaded: true,
-          error: error instanceof Error ? error.message : unavailableText("Teams"),
+          error: error instanceof Error ? error.message : "Could not load teams.",
         });
       } finally {
         this.refreshPromise = null;

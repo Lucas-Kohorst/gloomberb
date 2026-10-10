@@ -1005,6 +1005,7 @@ export const ko: Record<string, string> = {
   "Ticker add failed": "종목 추가 실패",
   "Ticker symbol is required.": "종목코드는 필수입니다.",
   "No ticker selected.": "선택한 종목이 없습니다.",
+  "Select a ticker.": "종목을 선택하세요.",
   "No comparison tickers configured.": "비교 종목이 설정되지 않았습니다.",
   "Loading chart...": "차트 불러오는 중...",
   "updating": "업데이트 중",

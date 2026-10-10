@@ -7,7 +7,6 @@ import type { SyncBrokerInstanceResult } from "../../brokers/sync-broker-instanc
 import type { AppConfig, BrokerInstanceConfig } from "../../types/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { debugLog } from "../../utils/debug-log";
-import { unavailableText } from "../ui/status";
 import type { PortfolioSub } from "./onboarding-steps";
 import type { BrokerOption } from "./wizard-model";
 
@@ -17,7 +16,7 @@ function summarizeOnboardingError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message.trim();
   }
-  return unavailableText("Broker");
+  return "Unable to connect the broker.";
 }
 
 function focusPortfolioListCollection(config: AppConfig, collectionId: string): AppConfig {

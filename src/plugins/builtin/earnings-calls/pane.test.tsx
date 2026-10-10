@@ -150,10 +150,10 @@ test("a pending company lookup remains pending after the pane reopens", async ()
   attachEarningsCallsPersistence(new MemoryPluginPersistence());
   setCloudApiFetchTransport(async () => Response.json({ calls: [], pending: true }));
   await mount();
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Looking for FIRST");
   await tui.destroy();
   await mount();
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Looking for FIRST");
 });
 
 test("identical pending responses keep polling until calls arrive and unmount cancels the next poll", async () => {
@@ -165,7 +165,7 @@ test("identical pending responses keep polling until calls arrive and unmount ca
   await mount();
   await timers.fire();
   expect(requests).toBe(2);
-  expect(tui.frame()).toContain("Loading...");
+  expect(tui.frame()).toContain("Looking for FIRST");
   await timers.fire();
   expect(requests).toBe(3);
   expect(tui.frame()).toContain("FIRST CORP");
@@ -259,7 +259,7 @@ for (const persisted of [false, true]) {
     fail = true;
     await press("r");
     expect(tui.frame()).toContain("FIRST CORP");
-    expect(tui.frame()).not.toContain("stale cache");
+    expect(tui.frame().includes("stale cache")).toBe(persisted);
     expect(tui.frame()).toContain("Controlled outage");
     fail = false;
     await press("r");
@@ -328,7 +328,7 @@ test("opening another quarter never displays the previous quarter's transcript",
   await press("return");
   const loading = tui.frame();
   expect(loading).toContain("Q1");
-  expect(loading).toContain("Loading...");
+  expect(loading).toContain("Loading transcript");
   expect(loading).not.toContain("Q2 ONLY OLD SUMMARY");
   await act(async () => finish(Response.json({ ...transcript("FIRST"), ...q1, summary: "Q1 NEW SUMMARY" })));
   await frames();
@@ -476,7 +476,7 @@ test("stale company fallback retains older quarters and its failure without repl
   const staleFrame = tui.frame();
   expect(staleFrame).not.toContain("queued");
   expect(staleFrame).toContain("FQ1 26");
-  expect(staleFrame).not.toContain("stale cache");
+  expect(staleFrame).toContain("FIRST stale cache");
   expect(staleFrame).toContain("Controlled company outage");
   fail = false;
   await press("r");
@@ -506,7 +506,7 @@ for (const status of [503, 403]) {
     await press("r");
     const frame = tui.frame();
     expect(frame.includes("FQ1 26")).toBe(status === 503);
-    expect(frame).not.toContain("stale cache");
+    expect(frame.includes("stale cache")).toBe(status === 503);
     expect(frame).toContain("Controlled lookup failure");
   });
 }

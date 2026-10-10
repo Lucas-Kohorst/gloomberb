@@ -11,7 +11,7 @@ import {
   resetSignedInBrokerCatalog,
   subscribeSignedInBrokers,
 } from "../../../brokers/signed-in/catalog";
-import { DataTableStackView, EmptyState, usePaneLoadingSignal } from "../../../components";
+import { DataTableStackView, EmptyState } from "../../../components";
 import { t } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import {
@@ -177,8 +177,8 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const canRemoveSelected = hasSelectedRow && !busy;
   const cancelEdit = useCallback(() => setEditDraft(null), []);
 
-  usePaneLoadingSignal(!!busy);
   useBrokerManagerFooter({
+    busy,
     message,
     actions: {
       connectSelected,

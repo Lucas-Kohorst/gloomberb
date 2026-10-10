@@ -1,6 +1,4 @@
 import { apiClient } from "../../../api-client";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { isYieldObservationDate } from "../yield-curve/treasury-data";
 import type { TreasuryBenchmarkPoint } from "./math";
 
@@ -11,21 +9,16 @@ export function parseBondBenchmark(payload: unknown): BondBenchmark {
   if (!Array.isArray(payload)) throw new Error("Treasury curve response is unavailable");
   const points: TreasuryBenchmarkPoint[] = [];
   const notices = new Set<string>();
-  const staleAsOf: string[] = [];
   for (const row of payload) {
     if (!row || typeof row !== "object" || typeof row.maturityYears !== "number" || !Number.isFinite(row.maturityYears)
       || row.maturityYears <= 0 || (row.yield !== null && (typeof row.yield !== "number" || !Number.isFinite(row.yield)))) {
       notices.add("Some Treasury points have an invalid response shape.");
       continue;
     }
-    if (row.stale) staleAsOf.push(isYieldObservationDate(row.asOf) ? row.asOf : "");
+    if (row.stale) notices.add("Treasury curve includes cached observations after a source failure.");
     if (row.error) notices.add("Some Treasury observations are unavailable.");
     if (row.yield != null && !isYieldObservationDate(row.asOf)) notices.add("Some Treasury observation dates are missing or invalid.");
     points.push({ maturityYears: row.maturityYears, yieldPercent: row.yield, asOf: isYieldObservationDate(row.asOf) ? row.asOf : null });
-  }
-  if (staleAsOf.length) {
-    const age = formatObservationAge(staleAsOf.filter(Boolean).sort()[0]);
-    notices.add(age ? `Treasury ${age}` : unavailableText("Treasury"));
   }
   return { points, notices: [...notices] };
 }

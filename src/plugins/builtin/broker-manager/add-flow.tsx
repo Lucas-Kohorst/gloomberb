@@ -20,7 +20,7 @@ import { connectSignedInBrokerProfile } from "../../../brokers/signed-in/connect
 import { SIGNED_IN_BROKER_TYPE } from "../../../brokers/signed-in/profile";
 import { runBrokerSignIn, type BrokerSignInOutcome } from "../../../brokers/signed-in/sign-in";
 import { promptGloomSignIn, useBrokerSignInAttempt } from "../../../brokers/signed-in/sign-in-dialog";
-import { Button, ListView, loadingText, unavailableText, useFieldRing } from "../../../components";
+import { Button, ListView, useFieldRing } from "../../../components";
 import { showCollectionInPortfolioPane } from "../../../components/command-bar/pane-actions";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { BrokerConnectView } from "../../../components/form-modal/broker-step";
@@ -155,7 +155,7 @@ export function useBrokerAddFlow({
       onProfileAdded(instanceId);
     };
     try {
-      setBusy(loadingText());
+      setBusy(t("Syncing…"));
       await syncBrokerInstance(instanceId);
       land();
       const state = getState();
@@ -165,7 +165,7 @@ export function useBrokerAddFlow({
     } catch (error) {
       // The profile stays: its detail and the footer say why it did not sync.
       land();
-      setMessage({ tone: "error", text: errorText(error, unavailableText(label)) });
+      setMessage({ tone: "error", text: errorText(error, tf("Failed to sync {label}.", { label })) });
     } finally {
       setBusy(null);
     }
@@ -188,14 +188,14 @@ export function useBrokerAddFlow({
     committingRef.current = true;
     setMessage(null);
     try {
-      setBusy(loadingText());
+      setBusy(t("Connecting broker…"));
       let instanceId: string;
       try {
         const instance = await createBrokerInstance(adapter.id, label, buildBrokerProfileConfig(adapter, draft.values));
         instanceId = instance.id;
       } catch (error) {
         setBusy(null);
-        setMessage({ tone: "error", text: errorText(error, unavailableText("Broker profile")) });
+        setMessage({ tone: "error", text: errorText(error, t("Failed to save broker profile.")) });
         return;
       }
       await syncNewProfile(current.id, instanceId, label);
@@ -250,7 +250,7 @@ export function useBrokerAddFlow({
           },
         });
       } catch (error) {
-        setMessage({ tone: "error", text: errorText(error, unavailableText(broker.name)) });
+        setMessage({ tone: "error", text: errorText(error, tf("{broker} was not connected.", { broker: broker.name })) });
         if (onStep()) setStep(flowId, { kind: "broker" });
         return;
       }

@@ -9,7 +9,6 @@ import { useAsyncResource } from "../../../public/react";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PricePoint } from "../../../types/financials";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { loadGpuHistory } from "./client";
 import { GpuPriceLadder } from "./ladder";
 import {
@@ -143,11 +142,8 @@ export function GpuBoard({ rows, asOf, model, setModel, selectedId, select, widt
         </Box> };
       }
       // The board's own day goes without saying; an older observation names its day.
-      case "asof": {
-        const age = row.stale ? formatObservationAge(row.observedAt) : null;
-        const text = age ?? (asOfDay && row.observedAt.startsWith(asOfDay) ? row.observedAt.slice(11, 16) : gpuTime(row.observedAt, true));
-        return { text, value: row.observedAt, color: row.stale ? colors.warning : colors.textDim, keepColorWhenSelected: row.stale };
-      }
+      case "asof": return { text: row.stale ? "stale" : asOfDay && row.observedAt.startsWith(asOfDay) ? row.observedAt.slice(11, 16) : gpuTime(row.observedAt, true), value: row.observedAt,
+        color: row.stale ? colors.warning : colors.textDim, keepColorWhenSelected: row.stale };
       default: return EMPTY_TABLE_CELL;
     }
   };

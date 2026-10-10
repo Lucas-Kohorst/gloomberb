@@ -14,6 +14,7 @@ interface BrokerManagerFooterActions {
 
 export function useBrokerManagerFooter({
   actions,
+  busy,
   canOpenSelectedAction,
   canRemoveSelected,
   canUseSelectedBroker,
@@ -21,6 +22,8 @@ export function useBrokerManagerFooter({
   message,
 }: {
   actions: BrokerManagerFooterActions;
+  /** What is running right now, or null. */
+  busy: string | null;
   canOpenSelectedAction: boolean;
   canRemoveSelected: boolean;
   canUseSelectedBroker: boolean;
@@ -56,9 +59,12 @@ export function useBrokerManagerFooter({
     return hints;
   }, [canOpenSelectedAction, canRemoveSelected, canUseSelectedBroker, editing]);
 
+  // The pane's rows already say which profiles exist and how they are doing,
+  // so the footer carries only what changes: the running action and its result.
   const info = useMemo<PaneFooterSegment[]>(() => [
+    ...(busy ? [{ id: "busy", parts: [{ text: busy, tone: "muted" as const }] }] : []),
     ...(message ? [{ id: "message", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : "muted" as const }] }] : []),
-  ], [message]);
+  ], [busy, message]);
 
   usePaneFooter("broker-manager", () => ({
     info,

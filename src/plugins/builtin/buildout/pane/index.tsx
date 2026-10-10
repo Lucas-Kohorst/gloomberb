@@ -7,7 +7,6 @@ import {
   PaneStatusBody,
   useTableLoadMore,
   usePaneFooter,
-  usePaneLoadingSignal,
   usePaneTabs,
   type DataTableKeyEvent,
   type PaneHint,
@@ -324,7 +323,6 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
   }), [activeTab, detailQuoteFreshness, favoriteMessage, footerHints, partialList, selectedList, startUpgrade, state, upgradeMessage]);
 
   const activePage = state.status === "ready" ? activeBuildoutPage(state, activeTab, selectedList) : null;
-  usePaneLoadingSignal(state.status === "loading" || (state.status === "ready" && (state.refreshing || !!activePage?.loadingMore)));
   const loadMoreActiveRows = useTableLoadMore(
     tableScrollRef,
     !!activePage && !activePage.loadingMore && !!activePage.hasMore && !activePage.error,

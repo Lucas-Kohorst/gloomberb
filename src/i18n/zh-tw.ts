@@ -1007,6 +1007,7 @@ export const zhTW: Record<string, string> = {
   "Ticker add failed": "新增股票代號失敗",
   "Ticker symbol is required.": "請輸入股票代號。",
   "No ticker selected.": "未選擇股票。",
+  "Select a ticker.": "請選擇股票。",
   "No comparison tickers configured.": "尚未設定比較股票。",
   "Loading chart...": "正在載入圖表...",
   "updating": "更新中",

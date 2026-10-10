@@ -4,7 +4,6 @@ import {
   DataTableView,
   PaneStatusBody,
   QueryBar,
-  usePaneLoadingSignal,
   useTableLoadMore,
   type DataTableCell,
   type DataTableColumn,
@@ -172,9 +171,9 @@ function FlowPane({ focused, width, height }: PaneProps) {
     if (history.error) {
       return { id: "flow-history", parts: [{ text: "older prints unavailable", tone: "warning" }] };
     }
+    if (history.loading) return { id: "flow-history", parts: [{ text: "loading older prints", tone: "muted" }] };
     return null;
-  }, [history.error]);
-  usePaneLoadingSignal(history.loading);
+  }, [history.error, history.loading]);
   useScannerStatusFooter("flow", feed, focused, historyFooter);
 
   const dated = useMemo(() => flowRowsSpanDays(events), [events]);
@@ -236,9 +235,9 @@ function FlowPane({ focused, width, height }: PaneProps) {
         selectedTextOverridesCellColor
         emptyContent={
           !feed.payload
-            ? <PaneStatusBody loading />
+            ? <PaneStatusBody loading loadingLabel="Waiting for the scanner..." />
             : events.length === 0 && history.loading
-              ? <PaneStatusBody loading />
+              ? <PaneStatusBody loading loadingLabel="Loading recorded prints..." />
               : undefined
         }
         emptyStateTitle={emptyState.title}

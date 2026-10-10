@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChartTableHeader, CurveSurface, curveGhostColors, DataTableView, formatPercentAxis, PaneStatusBody, useChartTableSelection,
-  usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type StatItem } from "../../../components";
+  usePaneFooter, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type StatItem } from "../../../components";
 import { curveStrip, curveSurfaceMinRows } from "../../../components/chart/curve";
 import { useAsyncResource } from "../../../react/async-resource";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
@@ -151,8 +151,9 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
     : selected?.sampleSize === 1 ? selected.history.at(-1)?.observedAt : null;
   const observationBasis = liveObservation ? "intraday" : tab === "history" ? "daily close"
     : tab === "board" && selected?.sampleSize === 1 ? "observation" : "daily history";
-  usePaneLoadingSignal((resource.loading));
   usePaneFooter("volatility", () => ({ info: [
+    ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading volatility", tone: "muted" as const }] }] : []),
+    ...(result?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
     ...(data ? [{ id: "basis", parts: [{ text: observationBasis, tone: "muted" as const }] }] : []),
     ...(asOf ? [{ id: "date", parts: [{ text: observationTime && (tab === "board" || liveObservation) ? `${observationTime.slice(0, 16).replace("T", " ")} UTC` : asOf, tone: "muted" as const }] }] : []),
   ], hints: [{ id: "view", key: "v", label: "iew", onPress: cycleTab }] }), [resource.loading, result?.stale, data, asOf, observationTime, observationBasis, tab, liveObservation]);

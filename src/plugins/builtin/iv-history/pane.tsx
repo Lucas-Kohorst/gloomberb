@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listingIdentity } from "../shared/ticker-request";
-import { DataTableView, EmptyState, PaneStatusBody, QueryBar, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, usePaneTicker, type DataTableColumn } from "../../../components";
+import { DataTableView, EmptyState, PaneStatusBody, QueryBar, usePaneFooter, usePaneNoticeFooter, usePaneTicker, type DataTableColumn } from "../../../components";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource } from "../../../react/async-resource";
@@ -80,8 +80,8 @@ export function IvHistoryPane({ width, height, focused }: PaneProps) {
     else return;
     event.preventDefault(); event.stopPropagation();
   }, { enabled: focused });
-  usePaneLoadingSignal((resource.loading));
   usePaneFooter("iv-history", () => ({ info: [
+    ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(model?.since ? [{ id: "since", parts: [{ text: `trade closes since ${model.since}`, tone: "muted" as const }] }] : []),
     ...(model?.asOf ? [{ id: "date", parts: [{ text: model.asOf, tone: "muted" as const }] }] : []),
   ], hints: [

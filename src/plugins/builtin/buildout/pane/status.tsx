@@ -1,4 +1,4 @@
-import { PaneStatusBody, unavailableText, type PaneFooterSegment } from "../../../../components";
+import { PaneStatusBody, type PaneFooterSegment } from "../../../../components";
 import type {
   BuildoutList,
   BuildoutLoadState,
@@ -34,7 +34,13 @@ export function updateBuildoutFooterInfo(
     quoteFreshness?: string | null;
   },
 ): PaneFooterSegment[] {
-  if (state.status === "loading" || state.status === "error") return [];
+  if (state.status === "loading") {
+    return [{ id: "loading", parts: [{ text: "loading", tone: "muted" }] }];
+  }
+
+  if (state.status === "error") {
+    return [{ id: "error", parts: [{ text: "load failed", tone: "negative" }] }];
+  }
 
   const info: PaneFooterSegment[] = [];
   if (messages.quoteFreshness) {
@@ -46,11 +52,17 @@ export function updateBuildoutFooterInfo(
   if (messages.partialList) {
     info.push({ id: "partial", onPress: messages.onUpgrade, parts: [{ text: "partial list", tone: "warning" }] });
   }
+  if (state.refreshing) {
+    info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+  }
   if (state.refreshError) {
     info.push({ id: "refresh-error", parts: [{ text: state.refreshError, tone: "warning" }] });
   }
 
   const page = activeBuildoutPage(state, activeTab, selectedList);
+  if (page?.loadingMore) {
+    info.push({ id: "loading-more", parts: [{ text: "loading more", tone: "muted" }] });
+  }
   if (page?.error) {
     info.push({ id: "page-error", parts: [{ text: page.error, tone: "negative" }] });
   }
@@ -72,8 +84,8 @@ export function renderBuildoutPageStatus(
   const page = activeBuildoutPage(state, activeTab, selectedList);
   if (!page) return null;
   if (page.loadingMore && page.items.length === 0) {
-    return <PaneStatusBody loading />;
+    return <PaneStatusBody loading loadingLabel={`Loading ${selectedList?.name ?? activeTab}...`} />;
   }
-  if (page.error) return <PaneStatusBody error={page.error} errorTitle={unavailableText("Rows")} />;
+  if (page.error) return <PaneStatusBody error={page.error} errorTitle="Could not load rows." />;
   return null;
 }

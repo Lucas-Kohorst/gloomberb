@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, PaneStatusBody, QueryBar, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, PaneStatusBody, QueryBar, usePaneFooter, usePaneNoticeFooter, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import { useAsyncResource } from "../../../react/async-resource";
 import { usePaneCollection, usePaneSettingValue, usePluginAppActions, useTickers } from "../../../public/react";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -84,10 +84,10 @@ export function IvScreenPane({ width, height, focused }: PaneProps) {
   // The full wording gives way to the short form in a pane too narrow to show the rank date.
   const fullDatesText = useMemo(() => sharedDates(dates).join(" · "), [dates]);
   const datesText = fullDatesText.length + FOOTER_MARGIN > width ? sharedDates(dates, true).join(" · ") : fullDatesText;
-  usePaneLoadingSignal(resource.loading);
   usePaneFooter("iv-screen", () => ({ info: [
+    ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(datesText ? [{ id: "dates", parts: [{ text: datesText, tone: "muted" as const }] }] : []),
-  ] }), [datesText]);
+  ] }), [resource.loading, datesText]);
   const handleKey = (event: DataTableKeyEvent): boolean => {
     if (event.ctrl || event.alt || event.meta || event.name !== "r") return false;
     void resource.reload();

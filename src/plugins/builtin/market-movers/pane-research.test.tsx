@@ -81,7 +81,7 @@ test("switching lists hides old rows while pending or failed and retains only sa
   fail = true;
   await tui.emitKeypress({ name: "r", sequence: "r" }); await settleFrame(tui.setup(), 6);
   expect(await csv()).toContain("GAINER");
-  expect(JSON.stringify(footer)).toContain("~0m");
+  expect(JSON.stringify(footer)).toContain("stale");
   expect(JSON.stringify(footer)).toContain("unavailable");
 });
 

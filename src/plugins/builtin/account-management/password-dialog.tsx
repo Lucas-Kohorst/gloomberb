@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Button, Spinner, TextField, loadingText, unavailableText } from "../../../components";
+import { Button, TextField } from "../../../components";
 import { DialogFrame } from "../../../components/ui/frame";
 import { Box, Text } from "../../../ui";
 import { useDialogKeyboard, type AlertContext } from "../../../ui/dialog";
@@ -46,7 +46,7 @@ export function PasswordChangeDialog({
       await onChangePassword(currentPassword, newPassword);
       dismiss();
     } catch (errorValue) {
-      setError(errorValue instanceof Error && errorValue.message ? errorValue.message : unavailableText("Password change"));
+      setError(errorValue instanceof Error ? errorValue.message : t("Failed to change password."));
     } finally {
       setSubmitting(false);
     }
@@ -112,10 +112,9 @@ export function PasswordChangeDialog({
           onSubmit={() => { void submit(); }}
         />
         {error ? <Text fg={colors.negative}>{truncateWithEllipsis(error, fieldWidth)}</Text> : null}
-        {submitting ? <Spinner label={loadingText()} /> : null}
         <Box flexDirection="row" justifyContent="flex-end">
           <Button
-            label={t("Update Password")}
+            label={submitting ? t("Changing...") : t("Update Password")}
             variant="primary"
             disabled={submitting}
             onPress={() => { void submit(); }}

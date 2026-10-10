@@ -223,7 +223,7 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
         onHeaderClick={(columnId) => setSort((current) => nextHeaderSort(current, columnId as ConnectionColumn["id"]))}
         getItemKey={(source) => source.id}
         renderCell={renderCell}
-        emptyContent={settled ? undefined : <PaneStatusBody loading />}
+        emptyContent={settled ? undefined : <PaneStatusBody loading loadingLabel="Waiting for services to register..." />}
         emptyStateTitle="No connection activity yet."
         emptyStateHint="Sources appear when providers and services register."
       />

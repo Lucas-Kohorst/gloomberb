@@ -90,6 +90,7 @@ describe("account management model", () => {
       savedProfilePublic: true,
       savedSharedPortfolioId: "main",
       selectedPortfolioId: "main",
+      syncing: false,
     });
 
     expect(preview.status).toBe("ready");
@@ -111,6 +112,7 @@ describe("account management model", () => {
       savedProfilePublic: true,
       savedSharedPortfolioId: "old",
       selectedPortfolioId: "new",
+      syncing: false,
     });
 
     expect(preview.status).toBe("pending");

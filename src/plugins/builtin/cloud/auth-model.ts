@@ -7,7 +7,6 @@
 import { apiClient, type AuthUser } from "../../../api-client";
 import { identifyResearchUser } from "../../../api-client/research-activity";
 import { t } from "../../../i18n";
-import { unavailableText } from "../../../components/ui/status-copy";
 import { chatController } from "../chat/controller";
 
 /**
@@ -100,7 +99,7 @@ export function classifyAccountError(error: unknown, mode: AccountMode): Account
   }
 
   return {
-    message: message || (mode === "signup" ? unavailableText("Account") : unavailableText("Sign-in")),
+    message: message || (mode === "signup" ? t("Could not create your account.") : t("Could not sign you in.")),
     kind: "retry",
   };
 }

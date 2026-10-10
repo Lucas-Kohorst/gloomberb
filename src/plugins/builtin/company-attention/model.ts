@@ -1,15 +1,8 @@
 import type { DataTableColumn, StatItem } from "../../../components";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { scalarPoint, staticSeries } from "../../../components/chart/static/series";
 import type { HiringBoard, HiringPayload, HiringSummary } from "../../../api-client/hiring";
 import type { AppAttentionPayload, AppCompany } from "../../../api-client/app-attention";
 import { humanLabel } from "../shared/research-cells";
-
-function agedNotice(label: string, timestamp: string | null | undefined): string {
-  const age = formatObservationAge(timestamp);
-  return age ? `${label} ${age}` : unavailableText(label);
-}
 
 export type AttentionKind = "hiring" | "apps";
 export type AttentionTab = "table" | "chart" | "mix" | "peers" | "evidence";
@@ -59,7 +52,7 @@ export function hiringModel(data: HiringBoard | HiringPayload, mix = "functions"
     preview: data.preview,
     locked: typeof data.locked === "number" ? data.locked : Object.values(data.locked).reduce((a, b) => a + b, 0),
     // How counts compare is methodology (docs/hiring-app-attention.md); the footer keeps only what is wrong with this capture.
-    notices: detail ? [...(latest?.completeness !== "complete" ? ["The latest capture has incomplete or unknown coverage."] : []), ...(detail.status === "stale" ? [agedNotice("Hiring capture", latest?.observedAt ?? data.generatedAt)] : [])] : [],
+    notices: detail ? [...(latest?.completeness !== "complete" ? ["The latest capture has incomplete or unknown coverage."] : []), ...(detail.status === "stale" ? ["The latest hiring capture is stale."] : [])] : [],
     // A figure the first capture cannot give yet (a weekly change, a z-score) is left out, not shown as a dash.
     figures: latest ? [
       { label: "Open roles", value: count(latest.openCount) },
@@ -114,7 +107,7 @@ export function appsModel(data: AppAttentionPayload, mix = "countries"): Attenti
     asOf: data.summary.lastObservedAt,
     preview: data.access === "preview",
     locked: Object.values(data.locked).reduce((a, b) => a + b, 0),
-    notices: [...data.coverage.limitations, ...(data.apps.some((row) => row.stale) ? [agedNotice("App observations", data.apps.filter((row) => row.stale).map((row) => row.observedAt).sort()[0])] : [])],
+    notices: [...data.coverage.limitations, ...(data.apps.some((row) => row.stale) ? ["Some app observations are stale."] : [])],
     // Seven-day figures appear once a week of captures can give them.
     figures: [
       { label: "Attention score", value: data.summary.attentionScore?.toFixed(1) ?? "--", detail: "/ 100" },

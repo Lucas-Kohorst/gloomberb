@@ -12,8 +12,6 @@ import {
   formatPercent,
   formatPercentRaw,
 } from "../../../utils/format";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { computeTTM } from "../ticker-detail/financials/aggregation";
 
 export const CORPORATE_ACTION_COVERAGE = "Split-feed factors may include spinoff price adjustments. Merger terms, spinoff distributions, and security conversions are not covered.";
@@ -418,16 +416,8 @@ export function eventSourceNotice(state: EventSourceState): EventSourceNotice | 
       : `No dividends, splits, or reported earnings for ${state.symbol}`);
   }
 
-  if (state.actions?.stale) {
-    const age = formatObservationAge(state.actions.fetchedAt);
-    if (age) notices.push(`Corporate actions ${age}`);
-    else if (!state.actionsError && unavailableSections.length === 0) notices.push(unavailableText("Corporate actions"));
-  }
-  if (state.estimates?.stale) {
-    const age = formatObservationAge(state.estimates.fetchedAt);
-    if (age) notices.push(`Analyst estimates ${age}`);
-    else if (!state.estimatesError) notices.push(unavailableText("Analyst estimates"));
-  }
+  if (state.actions?.stale) notices.push(`Corporate actions stale${state.actions.fetchedAt ? ` (fetched ${state.actions.fetchedAt})` : ""}`);
+  if (state.estimates?.stale) notices.push(`Analyst estimates stale${state.estimates.fetchedAt ? ` (fetched ${state.estimates.fetchedAt})` : ""}`);
 
   if (state.estimatesError) {
     notices.push(`Analyst estimates unavailable: ${state.estimatesError}`);

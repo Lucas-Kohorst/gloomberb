@@ -993,6 +993,7 @@ export const es: Record<string, string> = {
   "Ticker add failed": "No se pudo agregar el ticker",
   "Ticker symbol is required.": "El símbolo del ticker es obligatorio.",
   "No ticker selected.": "Ningún ticker seleccionado.",
+  "Select a ticker.": "Selecciona un ticker.",
   "No comparison tickers configured.": "Sin tickers de comparación configurados.",
   "Loading chart...": "Cargando gráfico...",
   "updating": "actualizando",

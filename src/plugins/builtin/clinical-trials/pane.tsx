@@ -4,7 +4,7 @@ import {
   PaneStatusBody,
   QueryBar,
   usePagedRows,
-  usePaneStatusLinkFooter, usePaneLoadingSignal,
+  usePaneStatusLinkFooter,
   useQueryBarSearch,
   useTableLoadMore,
   type DataTableKeyEvent,
@@ -151,13 +151,13 @@ export function TrialsPane({ width, height, focused }: PaneProps) {
 
   const detailUrl = detailTrial?.url || null;
   const info = useMemo<PaneFooterSegment[]>(() => [
+    ...(studies.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
     ...(studies.moreError ? [{ id: "more-error", parts: [{ text: studies.moreError.message, tone: "warning" as const }] }] : []),
   ], [studies.loadingMore, studies.moreError]);
   const hints = useMemo<PaneHint[]>(
     () => (openItemId ? [] : [{ id: "search", key: "/", label: "search", onPress: focusSearch }]),
     [focusSearch, openItemId],
   );
-  usePaneLoadingSignal((studies.loadingMore));
   usePaneStatusLinkFooter({
     registrationId: CLINICAL_TRIALS_PANE_ID,
     focused,

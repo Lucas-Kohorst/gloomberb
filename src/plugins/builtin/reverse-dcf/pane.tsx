@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneLoadingSignal, usePaneNoticeFooter,
+import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneNoticeFooter,
   usePaneTicker, type DataTableCell, type DataTableColumn, type StatItem } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { instrumentFromTicker } from "../../../market-data/request-types";
@@ -7,9 +7,7 @@ import { usePaneSettingValue } from "../../../public/react";
 import { useAsyncResource } from "../../../react/async-resource";
 import { useAutoRefresh } from "../../../react/auto-refresh";
 import type { PaneProps } from "../../../types/plugin";
-import { unavailableText } from "../../../components/ui/status-copy";
 import { Box } from "../../../ui";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatCompactCurrency } from "../../../utils/format";
 import { loadReverseDcfInputs } from "./client";
 import { DISCOUNT_RATES, FORECAST_YEARS, projectReverseDcf, TERMINAL_GROWTH, TERMINAL_GROWTHS, type ImpliedGrowth, type ReverseDcfModel } from "./model";
@@ -66,12 +64,11 @@ export function ReverseDcfPane({ width, height, focused }: PaneProps) {
 
   usePaneNoticeFooter({ registrationId: "reverse-dcf-notices", focused,
     notices: [...new Set([identityError, inputs.error, inputs.data?.error].filter((value): value is string => !!value))] });
-  usePaneLoadingSignal((inputs.loading));
-  const fundamentalsAge = inputs.data?.stale ? formatObservationAge(inputs.data.fetchedAt) ?? unavailableText("Fundamentals") : null;
   usePaneFooter("reverse-dcf", () => ({ info: [
-    ...(fundamentalsAge ? [{ id: "updated", parts: [{ text: fundamentalsAge, tone: "warning" as const }] }] : []),
+    ...(inputs.loading ? [{ id: "loading", parts: [{ text: "loading fundamentals", tone: "muted" as const }] }] : []),
+    ...(inputs.data?.stale ? [{ id: "stale", parts: [{ text: "stale fundamentals", tone: "warning" as const }] }] : []),
     ...(model?.currency ? [{ id: "units", parts: [{ text: `TTM, ${model.currency}`, tone: "muted" as const }] }] : []),
-  ] }), [inputs.loading, fundamentalsAge, model?.currency]);
+  ] }), [inputs.loading, inputs.data?.stale, model?.currency]);
 
   const stats = useMemo((): StatItem[] => {
     if (!model || model.error) return [];

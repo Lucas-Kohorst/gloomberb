@@ -7,9 +7,7 @@ import {
   PaneStatusBody,
   QueryBar,
   Spinner,
-  loadingText,
   useExternalLinkFooter,
-  usePaneLoadingSignal,
   usePagedRows,
   usePaneTabs,
   useTableLoadMore,
@@ -376,6 +374,12 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const info: PaneFooterSegment[] = [];
+    if (status === "loading" || documentLoading || savedStatus === "loading") {
+      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    }
+    if (loadingMore) {
+      info.push({ id: "loading-more", parts: [{ text: "loading more", tone: "muted" }] });
+    }
     if (proRequired) {
       info.push({ id: "pro", parts: [{ text: "pro required", tone: "warning" }] });
     }
@@ -447,7 +451,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     ].filter((part): part is string => !!part).join(" · ");
   }, [openHit]);
 
-  usePaneLoadingSignal(status === "loading" || documentLoading || savedStatus === "loading" || loadingMore);
   useExternalLinkFooter({
     registrationId: RESEARCH_SEARCH_PANE_ID,
     focused,
@@ -497,7 +500,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
           width={width}
           height={Math.max(1, height - tabRows)}
           emptyTitle={savedStatus === "loading"
-            ? ""
+            ? "Loading saved searches..."
             : "Run a search, then press Ctrl+S to save it and get keyword alerts."}
         />
       </Box>
@@ -655,7 +658,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         selectedTextOverridesCellColor
         showHorizontalScrollbar={false}
         emptyContent={status === "loading" && hits.length === 0
-          ? <Spinner label={loadingText()} />
+          ? <Spinner label="Searching..." />
           : undefined}
         emptyStateTitle={emptyTitle}
         emptyStateHint={failure?.message}

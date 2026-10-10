@@ -260,7 +260,7 @@ async function waitForAddedPosition(): Promise<void> {
   expectedPositionCount += 1;
   await waitForFrame(`Positions (${expectedPositionCount})`);
   // The row lands before the add finishes; typing on would be lost.
-  for (let attempt = 0; attempt < 60 && tui.frame().includes("Loading..."); attempt += 1) {
+  for (let attempt = 0; attempt < 60 && tui.frame().includes("adding..."); attempt += 1) {
     await act(async () => {
       await Bun.sleep(attempt < 5 ? 0 : 10);
       await tui.setup().renderOnce();
@@ -623,7 +623,7 @@ describe("OnboardingWizard", () => {
     await emitKeypress({ name: "b", sequence: "b" });
     await waitForFrame("Connect Delayed Broker");
     await pressEnter();
-    await waitForFrame("Loading...");
+    await waitForFrame("Importing");
 
     await pressEscape();
     await waitForFrame("What do you hold?");
@@ -718,9 +718,9 @@ describe("OnboardingWizard", () => {
     await firstWriteStarted;
 
     await pressEscape();
-    expect(tui.frame()).toContain("Loading...");
+    expect(tui.frame()).toContain("Importing");
     await emitKeypress({ name: "f10" });
-    expect(tui.frame()).toContain("Loading...");
+    expect(tui.frame()).toContain("Importing");
     expect((await tickerRepository.loadAllTickers()).map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "NVDA"]);
 
     await act(async () => {
@@ -799,10 +799,10 @@ describe("OnboardingWizard", () => {
     await waitForFrame("Connect Finalizing Broker");
     await pressEnter();
     await commitEnded;
-    await waitForFrame("Loading...");
+    await waitForFrame("Importing");
 
     await emitKeypress({ name: "f10" });
-    expect(tui.frame()).toContain("Loading...");
+    expect(tui.frame()).toContain("Importing");
     expect(completionCount).toBe(0);
 
     await act(async () => {

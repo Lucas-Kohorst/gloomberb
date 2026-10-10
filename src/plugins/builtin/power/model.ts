@@ -1,7 +1,5 @@
 import type { PowerAggregate, PowerBoard, PowerCoverage, PowerExposure, PowerHistoryPoint, PowerProject, PowerRates } from "../../../api-client/power";
 import { staticSeries, type DataTableColumn } from "../../../components";
-import { unavailableText } from "../../../components/ui/status-copy";
-import { formatObservationAge } from "../../../utils/datetime-format";
 
 export const POWER_TABS = [{ value: "queue", label: "Queue" }, { value: "history", label: "History" }, { value: "outcomes", label: "Outcomes" },
   { value: "loads", label: "Loads" }, { value: "utilities", label: "Utilities" }, { value: "capacity", label: "Capacity" }, { value: "coverage", label: "Coverage" }] as const;
@@ -11,15 +9,6 @@ const REGISTERS: Record<string, string> = { "neso-tec": "GB transmission", "neso
 const REGIONS: Record<string, string> = { LBNL: "US project queues", "LBNL-ANNUAL": "US annual queues", EIA860: "US generation capacity", EIA861: "US utilities", EIA923: "US generation output" };
 export const powerRegion = (value: string, sourceId?: string) => REGISTERS[sourceId ?? ""] ?? REGIONS[value] ?? value;
 export const titleCase = (value: string) => value.replace(/(^|[ _-])\w/g, (match) => match.toUpperCase());
-export function coverageNotice(row: PowerCoverage): string {
-  const label = `${powerRegion(row.region)} ${titleCase(row.kind)}`;
-  if (row.status === "stale") {
-    const age = formatObservationAge(row.asOf ?? row.observedAt);
-    return age ? `${label} ${age}` : unavailableText(label);
-  }
-  if (row.status === "failed") return row.reason ?? unavailableText(label);
-  return `${label}: ${row.status}${row.reason ? ` · ${row.reason}` : ""}`;
-}
 export const powerNumber = (n: number | null | undefined) => n == null ? "--" : n.toLocaleString("en-US", { maximumFractionDigits: 1 });
 export const powerPercent = (n: number | null) => n == null ? "--" : `${(n * 100).toFixed(1)}%`;
 const tickerLabel = (row: { entities: PowerProject["entities"] }) => [...new Set(row.entities.flatMap((e) => e.tickers.map((t) => t.ticker)))].join(", ") || "--";

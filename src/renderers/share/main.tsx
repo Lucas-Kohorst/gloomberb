@@ -33,14 +33,14 @@ function LayoutApp({ id }: { id: string }) {
         ? { entry }
         : { error: "This shared layout is unavailable." }))
       .catch(() => {
-        if (!controller.signal.aborted) setState({ error: "Shared layout unavailable." });
+        if (!controller.signal.aborted) setState({ error: "This shared layout could not be loaded." });
       });
     return () => controller.abort();
   }, [id]);
 
   return state.entry
     ? <LayoutShareView entry={state.entry} openLiveUrl={openLiveMarketplaceLayoutUrl(id)} />
-    : <main><h1>Gloomberb</h1><p>{state.error ?? "Loading..."}</p></main>;
+    : <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared layout..."}</p></main>;
 }
 
 function ContentShareApp({ id }: { id: string }) {
@@ -62,7 +62,7 @@ function ContentShareApp({ id }: { id: string }) {
         }
         setState(share ? { share } : { error: "This share is unavailable or has expired." });
       })
-      .catch(() => { if (!controller.signal.aborted) setState({ error: "Share unavailable." }); });
+      .catch(() => { if (!controller.signal.aborted) setState({ error: "This share could not be loaded." }); });
     return () => controller.abort();
   }, [id]);
   const remove = async () => {
@@ -75,7 +75,7 @@ function ContentShareApp({ id }: { id: string }) {
       setState((current) => ({
         ...current,
         deleting: false,
-        error: error instanceof Error ? error.message : "Share unavailable.",
+        error: error instanceof Error ? error.message : "Could not delete share.",
       }));
     }
   };
@@ -91,7 +91,7 @@ function ContentShareApp({ id }: { id: string }) {
       />
     );
   }
-  return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading..."}</p></main>;
+  return <main><h1>Gloomberb</h1><p>{state.error ?? "Loading shared view..."}</p></main>;
 }
 
 function SocialShareApp() {

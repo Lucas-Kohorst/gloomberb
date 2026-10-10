@@ -7,7 +7,6 @@ import type {
   HeadlessPaneLoadArgs,
 } from "../../../types/plugin";
 import type { AnalystResearchData } from "../../../types/financials";
-import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercent } from "../../../utils/format";
 import { loadAnalystResearch } from "./client";
 import {
@@ -163,7 +162,7 @@ export function createAnalystResearchHeadless(
       ];
       return {
         sections,
-        errors: data.stale ? [`Analyst research ${formatObservationAge(data.fetchedAt) ?? "unavailable"}`] : undefined,
+        errors: data.stale ? ["Analyst research is stale"] : undefined,
         ...(data.stale ? { freshness: { status: "stale" as const } } : {}),
         metadata: {
           symbol: data.symbol || symbol,

@@ -6,13 +6,10 @@ import {
   Notice,
   PaneStatusBody,
   Prose,
-  Spinner,
-  loadingText,
-  unavailableText,
   QueryBar,
   usePagedRows,
   usePaneNoticeFooter,
-  usePaneStatusLinkFooter, usePaneLoadingSignal,
+  usePaneStatusLinkFooter,
   useQueryBarSearch,
   useTableLoadMore,
   type DataTableCell,
@@ -154,13 +151,13 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
   const linkLetter = openLetter ?? selected;
   const detailUrl = linkLetter ? linkLetter.primaryDocumentUrl ?? linkLetter.filingUrl : null;
   const info = useMemo<PaneFooterSegment[]>(() => [
+    ...(letters.loadingMore ? [{ id: "loading-more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
     ...(letters.moreError ? [{ id: "more-error", parts: [{ text: letters.moreError.message, tone: "warning" as const }] }] : []),
   ], [letters.loadingMore, letters.moreError]);
   const hints = useMemo<PaneHint[]>(
     () => (openItemId ? [] : [{ id: "search", key: "/", label: "search", onPress: focusSearch }]),
     [focusSearch, openItemId],
   );
-  usePaneLoadingSignal((letters.loadingMore));
   usePaneStatusLinkFooter({
     registrationId: COMMENT_LETTERS_PANE_ID,
     focused,
@@ -254,11 +251,9 @@ export function CommentLettersPane({ width, height, focused }: PaneProps) {
               <Notice tone="muted">The letter continues past this preview; o opens all of it.</Notice>
             ) : null}
           </>
-        ) : letterText.loading ? (
-          <Spinner label={loadingText()} />
         ) : (
           <Text fg={colors.textDim}>
-            {letterText.error ? unavailableText("Letter text") : "This letter has no readable text."}
+            {letterText.loading ? "Loading the letter..." : letterText.error ? "The letter's text is unavailable." : "This letter has no readable text."}
           </Text>
         )}
       </Box>

@@ -80,7 +80,7 @@ describe("volatility source loader", () => {
     expect(result.data.board.find((row) => row.id === "vix3m")).toMatchObject({ value: 22, stale: true, error: "router failed" });
     expect(result.data.board.find((row) => row.id === "vvix")).toMatchObject({ value: null, date: null, stale: false });
     expect(result.data.curve.ratio).toBe(1);
-    expect(result.data.curve.warnings.join(" ")).toContain("VIX 2026-09-21");
+    expect(result.data.curve.warnings.join(" ")).toContain("stale cached history");
     // Cache age alone does not mark the first paint stale; the load that follows decides.
     const seeded = getCachedVolatilityData({ now: () => now, getChartEntry: () => ({ ...ready(), staleAt: now - 1 }),
       loadChart: async () => ready(), loadFred: async (id) => fred(id) });

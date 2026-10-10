@@ -256,6 +256,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter(TREASURY_AUCTIONS_PANE_ID, () => {
     const info = loadingErrorFooterInfo(loading, error);
+    if (stale) info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
     if (fetchedAt) {
       info.push({ id: "updated", parts: [{ text: formatRelativeAge(fetchedAt), tone: "muted" }] });
     }
@@ -303,7 +304,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <PaneStatusBody loading align="center" />
+        <PaneStatusBody loading align="center" loadingLabel="Loading Treasury auctions..." />
       </Box>
     );
   }

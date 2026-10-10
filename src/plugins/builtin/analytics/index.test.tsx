@@ -286,7 +286,7 @@ describe("PortfolioAnalyticsPane", () => {
     });
     await flushFrame();
     let frame = tui.frame();
-    expect(frame).toContain("Loading...");
+    expect(frame).toContain("Loading account history");
     expect(frame).not.toContain("No positions");
     expect(frame).not.toMatch(figure("Val", "0"));
 
@@ -303,7 +303,7 @@ describe("PortfolioAnalyticsPane", () => {
     frame = tui.frame();
     expect(frame).toContain("No positions in this portfolio.");
     expect(frame).not.toContain("Statement service unavailable");
-    expect(frame).not.toContain("Loading...");
+    expect(frame).not.toContain("Loading account history");
   });
 
   test("switching accounts hides prior performance while the next account is pending", async () => {
@@ -338,7 +338,7 @@ describe("PortfolioAnalyticsPane", () => {
     expect(harnessState?.paneState[TEST_PANE_ID]?.portfolioId).toBe(secondId);
     expect(tui.frame()).not.toContain("+10.00%");
     // The band holds its rows for the pending history instead of drawing the first account's.
-    expect(tui.frame()).toContain("Loading...");
+    expect(tui.frame()).toContain("Loading history...");
     await act(async () => {
       completeSecond({ accountId: "DU54321", source: "flex", period: "Second account", fetchedAt: 1,
         points: [{ date: "2026-01-01", cumulativeReturn: 0 }, { date: "2026-02-01", cumulativeReturn: .2 }] });
