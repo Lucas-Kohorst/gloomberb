@@ -4,6 +4,7 @@ import { holdsActiveTicker } from "../../../shares/pane-image";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { withCommandTab } from "../shared/command-tab";
 import { FinancialAnalysisPane } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
 import { ReturnsPane } from "./data-panes/returns-pane";
@@ -200,16 +201,18 @@ export const tickerDetailModule: PluginModule = {
       headless: historicalPricesHeadless,
     },
     {
-      ...createTickerSurfacePaneTemplate({
+      ...withCommandTab(createTickerSurfacePaneTemplate({
         id: "financial-analysis-pane",
-        paneId: "financial-analysis",
+        paneId: TICKER_RESEARCH_PANE_ID,
         label: "Financial Analysis",
         description: "Open financial statements for a ticker.",
         keywords: ["fa", "financial", "analysis", "statements"],
         shortcut: "FA",
         publicShare: true,
         titlePrefix: "FA",
-      }),
+        settings: () => ({ hideTabs: true, lockedTabId: "financials" }),
+      }), "financials"),
+      shortcut: { prefix: "FA", argPlaceholder: "ticker", argKind: "ticker", showInBrowse: false },
       headless: financialStatementsHeadless,
     },
   ],
