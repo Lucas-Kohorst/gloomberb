@@ -291,8 +291,8 @@
     },
     {
       "id": "credit",
-      "name": "Credit & Bonds",
-      "description": "Single-name, index and sovereign CDS, credit spreads, Treasury auctions, a bond calculator, credit documents and covenants, and debt maturities.",
+      "name": "Credit & Fixed Income",
+      "description": "Credit markets, issuer debt, corporate bonds, Treasury auctions and debt, and dealer positions.",
       "tagline": "CDS, credit spreads, auctions and bonds.",
       "categories": [
         "macro",
@@ -307,17 +307,16 @@
       ],
       "contributes": {
         "panes": [
-          "bond-calculator",
-          "cds",
-          "cdx-board",
-          "credit-conditions",
-          "credit-documents",
-          "debt-maturities",
-          "treasury-auctions"
+          "fixed-income"
         ],
         "capabilities": [],
         "broker": false,
         "shortcuts": [
+          {
+            "code": "FI",
+            "name": "Fixed Income",
+            "description": "Credit markets, issuer debt, corporate bonds, Treasury auctions and debt, and dealer positions."
+          },
           {
             "code": "CDS",
             "name": "Single-Name CDS",
@@ -347,6 +346,21 @@
             "code": "YAS",
             "name": "Bond Calculator",
             "description": "Price, yield, accrued interest, duration, convexity and Treasury spread for a fixed coupon bond."
+          },
+          {
+            "code": "TRACE",
+            "name": "Corporate Bond Tape",
+            "description": "Latest corporate and agency bond sales: issuer, coupon, price, yield, and grade."
+          },
+          {
+            "code": "DTS",
+            "name": "Treasury Cash and Debt",
+            "description": "Treasury operating cash for the latest day, and debt held by the public for the last 20 business days."
+          },
+          {
+            "code": "PDLR",
+            "name": "Primary Dealer Positions",
+            "description": "Weekly net positions and settlement fails in Treasuries and mortgage-backed securities."
           },
           {
             "code": "CRDOC",

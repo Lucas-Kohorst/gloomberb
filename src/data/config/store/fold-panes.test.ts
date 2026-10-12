@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { migrateSavedConfig } from "./migrations";
-import { foldPaneLayout } from "./fold-panes";
+import { foldFixedIncomePaneLayout, foldPaneLayout } from "./fold-panes";
 import { CURRENT_CONFIG_VERSION, type DockLayoutNode, type LayoutConfig, type PaneInstanceConfig } from "../../../types/config";
 
 function layout(instances: PaneInstanceConfig[], dockRoot: DockLayoutNode | null = null, floating: LayoutConfig["floating"] = []): LayoutConfig {
@@ -116,5 +116,73 @@ describe("fold short volume and sovereign CDS", () => {
       focusedPaneId: null,
     });
     expect(saved[1]?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "cdx-2" });
+  });
+});
+
+describe("fold fixed income views", () => {
+  test("legacy panes route into Fixed Income and keep their isolated pane state", () => {
+    const result = migrateSavedConfig({
+      configVersion: 26,
+      layout: layout([
+        { instanceId: "open-auctions", paneId: "treasury-auctions", binding: { kind: "none" } },
+      ], { kind: "pane", instanceId: "open-auctions" }),
+      layouts: [{
+        name: "Credit and rates",
+        layout: layout([
+          { instanceId: "cdx-1", paneId: "cdx-board", binding: { kind: "none" } },
+          { instanceId: "trace-1", paneId: "trace-bonds", binding: { kind: "none" } },
+          { instanceId: "daily-1", paneId: "treasury-daily", binding: { kind: "none" } },
+        ]),
+        paneState: {
+          "cdx-1": { pluginState: { macro: { "credit-boards:tab": "sovereign", "cdx:selected": "CDX-IG" } } },
+          "trace-1": { pluginState: { macro: { issuer: "IBM", selectedId: "bond-1" } } },
+          "daily-1": { pluginState: { macro: { tab: "debt" } } },
+        },
+      }],
+    }, "/tmp");
+
+    expect((result.config.layout as LayoutConfig).instances[0]).toMatchObject({
+      instanceId: "open-auctions",
+      paneId: "fixed-income",
+      params: { tab: "treasury", view: "auctions" },
+    });
+    const saved = (result.config.layouts as Array<{ layout: LayoutConfig; paneState: Record<string, any> }>)[0]!;
+    expect(saved.layout.instances).toEqual([
+      { instanceId: "cdx-1", paneId: "fixed-income", binding: { kind: "none" }, params: { tab: "credit", view: "index" } },
+      { instanceId: "trace-1", paneId: "fixed-income", binding: { kind: "none" }, params: { tab: "bonds", view: "tape" } },
+      { instanceId: "daily-1", paneId: "fixed-income", binding: { kind: "none" }, params: { tab: "treasury", view: "cash-debt" } },
+    ]);
+    expect(saved.paneState).toMatchObject({
+      "cdx-1": { pluginState: {
+        macro: { "fixed-income:view:credit": "sovereign" },
+        "fixed-income:credit-boards": { "credit-boards:tab": "sovereign", "cdx:selected": "CDX-IG" },
+      } },
+      "trace-1": { pluginState: {
+        macro: { issuer: "IBM", selectedId: "bond-1" },
+        "fixed-income:trace-bonds": { issuer: "IBM", selectedId: "bond-1" },
+      } },
+      "daily-1": { pluginState: {
+        macro: { tab: "debt" },
+        "fixed-income:treasury-daily": { tab: "debt" },
+      } },
+    });
+    expect(result.applied).toContain("fold-fixed-income-panes");
+  });
+
+  test("a typed legacy command keeps its requested view over the prior board tab", () => {
+    const folded = foldFixedIncomePaneLayout(layout([
+      {
+        instanceId: "cdx-1",
+        paneId: "cdx-board",
+        binding: { kind: "none" },
+        params: { tab: "index", tabAt: "123" },
+      },
+    ]));
+
+    expect(folded.layout.instances[0]).toMatchObject({
+      paneId: "fixed-income",
+      params: { tab: "credit", view: "index", tabAt: "123" },
+    });
+    expect(folded.fixedIncomeRoutes.get("cdx-1")?.migrateCreditBoardTab).toBe(false);
   });
 });

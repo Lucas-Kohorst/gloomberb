@@ -9,6 +9,10 @@ import { exposureModule } from "./builtin/exposure";
 import { supplyChainModule } from "./builtin/supply-chain";
 import { awardsModule } from "./builtin/awards";
 import { debtMaturitiesModule } from "./builtin/debt-maturities";
+import { fixedIncomeModule } from "./builtin/fixed-income";
+import { primaryDealersModule } from "./builtin/primary-dealers";
+import { traceBondsModule } from "./builtin/trace-bonds";
+import { treasuryDailyModule } from "./builtin/treasury-daily";
 import { revenueBreakdownModule } from "./builtin/revenue-breakdown";
 import { mnaModule } from "./builtin/mna";
 import { cryptoBoardModule } from "./builtin/crypto-board";
@@ -111,6 +115,7 @@ import {
   newsPluginMeta,
   portfolioPluginMeta,
 } from "./builtin/builtin-plugin-meta";
+import { FIXED_INCOME_HOSTS } from "./builtin/fixed-income/model";
 
 const browserApplicationPlugin = composeBuiltinPlugin({
   ...applicationPluginMeta,
@@ -240,15 +245,20 @@ const browserRatesMacroPlugin = composeBuiltinPlugin({
 const browserCreditPlugin = composeBuiltinPlugin({
   ...creditPluginMeta,
   modules: [
+    fixedIncomeModule,
     cdsModule,
     creditBoardsModule,
     creditConditionsModule,
     treasuryAuctionsModule,
     bondCalculatorModule,
+    traceBondsModule,
+    treasuryDailyModule,
+    primaryDealersModule,
     { module: creditDocumentsModule, stateId: "ticker-research" },
     { module: debtMaturitiesModule, stateId: "ticker-research" },
   ],
 });
+browserCreditPlugin.hosts = [...FIXED_INCOME_HOSTS];
 
 // The web app has never carried the earnings calendar. The call transcripts
 // and the ripple ran with Ticker Research here, so their pane state is under
