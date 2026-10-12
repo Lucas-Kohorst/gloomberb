@@ -839,7 +839,7 @@ Gloomberb includes English, Spanish, Simplified Chinese, Traditional Chinese, Ja
 
 ## Built-in plugins
 
-Each built-in plugin can be switched on or off in `PL`. Ticker Research, Market Overview and Macro were split into the plugins below; panes, shortcuts, settings and saved state are unchanged.
+Each built-in plugin can be switched on or off in `PL`. Ticker Research, Market Overview and Macro have successor plugins below. Legacy shortcuts and saved settings remain usable; the Commodities & Energy workspace groups related market and energy views into tabs.
 
 | Plugin | Functions |
 |--------|-----------|
@@ -854,8 +854,11 @@ Each built-in plugin can be switched on or off in `PL`. Ticker Research, Market 
 | Rates & Macro | ECO, ECST, CPI, GC, WIRP, BTMM, CBR, VIX, VOLS, VAL |
 | Global Markets | WEI, MAP, CHOKE, BI, THEM, FXC, RRG |
 | Screeners & Movers | EQS, MOST, HILO, FLOW |
-| Futures & Commodities | FUT, CTM, COT, DOE, NGS |
+| Commodities & Energy | FUT, CTM, COT, DOE, NGS, PSD, JODI, STEO |
+| Shipping Volumes | SHIP |
 | Crypto & Perps | CRYP, PERP |
+
+The typed commodities shortcuts open their corresponding tabs in **Commodities & Energy**. `SHIP` opens the separate Shipping Volumes pane.
 
 A research tab belongs to the plugin of its function: switching off Ownership & Insiders removes the Holders, 13F, Insider, Short Interest and Congress tabs.
 

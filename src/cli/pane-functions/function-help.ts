@@ -781,6 +781,30 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     data: same("Weekly, on release"),
     bloomberg: ["DOE"],
   },
+  PSD: {
+    summary: "World production, use, trade and ending stocks for wheat, corn, soybeans and cotton, by country and latest market year. Season-average price forecasts appear when USDA publishes them. The Crops tab of Commodities & Energy.",
+    usage: ["PSD"],
+    keys: [TABS],
+    data: same("Monthly, as USDA updates the market-year tables"),
+    bloomberg: [],
+    docs: "https://gloom.sh/docs/functions",
+  },
+  JODI: {
+    summary: "Latest monthly crude oil and natural gas balances for countries: production, demand, imports, exports and stocks. The Oil & Gas tab of Commodities & Energy.",
+    usage: ["JODI"],
+    keys: [TABS],
+    data: same("Monthly, as the latest country reports arrive"),
+    bloomberg: [],
+    docs: "https://gloom.sh/docs/functions",
+  },
+  STEO: {
+    summary: "The latest Short-Term Energy Outlook forecasts for oil prices, US crude production and fuel demand, alongside crude import origins and nuclear plant outages. The Outlook tab of Commodities & Energy.",
+    usage: ["STEO"],
+    keys: [TABS],
+    data: same("Monthly outlook and imports; latest daily outage reports"),
+    bloomberg: [],
+    docs: "https://gloom.sh/docs/functions",
+  },
   POWER: {
     summary: "Pro: global power interconnection queues, recorded MW history, completion and withdrawal cohorts, large-load requests and approvals, utility exposure and generation capacity. Open a project for primary evidence and revisions; mapped companies link to DES, FA, G and SPLC.",
     usage: ["POWER", "POWER NEE"],
@@ -869,6 +893,14 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: CHART_KEYS,
     data: same("Daily"),
     bloomberg: [],
+  },
+  SHIP: {
+    summary: "Ports and shipping chokepoints ranked by published vessel-call counts. Switch between ports and chokepoints to compare the latest reported volumes.",
+    usage: ["SHIP"],
+    keys: [TABS],
+    data: same("Dated snapshots, as published"),
+    bloomberg: [],
+    docs: "https://gloom.sh/docs/functions",
   },
 
   // Macro and rates

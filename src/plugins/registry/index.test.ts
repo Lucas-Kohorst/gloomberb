@@ -260,7 +260,7 @@ describe("Market Overview's successors", () => {
       expect(registry.getConfigState(pluginId, "priceLevels")).toBe("kept");
     }
 
-    const paneIds = ["world-venue-map", "world-indices", "equity-screener", "futures", "crypto-board", "attention", "correlation"];
+    const paneIds = ["world-venue-map", "world-indices", "equity-screener", "commodities-energy", "crypto-board", "attention", "correlation"];
     const instances = paneIds.map((paneId) => createPaneInstance(paneId, { instanceId: `${paneId}:main`, binding: { kind: "none" } }));
     const layout = {
       dockRoot: null,
@@ -272,7 +272,7 @@ describe("Market Overview's successors", () => {
       const disabledPaneIds = new Set(disabled.flatMap((pluginId) => registry.getPluginPaneIds(pluginId)));
       return resolveShellVisibleLayout(layout, disabledPaneIds, registry.panes).instances.map((instance) => instance.paneId);
     };
-    expect(visiblePanes(["global-markets"])).toEqual(["equity-screener", "futures", "crypto-board", "attention", "correlation"]);
+    expect(visiblePanes(["global-markets"])).toEqual(["equity-screener", "commodities-energy", "crypto-board", "attention", "correlation"]);
     expect(visiblePanes(expandBuiltinPluginGroups(["market-overview"]))).toEqual([]);
 
     // The template is Global Markets', the chart it opens Ticker Research's.
