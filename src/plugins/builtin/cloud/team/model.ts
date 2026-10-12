@@ -32,14 +32,9 @@ export function teamIdFromChannelId(channelId: string): string | null {
   return teamId || null;
 }
 
+/** The ref a team card's notice carries, so the Unread list keeps it once the toast is gone. */
 export function teamNotificationRefId(id: string): string {
   return `team:${id}`;
-}
-
-export function teamNotificationIdFromRef(refId: string | undefined): string | null {
-  if (!refId?.startsWith("team:")) return null;
-  const id = refId.slice("team:".length);
-  return id.length > 0 ? id : null;
 }
 
 /** #general first, then the rest by name, whatever order the server used. */

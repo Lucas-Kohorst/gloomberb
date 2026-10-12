@@ -81,9 +81,14 @@ const ALERT_TABS = [
 
 export function AlertsPane(props: PaneProps) {
   const [tab, setTab] = usePluginPaneState<string>("tab", "prices");
-  useEffect(() => subscribePriceAlertFocus(() => {
-    if (getPriceAlertFocus()) setTab("prices");
-  }), [setTab]);
+  // A missed price alert opened from the Unread list selects its rule on Prices.
+  useEffect(() => {
+    const showPrices = () => {
+      if (getPriceAlertFocus()) setTab("prices");
+    };
+    showPrices();
+    return subscribePriceAlertFocus(showPrices);
+  }, [setTab]);
   const { strip: tabStrip, rows: tabRows } = usePaneTabs({
     tabs: ALERT_TABS,
     activeValue: tab,
@@ -132,9 +137,9 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
   const focusedAlertId = useSyncExternalStore(subscribePriceAlertFocus, getPriceAlertFocus, getPriceAlertFocus);
   useEffect(() => {
     if (!focusedAlertId) return;
+    // A rule deleted since it fired leaves the selection where it was.
     const index = rows.findIndex((row) => row.id === focusedAlertId);
-    if (index < 0) return;
-    setSelectedIdx(index);
+    if (index >= 0) setSelectedIdx(index);
     clearPriceAlertFocus();
   }, [focusedAlertId, rows]);
 

@@ -1,165 +1,180 @@
-import type { AppNotificationRequest, AppNotificationType } from "../types/plugin";
+import type { AppPluginStateStorePort } from "../core/app-service-ports";
+import type { AppNotificationRequest } from "../types/plugin";
 
 export const NOTIFICATION_LOG_LIMIT = 300;
-const IDENTICAL_BODY_DEDUPE_MS = 10 * 60 * 1000;
+
+/**
+ * The notices worth finding again after their toast is gone: a price alert or
+ * a catalyst that fired, and a team card. Chat keeps its own unread state on
+ * the account, and plain info, success and error toasts are not logged.
+ */
+export type MissedNoticeKind = "price" | "catalyst" | "team";
+
+const KIND_PREFIXES: ReadonlyArray<readonly [MissedNoticeKind, string]> = [
+  ["price", "price:"],
+  ["catalyst", "catalyst:"],
+  ["team", "team:"],
+];
 
 export interface NotificationLogEntry {
   id: string;
+  /** `price:<alertId>`, `catalyst:<eventId>` or `team:<cardId>`. A later notice with the same ref updates this row. */
+  refId: string;
   title?: string;
   body: string;
-  type: AppNotificationType;
-  source: string;
   at: number;
   read: boolean;
-  /** External key. The same refId updates that row instead of adding another. */
-  refId?: string;
 }
 
-export interface NotificationLogStore {
-  get(): readonly NotificationLogEntry[];
-  set(entries: readonly NotificationLogEntry[]): void | Promise<void>;
+interface NotificationLogStore {
+  get(): readonly unknown[];
+  set(entries: readonly NotificationLogEntry[]): void;
+}
+
+/** What a ref points at, and the id inside it; null for anything the log does not keep. */
+export function parseNoticeRef(refId: string | undefined): { kind: MissedNoticeKind; id: string } | null {
+  if (!refId) return null;
+  for (const [kind, prefix] of KIND_PREFIXES) {
+    if (refId.startsWith(prefix) && refId.length > prefix.length) return { kind, id: refId.slice(prefix.length) };
+  }
+  return null;
 }
 
 let entries: NotificationLogEntry[] = [];
 let store: NotificationLogStore | null = null;
-let writeQueue = Promise.resolve();
 const listeners = new Set<() => void>();
 
 function normalizeEntry(value: unknown): NotificationLogEntry | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Partial<NotificationLogEntry>;
   if (typeof entry.id !== "string" || typeof entry.body !== "string" || typeof entry.at !== "number") return null;
+  if (typeof entry.refId !== "string" || !parseNoticeRef(entry.refId)) return null;
   return {
     id: entry.id,
+    refId: entry.refId,
     ...(typeof entry.title === "string" && entry.title ? { title: entry.title } : {}),
     body: entry.body,
-    type: entry.type === "success" || entry.type === "error" ? entry.type : "info",
-    source: typeof entry.source === "string" && entry.source ? entry.source : "app",
     at: entry.at,
     read: entry.read === true,
-    ...(typeof entry.refId === "string" && entry.refId ? { refId: entry.refId } : {}),
   };
 }
 
-function trim(next: readonly NotificationLogEntry[]): NotificationLogEntry[] {
-  return next.slice(-NOTIFICATION_LOG_LIMIT);
+/** One row per ref, oldest first, the newest {@link NOTIFICATION_LOG_LIMIT} kept. */
+function settle(next: readonly NotificationLogEntry[]): NotificationLogEntry[] {
+  const byRef = new Map<string, NotificationLogEntry>();
+  for (const entry of next) {
+    byRef.delete(entry.refId);
+    byRef.set(entry.refId, entry);
+  }
+  return [...byRef.values()].sort((left, right) => left.at - right.at).slice(-NOTIFICATION_LOG_LIMIT);
 }
 
-function publish(): void {
+function commit(next: NotificationLogEntry[]): void {
+  entries = next;
+  try {
+    store?.set(entries);
+  } catch {
+    // The rows stay in memory; the next change tries the write again.
+  }
   for (const listener of listeners) listener();
 }
 
-function persist(): void {
-  if (!store) return;
-  const snapshot = entries;
-  const targetStore = store;
-  writeQueue = writeQueue
-    .then(() => targetStore.set(snapshot))
-    .catch(() => {});
+/**
+ * Loads the log from a device-local store. Notices recorded before the store
+ * was attached are kept, so a fire during startup is not lost.
+ */
+function configureNotificationLog(nextStore: NotificationLogStore | null): void {
+  store = nextStore;
+  let saved: readonly unknown[] = [];
+  try {
+    saved = nextStore?.get() ?? [];
+  } catch {
+    saved = [];
+  }
+  const loaded = saved.map(normalizeEntry).filter((entry): entry is NotificationLogEntry => !!entry);
+  commit(settle([...loaded, ...entries]));
 }
 
-export function configureNotificationLog(nextStore: NotificationLogStore | null): void {
-  store = nextStore;
-  entries = trim((nextStore?.get() ?? []).map(normalizeEntry).filter((entry): entry is NotificationLogEntry => !!entry));
-  publish();
+const LOG_STATE_OWNER = "core.notifications";
+const LOG_STATE_KEY = "missed";
+
+/**
+ * Keeps the log in the app's local state store (SQLite in the terminal and the
+ * desktop app, browser storage on the web), never in config.json or synced
+ * settings, so team text in a notice stays on this device. Returns the detach.
+ */
+export function attachNotificationLog(pluginState: Pick<AppPluginStateStorePort, "get" | "set">): () => void {
+  configureNotificationLog({
+    get: () => {
+      const value = pluginState.get<unknown>(LOG_STATE_OWNER, LOG_STATE_KEY)?.value;
+      return Array.isArray(value) ? value : [];
+    },
+    set: (next) => pluginState.set(LOG_STATE_OWNER, LOG_STATE_KEY, next),
+  });
+  return () => configureNotificationLog(null);
 }
 
 export function subscribeNotificationLog(listener: () => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function getNotificationLog(): readonly NotificationLogEntry[] {
   return entries;
 }
 
+export function unreadNotificationLogCount(log: readonly NotificationLogEntry[] = entries): number {
+  let count = 0;
+  for (const entry of log) if (!entry.read) count += 1;
+  return count;
+}
+
+/**
+ * Records a notice whose `refId` names a price alert, a catalyst or a team
+ * card; anything else returns null and is not kept. The same ref replaces its
+ * row: a price alert that fires again is new and unread again.
+ */
 export function appendNotificationLog(
-  notification: AppNotificationRequest,
-  source = "app",
+  notification: Pick<AppNotificationRequest, "title" | "body" | "refId">,
   at = Date.now(),
-): NotificationLogEntry {
+): NotificationLogEntry | null {
+  const refId = notification.refId;
+  if (!refId || !parseNoticeRef(refId)) return null;
+  const existing = entries.find((candidate) => candidate.refId === refId);
+  const title = notification.title?.trim();
   const entry: NotificationLogEntry = {
-    id: `notification-${at.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    ...(notification.title?.trim() ? { title: notification.title.trim() } : {}),
+    id: existing?.id ?? `notice-${at.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    refId,
+    ...(title ? { title } : {}),
     body: notification.body,
-    type: notification.type ?? "info",
-    source,
     at,
-    read: notification.type === "success" && source === "app",
-    ...(notification.refId ? { refId: notification.refId } : {}),
+    read: false,
   };
-  if (entry.refId) {
-    const existingIndex = entries.findIndex((candidate) => candidate.refId === entry.refId);
-    if (existingIndex >= 0) {
-      const existing = entries[existingIndex]!;
-      entries = trim([
-        ...entries.slice(0, existingIndex),
-        {
-          ...existing,
-          ...entry,
-          id: existing.id,
-          at: existing.at,
-          read: entry.source === "alerts" ? false : existing.read,
-          source: existing.source,
-        },
-        ...entries.slice(existingIndex + 1),
-      ]);
-      persist();
-      publish();
-      return existing;
-    }
-  } else {
-    const duplicateIndex = entries.findIndex((candidate) => (
-      candidate.body === entry.body
-      && candidate.source === entry.source
-      && at - candidate.at <= IDENTICAL_BODY_DEDUPE_MS
-    ));
-    if (duplicateIndex >= 0) {
-      const existing = entries[duplicateIndex]!;
-      persist();
-      publish();
-      return existing;
-    }
-  }
-  entries = trim([...entries, entry]);
-  persist();
-  publish();
+  commit(settle([...entries, entry]));
   return entry;
 }
 
 export function markNotificationLogRead(ids?: Iterable<string>): void {
   const selected = ids ? new Set(ids) : null;
-  const next = entries.map((entry) => (
-    (!selected || selected.has(entry.id)) && !entry.read ? { ...entry, read: true } : entry
-  ));
-  if (next.every((entry, index) => entry === entries[index])) return;
-  entries = next;
-  persist();
-  publish();
+  let changed = false;
+  const next = entries.map((entry) => {
+    if (entry.read || (selected && !selected.has(entry.id))) return entry;
+    changed = true;
+    return { ...entry, read: true };
+  });
+  if (changed) commit(next);
 }
 
 export function markNotificationLogReadByRef(refIds: Iterable<string>): void {
   const wanted = new Set(refIds);
   if (wanted.size === 0) return;
-  markNotificationLogRead(
-    entries.filter((entry) => entry.refId && wanted.has(entry.refId)).map((entry) => entry.id),
-  );
-}
-
-export function clearNotificationLog(): void {
-  if (entries.length === 0) return;
-  entries = [];
-  persist();
-  publish();
-}
-
-export async function flushNotificationLog(): Promise<void> {
-  await writeQueue;
+  markNotificationLogRead(entries.filter((entry) => wanted.has(entry.refId)).map((entry) => entry.id));
 }
 
 export function resetNotificationLogForTest(): void {
   entries = [];
   store = null;
-  writeQueue = Promise.resolve();
   listeners.clear();
 }

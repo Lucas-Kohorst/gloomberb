@@ -1481,7 +1481,7 @@ describe("ChatContent", () => {
 
     expect(openedTemplates).toEqual([
       { templateId: "new-chat-pane", options: { arg: "everyone" } },
-      { templateId: "notification-center-pane", options: undefined },
+      { templateId: "unread-inbox-pane", options: undefined },
     ]);
   });
 
@@ -1556,7 +1556,7 @@ describe("ChatContent", () => {
 
     expect(openedTemplates).toEqual([
       { templateId: "new-chat-pane", options: { arg: dmChannelId } },
-      { templateId: "notification-center-pane", options: undefined },
+      { templateId: "unread-inbox-pane", options: undefined },
     ]);
   });
 

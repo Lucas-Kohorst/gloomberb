@@ -27,7 +27,6 @@ import { filingEventsModule } from "./builtin/filing-events";
 import { riskFactorsModule } from "./builtin/risk-factors";
 import { researchSearchPlugin } from "./builtin/research-search";
 import { alertsPlugin } from "./builtin/alerts";
-import { notificationCenterPlugin } from "./builtin/notification-center";
 import { marketHeatmapPlugin } from "./builtin/market-heatmap";
 import { marketHaltsPlugin } from "./builtin/market-halts";
 import { fearGreedPlugin } from "./builtin/fear-greed";
@@ -295,7 +294,6 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   browserCreditPlugin,
   browserEarningsPlugin,
   alertsPlugin,
-  notificationCenterPlugin,
   researchSearchPlugin,
 ];
 

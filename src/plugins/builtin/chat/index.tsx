@@ -51,13 +51,13 @@ export const chatModule: PluginModule = {
     },
   }, {
     id: UNREAD_INBOX_PANE_ID,
-    reportFreshness: { status: "not-a-feed", basis: "chat messages" },
+    reportFreshness: { status: "not-a-feed", basis: "chat messages and missed alerts" },
     name: "Unread",
     icon: "U",
     component: UnreadInboxPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 60, height: 16 },
+    defaultFloatingSize: { width: 88, height: 16 },
   }],
   paneTemplates: [{
     id: "new-chat-pane",
@@ -117,9 +117,9 @@ export const chatModule: PluginModule = {
   }, {
     id: UNREAD_INBOX_TEMPLATE_ID,
     paneId: UNREAD_INBOX_PANE_ID,
-    label: "Unread Chat",
-    description: "Open unread chat messages",
-    keywords: ["unread", "chat", "inbox", "mentions"],
+    label: "Unread",
+    description: "Unread chat, then price alerts, catalysts and team notices you missed",
+    keywords: ["unread", "chat", "inbox", "mentions", "missed", "notifications", "alerts"],
     createInstance: () => ({
       placement: "floating",
       instanceId: "unread-inbox",
