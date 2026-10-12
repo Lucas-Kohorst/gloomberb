@@ -38,7 +38,7 @@ export function renderCongressTradeCell(
     case "tx":
       return { text: column.width >= 10 ? trade.transactionDate ?? "--" : formatShortDate(trade.transactionDate, FILING_DAY_FORMAT), color: colors.textDim };
     case "lag":
-      return { text: `${formatLag(trade.lagDays)}${(trade.lagDays ?? 0) > 45 ? "!" : ""}`, color: (trade.lagDays ?? 0) > 45 ? colors.warning : colors.textDim };
+      return { text: `${formatLag(trade.lagDays)}${(trade.lagDays ?? 0) > 45 ? " late" : ""}`, color: colors.textDim };
     case "member":
       return { text: trade.memberName, color: colors.text };
     case "side":
