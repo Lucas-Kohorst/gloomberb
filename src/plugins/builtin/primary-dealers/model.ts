@@ -5,7 +5,7 @@ import { formatNumber } from "../../../utils/format";
 export const PRIMARY_DEALERS_PANE_ID = "primary-dealers";
 
 /** Aggregate totals only. Tenor and CUSIP buckets stay off the wire. */
-export const SERIES_CAP = 12;
+const SERIES_CAP = 12;
 
 /**
  * The current release names settlement fails PDFTD (deliver) and PDFTR
@@ -38,12 +38,12 @@ export interface DealerRow {
   unit: string | null;
 }
 
-export function seriesBreakYear(seriesBreak: string): number {
+function seriesBreakYear(seriesBreak: string): number {
   const match = /(\d{4})$/.exec(seriesBreak);
   return match ? Number(match[1]) : 0;
 }
 
-export function newestSeriesBreak(entries: readonly CatalogEntry[]): string | null {
+function newestSeriesBreak(entries: readonly CatalogEntry[]): string | null {
   let best: string | null = null;
   let bestYear = -1;
   for (const entry of entries) {
@@ -134,7 +134,7 @@ function fallbackLabel(description: string, keyid: string): string {
   return text.length <= 48 ? text : `${text.slice(0, 47).trimEnd()}…`;
 }
 
-export function positionLabel(entry: CatalogEntry): string {
+function positionLabel(entry: CatalogEntry): string {
   const id = entry.keyid.toUpperCase();
   const asset = id.includes("USTET") || id.includes("GST") ? "Treasuries ex-TIPS"
     : id.includes("TIPS") || /-(?:UST)$/.test(id) ? "TIPS"
@@ -189,7 +189,7 @@ export function boardAsOf(rows: readonly DealerRow[]): string | null {
   return best;
 }
 
-export type DealerColumnId = "position" | "asOf" | "latest" | "previous" | "change" | "unit";
+type DealerColumnId = "position" | "asOf" | "latest" | "previous" | "change" | "unit";
 export type DealerColumn = DataTableColumn & { id: DealerColumnId };
 
 const DEALER_COLUMNS: readonly DealerColumn[] = [

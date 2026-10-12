@@ -113,7 +113,7 @@ function dataRows(data: unknown): unknown[] | null {
 }
 
 /** Rows from a reporting envelope. Null when the payload is not that shape. */
-export function corporateBondPayloadRows(payload: unknown): unknown[] | null {
+function corporateBondPayloadRows(payload: unknown): unknown[] | null {
   if (Array.isArray(payload)) return payload;
   const record = asRecord(payload);
   if (!record) return null;
@@ -159,7 +159,7 @@ function byLastTrade(left: CorporateBond, right: CorporateBond): number {
  * One page of bonds from a reporting payload, newest last sale first.
  * An unrecognized payload is an empty page; the fetch rejects that case.
  */
-export function parseCorporateBondTape(payload: unknown): CorporateBond[] {
+function parseCorporateBondTape(payload: unknown): CorporateBond[] {
   const rows = corporateBondPayloadRows(payload);
   if (!rows) return [];
   const seen = new Map<string, number>();

@@ -43,7 +43,7 @@ function rowsOf(payload: unknown): Record<string, unknown>[] {
   return payload.data.filter((row): row is Record<string, unknown> => !!row && typeof row === "object");
 }
 
-export function parseOperatingCash(payload: unknown): OperatingCash {
+function parseOperatingCash(payload: unknown): OperatingCash {
   const parsed: Array<CashAccount & { date: string }> = [];
   for (const row of rowsOf(payload)) {
     const date = recordDate(row.record_date);
@@ -72,7 +72,7 @@ export function parseOperatingCash(payload: unknown): OperatingCash {
   };
 }
 
-export function parseDebtToPenny(payload: unknown): DebtDay[] {
+function parseDebtToPenny(payload: unknown): DebtDay[] {
   const byDate = new Map<string, DebtDay>();
   for (const row of rowsOf(payload)) {
     const date = recordDate(row.record_date);

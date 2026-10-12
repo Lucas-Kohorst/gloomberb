@@ -4,7 +4,7 @@ import type {
   PaneTemplateDef,
   PaneTemplateInstanceConfig,
 } from "../../../types/plugin";
-import { withCommandTab } from "../shared/command-tab";
+import { commandTabParams } from "../shared/command-tab";
 import type { FixedIncomeSection } from "./model";
 import { FIXED_INCOME_PANE_ID } from "./model";
 
@@ -32,16 +32,21 @@ export function fixedIncomeShortcut(
   view: string,
 ): PaneTemplateDef {
   const create = template.createInstance;
-  return withCommandTab({
+  return {
     ...template,
     paneId: FIXED_INCOME_PANE_ID,
     shortcut: template.shortcut ? { ...template.shortcut, showInBrowse: false } : undefined,
     createInstance: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => {
       const created = create ? create(context, options) : {};
-      const route = (instance: PaneTemplateInstanceConfig | null) => (
-        instance ? fixedIncomeInstance(context, instance) : null
-      );
+      const route = (instance: PaneTemplateInstanceConfig | null) => {
+        if (!instance) return null;
+        const routed = fixedIncomeInstance(context, instance);
+        return {
+          ...routed,
+          params: commandTabParams(section, { ...routed.params, view }),
+        };
+      };
       return created instanceof Promise ? created.then(route) : route(created);
     },
-  }, section, { view });
+  };
 }

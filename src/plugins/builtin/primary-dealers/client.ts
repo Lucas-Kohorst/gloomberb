@@ -11,12 +11,12 @@ import {
 const LIST_URL = "https://markets.newyorkfed.org/api/pd/list/timeseries.json";
 const FETCH_TIMEOUT_MS = 15_000;
 
-export interface SeriesPoint {
+interface SeriesPoint {
   asOf: string;
   value: number;
 }
 
-export interface ParsedSeries {
+interface ParsedSeries {
   keyid: string;
   unit: string | null;
   latest: SeriesPoint | null;
@@ -62,7 +62,7 @@ function readUnit(...sources: Array<Record<string, unknown> | null>): string | n
   return null;
 }
 
-export function parseCatalog(payload: unknown): CatalogEntry[] {
+function parseCatalog(payload: unknown): CatalogEntry[] {
   const root = asRecord(payload);
   const pd = asRecord(root?.pd);
   const rows = Array.isArray(pd?.timeseries) ? pd.timeseries : Array.isArray(root?.timeseries) ? root.timeseries : [];
@@ -79,7 +79,7 @@ export function parseCatalog(payload: unknown): CatalogEntry[] {
 }
 
 /** Latest two observations. Points may arrive oldest-last or newest-last. */
-export function parseSeriesObservations(payload: unknown, fallbackKeyid = ""): ParsedSeries {
+function parseSeriesObservations(payload: unknown, fallbackKeyid = ""): ParsedSeries {
   const root = asRecord(payload);
   const pd = asRecord(root?.pd);
   const rows = Array.isArray(pd?.timeseries) ? pd.timeseries : Array.isArray(root?.timeseries) ? root.timeseries : [];

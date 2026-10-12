@@ -34,8 +34,8 @@ export interface DebtDay {
   total: number | null;
 }
 
-export type CashColumnId = "account" | "opening" | "closing";
-export type DebtColumnId = "date" | "heldByPublic" | "intragovernmental" | "total";
+type CashColumnId = "account" | "opening" | "closing";
+type DebtColumnId = "date" | "heldByPublic" | "intragovernmental" | "total";
 export type CashColumn = DataTableColumn & { id: CashColumnId };
 export type DebtColumn = DataTableColumn & { id: DebtColumnId };
 
