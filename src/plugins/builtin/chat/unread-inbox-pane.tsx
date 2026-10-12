@@ -23,8 +23,9 @@ import {
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, TextAttributes } from "../../../ui";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { formatFeedTime } from "../../../utils/datetime-format";
+import { displayWidth, truncateToDisplayWidth } from "../../../utils/format";
 import { usePluginAppActions, usePluginPaneState } from "../../runtime";
 import { requestPriceAlertFocus } from "../alerts/focus";
 import { SignInWall } from "../cloud/auth-actions";
@@ -34,6 +35,8 @@ import { chatController, type ChatController } from "./controller";
 import { applyUnreadInboxItemToConfig } from "./pane-state";
 import { buildUnreadListRows, type UnreadInboxItem, type UnreadListRow } from "./unread-inbox";
 import { chatTextWithImages } from "./attachments/model";
+import { isManagedBot } from "./ghost-user";
+import { CHAT_AI_BADGE_WIDTH, ChatAiBadge } from "./message/ai-badge";
 
 type UnreadController = Pick<ChatController, "getSnapshot" | "listUnreadInbox" | "subscribe" | "markAllChannelsRead">;
 
@@ -54,7 +57,13 @@ const NOTICE_LABELS: Record<MissedNoticeKind, string> = {
   team: "Team",
 };
 
-function chatCell(item: UnreadInboxItem, column: DataTableColumn, now: number): DataTableCell {
+function chatCell(
+  item: UnreadInboxItem,
+  column: DataTableColumn,
+  now: number,
+  rowState: { selected: boolean },
+  native: boolean,
+): DataTableCell {
   switch (column.id) {
     case "from":
       return { text: item.title };
@@ -70,9 +79,29 @@ function chatCell(item: UnreadInboxItem, column: DataTableColumn, now: number): 
     default: {
       const preview = item.preview;
       if (!preview) return { text: "" };
-      const author = preview.user.username ? `@${preview.user.username}: ` : "";
-      const text = chatTextWithImages(preview.content, preview.attachments?.length ?? 0);
-      return { text: `${author}${text.replace(/\s+/g, " ").trim()}` };
+      const name = preview.user.username ? `@${preview.user.username}` : "";
+      const text = chatTextWithImages(preview.content, preview.attachments?.length ?? 0).replace(/\s+/g, " ").trim();
+      if (!isManagedBot(preview.user)) return { text: `${name ? `${name}: ` : ""}${text}` };
+      // A managed assistant's name carries the same AI badge as in the transcript.
+      const ink = rowState.selected ? colors.selectedText : colors.text;
+      // The badge stands where the colon would. The table gives the terminal its resolved width to clip
+      // to; the desktop clips the preview with CSS.
+      const latest = native ? ` ${text}` : truncateToDisplayWidth(` ${text}`, Math.max(0, column.width - displayWidth(name) - CHAT_AI_BADGE_WIDTH));
+      return {
+        text: `${name ? `${name} ` : ""}[AI]: ${text}`,
+        content: (
+          <Box flexDirection="row" height={1} width={native ? "100%" : column.width} overflow="hidden">
+            {name ? <Text fg={ink}>{name}</Text> : null}
+            <ChatAiBadge selectedColor={rowState.selected ? colors.selectedText : undefined} />
+            <Text
+              fg={ink}
+              style={native ? { flex: "1 1 0", minWidth: 0, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "pre" } : undefined}
+            >
+              {latest}
+            </Text>
+          </Box>
+        ),
+      };
     }
   }
 }
@@ -119,6 +148,7 @@ export function UnreadInboxPane({
   controller = chatController,
 }: UnreadInboxPaneProps) {
   const dispatch = useAppDispatch();
+  const { nativePaneChrome } = useUiCapabilities();
   const stateRef = useAppStateRef();
   const inboxInstanceId = useOptionalPaneInstanceId();
   const { createPaneFromTemplate, showPane } = usePluginAppActions();
@@ -224,7 +254,9 @@ export function UnreadInboxPane({
           }}
           selectedTextOverridesCellColor
           onActivate={openRow}
-          renderCell={(row, column) => (row.kind === "chat" ? chatCell(row.item, column, now) : noticeCell(row.notice, column, now))}
+          renderCell={(row, column, _index, rowState) => (row.kind === "chat"
+            ? chatCell(row.item, column, now, rowState, !!nativePaneChrome)
+            : noticeCell(row.notice, column, now))}
         />
       )}
     </Box>
