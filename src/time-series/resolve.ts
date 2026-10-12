@@ -77,9 +77,12 @@ import {
   resolveExchangeTimeZone,
 } from "../utils/exchanges";
 import { getPricePointTimestamp, isPriceHistoryStaleForCurrentWindow } from "../utils/price-history";
+import { timeZoneLabel, zonedDateKey, zonedWallClockMs } from "../utils/zoned-date-time";
+import { formatShortDate } from "../utils/datetime-format";
 import { latestSessionStart, latestTradingSessionOpen, listingTimeZone, priorSessionClose } from "../market-data/market/trading-sessions";
 import { futuresGenericCaption, futuresGenericListing, futuresGenericPriceBasis } from "../utils/futures-generic";
 import { isOhlcSeriesStyle } from "./spec";
+import { SERIES_COLORS } from "../theme/series-colors";
 import type {
   ChartResolutionResult,
   ChartSeriesSpec,
@@ -87,20 +90,6 @@ import type {
   ResolvedSeries,
   TimeSeriesPoint,
 } from "./types";
-
-/** Colours for series told apart by name (compared tickers, markets). */
-export const SERIES_COLORS = [
-  "#4dabf7",
-  "#63e6be",
-  "#f6c85f",
-  "#b197fc",
-  "#ff8787",
-  "#ffa94d",
-  "#74c0fc",
-  "#e599f7",
-  "#8ce99a",
-  "#ffd43b",
-] as const;
 
 export interface ChartResolveSources {
   dataProvider: DataProvider | null;
@@ -115,6 +104,11 @@ export interface ChartResolveSources {
   liveSince?: number;
   /** Capture the resolved inputs, including the calculation buffer, for an export. */
   onSecurityData?: (series: ChartSeriesSpec, data: TickerFinancials, includesHistory: boolean) => void;
+  /**
+   * How often, in milliseconds, a plugin-owned series is loaded again while
+   * it is charted; nothing for a series that keeps what it loaded.
+   */
+  capabilityRefreshMs?: (source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>) => number | undefined;
   /** Provider-neutral boundary for plugin-owned chart series. */
   resolveCapabilitySeries?: (
     source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>,
@@ -275,6 +269,24 @@ function instrumentKey(spec: Extract<ChartSeriesSpec["source"], { kind: "securit
 
 function instrumentLabel(spec: Extract<ChartSeriesSpec["source"], { kind: "security" }>): string {
   return publicTickerKey(spec.instrument.symbol, spec.instrument.exchange);
+}
+
+/**
+ * Shown while a current chart draws a saved copy that no refetch brought up
+ * to date: the last saved bar on the venue's clock, as the axis reads it.
+ */
+function behindHistoryNotice(
+  source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+  points: TickerFinancials["priceHistory"],
+  now: number,
+): string | null {
+  const latest = points.findLast((point) => Number.isFinite(point.close) && Number.isFinite(getPricePointTimestamp(point)));
+  if (!latest) return null;
+  const zone = listingTimeZone(source.instrument.symbol, source.instrument.exchange) ?? "UTC";
+  const wall = new Date(zonedWallClockMs(getPricePointTimestamp(latest), zone)).toISOString();
+  const sameYear = wall.slice(0, 4) === zonedDateKey(now, zone).slice(0, 4);
+  const day = formatShortDate(wall.slice(0, 10), { utc: true, year: sameYear ? false : "numeric" });
+  return `${instrumentLabel(source)}: newer bars are unavailable; showing saved bars as of ${day} ${wall.slice(11, 16)} ${timeZoneLabel(zone)}.`;
 }
 
 // A series that fails to load keeps its place with no observations. Dropping it
@@ -553,6 +565,25 @@ function followLatestMarketObservation(
     start: bounds.start === null ? null : bounds.start + shift,
     end: latest,
   };
+}
+
+/**
+ * A chart of capability series alone (CHOKE's vessel transits) ends at its
+ * newest observation, not today: such data is published days late, and an
+ * axis running on to today would read as days with nothing in them. The
+ * start stays where the range put it, so no empty span opens on the left.
+ */
+function endAtNewestObservation(bounds: DateBounds, series: readonly ResolvedSeries[]): DateBounds {
+  if (bounds.end === null) return bounds;
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const entry of series) {
+    for (const point of entry.points) {
+      const timestamp = point.date.getTime();
+      if (point.value !== null && Number.isFinite(timestamp) && timestamp > newest) newest = timestamp;
+    }
+  }
+  if (!Number.isFinite(newest) || newest >= bounds.end || (bounds.start !== null && newest <= bounds.start)) return bounds;
+  return { start: bounds.start, end: newest };
 }
 
 /**
@@ -1138,6 +1169,7 @@ function baseCapabilitySeries(
     axis: spec.axis === "right" ? "right" : spec.axis === "left" ? "left" : loaded.axis,
     panelId: spec.panelId,
     interpolation: spec.interpolation,
+    observationKind: loaded.observationKind ?? "dataset",
     points,
   };
 }
@@ -1641,33 +1673,63 @@ async function resolveChartSpecPass(
       return next;
     };
     pending ??= acquire();
-    let loaded = await pending;
+    let loaded: LoadedPriceHistory;
+    try {
+      loaded = await pending;
+    } catch (error) {
+      // Another series' refetch failed and put the saved copy back below.
+      const restored = cache.priceHistoryByRequest.get(key);
+      if (!restored || restored === pending) throw error;
+      pending = restored;
+      loaded = await pending;
+    }
     const now = () => referenceNow.getTime() + Math.max(0, Date.now() - resolutionStartedAt);
     const currentWindow = () => !request.explicitWindow
       || (request.bounds.end !== null && now() - (request.bounds.end + 1) < 60 * 60_000);
-    const staleCurrent = (value: LoadedPriceHistory) => currentWindow() && !!value.session
-      && isPriceHistoryStaleForCurrentWindow(value.points, now(), {
+    // A copy with a session record is judged here; any other says so itself,
+    // when the router answered it from a saved copy short of the latest session.
+    const staleCurrent = (value: LoadedPriceHistory) => currentWindow() && (value.savedCopyBehind === true
+      || (!!value.session && isPriceHistoryStaleForCurrentWindow(value.points, now(), {
         symbol: source.instrument.symbol, exchange: source.instrument.exchange, session: value.session,
         ...(value.resolution ? { intervalMs: CHART_RESOLUTION_STEP_MS[value.resolution] } : {}),
-      });
+      })));
+    // A copy behind the current session is fetched again at most every 30 s.
+    // Until a fetch answers a current one, the saved copy is drawn with a
+    // notice, as every other history path does, rather than an error.
+    let behind = false;
     if (staleCurrent(loaded)) {
+      const saved = pending;
+      const savedValue = loaded;
+      const latest = cache.priceHistoryByRequest.get(key);
+      let refresh: Promise<LoadedPriceHistory> | undefined;
       if (reused && (cache.priceHistoryRefreshAfter.get(key) ?? 0) <= Date.now()) {
         // Claim the refresh before awaiting it so price/volume/studies share one attempt.
         cache.priceHistoryRefreshAfter.set(key, Date.now() + 30_000);
-        if (cache.priceHistoryByRequest.get(key) === pending) pending = acquire();
-        else pending = cache.priceHistoryByRequest.get(key)!;
-        loaded = await pending;
-      } else if (cache.priceHistoryByRequest.get(key) !== pending) {
-        loaded = await cache.priceHistoryByRequest.get(key)!;
+        refresh = latest && latest !== pending ? latest : acquire();
+      } else if (latest && latest !== pending) {
+        refresh = latest;
       }
-      if (staleCurrent(loaded)) {
+      if (refresh) {
+        const attempt = refresh;
+        loaded = await attempt.catch(() => {
+          // A failed refetch leaves the saved copy in place until the next one is due.
+          if (cache.priceHistoryByRequest.get(key) === attempt) {
+            cache.priceHistoryByRequest.set(key, saved);
+            if (savedValue.expiresAt !== undefined) cache.priceHistoryExpiryByRequest.set(key, savedValue.expiresAt);
+            else cache.priceHistoryExpiryByRequest.delete(key);
+          }
+          return savedValue;
+        });
+      }
+      behind = staleCurrent(loaded);
+      if (behind) {
         const previousDeadline = cache.priceHistoryRefreshAfter.get(key) ?? 0;
-        const retryAt = previousDeadline > Date.now() ? previousDeadline : Date.now() + 30_000;
-        cache.priceHistoryRefreshAfter.set(key, retryAt);
-        throw new PriceHistoryAcquisitionError(`Current price history is unavailable for ${instrumentLabel(source)}.`, retryAt);
+        cache.priceHistoryRefreshAfter.set(key, previousDeadline > Date.now() ? previousDeadline : Date.now() + 30_000);
+        const notice = behindHistoryNotice(source, loaded.points, now());
+        if (notice) priorityWarnings.push(notice);
       }
     }
-    cache.priceHistoryRefreshAfter.delete(key);
+    if (!behind) cache.priceHistoryRefreshAfter.delete(key);
     const history = loaded.points;
     const coverageNotice = historyCoverageNotice(loaded.coverageStart, request.visibleBounds.start);
     if (coverageNotice) priorityWarnings.push(coverageNotice);
@@ -1926,9 +1988,12 @@ async function resolveChartSpecPass(
     ? latestSessionView(primaryRaw, rawSeries.filter((entry) => entry.observationKind === "market"),
       extendedHistories.has(primaryRaw?.id ?? ""), quoteReferences.get(primaryRaw?.id ?? ""))
     : null;
+  const capabilityOnly = spec.series.length > 0 && spec.series.every(({ source }) => source.kind === "capability");
   const bounds = hasExplicitWindow
     ? requestVisibleBounds
-    : sessionView?.bounds ?? followLatestMarketObservation(initialVisibleBounds, rawSeries);
+    : sessionView?.bounds ?? (capabilityOnly
+      ? endAtNewestObservation(initialVisibleBounds, rawSeries)
+      : followLatestMarketObservation(initialVisibleBounds, rawSeries));
   if (sessionView?.priorClose != null && primaryRaw?.transform === "raw"
     && primaryRaw.unitGroup.startsWith("price") && primaryRaw.unitGroup !== "price:unknown") {
     const index = rawSeries.indexOf(primaryRaw);
@@ -2146,8 +2211,9 @@ export function reconcileChartTail(
     const refreshed = mergePriceHistoryWindows(loaded.points, points, tail.resolution);
     if (samePricePoints(refreshed, loaded.points)) return false;
     const acquisition = priceHistoryTailAcquisition(loaded, result);
+    // The merged bars are as current as the newer acquisition says.
     cache.priceHistoryByRequest.set(key, Promise.resolve({ ...loaded, points: refreshed,
-      session: acquisition.session, sourceKey: acquisition.sourceKey }));
+      session: acquisition.session, sourceKey: acquisition.sourceKey, savedCopyBehind: acquisition.savedCopyBehind }));
     if (accumulated) {
       const accumulatedAcquisition = priceHistoryTailAcquisition(accumulated, result);
       cache.accumulatedPriceHistory.set(tail.accumulationKey, { ...accumulated,

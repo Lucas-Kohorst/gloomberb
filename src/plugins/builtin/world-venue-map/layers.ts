@@ -75,6 +75,33 @@ function capLayerSelection(ordered: readonly GeoLayerInfo[]): GeoLayerInfo[] {
   return kept;
 }
 
+/** Layers a plain map opens with: the server's default layers that can serve, two at most. */
+const MAX_DEFAULT_LAYERS = 2;
+
+function defaultLayerIds(layers: readonly GeoLayerInfo[] | null | undefined): string[] {
+  if (!layers?.length) return [];
+  const defaults = layers.filter((layer) => layer.defaultVisible && layer.status !== "unavailable");
+  return capLayerSelection(defaults.slice(0, MAX_DEFAULT_LAYERS)).map((layer) => layer.id);
+}
+
+/**
+ * A pane that never chose its layers or venues: a plain `MAP`, or a map
+ * saved before layers existed. It shows venues and the server's default
+ * layers. A preset or an edit in the layer picker writes both settings, and
+ * from then on the pane keeps exactly what was chosen.
+ */
+export function isPlainMap(settings: Record<string, unknown> | undefined): boolean {
+  return settings?.[LAYERS_SETTING_KEY] == null && typeof settings?.[VENUES_SETTING_KEY] !== "boolean";
+}
+
+/** The layer ids or groups a pane shows: what it chose, or the defaults on a plain map. */
+export function activeLayerTokens(
+  settings: Record<string, unknown> | undefined,
+  layers: readonly GeoLayerInfo[] | null | undefined,
+): string[] {
+  return isPlainMap(settings) ? defaultLayerIds(layers) : parseLayerTokens(settings?.[LAYERS_SETTING_KEY]);
+}
+
 /** Expands groups to their layers, drops what the server does not list, and applies the caps. */
 export function resolveActiveLayers(tokens: readonly string[], layers: readonly GeoLayerInfo[] | null | undefined): GeoLayerInfo[] {
   if (!layers?.length || !tokens.length) return [];
@@ -98,24 +125,58 @@ export interface MapPreset {
   venues: boolean;
 }
 
-/** `MAP ships` and friends: the typed words become layer tokens, resolved once the catalog is known. */
+/**
+ * `MAP ships` and friends: the typed words become layer tokens, resolved once
+ * the catalog is known. `MAP venues` alone is the venue map without layers.
+ */
 export function parseMapPreset(arg: string | null | undefined): MapPreset | null {
   const tokens = parseLayerTokens(arg ?? "");
-  if (!tokens.length) return null;
-  return { layers: tokens, venues: /\bvenues\b/i.test(arg ?? "") };
+  const venues = /\bvenues\b/i.test(arg ?? "");
+  if (!tokens.length) return venues ? { layers: [], venues: true } : null;
+  return { layers: tokens, venues };
 }
 
 export const MAP_PRESET_OPTIONS = [
+  { value: "venues", label: "Trading venues only" },
   { value: "ships", label: "Ships and chokepoints" },
   { value: "ports", label: "Ports" },
   { value: "energy", label: "Pipelines, fields and terminals" },
-  { value: "air", label: "Airports" },
+  { value: "air", label: "Airports and flights" },
 ] as const;
 
 function shortDate(iso: string): string | null {
   const time = Date.parse(iso);
   if (!Number.isFinite(time)) return null;
   return new Date(time).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/**
+ * Where a layer's features are, when not worldwide, by the catalog's layer id:
+ * the energy layers come from US federal maps. The catalog does not say where
+ * a layer covers, so a search that finds nothing there says why.
+ */
+const LAYER_COVERAGE: Readonly<Record<string, string>> = {
+  terminals: "the United States",
+  pipelines: "the United States",
+  "oil-gas-fields": "the lower 48 US states",
+};
+
+/**
+ * Why a layer can have nothing for a search or a view outside its region:
+ * "Terminals cover the United States only (as of 31 Aug 2023)." Null for a
+ * worldwide layer.
+ */
+export function layerCoverageNote(layer: Pick<GeoLayerInfo, "id" | "name" | "asOf" | "cadence">): string | null {
+  const region = LAYER_COVERAGE[layer.id];
+  if (!region) return null;
+  const asOf = layer.cadence === "static" && layer.asOf ? asOfDate(layer.asOf) : null;
+  return `${layer.name} cover ${region} only${asOf ? ` (as of ${asOf})` : ""}.`;
+}
+
+function asOfDate(iso: string): string | null {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return null;
+  return new Date(time).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /** Status and cadence in plain words, for the layer picker. */
@@ -152,8 +213,8 @@ function groupsOf(layers: readonly GeoLayerInfo[]): string[] {
 export function readVenuesSetting(settings: Record<string, unknown> | undefined, activeLayers: number): boolean {
   const value = settings?.[VENUES_SETTING_KEY];
   if (typeof value === "boolean") return value;
-  // A preset opens on its layers; a plain MAP stays the venue map.
-  return activeLayers === 0;
+  // A plain MAP shows venues under its default layers; a preset opens on its layers alone.
+  return settings?.[LAYERS_SETTING_KEY] == null || activeLayers === 0;
 }
 
 /**
@@ -166,7 +227,7 @@ export function buildMapSettingsDef(
   layers: readonly GeoLayerInfo[] | null | undefined,
 ): PaneSettingsDef | undefined {
   if (!layers?.length) return undefined;
-  const active = resolveActiveLayers(parseLayerTokens(settings[LAYERS_SETTING_KEY]), layers);
+  const active = resolveActiveLayers(activeLayerTokens(settings, layers), layers);
   const values: Record<string, unknown> = { [VENUES_SETTING_KEY]: readVenuesSetting(settings, active.length) };
   const fields: PaneSettingField[] = [{
     key: VENUES_SETTING_KEY,
@@ -199,12 +260,16 @@ export function applyMapSetting(
   value: unknown,
   layers: readonly GeoLayerInfo[],
 ): Record<string, unknown> {
-  if (key === VENUES_SETTING_KEY) return { ...settings, [VENUES_SETTING_KEY]: value === true };
-  if (!key.startsWith(GROUP_PREFIX)) return { ...settings, [key]: value };
+  const before = resolveActiveLayers(activeLayerTokens(settings, layers), layers);
+  // The first edit of a plain map writes down what it showed, so only the edited part changes.
+  const chosen = isPlainMap(settings)
+    ? { ...settings, [LAYERS_SETTING_KEY]: before.map((layer) => layer.id), [VENUES_SETTING_KEY]: readVenuesSetting(settings, before.length) }
+    : settings;
+  if (key === VENUES_SETTING_KEY) return { ...chosen, [VENUES_SETTING_KEY]: value === true };
+  if (!key.startsWith(GROUP_PREFIX)) return { ...chosen, [key]: value };
   const group = key.slice(GROUP_PREFIX.length);
   const members = new Set(layers.filter((layer) => String(layer.group || "other") === group).map((layer) => layer.id));
   const picked = Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && members.has(entry)) : [];
-  const before = resolveActiveLayers(parseLayerTokens(settings[LAYERS_SETTING_KEY]), layers);
   // Other groups keep their order; this group's picks follow, newest last, so the caps drop the oldest.
   const kept = before.filter((layer) => !members.has(layer.id) || picked.includes(layer.id));
   const added = picked.filter((id) => !kept.some((layer) => layer.id === id))
@@ -251,6 +316,28 @@ export function geoViewForViewport(
     ],
     zoom: Number(geoZoomLevel(viewport).toFixed(1)),
   };
+}
+
+/**
+ * Zoom an opened entity is shown at: 16 times the world (the server's zoom 4,
+ * where dense point layers stop clustering) for a ship or a port, wider for a
+ * pipeline or a field, and never short of the zoom its layer draws from
+ * (flights from the server's zoom 5, 32 times the world).
+ */
+export function entityOpenZoom(layer: Pick<GeoLayerInfo, "geometry" | "minZoom">): number {
+  const base = layer.geometry === "point" ? 16 : 4;
+  return layer.minZoom === undefined ? base : Math.max(base, 2 ** layer.minZoom);
+}
+
+/**
+ * The area a layer's table reads. A layer drawn only from a zoom (live
+ * flights) lists what the map shows once it is that close; further out, and
+ * for every other layer, the table asks without one and the server answers
+ * for the whole layer or, for flights, one busy area.
+ */
+export function entityTableBbox(layer: Pick<GeoLayerInfo, "minZoom">, view: GeoView): GeoBbox | undefined {
+  if (layer.minZoom === undefined || view.zoom < layer.minZoom) return undefined;
+  return view.bbox;
 }
 
 export function geoViewKey(view: GeoView): string {

@@ -8,9 +8,13 @@ import { type ChartToolSpan, CHART_DRAWING_COLORS, isDrawingTool, type ChartDraw
 import { ChartDrawingStore, NO_DRAWINGS } from "./drawing-store";
 import { CompositeLegend } from "./legend";
 import { ChartToolbar, CHART_TOOLBAR_WIDTH } from "./toolbar";
-import { AsciiText, Box, ChartSurface, Text, useUiCapabilities } from "../../../ui";
+import { AsciiText, Box, ChartSurface, Text, useUiCapabilities, type BoxRenderable } from "../../../ui";
+import { useLiveStretch } from "../../../ui/live-stretch";
+import { PANE_FILL } from "../../../ui/pane-fill";
 import { useOptionalPaneInstanceId } from "../../../state/app/context";
-import { useThemeColors } from "../../../theme/theme-context";
+import { useThemeColors, useThemeId } from "../../../theme/theme-context";
+import { themedSeriesColor, themeSeriesColors } from "../../../theme/series-colors";
+import { assignSeriesLineCues } from "./series-cues";
 import { chartSurfaceBackground, usePaneSurface } from "../../layout/pane/surface";
 import { CHART_WATERMARK_ROLE } from "../../../utils/screenshot-watermark";
 import type { ResolvedSeries } from "../../../time-series/types";
@@ -56,7 +60,38 @@ function chartWatermarkScale(plotWidthPx: number, plotHeightPx: number): number 
 }
 
 const NO_X_MARKERS: readonly CompositeChartXMarker[] = [];
-export function CompositeChart({
+
+/**
+ * Desktop: the rows below the plot span the chart's box and their labels the
+ * width the gutters leave, so when a resize draws the box at a new size
+ * between renders (`useLiveStretch`), or the chart is its pane's root and CSS
+ * sizes it to the pane (`PANE_FILL`), they follow it by CSS. Otherwise they
+ * are the size the cells give them.
+ */
+const DESKTOP_FULL_ROW = { width: "100%" } as const;
+const DESKTOP_PLOT_COLUMN = { flex: "1 1 0px", width: "auto", minWidth: 0 } as const;
+
+/** Default-palette series in the theme's own palette, where it has one; the same list otherwise. */
+function useThemedSeriesList(list: ResolvedSeries[], themeId: string): ResolvedSeries[];
+function useThemedSeriesList(list: ResolvedSeries[] | undefined, themeId: string): ResolvedSeries[] | undefined;
+function useThemedSeriesList(list: ResolvedSeries[] | undefined, themeId: string): ResolvedSeries[] | undefined {
+  return useMemo(() => {
+    if (!list || !themeSeriesColors(themeId)) return list;
+    return list.map((entry) => {
+      const color = themedSeriesColor(entry.color, themeId);
+      return color === entry.color ? entry : { ...entry, color };
+    });
+  }, [list, themeId]);
+}
+
+export function CompositeChart(props: CompositeChartProps) {
+  const themeId = useThemeId();
+  const series = useThemedSeriesList(props.series, themeId);
+  const legendSeries = useThemedSeriesList(props.legendSeries, themeId);
+  return <ThemedCompositeChart {...props} series={series} legendSeries={legendSeries} />;
+}
+
+function ThemedCompositeChart({
   series,
   legendSeries,
   timelineSeries,
@@ -155,6 +190,17 @@ export function CompositeChart({
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
   );
+  // Assigned over the legend's list, hidden lines included, so toggling one
+  // never restyles the rest.
+  const cueSource = legendSeries ?? stableSeries;
+  const cueKey = cueSource.map((entry) => `${entry.id}\u0000${entry.style}\u0000${entry.profile ? 1 : 0}`).join("\u0001");
+  const cueSourceRef = useRef(cueSource);
+  cueSourceRef.current = cueSource;
+  // Keyed by ids and styles: a live tick hands over new series objects.
+  const lineCues = useMemo(() => {
+    void cueKey;
+    return assignSeriesLineCues(cueSourceRef.current);
+  }, [cueKey]);
   const {
     navigationFrame, activeUserViewport, effectiveViewport,
     panViewport, panViewportByRatio, zoomViewport, setViewportRange, resetViewport,
@@ -239,8 +285,11 @@ export function CompositeChart({
       plotHeight,
     );
     // Terminal labels snap to rows; a fractional viewport places them exactly.
-    return projectedScene.panels.map((panel) => resizeCompositePanel(panel, panelHeights.get(panel.id) ?? 1, !fractionalViewport));
-  }, [fractionalViewport, panels, plotHeight, projectedScene]);
+    return projectedScene.panels.map((panel) => {
+      const resized = resizeCompositePanel(panel, panelHeights.get(panel.id) ?? 1, !fractionalViewport);
+      return lineCues.size > 0 ? { ...resized, lineCues } : resized;
+    });
+  }, [fractionalViewport, lineCues, panels, plotHeight, projectedScene]);
   // Static overview charts also pin the latest price with cursor precision.
   const includeCursorLabels = interactive || cursorDate !== undefined || !!scenePanels?.some((panel) => panel.lastPrice);
   const resolvedAxisWidth = useMemo(() => maximumAxisWidth === 0 ? 0 : Math.min(
@@ -379,14 +428,27 @@ export function CompositeChart({
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
 
+  // While a resize has the pane ahead of this size, the chart's box takes
+  // the size it will render at, the plot takes what the gutters leave, and
+  // its bitmap stretches with it until the chart renders at that size. As a
+  // pane's root (PANE_FILL) the box is the pane's by CSS instead.
+  const rootRef = useRef<BoxRenderable | null>(null);
+  useLiveStretch(rootRef, totalWidth, totalHeight);
+  // Overlays over the plot keep the gutters around it rather than its size.
+  const plotInsetStyle = isDesktopWeb
+    ? { width: "auto", height: "auto", right: `calc(${rightPadding} * var(--cell-w))`, bottom: `calc(${timeAxisRows + xMarkerRows} * var(--cell-h))` }
+    : undefined;
+
   if (!scene) {
     const emptyPlotHeight = Math.max(0, totalHeight - legendRows - timeAxisRows - xMarkerRows);
     return (
       <Box
+        ref={rootRef}
         flexDirection="column"
         width={totalWidth}
         height={totalHeight}
         overflow="hidden"
+        {...PANE_FILL}
         data-gloom-role="composite-chart"
       >
         {legendRows > 0 && legendAccessory ? (
@@ -406,11 +468,17 @@ export function CompositeChart({
           />
         ) : null}
         {emptyPlotHeight > 0 ? (
-          <Box flexDirection="row" width={totalWidth} height={emptyPlotHeight}>
+          <Box
+            flexDirection="row"
+            width={totalWidth}
+            height={emptyPlotHeight}
+            style={isDesktopWeb ? { width: "100%", flex: "1 1 0px", height: "auto", minHeight: 0 } : undefined}
+          >
             {leftPadding > 0 ? <Box width={leftPadding} /> : null}
             <ChartSurface
               width={plotWidth}
               height={emptyPlotHeight}
+              style={isDesktopWeb ? { ...DESKTOP_PLOT_COLUMN, height: "auto", alignSelf: "stretch" } : undefined}
               alignItems="center"
               justifyContent="center"
               onMouseScroll={interactive && navigable && navigationFrame ? handleEmptyMouseScroll : undefined}
@@ -425,7 +493,7 @@ export function CompositeChart({
           </Box>
         ) : null}
         {emptyTimeAxisLayout ? (
-          <Box flexDirection="row" width={totalWidth} height={1}>
+          <Box flexDirection="row" width={totalWidth} height={1} style={isDesktopWeb ? DESKTOP_FULL_ROW : undefined}>
             {leftPadding > 0 ? <Box width={leftPadding} /> : null}
             <StaticXAxisLabels
               labels={[emptyTimeAxisLayout.text]}
@@ -466,12 +534,14 @@ export function CompositeChart({
     : undefined;
   return (
     <Box
+      ref={rootRef}
       flexDirection="column"
       width={totalWidth}
       height={totalHeight}
       overflow="hidden"
       // The tool overlay anchors here; without it the desktop pins it to the page.
       position="relative"
+      {...PANE_FILL}
       data-gloom-role="composite-chart"
     >
       {showLegend ? (
@@ -479,6 +549,8 @@ export function CompositeChart({
           scene={scene}
           series={visibleLegendSeries}
           visibleSeriesIds={visibleSeriesIds}
+          lineCues={lineCues}
+          cellPlot={showTextFallback && !isDesktopWeb}
           width={totalWidth}
           accessory={legendAccessory}
           accessoryWidth={legendAccessoryWidth}
@@ -566,6 +638,7 @@ export function CompositeChart({
           zIndex={5}
           alignItems="center"
           justifyContent="center"
+          style={plotInsetStyle}
           data-gloom-role={CHART_WATERMARK_ROLE}
         >
           <AsciiText text="Gloomberb" font="wordmark" scale={watermarkScale} color={resolvedColors.textDim} />
@@ -579,7 +652,7 @@ export function CompositeChart({
           width={plotWidth}
           height={plotHeight}
           zIndex={12}
-          style={isDesktopWeb ? { pointerEvents: "none" } : undefined}
+          style={isDesktopWeb ? { ...plotInsetStyle, pointerEvents: "none" } : undefined}
         >
           <StaticXMarkerOverlay
             markers={xMarkers}
@@ -590,7 +663,7 @@ export function CompositeChart({
         </Box>
       ) : null}
       {timeAxisLayout ? (
-        <Box flexDirection="row" width={totalWidth} height={1}>
+        <Box flexDirection="row" width={totalWidth} height={1} style={isDesktopWeb ? DESKTOP_FULL_ROW : undefined}>
           {leftPadding > 0 ? <Box width={leftPadding} /> : null}
           <StaticXAxisLabels
             labels={xAxis?.ticks ? [] : xAxis?.labels ? [...xAxis.labels] : [timeAxisLayout.text]}
@@ -608,7 +681,7 @@ export function CompositeChart({
         </Box>
       ) : null}
       {xMarkerRows > 0 ? (
-        <Box flexDirection="row" width={totalWidth} height={1}>
+        <Box flexDirection="row" width={totalWidth} height={1} style={isDesktopWeb ? DESKTOP_FULL_ROW : undefined}>
           {leftPadding > 0 ? <Box width={leftPadding} /> : null}
           <StaticXMarkerLabels
             markers={xMarkers}

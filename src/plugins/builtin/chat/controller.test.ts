@@ -1053,6 +1053,37 @@ describe("ChatController", () => {
     expect(calls[1]?.opts?.after).toBe("m2");
   });
 
+  test("a page read before the session was restored is read again as the account, with its own reactions", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = createController();
+    const page = (me: boolean) => [chatMessage({
+      id: "m1",
+      content: "rates",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+      reactions: [{ emoji: "👍", count: 1, me, users: [] }],
+    })];
+    const calls: Array<string | undefined> = [];
+    let signedIn = false;
+    apiClient.getMessages = async (_channelId, opts) => {
+      calls.push(opts?.after);
+      return opts?.after ? [] : page(signedIn);
+    };
+
+    // The pane mounted and read the channel before the plugin restored the session.
+    await controller.refreshMessages();
+    expect(controller.getSnapshot().messages[0]?.reactions?.[0]?.me).toBe(false);
+
+    persistSession(persistence, { emailVerified: true });
+    controller.attachPersistence(persistence);
+    signedIn = true;
+    await controller.refreshMessages();
+    await controller.refreshMessages();
+
+    expect(calls).toEqual([undefined, undefined, "m1"]);
+    expect(controller.getSnapshot().messages[0]?.reactions?.[0]?.me).toBe(true);
+  });
+
   test("shows a pending message immediately and replaces it when the send succeeds", async () => {
     const persistence = new MemoryPersistence();
     const controller = createController();
@@ -1212,6 +1243,36 @@ describe("ChatController", () => {
 
     expect(controller.getSnapshot().messages[0]?.content).toBe("old typo");
     expect(notifications).toEqual([{ body: "Messages can only be edited within 15 minutes.", type: "error" }]);
+  });
+
+  test("refuses to edit a message written on Discord without asking the server", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = createController();
+    const notifications: AppNotificationRequest[] = [];
+    const original: ChatMessage = chatMessage({
+      id: "m1",
+      content: "from the other side",
+      createdAt: recentChatTimestamp(),
+      origin: "discord",
+    });
+
+    persistSession(persistence, { emailVerified: true });
+    persistence.setResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, {
+      messages: [original],
+    }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+    controller.setNotifier((notification) => { notifications.push(notification); });
+    controller.attachPersistence(persistence);
+    apiClient.editMessage = async () => {
+      throw new Error("should not call server");
+    };
+
+    await expect(controller.editChannelMessage("everyone", "m1", "edited")).resolves.toBe(false);
+
+    expect(notifications).toEqual([{ body: "This message was sent on Discord. Edit it there.", type: "error" }]);
   });
 
   test("refuses to edit an older message from the current user", async () => {

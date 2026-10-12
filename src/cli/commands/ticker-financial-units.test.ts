@@ -66,6 +66,92 @@ test("enterprise value is shown in the market cap's currency, converted or label
     .toContain("Enterprise Value 3.85T USD");
 });
 
+test("a zero enterprise value is a gap, not a value, while a negative one is kept", async () => {
+  const withEnterpriseValue = (enterpriseValue: number): TickerFinancials => ({ quote, annualStatements: [], quarterlyStatements: [], priceHistory: [],
+    fundamentals: { marketCap: 100e9, marketCapCurrency: "USD", enterpriseValue, revenue: 50e9, financialCurrency: "USD" },
+  });
+  const valuation = (financials: TickerFinancials) => renderFundamentalsReport({ ...financials, symbol: "UNITTEST" }, "valuation")
+    .replace(/\u001b\[[0-9;]*m/g, "").replace(/ {2,}/g, " ");
+  for (const enterpriseValue of [0, Number.NaN]) {
+    const financials = withEnterpriseValue(enterpriseValue);
+    expect(await report(financials)).not.toContain("Enterprise Value");
+    expect(valuation(financials)).not.toContain("Enterprise Value");
+    expect(valuation(financials)).toContain("Market Cap 100B USD");
+  }
+  expect(await report(withEnterpriseValue(-5e9))).toContain("Enterprise Value -5B USD");
+  expect(valuation(withEnterpriseValue(-5e9))).toContain("Enterprise Value -5B USD");
+});
+
+test("trailing figures use the fundamentals' currency, then the statements' reporting currency, never the quote's", async () => {
+  const fundamentals = { eps: 31.43, revenue: 202.08e9, netIncome: 46.98e9, operatingCashFlow: 42.43e9, freeCashFlow: 36.96e9 };
+  const reportedIn = (financialCurrency: string | undefined, fundamentalsCurrency?: string): TickerFinancials => ({
+    quote: { ...quote, currency: "GBP" }, annualStatements: [], quarterlyStatements: [], priceHistory: [],
+    fundamentals: { ...fundamentals, financialCurrency: fundamentalsCurrency }, financialCurrency,
+  });
+  // Intl joins a currency code to its amount with a no-break space.
+  const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, "").replace(/\u00a0/g, " ").replace(/ {2,}/g, " ");
+  const fromStatements = plain(await report(reportedIn("ZAR")));
+  expect(fromStatements).toContain("EPS (TTM) ZAR 31.43");
+  expect(fromStatements).toContain("Revenue (TTM) 202.08B ZAR");
+  expect(fromStatements).toContain("Net Income (TTM) 46.98B ZAR");
+  expect(fromStatements).toContain("Operating Cash Flow (TTM) 42.43B ZAR");
+  expect(fromStatements).toContain("Free Cash Flow (TTM) 36.96B ZAR");
+  expect(fromStatements).not.toContain("(ccy?)");
+  expect(plain(renderFundamentalsReport({ ...reportedIn("ZAR"), symbol: "UNITTEST" }, "valuation"))).toContain("EPS (TTM) ZAR 31.43");
+  expect(plain(await report(reportedIn("ZAR", "USD")))).toContain("Revenue (TTM) 202.08B USD");
+  // Nothing declares a currency: the GBP quote must not stand in for it.
+  expect(plain(await report(reportedIn(undefined)))).toContain("Revenue (TTM) 202.08B (ccy?)");
+});
+
+test("a converted TTM block prints in its own currency with what it was converted from, beside statements in theirs", async () => {
+  // SAN on NYSE: EUR statements, a TTM block converted to USD.
+  const santander = (fundamentals: NonNullable<TickerFinancials["fundamentals"]>): TickerFinancials => ({
+    quote: { ...quote, price: 13.49 }, financialCurrency: "EUR", priceHistory: [], quarterlyStatements: [],
+    annualStatements: [{ date: "2025-12-31", currency: "EUR", totalRevenue: 60.02e9, netIncome: 14.1e9 }],
+    fundamentals: { trailingPE: 13.097, eps: 1.03, revenue: 54.63e9, netIncome: 14.52e9, operatingCashFlow: -41.31e9, ...fundamentals },
+  });
+  const converted = { financialCurrency: "USD", ttmConversion: { from: "EUR", rate: 1.12571, asOf: "2026-10-09", eps: "report_date" as const } };
+  const conversionNote = "TTM converted from EUR (1 EUR = 1.1257 USD, 2026-10-09); EPS at report-date rates.";
+  const priceEarningsNote = "P/E (TTM): spot price over EPS at report-date rates.";
+  const text = await report(santander(converted));
+  for (const line of ["EPS (TTM) $1.03", "Revenue (TTM) 54.63B USD", "Net Income (TTM) 14.52B USD", "Operating Cash Flow (TTM) -41.31B USD",
+    conversionNote, priceEarningsNote, "Revenue 60.02B EUR", "Net Income 14.1B EUR"]) expect(text).toContain(line);
+  const valuation = renderFundamentalsReport({ ...santander(converted), symbol: "SAN" }, "valuation").replace(/\u001b\[[0-9;]*m/g, "");
+  expect(valuation).toContain(conversionNote);
+  expect(valuation).toContain(priceEarningsNote);
+  // A loss leaves no P/E to explain; a block in the reporting currency has nothing to say.
+  const loss = await report(santander({ ...converted, eps: -0.5 }));
+  expect(loss).toContain(conversionNote);
+  expect(loss).not.toContain(priceEarningsNote);
+  const madrid = await report(santander({ financialCurrency: "EUR", eps: 0.88 }));
+  expect(madrid).toContain("EPS (TTM) €0.88");
+  expect(madrid).not.toContain("converted");
+});
+
+test("an EPS in another currency than the TTM amounts, and a P/E converting its EPS, say so", async () => {
+  // CCU on NYSE as served on 2026-10-11: CLP amounts, EPS in USD at report-date rates.
+  const ccu: TickerFinancials = { quote: { ...quote, price: 10.91 }, financialCurrency: "CLP", priceHistory: [], quarterlyStatements: [],
+    annualStatements: [{ date: "2025-12-31", currency: "CLP", totalRevenue: 2.91e12, netIncome: 117.15e9, eps: 634.1 }],
+    fundamentals: { trailingPE: 17.885, eps: 0.61, revenue: 2.91e12, netIncome: 117.15e9, financialCurrency: "CLP", epsCurrency: "USD" },
+  };
+  const text = await report(ccu);
+  for (const line of ["EPS (TTM) $0.61", "Revenue (TTM) 2.91T CLP", "Net Income (TTM) 117.15B CLP",
+    "EPS (TTM) in USD, converted from CLP at report-date rates.", "P/E (TTM): spot price over EPS at report-date rates."]) expect(text).toContain(line);
+  // LIN on XETRA: USD figures, EPS included, and a EUR P/E on that EPS at the current rate.
+  const lin: TickerFinancials = { quote: { ...quote, price: 432.4, currency: "EUR" }, financialCurrency: "USD", priceHistory: [],
+    annualStatements: [], quarterlyStatements: [],
+    fundamentals: { trailingPE: 33.165, eps: 14.61, revenue: 33.99e9, netIncome: 6.9e9, financialCurrency: "USD",
+      trailingPEConversion: { from: "USD", rate: 0.8924 } },
+  };
+  const xetra = await report(lin);
+  for (const line of ["P/E (TTM) 33.17", "EPS (TTM) $14.61", "Revenue (TTM) 33.99B USD", "P/E (TTM): price over EPS converted at 1 USD = 0.8924 EUR."]) {
+    expect(xetra).toContain(line);
+  }
+  expect(xetra).not.toContain("report-date");
+  const valuation = renderFundamentalsReport({ ...lin, symbol: "LIN" }, "valuation").replace(/\u001b\[[0-9;]*m/g, "");
+  expect(valuation).toContain("P/E (TTM): price over EPS converted at 1 USD = 0.8924 EUR.");
+});
+
 test("a pence-quoted range shares one decimal count, other ranges are unchanged", async () => {
   const pence = { ...quote, currency: "GBP", instrumentType: "EQUITY", providerPriceDivisor: 100, price: 35.32, low: 35.1, high: 35.4871, low52w: 25.5377, high52w: 37.585 };
   const london = await report({ quote: pence, annualStatements: [], quarterlyStatements: [], priceHistory: [] });
@@ -75,4 +161,43 @@ test("a pence-quoted range shares one decimal count, other ranges are unchanged"
   expect(yen).toContain("Day Range ¥2,950 - ¥3,012");
   const dollars = await report({ quote: { ...quote, instrumentType: "EQUITY", low: 99.5, high: 101.25 }, annualStatements: [], quarterlyStatements: [], priceHistory: [] });
   expect(dollars).toContain("Day Range $99.50 - $101.25");
+});
+
+test("share counts say ADR equivalent where the service puts them on the receipts, and the profile decides only without it", async () => {
+  const profile = { description: "BHP Group Ltd. Sponsored ADR is an American depositary receipt representing two ordinary shares of BHP Group Limited." };
+  const statements = (shareBasis: "depositary_receipt" | "ordinary" | undefined, dilutedShares: number) => ({
+    annualStatements: [{ date: "2026-06-30", currency: "USD", ...(shareBasis ? { shareBasis } : {}), dilutedShares }], quarterlyStatements: [], priceHistory: [],
+  });
+  const nyse = await report({ quote: { ...quote, isDepositaryReceipt: true, adrRatio: 2 }, profile, ...statements("depositary_receipt", 2_544_500_000),
+    fundamentals: { sharesOutstanding: 2_540_081_549, isDepositaryReceipt: true, adrRatio: 2, shareBasis: "depositary_receipt", underlyingOrdinaryShares: 5_080_163_098 },
+  });
+  expect(nyse).toContain("Shares Outstanding 2.54B (ADR equivalent = 5.08B ordinary shares)");
+  expect(nyse).toContain("Diluted Shares 2.54B (ADR equivalent)");
+  // The London line shares the profile but is the ordinary line.
+  const london = await report({ quote: { ...quote, currency: "GBP", isDepositaryReceipt: false }, profile, ...statements("ordinary", 5_089_000_000),
+    fundamentals: { sharesOutstanding: 5_080_163_098, isDepositaryReceipt: false, shareBasis: "ordinary" },
+  });
+  expect(london).toContain("Shares Outstanding 5.08B\n");
+  expect(london).toContain("Diluted Shares 5.09B");
+  expect(london).not.toContain("ADR equivalent");
+  // An older service: the profile marks the count, and a statement row with no basis is not relabelled.
+  const older = await report({ quote, profile, ...statements(undefined, 2_544_500_000), fundamentals: { sharesOutstanding: 5_080_163_098 } });
+  expect(older).toContain("Shares Outstanding 5.08B (ADR equivalent)\n");
+  expect(older).toContain("Diluted Shares 2.54B\n");
+});
+
+test("a fund's report says its fund facts are not available yet and where its SEC filings are; a stock's says nothing", async () => {
+  const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, "").replace(/ {2,}/g, " ");
+  const note = "Fund facts (fee, NAV, premium) are not available yet; try fn SEC IBIT.";
+  const ibit: TickerFinancials = { quote: { ...quote, symbol: "IBIT", instrumentType: "ETF", exchangeName: "NASDAQ" },
+    annualStatements: [], quarterlyStatements: [], priceHistory: [] };
+  expect(plain(renderFundamentalsReport({ ...ibit, symbol: "IBIT", exchange: "NASDAQ" }, "fundamentals")))
+    .toContain(`No fundamentals reported for IBIT. ${note}`);
+  expect(plain(await buildTickerReport({ symbol: "IBIT", tickerFile: null, financials: ibit, config, toBase: async value => value })))
+    .toContain(note);
+  // A fund listed outside the US has no SEC filings to point at.
+  const london: TickerFinancials = { ...ibit, quote: { ...ibit.quote!, symbol: "VUSA", exchangeName: "LSE" } };
+  expect(plain(renderFundamentalsReport({ ...london, symbol: "VUSA", exchange: "LSE" }, "fundamentals")))
+    .toContain("No fundamentals reported for VUSA. Fund facts (fee, NAV, premium) are not available yet.");
+  expect(await report({ quote, annualStatements: [], quarterlyStatements: [], priceHistory: [] })).not.toContain("Fund facts");
 });

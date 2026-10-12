@@ -45,6 +45,10 @@ export interface PluginHostActions {
   openWindowMode(paneId?: string, mode?: WindowEditMode): void;
   /** The shell's fullscreen toggle for a pane; false when there is nothing to fill the window with. */
   togglePaneFullscreen(paneId: string): boolean;
+  /** The shell's Move to New Layout for a pane; false when it did nothing. Not on the plugin API. */
+  movePaneToNewLayout(paneId: string): boolean;
+  /** Returns a pane Move to New Layout moved to where it came from; false when it did nothing. Not on the plugin API. */
+  movePaneBack(paneId: string): boolean;
   showPane(paneId: string): void;
   createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   createPaneFromTemplateAsync(templateId: string, options?: PaneTemplateCreateOptions): Promise<void>;
@@ -62,6 +66,14 @@ export interface PluginHostActions {
   watchNewsQuery(query: NewsQuery, listener: (state: NewsQueryState) => void): () => void;
 
   notify(notification: AppNotificationRequest): AppNotificationDelivery | void;
+  /** Switches a plugin on or off the way the Plugins pane does. Not on the plugin API. */
+  setPluginEnabled(pluginId: string, enabled: boolean): void;
+  /**
+   * Switches several plugins on or off as one change: one config write and
+   * one save. A switched-off plugin's panes are hidden, never removed, so
+   * switching it back on shows them where they were. Not on the plugin API.
+   */
+  setPluginsEnabled(changes: Readonly<Record<string, boolean>>): void;
   getPaneRuntimeState(paneId: string): PaneRuntimeState | null;
   updatePaneRuntimeState(paneId: string, patch: Partial<PaneRuntimeState>): void;
   applyPaneSettingValue(paneId: string, field: PaneSettingField, value: unknown): Promise<void>;
@@ -95,6 +107,8 @@ export function createDefaultHostActions(current?: () => Pick<PluginHostActions,
     sharePane: () => {},
     openWindowMode: () => {},
     togglePaneFullscreen: () => false,
+    movePaneToNewLayout: () => false,
+    movePaneBack: () => false,
     showPane: () => {},
     createPaneFromTemplate: () => {},
     createPaneFromTemplateAsync: async () => {},
@@ -109,6 +123,8 @@ export function createDefaultHostActions(current?: () => Pick<PluginHostActions,
     registerNewsCapability: () => () => {},
     watchNewsQuery: () => () => {},
     notify: () => {},
+    setPluginEnabled: () => {},
+    setPluginsEnabled: () => {},
     getPaneRuntimeState: () => null,
     updatePaneRuntimeState: () => {},
     applyPaneSettingValue: async () => {},

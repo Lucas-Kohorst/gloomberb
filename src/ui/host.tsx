@@ -108,6 +108,19 @@ export interface SyntaxStyleLike {
   }): number;
 }
 
+/** Where a drag has a box this frame, in cells. */
+export interface LiveBoxFrame {
+  /** Offset from where the box is laid out, carried on the box's own layer. */
+  dx?: number;
+  dy?: number;
+  /** Position in place of the laid-out one (left and top in its parent): laid out again, with no layer of its own. */
+  x?: number;
+  y?: number;
+  /** Size in place of the laid-out one: the box and what stretches inside it lay out again, nothing renders. */
+  width?: number;
+  height?: number;
+}
+
 export interface BoxRenderable {
   x?: number;
   y?: number;
@@ -117,6 +130,24 @@ export interface BoxRenderable {
   absoluteY?: number;
   absoluteBounds?: { x: number; y: number; width: number; height: number };
   getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
+  /**
+   * Desktop only: draws the box at `frame` by restyling its own element, with
+   * no render, until it is called with null. The offset rides the compositor,
+   * so it costs no layout or repaint; a size lays out the box's own subtree.
+   */
+  setLiveFrame?: (frame: LiveBoxFrame | null) => void;
+  /**
+   * Desktop only: calls `listener` with the box's size in cells each time the
+   * browser lays it out at a new one (a ResizeObserver, after layout and
+   * before paint). Returns the unsubscribe.
+   */
+  observeSize?: (listener: (size: { width: number; height: number }) => void) => () => void;
+  /**
+   * Desktop only: whether CSS sizes this box to its pane's whole content box
+   * (`PANE_FILL` on a pane's root, ui/pane-fill.ts), so it follows every
+   * frame of a resize on its own.
+   */
+  fillsPane?: () => boolean;
   [key: string]: unknown;
 }
 
@@ -560,6 +591,9 @@ export interface UiHost {
   ListView?: ComponentType<any>;
   SegmentedControl?: ComponentType<any>;
   DialogFrame?: ComponentType<any>;
+  /** Props are `DialogActionsProps` / `DialogHintsProps` from components/ui/dialog-actions. */
+  DialogActions?: ComponentType<any>;
+  DialogHints?: ComponentType<any>;
   PageStackView?: ComponentType<any>;
   Tabs?: ComponentType<HostTabsProps>;
   Checkbox?: ComponentType<HostCheckboxProps>;

@@ -4,10 +4,19 @@ import { hasLikelyQuoteUnitMismatch } from "../../utils/currency-units";
 import { coalesceFinancialPeriodAliases, mergeFinancialStatementRows } from "../../utils/financial-statements";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../../utils/price-history";
 import { redactUnavailableFundamentals, RETRACTABLE_VALUATION_FIELDS } from "../../utils/fundamentals";
-import { isExtendedHoursExchange, isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
+import { hasValidQuoteObservationTime, isExtendedHoursExchange, isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
 import { mergeQuoteMetadata, quoteMetadataFromQuote, quoteMetadataMatchesTarget } from "../../market-data/quotes/metadata";
-import { parsePublicTickerKey } from "../../utils/exchanges";
-import { activeUsMarketSession, isUsPriorSessionPremarketQuote } from "../../market-data/market/freshness";
+import { canonicalExchange, parsePublicTickerKey } from "../../utils/exchanges";
+import {
+  activeUsMarketSession,
+  delayedFeedLagMs,
+  isMiddayBreakPrint,
+  isRegularSessionTime,
+  isUsExtendedHoursSessionPrint,
+  isUsPriorSessionPremarketQuote,
+  isUsRegularCloseQuoteInPostSession,
+  latestRegularSessionOpen,
+} from "../../market-data/market/freshness";
 import {
   mergeQuoteContributionMaps,
   isQuoteContributionStaleForCurrentSession,
@@ -122,21 +131,70 @@ function isQuoteInActiveSession(quote: Quote, now: number): boolean {
   return false;
 }
 
-function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now()): boolean {
+// An opening auction can print before the continuous open (Hong Kong's at 09:20).
+const OPENING_AUCTION_MS = 15 * 60_000;
+
+/**
+ * Whether Gloom Cloud vouches that a delayed quote is current, however long
+ * ago its last trade was. The service judges more than that trade's age: it
+ * knows when it asked for the quote and how often the listing trades, so a
+ * thinly traded listing's hour-old trade can be the current price while its
+ * venue trades. Its verdict stands in for the age bound when:
+ * - the service answered on this request, or a cache entry still inside its
+ *   TTL holds that answer (`recentAnswer`); a copy past the TTL is not vouched for;
+ * - the answer says `stale: false`. One without the flag vouches for nothing,
+ *   and one flagged stale never gets this far;
+ * - the quote is delayed. The service bounds a delayed quote's feed age itself
+ *   but not a real-time one's, so real-time quotes keep the age bound;
+ * - it reports the regular session, the venue's session is in progress as
+ *   the delayed feed shows it, and the trade belongs to that session; a
+ *   currency pair's session is the service's to judge; or
+ * - it reports a US extended-hours session and the trade is no older than
+ *   the regular session that session extends: after the close, today's
+ *   regular session or its after-hours; before the open, the previous
+ *   regular session or anything since. Whether the quote carries the
+ *   session's price is the freshness rule's call, made before this one.
+ * The answer says nothing about how often a listing trades, so a liquid
+ * listing the service wrongly vouches for is accepted too. The service's own
+ * bound for liquid listings, about twenty minutes, is tighter than this one.
+ */
+function isVouchedCurrentByService(quote: Quote, exchange: string | undefined, now: number): boolean {
+  if (quote.providerId !== "gloomberb-cloud" || quote.stale !== false || quote.dataSource !== "delayed") return false;
+  if (quote.marketState === "PRE" || quote.marketState === "POST") {
+    return isUsExtendedHoursSessionPrint(quote.lastUpdated, exchange, quote.marketState, now);
+  }
+  if (quote.marketState !== "REGULAR") return false;
+  // A currency pair trades around the clock through the week, and the service
+  // measures its silence against how often that pair prints: a pegged or
+  // exotic pair such as SAR=X goes hours without a print while its feed is fine.
+  if (canonicalExchange(exchange) === "CCY") return true;
+  const feedTime = now - delayedFeedLagMs(exchange);
+  if (isRegularSessionTime(exchange, feedTime) !== true) return false;
+  const open = latestRegularSessionOpen(exchange, feedTime);
+  return open != null && quote.lastUpdated >= open - OPENING_AUCTION_MS;
+}
+
+function isActiveProviderQuoteTooOld(quote: Quote, now = Date.now(), recentAnswer = false): boolean {
   // The shared freshness predicate already validates and dates a daily NAV.
   if (quote.priceObservation === "nav") return false;
   if (!isQuoteInActiveSession(quote, now)) return false;
   // A prior-session close before any pre-market trade has no in-session print
   // to age; the session-date rules bound it instead.
-  if (isUsPriorSessionPremarketQuote(quote.lastUpdated, quote.listingExchangeName || quote.exchangeName, quote.marketState, now)) {
+  const exchange = quote.listingExchangeName || quote.exchangeName;
+  if (isUsPriorSessionPremarketQuote(quote.lastUpdated, exchange, quote.marketState, now)) {
+    return false;
+  }
+  // Likewise today's regular close before any after-hours trade.
+  if (quote.postMarketPrice == null && isUsRegularCloseQuoteInPostSession(quote.lastUpdated, exchange, quote.marketState, now)) {
     return false;
   }
   if (!Number.isFinite(quote.lastUpdated)) return false;
-  const maxAge =
-    quote.dataSource === "delayed"
-      ? ACTIVE_DELAYED_PROVIDER_QUOTE_MAX_AGE_MS
-      : ACTIVE_PROVIDER_QUOTE_MAX_AGE_MS;
-  return now - quote.lastUpdated > maxAge;
+  const delayed = quote.dataSource === "delayed";
+  const maxAge = delayed ? ACTIVE_DELAYED_PROVIDER_QUOTE_MAX_AGE_MS : ACTIVE_PROVIDER_QUOTE_MAX_AGE_MS;
+  if (now - quote.lastUpdated <= maxAge) return false;
+  // While the venue pauses at midday, the morning's last print is the current price.
+  if (isMiddayBreakPrint(quote.lastUpdated, exchange, now, delayed ? delayedFeedLagMs(exchange) : 0)) return false;
+  return !(recentAnswer && isVouchedCurrentByService(quote, exchange, now));
 }
 
 export function providerQuoteMatchesTarget(quote: Quote | null | undefined, symbol?: string, exchange?: string): quote is Quote {
@@ -156,24 +214,53 @@ export function providerQuoteMatchesTarget(quote: Quote | null | undefined, symb
   return true;
 }
 
-export function isProviderQuoteUsableForCurrentSession(quote: Quote | null | undefined, exchange?: string, symbol?: string): quote is Quote {
+/**
+ * `recentAnswer`: the source answered with this quote on this request, or a
+ * cache entry still inside its TTL holds it. Only then can the source's own
+ * verdict on a delayed quote stand in for the age bound.
+ */
+export function isProviderQuoteUsableForCurrentSession(
+  quote: Quote | null | undefined,
+  exchange?: string,
+  symbol?: string,
+  options: { recentAnswer?: boolean } = {},
+): quote is Quote {
   if (!providerQuoteMatchesTarget(quote, symbol, exchange)) return false;
   const normalized = quoteWithFreshnessExchange(quote, exchange);
   if (isQuoteStaleForCurrentSession(normalized)) return false;
-  if (isActiveProviderQuoteTooOld(normalized)) return false;
+  if (isActiveProviderQuoteTooOld(normalized, Date.now(), options.recentAnswer === true)) return false;
+  return hasQuotedPrice(normalized);
+}
+
+function hasQuotedPrice(quote: Quote): boolean {
   // Futures may trade or settle at zero or negative prices. Require explicit
   // source type metadata; an alias alone cannot establish the price domain.
-  const futures = ["FUT", "FUTURE", "FUTURES"].includes(normalized.instrumentType?.trim().toUpperCase() ?? "");
+  const futures = ["FUT", "FUTURE", "FUTURES"].includes(quote.instrumentType?.trim().toUpperCase() ?? "");
   return [
-    normalized.price,
-    normalized.preMarketPrice,
-    normalized.postMarketPrice,
-    normalized.bid,
-    normalized.ask,
-    normalized.mark,
+    quote.price,
+    quote.preMarketPrice,
+    quote.postMarketPrice,
+    quote.bid,
+    quote.ask,
+    quote.mark,
   ].some((value) => futures
     ? typeof value === "number" && Number.isFinite(value)
     : finitePositiveNumber(value));
+}
+
+/**
+ * A source's answer for the target that is priced and dated but not current
+ * for its session, flagged stale: the last price there is, for when no source
+ * has a current one. It keeps its own observation time, which dates it
+ * wherever it is shown, and the flag keeps it out of anything that needs a
+ * current price. Null for an answer that names another listing, carries no
+ * price or no valid time.
+ */
+export function lastKnownProviderQuote(quote: Quote | null | undefined, exchange?: string, symbol?: string): Quote | null {
+  if (!providerQuoteMatchesTarget(quote, symbol, exchange)) return null;
+  const normalized = quoteWithFreshnessExchange(quote, exchange);
+  if (!hasValidQuoteObservationTime(normalized) || !hasQuotedPrice(normalized)) return null;
+  return { ...quote, stale: true };
 }
 
 export function providerFinancialsMatchTarget(value: TickerFinancials, symbol: string, exchange?: string): boolean {
@@ -187,8 +274,12 @@ export function providerFinancialsMatchTarget(value: TickerFinancials, symbol: s
   return quoteMetadataMatchesTarget(metadata, hasListing ? symbol : parsePublicTickerKey(symbol).symbol, hasListing ? exchange : undefined);
 }
 
-export function dropUnusableProviderQuote(value: TickerFinancials, exchange?: string): TickerFinancials {
-  if (!value.quote || isProviderQuoteUsableForCurrentSession(value.quote, exchange)) {
+export function dropUnusableProviderQuote(
+  value: TickerFinancials,
+  exchange?: string,
+  options: { recentAnswer?: boolean } = {},
+): TickerFinancials {
+  if (!value.quote || isProviderQuoteUsableForCurrentSession(value.quote, exchange, undefined, options)) {
     return value;
   }
 
@@ -379,6 +470,19 @@ function mergeFundamentals(primary: Fundamentals | undefined, fallback: Fundamen
   ].some((value) => value != null)) {
     // A fallback cannot retrospectively denominate an older cached snapshot.
     delete merged.financialCurrency;
+  }
+  if (merged) {
+    // A conversion, or an EPS currency apart from the amounts', describes the currency it came with, never one
+    // merged from elsewhere.
+    const denominated = primary?.financialCurrency ? primary : merged.financialCurrency ? fallback : undefined;
+    if (denominated?.ttmConversion) merged.ttmConversion = denominated.ttmConversion;
+    else delete merged.ttmConversion;
+    if (denominated?.epsCurrency) merged.epsCurrency = denominated.epsCurrency;
+    else delete merged.epsCurrency;
+    // The rate a trailing P/E converted its EPS at pairs with that multiple.
+    const trailing = primary?.trailingPE != null ? primary : fallback;
+    if (trailing?.trailingPEConversion) merged.trailingPEConversion = trailing.trailingPEConversion;
+    else delete merged.trailingPEConversion;
   }
   return redactUnavailableFundamentals(merged);
 }

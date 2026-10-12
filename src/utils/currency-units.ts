@@ -13,11 +13,16 @@ const SUB_UNIT_NAMES: Record<string, string> = {
   ZAc: "cents",
 };
 
-/** A currency code as a reader should see it; a sub-unit says which one: "GBp (pence)". */
-export function currencyUnitLabel(code?: string | null): string {
+/**
+ * A currency code as a reader should see it; a sub-unit says which one,
+ * "GBp (pence)", and with `ofMajor` what it divides: "ILA (agorot, 1/100 ILS)".
+ */
+export function currencyUnitLabel(code?: string | null, { ofMajor = false }: { ofMajor?: boolean } = {}): string {
   const raw = (code ?? "").trim();
   const unit = SUB_UNIT_NAMES[raw];
-  return unit ? `${raw} (${unit})` : raw;
+  const major = SUB_UNIT_CURRENCIES[raw];
+  if (!unit) return raw;
+  return ofMajor && major ? `${raw} (${unit}, 1/${major.divisor} ${major.currency})` : `${raw} (${unit})`;
 }
 
 const LIKELY_UNIT_MISMATCH_RATIOS: Record<string, number[]> = {
@@ -150,4 +155,15 @@ export function hasLikelyQuoteUnitMismatch(
 
   const ratio = normalizedRatio(left.price, right.price);
   return likelyUnitMismatchRatios(leftUnit.currency).some((target) => isRatioWithin(ratio, target));
+}
+
+/**
+ * Stablecoins perpetual venues quote and settle in (USDT, USDC). Gloom has no
+ * exchange rate for them and does not read one as a dollar, so a price in one
+ * stays in it: there is no rate to ask for.
+ */
+const STABLECOIN_CURRENCIES: ReadonlySet<string> = new Set(["USDT", "USDC", "USDE", "USDH", "USD1", "DAI", "FDUSD", "PYUSD", "TUSD", "BUSD"]);
+
+export function isStablecoinCurrency(currency?: string | null): boolean {
+  return STABLECOIN_CURRENCIES.has((currency ?? "").trim().toUpperCase());
 }

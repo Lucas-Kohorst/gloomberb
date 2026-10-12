@@ -24,8 +24,8 @@ import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
 import { loadWorldVenues } from "./client";
 import { WORLD_VENUE_MAP_PANE_ID } from "./ids";
 import { LayeredMapView } from "./layered-pane";
-import { LAYERS_SETTING_KEY, parseLayerTokens, resolveActiveLayers } from "./layers";
-import { WorldVenueMap } from "./map";
+import { activeLayerTokens, isPlainMap, LAYERS_SETTING_KEY, resolveActiveLayers, VENUES_SETTING_KEY } from "./layers";
+import { useMapKeyboard, WorldVenueMap } from "./map";
 import { filterWorldVenues, formatVenueLocalTime } from "./model";
 import { useGeoCatalog } from "./use-geo";
 import { SelectedVenueHeader } from "./venue-header";
@@ -47,19 +47,22 @@ function venueColumns(width: number): VenueColumn[] {
 }
 
 /**
- * One map for anything with a place. Venues are the default layer; geo layers
- * come from the server's catalog, so a server without them leaves the venue
- * map exactly as it was.
+ * One map for anything with a place. A plain MAP shows venues under the
+ * server's default layers; geo layers come from the server's catalog, so a
+ * server without them leaves the venue map exactly as it was.
  */
 export function WorldVenueMapPane(props: PaneProps) {
   const [layerSetting] = usePaneSettingValue<unknown>(LAYERS_SETTING_KEY, null);
-  const tokens = useMemo(() => parseLayerTokens(layerSetting), [layerSetting]);
+  const [venuesSetting] = usePaneSettingValue<boolean | undefined>(VENUES_SETTING_KEY, undefined);
   const { catalog, settled } = useGeoCatalog();
+  const settings = useMemo(() => ({ [LAYERS_SETTING_KEY]: layerSetting, [VENUES_SETTING_KEY]: venuesSetting }), [layerSetting, venuesSetting]);
+  const plain = isPlainMap(settings);
+  const tokens = useMemo(() => activeLayerTokens(settings, catalog?.layers), [catalog, settings]);
   const layers = useMemo(() => resolveActiveLayers(tokens, catalog?.layers), [catalog, tokens]);
-  if (layers.length) return <LayeredMapView {...props} layers={layers} tokens={tokens} />;
-  // A preset waits for the catalog rather than flashing the venue map first.
-  if (tokens.length && !settled) {
-    return <PaneStatusBody loading align="center" width={props.width} height={props.height} loadingLabel="Loading map layers..." />;
+  if (layers.length) return <LayeredMapView {...props} layers={layers} tokens={tokens} plain={plain} />;
+  // A preset or a plain map waits for the catalog rather than flashing the venue map first.
+  if ((plain || tokens.length) && !settled) {
+    return <PaneStatusBody loading align="center" width={props.width} height={props.height} loadingLabel="Loading map..." />;
   }
   return <VenueMapView {...props} />;
 }
@@ -69,6 +72,7 @@ function VenueMapView({ focused, width, height }: PaneProps) {
   const { data, loading, error, load } = useAsyncResource(loadWorldVenues);
   const [query, setQuery] = useState("");
   const { active: searchFocused, focus: focusSearch, searchProps } = useQueryBarSearch();
+  const mapKeys = useMapKeyboard(searchFocused);
   const [selectedMic, setSelectedMic] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -119,6 +123,7 @@ function VenueMapView({ focused, width, height }: PaneProps) {
 
   const { nativePaneChrome } = useUiCapabilities();
   const [storedSidebarWidth, setStoredSidebarWidth] = usePluginPaneState<number | null>("sidebarWidth", null);
+  const [savedViewport, setSavedViewport] = usePluginPaneState<unknown>("map:viewport", null);
   const [draggedSidebarWidth, setDraggedSidebarWidth] = useState<number | null>(null);
   const horizontal = shouldShowPaneSidebar(data?.venues.length ?? 0, width, height);
   // Venue names need more room than a conversation list, so the width the pane
@@ -178,7 +183,8 @@ function VenueMapView({ focused, width, height }: PaneProps) {
 
   const table = (
     <DataTableView<CloudWorldVenuePayload, VenueColumn>
-      focused={focused && !searchFocused}
+      focused={focused && !searchFocused && !mapKeys.active}
+      onTableMouseDown={mapKeys.release}
       selection={{
         kind: "id",
         selectedId: selectedMic,
@@ -208,7 +214,7 @@ function VenueMapView({ focused, width, height }: PaneProps) {
   }
 
   const map = (
-    <Box flexDirection="column" width={mapWidth} height={mapSectionHeight} overflow="hidden">
+    <Box key="map" flexDirection="column" width={mapWidth} height={mapSectionHeight} overflow="hidden">
       <SelectedVenueHeader venue={selectedVenue} checkedAt={data.checkedAt} now={now} width={mapWidth} />
       <WorldVenueMap
         venues={venues}
@@ -216,6 +222,9 @@ function VenueMapView({ focused, width, height }: PaneProps) {
         width={mapWidth}
         height={mapHeight}
         onSelect={(venue) => setSelectedMic(venue.mic)}
+        savedViewport={savedViewport}
+        onViewportSettled={setSavedViewport}
+        keyboard={mapKeys.keyboard}
       />
     </Box>
   );

@@ -1,5 +1,6 @@
 import { futuresGenericListing, futuresGenericPriceBasis } from "../../utils/futures-generic";
 import type { TimeRange } from "../../time-series/range";
+import { RANGE_HISTORY_RESOLUTION } from "../../time-series/resolution";
 import type {
   FinancialStatement,
   Fundamentals,
@@ -118,6 +119,7 @@ export function mapQuote(
       quote.postMarketChange,
       divisor,
     ),
+    extendedSessionPrint: typeof quote.extendedSessionPrint === "boolean" ? quote.extendedSessionPrint : undefined,
     listingExchangeName,
     listingExchangeFullName,
     exchangeName: listingExchangeName,
@@ -213,6 +215,8 @@ export function mapPricePoint(
     low: normalizePriceValueByDivisor(point.low, divisor),
     close: normalizePriceValueByDivisor(point.close, divisor) ?? point.close,
     volume: point.volume,
+    ...(point.partial === true ? { partial: true } : {}),
+    ...(point.filled === true ? { filled: true } : {}),
   };
 }
 
@@ -305,6 +309,9 @@ export function mapOptionsChain(
   };
 }
 
+/** The reason code Gloom Cloud gives an empty answer for a symbol no listing carries. */
+export const NOT_FOUND_REASON = "NOT_FOUND";
+
 export function isEmptyCloudStatus(
   status: CloudMarketResponse<unknown>["status"],
 ): boolean {
@@ -316,7 +323,7 @@ export function mapBatchError<T>(
   fallbackMessage: string,
 ): Error {
   if (isEmptyCloudStatus(item.status)) {
-    return createProviderMiss(item.reasonCode ?? fallbackMessage);
+    return createProviderMiss(item.reasonCode ?? fallbackMessage, item.message, { notFound: item.reasonCode === NOT_FOUND_REASON });
   }
   return new Error(item.reasonCode ?? fallbackMessage);
 }
@@ -370,29 +377,24 @@ export function formatCloudDateTime(
   return `${year}-${month}-${day}`;
 }
 
+const HISTORY_OUTPUT_SIZE: Record<TimeRange, number> = {
+  "1D": 24 * 12,
+  "1W": 7 * 24,
+  "1M": 31,
+  "3M": 93,
+  "6M": 186,
+  "1Y": 366,
+  "5Y": 261,
+  "ALL": 600,
+};
+
+/** The bar size comes from the shared range table, which `gloomberb help history` also lists. */
 export function toHistoryRequest(range: TimeRange): {
   interval: string;
   outputsize: number;
   rangeKey: TimeRange;
 } {
-  switch (range) {
-    case "1D":
-      return { interval: "5min", outputsize: 24 * 12, rangeKey: range };
-    case "1W":
-      return { interval: "1h", outputsize: 7 * 24, rangeKey: range };
-    case "1M":
-      return { interval: "1day", outputsize: 31, rangeKey: range };
-    case "3M":
-      return { interval: "1day", outputsize: 93, rangeKey: range };
-    case "6M":
-      return { interval: "1day", outputsize: 186, rangeKey: range };
-    case "1Y":
-      return { interval: "1day", outputsize: 366, rangeKey: range };
-    case "5Y":
-      return { interval: "1week", outputsize: 261, rangeKey: range };
-    case "ALL":
-      return { interval: "1month", outputsize: 600, rangeKey: range };
-    default:
-      return { interval: "1day", outputsize: 366, rangeKey: range };
-  }
+  const resolution = RANGE_HISTORY_RESOLUTION[range];
+  if (!resolution) return { interval: "1day", outputsize: 366, rangeKey: range };
+  return { interval: toCloudInterval(resolution), outputsize: HISTORY_OUTPUT_SIZE[range], rangeKey: range };
 }

@@ -18,6 +18,8 @@ export interface CliTableOptions {
   /** Total width to fit the table into. Defaults to the terminal width; null keeps every cell whole. */
   maxWidth?: number | null;
   indent?: number;
+  /** Lines printed under each row, by row index, indented and muted: a footnote that belongs to the row. */
+  below?: ReadonlyArray<readonly string[] | undefined>;
 }
 
 export type CliStatEntry = readonly [label: string, value: string];
@@ -32,6 +34,7 @@ const MIN_SHRUNK_COLUMN_WIDTH = 8;
 // Text columns first shrink right to left down to this width, then all shrink together.
 const SOFT_MIN_COLUMN_WIDTH = 20;
 let colorEnabledOverride: boolean | null = null;
+let widthOverride: number | null = null;
 
 function colorEnabled(): boolean {
   if (colorEnabledOverride != null) return colorEnabledOverride;
@@ -56,8 +59,14 @@ export function visibleLength(text: string): number {
   return typeof Bun !== "undefined" ? Bun.stringWidth(text) : stripAnsi(text).length;
 }
 
-/** Columns of the terminal stdout writes to, or null when output is piped or redirected. */
+/** `--width n`: tables, help and wrapped text fit n columns, whether or not stdout is a terminal. */
+export function setCliWidthOverride(value: number | null): void {
+  widthOverride = value;
+}
+
+/** Columns the output is fitted to: `--width`, else the terminal's, or null when output is piped or redirected. */
 export function cliTerminalWidth(): number | null {
+  if (widthOverride != null) return widthOverride;
   if (!process.stdout.isTTY) return null;
   const columns = process.stdout.columns;
   return typeof columns === "number" && columns > 0 ? columns : null;
@@ -137,6 +146,12 @@ export function wrapText(text: string, width: number): string[] {
     lines.push(line);
   }
   return lines;
+}
+
+/** One line of text under a table, wrapped to the width the table was fitted to; whole when output is not fitted. */
+export function wrapToTerminal(text: string): string {
+  const width = cliTerminalWidth();
+  return width == null ? text : wrapText(text, width).join("\n");
 }
 
 export const cliStyles = {
@@ -334,5 +349,9 @@ export function renderTable(columns: CliTableColumn[], rows: string[][], options
 
   const header = renderRow(columns.map((column) => column.header), cliStyles.bold);
   const divider = `${indent}${shown.map(({ width }) => cliStyles.muted("─".repeat(width))).join(" ".repeat(COLUMN_GAP))}`;
-  return [header, divider, ...rows.map((row) => renderRow(row))].join("\n");
+  const belowIndent = `${indent}${" ".repeat(COLUMN_GAP)}`;
+  const renderBelow = (index: number) => (options.below?.[index] ?? []).flatMap((line) => (
+    available == null ? [line] : wrapText(line, Math.max(1, available - COLUMN_GAP))
+  )).map((line) => `${belowIndent}${cliStyles.muted(line)}`.trimEnd());
+  return [header, divider, ...rows.flatMap((row, index) => [renderRow(row), ...renderBelow(index)])].join("\n");
 }

@@ -15,8 +15,9 @@ import {
   type ShortcutDisplayMode,
 } from "../../../utils/shortcut-labels";
 import { PANE_MANAGEMENT_ACCELERATORS, type PaneManagementAccelerators } from "./shortcuts";
-import { t } from "../../../i18n";
+import { t, tf } from "../../../i18n";
 import { displayWidth } from "../../../utils/format";
+import { fireAndForget } from "../../../utils/fire-and-forget";
 
 const MENU_MIN_WIDTH = 18;
 const MENU_MAX_WIDTH = 44;
@@ -39,6 +40,14 @@ export interface PaneMenuQuickSetting {
   label: string;
   active: boolean;
   toggle: () => void;
+}
+
+/** Move to New Layout and Move Back as the pane menu offers them; either may be absent. */
+export interface PaneMenuLayoutMove {
+  /** Absent when the pane is alone in its layout. */
+  moveToNewLayout?: () => void;
+  /** Present when the pane was moved here from another layout. */
+  moveBack?: { layoutName: string; onSelect: () => void };
 }
 
 /**
@@ -92,6 +101,11 @@ export function menuForPane(
   quickSettings: PaneMenuQuickSetting[] = [],
   fullscreen?: { active: boolean; toggle: () => void },
   paneItems: ContextMenuItem[] = [],
+  layoutMove: PaneMenuLayoutMove = {},
+  /** The pane's entry in DOCS, the same as the `?` in its header. */
+  openDocs?: () => void,
+  /** A new Ask Gloom conversation with this pane attached, the same as the button beside the `?`. */
+  askGloom?: () => void,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [...paneItems];
   if (baseActions.length > 0) baseActions.push(contextMenuDivider("pane:own-actions-divider"));
@@ -111,6 +125,12 @@ export function menuForPane(
       accelerator: accelerators.settings,
       onSelect: () => openPaneSettings(pane.instance.instanceId),
     });
+  }
+  if (openDocs) {
+    baseActions.push({ id: "pane-docs", label: "Docs", onSelect: openDocs });
+  }
+  if (askGloom) {
+    baseActions.push({ id: "ask-gloom", label: "Ask Gloom", accelerator: accelerators.ask, onSelect: askGloom });
   }
   if (sharePane) {
     baseActions.push({
@@ -146,6 +166,24 @@ export function menuForPane(
     });
   }
 
+  if (layoutMove.moveToNewLayout) {
+    baseActions.push({
+      id: "move-to-new-layout",
+      label: "Move to New Layout",
+      accelerator: accelerators.newLayout,
+      onSelect: layoutMove.moveToNewLayout,
+    });
+  }
+  if (layoutMove.moveBack) {
+    baseActions.push({
+      id: "move-back",
+      label: tf("Move Back to {layout}", { layout: layoutMove.moveBack.layoutName }),
+      // The shortcut moves a pane back only when it is alone, where Move to New Layout is not offered.
+      accelerator: layoutMove.moveToNewLayout ? undefined : accelerators.newLayout,
+      onSelect: layoutMove.moveBack.onSelect,
+    });
+  }
+
   if (pane.floating) {
     baseActions.push({
       id: "dock",
@@ -174,7 +212,7 @@ export function menuForPane(
       label: "Pop Out",
       accelerator: accelerators.popOut,
       onSelect: () => {
-        void desktopWindowBridge.popOutPane?.(pane.instance.instanceId);
+        fireAndForget(desktopWindowBridge.popOutPane?.(pane.instance.instanceId), "desktop.popOutPane");
       },
     });
   }

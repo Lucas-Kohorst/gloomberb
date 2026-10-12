@@ -1145,7 +1145,7 @@ export function ChartComposerPane({ paneId, focused, width, height }: PaneProps)
     }
   }, [follows, ownedIds, savedIds, setSpec, spec, stored, target, unlinkedFrom, updateSettings]);
   if (follows && !target && ownedIds.length > 0) {
-    return <EmptyState title={error ?? "No ticker selected."} />;
+    return <EmptyState title={error ?? "Select a ticker."} />;
   }
   return (
     <ChartComposerSurface

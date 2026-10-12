@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
-import type { HeadlessPaneDefinition, HeadlessPaneFreshness } from "./headless";
+import type { HeadlessPaneDefinition, HeadlessPaneFreshness, HeadlessPaneOptionDef } from "./headless";
 
 export type {
   HeadlessBundleResult,
@@ -34,6 +34,7 @@ import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
 import type { PluginCapability } from "../capabilities";
+import type { SeriesDefinition } from "../series/types";
 import type { CliGlobalOptions } from "../cli/options";
 import type { CliResult, CliResultRenderOptions } from "../cli/result";
 import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
@@ -132,6 +133,30 @@ export interface PaneDef {
    * shows would be wrong: local data, a calculator, filed records.
    */
   reportFreshness?: Pick<HeadlessPaneFreshness, "source" | "status" | "basis">;
+  /**
+   * Options a rendered-view report takes (`fn OMON AAPL --strikes 10`):
+   * each sets the pane setting of its key, is checked by its `normalize`, and
+   * is listed with its example by `gloomberb catalog`.
+   */
+  reportOptions?: readonly PaneReportOptionDef[];
+  /**
+   * Lines a rendered-view report prints above its table, from the settings it
+   * ran with: what the default view leaves out and how to see more. `--json`
+   * carries them in `data.metadata.notices`.
+   */
+  reportNotices?(settings: Readonly<Record<string, unknown>>): string[];
+  /**
+   * What a rendered-view report needs before it shows anything, such as a
+   * sign-in: `gloomberb catalog` lists it under Requires, as it does a
+   * `headless` model's `discovery.dataRequirements`.
+   */
+  reportRequirements?: readonly string[];
+  /**
+   * A `shot` without `--height` grows to the pane's natural height, up to the
+   * height limit, so a fixed board (FUT) shows every row instead of cutting
+   * the last ones. Leave it off for long or paged lists.
+   */
+  shotFitsRows?: true;
   /** Add an Excel-compatible CSV action for the pane's single active DataTable. */
   tableExport?: true;
   settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
@@ -142,6 +167,20 @@ export interface PaneDef {
    * toggle field in settings, or a two-option select field when `onValue` is set.
    */
   quickSettings?: readonly PaneQuickSettingDef[];
+}
+
+/**
+ * An option of a rendered-view report, which sets the pane setting of its key,
+ * or of `settingKey` when the flag reads better than the setting's name
+ * (`--columns` for `optionColumnIds`).
+ */
+export interface PaneReportOptionDef extends Omit<HeadlessPaneOptionDef, "pluginState"> {
+  /** The value's name in the catalog's flag, `--currencies <codes>`; the type when absent. */
+  placeholder?: string;
+  /** The option in use as typed after the function, such as `--currencies USD,ZAR,NGN`; the catalog shows it as an example. */
+  example?: string;
+  /** Checks a typed value and returns it as the pane reads it; throws an Error that names what is wrong. */
+  normalize?(value: string): string;
 }
 
 export interface PaneQuickSettingDef {
@@ -389,6 +428,10 @@ export interface CommandResultDef {
   label: string;
   detail?: string;
   category?: string;
+  /** Short tag drawn left of the label, as on a search provider's row. Six characters at most. */
+  badge?: string;
+  /** Drawn muted after the label, e.g. a person's full name after their @username. */
+  name?: string;
   right?: string;
   keywords?: string[];
   current?: boolean;
@@ -414,6 +457,8 @@ export interface CommandBarResultDef {
   category?: string;
   /** Short tag drawn left of the label, e.g. a document type. Six characters at most. */
   badge?: string;
+  /** Drawn muted after the label, e.g. a person's full name after their @username. */
+  name?: string;
   right?: string;
   keywords?: string[];
   disabled?: boolean;
@@ -431,15 +476,29 @@ export interface CommandBarSearchProvider {
   category: string;
   /** Sort position of the section. Higher sinks. Navigation sections are negative; use a positive value to sit below them. */
   priority?: number;
-  /** Skip provide() below this length. Default 3. */
+  /** Skip the provider below this length. Default 3. */
   minQueryLength?: number;
-  /** Default 300. */
+  /** Default 300. Ignored by `match`. */
   debounceMs?: number;
+  /**
+   * Codes (`CHAT`) after which the provider is still asked, typed alone or
+   * with text after them, with the whole query. Every other provider stays
+   * quiet once a code claims the text.
+   */
+  shortcuts?: readonly string[];
   provide(
     query: string,
     context: CommandBarSearchContext,
     signal: AbortSignal,
   ): Promise<CommandBarResultDef[]>;
+  /**
+   * Rows from what the app already holds in memory. When set, the bar calls
+   * this instead of `provide`, as it renders and on every keystroke, so it
+   * must be cheap: no request, no waiting. Its rows are ranked with the bar's
+   * own matches as they are typed and sit under Suggested in the empty bar.
+   * Keep `provide` answering the same rows for older versions of the app.
+   */
+  match?(query: string, context: CommandBarSearchContext): CommandBarResultDef[];
 }
 
 interface CliHelpColumn {
@@ -762,6 +821,12 @@ export interface GloomPluginContext {
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;
+  /**
+   * Adds a series to the data catalog and the chart composer, at any time
+   * after setup starts (after loading a list, say). Throws when the definition
+   * is invalid or its id is taken; the returned function removes it again.
+   */
+  registerSeries(series: SeriesDefinition): () => void;
   registerSyncContributor(contributor: SyncContributor): () => void;
   registerSyncTransport(transport: SyncTransport): () => void;
   watchNewsQuery?(
@@ -899,6 +964,12 @@ export interface GloomPlugin {
   paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
   capabilities?: PluginCapability[];
+  /**
+   * Series the plugin adds to the data catalog, chartable against any other
+   * catalog entry. A definition that fails validation is skipped and logged;
+   * `ctx.registerSeries` adds series later and throws instead.
+   */
+  series?: readonly SeriesDefinition[];
   slots?: Partial<{
     [K in keyof GloomSlots]: (props: GloomSlots[K]) => ReactNode;
   }>;

@@ -1,3 +1,4 @@
+import { registerAccountSession } from "../../../../account/session";
 import type {
   AppNotificationDelivery,
   AppNotificationRequest,
@@ -10,8 +11,11 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatMessage,
+  type ChatReaction,
+  type ChatReactionsUpdate,
   type PersistedAuthUser,
 } from "../../../../api-client";
+import { withOwnReaction } from "../reactions";
 import { normalizeSessionUser } from "./persistence";
 import { debugLog } from "../../../../utils/debug-log";
 import {
@@ -57,6 +61,8 @@ import {
 } from "./notifications";
 import {
   CHAT_MESSAGE_EDIT_WINDOW_LABEL,
+  DISCORD_MESSAGE_EDIT_NOTICE,
+  isEditableOnGloom,
   isWithinChatMessageEditWindow,
 } from "../edit-window";
 import { ChatControllerRealtime } from "./realtime";
@@ -65,6 +71,7 @@ import { ChatControllerView } from "./view";
 import { ChatControllerMessageLoading } from "./message-loading";
 import { ChatControllerStorage } from "./storage";
 import { listUnreadInboxItems } from "../unread-inbox";
+import type { ChatConversationList } from "../conversations";
 import {
   applySignedOutChatControllerSession,
   createChatControllerSessionState,
@@ -79,6 +86,26 @@ function unseenChannelMessages(messages: ChatMessage[], lastViewedMessageId: str
   if (!lastViewedMessageId) return messages;
   const viewedIndex = messages.findIndex((message) => message.id === lastViewedMessageId);
   return viewedIndex >= 0 ? messages.slice(viewedIndex + 1) : messages;
+}
+
+function timeOf(value: string | undefined): number {
+  const time = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * The newest message held for a conversation, sent or received. A DM or group
+ * with nothing on this device yet counts from when it was started.
+ */
+function lastConversationActivity(channel: ChatChannel, state: ChannelRuntimeState | undefined): number {
+  const started = channel.kind === "direct" || channel.kind === "group"
+    ? timeOf(channel.created_at)
+    : Number.NEGATIVE_INFINITY;
+  return Math.max(
+    started,
+    timeOf(state?.messages.at(-1)?.createdAt),
+    timeOf(state?.pendingMessages.at(-1)?.createdAt),
+  );
 }
 
 export type { ChatControllerSnapshot } from "./state";
@@ -126,6 +153,7 @@ export class ChatController {
     emit: (channelId) => this.emit(channelId),
     mergeMessages: (channelId, messages, options) => this.mergeMessages(channelId, messages, options),
     persistChannelState: (channelId) => this.storage.persistChannelState(channelId),
+    getReaderId: () => this.session.user?.id ?? null,
   });
   private readonly realtime = new ChatControllerRealtime({
     getAppActive: () => this.appActive,
@@ -133,6 +161,7 @@ export class ChatController {
     getUser: () => this.session.user,
     refreshSession: () => this.refreshSession(),
     handleNotification: (notification) => this.handleChatNotification(notification),
+    handleReactions: (update) => this.applyReactionsUpdate(update),
     setOnlineCount: (onlineCount) => {
       this.channelCatalog.setOnlineCount(onlineCount);
     },
@@ -248,6 +277,27 @@ export class ChatController {
         messages: channel.messages,
       })),
     });
+  }
+
+  /**
+   * Every conversation the Chat sidebar lists, with its unread count and last
+   * activity, from what this device already holds; no request. Null until a
+   * verified account is signed in.
+   */
+  listConversations(): ChatConversationList | null {
+    const user = this.session.user;
+    if (!user?.emailVerified) return null;
+    return {
+      userId: user.id,
+      states: this.channelCatalog.getChannels().map((channel) => {
+        const state = this.storage.channelStates.get(channel.id);
+        return {
+          channel,
+          unreadCount: Math.max(0, state?.unreadCount ?? 0),
+          lastActivityAt: lastConversationActivity(channel, state),
+        };
+      }),
+    };
   }
 
   getChannels(): ChatChannel[] {
@@ -622,6 +672,10 @@ export class ChatController {
       this.notifyFn({ body: "Only your latest sent message can be edited.", type: "error" });
       return false;
     }
+    if (!isEditableOnGloom(latestOwnMessage)) {
+      this.notifyFn({ body: DISCORD_MESSAGE_EDIT_NOTICE, type: "error" });
+      return false;
+    }
     if (!isWithinChatMessageEditWindow(latestOwnMessage)) {
       this.notifyFn({ body: `Messages can only be edited within ${CHAT_MESSAGE_EDIT_WINDOW_LABEL}.`, type: "error" });
       return false;
@@ -639,6 +693,55 @@ export class ChatController {
       this.notifyFn({ body: errorMessage, type: "error" });
       return false;
     }
+  }
+
+  /**
+   * Adds or takes back your reaction with one emoji. The chip moves at once;
+   * the server's answer settles it, and a refusal puts it back and says why.
+   */
+  async toggleChannelReaction(channelId: string, messageId: string, emoji: string): Promise<boolean> {
+    const normalizedChannelId = normalizeChannelId(channelId);
+    const channel = this.ensureChannelState(normalizedChannelId);
+    const user = this.session.user;
+    if (!user?.emailVerified) return false;
+    const message = channel.messages.find((entry) => entry.id === messageId);
+    if (!message) return false;
+    const reacted = !(message.reactions ?? []).some((reaction) => reaction.emoji === emoji && reaction.me);
+    const self = { id: user.id, username: user.username, displayName: user.username };
+    this.replaceMessageReactions(normalizedChannelId, messageId, (current) => withOwnReaction(current, emoji, reacted, self));
+    try {
+      const update = await apiClient.setChatReaction(normalizedChannelId, messageId, emoji, reacted);
+      this.replaceMessageReactions(normalizedChannelId, messageId, () => update.reactions);
+      return true;
+    } catch (error) {
+      // Only this change is undone; what others did meanwhile stays.
+      this.replaceMessageReactions(normalizedChannelId, messageId, (current) => withOwnReaction(current, emoji, !reacted, self));
+      const body = error instanceof Error && error.message ? error.message : "Failed to react.";
+      this.notifyFn({ body, type: "error" });
+      return false;
+    }
+  }
+
+  /** A message's reactions as everyone reading the channel just got them. */
+  applyReactionsUpdate(update: ChatReactionsUpdate): void {
+    this.replaceMessageReactions(normalizeChannelId(update.channelId), update.messageId, () => update.reactions);
+  }
+
+  private replaceMessageReactions(
+    channelId: string,
+    messageId: string,
+    next: (current: ChatReaction[]) => ChatReaction[],
+  ): void {
+    const channel = this.storage.channelStates.get(channelId);
+    if (!channel) return;
+    const index = channel.messages.findIndex((entry) => entry.id === messageId);
+    if (index < 0) return;
+    const message = channel.messages[index]!;
+    channel.messages = channel.messages.map((entry, entryIndex) => (
+      entryIndex === index ? { ...message, reactions: next(message.reactions ?? []) } : entry
+    ));
+    this.storage.persistTranscript(channelId);
+    this.emit(channelId);
   }
 
   ensureConnection(channelId = DEFAULT_CHAT_CHANNEL_ID): void {
@@ -773,3 +876,4 @@ export class ChatController {
 }
 
 export const chatController = new ChatController();
+registerAccountSession(chatController);

@@ -10,6 +10,7 @@ import { CLOUD_NEWS_DELAY_HOURS } from "../../../../../api-client/plan-access";
 import { usePaneStatusLinkFooter } from "../../../../../components/layout/pane/status-footer";
 import { usePluginAppActions } from "../../../../runtime";
 import { useOptionalPaneInstanceId } from "../../../../../state/app/context";
+import { useRemoteUiNode } from "../../../../../remote/semantic-tree";
 
 interface NewsFooterArticle {
   title?: string | null;
@@ -60,6 +61,15 @@ export function useNewsArticleFooter({
     shortcutScope: `${registrationId}:news-upgrade`,
   });
 
+  // A report or capture of the pane says how far its stories are held back, as the footer does.
+  useRemoteUiNode({
+    role: "report-freshness",
+    label: "News freshness",
+    getMetadata: () => (access.hasProAccess
+      ? { status: "live" }
+      : { status: "delayed", delayMinutes: CLOUD_NEWS_DELAY_HOURS * 60 }),
+  });
+
   const accessInfo = useMemo<PaneFooterSegment[]>(() => {
     if (access.isPayingPro) {
       return [{ id: "news-access", parts: [{ text: t("real-time news"), tone: "positive" }] }];
@@ -68,11 +78,11 @@ export function useNewsArticleFooter({
   }, [access.isPayingPro, language, segment]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
 
+  // The story's header names its source, so the footer keeps to the link.
   usePaneStatusLinkFooter({
     registrationId,
     focused,
     url: article?.url,
-    source: article?.source,
     info: footerInfo,
     // [o]pen is appended after these, so the story's own actions stay rightmost.
     hints: [

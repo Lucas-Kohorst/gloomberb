@@ -43,6 +43,7 @@ import { buildQuoteKey, resolveEntryData } from "../../../market-data/selectors"
 import { alertInstrument, streamedAlertQuote, syncAlertQuoteStream } from "./live";
 import { quoteAlertFields } from "./quotes";
 import { clearPriceAlertFocus, getPriceAlertFocus, subscribePriceAlertFocus } from "./focus";
+import { alertTarget, alertViewHints, priceRuleSubject, useOpenAlertTarget } from "./targets";
 
 type AlertColumnId =
   | "status"
@@ -194,6 +195,10 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
     if (selected) void deleteAlert(selected.id);
   }, [deleteAlert, rows, selectedIdx]);
 
+  const selectedRule = rows[selectedIdx];
+  const selectedTarget = useMemo(() => selectedRule ? alertTarget(priceRuleSubject(selectedRule)) : null, [selectedRule]);
+  const openTarget = useOpenAlertTarget();
+
   const rearmSelectedAlert = useCallback(() => {
     const selected = rows[selectedIdx];
     if (selected?.status === "triggered") rearmAlert(selected.id);
@@ -240,6 +245,7 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
         : [],
     hints: [
       { id: "add", key: "a", label: "dd alert", onPress: startAddAlert },
+      ...alertViewHints(selectedTarget, openTarget),
       {
         id: "edit",
         key: "e",
@@ -262,6 +268,8 @@ function PriceAlertsPane({ focused, width, height }: PaneProps) {
     deleteSelectedAlert,
     editSelectedAlert,
     rearmSelectedAlert,
+    selectedTarget,
+    openTarget,
     rows,
     selectedIdx,
     quoteError,

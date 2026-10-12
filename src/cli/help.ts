@@ -1,4 +1,5 @@
 import type { CliCommandDef } from "../types/plugin";
+import { CLI_EXIT_CODES } from "./exit-codes";
 import {
   cliStyles,
   cliTerminalWidth,
@@ -9,6 +10,12 @@ import {
   wrapCommandLine,
   wrapText,
 } from "../utils/cli-output";
+
+/** `--section` of a command whose report has several tables. */
+export const TABLE_SECTION_OPTION = {
+  flags: "--section <title|n>",
+  description: "With --csv or --ndjson, write only that table, by its title or number",
+};
 
 /** Headings of `gloomberb help`, in display order. */
 export const CLI_COMMAND_GROUPS = {
@@ -28,13 +35,31 @@ const INDENT = 2;
 const MAX_HELP_WIDTH = 100;
 const PIPED_HELP_WIDTH = 80;
 
+/** Commands that run as written, for someone who has just installed it. */
+const START_HERE: Array<[string, string]> = [
+  ["gloomberb search apple", "Find a ticker from a company name"],
+  ["gloomberb quote AAPL", "Show the latest price"],
+  ["gloomberb ticker AAPL", "Open the full research report"],
+  ["gloomberb catalog earnings", "Find a function, then run it with fn"],
+];
+
 const GLOBAL_OPTIONS: Array<[string, string]> = [
-  ["--json, --csv, --ndjson", "Print machine-readable output instead of text"],
-  ["--limit <n>", "Show at most n rows"],
+  ["--json", "Print the full result as JSON"],
+  ["--csv", "Print rows as CSV under the columns the text shows; fn reports and fundamentals put each table under # section: and end with # source lines"],
+  ["--ndjson", "Print one JSON object per table row"],
+  ["--limit <n>", "Show at most n rows, the first n as printed"],
+  ["--tail <n>", "Show the newest n rows of a dated series (history, fred, econ) in their printed order, or the last n of another list"],
   ["--refresh", "Fetch fresh data instead of reading the cache"],
   ["--dry-run", "Preview config, cache, notes, alerts, plugin on/off, and remote changes without saving"],
   ["-q, --quiet", "Print no results or errors in text mode, for commands that print results"],
   ["--color, --no-color", "Force or turn off colors (NO_COLOR=1 also turns them off)"],
+  ["--width <n>", "Fit tables to n columns (default: the terminal width; piped output is not fitted). shot takes its own --width in pixels"],
+];
+
+const EXIT_CODES: Array<[string, string]> = [
+  [String(CLI_EXIT_CODES.ok), "Success"],
+  [String(CLI_EXIT_CODES.error), "Failed: bad input, no data found or a failed check"],
+  [String(CLI_EXIT_CODES.unusableShot), "shot --strict saved an image of a pane with no usable data"],
 ];
 
 export interface CliHelpEntry {
@@ -90,6 +115,9 @@ export function renderCliHelp(entries: CliHelpEntry[], version: string, descript
     `${cliStyles.bold("gloomberb")} ${cliStyles.muted(version)}`,
     ...wrapText(description, width),
     "",
+    renderSection("Start here"),
+    ...renderDefinitions(START_HERE, { width, termStyle: cliStyles.command }),
+    "",
     renderSection("Usage"),
     ...renderDefinitions([
       ["gloomberb", "Open the terminal UI"],
@@ -109,6 +137,9 @@ export function renderCliHelp(entries: CliHelpEntry[], version: string, descript
 
   lines.push("", renderSection("Global options"));
   lines.push(...renderDefinitions(GLOBAL_OPTIONS, { width, termStyle: cliStyles.command }));
+
+  lines.push("", renderSection("Exit codes"));
+  lines.push(...renderDefinitions(EXIT_CODES, { width, termStyle: cliStyles.command }));
   return lines.join("\n");
 }
 
@@ -178,14 +209,10 @@ function editDistance(left: string, right: string): number {
   return previous[right.length]!;
 }
 
-/** The closest command token to a mistyped one, or null when nothing is plausibly meant. */
-export function suggestCliCommand(token: string, candidates: Iterable<string>): string | null {
-  const needle = token.trim().toLowerCase();
-  if (!needle || needle.startsWith("-")) return null;
+function closestName(needle: string, candidates: Iterable<string>): string | null {
   const allowed = needle.length <= 4 ? 1 : 2;
   let best: { name: string; score: number } | null = null;
   for (const candidate of candidates) {
-    if (candidate.startsWith("-")) continue;
     // A clear prefix ("tick" for "ticker") beats an edit of the same size.
     const score = needle.length >= 3 && candidate.startsWith(needle)
       ? 0.5
@@ -194,4 +221,20 @@ export function suggestCliCommand(token: string, candidates: Iterable<string>): 
     if (!best || score < best.score) best = { name: candidate, score };
   }
   return best?.name ?? null;
+}
+
+/** The closest command token to a mistyped one, or null when nothing is plausibly meant. */
+export function suggestCliCommand(token: string, candidates: Iterable<string>): string | null {
+  const needle = token.trim().toLowerCase();
+  if (!needle || needle.startsWith("-")) return null;
+  return closestName(needle, [...candidates].filter((candidate) => !candidate.startsWith("-")));
+}
+
+/** The closest of a command's options to a mistyped one (`--rnage` for `--range`), or null. */
+export function suggestCliOption(flag: string, options: Iterable<string>): string | null {
+  const needle = flag.trim().toLowerCase().replace(/^-+/, "");
+  if (!needle) return null;
+  const byName = new Map([...options].map((option) => [option.replace(/^-+/, ""), option] as const));
+  const name = closestName(needle, byName.keys());
+  return name == null ? null : byName.get(name)!;
 }

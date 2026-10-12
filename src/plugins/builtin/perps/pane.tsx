@@ -3,29 +3,67 @@ import { isAccessDenied } from "../../../api-client/errors";
 import { usePlanAccess } from "../../../api-client/plan-access";
 import type { PerpBoardRow, PerpMarketPayload } from "../../../api-client/perps";
 import { buildSectionedRows, ChartTableHeader, DataTableView, EmptyState, KeyValueRow, SectionHeading, PaneStatusBody, QueryBar, StatGrid, useChartTableSelection,
-  usePaneNoticeFooter, usePaneStatusFooter, usePaneTabs, useQueryBarSearch, type DataTableCell, type PaneHint, type SectionedRow, type StatItem } from "../../../components";
+  usePaneNoticeFooter, usePaneStatusFooter, usePaneTabs, useQueryBarSearch, type DataTableCell, type KeyValueRowProps, type PaneFooterSegment, type PaneHint, type SectionedRow,
+  type StatItem } from "../../../components";
+import { deriveHeadlessFreshness, paneStatusLineVariants } from "../../../cli/pane-functions/freshness";
 import { openFormModal } from "../../../components/form-modal";
+import { tf } from "../../../i18n";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePaneTitle, usePluginAppActions, usePluginPaneState } from "../../../public/react";
+import { useAgeClock } from "../../../react/auto-refresh";
+import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, useRendererHost, useUiCapabilities } from "../../../ui";
 import { getSharedRegistry } from "../../registry/shared";
 import { SignInWall } from "../cloud/auth-actions";
 import { CLOUD_PLAN_KEY, useCloudUpgradeAction } from "../shared/cloud-upgrade";
+import { useCommandValue } from "../shared/command-tab";
+import { useOpenDescription } from "../shared/open-description";
 import { UpgradeLabel } from "../shared/locked-rows";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { cachedPerpSelection, cachedPerpsBoard, cachedPerpsCompare, cachedPerpsRankings, loadPerpSelection, loadPerpsBoard, loadPerpsCompare,
   loadPerpsHistoryForRange, loadPerpsRankings } from "./client";
-import { ASSET_FILTERS, BOARD_SORTS, boardColumns, compact, compareColumns, fundingInterval, fundingSpread, historyCaption, historyCell, historyChange, historyColumns,
-  historyRows, historySeries, historyValue, isMarketTab, label, marketLabel, openingTab, perpCell, PERP_TABS, percent, price, rankingColumns, rankingRows, RANKINGS,
-  sortLabel, time, venueLabel, venueName, venuesOf, type HistoryMetric, type PerpColumnId, type PerpTab, type RankingKey } from "./model";
+import { perpFreshness, perpObservation } from "./freshness";
+import { ASSET_FILTERS, BOARD_SORTS, boardColumns, compact, compareColumns, dayChange, fundingInterval, fundingSpread, historyCaption, historyCell, historyChange, historyColumns,
+  HISTORY_METRICS, historyRows, historySeries, historyValue, inPoints, isMarketTab, label, longShortReason, marketLabel, metricLabel, openingTab, perpCell, PERP_TABS, percent,
+  positioningFields, price, rankingColumns, rankingRows, RANKINGS, ratioText, share, sortLabel, time, underlyingTicker, venueLabel, venueName, venuesOf, type HistoryMetric,
+  type PerpColumnId, type PerpTab, type RankingKey } from "./model";
+
+const NO_ROWS: readonly PerpBoardRow[] = [];
+
+/**
+ * The footer line for the rows on screen: each venue's own observation time, how old the oldest is, the delay state
+ * and what the funding figures are, the line `fn PERP` and `shot PERP` end with. It keeps ageing while the pane is
+ * seen (`since` is when the rows loaded), and is published for a capture to date itself the same way.
+ */
+function usePerpStatusLine(rows: readonly PerpBoardRow[], funding: readonly PerpBoardRow[], since: number | null): PaneFooterSegment[] {
+  const now = useAgeClock(since);
+  const declared = useMemo(() => rows.length ? perpFreshness(rows, { funding, now }) : null, [rows, funding, now]);
+  useRemoteUiNode(declared ? { role: "report-freshness", label: "Venue freshness", getMetadata: () => ({ ...declared, observations: rows.map(perpObservation) }) } : null);
+  return useMemo(() => {
+    if (!declared) return [];
+    const freshness = deriveHeadlessFreshness({ shape: "rows" }, { rows: rows.map(perpObservation), freshness: declared }, now);
+    const tone = freshness.status === "stale" ? "warning" as const : "muted" as const;
+    // A footer too narrow beside its keys gives up the funding part before any venue's time.
+    const [line, ...shorter] = paneStatusLineVariants(freshness).map((text) => [{ text, tone }]);
+    return [{ id: "perp-freshness", asOf: true, parts: line!, variants: shorter }];
+  }, [declared, rows, now]);
+}
+
+type EvidenceField = [label: string, value: string, detail?: string, link?: KeyValueRowProps["link"]];
 
 function MarketEvidence({ row, data, width, height }: { row: PerpBoardRow; data: PerpMarketPayload; width: number; height: number }) {
   const desktop = !!useUiCapabilities().nativePaneChrome;
   const upgrade = useCloudUpgradeAction("perp");
+  const openDescription = useOpenDescription();
+  const positioning = positioningFields(row);
+  // The security the premium is measured against opens its DES, as the `d` key does.
+  const security = underlyingTicker(row);
+  const listed: EvidenceField[] = security && row.underlying ? [["Ticker", row.underlying.symbol, row.underlying.listingExchange,
+    { label: tf("Open {ticker}", { ticker: row.underlying.symbol }), onOpen: () => openDescription(security) }]] : [];
   // Grouped as a trader reads a contract; a stock reference only for a market that has one.
-  const groups: Array<[string, Array<[string, string, string?]>]> = [
+  const groups: Array<[string, EvidenceField[]]> = [
     ["Market", [["Venue", venueLabel(row)], ["Contract symbol", row.symbol], ["Observed", time(row.observedAt)], ["Source as of", time(row.sourceAsOf)],
       ["Mark", `${price(row.markPrice)} ${row.quoteCurrency}`], ["Oracle", `${price(row.oraclePrice)} ${row.quoteCurrency}`], ["Premium vs oracle", percent(row.premium)]]],
     ["Funding", [["Funding", `${percent(row.fundingRate, 5)} / ${fundingInterval(row)}`, row.fundingKind === "last-paid" ? "Last paid" : row.fundingKind === "continuous" ? "Continuous rate" : "Current rate"],
@@ -34,15 +72,17 @@ function MarketEvidence({ row, data, width, height }: { row: PerpBoardRow; data:
       ...(row.nextFundingAt ? [["Next funding", time(row.nextFundingAt)] as [string, string]] : [])]],
     ["Open Interest", [["Open interest", `${compact(row.openInterestBase)} ${row.baseAsset} · ${compact(row.openInterestUsd)} USD`],
       ["OI change 1h / 24h", row.oiChange1h == null && row.oiChange24h == null ? "Collecting" : `${percent(row.oiChange1h, 2)} / ${percent(row.oiChange24h, 2)}`, "own snapshots"]]],
-    ...(row.underlying ? [["Underlying", [["Underlying last", `${price(row.underlying.price)} ${row.underlying.currency}`, time(row.underlying.asOf)], ["Underlying session", row.underlying.marketState ?? "Unknown"],
-      ["Premium vs underlying", percent(row.underlyingPremium)], ["Closed-market premium", percent(row.closedMarketPremium)]]] as [string, Array<[string, string, string?]>]] : []),
+    ...(positioning ? [["Positioning", positioning.map((field) => [field.label, field.text, field.detail])] as [string, EvidenceField[]]] : []),
+    ...(row.underlying ? [["Underlying", [...listed, ["Underlying last", `${price(row.underlying.price)} ${row.underlying.currency}`, time(row.underlying.asOf)], ["Underlying session", row.underlying.marketState ?? "Unknown"],
+      ["Premium vs underlying", percent(row.underlyingPremium)], ["Closed-market premium", percent(row.closedMarketPremium)]]] as [string, EvidenceField[]]] : []),
     ["Contract", [["Contract", `${label(row.contractType)} · ${row.priceMultiplier}× price`], ["Margin", row.marginCurrency], ["Max leverage", row.maxLeverage == null ? "--" : `${row.maxLeverage}×`],
       ["Margin mode", row.isolatedOnly === null ? "Unspecified" : row.isolatedOnly ? "Isolated only" : "Cross / isolated"], ["Listing", row.delisted ? "Delisted" : "Active"], ["Confidence", label(row.confidence)]]],
   ];
-  return <ScrollBox width={width} height={desktop ? undefined : height} flexGrow={1} flexBasis={0} minHeight={0} contentOptions={{ paddingX: 1 }}>
+  // The ticker's link is not listed in the pane menu again: `d` there opens the same DES.
+  return <ScrollBox scrollY width={width} height={desktop ? undefined : height} flexGrow={1} flexBasis={0} minHeight={0} contentOptions={{ paddingX: 1 }}>
     {groups.map(([title, fields]) => <Fragment key={title}>
       <SectionHeading title={title} />
-      {fields.map(([name, value, detail]) => <KeyValueRow key={name} labelWidth={25} label={name} value={value} detail={detail} />)}
+      {fields.map(([name, value, detail, link]) => <KeyValueRow key={name} labelWidth={25} label={name} value={value} detail={detail} link={link} />)}
     </Fragment>)}
     {data.evidence.length ? <SectionHeading title="Observation Revisions" /> : null}
     {data.evidence.map((entry) => {
@@ -76,28 +116,45 @@ function History({ market, accessKey, width, height, focused, range, metric, ref
   const [selectedId, setSelected] = usePluginPaneState<string | null>("perps:history-point", null);
   const selected = rows.find((row) => row.time === selectedId) ?? rows.at(-1);
   const link = useChartTableSelection({ rows, getId: (row) => row.time, getDate: (row) => row.value == null ? null : new Date(row.time), selectedId: selected?.time ?? null, onSelect: setSelected, focused });
-  const series = useMemo(() => historySeries(data, metric, marketLabel(market), colors.warning), [data, metric, market, colors.warning]);
+  // Venues count long and short accounts differently, so the long/short legend names the venue beside the definition.
+  const seriesName = metric === "long-short" ? `${marketLabel(market)} · ${venueLabel(market)}` : marketLabel(market);
+  const series = useMemo(() => historySeries(data, metric, seriesName, colors.warning), [data, metric, seriesName, colors.warning]);
   const upgrade = useCloudUpgradeAction("perp");
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   usePaneRefreshKey(() => { refreshMarket(); void resource.reload(); }, { focused });
   const lastTime = rows.at(-1)?.time;
+  // The market row dates the figures beside the series. Its funding is the current estimate, unless the series is paid funding.
+  const marketRows = useMemo(() => [market], [market]);
+  const line = usePerpStatusLine(marketRows, metric === "funding" && !data?.funding.length ? marketRows : NO_ROWS, resource.updatedAt);
   usePaneStatusFooter({ registrationId: "perps:history", loading: resource.loading, error: resource.error, stale: resource.data?.stale,
-    info: lastTime ? [{ id: "history-asof", parts: [{ text: `${historyCaption(data, metric)} · ${time(lastTime)}`, tone: "muted" }] }] : [] });
+    info: [...line, ...(lastTime ? [{ id: "history-asof", parts: [{ text: `${historyCaption(data, metric)} · ${time(lastTime)}`, tone: "muted" as const }] }] : [])] });
   usePaneNoticeFooter({ registrationId: "perps:history-notice", focused, notices: [resource.data?.refreshError,
     data?.truncated ? "History reached the 5,000-observation limit. Narrow the range for all observations." : null].filter((value): value is string => !!value) });
   const periodChange = rows.length > 1 && rows[0]!.value != null && rows.at(-1)!.value != null ? rows.at(-1)!.value! - rows[0]!.value! : null;
+  const tone = (n: number) => n === 0 ? colors.textMuted : n > 0 ? colors.positive : colors.negative;
+  // Long/short: the latest reading stays free on the row; history adds its ratio and the day's move once it reaches back a day.
+  const reading = market.longShortRatio ?? null;
+  const day = metric === "long-short" ? dayChange(rows) : null;
   // The same four figures on every series: the series itself, its move over the range, and the market around it.
   const figures: StatItem[] = [
-    { id: "latest", label: metric === "funding" ? "Funding / 8h" : metric === "oi" ? "Open interest USD" : metric === "premium" ? "Oracle premium" : `Price ${market.quoteCurrency}`,
-      value: rows.length ? historyValue(rows.at(-1)?.value, metric) : metric === "funding" ? percent(market.fundingRate8h, 4) : metric === "oi" ? compact(market.openInterestUsd) : metric === "premium" ? percent(market.premium) : price(market.markPrice),
+    { id: "latest", label: metric === "funding" ? "Funding / 8h" : metric === "oi" ? "Open interest USD" : metric === "premium" ? "Oracle premium" : metric === "long-short" ? "Long accounts" : `Price ${market.quoteCurrency}`,
+      value: rows.length ? historyValue(rows.at(-1)?.value, metric) : metric === "funding" ? percent(market.fundingRate8h, 4) : metric === "oi" ? compact(market.openInterestUsd)
+        : metric === "premium" ? percent(market.premium) : metric === "long-short" ? share(reading?.longShare, 2) : price(market.markPrice),
       // Annualised from the shown 8h rate, so the detail always agrees with the value beside it.
       ...(metric === "funding" && rows.at(-1)?.value != null ? { detail: `${percent(rows.at(-1)!.value! * 3 * 365, 1)} APR` } : {}) },
-    ...(periodChange !== null ? [{ id: "change", label: `${range}D change`, value: historyChange(periodChange, metric), color: periodChange === 0 ? colors.textMuted : periodChange > 0 ? colors.positive : colors.negative }] : []),
+    ...(metric === "long-short" ? [{ id: "ratio", label: "Long / short", value: ratioText(rows.length ? rows.at(-1)!.ratio : reading?.ratio) }] : []),
+    ...(day !== null ? [{ id: "day", label: "24h change", value: historyChange(day, metric), color: tone(day) }] : []),
+    // On a one-day range the day's move already says it.
+    ...(periodChange !== null && !(day !== null && range === "1") ? [{ id: "change", label: `${range}D change`, value: historyChange(periodChange, metric), color: tone(periodChange) }] : []),
     ...(metric !== "price" ? [{ id: "mark", label: `Mark ${market.quoteCurrency}`, value: price(market.markPrice) }] : []),
     ...(metric !== "oi" ? [{ id: "oi", label: "Open interest USD", value: compact(market.openInterestUsd) }] : []),
   ].slice(0, 4);
   // A series with one basis says it in the legend; the column only appears when the basis changes along the range.
   const oneBasis = rows.every((row) => row.basis === rows[0]?.basis);
+  // A venue that publishes no long/short reading, or one not collected, says why instead of claiming to collect it.
+  const reason = metric === "long-short" ? longShortReason(market) : null;
+  const noSeries = reason && reason !== "Collecting" ? reason : null;
+  const missing = noSeries ?? COLLECTING[metric];
   const shownColumns = oneBasis ? columns.filter((column) => column.id !== "basis") : columns;
   if (data?.locked) return <Box flexDirection="column" flexGrow={1}>
     <StatGrid width={width} items={figures} />
@@ -109,18 +166,23 @@ function History({ market, accessKey, width, height, focused, range, metric, ref
       rootBefore={<ChartTableHeader width={width} height={height} tableRows={rows.length} tableColumns={shownColumns} figures={figures}
         chart={{ series: rows.length ? series : [], formatValue: (n) => historyValue(n, metric), remoteKind: "perpetual-history", ...link,
           viewport: rows.length > 1 ? { start: new Date(rows[0]!.time), end: new Date(rows.at(-1)!.time) } : undefined,
-          formatAxisValue: (n, domain) => metric === "funding" || metric === "premium" ? `${(n * 100).toFixed(Math.max(2, Math.min(6, Math.ceil(-Math.log10(Math.abs(domain.max - domain.min) * 100 / 4)))))}%` : historyValue(n, metric),
-          loading: !data && resource.loading, empty: rows.length < 3 ? COLLECTING[metric] : undefined }} />}
+          formatAxisValue: (n, domain) => {
+            const steps = Math.ceil(-Math.log10(Math.abs(domain.max - domain.min) * 100 / 4));
+            return metric === "funding" || metric === "premium" ? `${(n * 100).toFixed(Math.max(2, Math.min(6, steps)))}%`
+              : metric === "long-short" ? `${(n * 100).toFixed(Math.max(0, Math.min(2, steps)))}%` : historyValue(n, metric);
+          },
+          loading: !data && resource.loading, empty: rows.length < 3 ? missing : undefined }} />}
       renderCell={(row, column) => historyCell(row, column.id, metric, colors)}
       getExportMetadata={() => [["As of", lastTime ?? ""], ["Market", market.marketId], ["Series", historyCaption(data, metric)], ["Source", market.sourceUrl],
         ["Retrieved", data?.asOf ?? ""], ["Funding basis", `${fundingInterval(market)}; every history point uses its own recorded interval`],
-        ["Units", metric === "funding" || metric === "premium" ? "percent; changes in percentage points" : metric === "oi" ? "USD" : market.quoteCurrency]]}
-      emptyStateTitle="History is accumulating from the first observation." />
+        ["Units", metric === "long-short" ? "percent of accounts; changes in percentage points; ratio is long over short accounts" : inPoints(metric) ? "percent; changes in percentage points" : metric === "oi" ? "USD" : market.quoteCurrency],
+        ...(metric === "long-short" && reading ? [["Definition", `${venueLabel(market)}: ${reading.definitionText}`]] : [])]}
+      emptyStateTitle={noSeries ?? "History is accumulating from the first observation."} />
   </PaneStatusBody>;
 }
 
 const COLLECTING: Record<HistoryMetric, string> = { funding: "Collecting funding history", oi: "Collecting open interest from our own snapshots",
-  premium: "Collecting oracle premium from our own snapshots", price: "Collecting price history" };
+  premium: "Collecting oracle premium from our own snapshots", price: "Collecting price history", "long-short": "Collecting long/short history" };
 
 interface ListTabProps {
   accessKey: string;
@@ -133,7 +195,6 @@ interface ListTabProps {
   onOpen: (row: PerpBoardRow) => void;
 }
 
-const asOfInfo = (id: string, asOf: string | null | undefined) => asOf ? [{ id, parts: [{ text: time(asOf), tone: "muted" as const }] }] : [];
 const moreText = (count: number, noun: string) => `Upgrade for ${count.toLocaleString("en-US")} more ${noun}`;
 
 /** The preview's lock: under the rows it shows, or in place of the rows when none of the preview matches. */
@@ -167,7 +228,8 @@ function Board({ accessKey, width, height, focused, onPick, onOpen }: ListTabPro
   const locked = typeof data?.locked === "number" ? data.locked : 0;
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   usePaneRefreshKey(() => { void resource.reload(); }, { focused: focused && !querySearch.active });
-  usePaneStatusFooter({ registrationId: "perps:board", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: asOfInfo("board-asof", data?.asOf) });
+  const line = usePerpStatusLine(rows, rows, resource.updatedAt);
+  usePaneStatusFooter({ registrationId: "perps:board", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: line });
   usePaneNoticeFooter({ registrationId: "perps:board-notice", focused, notices: resource.data?.refreshError ? [resource.data.refreshError] : [] });
   if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="perps-signin" action="view perpetual markets" needsVerification={session.needsVerification} />;
   const narrow = (apply: () => void) => { apply(); setSelected(null); };
@@ -187,7 +249,7 @@ function Board({ accessKey, width, height, focused, onPick, onOpen }: ListTabPro
       renderCell={(row, column) => perpCell(row, column.id as PerpColumnId, colors)} selectedTextOverridesCellColor
       emptyStateTitle="No markets match these filters." emptyContent={lock && <Box paddingX={1} paddingY={1}><EmptyState title="No preview markets match." actions={<UpgradeLabel text={moreText(locked, "markets")} onPress={upgrade} role="perps-board-upgrade" />} /></Box>}
       bodyAfter={lock}
-      getExportMetadata={() => [["As of", data?.asOf ?? ""], ["Units", "funding per its own interval, APR, premium and changes in percent; open interest in USD"]]} />
+      getExportMetadata={() => [["As of", data?.asOf ?? ""], ["Units", "funding per its own interval, APR, premium and changes in percent; open interest in USD; long share in percent of accounts, each venue's definition"]]} />
   </PaneStatusBody>;
 }
 
@@ -210,7 +272,11 @@ function Rankings({ accessKey, width, height, focused, onPick, onOpen }: ListTab
   const columns = useMemo(() => rankingColumns(width), [width]);
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   usePaneRefreshKey(() => { void resource.reload(); }, { focused });
-  usePaneStatusFooter({ registrationId: "perps:rankings", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: asOfInfo("rankings-asof", data?.asOf) });
+  // Every ranked row is dated; only the funding lists show funding.
+  const rankedRows = useMemo(() => RANKINGS.flatMap((ranking) => rankingRows(data, ranking.key)), [data]);
+  const fundingRows = useMemo(() => RANKINGS.filter((ranking) => ranking.field === "fundingRate8h").flatMap((ranking) => rankingRows(data, ranking.key)), [data]);
+  const line = usePerpStatusLine(rankedRows, fundingRows, resource.updatedAt);
+  usePaneStatusFooter({ registrationId: "perps:rankings", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: line });
   usePaneNoticeFooter({ registrationId: "perps:rankings-notice", focused, notices: resource.data?.refreshError ? [resource.data.refreshError] : [] });
   if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="perps-signin" action="view perpetual rankings" needsVerification={session.needsVerification} />;
   const renderCell = (entry: SectionedRow<Ranked>, column: { id: string }): DataTableCell => {
@@ -244,15 +310,16 @@ function Compare({ asset, onAssetChange, accessKey, width, height, focused, onPi
   const loader = useCallback((force: boolean) => loadPerpsCompare(base, accessKey, force), [base, accessKey]);
   const resource = useAsyncResource(loader, { initialData: () => cachedPerpsCompare(base, accessKey), clearOnError: isAccessDenied, keepPreviousData: true });
   const data = resource.data?.payload;
-  const rows = data?.rows ?? [];
+  const rows = useMemo(() => data?.rows ?? [], [data]);
   const selected = rows.find((row) => row.marketId === selectedId) ?? rows[0] ?? null;
   useEffect(() => { onPick(selected); }, [selected, onPick]);
   const columns = useMemo(() => compareColumns(width), [width]);
+  const line = usePerpStatusLine(rows, rows, resource.updatedAt);
   const spread = useMemo(() => fundingSpread(rows), [rows]);
   const locked = typeof data?.locked === "number" ? data.locked : 0;
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   usePaneRefreshKey(() => { void resource.reload(); }, { focused: focused && !querySearch.active });
-  usePaneStatusFooter({ registrationId: "perps:compare", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: asOfInfo("compare-asof", data?.asOf) });
+  usePaneStatusFooter({ registrationId: "perps:compare", loading: resource.loading, error: data ? resource.error : null, stale: resource.data?.stale, info: line });
   usePaneNoticeFooter({ registrationId: "perps:compare-notice", focused, notices: resource.data?.refreshError ? [resource.data.refreshError] : [] });
   if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="perps-signin" action="compare perpetual venues" needsVerification={session.needsVerification} />;
   const figures: StatItem[] = spread ? [{ id: "spread", label: "Funding spread 8h", value: spread.text, detail: spread.detail }] : [];
@@ -269,7 +336,7 @@ function Compare({ asset, onAssetChange, accessKey, width, height, focused, onPi
       emptyStateTitle={`No perpetual contracts for ${base}.`} emptyContent={lock && <Box paddingX={1} paddingY={1}><EmptyState title={`No preview contracts for ${base}.`} actions={<UpgradeLabel text={moreText(locked, locked === 1 ? "contract" : "contracts")} onPress={upgrade} role="perps-compare-upgrade" />} /></Box>}
       bodyAfter={lock}
       getExportMetadata={() => [["As of", data?.asOf ?? ""], ["Base asset", base], ...(spread ? [["Funding spread 8h", spread.text, spread.detail]] : []),
-        ["Units", "funding per its own interval, per 8 hours, APR, premium and changes in percent; open interest in USD"]]} />
+        ["Units", "funding per its own interval, per 8 hours, APR, premium and changes in percent; open interest in USD; long share in percent of accounts, each venue's definition"]]} />
   </PaneStatusBody>;
 }
 
@@ -289,13 +356,16 @@ export function PerpsPane({ width, height, focused, marketAction }: Pick<PanePro
   const access = usePlanAccess();
   const accessKey = `${session.requestKey}:${access.hasProAccess ? "pro" : "preview"}`;
   const { createPaneFromTemplate, notify } = usePluginAppActions();
+  const openDescription = useOpenDescription();
   const upgrade = useCloudUpgradeAction("perp");
   const [openingMarket] = usePaneSettingValue("market", "");
   const [openingTabValue] = usePaneSettingValue("tab", openingTab(openingMarket));
-  const [savedTab, setTab] = usePluginPaneState<string>("perps:tab", openingTabValue);
+  // A market asked for again (a stock's perpetual row, PERP) comes back to it on its opening tab, whatever this pane
+  // shows by then.
+  const [savedTab, setTab] = useCommandValue<string>("perps", "perps:tab", (params) => params.market ? openingTabValue : null, openingTabValue);
   const tab = PERP_TABS.includes(savedTab as PerpTab) ? savedTab as PerpTab : openingTab(openingMarket);
   const marketTab = isMarketTab(tab);
-  const [search, setSearch] = usePluginPaneState<string>("perps:search", openingMarket);
+  const [search, setSearch] = useCommandValue("perps", "perps:search", (params) => params.market || null, openingMarket);
   const [compareAsset, setCompareAsset] = usePluginPaneState<string>("perps:compare", compareOpening(openingMarket));
   // The row under a list's cursor, and the last one any list had: an empty list keeps the market it was given.
   const [listRow, setListRow] = useState<PerpBoardRow | null>(null);
@@ -305,7 +375,7 @@ export function PerpsPane({ width, height, focused, marketAction }: Pick<PanePro
   const [range, setRange] = usePluginPaneState<string>("perps:range", openingRange);
   const [openingMetric] = usePaneSettingValue("metric", "funding");
   const [metricValue, setMetric] = usePluginPaneState<string>("perps:metric", openingMetric);
-  const metric: HistoryMetric = ["funding", "oi", "premium", "price"].includes(metricValue) ? metricValue as HistoryMetric : "funding";
+  const metric: HistoryMetric = HISTORY_METRICS.includes(metricValue as HistoryMetric) ? metricValue as HistoryMetric : "funding";
   // One market's selection only loads for its own tabs; the lists bring their own rows.
   const loader = useCallback((force: boolean) => loadPerpSelection(search, accessKey, force), [search, accessKey]);
   const resource = useAsyncResource(marketTab ? loader : null, { initialData: () => cachedPerpSelection(search, accessKey), clearOnError: isAccessDenied });
@@ -327,7 +397,9 @@ export function PerpsPane({ width, height, focused, marketAction }: Pick<PanePro
   const refreshMarket = useCallback(() => { void resource.reload(); }, [resource.reload]);
   useAutoRefresh(resource.updatedAt, resource.load, { intervalMs: 60_000 });
   usePaneRefreshKey(refreshMarket, { focused: focused && marketTab && !querySearch.active && (tab !== "history" || !active) });
-  const navigate = (template: string) => { if (current?.underlyingSymbol) createPaneFromTemplate(template, { symbol: current.underlyingSymbol, arg: current.underlyingSymbol }); };
+  // The listed stock or fund a market tracks opens the way a ticker link does, on the DES already open for that
+  // listing when there is one; crypto, indices and commodities have none.
+  const underlying = current ? underlyingTicker(current) : null;
   const preview = marketTab ? data?.access === "preview" : !access.hasProAccess;
   const hints: PaneHint[] = [
     ...(current && marketAction ? [{ id: marketAction.id, key: marketAction.key, label: marketAction.label, onPress: () => marketAction.onPress(current) }] : []),
@@ -336,11 +408,17 @@ export function PerpsPane({ width, height, focused, marketAction }: Pick<PanePro
     } }] : []),
     ...(current && tab !== "evidence" ? [{ id: "evidence", key: "e", label: "vidence", onPress: () => marketTab ? setTab("evidence") : openMarket(current, "evidence") }] : []),
     ...(current ? [{ id: "source", key: "o", label: "pen source", onPress: () => void host.openExternal(current.sourceUrl) }] : []),
-    ...(current?.underlyingSymbol ? [{ id: "description", key: "d", label: "es", onPress: () => navigate("new-ticker-detail-pane") }, { id: "financials", key: "f", label: "a", onPress: () => navigate("financial-analysis-pane") }, { id: "graph", key: "g", label: "raph", onPress: () => navigate("chart-composer-pane") }] : []),
+    ...(underlying ? [{ id: "description", key: "d", label: "es", title: "Description (DES)", onPress: () => openDescription(underlying) },
+      // A fund has no statements to analyse.
+      ...(current?.assetClass === "stocks" ? [{ id: "financials", key: "f", label: "a", title: "Financial analysis (FA)", onPress: () => createPaneFromTemplate("financial-analysis-pane", { symbol: underlying }) }] : []),
+      { id: "graph", key: "g", label: "raph", title: "Price chart (G)", onPress: () => createPaneFromTemplate("chart-composer-pane", { arg: underlying }) }] : []),
     ...(preview ? [{ id: "upgrade", key: CLOUD_PLAN_KEY, label: "upgrade", title: "Upgrade to Pro", onPress: upgrade }] : []),
   ];
-  usePaneStatusFooter({ registrationId: "perps", loading: marketTab && resource.loading, error: data ? resource.error : null, stale: marketTab && (resource.data?.stale || !!active?.stale),
-    info: active && (tab === "evidence" || data?.access === "preview") ? [{ id: "asof", parts: [{ text: time(active.observedAt), tone: "muted" }] }] : [], hints });
+  // History dates its own market beside its series; Evidence is dated here.
+  const evidenceRows = useMemo(() => tab === "evidence" && active ? [active] : NO_ROWS, [tab, active]);
+  const evidenceLine = usePerpStatusLine(evidenceRows, evidenceRows, resource.updatedAt);
+  usePaneStatusFooter({ registrationId: "perps", loading: marketTab && resource.loading, error: data ? resource.error : null, stale: marketTab && resource.data?.stale,
+    info: evidenceLine, hints });
   usePaneNoticeFooter({ registrationId: "perps:notices", focused, notices: marketTab ? [resource.data?.refreshError,
     ...(active?.qualityFlags.map((flag) => flag.replaceAll("_", " ").replaceAll("-", " ")) ?? [])].filter((s): s is string => !!s) : [] });
   if (marketTab && !data && isCloudSessionRequired(resource.error)) return <SignInWall placement="perps-signin" action="view perpetual history" needsVerification={session.needsVerification} />;
@@ -352,7 +430,7 @@ export function PerpsPane({ width, height, focused, marketAction }: Pick<PanePro
       : tab === "compare" ? <Compare {...list} asset={compareAsset} onAssetChange={setCompareAsset} /> : <>
         <QueryBar width={width} search={{ focused, value: search, onChange: setSearch, placeholder: "Market or canonical identity", debounceMs: 300, ...querySearch.searchProps }}
           filters={tab === "history" ? [
-            { id: "metric", label: "Series", value: metric, options: ["funding", "oi", "premium", "price"].map((value) => ({ value, label: value === "oi" ? "OI" : label(value) })), onChange: setMetric },
+            { id: "metric", label: "Series", value: metric, options: HISTORY_METRICS.map((value) => ({ value, label: metricLabel(value) })), onChange: setMetric },
             { id: "range", label: "Range", value: range, options: ["1", "7", "30", "90", "365"].map((value) => ({ value, label: `${value}D` })), onChange: setRange },
           ] : []} />
         <PaneStatusBody loading={!data && resource.loading} error={!data ? resource.error : null} subject="perpetual market">

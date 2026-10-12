@@ -1,5 +1,5 @@
 import { peekGeoCatalog } from "../../../api-client/geo";
-import { SERIES_COLORS } from "../../../time-series/resolve";
+import { SERIES_COLORS } from "../../../theme/series-colors";
 import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import type { PaneTemplateDef } from "../../../types/plugin";
 import { chartHeadless } from "../chart-composer/headless";
@@ -7,7 +7,7 @@ import { buildCustomChartPreset } from "../chart-composer/presets";
 import { formatGeoSeriesExpression } from "../chart-composer/series-expression";
 import type { PluginModule } from "../plugin-module";
 import { cloudGeoRequest } from "./client";
-import { chokepointSeriesFor, chokepointSeriesIds, createGeoChartSeriesCapability, KEY_CHOKEPOINTS } from "./geo-series";
+import { chokepointSeriesFor, chokepointSeriesIds, CHOKEPOINT_SERIES, createGeoChartSeriesCapability, KEY_CHOKEPOINTS } from "./geo-series";
 import { mapHeadless } from "./headless";
 import { buildMapSettingsDef, groupTitle, MAP_PRESET_OPTIONS, parseMapPreset } from "./layers";
 import { WORLD_VENUE_MAP_PANE_ID, WorldVenueMapPane } from "./pane";
@@ -49,7 +49,7 @@ export const worldVenueMapModule: PluginModule = {
   panes: [
     {
       id: WORLD_VENUE_MAP_PANE_ID,
-      name: "World Venue Map",
+      name: "World Map",
       icon: "M",
       component: WorldVenueMapPane,
       defaultPosition: "right",
@@ -63,9 +63,9 @@ export const worldVenueMapModule: PluginModule = {
     {
       id: "world-venue-map-pane",
       paneId: WORLD_VENUE_MAP_PANE_ID,
-      label: "World Venue Map",
-      description: "Trading venues with live status and local time; ships, ports, energy and airports as layers on the same map.",
-      keywords: ["world", "map", "venue", "venues", "exchange", "mic", "market hours", "open markets", "ships", "vessels", "ports", "chokepoints", "pipelines", "airports", "energy", "layers"],
+      label: "World Map",
+      description: "A world map with trading venues and their hours; ships, ports, energy and airports as layers.",
+      keywords: ["world", "map", "globe", "countries", "venue", "venues", "exchange", "mic", "market hours", "open markets", "ships", "vessels", "ports", "chokepoints", "pipelines", "airports", "energy", "layers"],
       shortcut: {
         prefix: "MAP",
         argPlaceholder: "layers",
@@ -78,7 +78,7 @@ export const worldVenueMapModule: PluginModule = {
         const preset = parseMapPreset(options?.arg ?? options?.values?.layers);
         if (!preset) return { placement: "floating" };
         return {
-          title: `Map · ${preset.layers.map(groupTitle).join(", ")}`,
+          title: preset.layers.length ? `Map · ${preset.layers.map(groupTitle).join(", ")}` : "Map · Venues",
           placement: "floating",
           settings: { layers: preset.layers, venues: preset.venues },
         };
@@ -87,4 +87,5 @@ export const worldVenueMapModule: PluginModule = {
     chokepointTemplate,
   ],
   capabilities: [createGeoChartSeriesCapability()],
+  series: CHOKEPOINT_SERIES,
 };

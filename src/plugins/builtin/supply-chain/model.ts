@@ -1,7 +1,8 @@
-import type { SupplyRole, SupplyRow } from "../../../api-client/supply-chain";
-import { SERIES_COLORS } from "../../../time-series/resolve";
+import type { SupplyChainPayload, SupplyOptions, SupplyRole, SupplyRow } from "../../../api-client/supply-chain";
+import { SERIES_COLORS } from "../../../theme/series-colors";
 import { revenueAmount } from "../revenue-breakdown/model";
-import { activeRelationship, corroborationLabel, evidenceDate, evidenceLabel, isUnconfirmed, trustTier } from "./trust";
+import { countOf, freePreviewNote } from "../shared/free-preview";
+import { activeRelationship, corroborationLabel, evidenceDate, evidenceLabel, isUnconfirmed, matchesSupplyOptions, trustTier } from "./trust";
 
 /** One colour per role from the shared series palette, the same in the table, the flow and the evidence. */
 export const ROLE_COLORS: Record<SupplyRole, string> = {
@@ -64,6 +65,43 @@ export function counterpartyName(row: SupplyRow): string {
   return member ? `${member.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s*\(undisclosed\)/gi, "")} (undisclosed)` : name;
 }
 export const roleLabel = (role: SupplyRole) => role[0]!.toUpperCase() + role.slice(1);
+
+const SUPPLY_ROLE_ORDER: readonly SupplyRole[] = ["customer", "supplier", "partner", "competitor", "investee"];
+export interface SupplyRoleCount { role: SupplyRole; counterparties: number; locked: number }
+
+/**
+ * The one count behind the figures over the table, the flow and the headless
+ * report: per role, the companies the reader can see, each counted once
+ * however many disclosures name it (the flow draws one card per counterparty
+ * and role). Unconfirmed leads, inactive links and cohort groups are not
+ * counterparties. The server's counts are disclosures, not companies, so what
+ * a free preview withholds is reported apart as locked disclosures rather
+ * than added to the companies.
+ */
+export function supplyRoleCounts(data: Pick<SupplyChainPayload, "says" | "names" | "counts">, views: readonly ("says" | "names")[], options: Required<SupplyOptions>): SupplyRoleCount[] {
+  return SUPPLY_ROLE_ORDER.map((role) => {
+    const companies = new Set<string>();
+    let locked = 0;
+    for (const view of views) {
+      const rows = data[view].filter((row) => row.role === role);
+      for (const row of rows) if (!row.counterparty.aggregate && !isUnconfirmed(row) && matchesSupplyOptions(row, options)) companies.add(row.counterparty.id);
+      locked += Math.max(0, data.counts[view][role] - rows.length);
+    }
+    return { role, counterparties: companies.size, locked };
+  }).filter((entry) => entry.counterparties > 0 || entry.locked > 0);
+}
+
+/** Disclosures a free preview withholds from these views: the server's counts less the rows it sent. */
+export function lockedDisclosures(data: Pick<SupplyChainPayload, "says" | "names" | "counts">, views: readonly ("says" | "names")[]): number {
+  return views.reduce((sum, view) => sum + Math.max(0, Object.values(data.counts[view]).reduce((a, b) => a + b, 0) - data[view].length), 0);
+}
+
+/** The lock line of a free preview, in the same words in the pane and `fn SPLC`. */
+export function supplyPreviewNote(data: Pick<SupplyChainPayload, "previewRowsPerRole">, locked: number): string {
+  return freePreviewNote({ shows: data.previewRowsPerRole ? `${countOf(data.previewRowsPerRole, "relationship")} per role` : "part of the relationships",
+    adds: locked > 0 ? `${locked.toLocaleString("en-US")} more` : null });
+}
+
 export const percentage = (row: SupplyRow) => row.pctOfRevenue === null || trustTier(row) !== 1 || isUnconfirmed(row) || !activeRelationship(row) ? "--" : `${Number(row.pctOfRevenue.toFixed(2))}% ${row.pctScope ? "scoped " : ""}${row.pctBasis ?? ""}`;
 export const dollars = (row: SupplyRow) => row.usd === null ? "--" : `${row.usdBasis === "derived" ? "≈ " : ""}$${revenueAmount(row.usd)} ${row.usdBasis}`;
 const scaleLabel = (scale: number) => scale === 1 ? "" : scale === 1_000 ? " thousand" : scale === 1_000_000 ? " million" : scale === 1_000_000_000 ? " billion" : ` ×${scale.toLocaleString("en-US")}`;
