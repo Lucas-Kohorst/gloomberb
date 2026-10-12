@@ -808,7 +808,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(tui.frame()).not.toContain("Use a ticker symbol");
   });
 
-  test("renders one-month sparkline column when price history is loaded", async () => {
+  test("renders the price sparkline column when price history is loaded", async () => {
     const config = createPortfolioConfigWithColumns(
       "broker:ibkr-flex:DU12345",
       ["ticker", "price", "sparkline"],
@@ -838,7 +838,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = tui.frame();
-    expect(frame).toContain("1M");
+    expect(frame).toContain("PX");
     const row = frame.split("\n").find((line) => line.includes("AAPL")) ?? "";
     expect(row).toMatch(/[\u2800-\u28ff]/);
   });

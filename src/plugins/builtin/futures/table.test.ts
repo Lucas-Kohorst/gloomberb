@@ -7,6 +7,7 @@ import {
   type FuturesContract,
   type FuturesSector,
 } from "../../../market-data/futures-board";
+import { FUTURES_SERIES, futuresSeriesUnit } from "./series";
 import type { FuturesColumnId, FuturesTableRow } from "./model";
 import {
   createFuturesColumns,
@@ -157,6 +158,17 @@ describe("contract tick precision", () => {
 });
 
 describe("futures catalog", () => {
+  test("catalog units match the printed quote, not a blanket dollar price", () => {
+    const byCode = new Map(FUTURES_CONTRACTS.map((contract) => [contract.code, contract]));
+    expect(futuresSeriesUnit(byCode.get("TTF")!)).toBe("EUR");
+    expect(futuresSeriesUnit(byCode.get("LE")!)).toBe("USX");
+    expect(futuresSeriesUnit(byCode.get("ES")!)).toBe("points");
+    expect(futuresSeriesUnit(byCode.get("ZN")!)).toBe("points");
+    expect(futuresSeriesUnit(byCode.get("CL")!)).toBe("USD");
+    expect(FUTURES_SERIES.find((series) => series.id === "fut:TTF")?.unit).toBe("EUR");
+    expect(FUTURES_SERIES.every((series) => series.unit !== "USD" || !series.id.startsWith("fut:ZN"))).toBe(true);
+  });
+
   test("holds only available continuous symbols", () => {
     // DX=F is unavailable; the dollar index lives on the world indices board.
     expect(FUTURES_CONTRACTS.some((contract) => contract.symbol === "DX=F")).toBe(false);

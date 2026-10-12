@@ -1,6 +1,6 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
-import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
+import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline/view";
 import { t } from "../../../i18n";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
@@ -25,7 +25,7 @@ export interface CollectionEntry {
 
 const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   ...DEFAULT_COLUMNS,
-  { id: PRICE_SPARKLINE_COLUMN_ID, label: PRICE_SPARKLINE_PERIOD_LABEL, width: 6, align: "left" },
+  { id: PRICE_SPARKLINE_COLUMN_ID, label: "PX", width: 6, align: "left" },
   { id: "name", label: "NAME", width: 16, align: "left" },
   { id: "asset_type", label: "TYPE", width: 5, align: "left" },
   { id: "exchange", label: "EXCH", width: 8, align: "left" },
