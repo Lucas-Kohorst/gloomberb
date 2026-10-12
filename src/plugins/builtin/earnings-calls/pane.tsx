@@ -795,16 +795,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       message="Full transcripts with speaker attribution, analyst Q&A, guidance and risk extraction, transcribed from the call itself."
     />
   ) : selected && !selectedTranscript && (producing || (!selected.hasTranscript && !transcriptError)) ? (
-    <Box flexDirection="column" flexGrow={1} paddingX={1} gap={1}>
-      <Box height={1}>
-        <Text fg={colors.textDim}>
-          {[formatCallDate(selected.callAt), formatPeriod(selected.fiscalYear, selected.fiscalQuarter)]
-            .filter(Boolean)
-            .join("  ·  ")}
-        </Text>
-      </Box>
-      <Spinner label="Producing the transcript. This usually takes two to three minutes." />
-    </Box>
+    <PaneStatusBody loading subject="transcript" />
   ) : (
 
     // The reader gets its own find field: a transcript runs to thousands of
