@@ -69,7 +69,7 @@ export function TreasuryDailyPane({ width, height, focused }: PaneProps) {
   const bodyHeight = Math.max(1, height - tabRows);
   const renderCash = useCallback((row: CashAccount, column: CashColumn): DataTableCell => {
     if (column.id === "account") return { text: row.account };
-    const value = column.id === "opening" ? row.opening : row.closing;
+    const value = column.id === "today" ? row.today : row.month;
     return scaledCell(value, formatBillions(value), colors.textMuted);
   }, [colors.textMuted]);
   const renderDebt = useCallback((row: DebtDay, column: DebtColumn): DataTableCell => {

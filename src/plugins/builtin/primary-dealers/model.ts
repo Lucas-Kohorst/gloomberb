@@ -35,7 +35,6 @@ export interface DealerRow {
   latest: number | null;
   previous: number | null;
   change: number | null;
-  unit: string | null;
 }
 
 function seriesBreakYear(seriesBreak: string): number {
@@ -164,7 +163,7 @@ export function formatChange(value: number | null): string {
 
 export function toDealerRow(
   entry: CatalogEntry,
-  parsed: { keyid: string; unit: string | null; latest: { asOf: string; value: number } | null; previous: { asOf: string; value: number } | null },
+  parsed: { keyid: string; latest: { asOf: string; value: number } | null; previous: { asOf: string; value: number } | null },
   tab: DealerTab,
 ): DealerRow {
   const latest = parsed.latest?.value ?? null;
@@ -177,7 +176,6 @@ export function toDealerRow(
     latest,
     previous,
     change: latest != null && previous != null ? latest - previous : null,
-    unit: parsed.unit,
   };
 }
 
@@ -189,21 +187,20 @@ export function boardAsOf(rows: readonly DealerRow[]): string | null {
   return best;
 }
 
-type DealerColumnId = "position" | "asOf" | "latest" | "previous" | "change" | "unit";
+type DealerColumnId = "position" | "asOf" | "latest" | "previous" | "change";
 export type DealerColumn = DataTableColumn & { id: DealerColumnId };
 
 const DEALER_COLUMNS: readonly DealerColumn[] = [
   { id: "position", label: "Position", width: 28, align: "left", flexGrow: 1 },
   { id: "asOf", label: "As of", width: 10, align: "left" },
-  { id: "latest", label: "Latest", width: 12, align: "right" },
-  { id: "previous", label: "Previous", width: 12, align: "right" },
-  { id: "change", label: "Change", width: 12, align: "right" },
-  { id: "unit", label: "Unit", width: 14, align: "left" },
+  { id: "latest", label: "Latest $mn", width: 12, align: "right" },
+  { id: "previous", label: "Previous $mn", width: 12, align: "right" },
+  { id: "change", label: "Change $mn", width: 12, align: "right" },
 ];
 
-const NARROW_DROP_ORDER: readonly DealerColumnId[] = ["unit", "previous", "asOf"];
+const NARROW_DROP_ORDER: readonly DealerColumnId[] = ["previous", "asOf"];
 
-export function buildDealerColumns(width: number, showUnit: boolean): DealerColumn[] {
-  const columns = showUnit ? DEALER_COLUMNS : DEALER_COLUMNS.filter((column) => column.id !== "unit");
-  return fitChartTableColumns(columns, width, NARROW_DROP_ORDER);
+/** The release reports every figure in millions of dollars. */
+export function buildDealerColumns(width: number): DealerColumn[] {
+  return fitChartTableColumns(DEALER_COLUMNS, width, NARROW_DROP_ORDER);
 }

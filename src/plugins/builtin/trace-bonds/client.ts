@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { isoDateOrNull, numericOrNull, recordOrNull, textOrNull } from "../../../utils/guards";
 
 const ENDPOINT = "https://services-dynarep.ddwa.finra.org/public/reporting/v2/data/group/FixedIncomeMarket/name/corporateAndAgencySecurities";
 const PAGE_SIZE = 100;
@@ -36,29 +37,14 @@ export interface CorporateBond {
   traceGradeCode: string | null;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
+/** A sale date as its day. Text that is not a date is kept as published. */
+function saleDate(value: unknown): string | null {
+  return isoDateOrNull(value) ?? textOrNull(value);
 }
 
-function asText(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string" || !value.trim()) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function asDate(value: unknown): string | null {
-  const text = asText(value);
-  if (!text) return null;
-  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
+/** With no earlier sale to compare, the feed sends the whole price as the change. */
+function saleChange(change: number | null, price: number | null): number | null {
+  return change != null && price != null && price !== 0 && change === price ? null : change;
 }
 
 function scrubVendor(text: string): string {
@@ -71,8 +57,8 @@ function failureText(status: number, detail: string): string {
 }
 
 function failureDetail(payload: unknown): string {
-  const record = asRecord(payload);
-  return asText(record?.statusMessage) ?? asText(record?.message) ?? "";
+  const record = recordOrNull(payload);
+  return textOrNull(record?.statusMessage) ?? textOrNull(record?.message) ?? "";
 }
 
 /** Abort on the caller's signal or the timeout. AbortSignal.any is missing on older desktop webviews. */
@@ -115,36 +101,36 @@ function dataRows(data: unknown): unknown[] | null {
 /** Rows from a reporting envelope. Null when the payload is not that shape. */
 function corporateBondPayloadRows(payload: unknown): unknown[] | null {
   if (Array.isArray(payload)) return payload;
-  const record = asRecord(payload);
+  const record = recordOrNull(payload);
   if (!record) return null;
   if ("data" in record) return dataRows(record.data);
-  const body = asRecord(record.returnBody);
+  const body = recordOrNull(record.returnBody);
   if (body && "data" in body) return dataRows(body.data);
   return null;
 }
 
 function bondId(raw: Record<string, unknown>, index: number): string {
-  return asText(raw.cusip)
-    ?? asText(raw.issueSymbolIdentifier)
-    ?? `${asText(raw.issuerName) ?? ""}|${asText(raw.maturityDate) ?? ""}|${index}`;
+  return textOrNull(raw.cusip)
+    ?? textOrNull(raw.issueSymbolIdentifier)
+    ?? `${textOrNull(raw.issuerName) ?? ""}|${textOrNull(raw.maturityDate) ?? ""}|${index}`;
 }
 
 function parseBond(raw: unknown, index: number, seen: Map<string, number>): CorporateBond | null {
-  const record = asRecord(raw);
+  const record = recordOrNull(raw);
   if (!record) return null;
   const base = bondId(record, index);
   const count = seen.get(base) ?? 0;
   seen.set(base, count + 1);
   return {
     id: count === 0 ? base : `${base}#${count + 1}`,
-    issuerName: asText(record.issuerName) ?? "",
-    couponRate: asNumber(record.couponRate),
-    maturityDate: asDate(record.maturityDate),
-    lastSalePrice: asNumber(record.lastSalePrice),
-    lastSaleYield: asNumber(record.lastSaleYield),
-    priceChangeNumber: asNumber(record.priceChangeNumber),
-    lastTradeDate: asDate(record.lastTradeDate),
-    traceGradeCode: asText(record.traceGradeCode),
+    issuerName: textOrNull(record.issuerName) ?? "",
+    couponRate: numericOrNull(record.couponRate),
+    maturityDate: saleDate(record.maturityDate),
+    lastSalePrice: numericOrNull(record.lastSalePrice),
+    lastSaleYield: numericOrNull(record.lastSaleYield),
+    priceChangeNumber: saleChange(numericOrNull(record.priceChangeNumber), numericOrNull(record.lastSalePrice)),
+    lastTradeDate: saleDate(record.lastTradeDate),
+    traceGradeCode: textOrNull(record.traceGradeCode),
   };
 }
 
@@ -208,7 +194,7 @@ async function postBondPage(signal: AbortSignal): Promise<unknown> {
     signal,
   });
   const payload = await readPayload(response);
-  if (!response.ok || asRecord(payload)?.status === "failure") {
+  if (!response.ok || recordOrNull(payload)?.status === "failure") {
     throw new Error(failureText(response.status, failureDetail(payload)));
   }
   if (corporateBondPayloadRows(payload) == null) {

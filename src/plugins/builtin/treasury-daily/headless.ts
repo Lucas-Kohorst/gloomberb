@@ -4,8 +4,8 @@ import { formatBillions, formatTrillions } from "./model";
 
 const CASH_COLUMNS: HeadlessPaneColumn[] = [
   { key: "account", header: "Account" },
-  { key: "opening", header: "Opening $bn", align: "right", description: "Billions of dollars", format: formatBillions },
-  { key: "closing", header: "Closing $bn", align: "right", description: "Billions of dollars", format: formatBillions },
+  { key: "today", header: "Today $bn", align: "right", description: "The day's figure, billions of dollars", format: formatBillions },
+  { key: "month", header: "This month $bn", align: "right", description: "Month to date, billions of dollars", format: formatBillions },
 ];
 
 const DEBT_COLUMNS: HeadlessPaneColumn[] = [
@@ -30,6 +30,7 @@ export const treasuryDailyHeadless: HeadlessPaneDefinition<"bundle"> = {
     ],
   },
   describe: "Treasury operating cash and public debt",
+  freshness: { source: "US Treasury", status: "not-a-feed", basis: "daily statement" },
   async load(_args, ctx) {
     const { cash, debt } = await fetchTreasuryDaily(ctx.signal);
     return {
@@ -40,8 +41,8 @@ export const treasuryDailyHeadless: HeadlessPaneDefinition<"bundle"> = {
           columns: CASH_COLUMNS,
           rows: cash.rows.map((row) => ({
             account: row.account,
-            opening: row.opening,
-            closing: row.closing,
+            today: row.today,
+            month: row.month,
             recordDate: cash.recordDate,
           })),
         },
@@ -57,6 +58,9 @@ export const treasuryDailyHeadless: HeadlessPaneDefinition<"bundle"> = {
         },
       ],
       metadata: {
+        asOf: [cash.recordDate, debt[0]?.date ?? null].reduce<string | null>((newest, date) => (
+          date && (!newest || date > newest) ? date : newest
+        ), null),
         cashRecordDate: cash.recordDate,
         debtRecordDate: debt[0]?.date ?? null,
       },

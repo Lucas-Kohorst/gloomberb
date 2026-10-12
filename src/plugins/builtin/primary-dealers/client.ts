@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { isoDateOrNull, numericOrNull, recordOrNull, textOrNull } from "../../../utils/guards";
 import {
   boardAsOf,
   selectSeries,
@@ -18,7 +19,6 @@ interface SeriesPoint {
 
 interface ParsedSeries {
   keyid: string;
-  unit: string | null;
   latest: SeriesPoint | null;
   previous: SeriesPoint | null;
 }
@@ -30,71 +30,38 @@ export interface DealerBoard {
   asOf: string | null;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function asText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "string" || !value.trim()) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function asDate(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : null;
-}
-
-function readUnit(...sources: Array<Record<string, unknown> | null>): string | null {
-  for (const source of sources) {
-    if (!source) continue;
-    const unit = asText(source.unit) ?? asText(source.units) ?? asText(source.unit_name);
-    if (unit) return unit;
-  }
-  return null;
-}
-
 function parseCatalog(payload: unknown): CatalogEntry[] {
-  const root = asRecord(payload);
-  const pd = asRecord(root?.pd);
+  const root = recordOrNull(payload);
+  const pd = recordOrNull(root?.pd);
   const rows = Array.isArray(pd?.timeseries) ? pd.timeseries : Array.isArray(root?.timeseries) ? root.timeseries : [];
   const entries: CatalogEntry[] = [];
   for (const raw of rows) {
-    const row = asRecord(raw);
+    const row = recordOrNull(raw);
     if (!row) continue;
-    const seriesBreak = asText(row.seriesbreak) ?? asText(row.seriesBreak);
-    const keyid = asText(row.keyid) ?? asText(row.keyId);
+    const seriesBreak = textOrNull(row.seriesbreak) ?? textOrNull(row.seriesBreak);
+    const keyid = textOrNull(row.keyid) ?? textOrNull(row.keyId);
     if (!seriesBreak || !keyid) continue;
-    entries.push({ seriesBreak, keyid, description: asText(row.description) ?? "" });
+    entries.push({ seriesBreak, keyid, description: textOrNull(row.description) ?? "" });
   }
   return entries;
 }
 
 /** Latest two observations. Points may arrive oldest-last or newest-last. */
 function parseSeriesObservations(payload: unknown, fallbackKeyid = ""): ParsedSeries {
-  const root = asRecord(payload);
-  const pd = asRecord(root?.pd);
+  const root = recordOrNull(payload);
+  const pd = recordOrNull(root?.pd);
   const rows = Array.isArray(pd?.timeseries) ? pd.timeseries : Array.isArray(root?.timeseries) ? root.timeseries : [];
-  const points: Array<SeriesPoint & { unit: string | null; keyid: string }> = [];
+  const points: Array<SeriesPoint & { keyid: string }> = [];
   for (const raw of rows) {
-    const row = asRecord(raw);
+    const row = recordOrNull(raw);
     if (!row) continue;
-    const asOf = asDate(row.asofdate) ?? asDate(row.asOfDate) ?? asDate(row.date);
-    const value = asNumber(row.value);
+    const asOf = isoDateOrNull(row.asofdate) ?? isoDateOrNull(row.asOfDate) ?? isoDateOrNull(row.date);
+    const value = numericOrNull(row.value);
     if (!asOf || value == null) continue;
     points.push({
       asOf,
       value,
-      keyid: asText(row.keyid) ?? fallbackKeyid,
-      unit: readUnit(row, pd, root),
+      keyid: textOrNull(row.keyid) ?? fallbackKeyid,
     });
   }
   points.sort((a, b) => a.asOf < b.asOf ? -1 : a.asOf > b.asOf ? 1 : 0);
@@ -102,7 +69,6 @@ function parseSeriesObservations(payload: unknown, fallbackKeyid = ""): ParsedSe
   const previous = points.length >= 2 ? points[points.length - 2] ?? null : null;
   return {
     keyid: latest?.keyid || fallbackKeyid,
-    unit: latest?.unit ?? previous?.unit ?? null,
     latest: latest ? { asOf: latest.asOf, value: latest.value } : null,
     previous: previous ? { asOf: previous.asOf, value: previous.value } : null,
   };

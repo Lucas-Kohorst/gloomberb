@@ -1,4 +1,5 @@
 import { httpFetch } from "../../../utils/http-transport";
+import { numericOrNull, scalarTextOrNull } from "../../../utils/guards";
 import type { CashAccount, DebtDay, OperatingCash } from "./model";
 
 const CASH_URL = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/operating_cash_balance?sort=-record_date&page[size]=40";
@@ -11,24 +12,9 @@ export interface TreasuryDaily {
   debt: DebtDay[];
 }
 
-function text(value: unknown): string | null {
-  if (typeof value !== "string" && typeof value !== "number") return null;
-  const trimmed = String(value).trim();
-  return trimmed || null;
-}
-
 function recordDate(value: unknown): string | null {
-  const date = text(value);
+  const date = scalarTextOrNull(value);
   return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
-}
-
-/** Balances arrive as strings. The string "null" means the figure was not published. */
-function amount(value: unknown): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const raw = text(value);
-  if (!raw || raw.toLowerCase() === "null") return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function isBusinessDay(iso: string): boolean {
@@ -47,15 +33,17 @@ function parseOperatingCash(payload: unknown): OperatingCash {
   const parsed: Array<CashAccount & { date: string }> = [];
   for (const row of rowsOf(payload)) {
     const date = recordDate(row.record_date);
-    const account = text(row.account_type);
+    const account = scalarTextOrNull(row.account_type);
     if (!date || !account) continue;
-    const line = text(row.src_line_nbr);
+    const line = scalarTextOrNull(row.src_line_nbr);
     parsed.push({
       id: `${date}:${line ?? account}`,
       date,
       account,
-      opening: amount(row.open_today_bal),
-      closing: amount(row.close_today_bal),
+      // Since the 2022 statement format the day's figures are in open_today_bal
+      // and close_today_bal is always "null".
+      today: numericOrNull(row.open_today_bal),
+      month: numericOrNull(row.open_month_bal),
     });
   }
   const recordDateValue = parsed.reduce<string | null>((latest, row) => (
@@ -66,8 +54,8 @@ function parseOperatingCash(payload: unknown): OperatingCash {
     rows: parsed.filter((row) => row.date === recordDateValue).map((row) => ({
       id: row.id,
       account: row.account,
-      opening: row.opening,
-      closing: row.closing,
+      today: row.today,
+      month: row.month,
     })),
   };
 }
@@ -80,9 +68,9 @@ function parseDebtToPenny(payload: unknown): DebtDay[] {
     byDate.set(date, {
       id: date,
       date,
-      heldByPublic: amount(row.debt_held_public_amt),
-      intragovernmental: amount(row.intragov_hold_amt),
-      total: amount(row.tot_pub_debt_out_amt),
+      heldByPublic: numericOrNull(row.debt_held_public_amt),
+      intragovernmental: numericOrNull(row.intragov_hold_amt),
+      total: numericOrNull(row.tot_pub_debt_out_amt),
     });
   }
   return [...byDate.values()]

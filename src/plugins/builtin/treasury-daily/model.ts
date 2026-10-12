@@ -12,10 +12,10 @@ export const TREASURY_TABS: { value: TreasuryTab; label: string }[] = [
 export interface CashAccount {
   id: string;
   account: string;
-  /** Millions of dollars. Null when the feed sends no balance. */
-  opening: number | null;
-  /** Millions of dollars. Null when the feed sends no balance. */
-  closing: number | null;
+  /** The day's figure, millions of dollars. Null when it was not published. */
+  today: number | null;
+  /** Month to date (the month's opening balance on that row), millions of dollars. Null when it was not published. */
+  month: number | null;
 }
 
 export interface OperatingCash {
@@ -34,15 +34,15 @@ export interface DebtDay {
   total: number | null;
 }
 
-type CashColumnId = "account" | "opening" | "closing";
+type CashColumnId = "account" | "today" | "month";
 type DebtColumnId = "date" | "heldByPublic" | "intragovernmental" | "total";
 export type CashColumn = DataTableColumn & { id: CashColumnId };
 export type DebtColumn = DataTableColumn & { id: DebtColumnId };
 
 export const CASH_COLUMNS: CashColumn[] = [
   { id: "account", label: "Account", width: 28, align: "left", flexGrow: 1 },
-  { id: "opening", label: "Opening $bn", width: 12, align: "right" },
-  { id: "closing", label: "Closing $bn", width: 12, align: "right" },
+  { id: "today", label: "Today $bn", width: 12, align: "right" },
+  { id: "month", label: "This month $bn", width: 15, align: "right" },
 ];
 
 export const DEBT_COLUMNS: DebtColumn[] = [

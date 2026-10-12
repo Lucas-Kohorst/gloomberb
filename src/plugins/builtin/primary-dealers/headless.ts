@@ -9,10 +9,9 @@ const text = (value: unknown) => typeof value === "string" && value ? value : "â
 const COLUMNS: HeadlessPaneColumn[] = [
   { key: "position", header: "Position" },
   { key: "asOf", header: "As of", format: text },
-  { key: "latest", header: "Latest", align: "right", format: level },
-  { key: "previous", header: "Previous", align: "right", format: level },
-  { key: "change", header: "Change", align: "right", format: change },
-  { key: "unit", header: "Unit", format: text },
+  { key: "latest", header: "Latest $mn", align: "right", format: level },
+  { key: "previous", header: "Previous $mn", align: "right", format: level },
+  { key: "change", header: "Change $mn", align: "right", format: change },
 ];
 
 function reportRow(row: DealerRow) {
@@ -23,7 +22,6 @@ function reportRow(row: DealerRow) {
     latest: row.latest,
     previous: row.previous,
     change: row.change,
-    unit: row.unit,
   };
 }
 
@@ -32,6 +30,7 @@ export const primaryDealersHeadless: HeadlessPaneDefinition<"bundle"> = {
   argument: { kind: "none" },
   options: [],
   describe: "Primary dealer net positions and settlement fails",
+  freshness: { source: "New York Fed", status: "not-a-feed", basis: "weekly release" },
   discovery: {
     aliases: ["PDLR"],
     dataRequirements: ["Weekly primary dealer positions and settlement fails"],

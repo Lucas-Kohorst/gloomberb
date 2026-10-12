@@ -50,6 +50,7 @@ export const traceBondsHeadless: HeadlessPaneDefinition<"bundle"> = {
     ],
   },
   describe: "Latest corporate and agency bond sales",
+  freshness: { source: "FINRA", status: "not-a-feed", basis: "last sales", observedKey: "lastTradeDate" },
   async load(args, ctx) {
     const bonds = await fetchCorporateBonds(ctx.signal);
     const argument = Array.isArray(args.argument) ? args.argument.join(" ") : args.argument ?? "";

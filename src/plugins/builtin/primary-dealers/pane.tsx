@@ -48,8 +48,7 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
     }
     return best;
   }, [rows]);
-  const showUnit = rows.some((row) => row.unit != null);
-  const columns = useMemo(() => buildDealerColumns(width, showUnit), [showUnit, width]);
+  const columns = useMemo(() => buildDealerColumns(width), [width]);
   const footerInfo = useMemo(
     () => asOf ? [{ id: "as-of", parts: [{ text: asOf, tone: "muted" as const }] }] : [],
     [asOf],
@@ -102,8 +101,6 @@ export function PrimaryDealersPane({ focused, width, height }: PaneProps) {
         return { text: formatLevel(row.previous), value: row.previous, color: selectedColor ?? colors.textDim };
       case "change":
         return { text: formatChange(row.change), value: row.change, color: selectedColor ?? changeColor(row.change) };
-      case "unit":
-        return { text: row.unit ?? "—", color: selectedColor ?? colors.textDim };
     }
   }, []);
 
