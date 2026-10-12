@@ -57,10 +57,10 @@ test("financial exports distinguish provider dates from SEC period evidence and 
   const result = await financialStatementsHeadless.load(args(["COST"], { period: "annual", statement: "income" }), ctx);
   const columns = result.metadata!.columns as Array<Record<string, unknown>>;
   expect(columns.find(({ date }) => date === "2024-09-01")).toMatchObject({ dateSource: "sec", providerDate: "2024-08-31", dateEvidence, label: "2024-09-01 USD (SEC date)" });
-  expect(columns.find(({ date }) => date === "2023-08-31")).toMatchObject({ dateSource: "provider", dateEvidence: null, label: "2023-08-31 USD (provider date)" });
+  expect(columns.find(({ date }) => date === "2023-08-31")).toMatchObject({ dateSource: "provider", dateEvidence: null, label: "2023-08-31 USD" });
   expect(columns.find(({ date }) => date === "TTM")).toMatchObject({ dateSource: "derived", dateEvidence: null, providerDate: null });
   expect(columns.every((column) => column.availableAt === null && column.fieldAvailability === null)).toBe(true);
-  expect(result.columns?.find(({ key }) => key === "2023-08-31")?.header).toContain("provider date");
+  expect(result.columns?.find(({ key }) => key === "2023-08-31")?.header).not.toContain("provider");
 });
 
 test("financial exports put share counts in ADRs only for the periods the service says count receipts", async () => {

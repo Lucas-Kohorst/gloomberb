@@ -264,7 +264,8 @@ for (const reportedCurrency of [undefined, "USD"]) {
     expect(row(result, "basicShares:1").cells[0]!.growth).toBe(1);
     expect(csv).toContain(expectedHeader);
     expect(frame()).toContain(expectedHeader);
-    expect(text).toContain(reportedCurrency ? "2024-12-31 USD" : "2024-12-31 (provider date)");
+    expect(text).toContain(reportedCurrency ? "2024-12-31 USD" : "2024-12-31");
+    expect(text).not.toContain("provider date");
     expect(financials.annualStatements[0]!.currency).toBe(reportedCurrency);
   });
 }

@@ -283,7 +283,7 @@ function RiskFactorsReader({
               </Box>
             ) : null}
             <Box flexDirection="column">
-              <SectionHeading marginTop={1} title="All Risk Factors" />
+
               {report.risks.map((risk, index) => (
                 <Prose
                   key={`${index}-${risk.heading}`}
