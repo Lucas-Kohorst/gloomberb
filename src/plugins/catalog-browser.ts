@@ -54,6 +54,11 @@ import { futuresModule } from "./builtin/futures";
 import { futuresCurveModule } from "./builtin/futures-curve";
 import { cotModule } from "./builtin/cot";
 import { doeModule } from "./builtin/doe";
+import { commodityBalancesModule } from "./builtin/commodity-balances";
+import { energyOutlookModule } from "./builtin/energy-outlook";
+import { jodiModule } from "./builtin/jodi";
+import { commoditiesEnergyModule } from "./builtin/commodities-energy";
+import { portwatchPlugin } from "./builtin/portwatch";
 import { gpuModule } from "./builtin/gpu";
 import { fxMatrixModule } from "./builtin/fx-matrix";
 import { docsModule } from "./builtin/docs";
@@ -78,7 +83,7 @@ import { peBandModule } from "./builtin/pe-band";
 import { macroDayModule } from "./builtin/macro-day";
 import { ivHistoryModule } from "./builtin/iv-history";
 import { backtestModule } from "./builtin/backtest";
-import { composeBuiltinPlugin } from "./builtin/plugin-module";
+import { composeBuiltinPlugin, type PluginModule } from "./builtin/plugin-module";
 import { portfolioListModule } from "./builtin/portfolio-list";
 import { researchModule } from "./builtin/research";
 import { scannerModule } from "./builtin/scanner";
@@ -116,6 +121,11 @@ const browserApplicationPlugin = composeBuiltinPlugin({
   ...applicationPluginMeta,
   modules: [layoutManagerModule, helpModule, changelogModule, connectionsModule, docsModule],
 });
+
+const runtimeOnly = (module: PluginModule): PluginModule => {
+  const { panes: _panes, paneTemplates: _paneTemplates, ...runtime } = module;
+  return runtime;
+};
 
 const browserPortfolioPlugin = composeBuiltinPlugin({
   ...portfolioPluginMeta,
@@ -193,7 +203,13 @@ const browserScreenersPlugin = composeBuiltinPlugin({
 
 const browserFuturesCommoditiesPlugin = composeBuiltinPlugin({
   ...futuresCommoditiesPluginMeta,
-  modules: [futuresModule, futuresCurveModule, cotModule, doeModule],
+  modules: [
+    commoditiesEnergyModule,
+    ...[futuresModule, futuresCurveModule, cotModule, doeModule].map(runtimeOnly),
+    { module: runtimeOnly(commodityBalancesModule), stateId: "commodity-balances" },
+    { module: runtimeOnly(energyOutlookModule), stateId: "energy-outlook" },
+    { module: runtimeOnly(jodiModule), stateId: "jodi" },
+  ],
 });
 
 const browserCryptoPlugin = composeBuiltinPlugin({
@@ -295,6 +311,7 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   browserEarningsPlugin,
   alertsPlugin,
   researchSearchPlugin,
+  portwatchPlugin,
 ];
 
 /**

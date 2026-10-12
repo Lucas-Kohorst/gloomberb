@@ -627,9 +627,9 @@
     },
     {
       "id": "futures-commodities",
-      "name": "Futures & Commodities",
-      "description": "Futures board and curves, CFTC positioning, and EIA petroleum and gas storage.",
-      "tagline": "Futures, curves, positioning, energy data.",
+      "name": "Commodities & Energy",
+      "description": "Futures markets, curves, CFTC positioning, EIA inventories, crop and oil and gas balances, and energy outlook.",
+      "tagline": "Commodities, balances and energy outlook.",
       "categories": [
         "markets",
         "macro"
@@ -643,18 +643,15 @@
       ],
       "contributes": {
         "panes": [
-          "cot",
-          "doe",
-          "futures",
-          "futures-curve"
+          "commodities-energy"
         ],
         "capabilities": [],
         "broker": false,
         "shortcuts": [
           {
             "code": "FUT",
-            "name": "Futures Board",
-            "description": "Front-month futures across equity index, rates, energy, metals, agriculture, livestock, and FX with last price, session change, search, and collapsible sectors."
+            "name": "Commodities & Energy",
+            "description": "Futures markets, curves, positioning, inventories, crop balances, oil and gas balances, and energy outlook."
           },
           {
             "code": "CTM",
@@ -675,6 +672,21 @@
             "code": "NGS",
             "name": "Natural Gas Storage",
             "description": "EIA weekly working gas in storage, lower 48 and by region, against a year ago and the five-year range."
+          },
+          {
+            "code": "PSD",
+            "name": "Crop Balances",
+            "description": "World balances for wheat, corn, soybeans and cotton, with season-average price forecasts when a table is published."
+          },
+          {
+            "code": "JODI",
+            "name": "Oil and Gas Balances",
+            "description": "Latest monthly crude oil and natural gas production, demand, trade and stocks for the largest countries."
+          },
+          {
+            "code": "STEO",
+            "name": "Energy Outlook",
+            "description": "Monthly energy outlook, the latest month of crude import origins, and nuclear plant outages."
           }
         ]
       },
@@ -1213,6 +1225,39 @@
         "PF",
         "PORT",
         "MARS"
+      ]
+    },
+    {
+      "id": "portwatch",
+      "name": "Shipping Volumes",
+      "description": "Busiest ports and straits by vessel calls.",
+      "tagline": "Ports, chokepoints and shipping volumes.",
+      "categories": [
+        "markets"
+      ],
+      "toggleable": true,
+      "targets": [
+        "cli",
+        "tui",
+        "desktop",
+        "web"
+      ],
+      "contributes": {
+        "panes": [
+          "portwatch"
+        ],
+        "capabilities": [],
+        "broker": false,
+        "shortcuts": [
+          {
+            "code": "SHIP",
+            "name": "Shipping Volumes",
+            "description": "Ports and chokepoints ranked by vessel calls."
+          }
+        ]
+      },
+      "highlights": [
+        "SHIP"
       ]
     },
     {

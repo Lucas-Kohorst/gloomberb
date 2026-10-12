@@ -8,6 +8,25 @@ export function parseDisplayDate(value: DisplayDateValue): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function formatStatusDay(timestamp: number): string {
+  const date = new Date(timestamp);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** Status age used by pane footers: `~0m`, `~5m`, `~1hr`, or a local date after 24 hours. */
+export function formatApproximateAge(timestamp: number | null | undefined, now = Date.now()): string {
+  if (timestamp == null || !Number.isFinite(timestamp)) return "~0m";
+  const elapsed = now - timestamp;
+  if (!(elapsed >= 60_000)) return "~0m";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return `~${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `~${hours}hr`;
+  return formatStatusDay(timestamp);
+}
+
 /**
  * Whole minutes, hours or days in an age, the one ladder every relative-time
  * label reads from. Null under a minute, which includes a time in the future.

@@ -149,7 +149,7 @@ function FuturesCurveView({ width, height, focused, root }: PaneProps & { root: 
       detail: [data.slope.state, curveRank(data.slope.percentile, data.slope.samples), slopeDate].filter(Boolean).join(" · ") },
     ...data.spec ? [{ id: "contract", label: "Contract", value: data.spec.size, detail: `tick ${futuresTickText(data.spec)}` }] : [],
   ] : [];
-  const { strip: tabStrip, rows: tabRows } = usePaneTabs({ tabs: TABS, activeValue: tab, onSelect: setTab, focused, dense: true });
+  const { strip: tabStrip, rows: tabRows } = usePaneTabs({ tabs: TABS, activeValue: tab, onSelect: setTab, focused, dense: true, queryBarWidth: width });
   // The query bar takes one row below the tabs, and a refused date one more.
   const bodyHeight = Math.max(1, height - tabRows - 1 - (dateError ? 1 : 0));
   // A Cboe price is the settlement itself, so its curve has no separate last trade.

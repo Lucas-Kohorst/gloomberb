@@ -1,14 +1,20 @@
 {
   "hosts": [
+    "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
+    "api.publisher.jodidata.org",
     "api.votehub.com",
+    "apps.fas.usda.gov",
     "clinicaltrials.gov",
     "clob.polymarket.com",
     "data-api.polymarket.com",
     "efts.sec.gov",
     "gamma-api.polymarket.com",
     "nasdaqtrader.com",
-    "production.dataviz.cnn.io"
+    "production.dataviz.cnn.io",
+    "services9.arcgis.com",
+    "www.ers.usda.gov",
+    "www.jodidata.org"
   ]
 }

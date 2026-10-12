@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { migrateSavedConfig } from "./migrations";
-import { foldPaneLayout } from "./fold-panes";
+import { foldCommoditiesPaneLayout, foldPaneLayout } from "./fold-panes";
 import { CURRENT_CONFIG_VERSION, type DockLayoutNode, type LayoutConfig, type PaneInstanceConfig } from "../../../types/config";
 
 function layout(instances: PaneInstanceConfig[], dockRoot: DockLayoutNode | null = null, floating: LayoutConfig["floating"] = []): LayoutConfig {
@@ -116,5 +116,52 @@ describe("fold short volume and sovereign CDS", () => {
       focusedPaneId: null,
     });
     expect(saved[1]?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "cdx-2" });
+  });
+});
+
+describe("fold Commodities & Energy panes", () => {
+  test("moves each old view into its workspace tab and preserves saved module state", () => {
+    const current = layout([
+      { instanceId: "curve:1", paneId: "futures-curve", binding: { kind: "none" }, params: { root: "CL" } },
+      { instanceId: "cot:1", paneId: "cot", binding: { kind: "none" }, params: { code: "CL" } },
+      { instanceId: "outside", paneId: "ticker-chart", binding: { kind: "none" } },
+    ], {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.5,
+      first: { kind: "pane", instanceId: "curve:1" },
+      second: { kind: "pane", instanceId: "outside" },
+    }, [{ instanceId: "cot:1", x: 0, y: 0, width: 40, height: 20 }]);
+    const folded = foldCommoditiesPaneLayout(current);
+    expect(folded.instances).toMatchObject([
+      { instanceId: "curve:1", paneId: "commodities-energy", params: { root: "CL", tab: "curve" } },
+      { instanceId: "cot:1", paneId: "commodities-energy", params: { code: "CL", tab: "positioning" } },
+      { instanceId: "outside", paneId: "ticker-chart" },
+    ]);
+    expect(folded.dockRoot).toEqual(current.dockRoot);
+    expect(folded.floating).toEqual(current.floating);
+
+    const result = migrateSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION - 1,
+      layout: current,
+      layouts: [{
+        name: "Commodities",
+        layout: current,
+        paneState: {
+          "curve:1": { pluginState: { "market-overview": { tab: "contracts", contract: "CLM26" } } },
+          "cot:1": { pluginState: { "market-overview": { report: "disaggregated", scope: "all" } } },
+        },
+        focusedPaneId: "curve:1",
+      }],
+    }, "/tmp/gloom-commodities-migration");
+    expect(result.applied).toContain("fold-commodities-and-energy-panes");
+    const saved = result.config.layouts as Array<{ layout: LayoutConfig; paneState: Record<string, { pluginState: Record<string, unknown> }> }>;
+    expect(saved[0]?.layout.instances[0]).toMatchObject({ paneId: "commodities-energy", params: { tab: "curve" } });
+    expect(saved[0]?.paneState["curve:1"]?.pluginState).toEqual({
+      "market-overview:futures-curve": { tab: "contracts", contract: "CLM26" },
+    });
+    expect(saved[0]?.paneState["cot:1"]?.pluginState).toEqual({
+      "market-overview:cot": { report: "disaggregated", scope: "all" },
+    });
   });
 });

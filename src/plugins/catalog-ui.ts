@@ -14,6 +14,7 @@ import { ipoCalendarPlugin } from "./builtin/ipo-calendar";
 import { clinicalTrialsPlugin } from "./builtin/clinical-trials";
 import { commentLettersPlugin } from "./builtin/comment-letters";
 import { openFdaPlugin } from "./builtin/openfda";
+import { portwatchPlugin } from "./builtin/portwatch";
 import {
   altDataPlugin,
   applicationPlugin,
@@ -64,6 +65,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   earningsPlugin,
   alertsPlugin,
   researchSearchPlugin,
+  portwatchPlugin,
 ];
 
 /**
