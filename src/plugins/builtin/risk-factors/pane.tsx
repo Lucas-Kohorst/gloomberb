@@ -85,10 +85,6 @@ interface RiskFactorsPaneProps {
   nested?: boolean;
 }
 
-export function RiskFactorsResearchTab(props: { focused: boolean; width: number; height: number }) {
-  return <RiskFactorsPane {...props} nested />;
-}
-
 export function RiskFactorsPane(props: RiskFactorsPaneProps) {
   const { wall, guard } = useProFeatureWall(RISK_WALL, props);
   return wall ?? <RiskFactorsReader {...props} guard={guard} />;
