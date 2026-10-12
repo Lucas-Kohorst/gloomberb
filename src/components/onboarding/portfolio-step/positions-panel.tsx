@@ -4,6 +4,7 @@ import { useThemeColors } from "../../../theme/theme-context";
 import { blendHex, priceColor } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
 import { formatMarketPrice } from "../../../market-data/market/format";
+import { getRegularSessionDisplay } from "../../../market-data/market/status";
 import { formatPercentRaw } from "../../../utils/format";
 import { Button, NumberField, TextField } from "../../ui";
 import { Spinner } from "../../ui/loading";
@@ -49,8 +50,10 @@ function PreviewLine({ preview, error }: Pick<OnboardingPositionsState, "preview
     return <Spinner label={loadingText()} />;
   }
   if (preview.status === "missing") return <Text fg={colors.textMuted}>{preview.message}</Text>;
-  const price = preview.quote?.price;
-  const change = preview.quote?.changePercent;
+  // The regular session's last and move, as `ticker` headlines them: after the close, that close.
+  const headline = getRegularSessionDisplay(preview.quote);
+  const price = headline?.price;
+  const change = headline?.changePercent;
   return (
     <Box flexDirection="row" minWidth={0} overflow="hidden">
       <Text fg={colors.text} attributes={TextAttributes.BOLD}>{preview.symbol}</Text>

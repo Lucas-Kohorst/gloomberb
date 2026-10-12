@@ -539,7 +539,7 @@ export function TeamPane({ focused, width, height, close }: PaneProps) {
     return list;
   }, [dirty, draft, openChannel, saveSettings, section, showCreate, signedIn, snapshot.teams.length, team]);
   const result = message ?? (details.error ? { tone: "error" as const, text: details.error } : null);
-  usePaneLoadingSignal((busy));
+  usePaneLoadingSignal(busy != null);
   usePaneFooter(TEAM_PANE_ID, () => ({
     info: [
       ...(details.loading && !busy ? [{ id: "loading", parts: [{ text: "syncing", tone: "muted" as const }] }] : []),

@@ -6,12 +6,11 @@ import {
   type DockLeafLayout,
   type DropTarget,
   type FloatingRect,
-  type FloatingResizeCorner,
   type LayoutBounds,
 } from "../../../../layout/pane-manager";
 import type { DesktopDockPreviewState } from "../../../../types/desktop-window";
 import type { LayoutConfig } from "../../../../types/config";
-import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE, PANE_HEADER_RESTORE } from "../../pane/header";
+import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE, PANE_HEADER_HELP, PANE_HEADER_RESTORE } from "../../pane/header";
 
 export interface HoverOverlay {
   targetId: string;
@@ -54,16 +53,33 @@ export interface PaneDragRectState {
   origRect: FloatingRect;
 }
 
+/**
+ * The edges of a floating pane a resize moves: -1 the left or top edge, 1 the
+ * right or bottom one, 0 neither on that axis.
+ */
+export interface ResizeEdges {
+  x: -1 | 0 | 1;
+  y: -1 | 0 | 1;
+}
+
+/** The bottom-right corner, the one resize the terminal has. */
+const CORNER_RESIZE: ResizeEdges = { x: 1, y: 1 };
+
 export interface FloatResizeDragState {
-  corner?: FloatingResizeCorner;
   startX: number;
   startY: number;
   origRect: FloatingRect;
+  /** Omitted: the bottom-right corner. */
+  edges?: ResizeEdges;
 }
 
 const DOCK_DIVIDER_SIZE = 1;
 export const PANE_DRAG_THRESHOLD = 2;
 export const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
+
+export function sameRect(a: LayoutBounds, b: LayoutBounds): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
 
 export function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
   return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
@@ -143,6 +159,21 @@ export function resolvePaneDragFloatingRect(
   }, totalWidth, totalHeight);
 }
 
+/**
+ * Moves one edge of a span by `delta`, keeping it at least `min` long and
+ * inside 0..`total`: the far edge (1) grows the length, the near one (-1)
+ * moves the start and keeps the far edge where it was.
+ */
+function resizeSpan(start: number, length: number, delta: number, edge: -1 | 0 | 1, min: number, total: number): [number, number] {
+  if (edge === 1) return [start, Math.max(min, Math.min(total - start, length + delta))];
+  if (edge === -1) {
+    const end = start + length;
+    const nextStart = Math.max(0, Math.min(end - min, start + delta));
+    return [nextStart, end - nextStart];
+  }
+  return [start, length];
+}
+
 export function resolveFloatResizeRect(
   drag: FloatResizeDragState,
   pointerX: number,
@@ -150,32 +181,11 @@ export function resolveFloatResizeRect(
   totalWidth: number,
   totalHeight: number,
 ): FloatingRect {
-  const corner = drag.corner ?? "bottom-right";
-  const dx = pointerX - drag.startX;
-  const dy = pointerY - drag.startY;
-  let left = drag.origRect.x;
-  let top = drag.origRect.y;
-  let right = left + drag.origRect.width;
-  let bottom = top + drag.origRect.height;
-
-  if (corner === "top-left" || corner === "bottom-left") {
-    left = Math.max(0, Math.min(left + dx, right - MIN_FLOAT_WIDTH));
-  } else {
-    right = Math.min(totalWidth, Math.max(right + dx, left + MIN_FLOAT_WIDTH));
-  }
-  if (corner === "top-left" || corner === "top-right") {
-    top = Math.max(0, Math.min(top + dy, bottom - MIN_FLOAT_HEIGHT));
-  } else {
-    bottom = Math.min(totalHeight, Math.max(bottom + dy, top + MIN_FLOAT_HEIGHT));
-  }
-
-  return constrainFloatingRectToBounds({
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-    zIndex: drag.origRect.zIndex,
-  }, totalWidth, totalHeight);
+  const edges = drag.edges ?? CORNER_RESIZE;
+  const { origRect } = drag;
+  const [x, width] = resizeSpan(origRect.x, origRect.width, pointerX - drag.startX, edges.x, MIN_FLOAT_WIDTH, totalWidth);
+  const [y, height] = resizeSpan(origRect.y, origRect.height, pointerY - drag.startY, edges.y, MIN_FLOAT_HEIGHT, totalHeight);
+  return constrainFloatingRectToBounds({ x, y, width, height, zIndex: origRect.zIndex }, totalWidth, totalHeight);
 }
 
 function centerRectWithin(parent: LayoutBounds, width: number, height: number): LayoutBounds {
@@ -383,6 +393,8 @@ export function resolveHeaderHitAreas(
   width: number,
   options: { floating: boolean; focused: boolean; fullscreen?: boolean },
 ): {
+  /** The `?` that opens the pane's docs, just left of the menu. */
+  helpStart: number | null;
   actionStart: number | null;
   closeStart: number | null;
 } {
@@ -398,8 +410,9 @@ export function resolveHeaderHitAreas(
   }
 
   actionStart = Math.max(0, rightEdge - PANE_HEADER_ACTION.length);
+  const helpStart = Math.max(0, actionStart - PANE_HEADER_HELP.length);
 
-  return { actionStart, closeStart };
+  return { helpStart, actionStart, closeStart };
 }
 
 export function resolveExternalDockPreview(

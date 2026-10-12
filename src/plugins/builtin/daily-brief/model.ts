@@ -1,6 +1,6 @@
 import type { EarningsCalendarReport } from "../../../api-client/earnings";
 import type { EconEvent } from "../econ/types";
-import { FUTURES_CONTRACTS } from "../futures/contracts";
+import { FUTURES_CONTRACTS } from "../../../market-data/futures-board";
 import { usSessionAt } from "../market-movers/session";
 import type { NewsArticle } from "../../../news/types";
 import { zonedDateKey } from "../../../utils/zoned-date-time";

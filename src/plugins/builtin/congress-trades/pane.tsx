@@ -240,7 +240,7 @@ export function CongressTradesPane({ focused, width, height, tickerFilter }: Pan
     const owned = mine ? trades.filter((trade) => trade.ticker && mineTickers.has(trade.ticker)) : trades;
     if (lineageStart == null || !tickerFilter) return owned;
     return owned.filter((trade) => {
-      const time = Date.parse(trade.transactionDate);
+      const time = trade.transactionDate ? Date.parse(trade.transactionDate) : NaN;
       return Number.isFinite(time) && time >= lineageStart;
     });
   }, [trades, mine, mineTickers, lineageStart, tickerFilter]);

@@ -7,6 +7,7 @@ import {
   type CreditBoardLoadResult,
   type CreditSeriesLoader,
 } from "./client";
+import { creditRegion, creditSeriesIn } from "./model";
 
 const bp = (value: unknown, signed = false) => value == null || !Number.isFinite(Number(value))
   ? "-"
@@ -36,7 +37,7 @@ interface CreditConditionsHeadlessDependencies {
 }
 
 const defaultDependencies: CreditConditionsHeadlessDependencies = {
-  load: (_args, loader, curve) => loadCreditBoard(false, loader, curve),
+  load: (args, loader, curve) => loadCreditBoard(false, loader, curve, creditSeriesIn(creditRegion(args.options.region))),
 };
 
 function createCreditConditionsHeadless(
@@ -45,7 +46,17 @@ function createCreditConditionsHeadless(
   return {
     shape: "rows",
     argument: { kind: "none" },
-    options: [],
+    options: [{
+      key: "region",
+      description: "Indexes to list. FRED publishes euro high yield but no euro investment grade spread.",
+      type: "enum",
+      values: [
+        { value: "all" },
+        { value: "us", aliases: ["usa", "united states", "america"] },
+        { value: "euro", aliases: ["eu", "eur", "europe", "eurozone", "euro area", "ea"] },
+      ],
+      defaultValue: "all",
+    }],
     columns: COLUMNS,
     describe: "Credit Spreads",
     freshness: { source: "FRED", status: "not-a-feed", basis: "daily index levels", cadence: "daily", observedKey: "date" },

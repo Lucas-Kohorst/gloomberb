@@ -1,5 +1,5 @@
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
-import { formatObservationAge } from "../../../utils/datetime-format";
+import { expirationOptionSeconds, expiryIsoDate, OPTION_EXPIRATION_FORMAT, OPTION_EXPIRATION_PLACEHOLDER } from "../../../utils/option-expiry";
 import { loadGamma, loadOpenInterest, positioningSymbol } from "./client";
 import {
   ALL_EXPIRIES,
@@ -26,22 +26,24 @@ export const optionsPositioningHeadless = (initialTab: PositioningTab): Headless
   shape: "bundle",
   freshness: { status: "not-a-feed", basis: "daily open interest", cadence: "daily" },
   argument: { kind: "ticker", optional: true, description: "US option underlying, or SPX; SPY when omitted" },
+  usListingsOnly: "Options data",
   describe: (args) => `${initialTab === "gex" ? "GEX" : "OPX"} ${args.symbols[0] ?? "SPY"}`,
   discovery: {
     aliases: initialTab === "gex" ? ["GEX"] : ["OPX", "MAXPAIN"],
     screenshotReadiness: "live-dom",
     dataRequirements: ["Cloud listed open interest", "Option chains"],
     limitations: [
-      "Open interest is as of the prior session's close",
-      "Dealer gamma assumes dealers are long every call and short every put",
-      "NDX and RUT index options are not covered; use QQQ and IWM",
+      "Open interest is as of the prior session's close.",
+      "Dealer gamma assumes dealers are long every call and short every put.",
+      "NDX and RUT index options are not covered; use QQQ and IWM.",
     ],
   },
   options: [
     { key: "tab", type: "enum", values: POSITIONING_TABS.map((tab) => ({ value: tab.value })), defaultValue: initialTab,
       settingKey: "tab", description: "View the pane opens on: strikes, expiries or gex" },
-    { key: "expiry", type: "string", settingKey: "expiry",
-      description: "Expiry for the strikes and gamma, YYYY-MM-DD; the busiest near expiry when omitted (all expiries for gamma)" },
+    { key: "expiry", type: "string", settingKey: "expiry", placeholder: OPTION_EXPIRATION_PLACEHOLDER, example: "--expiry 2027-01-15",
+      description: `Expiry for the strikes and gamma, as ${OPTION_EXPIRATION_FORMAT}; the busiest near expiry when omitted (all expiries for gamma)`,
+      normalize: (value) => expiryIsoDate(expirationOptionSeconds(value, "expiry")) },
   ],
   async load(args, ctx) {
     const symbol = positioningSymbol(args.symbols[0] ?? "SPY");
@@ -64,7 +66,7 @@ export const optionsPositioningHeadless = (initialTab: PositioningTab): Headless
       // Open interest is published once a day for the prior session; the spot beside it is context.
       freshness: { asOf: openInterest.oiDate },
       sections: [
-        { title: `Expiries · OI ${formatObservationAge(openInterest.oiDate) ?? openInterest.oiDate ?? "--"}`, columns: [
+        { title: `Expiries · OI as of ${openInterest.oiDate ?? "--"}`, columns: [
           { key: "date", header: "Expiry" }, { key: "days", header: "Days" },
           { key: "callOI", header: "Call OI", format: count }, { key: "putOI", header: "Put OI", format: count },
           { key: "putCallRatio", header: "P/C", format: (value: unknown) => formatRatio(value as number | null) },

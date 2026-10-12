@@ -4,7 +4,6 @@ import {
   EMPTY_TABLE_CELL,
   QueryBar,
   buildSectionedRows,
-  confirmDialog,
   isSectionedItemRow,
   renderSectionedRowHeader,
   usePaneFooter,
@@ -14,7 +13,6 @@ import {
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
-import { useDialog } from "../../../ui/dialog";
 import { usePluginAppActions } from "../../runtime";
 import { requestPriceAlertFocus } from "../alerts/focus";
 import { teamChannelId, teamNotificationIdFromRef } from "../cloud/team/model";
@@ -22,10 +20,9 @@ import { openTeamPane } from "../cloud/team/pane-request";
 import { teamStore } from "../cloud/team/store";
 import { chatController } from "../chat/controller";
 import {
-  clearNotificationLog,
-  configureNotificationLog,
   getNotificationLog,
   markNotificationLogRead,
+  parseNoticeRef,
   subscribeNotificationLog,
   type NotificationLogEntry,
 } from "../../../notifications/notification-log";
@@ -46,7 +43,12 @@ import {
   type NotificationSourceFilter,
 } from "./filter";
 
-const NOTIFICATION_LOG_KEY = "notification-log";
+function noticeSource(entry: NotificationLogEntry): string {
+  const kind = parseNoticeRef(entry.refId)?.kind;
+  if (kind === "price" || kind === "catalyst") return "alerts";
+  if (kind === "team") return "team";
+  return "app";
+}
 
 type NotificationColumnId = "state" | "date" | "source" | "notification";
 type NotificationColumn = DataTableColumn & { id: NotificationColumnId };
@@ -96,12 +98,11 @@ function sourceDestination(source: string): "alerts" | "chat" | "team" | null {
 function notificationSortValue(entry: NotificationLogEntry, column: NotificationColumnId): string | number {
   if (column === "state") return entry.read ? 1 : 0;
   if (column === "date") return entry.at;
-  if (column === "source") return notificationSourceLabel(entry.source);
+  if (column === "source") return notificationSourceLabel(noticeSource(entry));
   return `${entry.title ?? ""} ${entry.body}`;
 }
 
 export function NotificationCenterPane({ focused, width, height }: PaneProps) {
-  const dialog = useDialog();
   const search = useQueryBarSearch();
   const { createPaneFromTemplate, showPane } = usePluginAppActions();
   const [entries, setEntries] = useState<readonly NotificationLogEntry[]>(getNotificationLog);
@@ -131,9 +132,9 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
   const rows = useMemo(() => {
     const lowerQuery = query.trim().toLowerCase();
     const filtered = entries.filter((entry) => {
-      if (!notificationSourceVisible(entry.source, sourceFilter)) return false;
+      if (!notificationSourceVisible(noticeSource(entry), sourceFilter)) return false;
       if (!lowerQuery) return true;
-      return [entry.title, entry.body, notificationSourceLabel(entry.source), formatDay(entry.at)]
+      return [entry.title, entry.body, notificationSourceLabel(noticeSource(entry)), formatDay(entry.at)]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -208,11 +209,11 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
       });
       return;
     }
-    if (entry.source === "team") {
+    if (noticeSource(entry) === "team") {
       openTeamNotification(entry);
       return;
     }
-    const destination = sourceDestination(entry.source);
+    const destination = sourceDestination(noticeSource(entry));
     if (!destination) return;
     markNotificationLogRead([entry.id]);
     if (destination === "chat" && entry.refId) {
@@ -232,26 +233,14 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
     const teamIds = teamStore.getSnapshot().notifications.map((notification) => notification.id);
     if (teamIds.length > 0) void teamStore.dismissNotifications(teamIds);
   }, []);
-  const requestClear = useCallback(async () => {
-    const confirmed = await confirmDialog(dialog, {
-      title: t("Clear notification history?"),
-      body: t("This cannot be undone."),
-      confirmLabel: t("Clear"),
-    });
-    if (confirmed) clearNotificationLog();
-  }, [dialog]);
-
   usePaneFooter("notification-center", () => ({
     hints: [
-      ...(selected && sourceDestination(selected.source)
+      ...(selected && sourceDestination(noticeSource(selected))
         ? [{ id: "open", key: "o", label: t("pen"), title: t("Open"), onPress: openSelected }]
         : []),
       { id: "mark-all-read", key: "m", label: t("ark all read"), title: t("Mark all read"), onPress: markAllRead },
-      ...(entries.length > 0
-        ? [{ id: "clear", key: "c", label: t("lear"), title: t("Clear"), onPress: () => { void requestClear(); } }]
-        : []),
     ],
-  }), [entries.length, markAllRead, openSelected, requestClear, selected]);
+  }), [markAllRead, openSelected, selected]);
 
   const renderCell = useCallback((
     row: (typeof rows)[number],
@@ -264,7 +253,7 @@ export function NotificationCenterPane({ focused, width, height }: PaneProps) {
       return { text: unread ? t("New") : t("Read"), color: unread ? colors.textBright : colors.textDim };
     }
     if (column.id === "date") return { text: formatTime(entry.at), color: colors.textDim };
-    if (column.id === "source") return { text: notificationSourceLabel(entry.source), color: colors.textDim };
+    if (column.id === "source") return { text: notificationSourceLabel(noticeSource(entry)), color: colors.textDim };
     return { text: entry.title ? `${entry.title}: ${entry.body}` : entry.body, color: colors.text };
   }, [unreadIds]);
 
@@ -328,13 +317,6 @@ export const notificationCenterPlugin: GloomPlugin = {
   description: "Review alert, chat, and app notification history",
   toggleable: true,
   setup(ctx) {
-    configureNotificationLog({
-      get: () => {
-        const value = ctx.configState.get<unknown>(NOTIFICATION_LOG_KEY);
-        return Array.isArray(value) ? value : [];
-      },
-      set: (next) => ctx.configState.set(NOTIFICATION_LOG_KEY, next),
-    });
     ctx.registerPane({
       id: "notification-center",
       name: "Notifications",
@@ -353,9 +335,6 @@ export const notificationCenterPlugin: GloomPlugin = {
       shortcut: { prefix: "NOT", aliases: ["NOTF", "UNREAD"] },
       createInstance: () => ({ placement: "floating" }),
     });
-  },
-  dispose() {
-    configureNotificationLog(null);
   },
 };
 

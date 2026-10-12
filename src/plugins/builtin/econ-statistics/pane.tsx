@@ -148,7 +148,7 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selected) return [];
     const info: PaneFooterSegment[] = [
-      { id: "as-of", parts: [{ text: selected.latest.date, tone: "muted" }] },
+      { id: "as-of", parts: [{ text: `reading for ${selected.reading}`, tone: "muted" }] },
     ];
     return info;
   }, [resource.loading, resource.updatedAt, selected]);

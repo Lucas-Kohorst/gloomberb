@@ -11,6 +11,7 @@ import { nativePaneFooterRows } from "../sizing";
 import { FooterSelectMenuPopover, openFooterSelectMenu } from "./select-menu";
 import {
   EMPTY_FOOTER,
+  fitPaneFooterInfo,
   hasPaneFooterContent,
   layoutPaneFooterHintRow,
   totalHintsWidth,
@@ -283,6 +284,9 @@ function FooterContent({
   const infoWidth = availableWidth !== null && hasInfo
     ? (row?.infoWidth ?? Math.max(0, availableWidth - hintsWidth))
     : undefined;
+  // A segment with shorter forms takes the longest that fits beside the hints, gaps and terminal keys included.
+  const keysWidth = nativePaneChrome ? 0 : footer.info.reduce((total, segment) => total + terminalSegmentKey(segment, focused).length, 0);
+  const info = infoWidth != null ? fitPaneFooterInfo(footer.info, infoWidth - keysWidth) : footer.info;
 
   if (!hasInfo && !hasHints && !hasTrailing) {
     return <Box flexGrow={1} height={1} />;
@@ -309,14 +313,10 @@ function FooterContent({
             ...(infoWidth != null ? { width: infoWidth } : {}),
           })}
         >
-          {footer.info.map((segment, index) => (
-            <FooterSegment
-              key={segment.id}
-              segment={segment}
-              focused={focused}
-              gapAfter={index !== footer.info.length - 1}
-              nativePaneChrome={nativePaneChrome}
-            />
+          {info.map((segment, index) => (
+            <Box key={segment.id} flexDirection="row" marginRight={index === info.length - 1 ? 0 : 1}>
+              <SegmentView segment={segment} focused={focused} />
+            </Box>
           ))}
         </Box>
       )}

@@ -17,6 +17,7 @@ import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { shortcutGhostSuffix } from "./ghost";
 import { buildRootResultModel, mnemonicListingQuery, type RootResultModel } from "./results";
 import { useRootProviderSearch } from "./provider-search";
+import { isProviderResultItem } from "./search-providers";
 import { buildRootShortcutFeedback } from "./shortcut-feedback";
 import type { ShortcutIntent } from "./shortcuts";
 import { clampIndex } from "../../../../utils/math";
@@ -69,6 +70,7 @@ interface UseCommandBarRootRuntimeOptions {
   pluginCommandResultItems(command: CommandDef, shortcutArg: string): ResultItem[];
   pluginInstallItem?: ResultItem | null;
   providerResultItems?: ResultItem[];
+  providerMatchItems?: ResultItem[];
   providerCategoryPriorities?: CommandBarCategoryPriorities;
   providerSearching?: boolean;
   readTickerSearchCache(
@@ -126,6 +128,7 @@ export function useCommandBarRootRuntime({
   pluginCommandResultItems,
   pluginInstallItem = null,
   providerResultItems = [],
+  providerMatchItems = [],
   providerCategoryPriorities,
   providerSearching = false,
   readTickerSearchCache,
@@ -205,6 +208,7 @@ export function useCommandBarRootRuntime({
     rootQuery,
     rootShortcutIntent,
     providerResultItems,
+    providerMatchItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -237,6 +241,7 @@ export function useCommandBarRootRuntime({
     rootQuery,
     rootShortcutIntent,
     providerResultItems,
+    providerMatchItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -271,12 +276,14 @@ export function useCommandBarRootRuntime({
     if (!bareMnemonic && symbolQuery.length < 2) return null;
     const normalizedQuery = normalizeCommandTickerSearchText(symbolQuery);
     // The install row for "TV" is labelled TV, but it leads on purpose and
-    // must not keep Grupo Televisa out of the list. A bare mnemonic's own row
-    // is labelled with the focused symbol, and that must not hide the listing.
-    const hasExactLocalRow = !bareMnemonic && rootResultModel.items.some((item) => (
+    // must not keep Grupo Televisa out of the list.
+    // A plugin's row never stands in for the symbol: a DM with @spy must not
+    // keep SPY out of the list.
+    const hasExactLocalRow = rootResultModel.items.some((item) => (
       item !== pluginInstallItem
       && item.kind !== "ticker"
       && item.kind !== "search"
+      && !isProviderResultItem(item)
       && normalizeCommandTickerSearchText(item.label) === normalizedQuery
     ));
     return hasExactLocalRow ? null : symbolQuery;

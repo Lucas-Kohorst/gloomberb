@@ -10,6 +10,7 @@ import type { ManualChartResolution } from "../time-series/resolution";
 import type { SnapshotMarketData } from "../market-data/snapshot-provider";
 import type { InstrumentRef } from "../market-data/request-types";
 import type { TickerRecord } from "../types/ticker";
+import type { BrokerAccount } from "../types/trading";
 import type { PaneRuntimeState } from "../core/state/app/state";
 import type { RemoteUiNodeSnapshot } from "../remote/types";
 import type { DatedObservation } from "../plugins/builtin/market-valuation/series";
@@ -17,6 +18,7 @@ import type { DesktopExternalPluginBundle } from "../renderers/electrobun/shared
 import type { HttpProxyRequestEnvelope, HttpProxyResponseEnvelope } from "../utils/http-proxy-response";
 import type { PaneAccessGate } from "./pane-functions/access-gate";
 import { readVisibleKeyValues } from "./visible-key-values";
+import { scrollTruncationReasons } from "./scroll-truncation";
 import { SHOT_API_PROXY_PREFIX, SHOT_HTTP_BRIDGE_PATH, SHOT_MARKET_BRIDGE_PATH } from "./desktop-pane-shot-routes";
 import { SESSION_COOKIE_NAMES } from "../api-client/session-cookie";
 import {
@@ -53,7 +55,19 @@ export interface DesktopPaneShotPayload {
   deviceScaleFactor?: number;
   /** Label drawn at the right edge of the pane title bar; null draws nothing. */
   watermark?: string | null;
+  /**
+   * The pane footer keeps a row for the capture's dated status line, filled
+   * once the pane has loaded. Absent for `--no-status` and for reports.
+   */
+  statusLine?: boolean;
+  /**
+   * The tallest the capture may grow, in cells, to show every row its tables
+   * scroll past; absent keeps the requested height (`--height`, most panes).
+   */
+  maxHeightCells?: number;
   tickers: TickerRecord[];
+  /** Broker accounts as last synced, by profile, so a broker portfolio shows its equity and cash. */
+  brokerAccounts?: Record<string, BrokerAccount[]>;
   financials: Array<[string, TickerFinancials]>;
   instrumentFinancials?: SnapshotMarketData["instrumentFinancials"];
   historyVariants?: SnapshotMarketData["historyVariants"];
@@ -96,6 +110,8 @@ interface DesktopPaneShotRenderedCell {
   text: string;
   /** The ISO instant behind a cell whose text shortens a time ("Wed 11:27"), from the table cell's export value. */
   instant?: string;
+  /** The full-precision number behind a cell whose text rounds it (a trade of -9.4596), from the same export value. */
+  value?: number;
 }
 
 export interface DesktopPaneShotRenderedRow {
@@ -106,10 +122,25 @@ export interface DesktopPaneShotRenderedRow {
   cells: DesktopPaneShotRenderedCell[];
 }
 
+interface DesktopPaneShotSurface {
+  renderer: string;
+  state: string;
+}
+
 export interface DesktopPaneShotRenderResult {
   visibleText: string;
+  /**
+   * The rows a report reads, when a table reports every row (an option chain's
+   * strike window) rather than those in the viewport; `rows` stays what the
+   * capture shows. Absent when every table is read from the viewport.
+   */
+  reportRows?: DesktopPaneShotRenderedRow[];
+  /** `truncationReasons` without the cuts of tables whose every row is in `reportRows`. */
+  reportTruncationReasons?: string[];
   /** Text of the pane footers, where a pane says whether its data is live, delayed or stale. */
   footerText?: string;
+  /** How each 3D surface in the view was drawn: `webgl`, `software` (a CPU raster) or `grid` (the 2D stand-in), and its last frame's state. */
+  surfaces?: DesktopPaneShotSurface[];
   visibleKeyValues?: Array<{ label: string; text: string }>;
   rows: DesktopPaneShotRenderedRow[];
   truncated: boolean;
@@ -122,7 +153,21 @@ export interface DesktopPaneShotRenderResult {
   /** A wall that needs an account, or a Pro lock on part of the pane. */
   accessGate?: PaneAccessGate | null;
   semanticUi: RemoteUiNodeSnapshot[];
+  /** The status line drawn in the capture's footer, as it fit the width. */
+  statusLine?: string | null;
 }
+
+/**
+ * The status line variants for a capture, longest first, worked out from what
+ * the pane rendered; null leaves the footer row empty. `dates` says what the
+ * line dates (`CaptureStatusLine`): the pane's own data, whose `as of` text is
+ * then left out rather than repeat the date, or the quotes on screen.
+ */
+interface ShotStatusLineVariants {
+  variants: readonly string[];
+  dates?: "data" | "quotes" | null;
+}
+type ShotStatusLine = (rendered: DesktopPaneShotRenderResult) => ShotStatusLineVariants | null | Promise<ShotStatusLineVariants | null>;
 
 type CdpResponse = {
   id?: number;
@@ -151,7 +196,8 @@ const SHOT_MODE_CSS = [
   + " line-height: var(--cell-h); font-size: 12px; letter-spacing: 0.02em; color: var(--gloom-text-dim, #888);"
   + " pointer-events: none; z-index: 1000; }";
 
-const CHROME_POLL_ATTEMPTS = 80;
+// Chrome gets 30 s (300 polls x 100 ms) to open its DevTools port: 8 s was not enough on a busy machine.
+const CHROME_POLL_ATTEMPTS = 300;
 const SHOT_READY_TIMEOUT_MS = 45_000;
 const CDP_CALL_TIMEOUT_MS = 10_000;
 const DEFAULT_DEVICE_SCALE_FACTOR = 2;
@@ -160,7 +206,7 @@ export async function renderDesktopPaneScreenshot(
   payload: DesktopPaneShotPayload,
   outputPath: string,
   apiProxy: DesktopPaneShotApiProxy,
-  options: { captureImage?: boolean; bridge?: DesktopPaneShotBridge } = {},
+  options: { captureImage?: boolean; bridge?: DesktopPaneShotBridge; statusLine?: ShotStatusLine } = {},
 ): Promise<DesktopPaneShotRenderResult> {
   const tempDir = await mkdtemp(join(tmpdir(), "gloom-pane-shot-"));
   let server: ReturnType<typeof Bun.serve> | null = null;
@@ -179,6 +225,8 @@ export async function renderDesktopPaneScreenshot(
       deviceScaleFactor: payload.deviceScaleFactor ?? DEFAULT_DEVICE_SCALE_FACTOR,
       userDataDir: join(tempDir, "chrome-profile"),
       captureImage: options.captureImage !== false,
+      statusLine: payload.statusLine ? options.statusLine : undefined,
+      ...(payload.maxHeightCells ? { fitRows: { heightCells: payload.heightCells, maxHeightCells: payload.maxHeightCells } } : {}),
     });
   } finally {
     server?.stop(true);
@@ -399,6 +447,8 @@ async function capturePageScreenshot({
   deviceScaleFactor,
   userDataDir,
   captureImage,
+  statusLine,
+  fitRows,
 }: {
   chrome: string;
   url: string;
@@ -408,6 +458,8 @@ async function capturePageScreenshot({
   deviceScaleFactor: number;
   userDataDir: string;
   captureImage: boolean;
+  statusLine?: ShotStatusLine;
+  fitRows?: { heightCells: number; maxHeightCells: number };
 }): Promise<DesktopPaneShotRenderResult> {
   await mkdir(userDataDir, { recursive: true });
   const port = 43000 + Math.floor(Math.random() * 10000);
@@ -453,7 +505,12 @@ async function capturePageScreenshot({
       color: { r: 0, g: 0, b: 0, a: 0 },
     });
     await waitForShotReady(session);
+    if (fitRows) await growToFitRows(session, { widthPx, heightPx, deviceScaleFactor, ...fitRows });
     const rendered = await readRenderedPaneState(session);
+    if (captureImage && statusLine) {
+      const line = await statusLine(rendered);
+      rendered.statusLine = line?.variants.length ? await fitShotStatusLine(session, line) : null;
+    }
     if (captureImage) {
       const screenshot = await session.send("Page.captureScreenshot", {
         format: "png",
@@ -472,6 +529,42 @@ async function capturePageScreenshot({
     proc.kill();
     await proc.exited.catch(() => {});
   }
+}
+
+/**
+ * Grows the viewport and the pane by the rows their tables scroll past, up to
+ * `maxHeightCells`, then waits for the taller pane to settle: a board a
+ * default capture would cut (FUT's last sectors) shows every row.
+ */
+async function growToFitRows(session: CdpSession, size: {
+  widthPx: number;
+  heightPx: number;
+  deviceScaleFactor: number;
+  heightCells: number;
+  maxHeightCells: number;
+}): Promise<void> {
+  const result = await session.send("Runtime.evaluate", {
+    expression: `Math.max(0, ...[...document.querySelectorAll('[data-gloom-role="data-table-body-scroll"]')]
+      .map((element) => element.scrollHeight - element.clientHeight))`,
+    returnByValue: true,
+  }) as { result?: { value?: unknown } };
+  const overflowPx = Number(result.result?.value);
+  // One pixel is subpixel layout, not a hidden row.
+  if (!Number.isFinite(overflowPx) || overflowPx <= 1) return;
+  const cellPx = size.heightPx / size.heightCells;
+  const heightCells = Math.min(size.maxHeightCells, size.heightCells + Math.ceil(overflowPx / cellPx));
+  if (heightCells <= size.heightCells) return;
+  await session.send("Emulation.setDeviceMetricsOverride", {
+    width: size.widthPx,
+    height: Math.round(heightCells * cellPx),
+    deviceScaleFactor: size.deviceScaleFactor,
+    mobile: false,
+  });
+  await session.send("Runtime.evaluate", {
+    expression: `window.__GLOOM_CLI_SHOT_RESIZE__ && window.__GLOOM_CLI_SHOT_RESIZE__(${heightCells})`,
+    returnByValue: true,
+  });
+  await waitForShotReady(session);
 }
 
 const LOADING_STATE_PATTERNS = [
@@ -512,6 +605,8 @@ const EMPTY_STATE_PATTERNS = [
   /\bNo transcribed calls(?: for [^.]+)? yet\b/gi,
   /\bNo short interest (?:data|found)\b/gi,
   /\bNo (?:House PTR |insider )?(?:trades|members|transactions|filings)\b/gi,
+  // OMON on an expiry the chain does not list, with the dates nearest it.
+  /\bNo (?:option contracts returned for )?expiry \d{4}-\d{2}-\d{2}(?:; (?:available|nearest others): \d{4}-\d{2}-\d{2}(?:, \d{4}-\d{2}-\d{2})*(?: \(\+\d+ more\))?|; the chain lists no expiries)?/gi,
 ];
 
 function stateMarkers(text: string, patterns: RegExp[]): string[] {
@@ -538,26 +633,39 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
       const semanticTables = semanticUi.filter((node) => node && node.role === "table");
       const rows = [];
       const truncationReasons = new Set();
+      const scrollReasons = (${scrollTruncationReasons.toString()});
+      const visibleTables = [...root.querySelectorAll('[data-gloom-role="data-table"]')].filter(isVisible);
+      // A table that publishes every row has nothing cut from a report, whatever the viewport shows.
+      const reportedRowsOf = (tableIndex) => {
+        const metadata = semanticTables[tableIndex] && semanticTables[tableIndex].metadata;
+        return metadata && Array.isArray(metadata.rows) ? metadata.rows : null;
+      };
+      const reportedTables = new Set(visibleTables.filter((_table, tableIndex) => reportedRowsOf(tableIndex)));
+      const reportRows = [];
+      const reportTruncationReasons = new Set();
+      const inReportedTable = (element) => {
+        const table = element.closest('[data-gloom-role="data-table"]');
+        return !!table && reportedTables.has(table);
+      };
       const markScrollTruncation = (element) => {
         if (!(element instanceof HTMLElement) || !isVisible(element)) return;
-        if (
-          element.getAttribute("data-gloom-scrollbar-y") === "visible"
-          || element.scrollHeight > element.clientHeight + 1
-        ) {
-          truncationReasons.add("rows extend below the rendered viewport");
-        }
-        if (
-          element.getAttribute("data-gloom-scrollbar-x") === "visible"
-          || element.scrollWidth > element.clientWidth + 1
-        ) {
-          truncationReasons.add("columns extend beyond the rendered viewport");
-        }
+        const reasons = scrollReasons({
+          scrollTop: element.scrollTop,
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+          scrollLeft: element.scrollLeft,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+          scrollbarY: element.getAttribute("data-gloom-scrollbar-y") === "visible",
+          scrollbarX: element.getAttribute("data-gloom-scrollbar-x") === "visible",
+        });
+        reasons.forEach((reason) => truncationReasons.add(reason));
+        if (!inReportedTable(element)) reasons.forEach((reason) => reportTruncationReasons.add(reason));
       };
       [...root.querySelectorAll(
         '[data-gloom-scrollbar-x="visible"], [data-gloom-scrollbar-y="visible"], [data-gloom-role="data-table-body-scroll"]',
       )].forEach(markScrollTruncation);
-      [...root.querySelectorAll('[data-gloom-role="data-table"]')]
-        .filter(isVisible)
+      visibleTables
         .forEach((table, tableIndex) => {
           const tableMetadata = semanticTables[tableIndex] && semanticTables[tableIndex].metadata || {};
           const semanticColumns = Array.isArray(tableMetadata.columns) ? tableMetadata.columns : [];
@@ -583,8 +691,10 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
                 ))
               ) {
                 truncationReasons.add("one or more cells are visibly clipped");
+                if (!reportedTables.has(table)) reportTruncationReasons.add("one or more cells are visibly clipped");
               }
               const instant = cell.getAttribute("data-gloom-cell-instant");
+              const exact = Number(cell.getAttribute("data-gloom-cell-value") || "NaN");
               return {
                 ...(typeof semanticColumn.id === "string" ? { columnId: semanticColumn.id } : {}),
                 columnLabel: typeof semanticColumn.label === "string"
@@ -592,14 +702,30 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
                   : headers[cellIndex] || (values.length === 1 ? "Row" : String(cellIndex + 1)),
                 text,
                 ...(instant ? { instant } : {}),
+                ...(Number.isFinite(exact) ? { value: exact } : {}),
               };
             }).filter((cell) => cell.text.length > 0);
             if (cells.length === 0) return;
-            rows.push({
+            const captured = {
               tableIndex,
               rowIndex,
               ...(rowKey ? { key: rowKey } : {}),
               selected: row.getAttribute("data-selected") === "true",
+              cells,
+            };
+            rows.push(captured);
+            if (!reportedTables.has(table)) reportRows.push(captured);
+          });
+          const reported = reportedRowsOf(tableIndex);
+          if (!reported) return;
+          reported.forEach((row, rowIndex) => {
+            const cells = Array.isArray(row && row.cells) ? row.cells.filter((cell) => cell && cell.text) : [];
+            if (cells.length === 0) return;
+            reportRows.push({
+              tableIndex,
+              rowIndex,
+              ...(typeof row.key === "string" ? { key: row.key } : {}),
+              selected: row.selected === true,
               cells,
             });
           });
@@ -627,6 +753,10 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
           .filter(Boolean)
           .join(" "),
         visibleKeyValues: (${readVisibleKeyValues.toString()})(root),
+        surfaces: [...root.querySelectorAll('[data-gloom-surface-renderer]')].filter(isVisible).map((element) => ({
+          renderer: element.getAttribute("data-gloom-surface-renderer") || "",
+          state: element.getAttribute("data-gloom-surface-state") || "",
+        })),
         error: window.__GLOOM_CLI_SHOT_ERROR__ || "",
         loadingStateDetected: root.querySelector('[data-gloom-status="loading"]') !== null,
         errorStateDetected: root.querySelector('[data-gloom-status="error"]') !== null,
@@ -639,6 +769,7 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
         rows,
         truncated: truncationReasons.size > 0,
         truncationReasons: [...truncationReasons],
+        ...(reportedTables.size > 0 ? { reportRows, reportTruncationReasons: [...reportTruncationReasons] } : {}),
         semanticUi,
       };
     })()`,
@@ -649,6 +780,7 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
         visibleText?: string;
         footerText?: string;
         visibleKeyValues?: Array<{ label: string; text: string }>;
+        surfaces?: DesktopPaneShotSurface[];
         error?: string;
         loadingStateDetected?: boolean;
         errorStateDetected?: boolean;
@@ -657,6 +789,8 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
         rows?: DesktopPaneShotRenderedRow[];
         truncated?: boolean;
         truncationReasons?: string[];
+        reportRows?: DesktopPaneShotRenderedRow[];
+        reportTruncationReasons?: string[];
         semanticUi?: RemoteUiNodeSnapshot[];
       };
     };
@@ -681,9 +815,14 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
     visibleText,
     footerText: typeof value?.footerText === "string" ? value.footerText : "",
     visibleKeyValues: Array.isArray(value?.visibleKeyValues) ? value.visibleKeyValues : [],
+    ...(Array.isArray(value?.surfaces) && value.surfaces.length > 0 ? { surfaces: value.surfaces } : {}),
     rows,
     truncated: value?.truncated === true || textShowsEllipsis,
     truncationReasons,
+    ...(Array.isArray(value?.reportRows) ? {
+      reportRows: value.reportRows,
+      reportTruncationReasons: (value.reportTruncationReasons ?? []).filter((reason): reason is string => typeof reason === "string"),
+    } : {}),
     loadingStateDetected: value?.loadingStateDetected === true || loadingStateMarkers.length > 0,
     errorStateDetected: value?.errorStateDetected === true || errorStateMarkers.length > 0,
     errorStateMarkers,
@@ -692,6 +831,20 @@ async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneSh
     accessGate,
     semanticUi: Array.isArray(value?.semanticUi) ? value.semanticUi : [],
   };
+}
+
+/** Draws the first variant that fits the pane footer, and returns what it drew. */
+async function fitShotStatusLine(session: CdpSession, { variants, dates }: ShotStatusLineVariants): Promise<string | null> {
+  const result = await session.send("Runtime.evaluate", {
+    expression: `(() => {
+      const fit = window.__GLOOM_CLI_SHOT_FIT_STATUS__;
+      return fit ? fit(${JSON.stringify(variants)}, ${JSON.stringify({ dates: dates ?? null })}) : null;
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }) as { result?: { value?: unknown } };
+  const value = result.result?.value;
+  return typeof value === "string" ? value : null;
 }
 
 async function waitForPageWebSocket(port: number, targetUrl: string): Promise<string> {

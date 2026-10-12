@@ -10,6 +10,7 @@ import {
   normalizeCreditSeries,
   normalizeCreditYieldSeries,
   type CreditConditionRow,
+  type CreditSeriesDefinition,
   type CreditYieldRow,
   type CreditYieldSeriesId,
 } from "./model";
@@ -55,10 +56,12 @@ function seriesError(seriesId: string, error: unknown): string {
   return message.startsWith(`${seriesId}:`) ? message : `${seriesId}: ${message}`;
 }
 
-export function getCachedCreditConditions(): CreditConditionsLoadResult | null {
+export function getCachedCreditConditions(
+  series: readonly CreditSeriesDefinition[] = CREDIT_SERIES,
+): CreditConditionsLoadResult | null {
   const rows: CreditConditionRow[] = [];
   const errors: string[] = [];
-  for (const definition of CREDIT_SERIES) {
+  for (const definition of series) {
     const cached = getCachedFredSeries(requestFor(definition.seriesId), { allowExpired: true });
     if (!cached) continue;
     try {
@@ -76,7 +79,7 @@ export function getCachedCreditConditions(): CreditConditionsLoadResult | null {
 }
 
 async function loadSeries(
-  definition: typeof CREDIT_SERIES[number],
+  definition: CreditSeriesDefinition,
   force: boolean,
   loader: CreditSeriesLoader,
 ) {
@@ -104,15 +107,16 @@ async function loadSeries(
 export async function loadCreditConditions(
   force = false,
   loader: CreditSeriesLoader = (seriesId, options) => apiClient.getCloudFredSeries(seriesId, options),
+  series: readonly CreditSeriesDefinition[] = CREDIT_SERIES,
 ): Promise<CreditConditionsLoadResult> {
   const settled = await Promise.allSettled(
-    CREDIT_SERIES.map((definition) => loadSeries(definition, force, loader)),
+    series.map((definition) => loadSeries(definition, force, loader)),
   );
   const rows: CreditConditionRow[] = [];
   const errors: string[] = [];
   settled.forEach((result, index) => {
     if (result.status === "rejected") {
-      const seriesId = CREDIT_SERIES[index]!.seriesId;
+      const seriesId = series[index]!.seriesId;
       errors.push(seriesError(seriesId, result.reason));
       return;
     }
@@ -139,7 +143,10 @@ function treasury10Y(points: readonly { maturity: string; yield: number | null }
   return point?.yield != null && Number.isFinite(point.yield) ? point.yield : null;
 }
 
-function unavailableYield(definition: typeof CREDIT_YIELD_SERIES[number], error: unknown): CreditYieldBoardRow {
+function unavailableYield(
+  definition: typeof CREDIT_YIELD_SERIES[number],
+  error: unknown,
+): Extract<CreditYieldBoardRow, { status: "unavailable" }> {
   return { seriesId: definition.seriesId, label: definition.label, status: "unavailable", error: seriesError(definition.seriesId, error) };
 }
 
@@ -226,9 +233,10 @@ export async function loadCreditBoard(
   force = false,
   loader?: CreditSeriesLoader,
   curve?: () => Promise<Array<{ maturity: string; yield: number | null }>>,
+  series: readonly CreditSeriesDefinition[] = CREDIT_SERIES,
 ): Promise<CreditBoardLoadResult> {
   const [spreads, yields] = await Promise.all([
-    loadCreditConditions(force, loader).then((value) => ({ ok: true as const, value })).catch((error: unknown) => ({ ok: false as const, error })),
+    loadCreditConditions(force, loader, series).then((value) => ({ ok: true as const, value })).catch((error: unknown) => ({ ok: false as const, error })),
     loadCreditYields(force, loader, curve),
   ]);
   if (!spreads.ok && yields.rows.every((row) => row.status !== "available")) {
@@ -243,8 +251,10 @@ export async function loadCreditBoard(
   };
 }
 
-export function getCachedCreditBoard(): CreditBoardLoadResult | null {
-  const spreads = getCachedCreditConditions();
+export function getCachedCreditBoard(
+  series: readonly CreditSeriesDefinition[] = CREDIT_SERIES,
+): CreditBoardLoadResult | null {
+  const spreads = getCachedCreditConditions(series);
   const yields = getCachedCreditYields();
   if (!spreads && !yields) return null;
   return {

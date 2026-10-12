@@ -1,3 +1,4 @@
+import { registerAccountSession } from "../../../../account/session";
 import type {
   AppNotificationDelivery,
   AppNotificationRequest,
@@ -10,10 +11,11 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatMessage,
-  type ChatPresence,
+  type ChatReaction,
+  type ChatReactionsUpdate,
   type PersistedAuthUser,
 } from "../../../../api-client";
-import { unavailableText } from "../../../../components/ui/status-copy";
+import { withOwnReaction } from "../reactions";
 import { normalizeSessionUser } from "./persistence";
 import { debugLog } from "../../../../utils/debug-log";
 import {
@@ -34,7 +36,8 @@ import {
   updateChatChannelDraft,
   updateChatChannelNotifications,
 } from "./channel-actions";
-import { retryChatMessageInChannel, sendChatMessageToChannel } from "./send";
+import { postImageMessageToChannel, retryChatMessageInChannel, sendChatMessageToChannel } from "./send";
+import { describeChatImageError } from "../attachments/model";
 import {
   addDraftAttachments,
   discardDraftAttachments,
@@ -69,6 +72,7 @@ import { ChatControllerView } from "./view";
 import { ChatControllerMessageLoading } from "./message-loading";
 import { ChatControllerStorage } from "./storage";
 import { listUnreadInboxItems } from "../unread-inbox";
+import type { ChatConversationList } from "../conversations";
 import {
   applySignedOutChatControllerSession,
   createChatControllerSessionState,
@@ -78,6 +82,26 @@ import {
 
 const chatLog = debugLog.createLogger("chat-controller");
 const IMAGE_LINK_REFRESH_INTERVAL_MS = 60_000;
+
+function timeOf(value: string | undefined): number {
+  const time = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * The newest message held for a conversation, sent or received. A DM or group
+ * with nothing on this device yet counts from when it was started.
+ */
+function lastConversationActivity(channel: ChatChannel, state: ChannelRuntimeState | undefined): number {
+  const started = channel.kind === "direct" || channel.kind === "group"
+    ? timeOf(channel.created_at)
+    : Number.NEGATIVE_INFINITY;
+  return Math.max(
+    started,
+    timeOf(state?.messages.at(-1)?.createdAt),
+    timeOf(state?.pendingMessages.at(-1)?.createdAt),
+  );
+}
 
 function unseenChannelMessages(messages: ChatMessage[], lastViewedMessageId: string | null): ChatMessage[] {
   if (!lastViewedMessageId) return messages;
@@ -98,7 +122,6 @@ export class ChatController {
   );
   private notifyFn: (notification: AppNotificationRequest) => AppNotificationDelivery | void = () => {};
   private openMessageFn: ((channelId: string, messageId: string) => void) | undefined;
-  private onUnreadMessage: ((message: ChatMessage, channelId: string) => void) | undefined;
   private notifiedMessageIds = new Set<string>();
 
   private readonly storage = new ChatControllerStorage({
@@ -121,8 +144,6 @@ export class ChatController {
     isSessionChecked: () => this.session.sessionChecked,
     hasSession: () => !!this.session.sessionToken || !!this.session.user,
     getOnlineCount: () => this.channelCatalog.getOnlineCount(),
-    getOnlineUserIds: () => this.channelCatalog.getOnlineUserIds(),
-    getOnlineUsernames: () => this.channelCatalog.getOnlineUsernames(),
     getUser: () => this.session.user,
     getListenerSnapshot: (channelId) => this.getSnapshot(channelId),
     getVisibleMessages: (channelId) => this.getVisibleMessages(channelId),
@@ -133,6 +154,7 @@ export class ChatController {
     emit: (channelId) => this.emit(channelId),
     mergeMessages: (channelId, messages, options) => this.mergeMessages(channelId, messages, options),
     persistChannelState: (channelId) => this.storage.persistChannelState(channelId),
+    getReaderId: () => this.session.user?.id ?? null,
   });
   private readonly realtime = new ChatControllerRealtime({
     getAppActive: () => this.appActive,
@@ -140,8 +162,9 @@ export class ChatController {
     getUser: () => this.session.user,
     refreshSession: () => this.refreshSession(),
     handleNotification: (notification) => this.handleChatNotification(notification),
-    applyPresence: (presence) => {
-      this.channelCatalog.applyPresence(presence);
+    handleReactions: (update) => this.applyReactionsUpdate(update),
+    setOnlineCount: (onlineCount) => {
+      this.channelCatalog.setOnlineCount(onlineCount);
     },
     emit: () => this.emit(),
     getSafetyRefreshChannelIds: () => getChannelIdsForSafetyRefresh(this.storage.channelStates),
@@ -159,10 +182,6 @@ export class ChatController {
   ): void {
     this.notifyFn = notify;
     this.openMessageFn = openMessage;
-  }
-
-  setOnUnreadMessage(callback: (message: ChatMessage, channelId: string) => void): void {
-    this.onUnreadMessage = callback;
   }
 
   /** Channel that currently holds this message, when its transcript is loaded. */
@@ -201,33 +220,27 @@ export class ChatController {
   }
 
   /**
-   * Clears every channel unread count the status badge is showing.
-   * Mark-all in Notifications has to do this: the log read flag and the
-   * channel unread count are separate, and clearing only the log leaves the badge.
+   * Mark all read in the Unread list: each unread channel is read through its
+   * newest message the way opening it in Chat reads it, and a channel with
+   * nothing on this device yet once its latest messages load. A failed load
+   * leaves that channel unread.
    */
   markAllChannelsRead(): void {
-    const pending: string[] = [];
     let changed = false;
     for (const [channelId, channel] of this.storage.channelStates) {
       if (channel.unreadCount <= 0) continue;
-      changed = true;
       if (channel.messages.length > 0) {
-        this.markViewedThroughLatestMessage(channelId);
+        changed = this.markViewedThroughLatestMessage(channelId) || changed;
         continue;
       }
-      channel.unreadCount = 0;
-      this.storage.persistChannelState(channelId);
-      pending.push(channelId);
+      void this.refreshChannelMessages(channelId)
+        .then(() => {
+          if (this.ensureChannelState(channelId).messages.length === 0) return;
+          if (this.markViewedThroughLatestMessage(channelId)) this.emit(channelId);
+        })
+        .catch(() => {});
     }
     if (changed) this.emit();
-    for (const channelId of pending) {
-      void this.refreshChannelMessages(channelId).finally(() => {
-        const channel = this.ensureChannelState(channelId);
-        channel.unreadCount = 0;
-        if (channel.messages.length > 0) this.markViewedThroughLatestMessage(channelId);
-        this.emit();
-      });
-    }
   }
 
   hydrate(): void {
@@ -254,11 +267,6 @@ export class ChatController {
     return this.view.getSnapshot(channelId);
   }
 
-  applyPresence(presence: ChatPresence | { onlineCount: number }): void {
-    this.channelCatalog.applyPresence(presence);
-    this.emit();
-  }
-
   /** Channels with unread messages, from the counts and messages already held; no request. */
   listUnreadInbox() {
     return listUnreadInboxItems({
@@ -271,6 +279,27 @@ export class ChatController {
         messages: channel.messages,
       })),
     });
+  }
+
+  /**
+   * Every conversation the Chat sidebar lists, with its unread count and last
+   * activity, from what this device already holds; no request. Null until a
+   * verified account is signed in.
+   */
+  listConversations(): ChatConversationList | null {
+    const user = this.session.user;
+    if (!user?.emailVerified) return null;
+    return {
+      userId: user.id,
+      states: this.channelCatalog.getChannels().map((channel) => {
+        const state = this.storage.channelStates.get(channel.id);
+        return {
+          channel,
+          unreadCount: Math.max(0, state?.unreadCount ?? 0),
+          lastActivityAt: lastConversationActivity(channel, state),
+        };
+      }),
+    };
   }
 
   getChannels(): ChatChannel[] {
@@ -612,6 +641,47 @@ export class ChatController {
     };
   }
 
+  /**
+   * Posts one picture with an optional caption as the user's own message, as
+   * Share to Chat does: uploads it, then sends it, leaving the channel's
+   * draft alone. Rejects with a sentence that says what went wrong.
+   */
+  async postImage(
+    channelId: string,
+    upload: ChatAttachmentUpload & { previewUrl?: string | null },
+    caption: string,
+    options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
+  ): Promise<ChatMessage> {
+    const normalizedChannelId = normalizeChannelId(channelId);
+    const user = this.session.user;
+    if (!user?.emailVerified) throw new Error("Verify your email to post in chat.");
+    let attachment;
+    try {
+      attachment = await this.uploadAttachment(normalizedChannelId, upload, {
+        signal: options.signal ?? new AbortController().signal,
+        onProgress: options.onProgress ?? (() => {}),
+      });
+    } catch (error) {
+      throw new Error(describeChatImageError(error));
+    }
+    const channel = this.ensureChannelState(normalizedChannelId);
+    return postImageMessageToChannel({
+      channelId: normalizedChannelId,
+      channel,
+      content: caption,
+      attachment,
+      previewUrl: upload.previewUrl ?? null,
+      user,
+      getVisibleMessages: () => this.getVisibleMessages(normalizedChannelId),
+      nextPendingMessageId: () => `local:${Date.now()}:${this.pendingMessageSeq += 1}`,
+      emit: () => this.emit(normalizedChannelId),
+      mergeMessages: (messages) => this.mergeMessages(normalizedChannelId, messages),
+      send: (content, clientMessageId, attachmentIds) => (
+        apiClient.sendMessage(normalizedChannelId, content, undefined, clientMessageId, attachmentIds)
+      ),
+    });
+  }
+
   /** Sends a failed message again with the same images and idempotency key. */
   retryChannelMessage(channelId: string, messageId: string): boolean {
     const normalizedChannelId = normalizeChannelId(channelId);
@@ -662,10 +732,59 @@ export class ChatController {
     } catch (error) {
       const errorMessage = error instanceof Error && error.message
         ? error.message
-        : unavailableText("Message");
+        : "Failed to edit message.";
       this.notifyFn({ body: errorMessage, type: "error" });
       return false;
     }
+  }
+
+  /**
+   * Adds or takes back your reaction with one emoji. The chip moves at once;
+   * the server's answer settles it, and a refusal puts it back and says why.
+   */
+  async toggleChannelReaction(channelId: string, messageId: string, emoji: string): Promise<boolean> {
+    const normalizedChannelId = normalizeChannelId(channelId);
+    const channel = this.ensureChannelState(normalizedChannelId);
+    const user = this.session.user;
+    if (!user?.emailVerified) return false;
+    const message = channel.messages.find((entry) => entry.id === messageId);
+    if (!message) return false;
+    const reacted = !(message.reactions ?? []).some((reaction) => reaction.emoji === emoji && reaction.me);
+    const self = { id: user.id, username: user.username, displayName: user.username };
+    this.replaceMessageReactions(normalizedChannelId, messageId, (current) => withOwnReaction(current, emoji, reacted, self));
+    try {
+      const update = await apiClient.setChatReaction(normalizedChannelId, messageId, emoji, reacted);
+      this.replaceMessageReactions(normalizedChannelId, messageId, () => update.reactions);
+      return true;
+    } catch (error) {
+      // Only this change is undone; what others did meanwhile stays.
+      this.replaceMessageReactions(normalizedChannelId, messageId, (current) => withOwnReaction(current, emoji, !reacted, self));
+      const body = error instanceof Error && error.message ? error.message : "Failed to react.";
+      this.notifyFn({ body, type: "error" });
+      return false;
+    }
+  }
+
+  /** A message's reactions as everyone reading the channel just got them. */
+  applyReactionsUpdate(update: ChatReactionsUpdate): void {
+    this.replaceMessageReactions(normalizeChannelId(update.channelId), update.messageId, () => update.reactions);
+  }
+
+  private replaceMessageReactions(
+    channelId: string,
+    messageId: string,
+    next: (current: ChatReaction[]) => ChatReaction[],
+  ): void {
+    const channel = this.storage.channelStates.get(channelId);
+    if (!channel) return;
+    const index = channel.messages.findIndex((entry) => entry.id === messageId);
+    if (index < 0) return;
+    const message = channel.messages[index]!;
+    channel.messages = channel.messages.map((entry, entryIndex) => (
+      entryIndex === index ? { ...message, reactions: next(message.reactions ?? []) } : entry
+    ));
+    this.storage.persistTranscript(channelId);
+    this.emit(channelId);
   }
 
   ensureConnection(channelId = DEFAULT_CHAT_CHANNEL_ID): void {
@@ -739,7 +858,6 @@ export class ChatController {
       options,
       viewActive: this.appActive && channel.focusedViewCount > 0,
       markViewed: (persist) => this.markViewedThroughLatestMessage(channelId, persist),
-      onUnread: (message) => this.onUnreadMessage?.(message, channelId),
     });
     this.storage.persistTranscript(channelId);
     this.emit(channelId);
@@ -801,3 +919,4 @@ export class ChatController {
 }
 
 export const chatController = new ChatController();
+registerAccountSession(chatController);

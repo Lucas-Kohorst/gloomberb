@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
-import { orderCandidatesByListingVolume, searchTickerCandidates, symbolSearchQuery } from "../../../../tickers/search";
+import { LISTING_SEARCH_LIMIT, searchTickerCandidates, symbolSearchQuery } from "../../../../tickers/search";
 import {
-  COMMAND_BAR_TICKER_SEARCH_LIMIT,
   mergeTickerSearchResultItems,
   QUICK_LOOK_TICKER_SEARCH_OPTIONS,
 } from "./results";
@@ -85,12 +84,6 @@ export function useTickerSearchRouteResults(options: {
       : localItems);
     const requestId = ++searchRequestIdRef.current;
     const searchDelay = skipTickerSearchDebounceRef.current ? 0 : 200;
-    const searchContext = {
-      preferBroker: true,
-      interactive: true,
-      brokerId: brokerId ?? undefined,
-      brokerInstanceId: brokerInstanceId ?? undefined,
-    };
     skipTickerSearchDebounceRef.current = false;
 
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -100,22 +93,27 @@ export function useTickerSearchRouteResults(options: {
           query: searchQuery,
           tickers: getTickers(),
           dataProvider,
-          searchContext,
-          totalLimit: COMMAND_BAR_TICKER_SEARCH_LIMIT,
+          searchContext: {
+            preferBroker: true,
+            interactive: true,
+            limit: LISTING_SEARCH_LIMIT,
+            brokerId: brokerId ?? undefined,
+            brokerInstanceId: brokerInstanceId ?? undefined,
+          },
+          // The rows the CLI's search reads, so CAR Group on ASX (CAR's eleventh row) is offered too.
+          totalLimit: LISTING_SEARCH_LIMIT,
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== searchRequestIdRef.current) return;
-        const ordered = await orderCandidatesByListingVolume(combined, searchQuery, dataProvider, searchContext);
-        if (requestId !== searchRequestIdRef.current) return;
         writeTickerSearchCache(
           searchQuery,
-          ordered,
+          combined,
           brokerId,
           brokerInstanceId,
         );
         setTickerSearchResults(mergeTickerSearchResultItems(
           searchQuery,
-          buildTickerSearchResultItems(ordered, searchQuery),
+          buildTickerSearchResultItems(combined, searchQuery),
           localTickerSearchResultItems(searchQuery, { limit: 6 }),
         ));
       } catch {

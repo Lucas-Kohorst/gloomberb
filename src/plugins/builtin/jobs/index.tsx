@@ -1,20 +1,13 @@
 import { publicTickerBindingSymbol } from "../../../tickers/selection";
-import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { researchCanReadPro } from "../shared/research-tab-availability";
-import { fetchJobs, resetJobsCache } from "./client";
-
-async function loadJobsTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
-  if (!researchCanReadPro()) return true;
-  const state = await fetchJobs(ticker.metadata.ticker, { name: ticker.metadata.name });
-  return state.kind !== "uncovered";
-}
+import { JOBS_SERIES } from "./series";
+import { resetJobsCache } from "./client";
 import { jobsHeadless } from "./headless";
 import { JOBS_PANE_ID, JobsPane, JobsResearchTab } from "./pane";
 
 
 const description =
-  "Hiring read from the company's own careers system: open roles over time, by function and location, new roles, pay ranges. Alone, every covered company ranked.";
+  "Pro hiring read from the company's own careers system: open roles over time, by function and location, new roles, pay ranges. Alone, every covered company ranked.";
 
 function explicitSymbol(options?: { arg?: string; symbol?: string | null }): string | null {
   const symbol = (options?.symbol ?? options?.arg ?? "").trim().toUpperCase();
@@ -22,6 +15,7 @@ function explicitSymbol(options?: { arg?: string; symbol?: string | null }): str
 }
 
 export const jobsModule: PluginModule = {
+  series: JOBS_SERIES,
   setup(ctx) {
     ctx.registerTickerResearchTab({
       id: "jobs",
@@ -29,7 +23,6 @@ export const jobsModule: PluginModule = {
       order: 37,
       component: JobsResearchTab,
       instruments: ["equity"],
-      load: loadJobsTab,
     });
   },
 

@@ -13,6 +13,7 @@ import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import { buildQuoteKey, resolveEntryData } from "../../../market-data/selectors";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { Quote } from "../../../types/financials";
+import type { ExtendedSession } from "../../../market-data/market/status";
 import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { isStreamCarryingQuote, useVisibleBoardSymbols } from "../shared/use-quote-board";
@@ -34,6 +35,7 @@ import {
   nextSortPreference,
   normalizeRowsForCollection,
   overlayLiveSectorQuote,
+  sectorExtendedSessions,
   sectorRowFollowsQuote,
   sectorRowIssues,
   sortRows,
@@ -150,7 +152,6 @@ function EtfBoard({ collectionId, focused, width, height, rootBefore }: EtfBoard
   const fetchGenRef = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const columns = useMemo(() => buildSectorColumns(width), [width]);
   const rows = useMemo(
     () => normalizeRowsForCollection(rowsByCollection, activeCollection.id, activeItems),
     [activeCollection.id, activeItems, rowsByCollection],
@@ -204,6 +205,12 @@ function EtfBoard({ collectionId, focused, width, height, rootBefore }: EtfBoard
     return carried && !!quote && sectorRowFollowsQuote(row, quote);
   }), [freshnessNow, liveEntries, liveStreaming, rows, subscriptionStartedAt]);
   const sortedRows = useMemo(() => sortRows(liveRows, sortPreference), [liveRows, sortPreference]);
+  // A pre-market or after-hours column only while a fund has such a print.
+  const extendedSessionsKey = sectorExtendedSessions(liveRows).join(",");
+  const columns = useMemo(
+    () => buildSectorColumns(width, extendedSessionsKey ? extendedSessionsKey.split(",") as ExtendedSession[] : []),
+    [extendedSessionsKey, width],
+  );
   const lastRefreshMs = lastRefreshByCollection[activeCollection.id] ?? null;
   const loading = rows.some((row) => row.loading);
   /**
@@ -297,6 +304,16 @@ function EtfBoard({ collectionId, focused, width, height, rootBefore }: EtfBoard
           text: row.changePercent !== null ? formatPercentRaw(shownPercent(row.changePercent)) : "—",
           color: row.changePercent !== null ? priceColor(shownPercent(row.changePercent)) : colors.textDim,
         };
+      case "preMarket":
+      case "afterHours": {
+        // The extended print's move from the close in LAST.
+        const move = row.extendedSession === (column.id === "preMarket" ? "PRE" : "POST") ? row.extendedChangePercent ?? null : null;
+        return {
+          text: move !== null ? formatPercentRaw(shownPercent(move)) : "—",
+          value: move,
+          color: move !== null ? priceColor(shownPercent(move)) : colors.textDim,
+        };
+      }
       case "return1M":
         return {
           text: row.loading && row.return1M === null ? "…" : row.return1M !== null ? formatPercentRaw(shownPercent(row.return1M)) : "—",

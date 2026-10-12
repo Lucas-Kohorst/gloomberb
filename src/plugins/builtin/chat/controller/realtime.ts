@@ -1,4 +1,4 @@
-import { apiClient, type ChatNotification, type ChatPresence } from "../../../../api-client";
+import { apiClient, type ChatNotification, type ChatReactionsUpdate } from "../../../../api-client";
 import {
   SAFETY_REFRESH_MS,
   SESSION_RETRY_MS,
@@ -11,7 +11,8 @@ interface ChatControllerRealtimeOptions {
   getUser: () => { emailVerified?: boolean } | null;
   refreshSession: () => Promise<void>;
   handleNotification: (notification: ChatNotification) => void;
-  applyPresence: (presence: ChatPresence) => void;
+  handleReactions: (update: ChatReactionsUpdate) => void;
+  setOnlineCount: (onlineCount: number) => void;
   emit: () => void;
   getSafetyRefreshChannelIds: () => string[];
   runSafetyRefresh: (channelId: string) => Promise<void>;
@@ -23,6 +24,7 @@ export class ChatControllerRealtime {
   private safetyRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private chatNotificationUnsubscribe: (() => void) | null = null;
   private chatPresenceUnsubscribe: (() => void) | null = null;
+  private chatReactionsUnsubscribe: (() => void) | null = null;
 
   constructor(private readonly options: ChatControllerRealtimeOptions) {}
 
@@ -65,9 +67,14 @@ export class ChatControllerRealtime {
         this.options.handleNotification(notification);
       });
     }
+    if (!this.chatReactionsUnsubscribe) {
+      this.chatReactionsUnsubscribe = apiClient.subscribeChatReactions((update) => {
+        this.options.handleReactions(update);
+      });
+    }
     if (!this.chatPresenceUnsubscribe) {
-      this.chatPresenceUnsubscribe = apiClient.subscribeChatPresence((presence) => {
-        this.options.applyPresence(presence);
+      this.chatPresenceUnsubscribe = apiClient.subscribeChatPresence((onlineCount) => {
+        this.options.setOnlineCount(onlineCount);
         this.options.emit();
       });
     }
@@ -78,6 +85,8 @@ export class ChatControllerRealtime {
     this.chatNotificationUnsubscribe = null;
     this.chatPresenceUnsubscribe?.();
     this.chatPresenceUnsubscribe = null;
+    this.chatReactionsUnsubscribe?.();
+    this.chatReactionsUnsubscribe = null;
   }
 
   stopVerificationPolling(): void {

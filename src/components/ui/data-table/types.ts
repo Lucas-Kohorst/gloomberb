@@ -58,9 +58,22 @@ export interface DataTableSectionHeader {
    * `onMouseDown` instead of `onActivate`.
    */
   expanded?: boolean;
+  /**
+   * A quiet control at the right end of the header that acts on the whole
+   * group, such as the preset its rows are set to. A header is not a stop for
+   * the cursor, so the pane gives the same action a key (a footer hint).
+   */
+  action?: {
+    /** What the control says, already translated: the group's current setting. */
+    label: string;
+    /** Desktop tooltip: what pressing it does. */
+    title?: string;
+    onPress: () => void;
+  };
 }
 
-export type DataTableScrollAlign = "nearest" | "center";
+/** Where `scrollToIndex` puts its row: the nearest edge, the middle, or the top of the viewport. */
+export type DataTableScrollAlign = "nearest" | "center" | "start";
 
 interface DataTableRowState {
   selected: boolean;
@@ -144,8 +157,18 @@ export interface DataTableProps<
   showHorizontalScrollbar?: boolean;
   /** Keep the row identifier visible during horizontal scrolling. */
   freezeFirstColumn?: boolean;
+  /** Drag a column edge. `width` is the column's new character width. */
+  onColumnResize?: (columnId: string, width: number) => void;
+  onColumnResizeEnd?: () => void;
+  onColumnResizeReset?: (columnId: string) => void;
   /** Append export-only source records after the displayed table. */
   getExportMetadata?: () => readonly (readonly unknown[])[];
+  /**
+   * A rendered-view report (`gloomberb fn`) reads every row, not only those
+   * the viewport shows. For a bounded table a reader needs whole, such as an
+   * option chain's strike window; leave it off for long or paged lists.
+   */
+  reportEveryRow?: boolean;
   scrollToIndex?: number | null;
   scrollToIndexAlign?: DataTableScrollAlign;
   scrollToIndexVersion?: number;

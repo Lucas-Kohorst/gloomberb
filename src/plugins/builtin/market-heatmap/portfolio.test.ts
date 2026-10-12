@@ -109,6 +109,8 @@ test("portfolio tiles are sized by the square root of market cap, and a name wit
       ["AAPL 270115C00200000", quote("AAPL 270115C00200000", { price: 5 })],
       ["GOOGL", { ...quote("GOOGL", { price: 340 }), fundamentals: { marketCap: 4e12, marketCapCurrency: "USD" } }],
     ]),
+    collectionId: "watchlist",
+    kind: "watchlist",
     currency: "USD",
     exchangeRates: rates,
   });
@@ -131,6 +133,8 @@ test("watchlist names default to the square root of market cap; a saved market-c
       ["SPY", { ...quote("SPY"), fundamentals: { marketCap: 400, marketCapCurrency: "USD" } }],
       ["7203", { ...quote("7203", { currency: "JPY" }), fundamentals: { marketCap: 90_000, marketCapCurrency: "JPY" } }],
     ]),
+    collectionId: "watchlist",
+    kind: "watchlist",
     currency: "USD",
     exchangeRates: new Map([["JPY", 0.01]]),
     sizeBy,

@@ -1,16 +1,11 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import type { PaneFooterSegment } from "../../../../../components";
 import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
-import { useShortcut } from "../../../../../react/input";
-import { useUiCapabilities } from "../../../../../ui";
-import { isPlainKey } from "../../../../../utils/keyboard";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../../../api-client/plan-access";
 import { usePaneStatusLinkFooter } from "../../../../../components/layout/pane/status-footer";
-import { useRefreshPollTrailing, useUpdatedFooterInfo } from "../../../../../components/layout/pane/freshness-footer";
-import { usePluginAppActions } from "../../../../runtime";
-import { useOptionalPaneInstanceId } from "../../../../../state/app/context";
+import { useRemoteUiNode } from "../../../../../remote/semantic-tree";
 
 interface NewsFooterArticle {
   title?: string | null;
@@ -26,7 +21,7 @@ interface UseNewsArticleFooterOptions {
   loading?: boolean;
   error?: string | null;
   onPopOut?: () => void;
-  /** Last successful fetch. Article readers omit this and do not show a poll. */
+  /** List panes still pass the last fetch. This footer does not print a poll clock. */
   updatedAt?: number | null;
 }
 
@@ -38,24 +33,8 @@ export function useNewsArticleFooter({
   loading = false,
   error,
   onPopOut,
-  updatedAt,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
-  const { publicSharing } = useUiCapabilities();
-  const { sharePane } = usePluginAppActions();
-  const paneInstanceId = useOptionalPaneInstanceId();
-  // The open story is pane state, so sharing the pane shares the story: the
-  // receiver's terminal opens on the same article.
-  const shareArticle = useCallback(() => {
-    if (!article?.title || !paneInstanceId) return;
-    sharePane(paneInstanceId);
-  }, [article?.title, paneInstanceId, sharePane]);
-  useShortcut((event) => {
-    if (!focused || !publicSharing || !article?.title || !isPlainKey(event, "y")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    shareArticle();
-  });
   const { access, hint: upgradeHint, segment } = useCloudAccessFooter({
     delayLabel: tf("{count}h", { count: CLOUD_NEWS_DELAY_HOURS }),
     focused,
@@ -64,28 +43,32 @@ export function useNewsArticleFooter({
     shortcutScope: `${registrationId}:news-upgrade`,
   });
 
-  const accessInfo = useMemo<PaneFooterSegment[]>(
-    () => (access.isPayingPro || !segment ? [] : [segment]),
-    [access.isPayingPro, language, segment],
-  );
-  const updatedInfo = useUpdatedFooterInfo(updatedAt);
-  const footerInfo = useMemo(() => [...updatedInfo, ...accessInfo, ...(info ?? [])], [accessInfo, info, updatedInfo]);
-  // Lists pass updatedAt and show the refresh interval. Article readers omit it.
-  const trailingInfo = useRefreshPollTrailing(updatedAt != null);
+  // A report or capture of the pane says how far its stories are held back, as the footer does.
+  useRemoteUiNode({
+    role: "report-freshness",
+    label: "News freshness",
+    getMetadata: () => (access.hasProAccess
+      ? { status: "live" }
+      : { status: "delayed", delayMinutes: CLOUD_NEWS_DELAY_HOURS * 60 }),
+  });
 
+  const accessInfo = useMemo<PaneFooterSegment[]>(() => {
+    if (access.isPayingPro) {
+      return [{ id: "news-access", parts: [{ text: t("real-time news"), tone: "positive" }] }];
+    }
+    return segment ? [segment] : [];
+  }, [access.isPayingPro, language, segment]);
+  const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+
+  // The story's header names its source, so the footer keeps to the link.
   usePaneStatusLinkFooter({
     registrationId,
     focused,
     url: article?.url,
-    source: article?.source,
     info: footerInfo,
-    trailingInfo,
     // [o]pen is appended after these, so the story's own actions stay rightmost.
     hints: [
       ...(upgradeHint ? [upgradeHint] : []),
-      ...(publicSharing && article?.title && paneInstanceId
-        ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
-        : []),
       ...(onPopOut ? [{ id: "pop-out", key: "p", label: "op out", onPress: onPopOut }] : []),
     ],
     showOpenHint: true,

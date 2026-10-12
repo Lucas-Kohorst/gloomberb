@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
-import type { TickerResearchTabLoadContext } from "../../../types/plugin";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
@@ -10,8 +9,8 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import type { ScrollBoxRenderable } from "../../../ui";
-import { EmptyState, FeedDataTableStackView, Spinner, StatGrid, loadingText, unavailableText, usePaneNoticeFooter, useTableLoadMore, type FeedDataTableItem, type StatItem } from "../../../components";
-import { isUsEquityOrFundTicker, isUsEquityTicker, secFilingItemCodes } from "../../../utils/sec";
+import { EmptyState, FeedDataTableStackView, Spinner, StatGrid, usePaneNoticeFooter, useTableLoadMore, type FeedDataTableItem, type StatItem } from "../../../components";
+import { mayBeUsEquityOrFundTicker, mayBeUsEquityTicker, secFilingItemCodes } from "../../../utils/sec";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
@@ -33,12 +32,10 @@ import {
   useSecFilingContentCache,
 } from "./filing-content";
 import { usePaneStatusLinkFooter } from "../../../components/layout/pane/status-footer";
-import { entryShows } from "../shared/research-tab-availability";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { SignInWall } from "../cloud/auth-actions";
-import { EDGAR_FILINGS_PANE_ID } from "../edgar-filings/types";
-import { ETF_FILING_FORMS, filterFilingsByForms, parseFormsSetting, SEC_FILING_FETCH_LIMIT } from "./forms";
-import { createSecHeadless, secHeadless } from "./headless";
+import { ETF_FILING_FORMS, ETF_FORMS_SETTING, filterFilingsByForms, parseFormsSetting, SEC_FILING_FETCH_LIMIT } from "./forms";
+import { createSecHeadless, fundFilingsEmpty, secHeadless } from "./headless";
 import {
   getFilingDisplayTitle,
   getFilingColumnText,
@@ -94,9 +91,9 @@ function buildDetailBodyWithDocuments({
   const lines: string[] = [];
   lines.push("Documents");
   if (documentsError && documents.length === 0) {
-    lines.push(`${unavailableText("Filing documents")} ${documentsError}`);
+    lines.push(`Filing documents unavailable: ${documentsError}`);
   } else if (documentsLoading && documents.length === 0) {
-    lines.push(loadingText());
+    lines.push("Loading filing documents...");
   } else if (documents.length === 0) {
     lines.push("No filing documents were listed for this filing.");
   } else {
@@ -117,7 +114,7 @@ function buildDetailBodyWithDocuments({
       lines.push(contentErrors.has(key) && !content
         ? `Exhibit content unavailable: ${contentErrors.get(key)}`
         : hasContent ? content || "Readable document content was not available for this exhibit."
-        : loadingText());
+        : "Loading exhibit content...");
     }
   }
 
@@ -181,7 +178,7 @@ function toFeedItems(
       : null;
     const selected = filing.accessionNumber === selectedAccessionNumber;
     const primaryDetailBody = loadingContent && selected
-      ? loadingText()
+      ? "Loading filing content..."
       : contentErrors.has(filing.accessionNumber) && !fetchedContent
         ? `Filing content unavailable: ${contentErrors.get(filing.accessionNumber)}`
         : form4Detail ?? fetchedContent ?? fallbackBody;
@@ -244,7 +241,7 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   // ticker. The fund filings view (ETF) lists other forms, so it leaves it.
   useSecFilingFocusRequest(forms ? null : ticker?.metadata.ticker, setOpenItemId);
   // A form list is the fund filings view (ETF), which US-listed funds open too.
-  const eligibleTicker = forms ? isUsEquityOrFundTicker(ticker) : isUsEquityTicker(ticker);
+  const eligibleTicker = forms ? mayBeUsEquityOrFundTicker(ticker) : mayBeUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
   const filingsEntry = useSecFilingsQuery(
     instrument && eligibleTicker
@@ -385,13 +382,13 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   })), [filings]);
 
   if (!ticker) {
-    return <EmptyState title="Select a ticker." />;
+    return <EmptyState title="No ticker selected." message="Select a ticker to view SEC filings." />;
   }
   if (!eligibleTicker) {
     return renderFilingNotice(forms ? "Fund filings are only shown for US-listed funds and equities." : "SEC filings are only shown for US equities.", width);
   }
   if (authWall) return <SignInWall placement="sec-signin" action="view SEC filings" needsVerification={cloudSession.needsVerification} />;
-  if (loading && filings.length === 0) return <Spinner label={loadingText()} />;
+  if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
   if (error && filings.length === 0) return <EmptyState title="SEC filings unavailable." message={error} />;
   if (filings.length === 0) {
     return renderFilingNotice(forms ? `No fund filings for ${ticker.metadata.ticker}.` : `No recent SEC filings for ${ticker.metadata.ticker}.`, width);
@@ -427,14 +424,6 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
 }
 
-async function loadSecTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
-  const coordinator = getSharedMarketDataCoordinator();
-  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
-  if (!coordinator || !instrument) return true;
-  const entry = await coordinator.loadSecFilings({ instrument, count: SEC_FILING_FETCH_LIMIT });
-  return entryShows(entry, (filings) => filings.length > 0);
-}
-
 export const secModule: PluginModule = {
   panes: [
     {
@@ -460,27 +449,27 @@ export const secModule: PluginModule = {
         keywords: ["sec", "filings", "10-k", "10-q", "8-k"],
         shortcut: "SEC",
         shortcutAliases: ["CF"],
-        canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
+        canCreate: (_context, options) => !options?.ticker || mayBeUsEquityTicker(options.ticker),
       }),
       headless: secHeadless,
     },
     {
       ...createTickerSurfacePaneTemplate({
         id: "sec-etf-pane",
-        paneId: EDGAR_FILINGS_PANE_ID,
+        paneId: "sec",
         label: "ETF Filings",
         description: "A US-listed fund's SEC filings: registration statements, prospectus updates, shareholder reports, N-CEN and N-PORT.",
         keywords: ["etf", "fund", "n-1a", "485bpos", "497", "n-csr", "n-cen", "n-port", "prospectus"],
         shortcut: "ETF",
-        titlePrefix: "Filings",
-        viewKey: "funds",
-        canCreate: (_context, options) => !options?.ticker || isUsEquityOrFundTicker(options.ticker),
-        settings: () => ({ form: "funds" }),
+        viewKey: "etf",
+        canCreate: (_context, options) => !options?.ticker || mayBeUsEquityOrFundTicker(options.ticker),
+        settings: () => ({ forms: ETF_FORMS_SETTING }),
       }),
       headless: createSecHeadless(undefined, {
         forms: ETF_FILING_FORMS,
         title: "Fund Filings",
         argumentDescription: "US-listed fund ticker.",
+        empty: fundFilingsEmpty,
       }),
     },
   ],
@@ -493,8 +482,7 @@ export const secModule: PluginModule = {
       order: 45,
       component: SecView,
       instruments: ["equity"],
-      isVisible: ({ ticker }) => isUsEquityTicker(ticker),
-      load: loadSecTab,
+      isVisible: ({ ticker }) => mayBeUsEquityTicker(ticker),
     });
   },
   dispose() {

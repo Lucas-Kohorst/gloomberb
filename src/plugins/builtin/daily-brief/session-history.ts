@@ -1,7 +1,7 @@
 import { fetchHistoryResult } from "../../../sources/history-result";
 import type { DataProvider } from "../../../types/data-provider";
 import type { PricePoint } from "../../../types/financials";
-import { FUTURES_CONTRACTS } from "../futures/contracts";
+import { FUTURES_CONTRACTS } from "../../../market-data/futures-board";
 import { BRIEF_FUTURES } from "./model";
 
 const MARK_SYMBOLS = [...BRIEF_FUTURES, "^VIX"] as const;

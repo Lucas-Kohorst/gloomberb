@@ -1,25 +1,23 @@
 import { portfolioOptionGreeks } from "./risk-options";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
-import { formatNumber } from "../../../utils/format";
+import { formatCurrency, formatNumber } from "../../../utils/format";
 import { resolveCurrencyUnit } from "../../../utils/currency-units";
 import {
   getPortfolioPositionMetrics,
   resolvePortfolioMarketValue,
-} from "../portfolio-list/position-metrics";
+} from "../../../portfolio/position-metrics";
 import type { DatedReturn } from "./metrics";
 import {
-  computeDatedBeta,
-  computeSharpeRatio,
   computeWeightedPortfolioReturns,
   syntheticPositionUnsupportedReason,
 } from "./metrics";
 import {
-  compoundReturns,
   concentration,
   pairedReturns,
   regressReturns,
   rollingBasketRisk,
   rollingBeta,
+  sinceBasketRisk,
   subtractReturns,
 } from "./risk-math";
 import {
@@ -100,7 +98,13 @@ export interface RiskDisplayRow {
   interaction?: number;
   /** Holdings rows only: why the holding is outside the covered basket. */
   leftOut?: string;
+  /** VaR and expected shortfall only: the loss `value` is on the covered basket's current value (`amountBase`), in `amountCurrency`. */
+  amount?: number;
+  amountCurrency?: string;
+  amountBase?: number;
 }
+/** The tail-loss rows, which also read in money on the covered basket. */
+const TAIL_ROW_IDS: ReadonlySet<string> = new Set(["var", "es"]);
 /**
  * Below half of market value the qualifying holdings are not most of the
  * account, so a basket estimate would mostly describe something other than it;
@@ -127,65 +131,27 @@ export interface RiskShifts {
   rates: number;
   volatility: number;
 }
-export const DEFAULT_RISK_SHIFTS: RiskShifts = {
+/** The benchmark the basket's returns, active return and tracking error are measured against. */
+const RISK_BENCHMARK = "SPY";
+
+/**
+ * The window the risk rows cover: the trailing 60 sessions, or, with `since:
+ * "filed"`, every session since the filing date of a portfolio imported from
+ * a 13F.
+ */
+export interface RiskWindowRequest {
+  since?: "filed";
+}
+
+/** Why a portfolio asked for risk since its filing shows the trailing window instead. */
+export const sinceFallbackNote = (portfolio: Pick<Portfolio, "name">) =>
+  `"${portfolio.name}" was not imported from a 13F, so it has no filing date; the risk rows cover the trailing 60 sessions.`;
+
+const DEFAULT_RISK_SHIFTS: RiskShifts = {
   equity: -10,
   rates: 100,
   volatility: 10,
 };
-
-function drawdownPath(values: readonly number[]) {
-  let wealth = 1,
-    peak = 1;
-  return values.map((value) => {
-    wealth *= 1 + value;
-    peak = Math.max(peak, wealth);
-    return wealth / peak - 1;
-  });
-}
-
-function sampleVolatility(values: readonly number[]): number | null {
-  if (values.length < 2) return null;
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  return (
-    Math.sqrt(
-      values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-        (values.length - 1),
-    ) * Math.sqrt(252)
-  );
-}
-
-/** Statistics of the account's own daily returns, as the broker measured them. */
-export interface AccountReturnStatistics {
-  startDate: string;
-  endDate: string;
-  twr: number;
-  maxDrawdown: number;
-  sharpe: number | null;
-  beta: number | null;
-  volatility: number | null;
-  points: Array<{ date: string; wealth: number }>;
-}
-function accountReturnStatistics(
-  returns: DatedReturn[],
-  benchmark: DatedReturn[],
-): AccountReturnStatistics | null {
-  if (!returns.length) return null;
-  const values = returns.map((row) => row.value);
-  let wealth = 1;
-  return {
-    startDate: returns[0]!.startDateKey,
-    endDate: returns.at(-1)!.dateKey,
-    twr: compoundReturns(values),
-    maxDrawdown: Math.min(0, ...drawdownPath(values)),
-    sharpe: computeSharpeRatio(values),
-    beta: computeDatedBeta(returns, benchmark),
-    volatility: sampleVolatility(values),
-    points: [
-      { date: returns[0]!.startDateKey, wealth },
-      ...returns.map((row) => ({ date: row.dateKey, wealth: (wealth *= 1 + row.value) })),
-    ],
-  };
-}
 
 function fredChanges(data: RiskMarketSnapshot["yields"]): DatedReturn[] {
   const rows = (data?.observations ?? [])
@@ -336,8 +302,7 @@ export function riskCoverageShortfall(
 /**
  * Basket estimates use the holdings that qualify, reweighted among themselves.
  * Every other holding stays listed with its reason and counts in the market
- * value they are measured against. `accountReturns` are the broker's own daily
- * time-weighted returns, when it reports them.
+ * value they are measured against.
  */
 export function buildPortfolioRisk(
   portfolio: Portfolio,
@@ -345,7 +310,7 @@ export function buildPortfolioRisk(
   market: RiskMarketSnapshot,
   evidence: PortfolioRiskEvidence | null = null,
   shifts: RiskShifts = DEFAULT_RISK_SHIFTS,
-  accountReturns: DatedReturn[] | null = null,
+  window: RiskWindowRequest = {},
 ) {
   if (
     ![shifts.equity, shifts.rates, shifts.volatility].every(Number.isFinite) ||
@@ -528,13 +493,15 @@ export function buildPortfolioRisk(
     );
     return (instrument && byId.get(riskInstrumentId(instrument))?.returns) || [];
   };
-  const benchmark = proxy("SPY"),
+  const benchmark = proxy(RISK_BENCHMARK),
     sample = pairedReturns(basket, benchmark);
-  const metrics = rollingBasketRisk(sample);
-  // The one-year horizon repeats only the return and Sharpe; the rest stay on 60 sessions.
-  const yearMetrics = rollingBasketRisk(sample, 252)
-    .filter((row) => (row.id === "return" || row.id === "sharpe") && row.value != null)
-    .map((row) => ({ ...row, id: `${row.id}-252` }));
+  // Since the filing only for a portfolio that has one; any other keeps the trailing window and says why.
+  const filed = window.since === "filed" ? portfolio.importedFrom?.filed ?? null : null;
+  if (window.since === "filed" && !filed)
+    notes.push(sinceFallbackNote(portfolio));
+  const metrics = filed
+    ? sinceBasketRisk(sample, filed, RISK_BENCHMARK)
+    : rollingBasketRisk(sample, undefined, RISK_BENCHMARK);
   const factors = [
     { id: "market", label: "Market (SPY)", series: benchmark },
     {
@@ -562,10 +529,6 @@ export function buildPortfolioRisk(
     ...rollingBeta(basket, factor.series, factor.label, factor.id),
     regression: regressReturns(basket.slice(-60), factor.series),
   }));
-  const yearMarket = {
-    ...rollingBeta(basket, benchmark, "Market (SPY) 252D", "market-252", 252),
-    regression: regressReturns(basket.slice(-252), benchmark, 252),
-  };
   const correlation = members.flatMap((left, index) =>
     members.slice(index + 1).map((right) => {
       const regression = regressReturns(left.returns.slice(-60), right.returns);
@@ -613,11 +576,12 @@ export function buildPortfolioRisk(
       if (factor.samples === 0)
         warnings.push(`${factor.label}: no matched factor history`);
   if (sufficient && metrics.every((row) => row.value == null))
-    warnings.push("Fewer than 60 consecutive matched completed daily returns.");
+    warnings.push(filed
+      ? `No completed session since the 13F filing on ${filed} yet.`
+      : "Fewer than 60 consecutive matched completed daily returns.");
   const performance = evidence?.performance
     ? calculateAccountPerformance(evidence.performance)
     : null;
-  const account = accountReturns ? accountReturnStatistics(accountReturns, benchmark) : null;
   const attribution = evidence?.attribution
     ? calculateBrinson(evidence.attribution)
     : null;
@@ -633,14 +597,20 @@ export function buildPortfolioRisk(
     : null;
   warnings.push(...(greeks?.warnings ?? []));
   const rows: Record<RiskView, RiskDisplayRow[]> = {
-    // Each label names its window, so every row shares this evidence.
-    risk: [...metrics, ...yearMetrics].map((row) => ({
-      ...row,
-      percentile: row.rank.percentile,
-      // The method (price returns at fixed current weights) is in docs; the footer keeps room for coverage.
-      detail: `${row.samples} sessions`,
-    })),
-    factors: [...factors, yearMarket].map((row) => ({
+    risk: metrics.map((row) => {
+      // VaR and expected shortfall are a one-day loss on the covered basket's current value, in the portfolio currency.
+      const tail = TAIL_ROW_IDS.has(row.id) && row.value != null && coverage.coveredValue > 0;
+      return {
+        ...row,
+        percentile: row.rank.percentile,
+        // The method (price returns at fixed current weights) is in docs; the footer keeps room for coverage.
+        detail: filed && row.value == null && TAIL_ROW_IDS.has(row.id) ? `${row.samples} sessions; needs 60` : `${row.samples} sessions`,
+        ...(tail
+          ? { amount: (row.value! / 100) * coverage.coveredValue, amountCurrency: coverage.currency, amountBase: coverage.coveredValue }
+          : {}),
+      };
+    }),
+    factors: factors.map((row) => ({
       ...row,
       percentile: row.rank.percentile,
       detail: `${row.samples} sessions; R² ${row.regression?.rSquared?.toFixed(2) ?? "--"}; independent ETF proxy`,
@@ -678,8 +648,7 @@ export function buildPortfolioRisk(
       asOf: row.regression?.asOf ?? null,
       detail: `${row.regression?.samples ?? 0} sessions; R² ${row.regression?.rSquared?.toFixed(2) ?? "--"}; ${row.source}`,
     })),
-    performance: [
-      ...(performance
+    performance: performance
       ? [
           {
             id: "twr",
@@ -709,32 +678,7 @@ export function buildPortfolioRisk(
           asOf: performance.endDate,
           detail: `${performance.startDate} to ${performance.endDate}; ${row.detail}`,
         }))
-      : []),
-      ...(account
-        ? [
-            // Evidence with flows already states the return and drawdown.
-            ...(performance
-              ? []
-              : [
-                  { id: "twr", label: "TWR", value: account.twr * 100, unit: "%" },
-                  { id: "drawdown", label: "Account max drawdown", value: account.maxDrawdown * 100, unit: "%" },
-                ]),
-            { id: "account-sharpe", label: "Account Sharpe", value: account.sharpe, unit: "ratio" },
-            { id: "account-beta", label: "Account beta (SPY)", value: account.beta, unit: "beta" },
-            {
-              id: "account-volatility",
-              label: "Account volatility",
-              value: account.volatility == null ? null : account.volatility * 100,
-              unit: "%",
-            },
-          ].map((row) => ({
-            ...row,
-            percentile: null,
-            asOf: account.endDate,
-            detail: `${account.startDate} to ${account.endDate}; broker daily time-weighted returns`,
-          }))
-        : []),
-    ],
+      : [],
     attribution: attribution
       ? attribution.rows.map((row) => ({
           id: row.sector,
@@ -845,7 +789,6 @@ export function buildPortfolioRisk(
     correlation,
     stresses,
     performance,
-    account,
     attribution,
     greeks,
     evidence,
@@ -858,6 +801,10 @@ export function buildPortfolioRisk(
     warnings: [...new Set(warnings)],
     notes,
     fetchedAt: market.fetchedAt,
+    benchmark: RISK_BENCHMARK,
+    window: filed
+      ? { kind: "since-filed" as const, filed, start: metrics[0]?.startDate ?? null, sessions: metrics[0]?.samples ?? 0 }
+      : { kind: "trailing" as const, sessions: 60 },
   };
 }
 export type PortfolioRiskModel = ReturnType<typeof buildPortfolioRisk>;
@@ -866,6 +813,22 @@ export const riskValue = (row: RiskDisplayRow) =>
     ? "left out"
     : row.value == null
     ? "--"
-    : `${row.value.toFixed(2)}${row.unit === "%" ? "%" : ` ${row.unit}`}`;
+    : `${row.value.toFixed(2)}${row.unit === "%" ? "%" : ` ${row.unit}`}${riskAmount(row)}`;
+/** "220,476 USD basket": the value a tail loss in money is taken on, or null for a row without one. */
+export function riskAmountBase(row: Pick<RiskDisplayRow, "amountBase" | "amountCurrency">): string | null {
+  return row.amountBase != null && Number.isFinite(row.amountBase) && row.amountCurrency
+    ? `${formatNumber(row.amountBase, 0)} ${row.amountCurrency} basket`
+    : null;
+}
+/** A row's evidence with the basket a tail loss in money is taken on. */
+export function riskEvidence(row: RiskDisplayRow): string {
+  const base = riskAmountBase(row);
+  return base ? `${row.detail}; of ${base}` : row.detail;
+}
+/** " ($5,735)": a tail loss in money beside its percent. */
+function riskAmount(row: RiskDisplayRow): string {
+  if (row.amount == null || !Number.isFinite(row.amount) || !row.amountCurrency) return "";
+  return ` (${formatCurrency(row.amount, row.amountCurrency, 0)})`;
+}
 export const riskPercentile = (row: RiskDisplayRow) =>
   row.percentile == null ? "--" : String(Math.round(row.percentile));

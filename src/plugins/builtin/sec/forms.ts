@@ -23,6 +23,8 @@ export const ETF_FILING_FORMS = [
   "24F-2NT",
 ] as const;
 
+export const ETF_FORMS_SETTING = ETF_FILING_FORMS.join(",");
+
 /**
  * How many filings the SEC pane asks for: the most the filings service
  * returns for one issuer. A form filter searches only these, so when an issuer

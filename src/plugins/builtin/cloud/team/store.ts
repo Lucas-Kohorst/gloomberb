@@ -7,7 +7,7 @@ import {
 } from "../../../../api-client";
 import { unavailableText } from "../../../../components/ui/status-copy";
 import type { AppNotificationDelivery, AppNotificationRequest, PluginPersistence } from "../../../../types/plugin";
-import { appendNotificationLog, markNotificationLogReadByRef } from "../../../../notifications/notification-log";
+import { markNotificationLogReadByRef } from "../../../../notifications/notification-log";
 import { describeTeamNotification, findTeam, teamIdFromChannelId, teamNotificationRefId } from "./model";
 
 export interface TeamStoreSnapshot {
@@ -234,7 +234,6 @@ export class TeamStore {
           error: null,
         });
         this.persistNotifications();
-        if (notifications) this.rememberInNotificationCenter(this.snapshot.notifications);
       } catch (error) {
         this.update({
           loading: false,
@@ -251,14 +250,11 @@ export class TeamStore {
   /** Marks cards handled and tells the server so they stop coming back. */
   async dismissNotifications(ids: readonly string[]): Promise<void> {
     if (ids.length === 0) return;
-    const dismissed = this.snapshot.notifications.filter((entry) => ids.includes(entry.id));
     const remaining = this.snapshot.notifications.filter((entry) => !ids.includes(entry.id));
     this.update({ notifications: remaining });
     this.persistNotifications();
-    // Pending cards are the unread badge. Dismissing one removes it from that
-    // list, and the notification log keeps the same card as history.
-    this.rememberInNotificationCenter(dismissed);
-    markNotificationLogReadByRef(dismissed.map((entry) => teamNotificationRefId(entry.id)));
+    // A handled card is no longer missed in the Unread list either.
+    markNotificationLogReadByRef(ids.map(teamNotificationRefId));
     try {
       await this.client.markChatNotificationsDelivered([...ids]);
     } catch {
@@ -279,9 +275,8 @@ export class TeamStore {
     if (notification.type === "team-joined" || notification.type === "team-invite") {
       void this.refresh();
     }
-    this.rememberInNotificationCenter([notification]);
     const { title, body } = describeTeamNotification(notification);
-    const action = this.actionFor(notification);
+    const action = this.notificationAction(notification);
     this.notifier?.({
       refId: teamNotificationRefId(notification.id),
       title,
@@ -293,20 +288,8 @@ export class TeamStore {
     });
   }
 
-  private rememberInNotificationCenter(notifications: readonly TeamNotification[]): void {
-    for (const notification of notifications) {
-      const { title, body } = describeTeamNotification(notification);
-      const at = Date.parse(notification.createdAt);
-      appendNotificationLog({
-        title,
-        body,
-        type: "info",
-        refId: teamNotificationRefId(notification.id),
-      }, "team", Number.isFinite(at) ? at : Date.now());
-    }
-  }
-
-  private actionFor(notification: TeamNotification): AppNotificationRequest["action"] | null {
+  /** Where a card's toast goes; the Unread list opens a missed card the same way. */
+  notificationAction(notification: TeamNotification): AppNotificationRequest["action"] | null {
     const data = notification.data;
     if (data.kind === "team-invite" && this.actions.openTeamInvites) {
       return { label: "Review", onClick: () => this.actions.openTeamInvites?.() };

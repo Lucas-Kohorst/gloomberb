@@ -23,7 +23,7 @@ function payload(overrides: Record<string, unknown> = {}, observations: Array<{ 
 
 describe("normalizeCreditSeries", () => {
   test("converts the official percent OAS to basis points", () => {
-    const row = normalizeCreditSeries(CREDIT_SERIES[0], payload(), true);
+    const row = normalizeCreditSeries(CREDIT_SERIES[0]!, payload(), true);
 
     expect(row).toMatchObject({
       label: "US IG",
@@ -37,7 +37,7 @@ describe("normalizeCreditSeries", () => {
   });
 
   test("ranks the latest spread within the year before it, not the whole fetched history", () => {
-    const row = normalizeCreditSeries(CREDIT_SERIES[0], payload({}, [
+    const row = normalizeCreditSeries(CREDIT_SERIES[0]!, payload({}, [
       { date: "2025-08-01", value: 3 },
       { date: "2025-08-20", value: 0.7 },
       { date: "2026-02-02", value: 0.9 },
@@ -49,9 +49,9 @@ describe("normalizeCreditSeries", () => {
   });
 
   test("rejects metadata that would make spread normalization misleading", () => {
-    expect(() => normalizeCreditSeries(CREDIT_SERIES[0], payload({ units: "Index" }))).toThrow("unexpected FRED metadata");
-    expect(() => normalizeCreditSeries(CREDIT_SERIES[0], payload({ title: "Corporate Effective Yield" }))).toThrow("unexpected FRED metadata");
-    expect(() => normalizeCreditSeries(CREDIT_SERIES[0], payload({ id: "BAMLH0A0HYM2" }))).toThrow("unexpected FRED metadata");
+    expect(() => normalizeCreditSeries(CREDIT_SERIES[0]!, payload({ units: "Index" }))).toThrow("unexpected FRED metadata");
+    expect(() => normalizeCreditSeries(CREDIT_SERIES[0]!, payload({ title: "Corporate Effective Yield" }))).toThrow("unexpected FRED metadata");
+    expect(() => normalizeCreditSeries(CREDIT_SERIES[0]!, payload({ id: "BAMLH0A0HYM2" }))).toThrow("unexpected FRED metadata");
   });
 });
 
@@ -104,7 +104,7 @@ describe("normalizeCreditYieldSeries", () => {
 
   test("accepts a yield title the OAS check rejects", () => {
     const body = yieldPayload({ title: "Corporate Effective Yield" });
-    expect(() => normalizeCreditSeries(CREDIT_SERIES[0], body)).toThrow("unexpected FRED metadata");
+    expect(() => normalizeCreditSeries(CREDIT_SERIES[0]!, body)).toThrow("unexpected FRED metadata");
     expect(normalizeCreditYieldSeries(CREDIT_YIELD_SERIES[0], body, null).yieldPct).toBe(5.1);
   });
 

@@ -4,12 +4,11 @@ import type { NewsCapability } from "../../capabilities";
 import { apiClient, type CloudNewsPayload } from "../../api-client";
 import { cloudNewsParams } from "./news";
 import type { QuoteSubscriptionTarget } from "../../types/data-provider";
-import { ProviderMissError } from "../provider-errors";
+import { ProviderMissError, providerMissReason } from "../provider-errors";
 import { verifiedUser } from "../../test-support/cloud-api";
 
 const originalEnsureVerifiedSession = apiClient.ensureVerifiedSession.bind(apiClient);
 const originalGetCloudSecFilings = apiClient.getCloudSecFilings.bind(apiClient);
-const originalGetCloudSecFilingContent = apiClient.getCloudSecFilingContent.bind(apiClient);
 const originalGetCloudHistory = apiClient.getCloudHistory.bind(apiClient);
 const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
 const originalGetCloudFinancials = apiClient.getCloudFinancials.bind(apiClient);
@@ -87,7 +86,6 @@ function makeCloudNewsPayload(overrides: Partial<CloudNewsPayload> = {}): CloudN
 afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
   apiClient.getCloudSecFilings = originalGetCloudSecFilings;
-  apiClient.getCloudSecFilingContent = originalGetCloudSecFilingContent;
   apiClient.getCloudHistory = originalGetCloudHistory;
   apiClient.getCloudQuote = originalGetCloudQuote;
   apiClient.getCloudFinancials = originalGetCloudFinancials;
@@ -132,6 +130,55 @@ describe("GloomberbCloudProvider", () => {
     }
   });
 
+  test("an empty answer carries the service's reason into the provider miss, cleaned, or none when it gave none", async () => {
+    const provider = new GloomberbCloudProvider();
+    const sentence = "Spot gold is not quoted; GC=F is the front-month future.";
+    const fixtures: Array<[string, unknown, string | undefined]> = [
+      ["present", sentence, sentence],
+      ["absent", undefined, undefined],
+      ["blank", "  \n ", undefined],
+      ["multi-line", `  ${sentence}\r\nSecond line\u001b[31m.\n`, `${sentence} Second line.`],
+      ["over-long", `${sentence} ${"More detail. ".repeat(40)}`, `${sentence} ${"More detail. ".repeat(40)}`.slice(0, 199).trimEnd() + "…"],
+    ];
+    for (const [name, message, expected] of fixtures) {
+      const empty = { status: "empty" as const, data: null, reasonCode: "NOT_FOUND", ...(message === undefined ? {} : { message: message as string }) };
+      apiClient.getCloudQuote = async () => empty;
+      apiClient.getCloudExchangeRate = async () => empty;
+      apiClient.getCloudQuotesBatch = async () => ({ status: "partial", data: { items: [{ symbol: "XAU/USD", exchange: "", ...empty }] } });
+      apiClient.getCloudFinancialsBatch = apiClient.getCloudQuotesBatch as unknown as typeof apiClient.getCloudFinancialsBatch;
+      const misses = [
+        await provider.getQuote("XAU/USD").catch((error) => error),
+        await provider.getExchangeRateSnapshot("XAU").catch((error) => error),
+        (await provider.getQuotesBatch([{ symbol: "XAU/USD" }]))[0]!.error,
+        (await provider.getTickerFinancialsBatch([{ symbol: "XAU/USD" }]))[0]!.error,
+      ];
+      for (const miss of misses) {
+        expect([name, miss instanceof ProviderMissError]).toEqual([name, true]);
+        expect([name, providerMissReason(miss)]).toEqual([name, expected]);
+      }
+    }
+    // An error status is a failure, not an empty answer: its text is not offered as a reason.
+    apiClient.getCloudQuote = async () => ({ status: "error", data: null, reasonCode: "UPSTREAM", message: sentence });
+    const failure = await provider.getQuote("XAU/USD").catch((error) => error);
+    expect(failure).not.toBeInstanceOf(ProviderMissError);
+    expect(failure.message).toBe("UPSTREAM");
+  });
+
+  test("only the NOT_FOUND reason code marks a miss as a symbol no listing carries", async () => {
+    const provider = new GloomberbCloudProvider();
+    const answer = (reasonCode: string, status: "empty" | "unsupported" = "empty") => ({ status, data: null, reasonCode });
+    for (const [reasonCode, notFound] of [["NOT_FOUND", true], ["NO_DATA", false], ["UNSUPPORTED_RANGE", false]] as const) {
+      const empty = answer(reasonCode);
+      apiClient.getCloudQuote = async () => empty;
+      apiClient.getCloudQuotesBatch = async () => ({ status: "partial", data: { items: [{ symbol: "APPLE", exchange: "", ...empty }] } });
+      const misses = [
+        await provider.getQuote("APPLE").catch((error) => error),
+        (await provider.getQuotesBatch([{ symbol: "APPLE" }]))[0]!.error,
+      ];
+      for (const miss of misses) expect([reasonCode, (miss as ProviderMissError).notFound]).toEqual([reasonCode, notFound]);
+    }
+  });
+
   test("uses host venue aliases at the cloud boundary without losing suffix or non-equity identity", async () => {
     const requests: Array<[string, string | undefined]> = [];
     apiClient.getCloudQuote = async (symbol, exchange) => {
@@ -157,6 +204,37 @@ describe("GloomberbCloudProvider", () => {
       expect((await provider.getQuote(symbol!, exchange)).symbol).toBe(symbol!);
       expect(requests.at(-1)).toEqual([requestSymbol, requestExchange]);
     }
+  });
+
+  test("asks for a Hong Kong listing by its four-digit code, as brokers report it without the zeros", async () => {
+    // IBKR reports Tencent as 700 on SEHK; Cloud only knows 0700.
+    const requests: Array<[string, string, string | undefined]> = [];
+    const quote = (symbol: string) => ({ symbol, price: 424.8, currency: "HKD", change: 0, changePercent: 0, lastUpdated: 1, listingExchangeName: "HKEX" });
+    apiClient.getCloudQuote = async (symbol, exchange) => {
+      requests.push(["quote", symbol, exchange]);
+      return { status: "success", data: quote(symbol) };
+    };
+    apiClient.getCloudQuotesBatch = async (targets) => {
+      for (const target of targets) requests.push(["batch", target.symbol, target.exchange]);
+      return { status: "success", data: { items: targets.map((target) => ({ ...target, status: "success" as const, data: quote(target.symbol) })) } };
+    };
+    apiClient.getCloudHistory = async (symbol, exchange) => {
+      requests.push(["history", symbol, exchange]);
+      return { status: "success", data: [{ date: "2026-10-09", close: 424.8 }] };
+    };
+    const provider = new GloomberbCloudProvider();
+    expect((await provider.getQuote("700", "SEHK")).price).toBe(424.8);
+    const targets = [{ symbol: "700", exchange: "SEHK" }, { symbol: "1211", exchange: "HKEX" }, { symbol: "7203", exchange: "TSEJ" }];
+    const batch = await provider.getQuotesBatch(targets);
+    // The four-digit answer still lands on the target that asked for 700.
+    expect(batch.find((result) => result.target === targets[0])?.quote?.price).toBe(424.8);
+    expect(batch.every((result) => result.quote)).toBe(true);
+    expect(await provider.getPriceHistory("5", "SEHK", "1M")).toHaveLength(1);
+    expect(requests).toEqual([
+      ["quote", "0700", "HKEX"],
+      ["batch", "0700", "HKEX"], ["batch", "1211", "HKEX"], ["batch", "7203", "JPX"],
+      ["history", "0005", "HKEX"],
+    ]);
   });
 
   test("rejects contradictory qualified listings before quote, research, history or auth transport", async () => {
@@ -236,83 +314,7 @@ describe("GloomberbCloudProvider", () => {
     expect([batchCalls, streamCalls, authCalls]).toEqual([2, 1, 1]);
   });
 
-  test("prices a numbered crypto id from its latest bar when that id has no quote", async () => {
-    const now = Date.now();
-    apiClient.getCloudQuote = async (symbol) => symbol === "HYPE-USD"
-      ? { status: "success", stale: true, data: {
-        symbol, price: 90, currency: "USD", change: 0, changePercent: 0,
-        lastUpdated: now - 20 * 60 * 60 * 1000, listingExchangeName: "CCC",
-      } }
-      : { status: "retryable_error", data: null, reasonCode: "UPSTREAM_ERROR" };
-    apiClient.getCloudQuotesBatch = async (targets) => ({
-      status: "success",
-      data: { items: targets.map((target) => ({
-        symbol: target.symbol, exchange: target.exchange ?? "", status: "retryable_error" as const, data: null, reasonCode: "UPSTREAM_ERROR",
-      })) },
-    });
-    const recent = new Date(now - 60_000).toISOString();
-    apiClient.getCloudHistory = async (_symbol, _exchange, params) => ({
-      status: "success" as const,
-      data: params?.interval === "1day"
-        ? [{ date: new Date(now - 24 * 60 * 60 * 1000).toISOString(), close: 90 }, { date: recent, close: 93.2 }]
-        : [{ date: recent, close: 93.2 }],
-    });
-    const provider = new GloomberbCloudProvider();
-    const quote = await provider.getQuote("HYPE32196-USD", "CCC");
-    expect(quote).toMatchObject({ symbol: "HYPE32196-USD", price: 93.2, listingExchangeName: "CCC", instrumentType: "CRYPTOCURRENCY" });
-    expect(quote.change).toBeCloseTo(3.2);
-    const batch = await provider.getQuotesBatch([{ symbol: "HYPE32196-USD", exchange: "CCC" }]);
-    expect(batch[0]?.quote).toMatchObject({ symbol: "HYPE32196-USD", price: 93.2 });
-    apiClient.getCloudHistory = async () => ({
-      status: "success",
-      data: [{ date: new Date(now - 3 * 60 * 60 * 1000).toISOString(), close: 93.2 }],
-    });
-    await expect(provider.getQuote("HYPE32196-USD", "CCC")).rejects.toThrow("UPSTREAM_ERROR");
-  });
-
-  test("keeps reading a numbered crypto id's latest bar while it is subscribed", async () => {
-    const now = Date.now();
-    let price = 93.2;
-    const polls: Array<() => void> = [];
-    const setInterval = globalThis.setInterval;
-    globalThis.setInterval = ((fn: () => void) => {
-      polls.push(fn);
-      return 1 as unknown as ReturnType<typeof globalThis.setInterval>;
-    }) as typeof globalThis.setInterval;
-    apiClient.getCloudQuote = async () => ({ status: "retryable_error", data: null, reasonCode: "UPSTREAM_ERROR" });
-    apiClient.ensureVerifiedSession = async () => null;
-    apiClient.subscribeQuotes = () => () => {};
-    apiClient.getCloudHistory = async (_symbol, _exchange, params) => ({
-      status: "success" as const,
-      data: params?.interval === "1day"
-        ? [{ date: new Date(now - 24 * 60 * 60 * 1000).toISOString(), close: 90 }, { date: new Date(now - 30_000).toISOString(), close: price }]
-        : [{ date: new Date(now - 30_000).toISOString(), close: price }],
-    });
-    const quotes: number[] = [];
-    const stop = new GloomberbCloudProvider().subscribeQuotes(
-      [{ symbol: "HYPE32196-USD", exchange: "CCC" }],
-      (_target, quote) => { quotes.push(quote.price); },
-    );
-    const flush = () => new Promise((resolve) => globalThis.setTimeout(resolve, 0));
-    try {
-      await flush();
-      expect(quotes).toEqual([93.2]);
-      expect(polls).toHaveLength(1);
-      price = 94;
-      polls[0]!();
-      await flush();
-      expect(quotes).toEqual([93.2, 94]);
-      stop();
-      polls[0]!();
-      await flush();
-      expect(quotes).toEqual([93.2, 94]);
-    } finally {
-      globalThis.setInterval = setInterval;
-      stop();
-    }
-  });
-
-  test("stale items in a successful quote batch cannot bypass single-quote freshness checks", async () => {
+  test("stale items in a successful quote batch and a stale single quote cannot pass as current", async () => {
     const targets = [{ symbol: "VOD", exchange: "NASDAQ" }, { symbol: "VOD:XLON", exchange: "LSE" }];
     const quote = { symbol: "VOD", price: 118, currency: "GBp", change: 1, changePercent: 0.85, lastUpdated: 1, stale: false };
     for (const status of ["success", "partial"] as const) {
@@ -328,7 +330,8 @@ describe("GloomberbCloudProvider", () => {
       expect(results[0]?.error?.message).toContain("stale");
       expect(results[1]?.target).toBe(targets[0]!);
       expect(results[1]?.quote).toMatchObject({ symbol: "VOD", currency: "USD", price: 15 });
-      await expect(provider.getQuote("VOD:XLON", "LSE")).rejects.toThrow("stale");
+      // A single stale answer comes back as the last price the service has, flagged stale.
+      expect(await provider.getQuote("VOD:XLON", "LSE")).toMatchObject({ price: 1.18, stale: true });
     }
   });
 
@@ -1029,39 +1032,6 @@ describe("GloomberbCloudProvider", () => {
     expect(story?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
     expect(story?.items?.[0]?.publishedAt).toEqual(new Date("2026-04-01T10:05:00.000Z"));
   });
-
-  test("does not ask cloud news for a firehose tweet id", async () => {
-    let requested = false;
-    apiClient.getCloudNewsStory = async () => {
-      requested = true;
-      throw new Error("cloud story should not be requested");
-    };
-    const source = createGloomberbCloudCapabilities().find((capability) => capability.kind === "news") as NewsCapability;
-    await expect(source.provider.fetchNewsStory?.("x:123")).resolves.toBeNull();
-    expect(requested).toBe(false);
-  });
-});
-
-test("cloud filing content previews a large fund document instead of returning it raw", async () => {
-  const huge = `<html><body>${Array.from({ length: 20_000 }, (_, index) => `<p>Holding ${index} shares of issuer ${index}.</p>`).join("")}</body></html>`;
-  apiClient.getCloudSecFilingContent = async () => ({ content: huge, form4: null });
-  const filing = {
-    accessionNumber: "0001410368-26-089410",
-    form: "NPORT-P",
-    filingDate: new Date("2026-08-28T00:00:00Z"),
-    cik: "0000884394",
-    filingUrl: "https://www.sec.gov/Archives/edgar/data/884394/0001410368-26-089410-index.htm",
-    primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/884394/primary_doc.xml",
-  };
-  const preview = await new GloomberbCloudProvider().getSecFilingContent(filing);
-  expect(preview).toContain("Holding 0 shares of issuer 0.");
-  expect(preview!.length).toBeLessThan(20_000);
-  expect(preview).not.toContain("<p>");
-  expect(preview!.endsWith("[truncated]")).toBe(true);
-
-  const xml = "<?xml version=\"1.0\"?><ownershipDocument><issuer><issuerName>Acme</issuerName></issuer></ownershipDocument>";
-  apiClient.getCloudSecFilingContent = async () => ({ content: xml, form4: null });
-  expect(await new GloomberbCloudProvider().getSecFilingContent({ ...filing, form: "4" })).toBe(xml);
 });
 
 test("cloud SEC acceptance keeps timezone-free source values without using the machine timezone", async () => {

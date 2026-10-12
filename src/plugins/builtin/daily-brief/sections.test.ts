@@ -72,7 +72,7 @@ test("the checklist shows table names and keeps a view when the order changes", 
       { kind: "view", id: "wire", title: "Wire", spec: {
         version: 1,
         source: { kind: "inline", pane: "N" },
-        projection: { columns: ["headline"], filters: [], limit: 4 },
+        projection: { columns: [{ key: "headline" }], filters: [], limit: 4 },
         presentation: { title: "Wire" },
       } },
     ],

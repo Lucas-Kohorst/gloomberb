@@ -1,7 +1,7 @@
-import { Box, Text, useUiCapabilities } from "../../ui";
-import type { ReactNode } from "react";
-import type { FloatingResizeCorner } from "../../layout/pane-manager";
+import { Box, Text, useUiCapabilities, type BoxRenderable } from "../../ui";
+import type { ReactNode, RefObject } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./pane/header";
 import { PaneHeaderAccessoryProvider } from "./pane/header-accessory";
@@ -32,22 +32,19 @@ interface FloatingPaneWrapperProps {
   onHeaderMouseDragEnd?: (event: any) => void;
   onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
+  onHelpMouseDown?: (event: any) => void;
+  /** Ask Gloom about the pane, from the button beside the `?`. */
+  onAskMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
   onRestoreMouseDown?: (event: any) => void;
   fullscreen?: boolean;
-  onResizeMouseDown?: (event: any, corner: FloatingResizeCorner) => void;
+  onResizeMouseDown?: (event: any) => void;
   onResizeMouseDrag?: (event: any) => void;
   onResizeMouseDragEnd?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
+  /** The pane's frame, which a desktop resize sizes outside React; its header, body and footer stretch with it. */
+  frameRef?: RefObject<BoxRenderable | null>;
   children: ReactNode;
-}
-
-const FLOATING_RESIZE_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
-
-function floatingResizeCornerStyle(corner: FloatingResizeCorner): Record<string, string | number> {
-  const edge = corner.startsWith("top") ? { top: 0 } : { bottom: 0 };
-  const side = corner.endsWith("left") ? { left: 0 } : { right: 0 };
-  return { ...edge, ...side, width: 18, height: 18 };
 }
 
 function TerminalFloatingPaneBorder({ width, height }: { width: number; height: number }) {
@@ -91,6 +88,8 @@ export function FloatingPaneWrapper({
   onHeaderMouseDragEnd,
   onHeaderContextMenu,
   onActionMouseDown,
+  onHelpMouseDown,
+  onAskMouseDown,
   onCloseMouseDown,
   onRestoreMouseDown,
   fullscreen = false,
@@ -98,11 +97,13 @@ export function FloatingPaneWrapper({
   onResizeMouseDrag,
   onResizeMouseDragEnd,
   footer,
+  frameRef,
   children,
 }: FloatingPaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const { headerTabs, contextValue: headerTabsContext } = usePaneHeaderTabsHost(nativePaneChrome === true);
-  const bg = floatingPaneBg(focused);
+  const palette = useThemeColors();
+  const bg = floatingPaneBg(focused, palette);
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const renderFooter = reserveFooter || showFooter;
@@ -112,6 +113,7 @@ export function FloatingPaneWrapper({
     <PaneHeaderAccessoryProvider>
     {(titleAccessory) => (
     <Box
+      ref={frameRef}
       position="absolute"
       top={y}
       left={x}
@@ -154,6 +156,8 @@ export function FloatingPaneWrapper({
         onHeaderMouseDragEnd={onHeaderMouseDragEnd}
         onHeaderContextMenu={onHeaderContextMenu}
         onActionMouseDown={onActionMouseDown}
+        onHelpMouseDown={onHelpMouseDown}
+        onAskMouseDown={onAskMouseDown}
         onCloseMouseDown={onCloseMouseDown}
         onRestoreMouseDown={onRestoreMouseDown}
         fullscreen={fullscreen}
@@ -176,18 +180,17 @@ export function FloatingPaneWrapper({
       {!nativePaneChrome && !focused && <TerminalFloatingPaneBorder width={width} height={height} />}
 
       {nativePaneChrome ? (
-        FLOATING_RESIZE_CORNERS.map((corner) => (
-          <Box
-            key={corner}
-            position="absolute"
-            data-gloom-role="resize-handle"
-            data-corner={corner}
-            onMouseDown={onResizeMouseDown ? (event: any) => onResizeMouseDown(event, corner) : undefined}
-            onMouseDrag={onResizeMouseDrag}
-            onMouseDragEnd={onResizeMouseDragEnd}
-            style={floatingResizeCornerStyle(corner)}
-          />
-        ))
+        <Box
+          position="absolute"
+          bottom={0}
+          right={0}
+          width={2}
+          height={1}
+          data-gloom-role="resize-handle"
+          onMouseDown={onResizeMouseDown}
+          onMouseDrag={onResizeMouseDrag}
+          onMouseDragEnd={onResizeMouseDragEnd}
+        />
       ) : (
         <Box position="absolute" bottom={0} right={0} width={2} height={1}>
           <Text fg={focused ? colors.borderFocused : colors.border} selectable={false}>{"─◢"}</Text>

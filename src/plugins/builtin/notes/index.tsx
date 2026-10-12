@@ -82,6 +82,7 @@ export const notesPlugin: GloomPlugin = {
       id: "quick-notes",
       reportFreshness: { source: "Your notes", status: "not-a-feed", basis: "your notes" },
       name: "Notes",
+      personalData: "messages",
       icon: "N",
       component: QuickNotesPane,
       defaultPosition: "right",

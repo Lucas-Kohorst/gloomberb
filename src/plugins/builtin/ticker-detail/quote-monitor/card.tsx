@@ -8,13 +8,17 @@ import { resolveEntryData } from "../../../../market-data/selectors";
 import { useDoubleClickActivation } from "../../../../components/use-double-click-activation";
 import { FigureText } from "../../../../components/ui/figure";
 import { colors, priceColor } from "../../../../theme/colors";
-import { formatPercentRaw } from "../../../../utils/format";
+import { displayWidth, formatPercentRaw } from "../../../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice, liveQuoteFormatOptions } from "../../../../market-data/market/format";
-import { getActiveQuoteDisplay } from "../../../../market-data/market/status";
-import { hasValidQuoteObservationTime, isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
+import {
+  getCompletedRegularSessionDisplay,
+  getExtendedSessionDisplay,
+  getRegularSessionDisplay,
+  type ExtendedSessionDisplay,
+} from "../../../../market-data/market/status";
+import { t } from "../../../../i18n";
+import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
 import { formatQuoteNavAsOf } from "../../../../market-data/quotes/time";
-import { loadingText, unavailableText } from "../../../../components/ui/status-copy";
-import { formatApproximateAge } from "../../../../utils/datetime-format";
 import { useQuoteFlashDirection } from "../../../../components/quote-flash";
 import { appendLiveQuotePoint } from "../../../../time-series/chart-data";
 import {
@@ -28,6 +32,52 @@ import {
 function quoteTrend(value: number | null | undefined): PriceSparklineTrend {
   if (value == null || value === 0) return "neutral";
   return value > 0 ? "positive" : "negative";
+}
+
+/** Desktop body text is 12px in the card's monospace face, 0.6 of its size wide. */
+const DESKTOP_DETAIL_CHAR_PX = 12 * 0.6;
+
+/**
+ * The extended print's line, "After-Hours $336.08 -0.17%": the full label
+ * where the room allows, else "AH" or "PM" as the heat map marks them, and
+ * at the narrowest the mark and the move without the price.
+ */
+function extendedLineParts(
+  extended: ExtendedSessionDisplay,
+  priceText: string,
+  fits: (text: string) => boolean,
+): { label: string; figures: string } | null {
+  const pre = extended.session === "PRE";
+  const percent = formatPercentRaw(extended.changePercent);
+  const candidates = [
+    { label: t(pre ? "Pre-Market" : "After-Hours"), figures: `${priceText} ${percent}` },
+    { label: pre ? "PM" : "AH", figures: `${priceText} ${percent}` },
+    { label: pre ? "PM" : "AH", figures: percent },
+  ];
+  return candidates.find(({ label, figures }) => fits(`${label} ${figures}`)) ?? null;
+}
+
+const DESKTOP_DETAIL_TEXT_STYLE = { fontSize: "12px", lineHeight: "14px", whiteSpace: "nowrap" };
+
+function ExtendedSessionLine({
+  parts,
+  color,
+  dim,
+  desktopStyle,
+}: {
+  parts: { label: string; figures: string };
+  color: string;
+  dim: boolean;
+  /** Placement on the desktop card's grid; the terminal gives the line one row. */
+  desktopStyle?: Record<string, string | number | undefined>;
+}) {
+  const textStyle = desktopStyle ? DESKTOP_DETAIL_TEXT_STYLE : undefined;
+  return (
+    <Box flexDirection="row" gap={1} height={desktopStyle ? undefined : 1} overflow="hidden" style={desktopStyle}>
+      <Text fg={colors.textDim} style={textStyle}>{parts.label}</Text>
+      <Text fg={color} attributes={dim ? TextAttributes.DIM : TextAttributes.NONE} style={textStyle}>{parts.figures}</Text>
+    </Box>
+  );
 }
 
 /** A mistyped ticker and a broken provider are not the same problem. */
@@ -46,12 +96,9 @@ function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string, quo
       ? { failed: true, text: `${symbol} not recognized` }
       : { failed: true, text: error.message || "Quote unavailable" };
   }
-  if (isQuoteStaleForCurrentSession(quote)) {
-    const age = quote && hasValidQuoteObservationTime(quote) ? formatApproximateAge(quote.lastUpdated) : null;
-    return { failed: true, text: age ?? unavailableText("Quote"), stale: true };
-  }
+  if (isQuoteStaleForCurrentSession(quote)) return { failed: true, text: "Stale quote", stale: true };
   if (entry?.phase === "ready") return { failed: false, text: "No quote data" };
-  return { failed: false, text: loadingText() };
+  return { failed: false, text: "Loading quote..." };
 }
 
 export function QuoteMonitorCard({
@@ -88,7 +135,7 @@ export function QuoteMonitorCard({
   onSelect?: (symbol: string) => void;
   onOpen: (symbol: string) => void;
 }) {
-  const { nativePaneChrome } = useUiCapabilities();
+  const { nativePaneChrome, cellWidthPx = 8 } = useUiCapabilities();
   const quote = resolveEntryData(quoteEntry) ?? cachedFinancials?.quote;
   const queriedPriceHistory = resolveEntryData(chartEntry);
   const barHistory = queriedPriceHistory && queriedPriceHistory.length >= 2
@@ -103,12 +150,17 @@ export function QuoteMonitorCard({
     [quote],
   );
   const flashDirection = useQuoteFlashDirection(flashFinancials, valueFlashingEnabled);
-  const display = getActiveQuoteDisplay(quote);
+  // The headline is the regular session, which holds at its close; a pre-market or
+  // after-hours print is its own line, measured from that close, as on the Overview.
+  const display = getRegularSessionDisplay(quote);
+  const extended = getExtendedSessionDisplay(quote);
+  // Once the close is in, a tick moves only the extended print, so only that line flashes.
+  const headlineHolds = getCompletedRegularSessionDisplay(quote) != null;
   const quoteStatus = resolveQuoteStatus(quoteEntry, symbol, quote);
   const quoteFailed = quoteStatus.failed && !!display;
   const navAsOf = formatQuoteNavAsOf(quote);
   const changeColor = quoteFailed ? colors.textDim : priceColor(display?.change ?? 0);
-  const flashing = !!flashDirection;
+  const flashing = !!flashDirection && !headlineHolds;
   const currency = quote?.currency || ticker?.metadata.currency || "USD";
   const stacked = width < 31;
   const compactQuoteFailure = quoteFailed && stacked && height <= 3;
@@ -120,6 +172,16 @@ export function QuoteMonitorCard({
   const changeValueText = display ? formatSignedMarketPrice(display.change, priceOptions) : "";
   const priceColumnWidth = Math.max(priceText.length, changePercentText.length + changeValueText.length + 1);
   const nameMaxWidth = Math.max(10, width - priceColumnWidth - (nativePaneChrome ? 5 : 3));
+  // The terminal sets the line beside the change, under the symbol (or after it in a
+  // stacked card); the desktop gives it a row of its own under the name.
+  const extendedRoom = nativePaneChrome
+    ? (width * cellWidthPx - 24) / DESKTOP_DETAIL_CHAR_PX
+    : stacked ? width - 3 - displayWidth(symbol) : width - 3 - priceColumnWidth;
+  const extendedParts = display && extended
+    ? extendedLineParts(extended, formatMarketPriceWithCurrency(extended.price, currency, priceOptions), (text) => displayWidth(text) <= extendedRoom)
+    : null;
+  const extendedColor = quoteFailed ? colors.textDim : priceColor(extended?.change ?? 0);
+  const extendedDim = !!flashDirection && headlineHolds;
   const sparklineRange = resolvePriceSparklineRange(priceHistory, chartPeriod);
   // A price in 32nds already has a hyphen (104-16½), so its range reads "to".
   const rangeSeparator = priceOptions.priceBasis === "thirty-seconds" ? " to " : "-";
@@ -208,7 +270,7 @@ export function QuoteMonitorCard({
             minWidth={0}
             style={{
               gridColumn: "1",
-              gridRow: "1 / span 2",
+              gridRow: extendedParts ? "1" : "1 / span 2",
               minWidth: 0,
               overflow: "hidden",
             }}
@@ -264,6 +326,25 @@ export function QuoteMonitorCard({
             </Box>
           </Box>
 
+          {extendedParts && (
+            <ExtendedSessionLine
+              parts={extendedParts}
+              color={extendedColor}
+              dim={extendedDim}
+              desktopStyle={{
+                gridColumn: "1 / -1",
+                gridRow: "2",
+                justifySelf: "start",
+                alignSelf: "start",
+                maxWidth: "100%",
+                marginTop: 2,
+                backgroundColor: colors.bg,
+                boxShadow: `0 0 0 2px ${colors.bg}`,
+                paddingRight: 2,
+              }}
+            />
+          )}
+
           {perpetuals && <Box style={{ gridColumn: "1 / -1", gridRow: "4", alignSelf: "end" }}>{perpetuals}</Box>}
           {rangeLabel && (
             <Text
@@ -294,10 +375,11 @@ export function QuoteMonitorCard({
                   {symbol}
                 </Text>
                 {compactNavAsOf && <Text fg={colors.textDim}>{navAsOf}</Text>}
+                {extendedParts && <ExtendedSessionLine parts={extendedParts} color={extendedColor} dim={extendedDim} />}
               </Box>
               <Box flexDirection="column">
                 <FigureText fg={changeColor} dim={flashing} style={figureHalo}>
-                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.stale && quote && hasValidQuoteObservationTime(quote) ? formatApproximateAge(quote.lastUpdated) : "unavailable"}` : priceText}
+                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.stale ? "STALE" : "ERROR"}` : priceText}
                 </FigureText>
                 <Box flexDirection="row" gap={1}>
                   <FigureText part="sub" fg={changeColor} dim={flashing} style={figureHalo}>{changePercentText}</FigureText>
@@ -316,6 +398,7 @@ export function QuoteMonitorCard({
                 <Text attributes={TextAttributes.BOLD} fg={symbolFg} bg={symbolBg} style={desktopSymbolStyle}>
                   {symbol}
                 </Text>
+                {extendedParts && <ExtendedSessionLine parts={extendedParts} color={extendedColor} dim={extendedDim} />}
                 {nativePaneChrome && ticker?.metadata.name && width >= 36 && (
                   <Text
                     fg={colors.textDim}

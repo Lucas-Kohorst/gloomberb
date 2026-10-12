@@ -38,11 +38,10 @@ function parseMentionUsernames(value: string | null | undefined): string[] {
 }
 
 export function isChatUserOnline(
-  user: Pick<ChatUserSummary, "id" | "username" | "online"> | null | undefined,
+  user: Pick<ChatUserSummary, "id" | "username"> | null | undefined,
   presence: ChatPresenceLookup,
 ): boolean {
   if (!user) return false;
-  if (user.online === true) return true;
   if (user.id && presence.onlineUserIds?.includes(user.id)) return true;
   const username = normalizePresenceUsername(user.username);
   if (!username) return false;

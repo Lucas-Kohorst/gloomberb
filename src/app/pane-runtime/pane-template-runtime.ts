@@ -5,6 +5,7 @@ import { createPaneTemplateOrThrow } from "../../components/command-bar/workflow
 import { openFormModal } from "../../components/form-modal";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import type { PluginRegistry } from "../../plugins/registry";
+import { PluginOffError, notifyPluginOff } from "../../plugins/plugin-off";
 import type { AppAction, AppState } from "../../state/app/context";
 import type { PaneBinding, PaneInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
@@ -71,6 +72,10 @@ export function useAppPaneTemplateRuntime({
         placePaneInstance,
       });
     } catch (error) {
+      if (error instanceof PluginOffError) {
+        notifyPluginOff(pluginRegistry, error, () => { void createPaneFromTemplate(templateId, options); });
+        return;
+      }
       notify(
         error instanceof Error ? error.message : unavailableText(getPaneTemplateDisplayLabel(template)),
         { type: "info" },

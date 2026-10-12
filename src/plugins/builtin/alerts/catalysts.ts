@@ -3,7 +3,6 @@ import type { CatalystEvent } from "../../../api-client/catalysts";
 import type { GloomPluginContext } from "../../../types/plugin";
 import { publicTickerKey, parsePublicTickerKey } from "../../../utils/exchanges";
 import { EVENT_ALERTS_KEY, readEventAlerts, type EventAlertRule } from "./events";
-import { ALERT_TOAST_DURATION_MS } from "./constants";
 
 export const CATALYST_POLL_STATUS = "catalystPollStatus";
 interface Cursor { since: string; cursor?: string; delivered: Record<string, string>; }
@@ -51,24 +50,8 @@ export function startCatalystAlerts(ctx: GloomPluginContext): () => void {
           const ruleKey = `${rule.id}:${rule.createdAt}`;
           if (state.delivered[ruleKey] && BigInt(state.delivered[ruleKey]!) >= BigInt(event.revisionId)) continue;
           if (!catalystMatches(rule, event, watched)) continue;
-          const party = event.parties.find((party) => party.ticker);
-          const symbol = party?.ticker ? publicTickerKey(party.ticker, party.exchange ?? undefined) : undefined;
-          ctx.notify({
-            ...(symbol ? { title: symbol } : {}),
-            body: `${event.title} · ${event.status}`,
-            type: "info",
-            source: "alerts",
-            refId: `catalyst:${event.id}`,
-            desktop: "when-inactive",
-            duration: ALERT_TOAST_DURATION_MS,
-            action: {
-              label: "Open catalyst",
-              onClick: () => ctx.createPaneFromTemplate("catalysts-pane", {
-                values: { event: event.id },
-                ...(symbol ? { symbol } : {}),
-              }),
-            },
-          });
+          ctx.notify({ body: `${event.title} · ${event.status}`, type: "info", source: "alerts", desktop: "always", persistent: true, refId: `catalyst:${event.id}`,
+            action: { label: "Open catalyst", onClick: () => ctx.createPaneFromTemplate("catalysts-pane", { values: { event: event.id }, symbol: (() => { const party = event.parties.find((party) => party.ticker); return party?.ticker ? publicTickerKey(party.ticker, party.exchange ?? undefined) : undefined; })() }) } });
           state.delivered[ruleKey] = event.revisionId;
         }
       }

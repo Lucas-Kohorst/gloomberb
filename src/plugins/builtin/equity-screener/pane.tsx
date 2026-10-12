@@ -47,6 +47,7 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import { formatObservationAge } from "../../../utils/datetime-format";
 import { formatPercentileRank } from "../../../utils/format";
+import { useOpenDescription } from "../shared/open-description";
 import { useResearchCloudSession } from "../shared/research-cloud-session";
 import { INITIAL_STREAM_RANGE, streamWindowRows } from "../shared/use-quote-board";
 import { usePlanAccess } from "../../../api-client/plan-access";
@@ -207,7 +208,8 @@ function EquityScreenView({
   const colors = useThemeColors(),
     dialog = useDialog(),
     host = useRendererHost();
-  const { notify, createPaneFromTemplate } = usePluginAppActions();
+  const { notify } = usePluginAppActions();
+  const openDescription = useOpenDescription();
   const session = useResearchCloudSession(),
     access = usePlanAccess();
   const [definition, setDefinition] = usePluginPaneState("definition", initial);
@@ -316,16 +318,7 @@ function EquityScreenView({
     setActionError(null);
   };
   const research = () => {
-    if (selected)
-      createPaneFromTemplate("new-ticker-detail-pane", {
-        symbol: selected.symbol,
-        listing: {
-          name: selected.name ?? selected.symbol,
-          exchange: selected.exchange,
-          currency: selected.currency ?? "",
-          type: "STK",
-        },
-      });
+    if (selected) openDescription(selected.symbol, selected.exchange);
   };
   const startSave = () => {
     if (!access.emailVerified) { switchMode("saved"); return; }

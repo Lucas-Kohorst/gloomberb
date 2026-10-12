@@ -5,6 +5,7 @@ import { appRankCache, attentionCache, loadAttention, type AttentionPayload } fr
 import { attentionHeadless } from "./headless";
 import type { AttentionKind } from "./model";
 import { AppsPane, HiringPane } from "./pane";
+import { COMPANY_ATTENTION_SERIES } from "./series";
 
 function attentionPresent(payload: AttentionPayload): boolean {
   if ("apps" in payload) return payload.status !== "unavailable" || payload.apps.length > 0;
@@ -35,6 +36,7 @@ const templates: PaneTemplateDef[] = definitions.map((def) => ({
   },
 }));
 export const companyAttentionModule: PluginModule = {
+  series: COMPANY_ATTENTION_SERIES,
   setup(ctx) {
     attentionCache.attach(ctx.persistence);
     appRankCache.attach(ctx.persistence);

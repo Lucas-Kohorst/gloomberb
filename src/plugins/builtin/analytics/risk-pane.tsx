@@ -20,7 +20,6 @@ import {
   QueryBar,
   statGridRows,
   usePaneFooter,
-  usePaneLoadingSignal,
   usePaneNoticeFooter,
   usePaneTabs,
   type ChartTableChart,
@@ -39,21 +38,17 @@ import {
   useAppSelector,
   usePaneInstance,
 } from "../../../state/app/context";
-import { colors, priceColor } from "../../../theme/colors";
+import { colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
-import { formatCompactAmount, formatPercentRaw } from "../../../utils/format";
 import { isAccessDenied } from "../../../api-client/errors";
 import { useResearchCloudSession } from "../shared/research-cloud-session";
 import { loadPortfolioRiskMarket } from "./risk-client";
 import { brokerPerformanceEvidence, parsePortfolioRiskEvidence } from "./risk-evidence";
 import { useBrokerPortfolioPerformance } from "./broker-performance";
-import { accountDailyReturns } from "./account-returns";
-import { usePortfolioBook } from "./portfolio-book";
 import {
   BASKET_VIEWS,
   buildPortfolioRisk,
-  DEFAULT_RISK_SHIFTS,
   HOLDINGS_SUMMARY_ROW_IDS,
   portfolioRiskRequests,
   portfolioRiskTickers,
@@ -61,83 +56,52 @@ import {
   riskCoverageShortfall,
   riskCoverageText,
   riskPercentile,
+  riskAmountBase,
+  riskEvidence,
   riskValue,
+  RISK_VIEWS,
   type PortfolioRiskModel,
   type RiskDisplayRow,
+  type RiskView,
 } from "./risk-model";
 import {
-  describePortfolioTab,
   resolvePortfolioId,
   resolveTemplatePortfolioId,
 } from "./portfolio-selection";
 
-/**
- * The model's views plus Sectors, which the pane values from live quotes and
- * FX so non-USD holdings count; reports and screenshots carry the model's only.
- */
-const PANE_VIEWS = [
-  "risk",
-  "factors",
-  "holdings",
-  "sectors",
-  "correlation",
-  "stress",
-  "performance",
-  "attribution",
-  "greeks",
-] as const;
-type PaneView = (typeof PANE_VIEWS)[number];
-/** A sector row carries the holdings' value and P&L beside its weight. */
-type PaneRow = RiskDisplayRow & { marketValue?: number | null; pnl?: number | null; pnlPct?: number | null };
-const titles: Record<PaneView, string> = {
+const titles = {
   risk: "Risk",
   factors: "Factors",
   holdings: "Holdings",
-  sectors: "Sectors",
   correlation: "Correlation",
   stress: "Stress",
   performance: "Performance",
   attribution: "Attribution",
   greeks: "Greeks",
 };
-const tabs = PANE_VIEWS.map((value) => ({ value, label: titles[value] }));
+const tabs = RISK_VIEWS.map((value) => ({ value, label: titles[value] }));
 const getKey = (row: RiskDisplayRow) => row.id;
-/** The two return rows chart the basket against SPY over the window they measure. */
+/** The two return rows chart the basket against its benchmark over the window they measure. */
 const RETURN_ROW_IDS: ReadonlySet<string> = new Set(["return", "benchmark"]);
 const formatPercentValue = (value: number) => `${value.toFixed(2)}%`;
 const formatPlainAxis = spanAxisFormatter((value, digits) => value.toFixed(digits));
 /** What the first column lists in each view. */
-const LABEL_HEADERS: Record<PaneView, string> = {
+const LABEL_HEADERS: Record<RiskView, string> = {
   risk: "Metric",
   factors: "Factor",
   holdings: "Symbol",
-  sectors: "Sector",
   correlation: "Pair",
   stress: "Scenario",
   performance: "Metric",
   attribution: "Sector",
   greeks: "Metric",
 };
-const EVIDENCE_VIEWS: ReadonlySet<PaneView> = new Set(["performance", "attribution", "greeks"]);
+const EVIDENCE_VIEWS: ReadonlySet<RiskView> = new Set(["performance", "attribution", "greeks"]);
 const ATTRIBUTION_PARTS = [
   { id: "allocation", label: "Allocation" },
   { id: "selection", label: "Selection" },
   { id: "interaction", label: "Interaction" },
 ] as const;
-const SECTOR_PARTS = [
-  { id: "marketValue", label: "Value", width: 10 },
-  { id: "pnl", label: "P&L", width: 10 },
-  { id: "pnlPct", label: "P&L %", width: 9 },
-] as const;
-function sectorCell(row: PaneRow, column: (typeof SECTOR_PARTS)[number]["id"]) {
-  const value = row[column];
-  if (value == null) return { text: "--", color: colors.textMuted };
-  if (column === "marketValue") return { text: formatCompactAmount(value) };
-  return {
-    text: column === "pnl" ? formatCompactAmount(value, { signed: true }) : formatPercentRaw(value),
-    color: priceColor(value),
-  };
-}
 /** The unit every row shares, when it is a word worth moving into the header ("beta", "% gross"). */
 function sharedWordUnit(rows: RiskDisplayRow[]): string | null {
   const unit = rows[0]?.unit;
@@ -157,12 +121,15 @@ function holdingsSummaryItems(rows: RiskDisplayRow[]): StatItem[] {
   }));
 }
 /**
- * Cumulative return of the current-weight basket and of SPY across the last
- * window of paired sessions: the path behind the two return rows, whose
- * values the legend ends on. The series take the rows' names.
+ * Cumulative return of the current-weight basket and of its benchmark across
+ * the window of paired sessions the return rows measure (the last 60, or those
+ * since a 13F filing): the path behind the two rows, whose values the legend
+ * ends on. The series take the rows' names.
  */
 function basketReturnSeries(model: PortfolioRiskModel): ChartTableChart["series"] {
-  const sample = model.sample.slice(-60);
+  // A snapshot saved before the window existed covers the trailing 60.
+  const sessions = model.window?.sessions ?? 60;
+  const sample = sessions > 0 ? model.sample.slice(-sessions) : [];
   if (!sample.length) return [];
   const label = (id: string, fallback: string) => model.rows.risk.find((row) => row.id === id)?.label ?? fallback;
   let wealth = 1,
@@ -175,7 +142,7 @@ function basketReturnSeries(model: PortfolioRiskModel): ChartTableChart["series"
     ),
     staticSeries(
       [start, ...sample.map((row) => scalarPoint(new Date(row.dateKey), ((benchmark *= 1 + row.benchmark) - 1) * 100))],
-      { id: "benchmark", label: label("benchmark", "SPY return"), color: colors.textMuted },
+      { id: "benchmark", label: label("benchmark", `${model.benchmark ?? "SPY"} return`), color: colors.textMuted },
     ),
   ];
 }
@@ -216,7 +183,7 @@ function RiskDetail({
       detail: row.asOf?.slice(0, 10) ?? "Source date unavailable",
     },
     ...(row.percentile != null ? [{ id: "percentile", label: "Pctl 1Y", value: riskPercentile(row) }] : []),
-    { id: "evidence", label: "Evidence", value: row.detail, wide: true },
+    { id: "evidence", label: "Evidence", value: riskEvidence(row), wide: true },
   ];
   const statRows = statGridRows(items, width);
   const points = (row.history ?? []).map((point, index) => ({
@@ -280,8 +247,8 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     "risk:view",
     initialView,
   );
-  const view: PaneView = PANE_VIEWS.includes(savedView as PaneView)
-    ? (savedView as PaneView)
+  const view: RiskView = RISK_VIEWS.includes(savedView as RiskView)
+    ? (savedView as RiskView)
     : "risk";
   const [evidenceText, setEvidenceText] = usePaneSettingValue(
     "riskEvidence",
@@ -299,14 +266,11 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
       : null,
     [brokerPerformance.performance, evidenceText, portfolio],
   );
-  // Without flows the history still gives the account's daily returns, when it is daily.
-  const accountReturns = useMemo(
-    () => accountDailyReturns(brokerPerformance.performance),
-    [brokerPerformance.performance],
-  );
   const [equity] = usePaneSettingValue("equityShift", -10),
     [rates] = usePaneSettingValue("rateShift", 100),
-    [volatility] = usePaneSettingValue("volShift", 10);
+    [volatility] = usePaneSettingValue("volShift", 10),
+    [since] = usePaneSettingValue("riskSince", "trailing");
+  const riskWindow = useMemo(() => (since === "filed" ? { since: "filed" as const } : {}), [since]);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [selected, setSelected] = usePluginPaneState<string | null>(
     "risk:selected",
@@ -345,7 +309,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   useAutoRefresh(resource.updatedAt, resource.load);
   const derived = useMemo(() => {
     if (frozen) return { model: frozen, error: null };
-    if (!portfolio || (!resource.data && !evidenceText.trim() && !brokerEvidence && !accountReturns))
+    if (!portfolio || (!resource.data && !evidenceText.trim() && !brokerEvidence))
       return { model: null, error: null };
     const market = resource.data ?? {
       histories: [],
@@ -366,13 +330,13 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
             rates: Number(rates),
             volatility: Number(volatility),
           },
-          accountReturns,
+          riskWindow,
         ),
         error: null,
       };
     } catch (error) {
       return {
-        model: buildPortfolioRisk(portfolio, localTickers, market, null, DEFAULT_RISK_SHIFTS, accountReturns),
+        model: buildPortfolioRisk(portfolio, localTickers, market, null, undefined, riskWindow),
         error: error instanceof Error ? error.message : "Evidence invalid",
       };
     }
@@ -383,54 +347,32 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     resource.data,
     evidenceText,
     brokerEvidence,
-    accountReturns,
     equity,
     rates,
     volatility,
+    riskWindow,
   ]);
   const model = derived.model;
   const marketLoading = resource.loading && !resource.data;
   // A basket view with nothing to estimate says why in the body, not with a table of dashes.
   const basketBody = useMemo<{ loading?: boolean; error?: string; title?: string; message?: string } | null>(() => {
-    if (!model || view === "sectors" || !BASKET_VIEWS.has(view)) return null;
+    if (!model || !BASKET_VIEWS.has(view)) return null;
     if (!frozen && !resource.data)
       return marketLoading ? { loading: true } : resource.error ? { error: resource.error } : null;
     return view === "holdings" ? null : riskCoverageShortfall(model.coverage);
   }, [frozen, marketLoading, model, resource.data, resource.error, view]);
-  const book = usePortfolioBook(portfolio ?? null, localTickers, {
-    enabled: !frozen && (view === "sectors" || view === "performance"),
-    // The broker's own return figure only when no row already states the period's return.
-    brokerReturn: model?.rows.performance.some((row) => row.id === "twr") ? null : brokerPerformance.performance,
-  });
-  const summaryItems = useMemo(
-    () => view === "holdings"
-      ? holdingsSummaryItems((model?.rows.holdings ?? []).filter((row) => HOLDINGS_SUMMARY_ROW_IDS.has(row.id)))
-      : view === "performance" ? book.band : [],
-    [book.band, model, view],
+  const holdingsSummary = useMemo(
+    () => view === "holdings" ? holdingsSummaryItems((model?.rows.holdings ?? []).filter((row) => HOLDINGS_SUMMARY_ROW_IDS.has(row.id))) : [],
+    [model, view],
   );
-  const sectorRows = useMemo<PaneRow[]>(
-    () => book.sectors.rows.map((row) => ({
-      id: row.id,
-      label: row.sector,
-      value: row.weight == null ? null : row.weight * 100,
-      unit: "% gross",
-      percentile: null,
-      asOf: null,
-      detail: "",
-      marketValue: row.value,
-      pnl: row.pnl,
-      pnlPct: row.returnPct,
-    })),
-    [book.sectors],
-  );
-  const rows = useMemo<PaneRow[]>(
+  const rows = useMemo(
     () =>
-      (view === "sectors" ? sectorRows : basketBody ? [] : (model?.rows[view] ?? []) as PaneRow[])
+      (basketBody ? [] : model?.rows[view] ?? [])
         .filter((row) => view !== "holdings" || !HOLDINGS_SUMMARY_ROW_IDS.has(row.id))
         .sort((a, b) => {
         if (!sort.column) return 0;
-        const left = a[sort.column as keyof PaneRow],
-          right = b[sort.column as keyof PaneRow];
+        const left = a[sort.column as keyof RiskDisplayRow],
+          right = b[sort.column as keyof RiskDisplayRow];
         if (left == null) return right == null ? 0 : 1;
         if (right == null) return -1;
         return (
@@ -440,7 +382,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
           (sort.direction === "asc" ? 1 : -1)
         );
       }),
-    [basketBody, model, sectorRows, view, sort],
+    [basketBody, model, view, sort],
   );
   const openRow = rows.find((row) => row.id === open);
   const detailScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -509,46 +451,35 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   );
   // Only real data limitations raise the footer warning; the empty evidence
   // views say what they need in the body, with the import action.
-  const unvaluedSectorSymbols = book.sectors.unvaluedSymbols;
   const notices = [
     ...riskCoverageNotices(model?.coverage),
     ...(model?.notes ?? []),
     ...(model?.warnings ?? []),
     ...(derived.error ? [derived.error] : []),
     ...(resource.error ? [resource.error] : []),
-    ...(view === "sectors" && unvaluedSectorSymbols.length
-      ? [`Weights unavailable: missing prices or FX for ${unvaluedSectorSymbols.join(", ")}.`]
-      : []),
-    ...(view === "performance" ? book.accountNotices : []),
-    ...(view === "performance" && brokerPerformance.error ? [`Account history: ${brokerPerformance.error}`] : []),
   ];
   // What the basket views cover, unless the body already says why they show nothing.
-  // Sector values are live and converted to the base currency, so that view names the currency instead.
-  const coverageText = model && view !== "sectors" && BASKET_VIEWS.has(view) && !basketBody ? riskCoverageText(model.coverage) : null;
-  const viewRows = view === "sectors" ? null : model?.rows[view];
-  const asOfDate = viewRows?.find((row) => row.asOf)?.asOf?.slice(0, 10) ?? null;
+  const coverageText = model && BASKET_VIEWS.has(view) && !basketBody ? riskCoverageText(model.coverage) : null;
+  const asOfDate = model?.rows[view].find((row) => row.asOf)?.asOf?.slice(0, 10) ?? null;
   // Dated evidence only when a row has a date; a missing date is not a claim about history.
-  const asOfText = view === "sectors"
-    ? book.baseCurrency
-    : !model
-      ? null
-      : [
-          ...(basketBody ? [] : [
-            ...(asOfDate && sharedEvidence ? [sharedEvidence] : []),
-            model.portfolio.currency,
-            ...(asOfDate ? [asOfDate] : []),
-            ...(EVIDENCE_VIEWS.has(view) && model.evidence ? [model.evidence.source] : []),
-          ]),
-          ...(frozen ? ["snapshot"] : []),
-        ].join(" · ") || null;
+  const asOfText = !model
+    ? null
+    : [
+        ...(basketBody ? [] : [
+          ...(asOfDate && sharedEvidence ? [sharedEvidence] : []),
+          // The value the tail losses in money are taken on names the currency too.
+          rows.map(riskAmountBase).find(Boolean) ?? model.portfolio.currency,
+          ...(asOfDate ? [asOfDate] : []),
+          ...(EVIDENCE_VIEWS.has(view) && model.evidence ? [model.evidence.source] : []),
+        ]),
+        ...(frozen ? ["snapshot"] : []),
+      ].join(" · ") || null;
   usePaneNoticeFooter({
     registrationId: "portfolio-risk-notices",
     notices,
     focused,
     enabled: !openRow,
   });
-  const accountLoading = view === "performance" && brokerPerformance.loading;
-  usePaneLoadingSignal(resource.loading || accountLoading);
   usePaneFooter(
     "portfolio-risk",
     () => ({
@@ -563,18 +494,12 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
               },
             ]
           : []),
-        ...(accountLoading
-          ? [{ id: "account-loading", parts: [{ text: "loading account history", tone: "muted" as const }] }]
-          : []),
         // One segment, coverage first: a narrow footer cuts the date before what the numbers cover.
         ...(coverageText || asOfText
           ? [{
               id: "asof",
               parts: [{ text: [coverageText, asOfText].filter(Boolean).join(" · "), tone: "muted" as const }],
             }]
-          : []),
-        ...(view === "performance" && book.accountSource
-          ? [{ id: "account", parts: [{ text: book.accountSource, tone: "muted" as const }] }]
           : []),
         ...(actionStatus
           ? [
@@ -587,7 +512,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
       ],
       hints,
     }),
-    [resource.loading, accountLoading, coverageText, asOfText, actionStatus, hints, view, book.accountSource],
+    [resource.loading, coverageText, asOfText, actionStatus, hints],
   );
   useShortcut(
     (event) => {
@@ -617,12 +542,10 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   const chart = useMemo<ChartTableChart | null>(() => {
     if (!model) return null;
     if (view === "performance") {
-      // Flow evidence first; without it, the broker's own daily returns.
-      const points = model.performance?.points ?? model.account?.points;
-      if (!points) return null;
+      if (!model.performance) return null;
       return {
         series: [staticSeries(
-          points.map((row) => scalarPoint(new Date(row.date), (row.wealth - 1) * 100)),
+          model.performance.points.map((row) => scalarPoint(new Date(row.date), (row.wealth - 1) * 100)),
           { id: "twr", label: "TWR", color: colors.positive, calendarSpaced: true },
         )],
         formatValue: formatPercentValue,
@@ -647,8 +570,6 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     };
   }, [chartRow, marketLoading, model, sharedUnit, view]);
   const attributionParts = view === "attribution" && rows.some((row) => row.allocation != null);
-  // Sectors are current and undated; their value, P&L and return take the date and evidence columns.
-  const sectorParts = view === "sectors";
   const valueHeader = attributionParts
     ? "Total pp"
     : sharedUnit
@@ -665,23 +586,21 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
       {
         id: "value",
         label: valueHeader,
-        width: sharedUnit || attributionParts ? Math.max(9, valueHeader.length) : 16,
+        // A tail loss reads in money beside its percent: 2.60% ($5,735).
+        width: sharedUnit || attributionParts ? Math.max(9, valueHeader.length) : rows.some((row) => row.amount != null) ? 18 : 16,
         align: "right",
       },
       ...(attributionParts
         ? ATTRIBUTION_PARTS.map((part) => ({ id: part.id, label: part.label, width: 11, align: "right" as const }))
         : []),
-      ...(sectorParts
-        ? SECTOR_PARTS.map((part) => ({ id: part.id, label: part.label, width: part.width, align: "right" as const }))
-        : []),
       ...(showPercentile
         ? [{ id: "percentile", label: "Pctl 1Y", width: 8, align: "right" as const }]
         : []),
-      ...(sharedDate || sectorParts
+      ...(sharedDate
         ? []
         : [{ id: "asOf", label: "As of", width: 11, align: "left" as const }]),
       // Attribution's evidence is the three effects, now columns of their own.
-      ...(width >= 95 && !sharedEvidence && !attributionParts && !sectorParts
+      ...(width >= 95 && !sharedEvidence && !attributionParts
         ? [
             {
               id: "detail",
@@ -693,19 +612,16 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
           ]
         : []),
     ],
-    [width, view, valueHeader, sharedUnit, attributionParts, sectorParts, sharedEvidence, showPercentile, sharedDate],
+    [width, view, valueHeader, sharedUnit, attributionParts, sharedEvidence, showPercentile, sharedDate, rows],
   );
   const selectView = (value: string) => {
     setView(value);
     setOpen(null);
     setSelected(null);
   };
-  // Sectors come from the holdings alone, so they show while the market history
-  // loads or fails, and the strip stays so the user can reach them.
-  const ready = !!model || view === "sectors";
   // The view strip takes a row when it is not in the title bar; the portfolio
   // bar, the holdings summary and the chart sit on the root view only.
-  const { strip: tabStrip, rows: tabRows } = usePaneTabs(portfolio ? {
+  const { strip: tabStrip, rows: tabRows } = usePaneTabs(portfolio && model ? {
     tabs,
     activeValue: view,
     onSelect: selectView,
@@ -721,21 +637,19 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
         hint="Add holdings in PF, then open PORT."
       />
     );
-  if (!ready)
+  if (!model)
     return (
-      <Box width={width} height={height} flexDirection="column">
-        {tabStrip}
-        <PaneStatusBody
-          loading={resource.loading}
-          error={resource.error}
-          emptyTitle="Risk data unavailable"
-        />
-      </Box>
+      <PaneStatusBody
+        loading={resource.loading}
+        error={resource.error}
+        loadingLabel="Loading portfolio risk"
+        emptyTitle="Risk data unavailable"
+      />
     );
   return (
     <Box width={width} height={height} flexDirection="column">
       {tabStrip}
-      <DataTableStackView<PaneRow, DataTableColumn>
+      <DataTableStackView<RiskDisplayRow, DataTableColumn>
         focused={focused}
         columns={columns}
         items={rows}
@@ -754,8 +668,9 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
                   id: "portfolio",
                   label: "Portfolio",
                   value: portfolio.id,
-                  options: (portfolios.length ? portfolios : [portfolio])
-                    .map((row) => ({ value: row.id, label: describePortfolioTab(row, config.brokerInstances) })),
+                  options: portfolios.length
+                    ? portfolios.map((row) => ({ value: row.id, label: row.name }))
+                    : [{ value: portfolio.id, label: portfolio.name }],
                   onChange: (id: string) => {
                     setPortfolio(id);
                     setOpen(null);
@@ -763,7 +678,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
                 }]}
               />
             }
-            figures={summaryItems}
+            figures={holdingsSummary}
             chart={chart}
           />
         }
@@ -798,12 +713,10 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
             const part = row[column.id];
             return { text: part == null ? "--" : part.toFixed(2) };
           }
-          if (column.id === "marketValue" || column.id === "pnl" || column.id === "pnlPct") return sectorCell(row, column.id);
           return { text: row.detail };
         }}
         selectedTextOverridesCellColor
-        // A sector has no history or evidence of its own to open.
-        onActivate={(row) => { if (!sectorParts) setOpen(row.id); }}
+        onActivate={(row) => setOpen(row.id)}
         detailOpen={!!openRow}
         detailTitle={openRow?.label}
         onBack={() => setOpen(null)}
@@ -838,7 +751,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
             />
           ) : undefined
         }
-        emptyStateTitle={sectorParts ? "No holdings in this portfolio." : "No comparable observations."}
+        emptyStateTitle="No comparable observations."
       />
     </Box>
   );

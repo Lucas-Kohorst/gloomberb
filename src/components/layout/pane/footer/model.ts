@@ -38,6 +38,24 @@ export interface PaneFooterSegment {
   parts: PaneFooterPart[];
   /** Not drawn. Footer segments are the words in `parts`. */
   icon?: "warning";
+  /**
+   * The segment only dates the pane's data (`as of 2026-10-05`). A `gloomberb
+   * shot` whose status line already dates that data leaves it out, so the
+   * date is not said twice, and gives it up before its status line is cut.
+   */
+  asOf?: boolean;
+  /**
+   * The segment only says how current the pane's quotes are (`2026-10-09 ·
+   * 15m delayed`), which a `gloomberb shot` status line says too: a shot whose
+   * line states its data's date and delay leaves it out.
+   */
+  quoteStatus?: boolean;
+  /**
+   * Shorter forms of `parts`, longest first. When the row is too narrow for
+   * `parts` beside the hints, it shows the first that fits, or the last, and
+   * keeps the full text as the segment's title.
+   */
+  variants?: PaneFooterPart[][];
   label?: string;
   title?: string;
   shortcut?: string;
@@ -105,6 +123,26 @@ export function footerSegmentsWidth(segments: readonly PaneFooterSegment[]): num
     ), 0);
     return total + (index > 0 ? 1 : 0) + text;
   }, 0);
+}
+
+/**
+ * The info segments as they fit `width`: segments with `variants` step down
+ * together, one variant at a time, until the row fits or none is left.
+ */
+export function fitPaneFooterInfo(info: PaneFooterSegment[], width: number): PaneFooterSegment[] {
+  const stages = Math.max(0, ...info.map((segment) => segment.variants?.length ?? 0));
+  let fitted = info;
+  for (let stage = 0; stage < stages && footerSegmentsWidth(fitted) > width; stage += 1) {
+    fitted = info.map((segment) => {
+      const variants = segment.variants ?? [];
+      return variants.length ? {
+        ...segment,
+        title: segment.title ?? segment.parts.map((part) => part.text).join(" "),
+        parts: variants[Math.min(stage, variants.length - 1)]!,
+      } : segment;
+    });
+  }
+  return fitted;
 }
 
 function moreControl(budget: number): { label: string; width: number } {
@@ -276,6 +314,20 @@ export function samePaneFooterRegistration(
     && sameFooterSegments(leftInfo, rightInfo)
     && sameFooterSegments(leftTrailing, rightTrailing)
     && leftHints.length === rightHints.length
+    && leftInfo.every((segment, index) => {
+      const other = rightInfo[index];
+      return !!other
+        && segment.id === other.id
+        && segment.icon === other.icon
+        && segment.label === other.label
+        && segment.title === other.title
+        && segment.shortcut === other.shortcut
+        && !!segment.onPress === !!other.onPress
+        && segment.disabled === other.disabled
+        && sameFooterParts(segment.parts, other.parts)
+        && (segment.variants?.length ?? 0) === (other.variants?.length ?? 0)
+        && (segment.variants ?? []).every((variant, variantIndex) => sameFooterParts(variant, other.variants![variantIndex]!));
+    })
     && leftHints.every((hint, index) => {
       const other = rightHints[index];
       return !!other

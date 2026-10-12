@@ -1,11 +1,8 @@
 import type { PluginModule } from "../plugin-module";
+import { SHORT_INTEREST_SERIES } from "./series";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import type { TickerResearchTabLoadContext } from "../../../types/plugin";
-import { shownIf } from "../shared/research-tab-availability";
-import { isKnownNonUsListing } from "../../../utils/sec";
 import {
   attachShortInterestHealth,
-  loadShortInterest,
   resetShortInterestHealth,
   SHORT_INTEREST_CONNECTION_ID,
 } from "./client";
@@ -16,26 +13,20 @@ import { SHORT_WATCH_SCOPE_OPTIONS, ShortWatchPane } from "./watch-pane";
 import { withCommandTab } from "../shared/command-tab";
 import { followsWithoutFinraOverride, shortVolumeSettings } from "../short-volume";
 import { shortVolumeHeadless } from "../short-volume/headless";
-
-function loadShortInterestTab({ ticker }: TickerResearchTabLoadContext): Promise<boolean> {
-  return shownIf(
-    () => loadShortInterest(ticker.metadata.ticker),
-    (result) => result.records.length > 0 || result.cloudSessionRequired,
-    (error) => error instanceof Error && error.message.startsWith("No short interest data"),
-  );
-}
+import { isKnownNonUsListing } from "../../../utils/sec";
 
 
 let disposeConnection: (() => void) | null = null;
 
 export const shortInterestModule: PluginModule = {
+  series: SHORT_INTEREST_SERIES,
   setup(ctx) {
     attachShortInterestHealth(ctx.connectionHealth);
     disposeConnection = ctx.connectionHealth.registerSource({
       id: SHORT_INTEREST_CONNECTION_ID,
       name: "Gloom Short Interest",
       kind: "api",
-      ownerId: "ticker-research",
+      ownerId: "ownership",
       detail: "api.gloom.sh",
       priority: 300,
     });
@@ -47,7 +38,6 @@ export const shortInterestModule: PluginModule = {
       component: ShortInterestResearchTab,
       instruments: ["equity"],
       isVisible: ({ ticker }) => !isKnownNonUsListing(ticker),
-      load: loadShortInterestTab,
     });
   },
 

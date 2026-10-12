@@ -11,14 +11,10 @@ const bob: ChatChannel = {
 };
 
 describe("isDirectPeerOnline", () => {
-  test("matches a direct peer by user id, username, or online flag", () => {
+  test("matches a direct peer by user id or username", () => {
     expect(isDirectPeerOnline(bob, { onlineUserIds: ["u2"] })).toBe(true);
     expect(isDirectPeerOnline(bob, { onlineUsernames: ["Bob"] })).toBe(true);
     expect(isDirectPeerOnline(bob, { onlineUsernames: ["@bob"] })).toBe(true);
-    expect(isDirectPeerOnline({
-      ...bob,
-      dmUser: { ...bob.dmUser!, online: true },
-    }, {})).toBe(true);
     expect(isDirectPeerOnline(bob, { onlineUserIds: ["u9"] })).toBe(false);
   });
 

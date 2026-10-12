@@ -3,13 +3,12 @@ import type {
   CloudRiskNotePayload,
 } from "../../../api-client";
 import {
-  BulletList, EmptyState, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, Spinner, StatGrid, unavailableText,
-  usePaneFooter, usePaneLoadingSignal,
+  BulletList, EmptyState, PaneStatusBody, Prose, QueryBar, READING_WIDTH, SectionHeading, Spinner, StatGrid,
+  usePaneFooter,
   type PaneFooterSegment,
   type PaneHint,
 } from "../../../components";
 import { useAsyncResource } from "../../../react/async-resource";
-import { formatApproximateAge } from "../../../utils/datetime-format";
 import { colors } from "../../../theme/colors";
 import {
   Box,
@@ -22,7 +21,7 @@ import { isPermanentClientError } from "../../../api-client/errors";
 import { usePluginPaneState } from "../../runtime";
 import { useFilingYearReader } from "../shared/filing-year-reader";
 import { useProFeatureWall, type ProFeatureWallCopy, type ReadGuard } from "../shared/pro-feature-wall";
-import { useBoundTicker } from "../shared/ticker-request";
+import { useBoundTicker, useIssuerListing } from "../shared/ticker-request";
 import { loadRiskReport, loadRiskReports } from "./data";
 
 export const RISK_FACTORS_PANE_ID = "risk-factors";
@@ -101,8 +100,9 @@ function RiskFactorsReader({
   nested = false,
   guard,
 }: RiskFactorsPaneProps & { guard: ReadGuard }) {
-  const { symbol } = useBoundTicker();
+  const { symbol, ticker: boundTicker } = useBoundTicker();
   const ticker = symbol ? symbol.toUpperCase() : null;
+  const listing = useIssuerListing(boundTicker);
   const nativePaneChrome = useUiCapabilities().nativePaneChrome === true;
   const rendererHost = useRendererHost();
 
@@ -110,13 +110,13 @@ function RiskFactorsReader({
   // one the pane opened with, so a restored year applies to it.
   const [selectedYear, setSelectedYear] = usePluginPaneState<number | null>("filingYear", null);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(ticker);
-  const listLoader = useCallback((force: boolean) => guard(loadRiskReports(ticker!, { force })), [guard, ticker]);
+  const listLoader = useCallback((force: boolean) => guard(loadRiskReports(ticker!, { force, listing })), [guard, listing, ticker]);
   const list = useAsyncResource(ticker ? listLoader : null, { clearOnError: isPermanentClientError });
   const years = useMemo(() => (list.data?.reports ?? []).map((entry) => entry.reportYear).sort((a, b) => b - a), [list.data]);
   // Null follows the newest discovered filing; an explicit choice stays on that year.
   const year = selectedTicker === ticker && selectedYear !== null
     ? selectedYear : years[0] ?? null;
-  const reportLoader = useCallback((force: boolean) => guard(loadRiskReport(ticker!, year!, { force })), [guard, ticker, year]);
+  const reportLoader = useCallback((force: boolean) => guard(loadRiskReport(ticker!, year!, { force, listing })), [guard, listing, ticker, year]);
   const detail = useAsyncResource(ticker && year !== null ? reportLoader : null, { clearOnError: isPermanentClientError });
   const report = detail.data;
   const listError = list.error ?? list.data?.refreshError ?? null;
@@ -145,13 +145,18 @@ function RiskFactorsReader({
     refresh,
   });
 
-  usePaneLoadingSignal((list.loading || detail.loading));
   usePaneFooter(RISK_FACTORS_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
-    const fetchedAt = report?.fetchedAt ?? list.data?.fetchedAt;
-    if (fetchedAt) info.push({ id: "updated", parts: [{ text: formatApproximateAge(fetchedAt), tone: "muted" }] });
-    if (listError) info.push({ id: "list-error", parts: [{ text: listError, tone: "warning" }] });
-    if (reportError) info.push({ id: "report-error", parts: [{ text: reportError, tone: "warning" }] });
+    if (list.loading || detail.loading)
+      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    if (listError) info.push({ id: "list-error", parts: [{ text: `Report list: ${listError}`, tone: "warning" }] });
+    if (reportError) info.push({ id: "report-error", parts: [{ text: `${year} report: ${reportError}`, tone: "warning" }] });
+    if ((listError || list.data?.stale) && list.data) {
+      info.push({ id: "list-stale", parts: [{ text: `List cached ${new Date(list.data.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
+    if ((reportError || report?.stale) && report) {
+      info.push({ id: "report-stale", parts: [{ text: `Report cached ${new Date(report.fetchedAt).toISOString()}`, tone: "muted" }] });
+    }
     const hints: PaneHint[] = report?.docUrl
       ? [{ id: "open", key: "o", label: "pen filing", onPress: openFiling }]
       : [];
@@ -163,8 +168,8 @@ function RiskFactorsReader({
   const proseWidth = Math.min(bodyWidth, READING_WIDTH);
 
   if (!ticker) return <EmptyState title="Select a ticker." />;
-  if (!list.data && list.loading) return <PaneStatusBody loading align="center" />;
-  if (!list.data && listError && year === null) return <PaneStatusBody error={listError} errorTitle={unavailableText("Risk reports")} />;
+  if (!list.data && list.loading) return <PaneStatusBody loading align="center" loadingLabel="Loading risk factors..." />;
+  if (!list.data && listError && year === null) return <PaneStatusBody error={listError} errorTitle="Could not load risk reports." />;
   if (year === null) return <EmptyState title={`No 10-K risk factors on file for ${ticker}.`} />;
 
   const diff = report?.diff ?? null;
@@ -292,7 +297,7 @@ function RiskFactorsReader({
 
           </Box>
         ) : reportError ? (
-          <PaneStatusBody error={reportError} errorTitle={unavailableText(`${year} risk report`)} />
+          <PaneStatusBody error={reportError} errorTitle={`Could not load ${year} risk report.`} />
         ) : (
           <Spinner label="Loading..." />
         )}

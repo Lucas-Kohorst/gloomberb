@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { EconEvent } from "../econ/types";
-import { FUTURES_CONTRACTS } from "../futures/contracts";
+import { FUTURES_CONTRACTS } from "../../../market-data/futures-board";
 import type { NewsArticle } from "../../../news/types";
 import { assembleBrief, BRIEF_FUTURES, type BriefSlices } from "./model";
 

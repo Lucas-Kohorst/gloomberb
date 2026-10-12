@@ -14,10 +14,19 @@ const PANE_HEADER_HEIGHT = 1;
 const HEADER_TAB_TOP_GAP = 2;
 const PANE_HEADER_GRIP = ":: ";
 export const PANE_HEADER_ACTION = " ... ";
+/** The pane's docs: the same width shown or blank, so the title never shifts. */
+export const PANE_HEADER_HELP = " ? ";
 export const PANE_HEADER_CLOSE = " x ";
+/**
+ * Desktop: narrower than this many cells, a header leaves Ask Gloom out (the
+ * pane menu and the key still ask), so the title keeps room and the `?`, the
+ * menu and the close button sit where they always do.
+ */
+export const PANE_HEADER_ASK_MIN_WIDTH = 32;
 /** Same width as the close mark, so the header hit areas stay put. */
 export const PANE_HEADER_RESTORE = " - ";
 const PANE_HEADER_LOCK = " 🔒 ";
+const HIDDEN_HEADER_BUTTON = { visibility: "hidden" } as const;
 
 interface PaneHeaderProps {
   title: string;
@@ -48,6 +57,13 @@ interface PaneHeaderProps {
   onHeaderMouseDragEnd?: (event: any) => void;
   onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
+  /** The `?`: this pane's entry in DOCS. Absent, the header draws no `?`. */
+  onHelpMouseDown?: (event: any) => void;
+  /**
+   * Desktop: the button beside the `?` that asks Ask Gloom about this pane.
+   * The terminal reaches it from the pane menu and the key instead.
+   */
+  onAskMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
   /** Pane fullscreen. The corner mark leaves fullscreen instead of closing. */
   fullscreen?: boolean;
@@ -131,6 +147,8 @@ export function PaneHeader({
   onHeaderMouseDragEnd,
   onHeaderContextMenu,
   onActionMouseDown,
+  onHelpMouseDown,
+  onAskMouseDown,
   onCloseMouseDown,
   fullscreen = false,
   onRestoreMouseDown,
@@ -141,15 +159,17 @@ export function PaneHeader({
   const menuShortcut = useActionShortcut("pane-menu");
   const closeShortcut = useActionShortcut("pane-close");
   const fullscreenShortcut = useActionShortcut("pane-fullscreen");
+  const askShortcut = useActionShortcut("pane-ask");
   const terminalHeaderRef = useRef<unknown>(null);
   const visuallyFocused = focused || windowModeSelected;
   const backgroundColor = floating ? floatingPaneTitleBg(visuallyFocused) : paneTitleBg(visuallyFocused);
   const actionText = showActions ? PANE_HEADER_ACTION : "     ";
+  const helpText = onHelpMouseDown ? (showActions ? PANE_HEADER_HELP : "   ") : "";
   const closeText = fullscreen ? PANE_HEADER_RESTORE : floating ? PANE_HEADER_CLOSE : "";
   const onCornerMouseDown = fullscreen ? onRestoreMouseDown : onCloseMouseDown;
   const lockText = locked ? PANE_HEADER_LOCK : "";
   const terminalQuickSettingsWidth = quickSettings.reduce((total, setting) => total + displayWidth(quickSettingText(setting)), 0)
-    + displayWidth(lockText);
+    + displayWidth(lockText) + helpText.length;
   const textColor = paneTitleText(visuallyFocused, floating);
   const accessoryWidth = Math.max(0, Math.floor(titleAccessoryWidth));
   const topInset = topRule ? 1 : 0;
@@ -179,10 +199,11 @@ export function PaneHeader({
 
   if (nativePaneChrome) {
     const ruleColor = visuallyFocused ? colors.borderFocused : colors.border;
+    // No width of its own: it stretches across its pane, so it follows a
+    // frame a resize sizes outside React.
     return (
       <Box
         height={titleBar?.rows ?? nativePaneHeaderRows()}
-        width={width}
         backgroundColor={backgroundColor}
         flexDirection="row"
         data-gloom-role="pane-header"
@@ -194,7 +215,6 @@ export function PaneHeader({
         {...barHandlers}
         onMouseMove={onHeaderMouseMove}
         onContextMenu={onHeaderContextMenu}
-        {...chromeHandlers}
         style={{
           // One 1px rule at the bottom, painted inside the header, mirrored by
           // 1px of padding at the top where the pane's divider or floating border
@@ -301,6 +321,29 @@ export function PaneHeader({
             <IconButton icon="lock" label="Locked: the close shortcut leaves this pane open" color={colors.textMuted} />
           </Box>
         )}
+        {onAskMouseDown && width >= PANE_HEADER_ASK_MIN_WIDTH && (
+          // Hidden rather than swapped for a spacer while the pane is not
+          // focused or hovered: it keeps its width, so showing it moves nothing.
+          <Box data-gloom-role="pane-ask" style={showActions ? undefined : HIDDEN_HEADER_BUTTON}>
+            <IconButton
+              icon="ask"
+              label="Ask Gloom about this pane"
+              shortcut={askShortcut || undefined}
+              onPress={showActions ? (event) => onAskMouseDown(event) : undefined}
+            />
+          </Box>
+        )}
+        {onHelpMouseDown && (
+          <Box data-gloom-role="pane-help">
+            {showActions ? (
+              <IconButton
+                icon="help"
+                label="Docs for this pane"
+                onPress={(event) => onHelpMouseDown(event)}
+              />
+            ) : <Box width={2} />}
+          </Box>
+        )}
         <Box data-gloom-role="pane-action">
           {showActions ? (
             <IconButton
@@ -366,6 +409,9 @@ export function PaneHeader({
         {locked && (
           <TerminalPaneButton text={lockText} fg={colors.textMuted} role="pane-lock" />
         )}
+        {helpText && (
+          <TerminalPaneButton text={helpText} fg={textColor} role="pane-help" onMouseDown={showActions ? onHelpMouseDown : undefined} />
+        )}
         <TerminalPaneButton
           text={actionText}
           fg={textColor}
@@ -417,6 +463,9 @@ export function PaneHeader({
       ))}
       {locked && (
         <TerminalPaneButton text={lockText} fg={colors.textMuted} role="pane-lock" />
+      )}
+      {helpText && (
+        <TerminalPaneButton text={helpText} fg={textColor} role="pane-help" onMouseDown={showActions ? onHelpMouseDown : undefined} />
       )}
       <TerminalPaneButton
         text={actionText}

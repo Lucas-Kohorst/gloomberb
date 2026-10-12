@@ -349,7 +349,9 @@ export function createCommandBarCollectionWorkflowActions(options: {
         if (validation.status === "ready" || validation.status === "duplicate") return { value: validation };
         // Quick-add already picked the highest-volume venue. A remaining choice cannot be answered from a paste.
         if (validation.status === "choose") {
-          const venues = validation.listings.map((listing) => listing.exchange).filter(Boolean).join(", ");
+          const venues = "listings" in validation
+            ? validation.listings.map((listing) => listing.exchange).filter(Boolean).join(", ")
+            : "";
           return { reason: venues ? `Multiple listings match: ${venues}` : "Multiple listings match" };
         }
         return {

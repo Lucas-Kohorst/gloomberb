@@ -4,7 +4,7 @@ import {
   normalizeChatDiscordLink,
   normalizeChatMessage,
   normalizeChatMessages,
-  normalizeChatPresence,
+  normalizeChatReactions,
   normalizeChatState,
 } from "./normalizers";
 import { CHAT_ATTACHMENTS_FEATURE, type CloudApiSocket } from "./socket";
@@ -15,12 +15,12 @@ import type {
   ChatDiscordLink,
   ChatMessage,
   ChatNotification,
-  ChatPresence,
+  ChatReactionsUpdate,
   ChatStateResponse,
 } from "./types";
 import type { CloudApiRequest } from "./request";
 type ChatNotificationListener = (notification: ChatNotification) => void;
-type ChatPresenceListener = (presence: ChatPresence) => void;
+type ChatPresenceListener = (onlineCount: number) => void;
 
 /** REST requests list the protocol features this client reads, comma separated. */
 const CHAT_FEATURES_HEADER = "X-Gloom-Features";
@@ -123,8 +123,8 @@ export class CloudChatApi {
     return channels.map((channel) => normalizeChatChannel(channel));
   }
 
-  async getPresence(): Promise<ChatPresence> {
-    return normalizeChatPresence(await this.request<unknown>("/chat/presence"));
+  async getPresence(): Promise<{ onlineCount: number }> {
+    return this.request<{ onlineCount: number }>("/chat/presence");
   }
 
   async getState(): Promise<ChatStateResponse> {
@@ -258,6 +258,30 @@ export class CloudChatApi {
       },
     );
     return normalizeChatMessage(message);
+  }
+
+  /**
+   * Sets your reaction with one emoji on a message; setting what is already
+   * there changes nothing. Answers the message's reactions as they stand.
+   */
+  async setReaction(
+    channelId: string,
+    messageId: string,
+    emoji: string,
+    reacted: boolean,
+  ): Promise<ChatReactionsUpdate> {
+    const answer = await this.request<{ reactions?: unknown }>(
+      `/chat/channels/${channelId}/messages/${messageId}/reactions`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ emoji, reacted }),
+      },
+    );
+    return { channelId, messageId, reactions: normalizeChatReactions(answer?.reactions) };
+  }
+
+  subscribeReactions(listener: (update: ChatReactionsUpdate) => void): () => void {
+    return this.options.socket.subscribeChatReactions(listener);
   }
 
   /** Whether this account is tied to a Discord person. Throws a 404 or 501 `ApiRequestError` on a server without Discord sync. */

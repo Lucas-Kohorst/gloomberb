@@ -3,7 +3,7 @@ import type { PaneTemplateDef } from "../../../../types/plugin";
 import { orderListResults, type ResultItem } from "../../list/model";
 import { PLUGIN_INSTALL_CATEGORY } from "../../view-model";
 import { mergePlainRootTickerResults } from "../ticker-search/results";
-import { buildRootResultModel, mnemonicListingQuery, shortRootQueryMatches, type RootResultModelOptions } from "./results";
+import { buildRootResultModel, type RootResultModelOptions } from "./results";
 
 function rootOptions(overrides: Partial<RootResultModelOptions>): RootResultModelOptions {
   const empty = () => [] as ResultItem[];
@@ -135,53 +135,6 @@ describe("provider rows in the root result model", () => {
     expect(ordered.map((item) => item.id)).toEqual([tickerRow.id, storyRow.id, filingRow.id, documentRow.id]);
   });
 
-  test("a short query ignores description words and later label words", () => {
-    const crash: ResultItem = {
-      id: "crash",
-      label: "Crash Reports",
-      detail: "Turn automatic crash reports on or off",
-      shortcutQuery: "",
-      category: "Config",
-      kind: "command",
-      action: () => {},
-    };
-    const reset: ResultItem = {
-      id: "reset",
-      label: "Reset All Data",
-      detail: "Erase local data",
-      category: "Config",
-      kind: "command",
-      action: () => {},
-    };
-    const description: ResultItem = {
-      id: "des",
-      label: "Description",
-      detail: "Open security details for a ticker",
-      shortcutQuery: "DES",
-      category: "Search",
-      kind: "command",
-      action: () => {},
-    };
-    expect(shortRootQueryMatches("ON", crash)).toBe(false);
-    expect(shortRootQueryMatches("ALL", reset)).toBe(false);
-    expect(shortRootQueryMatches("AI", description)).toBe(false);
-    expect(shortRootQueryMatches("DES", description)).toBe(true);
-    expect(mnemonicListingQuery("T", "NIKE")).toBe("NIKE");
-    expect(mnemonicListingQuery("T", null)).toBe("T");
-
-    const { items } = buildRootResultModel(rootOptions({
-      rootQuery: "ON",
-      availableCommands: [{
-        id: "crash",
-        prefix: "",
-        label: "Crash Reports",
-        description: "Turn automatic crash reports on or off",
-        category: "Config",
-      }],
-    }));
-    expect(items.map((item) => item.id)).not.toContain("crash");
-  });
-
   test("a company name leads when no command starts with it, and a mnemonic keeps Enter", () => {
     const nvidia: ResultItem = {
       id: "ticker:NVDA",
@@ -220,24 +173,98 @@ describe("provider rows in the root result model", () => {
     expect(mnemonic.find((item) => item.id === "des")?.defaultSelectable).toBeUndefined();
   });
 
-  test("stay out of the way once a prefix claims the query", () => {
+  test("a code's own rows lead, and only the rows asked to follow it come after", () => {
+    const templateRow = { ...paneRow, id: "template", label: "New Chat Pane" };
     const { items } = buildRootResultModel(rootOptions({
-      rootQuery: "SEC AAPL",
-      providerResultItems: [documentRow],
+      rootQuery: "chat",
+      providerMatchItems: [chatRow("general", "#general")],
+      createPaneTemplateItem: () => templateRow,
       rootShortcutIntent: {
-        kind: "complete",
+        kind: "partial",
         source: "pane-template",
-        prefix: "SEC",
-        label: "SEC",
+        prefix: "CHAT",
+        label: "Chat",
         description: "",
-        argKind: "ticker",
-        argText: "AAPL",
+        argKind: "text",
+        argText: "",
         completionQuery: null,
-        template: { id: "sec-pane" } as unknown as PaneTemplateDef,
+        template: { id: "new-chat-pane" } as unknown as PaneTemplateDef,
       },
     }));
 
-    expect(items.map((item) => item.id)).not.toContain(documentRow.id);
+    expect(orderListResults(items).map((item) => item.id)).toEqual(["template", chatRow("general", "#general").id]);
+  });
+});
+
+function chatRow(id: string, label: string, keywords: string[] = []): ResultItem {
+  return {
+    id: `search-provider:chat:conversations:${id}`,
+    label,
+    detail: "Channel",
+    category: "Chat",
+    kind: "action",
+    searchText: [label, ...keywords].join(" "),
+    action: () => {},
+  };
+}
+
+describe("in-memory provider rows in the root result model", () => {
+  const agentRow: ResultItem = {
+    id: "pane-template:agents",
+    label: "Agent Activity",
+    detail: "Track what agents changed",
+    category: "Panes",
+    kind: "action",
+    action: () => {},
+  };
+  const genRow: ResultItem = { ...agentRow, id: "command:gen", label: "GEN Monitor", category: "Commands" };
+
+  test("rank as one block at the place of their best row, in the order the provider gave", () => {
+    // The provider leads with the unread DM; the bar's own matcher would put #general first.
+    const unreadDm = chatRow("dm", "@gena", ["gena"]);
+    const general = chatRow("general", "#general", ["general"]);
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "gen",
+      paneShortcutItems: () => [agentRow, genRow],
+      providerMatchItems: [unreadDm, general],
+    }));
+
+    // Sections follow their best row: "GEN" is the text itself, "gena" starts
+    // with it, and "agent" only holds it.
+    expect(orderListResults(items).map((item) => item.id)).toEqual([
+      genRow.id,
+      unreadDm.id,
+      general.id,
+      agentRow.id,
+    ]);
+  });
+
+  test("still show when the bar's own matcher finds none of them, after its matches", () => {
+    const member = chatRow("group", "Macro desk");
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "gen",
+      paneShortcutItems: () => [agentRow],
+      providerMatchItems: [member],
+    }));
+
+    expect(items.map((item) => item.id)).toEqual([agentRow.id, member.id]);
+  });
+
+  test("sit under Suggested in the empty bar, ahead of the browse list", () => {
+    const general = chatRow("general", "#general");
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "",
+      buildRecentTickerItem: (symbol) => ({ ...paneRow, id: `ticker:${symbol}`, label: symbol, kind: "ticker" }),
+      state: {
+        config: { watchlists: [], portfolios: [], recentCommands: [] },
+        recentTickers: ["AAPL"],
+        focusedPaneId: null,
+      } as unknown as RootResultModelOptions["state"],
+      paneShortcutItems: () => [paneRow],
+      providerMatchItems: [general],
+    }));
+
+    expect(orderListResults(items).map((item) => item.id)).toEqual(["ticker:AAPL", general.id, paneRow.id]);
   });
 });
 

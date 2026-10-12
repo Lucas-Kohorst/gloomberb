@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppState } from "../../../../state/app/context";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
-import { orderCandidatesByListingVolume, searchTickerCandidates } from "../../../../tickers/search";
+import { LISTING_SEARCH_LIMIT, searchTickerCandidates } from "../../../../tickers/search";
 import {
-  COMMAND_BAR_TICKER_SEARCH_LIMIT,
   mergePlainRootTickerResults,
   mergeTickerSearchResultItems,
   QUICK_LOOK_TICKER_SEARCH_OPTIONS,
@@ -116,12 +115,6 @@ export function useRootProviderSearch(options: {
     setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
-    const searchContext = {
-      preferBroker: true,
-      interactive: true,
-      brokerId: activeSearchPortfolio?.brokerId,
-      brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
-    };
     rootSearchTimerRef.current = setTimeout(async () => {
       try {
         const publish = (candidates: TickerSearchCandidate[]) => {
@@ -136,26 +129,31 @@ export function useRootProviderSearch(options: {
           query: searchQuery,
           tickers,
           dataProvider,
-          searchContext,
+          searchContext: {
+            preferBroker: true,
+            interactive: true,
+            limit: LISTING_SEARCH_LIMIT,
+            brokerId: activeSearchPortfolio?.brokerId,
+            brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
+          },
           // A broker that answers after the cloud upgrades the rows in place
           // rather than being dropped because the list was already drawn.
           onPartial: (candidates) => {
             if (requestId !== rootSearchRequestIdRef.current) return;
             publish(candidates);
           },
-          totalLimit: COMMAND_BAR_TICKER_SEARCH_LIMIT,
+          // The rows the CLI reads a symbol's listings from, so `CAR:` offers CAR Group on ASX (its eleventh).
+          totalLimit: LISTING_SEARCH_LIMIT,
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
-        const ordered = await orderCandidatesByListingVolume(combined, searchQuery, dataProvider, searchContext);
-        if (requestId !== rootSearchRequestIdRef.current) return;
         writeTickerSearchCache(
           searchQuery,
-          ordered,
+          combined,
           activeSearchPortfolio?.brokerId,
           activeSearchPortfolio?.brokerInstanceId,
         );
-        publish(ordered);
+        publish(combined);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
         setRootProviderResults([{

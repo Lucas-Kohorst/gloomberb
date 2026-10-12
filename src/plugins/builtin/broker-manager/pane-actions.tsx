@@ -113,9 +113,15 @@ export function useBrokerManagerActions({
       // Connecting happens in the browser, then the profile syncs what it can now see.
       const broker = signedInBrokerForProfile(selectedRow.instance, selectedRow.brokerName);
       try {
-        setBusy(loadingText());
-        if (!await requestBrokerSignIn(broker)) {
-          setMessage(infoMessage(unavailableText(broker.name)));
+        setBusy(t("Connecting…"));
+        // A connected broker is connected again only by a new sign-in: this renews it before the broker ends it.
+        // A row that says when the sign-in ends is renewable before this session's first sync too.
+        const renew = selectedRow.state === "connected" || selectedRow.signInEndsAt !== null;
+        if (!await requestBrokerSignIn(broker, { renew })) {
+          // Backing out of a renewal leaves the broker connected, for now.
+          setMessage(infoMessage(renew
+            ? tf("{broker} sign-in was not renewed.", { broker: broker.name })
+            : tf("{broker} was not connected.", { broker: broker.name })));
           return;
         }
         await syncBrokerInstance(selectedRow.id);

@@ -1,5 +1,4 @@
 import { useEffect, type Dispatch } from "react";
-import { unavailableText } from "../../components/ui/status";
 import { apiClient } from "../../api-client";
 import { getDockedPaneIds } from "../../layout/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -16,7 +15,9 @@ import { openTeamPane } from "../../plugins/builtin/cloud/team/pane-request";
 import { chatController } from "../../plugins/builtin/chat/controller";
 import { getShare } from "../../shares/api";
 import { openPaneShare } from "../../shares/pane";
+import { PluginOffError, notifyPluginOff } from "../../plugins/plugin-off";
 import { materializeMarketplaceLayout } from "../../shares/portable-layout";
+import { settleTypedListingKey } from "../../tickers/listing-venues";
 
 type CloudDeepLinkRoute = {
   kind: "cloud-alerts" | "cloud-emails" | "cloud-roundup" | "cloud-success" | "cloud-teams";
@@ -425,7 +426,7 @@ function handleCreateAlert(
     return;
   }
   void Promise.resolve(command.execute(action.values)).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Alert"));
+    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to create alert.");
   });
 }
 
@@ -446,7 +447,7 @@ function handleOpenChatChannel(
   void pluginRegistry.createPaneFromTemplateAsync("new-chat-pane", options).then(() => {
     notifySuccess(pluginRegistry, action.message);
   }).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Chat"));
+    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open chat.");
   });
 }
 
@@ -462,7 +463,7 @@ function handleOpenChatDm(
   void Promise.resolve(command.execute({ participants: action.participants })).then(() => {
     notifySuccess(pluginRegistry, action.message);
   }).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Direct message"));
+    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open DM.");
   });
 }
 
@@ -475,11 +476,15 @@ function handleOpenNews(
       notifyError(pluginRegistry, "Ticker news is unavailable.");
       return;
     }
-    void pluginRegistry.createPaneFromTemplateAsync("ticker-news-pane", { symbol: action.symbol }).then(() => {
-      notifySuccess(pluginRegistry, action.message);
-    }).catch((error) => {
-      notifyError(pluginRegistry, error instanceof Error ? error.message : unavailableText("Ticker news"));
-    });
+    // A link's 7203:TSE is the venue its symbol trades on; ticker and alert links settle it where they open.
+    void settleTypedListingKey(action.symbol, { store: pluginRegistry.tickerRepository, dataProvider: pluginRegistry.marketData })
+      .then((symbol) => pluginRegistry.createPaneFromTemplateAsync("ticker-news-pane", { symbol: symbol.toUpperCase() }))
+      .then(() => {
+        notifySuccess(pluginRegistry, action.message);
+      })
+      .catch((error) => {
+        notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open ticker news.");
+      });
     return;
   }
 
@@ -565,12 +570,16 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
       return;
     case "open-share":
       void handleOpenShare(action, options.pluginRegistry).catch((error) => {
-        notifyError(options.pluginRegistry, error instanceof Error ? error.message : unavailableText("Shared pane"));
+        if (error instanceof PluginOffError) {
+          notifyPluginOff(options.pluginRegistry, error, () => handleDesktopDeepLink(rawUrl, options));
+          return;
+        }
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared pane.");
       });
       return;
     case "open-layout":
       void handleOpenLayout(action, options).catch((error) => {
-        notifyError(options.pluginRegistry, error instanceof Error ? error.message : unavailableText("Shared layout"));
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared layout.");
       });
       return;
   }

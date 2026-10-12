@@ -133,7 +133,8 @@ function DoeBoard({ payload, tab, weekly, initialSeries, width, height, focused 
   }, [inventory, tab, weekly]);
   // One selection across tabs: a row from another tab falls back to this tab's first.
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", initialSeries);
-  const selected = items.find((item) => item.kind === "item" && item.item.row.id === selectedId)?.item
+  const matched = items.find((row) => isSectionedItemRow(row) && row.item.row.id === selectedId);
+  const selected = (matched && isSectionedItemRow(matched) ? matched.item : undefined)
     ?? items.find(isSectionedItemRow)?.item
     ?? null;
   const chartRow = selected?.kind === "inventory" ? selected.row : null;

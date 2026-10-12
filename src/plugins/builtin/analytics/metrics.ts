@@ -155,7 +155,7 @@ export function computeWeightedPortfolioReturns(series: WeightedReturnSeries[]):
   return returns.sort((left, right) => left.dateKey.localeCompare(right.dateKey));
 }
 
-function alignedAssetReturns(assetReturns: DatedReturn[], marketReturns: DatedReturn[]): DatedReturn[] {
+export function alignedAssetReturns(assetReturns: DatedReturn[], marketReturns: DatedReturn[]): DatedReturn[] {
   const marketIntervals = new Set(marketReturns.filter(validReturnInterval).map(returnIntervalKey));
   return assetReturns.filter((point) => validReturnInterval(point) && marketIntervals.has(returnIntervalKey(point)));
 }

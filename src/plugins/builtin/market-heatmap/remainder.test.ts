@@ -12,7 +12,6 @@ import {
 
 function asset(patch: Partial<HeatmapBoardAsset> & { symbol: string }): HeatmapBoardAsset {
   return {
-    symbol: patch.symbol,
     name: patch.symbol,
     price: 1,
     change: 0,
