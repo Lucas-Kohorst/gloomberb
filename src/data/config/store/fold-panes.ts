@@ -151,7 +151,7 @@ export function foldSavedPanes(saved: Record<string, unknown>): Record<string, u
 }
 
 /** Financial Analysis becomes the Financials tab of Ticker Research. */
-export function foldFinancialAnalysisPaneLayout(layout: LayoutConfig): LayoutConfig {
+function foldFinancialAnalysisPaneLayout(layout: LayoutConfig): LayoutConfig {
   return {
     ...layout,
     instances: layout.instances.map((instance) => instance.paneId === FINANCIAL_ANALYSIS_PANE_ID

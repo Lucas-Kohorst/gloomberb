@@ -5,7 +5,6 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { withCommandTab } from "../shared/command-tab";
-import { FinancialAnalysisPane } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
 import { ReturnsPane } from "./data-panes/returns-pane";
 import { TickerResearchPane } from "./pane";
@@ -55,18 +54,6 @@ export const tickerDetailModule: PluginModule = {
         buildTickerResearchSettingsDef(getTickerResearchPaneSettings(context.settings)),
         context.settings,
       ),
-    },
-    {
-      id: "financial-analysis",
-      name: "Financials",
-      icon: "F",
-      component: FinancialAnalysisPane,
-      headless: financialStatementsHeadless,
-      defaultPosition: "right",
-      tickerFollower: true,
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 98, height: 30 },
-      tableExport: true,
     },
     {
       id: "quote-monitor",
