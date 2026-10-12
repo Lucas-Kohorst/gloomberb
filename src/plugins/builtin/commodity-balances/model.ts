@@ -1,10 +1,10 @@
 import { compareSortValues, type SortPreference } from "../../../utils/sort-values";
 
-export const TOP_PRODUCERS = 10;
+const TOP_PRODUCERS = 10;
 
-export const CROP_ORDER = ["Wheat", "Corn", "Soybeans", "Cotton"] as const;
+const CROP_ORDER = ["Wheat", "Corn", "Soybeans", "Cotton"] as const;
 
-export const ATTRIBUTE_ORDER = ["Production", "Domestic use", "Exports", "Ending stocks"] as const;
+const ATTRIBUTE_ORDER = ["Production", "Domestic use", "Exports", "Ending stocks"] as const;
 
 const CROP_BY_CODE: Record<string, string> = {
   "0410000": "Wheat",

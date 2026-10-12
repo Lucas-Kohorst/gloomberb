@@ -20,7 +20,7 @@ import { JodiPane } from "../jodi/pane";
 import { jodiModule } from "../jodi";
 import type { PluginModule } from "../plugin-module";
 
-export const COMMODITIES_ENERGY_PANE_ID = "commodities-energy";
+const COMMODITIES_ENERGY_PANE_ID = "commodities-energy";
 
 const TABS = [
   { value: "markets", label: "Markets" },
@@ -126,7 +126,7 @@ function activeSettings(context: PaneSettingsContext) {
   return typeof pane.settings === "function" ? pane.settings(context) : pane.settings;
 }
 
-export function CommoditiesEnergyPane(props: PaneProps) {
+function CommoditiesEnergyPane(props: PaneProps) {
   const [tab, setTab] = useCommandTab(
     COMMODITIES_ENERGY_PANE_ID,
     "commodities-energy:tab",

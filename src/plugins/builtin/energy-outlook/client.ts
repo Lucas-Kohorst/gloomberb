@@ -49,18 +49,18 @@ interface EiaPage {
   total: number | null;
 }
 
-export interface OutlookSection {
+interface OutlookSection {
   rows: OutlookRow[];
   error: string | null;
 }
 
-export interface ImportSection {
+interface ImportSection {
   rows: ImportRow[];
   period: string | null;
   error: string | null;
 }
 
-export interface OutageSection {
+interface OutageSection {
   available: boolean;
   rows: OutageRow[];
   period: string | null;
