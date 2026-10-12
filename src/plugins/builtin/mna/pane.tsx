@@ -131,7 +131,7 @@ export function MnaWorkspacePane({ view, ...props }: PaneProps & { view: "deals"
   return <MnaDealsView key={symbol || "market"} {...props} symbol={symbol || null} />;
 }
 
-export function MnaDealsView({ focused, width, height, symbol }: {
+function MnaDealsView({ focused, width, height, symbol }: {
   focused: boolean;
   width: number;
   height: number;

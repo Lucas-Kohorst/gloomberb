@@ -33,8 +33,8 @@ import { eventsHeadless } from "../research/events-headless";
 import { CommentLettersPane } from "../comment-letters/pane";
 import { COMMENT_LETTERS_PANE_ID } from "../comment-letters/types";
 
-export const FILINGS_WORKSPACE_PANE_ID = "filings-workspace";
-export const EVENTS_WORKSPACE_PANE_ID = "events-workspace";
+const FILINGS_WORKSPACE_PANE_ID = "filings-workspace";
+const EVENTS_WORKSPACE_PANE_ID = "events-workspace";
 
 type FilingsTab = "sec" | "etf" | "eight-k" | "risks" | "comments";
 type EventsTab = "corporate-actions" | "catalysts" | "litigation" | "mna" | "distress";

@@ -40,7 +40,7 @@ export function LitigationPane(props: PaneProps & { queryBarWidth?: number }) {
   const { symbol } = usePaneTickerIdentity();
   return symbol ? <CatalystView key={symbol} {...props} symbol={symbol} litigation /> : <EmptyState title="Select a ticker." />;
 }
-export function CatalystView({ width, height, focused, symbol, litigation = false, queryBarWidth }: Pick<PaneProps, "width" | "height" | "focused"> & { symbol: string | null; litigation?: boolean; queryBarWidth?: number }) {
+function CatalystView({ width, height, focused, symbol, litigation = false, queryBarWidth }: Pick<PaneProps, "width" | "height" | "focused"> & { symbol: string | null; litigation?: boolean; queryBarWidth?: number }) {
   const colors = useThemeColors();
   const desktop = !!useUiCapabilities().nativePaneChrome;
   const instance = usePaneInstance();

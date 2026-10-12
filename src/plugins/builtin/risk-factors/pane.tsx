@@ -24,7 +24,7 @@ import { useProFeatureWall, type ProFeatureWallCopy, type ReadGuard } from "../s
 import { useBoundTicker, useIssuerListing } from "../shared/ticker-request";
 import { loadRiskReport, loadRiskReports } from "./data";
 
-export const RISK_FACTORS_PANE_ID = "risk-factors";
+const RISK_FACTORS_PANE_ID = "risk-factors";
 
 function noteFor(
   notes: CloudRiskNotePayload[],

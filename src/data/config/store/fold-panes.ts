@@ -168,7 +168,7 @@ export function foldPaneLayout(layout: LayoutConfig): FoldedLayout {
 }
 
 /** Fold issuer research panes into Filings and Events while retaining instance IDs. */
-export function foldFilingsEventsPaneLayout(layout: LayoutConfig, paneState?: unknown): LayoutConfig {
+function foldFilingsEventsPaneLayout(layout: LayoutConfig, paneState?: unknown): LayoutConfig {
   return {
     ...layout,
     instances: layout.instances.map((instance) => {
