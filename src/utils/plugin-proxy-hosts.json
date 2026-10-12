@@ -1,5 +1,6 @@
 {
   "hosts": [
+    "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
     "api.votehub.com",

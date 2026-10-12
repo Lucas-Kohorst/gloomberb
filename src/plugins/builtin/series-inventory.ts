@@ -54,7 +54,7 @@ export const SERIES_INVENTORY: readonly SeriesInventoryEntry[] = [
   { module: "credit-documents", chart: "Principal due by year", notInCatalog: "not-a-time-series", reason: "A maturity schedule, not a history." },
   { module: "debt-maturities", chart: "A company's principal and the share due soon, across annual filings", series: ["debt-maturities:*"] },
   { module: "debt-maturities", chart: "A company's maturity wall", notInCatalog: "not-a-time-series", reason: "A schedule by maturity year from one filing; its total and near-term shares across filings are in the catalog." },
-  { module: "doe", chart: "Weekly oil and gas inventories against their five-year range", series: ["doe:*"] },
+  { module: "doe", chart: "Weekly oil and gas inventories against their five-year range, and US retail gasoline and diesel prices", series: ["doe:*"] },
   { module: "cot", chart: "Net positioning by trader class, over the front-month price", series: ["cot:*"] },
   { module: "futures", chart: "Front-month futures board, charted from the board", series: ["fut:*"] },
   { module: "futures-curve", chart: "Futures curve by contract month", notInCatalog: "not-a-time-series", reason: "Plotted by delivery month; each front month is in the catalog as FUT:code." },

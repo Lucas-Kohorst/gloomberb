@@ -100,6 +100,7 @@ export const futuresCommoditiesPluginMeta = {
   version: "1.0.0",
   description: "Futures board and curves, CFTC positioning, and EIA petroleum and gas storage.",
   toggleable: true,
+  hosts: ["api.eia.gov"],
 };
 
 export const cryptoPluginMeta = {
