@@ -29,6 +29,22 @@ interface FixedIncomeRoute {
   migrateCreditBoardTab?: boolean;
 }
 
+const COMMODITIES_ENERGY_PANE_ID = "commodities-energy";
+const COMMODITIES_ENERGY_TABS: Readonly<Record<string, string>> = {
+  futures: "markets",
+  "futures-curve": "curve",
+  cot: "positioning",
+  doe: "inventories",
+  "commodity-balances": "crops",
+  jodi: "balances",
+  "energy-outlook": "outlook",
+};
+const COMMODITIES_MODULE_STATE: Readonly<Record<string, string>> = {
+  "futures-curve": "market-overview:futures-curve",
+  cot: "market-overview:cot",
+  doe: "market-overview:doe",
+};
+
 interface FoldedLayout {
   layout: LayoutConfig;
   idMap: Map<string, string>;
@@ -258,4 +274,66 @@ export function foldSavedPanes(saved: Record<string, unknown>): Record<string, u
 /** Rewrite layouts for the Fixed Income workspace migration. */
 export function foldFixedIncomeSavedPanes(saved: Record<string, unknown>): Record<string, unknown> {
   return foldSavedPanesWith(saved, foldFixedIncomePaneLayout);
+}
+
+/** Move related market and energy panes into the one Commodities & Energy workspace. */
+export function foldCommoditiesPaneLayout(layout: LayoutConfig): LayoutConfig {
+  const instances = layout.instances.map((instance) => {
+    const tab = COMMODITIES_ENERGY_TABS[instance.paneId];
+    if (!tab) return instance;
+    return {
+      ...instance,
+      paneId: COMMODITIES_ENERGY_PANE_ID,
+      params: { ...(instance.params ?? {}), tab },
+    };
+  });
+  return { ...layout, instances };
+}
+
+function foldCommoditiesPaneState(value: unknown, layout: LayoutConfig): unknown {
+  if (!isRecord(value)) return value;
+  let next = value;
+  for (const instance of layout.instances) {
+    const stateId = COMMODITIES_MODULE_STATE[instance.paneId];
+    if (!stateId) continue;
+    const entry = next[instance.instanceId];
+    if (!isRecord(entry) || !isRecord(entry.pluginState)) continue;
+    const oldState = entry.pluginState["market-overview"];
+    if (!isRecord(oldState)) continue;
+    const pluginState = { ...entry.pluginState };
+    pluginState[stateId] = {
+      ...oldState,
+      ...(isRecord(pluginState[stateId]) ? pluginState[stateId] : {}),
+    };
+    delete pluginState["market-overview"];
+    next = { ...next, [instance.instanceId]: { ...entry, pluginState } };
+  }
+  return next;
+}
+
+function foldCommoditiesLayoutField(value: unknown): LayoutConfig | null {
+  const layout = asLayout(value);
+  return layout ? foldCommoditiesPaneLayout(layout) : null;
+}
+
+/** Rewrite old panes in the open layout and every saved layout, retaining the selected tab and module state. */
+export function foldSavedCommoditiesPanes(saved: Record<string, unknown>): Record<string, unknown> {
+  const open = foldCommoditiesLayoutField(saved.layout);
+  const layouts = Array.isArray(saved.layouts)
+    ? saved.layouts.map((entry) => {
+      if (!isRecord(entry)) return entry;
+      const original = asLayout(entry.layout);
+      if (!original) return entry;
+      return {
+        ...entry,
+        layout: foldCommoditiesPaneLayout(original),
+        paneState: foldCommoditiesPaneState(entry.paneState, original),
+      };
+    })
+    : saved.layouts;
+  return {
+    ...saved,
+    ...(open ? { layout: open } : {}),
+    layouts,
+  };
 }

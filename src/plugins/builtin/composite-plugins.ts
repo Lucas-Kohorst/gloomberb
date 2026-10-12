@@ -30,6 +30,10 @@ import { futuresModule } from "./futures";
 import { futuresCurveModule } from "./futures-curve";
 import { cotModule } from "./cot";
 import { doeModule } from "./doe";
+import { commodityBalancesModule } from "./commodity-balances";
+import { energyOutlookModule } from "./energy-outlook";
+import { jodiModule } from "./jodi";
+import { commoditiesEnergyModule } from "./commodities-energy";
 import { gpuModule } from "./gpu";
 import { fxMatrixModule } from "./fx-matrix";
 import { docsModule } from "./docs";
@@ -124,6 +128,10 @@ export const portfolioPlugin = composeBuiltinPlugin({
 // hold nothing else.
 const rendererOnly = (module: PluginModule) => ({ module, rendererOnly: true });
 const tickerResearchModule = (module: PluginModule) => ({ module, stateId: "ticker-research", rendererOnly: true });
+const runtimeOnly = (module: PluginModule): PluginModule => {
+  const { panes: _panes, paneTemplates: _paneTemplates, ...runtime } = module;
+  return runtime;
+};
 
 export const tickerCorePlugin = composeBuiltinPlugin({
   ...tickerCorePluginMeta,
@@ -200,7 +208,16 @@ export const screenersPlugin = composeBuiltinPlugin({
 
 export const futuresCommoditiesPlugin = composeBuiltinPlugin({
   ...futuresCommoditiesPluginMeta,
-  modules: [futuresModule, futuresCurveModule, cotModule, doeModule],
+  modules: [
+    commoditiesEnergyModule,
+    runtimeOnly(futuresModule),
+    runtimeOnly(futuresCurveModule),
+    runtimeOnly(cotModule),
+    runtimeOnly(doeModule),
+    { module: runtimeOnly(commodityBalancesModule), stateId: "commodity-balances" },
+    { module: runtimeOnly(energyOutlookModule), stateId: "energy-outlook" },
+    { module: runtimeOnly(jodiModule), stateId: "jodi" },
+  ],
 });
 
 export const cryptoPlugin = composeBuiltinPlugin({

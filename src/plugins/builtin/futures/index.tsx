@@ -72,7 +72,7 @@ const LIVE_SORT_COLUMNS = new Set<string>([
   "status", "price", "change", "changePercent", "return1w", "return1m", "returnYtd", "volume", "time",
 ]);
 
-function FuturesPane({ focused, width, height }: PaneProps) {
+export function FuturesPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
   const dataProvider = useAssetData();
   const paneInstance = usePaneInstance();
