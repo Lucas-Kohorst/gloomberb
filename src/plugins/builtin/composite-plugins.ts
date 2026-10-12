@@ -51,6 +51,7 @@ import { centralBankRatesModule } from "./central-bank-rates";
 import { moneyMarketsModule } from "./money-markets";
 import { ratePathModule } from "./rate-path";
 import { debtMaturitiesModule } from "./debt-maturities";
+import { fixedIncomeModule } from "./fixed-income";
 import { revenueBreakdownModule } from "./revenue-breakdown";
 import { mnaModule } from "./mna";
 import { shortVolumeModule } from "./short-volume";
@@ -63,6 +64,9 @@ import { congressResearchModule } from "./congress-trades";
 import { dividendYieldModule } from "./dividend-yield";
 import { executivesModule } from "./executives";
 import { filingEventsModule } from "./filing-events";
+import { primaryDealersModule } from "./primary-dealers";
+import { traceBondsModule } from "./trace-bonds";
+import { treasuryDailyModule } from "./treasury-daily";
 import { holdersModule } from "./holders";
 import { insiderModule } from "./insider";
 import { jobsModule } from "./jobs";
@@ -103,6 +107,7 @@ import {
   screenersPluginMeta,
   tickerCorePluginMeta,
 } from "./builtin-plugin-meta";
+import { FIXED_INCOME_HOSTS } from "./fixed-income/model";
 
 export const applicationPlugin = composeBuiltinPlugin({
   ...applicationPluginMeta,
@@ -240,15 +245,20 @@ export const ratesMacroPlugin = composeBuiltinPlugin({
 export const creditPlugin = composeBuiltinPlugin({
   ...creditPluginMeta,
   modules: [
+    fixedIncomeModule,
     cdsModule,
     creditBoardsModule,
     creditConditionsModule,
     treasuryAuctionsModule,
     bondCalculatorModule,
+    traceBondsModule,
+    treasuryDailyModule,
+    primaryDealersModule,
     tickerResearchModule(creditDocumentsModule),
     tickerResearchModule(debtMaturitiesModule),
   ],
 });
+creditPlugin.hosts = [...FIXED_INCOME_HOSTS];
 
 export const earningsPlugin = composeBuiltinPlugin({
   ...earningsPluginMeta,

@@ -146,9 +146,9 @@ export const ratesMacroPluginMeta = {
 export const creditPluginMeta = {
   id: "credit",
   stateId: "macro",
-  name: "Credit & Bonds",
+  name: "Credit & Fixed Income",
   version: "1.0.0",
-  description: "Single-name, index and sovereign CDS, credit spreads, Treasury auctions, a bond calculator, credit documents and covenants, and debt maturities.",
+  description: "Credit markets, issuer debt, corporate bonds, Treasury auctions and debt, and dealer positions.",
   toggleable: true,
 };
 

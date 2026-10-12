@@ -17,18 +17,26 @@ export function commandTabParams(tab: string, params?: Record<string, string>): 
 }
 
 /** The template's pane, with the command's tab written onto the instance. */
-function stampCommandTab(instance: PaneTemplateInstanceConfig | null, tab: string): PaneTemplateInstanceConfig | null {
-  return instance ? { ...instance, params: commandTabParams(tab, instance.params) } : null;
+function stampCommandTab(
+  instance: PaneTemplateInstanceConfig | null,
+  tab: string,
+  params?: Record<string, string>,
+): PaneTemplateInstanceConfig | null {
+  return instance
+    ? { ...instance, params: commandTabParams(tab, { ...instance.params, ...params }) }
+    : null;
 }
 
-export function withCommandTab(template: PaneTemplateDef, tab: string): PaneTemplateDef {
+export function withCommandTab(template: PaneTemplateDef, tab: string, params?: Record<string, string>): PaneTemplateDef {
   const create = template.createInstance;
   return {
     ...template,
     createInstance: (context, options) => {
       const created = create?.(context, options);
       if (!created) return null;
-      return created instanceof Promise ? created.then((instance) => stampCommandTab(instance, tab)) : stampCommandTab(created, tab);
+      return created instanceof Promise
+        ? created.then((instance) => stampCommandTab(instance, tab, params))
+        : stampCommandTab(created, tab, params);
     },
   };
 }
