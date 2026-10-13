@@ -7,7 +7,7 @@ import { recordResearchActivity } from "../../../api-client/research-activity";
 import {
   DataTableStackView,
   EmptyState,
-  PaneStatusBody, QueryBar, Spinner,
+  PaneStatusBody, QueryBar,
   usePaneFooter,
   useQueryBarSearch,
   useTableLoadMore,
@@ -22,7 +22,6 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import {
   Box,
-  Text,
   useRendererHost,
   type ScrollBoxRenderable,
 } from "../../../ui";
@@ -795,7 +794,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       message="Full transcripts with speaker attribution, analyst Q&A, guidance and risk extraction, transcribed from the call itself."
     />
   ) : selected && !selectedTranscript && (producing || (!selected.hasTranscript && !transcriptError)) ? (
-    <PaneStatusBody loading subject="transcript" />
+    <PaneStatusBody loading loadingLabel="Producing the transcript. This usually takes two to three minutes." />
   ) : (
 
     // The reader gets its own find field: a transcript runs to thousands of

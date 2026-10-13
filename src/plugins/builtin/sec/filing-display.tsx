@@ -20,7 +20,7 @@ export function formatFilingFormLabel(form: string, fallback = "FORM 4"): string
   return value ? `FORM ${value}` : fallback;
 }
 
-export function renderFilingNotice(message: string, _width?: number) {
+export function renderFilingNotice(message: string) {
   return <EmptyState title={message} />;
 }
 
