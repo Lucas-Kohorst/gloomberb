@@ -203,7 +203,11 @@ In a 13F fund detail, open Overlap, search a second fund by name or CIK, and sel
 
 ```text
 G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
+G GAA/VOO
+G MSFT:revenue / AAPL:revenue
 ```
+
+`A/B` and `A / B` chart the ratio of two series. `A - B` charts the spread. A slash that is the symbol stays one series, so `EUR/USD` and `BTC/USD` are not ratios. A constant such as `100 - STRC:price` is not a series.
 
 #### Your own series
 
