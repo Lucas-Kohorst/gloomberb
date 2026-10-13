@@ -837,7 +837,7 @@ export default {
 
 A `load` that has nothing to return (signed out, a plan the account lacks, history still collecting) throws an `Error` that says why, in the words the plugin's pane uses; the chart shows the message where the line would be, instead of an empty plot.
 
-A definition is checked when it registers: a malformed id, an unknown unit or frequency, both or neither of `load` and `expression`, or a label that names a host or one of the services in the plugin's `hosts` (a catalog says what the data is, not who serves it) is refused. A bad entry in `series` is skipped and logged, so the plugin's other series and panes still load; `ctx.registerSeries` throws instead. `defineSeries` runs the same checks where the definition is written.
+A definition is checked when it registers: a malformed id, an unknown unit or frequency, both or neither of `load` and `expression`, or a label that names a host or one of the services in the plugin's `hosts` (a catalog says what the data is, not who serves it) is refused. A government host (`api.eia.gov`) is the publisher itself, so its agency may be named. A bad entry in `series` is skipped and logged, so the plugin's other series and panes still load; `ctx.registerSeries` throws instead. `defineSeries` runs the same checks where the definition is written.
 
 `ctx.registerSeries` adds series after setup has started, for a list the plugin loads first or a folder it watches; it returns a function that removes the series again, and a plugin's series leave with it when it is switched off or removed.
 
