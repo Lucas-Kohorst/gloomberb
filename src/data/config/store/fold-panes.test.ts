@@ -124,7 +124,7 @@ describe("fold fixed income views", () => {
     const result = migrateSavedConfig({
       configVersion: 26,
       layout: layout([
-        { instanceId: "open-auctions", paneId: "treasury-auctions", binding: { kind: "none" } },
+        { instanceId: "open-auctions", paneId: "treasury-auctions", binding: { kind: "none" }, title: "Treasury Auctions" },
       ], { kind: "pane", instanceId: "open-auctions" }),
       layouts: [{
         name: "Credit and rates",
@@ -146,6 +146,7 @@ describe("fold fixed income views", () => {
       paneId: "fixed-income",
       params: { tab: "treasury", view: "auctions" },
     });
+    expect((result.config.layout as LayoutConfig).instances[0]).not.toHaveProperty("title");
     const saved = (result.config.layouts as Array<{ layout: LayoutConfig; paneState: Record<string, any> }>)[0]!;
     expect(saved.layout.instances).toEqual([
       { instanceId: "cdx-1", paneId: "fixed-income", binding: { kind: "none" }, params: { tab: "credit", view: "index" } },

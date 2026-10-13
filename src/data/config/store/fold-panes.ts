@@ -155,8 +155,10 @@ export function foldFixedIncomePaneLayout(layout: LayoutConfig): FoldedLayout {
     const route = fixedIncomeRoute(instance);
     if (!route) return instance;
     fixedIncomeRoutes.set(instance.instanceId, route);
+    // The old function's title (CDS AAPL, DDIS AAPL) would outlive its tab; the workspace names itself.
+    const { title: _title, ...rest } = instance;
     return {
-      ...instance,
+      ...rest,
       paneId: FIXED_INCOME_PANE_ID,
       params: { ...(instance.params ?? {}), tab: route.section, view: route.view },
     };
