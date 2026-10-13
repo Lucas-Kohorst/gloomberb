@@ -37,6 +37,7 @@ export const SERIES_INVENTORY: readonly SeriesInventoryEntry[] = [
   { module: "realized-vol", chart: "Realized volatility cone and rolling windows", notInCatalog: "derived", reason: "The composer's realized volatility study draws it from any price series." },
   { module: "vol-surface", chart: "Implied volatility surface by strike and expiry", notInCatalog: "not-a-time-series", reason: "A surface over strike and tenor." },
   { module: "options-positioning", chart: "Open interest and gamma by strike and expiry", notInCatalog: "not-a-time-series", reason: "Plotted by strike and expiry, not by date." },
+  { module: "options-calculator", chart: "A linked option contract's daily premium", series: ["option:*"] },
   { module: "options-scenario", chart: "Option payoff by underlying price", notInCatalog: "not-a-time-series", reason: "A payoff curve over prices." },
   { module: "kelly-sizer", chart: "Position size against win rate", notInCatalog: "account", reason: "Drawn from the inputs typed into the sizer." },
   { module: "yield-curve", chart: "Treasury curve and each maturity's history", series: ["ust:*", "fred:T10Y2Y", "fred:T10Y3M", "fred:DFII*"] },
