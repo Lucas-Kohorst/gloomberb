@@ -7,7 +7,7 @@ import {
   type FuturesContract,
   type FuturesSector,
 } from "../../../market-data/futures-board";
-import { FUTURES_SERIES, futuresSeriesUnit } from "./series";
+import { FUTURES_SERIES } from "./series";
 import type { FuturesColumnId, FuturesTableRow } from "./model";
 import {
   createFuturesColumns,
@@ -159,14 +159,11 @@ describe("contract tick precision", () => {
 
 describe("futures catalog", () => {
   test("catalog units match the printed quote, not a blanket dollar price", () => {
-    const byCode = new Map(FUTURES_CONTRACTS.map((contract) => [contract.code, contract]));
-    expect(futuresSeriesUnit(byCode.get("TTF")!)).toBe("EUR");
-    expect(futuresSeriesUnit(byCode.get("LE")!)).toBe("USX");
-    expect(futuresSeriesUnit(byCode.get("ES")!)).toBe("points");
-    expect(futuresSeriesUnit(byCode.get("ZN")!)).toBe("points");
-    expect(futuresSeriesUnit(byCode.get("CL")!)).toBe("USD");
-    expect(FUTURES_SERIES.find((series) => series.id === "fut:TTF")?.unit).toBe("EUR");
-    expect(FUTURES_SERIES.every((series) => series.unit !== "USD" || !series.id.startsWith("fut:ZN"))).toBe(true);
+    const units = Object.fromEntries(FUTURES_SERIES.map((series) => [series.id.slice(4), series.unit]));
+    expect(units).toMatchObject({
+      TTF: "EUR", LE: "USX", ZC: "USX", KC: "USX", ZM: "USD", CC: "USD",
+      ES: "points", ZN: "points", CL: "USD", GC: "USD", "6E": "USD", "6J": "USD",
+    });
   });
 
   test("holds only available continuous symbols", () => {
