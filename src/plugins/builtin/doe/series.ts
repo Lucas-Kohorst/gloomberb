@@ -50,7 +50,7 @@ export const DOE_SERIES: readonly SeriesDefinition[] = DOE_SERIES_OPTIONS.map((o
     frequency: "weekly",
     group: "Energy",
     tags: gas ? ["natural gas", "storage", "inventories"] : ["oil", "petroleum", "inventories", "US"],
-    publisher: "U.S. Energy Information Administration",
+    publisher: "EIA",
     load: async () => {
       const resource = await loadDoeBoard();
       const row = resource.payload.series.find((entry) => entry.id === option.value);
