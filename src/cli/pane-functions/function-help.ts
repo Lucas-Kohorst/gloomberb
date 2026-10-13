@@ -790,18 +790,10 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     docs: "https://gloom.sh/docs/functions",
   },
   JODI: {
-    summary: "Latest monthly crude oil and natural gas balances for countries: production, demand, imports, exports and stocks. The Oil & Gas tab of Commodities & Energy.",
+    summary: "Latest monthly crude oil and natural gas balances for countries: production, imports, exports and stocks, and demand for natural gas. The Oil & Gas tab of Commodities & Energy.",
     usage: ["JODI"],
     keys: [TABS],
     data: same("Monthly, as the latest country reports arrive"),
-    bloomberg: [],
-    docs: "https://gloom.sh/docs/functions",
-  },
-  STEO: {
-    summary: "The latest Short-Term Energy Outlook forecasts for oil prices, US crude production and fuel demand, alongside crude import origins and nuclear plant outages. The Outlook tab of Commodities & Energy.",
-    usage: ["STEO"],
-    keys: [TABS],
-    data: same("Monthly outlook and imports; latest daily outage reports"),
     bloomberg: [],
     docs: "https://gloom.sh/docs/functions",
   },
@@ -893,14 +885,6 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: CHART_KEYS,
     data: same("Daily"),
     bloomberg: [],
-  },
-  SHIP: {
-    summary: "Ports and shipping chokepoints ranked by published vessel-call counts. Switch between ports and chokepoints to compare the latest reported volumes.",
-    usage: ["SHIP"],
-    keys: [TABS],
-    data: same("Dated snapshots, as published"),
-    bloomberg: [],
-    docs: "https://gloom.sh/docs/functions",
   },
 
   // Macro and rates

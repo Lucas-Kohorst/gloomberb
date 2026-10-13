@@ -1,6 +1,5 @@
 {
   "hosts": [
-    "api.eia.gov",
     "api.elections.kalshi.com",
     "api.fda.gov",
     "api.fiscaldata.treasury.gov",
@@ -16,7 +15,6 @@
     "nasdaqtrader.com",
     "production.dataviz.cnn.io",
     "services-dynarep.ddwa.finra.org",
-    "services9.arcgis.com",
     "www.ers.usda.gov",
     "www.jodidata.org"
   ]

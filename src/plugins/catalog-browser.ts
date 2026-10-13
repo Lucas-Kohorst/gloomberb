@@ -59,10 +59,8 @@ import { futuresCurveModule } from "./builtin/futures-curve";
 import { cotModule } from "./builtin/cot";
 import { doeModule } from "./builtin/doe";
 import { commodityBalancesModule } from "./builtin/commodity-balances";
-import { energyOutlookModule } from "./builtin/energy-outlook";
 import { jodiModule } from "./builtin/jodi";
 import { commoditiesEnergyModule } from "./builtin/commodities-energy";
-import { portwatchPlugin } from "./builtin/portwatch";
 import { gpuModule } from "./builtin/gpu";
 import { fxMatrixModule } from "./builtin/fx-matrix";
 import { docsModule } from "./builtin/docs";
@@ -212,7 +210,6 @@ const browserFuturesCommoditiesPlugin = composeBuiltinPlugin({
     commoditiesEnergyModule,
     ...[futuresModule, futuresCurveModule, cotModule, doeModule].map(runtimeOnly),
     { module: runtimeOnly(commodityBalancesModule), stateId: "commodity-balances" },
-    { module: runtimeOnly(energyOutlookModule), stateId: "energy-outlook" },
     { module: runtimeOnly(jodiModule), stateId: "jodi" },
   ],
 });
@@ -321,7 +318,6 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   browserEarningsPlugin,
   alertsPlugin,
   researchSearchPlugin,
-  portwatchPlugin,
 ];
 
 /**

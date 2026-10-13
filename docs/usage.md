@@ -854,11 +854,10 @@ Each built-in plugin can be switched on or off in `PL`. Ticker Research, Market 
 | Rates & Macro | ECO, ECST, CPI, GC, WIRP, BTMM, CBR, VIX, VOLS, VAL |
 | Global Markets | WEI, MAP, CHOKE, BI, THEM, FXC, RRG |
 | Screeners & Movers | EQS, MOST, HILO, FLOW |
-| Commodities & Energy | FUT, CTM, COT, DOE, NGS, PSD, JODI, STEO |
-| Shipping Volumes | SHIP |
+| Commodities & Energy | FUT, CTM, COT, DOE, NGS, PSD, JODI |
 | Crypto & Perps | CRYP, PERP |
 
-The typed commodities shortcuts open their corresponding tabs in **Commodities & Energy**. `SHIP` opens the separate Shipping Volumes pane.
+The typed commodities shortcuts open their corresponding tabs in **Commodities & Energy**.
 
 A research tab belongs to the plugin of its function: switching off Ownership & Insiders removes the Holders, 13F, Insider, Short Interest and Congress tabs.
 

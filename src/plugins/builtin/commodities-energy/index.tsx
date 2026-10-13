@@ -11,8 +11,6 @@ import { cotModule } from "../cot";
 import { CotPane } from "../cot/pane";
 import { doeModule } from "../doe";
 import { DoePane } from "../doe/pane";
-import { energyOutlookModule } from "../energy-outlook";
-import { EnergyOutlookPane } from "../energy-outlook/pane";
 import { FuturesPane, futuresModule } from "../futures";
 import { FuturesCurvePane } from "../futures-curve/pane";
 import { futuresCurveModule } from "../futures-curve";
@@ -29,7 +27,6 @@ const TABS = [
   { value: "inventories", label: "Inventories" },
   { value: "crops", label: "Crops" },
   { value: "balances", label: "Oil & Gas" },
-  { value: "outlook", label: "Outlook" },
 ] as const;
 type WorkspaceTab = typeof TABS[number]["value"];
 
@@ -37,7 +34,6 @@ const CURVE_SURFACE = withPluginStateNamespace("market-overview:futures-curve", 
 const COT_SURFACE = withPluginStateNamespace("market-overview:cot", CotPane);
 const DOE_SURFACE = withPluginStateNamespace("market-overview:doe", DoePane);
 const CROP_SURFACE = withPluginStateNamespace("commodity-balances", CommodityBalancesPane);
-const ENERGY_SURFACE = withPluginStateNamespace("energy-outlook", EnergyOutlookPane);
 const JODI_SURFACE = withPluginStateNamespace("jodi", JodiPane);
 
 const SURFACES = {
@@ -47,7 +43,6 @@ const SURFACES = {
   inventories: DOE_SURFACE,
   crops: CROP_SURFACE,
   balances: JODI_SURFACE,
-  outlook: ENERGY_SURFACE,
 } satisfies Record<WorkspaceTab, ComponentType<PaneProps>>;
 
 /** One workspace tab from one of the previous pane templates. */
@@ -99,13 +94,12 @@ const cotTemplate = templateFor(cotModule, "cot-cot");
 const doeTemplate = templateFor(doeModule, "doe-pane");
 const gasTemplate = templateFor(doeModule, "doe-gas-pane");
 const cropsTemplate = templateFor(commodityBalancesModule, "commodity-balances-pane");
-const energyTemplate = templateFor(energyOutlookModule, "energy-outlook-pane");
 const jodiTemplate = templateFor(jodiModule, "jodi-pane");
 
 const workspaceTemplates = [
   workspaceTemplate(futuresTemplate, "markets", {
     label: "Commodities & Energy",
-    description: "Futures markets, curves, positioning, inventories, crop balances, oil and gas balances, and energy outlook.",
+    description: "Futures markets, curves, positioning, inventories, crop balances, and oil and gas balances.",
     keywords: ["commodities", "energy", "futures", "crude", "oil", "gas", "agriculture", "crops", "CFTC", "EIA", "balances"],
   }),
   workspaceTemplate(curveTemplate, "curve", { browse: false }),
@@ -114,7 +108,6 @@ const workspaceTemplates = [
   workspaceTemplate(gasTemplate, "inventories", { browse: false }),
   workspaceTemplate(cropsTemplate, "crops", { browse: false }),
   workspaceTemplate(jodiTemplate, "balances", { browse: false }),
-  workspaceTemplate(energyTemplate, "outlook", { browse: false }),
 ];
 
 function activeSettings(context: PaneSettingsContext) {

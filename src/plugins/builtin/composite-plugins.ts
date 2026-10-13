@@ -31,7 +31,6 @@ import { futuresCurveModule } from "./futures-curve";
 import { cotModule } from "./cot";
 import { doeModule } from "./doe";
 import { commodityBalancesModule } from "./commodity-balances";
-import { energyOutlookModule } from "./energy-outlook";
 import { jodiModule } from "./jodi";
 import { commoditiesEnergyModule } from "./commodities-energy";
 import { gpuModule } from "./gpu";
@@ -215,7 +214,6 @@ export const futuresCommoditiesPlugin = composeBuiltinPlugin({
     runtimeOnly(cotModule),
     runtimeOnly(doeModule),
     { module: runtimeOnly(commodityBalancesModule), stateId: "commodity-balances" },
-    { module: runtimeOnly(energyOutlookModule), stateId: "energy-outlook" },
     { module: runtimeOnly(jodiModule), stateId: "jodi" },
   ],
 });

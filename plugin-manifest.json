@@ -642,8 +642,8 @@
     {
       "id": "futures-commodities",
       "name": "Commodities & Energy",
-      "description": "Futures markets, curves, CFTC positioning, EIA inventories, crop and oil and gas balances, and energy outlook.",
-      "tagline": "Commodities, balances and energy outlook.",
+      "description": "Futures markets, curves, CFTC positioning, EIA inventories, and crop and oil and gas balances.",
+      "tagline": "Futures, curves, positioning, inventories and balances.",
       "categories": [
         "markets",
         "macro"
@@ -665,7 +665,7 @@
           {
             "code": "FUT",
             "name": "Commodities & Energy",
-            "description": "Futures markets, curves, positioning, inventories, crop balances, oil and gas balances, and energy outlook."
+            "description": "Futures markets, curves, positioning, inventories, crop balances, and oil and gas balances."
           },
           {
             "code": "CTM",
@@ -696,11 +696,6 @@
             "code": "JODI",
             "name": "Oil and Gas Balances",
             "description": "Latest monthly crude oil and natural gas production, demand, trade and stocks for the largest countries."
-          },
-          {
-            "code": "STEO",
-            "name": "Energy Outlook",
-            "description": "Monthly energy outlook, the latest month of crude import origins, and nuclear plant outages."
           }
         ]
       },
@@ -1239,39 +1234,6 @@
         "PF",
         "PORT",
         "MARS"
-      ]
-    },
-    {
-      "id": "portwatch",
-      "name": "Shipping Volumes",
-      "description": "Busiest ports and straits by vessel calls.",
-      "tagline": "Ports, chokepoints and shipping volumes.",
-      "categories": [
-        "markets"
-      ],
-      "toggleable": true,
-      "targets": [
-        "cli",
-        "tui",
-        "desktop",
-        "web"
-      ],
-      "contributes": {
-        "panes": [
-          "portwatch"
-        ],
-        "capabilities": [],
-        "broker": false,
-        "shortcuts": [
-          {
-            "code": "SHIP",
-            "name": "Shipping Volumes",
-            "description": "Ports and chokepoints ranked by vessel calls."
-          }
-        ]
-      },
-      "highlights": [
-        "SHIP"
       ]
     },
     {

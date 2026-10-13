@@ -69,7 +69,7 @@ export const BUILTIN_EDITORIAL: Readonly<Record<string, BuiltinEditorial>> = {
   },
   "futures-commodities": {
     categories: ["markets", "macro"],
-    tagline: "Commodities, balances and energy outlook.",
+    tagline: "Futures, curves, positioning, inventories and balances.",
     screenshots: ["CTM", "COT", "FUT"],
   },
   "global-markets": {
@@ -98,7 +98,6 @@ export const BUILTIN_EDITORIAL: Readonly<Record<string, BuiltinEditorial>> = {
     screenshots: ["INS", "SI"],
   },
   portfolio: { categories: ["portfolio"], tagline: "Portfolios, watchlists and position sizing." },
-  portwatch: { categories: ["markets"], tagline: "Ports, chokepoints and shipping volumes." },
   quant: {
     categories: ["markets", "research"],
     tagline: "Correlations, backtests and seasonality.",

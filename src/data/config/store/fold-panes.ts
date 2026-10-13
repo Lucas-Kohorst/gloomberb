@@ -37,7 +37,6 @@ const COMMODITIES_ENERGY_TABS: Readonly<Record<string, string>> = {
   doe: "inventories",
   "commodity-balances": "crops",
   jodi: "balances",
-  "energy-outlook": "outlook",
 };
 const COMMODITIES_MODULE_STATE: Readonly<Record<string, string>> = {
   "futures-curve": "market-overview:futures-curve",
