@@ -187,7 +187,7 @@ export function formatFinancialHeader(date: string, currency?: string, dateSourc
   const period = date === "TTM" ? (periodEnd ? `TTM ${periodEnd}` : "TTM") : date.slice(0, 10);
   const label = currency ? `${period} ${currency}` : period;
   if (date === "TTM") return label;
-  return dateSource === "sec" ? `${label} (SEC date)` : label;
+  return `${label} ${dateSource === "sec" ? "(SEC date)" : "(provider date)"}`;
 }
 
 /**
