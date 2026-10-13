@@ -1,3 +1,4 @@
+import { signalWithTimeout } from "../../../utils/async-deadline";
 import { httpFetch } from "../../../utils/http-transport";
 import { isoDateOrNull, numericOrNull, recordOrNull, textOrNull } from "../../../utils/guards";
 
@@ -59,21 +60,6 @@ function failureText(status: number, detail: string): string {
 function failureDetail(payload: unknown): string {
   const record = recordOrNull(payload);
   return textOrNull(record?.statusMessage) ?? textOrNull(record?.message) ?? "";
-}
-
-/** Abort on the caller's signal or the timeout. AbortSignal.any is missing on older desktop webviews. */
-function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
-  const timeout = AbortSignal.timeout(ms);
-  if (!signal) return timeout;
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (signal.aborted || timeout.aborted) {
-    abort();
-    return controller.signal;
-  }
-  signal.addEventListener("abort", abort, { once: true });
-  timeout.addEventListener("abort", abort, { once: true });
-  return controller.signal;
 }
 
 function xsrfToken(response: Response): string | null {
@@ -205,6 +191,6 @@ async function postBondPage(signal: AbortSignal): Promise<unknown> {
 
 /** The latest page of corporate and agency bond sales. One hundred rows, not the whole market. */
 export async function fetchCorporateBonds(signal?: AbortSignal): Promise<CorporateBond[]> {
-  const payload = await postBondPage(withTimeout(signal, FETCH_TIMEOUT_MS));
+  const payload = await postBondPage(signalWithTimeout(signal, FETCH_TIMEOUT_MS));
   return parseCorporateBondTape(payload);
 }
