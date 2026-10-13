@@ -4,10 +4,10 @@ import {
   DataTableView,
   PaneStatusBody,
   QueryBar,
-  usePaneFooter,
   useTableLoadMore,
   type DataTableCell,
   type DataTableColumn,
+  type DataTableKeyEvent,
   type PaneFooterSegment,
 } from "../../../components";
 import { useAppSelector, usePaneSettingValue, usePaneStateValue } from "../../../state/app/context";
@@ -16,6 +16,7 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginTickerActions } from "../../runtime";
 import { ScannerDeniedState } from "./denied";
 import { useFlowFeed, useScannerStatusFooter } from "./feed";
@@ -185,11 +186,13 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const dated = useMemo(() => flowRowsSpanDays(events), [events]);
   const columns = useMemo(() => buildColumns(width, dated), [dated, width]);
 
-  usePaneFooter("scanner-flow:older-prints", () => (
-    focused && history.error
-      ? { hints: [{ id: "older-prints", key: "o", label: "older prints", onPress: () => history.retry() }] }
-      : null
-  ), [focused, history.error, history.retry]);
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (!isPlainKey(event, "r") || !history.error) return false;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    history.retry();
+    return true;
+  }, [history.error, history.retry]);
 
   const handleSelect = useCallback((event: ScannerFlowEvent) => {
     setSelectedId(event.id);
@@ -246,6 +249,7 @@ function FlowPane({ focused, width, height }: PaneProps) {
         }
         emptyStateTitle={emptyState.title}
         emptyStateHint={emptyState.hint}
+        onRootKeyDown={handleRootKeyDown}
         onBodyScrollActivity={onBodyScrollActivity}
         scrollRef={scrollRef}
       />

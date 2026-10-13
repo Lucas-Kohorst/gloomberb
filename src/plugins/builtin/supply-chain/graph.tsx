@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, usePaneStatusFooter } from "../../../components";
+import { ActionRow, Badge, Button, usePaneStatusFooter } from "../../../components";
 import { Box, ChartSurface, ScrollBox, Span, Text, TextAttributes, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import type { ChartVectorShape } from "../../../ui/host";
 import type { GraphPath, GraphPayload } from "../../../api-client/supply-chain-graph";
@@ -123,7 +123,10 @@ export function SupplyGraph({ data, width, height, focused, selectedId, selected
         {!desktop ? fallback.map((spans, y) => <Text key={y}>{spans.map((span, i) => <Span key={i} fg={span.color}>{span.text}</Span>)}</Text>) : null}
       </ChartSurface>
       {columns.map((column, index) => <Box key={column} position="absolute" top={0} left={index * cellWidth + 1} width={cellWidth - 2}><Text fg={column < 0 ? ROLE_COLORS.supplier : column > 0 ? ROLE_COLORS.customer : colors.textMuted}>{column < 0 ? `${-column} HOP${column === -1 ? "" : "S"}` : column > 0 ? `${column} HOP${column === 1 ? "" : "S"}` : "FOCUS"}</Text></Box>)}
-      
+      {columns.map((column, index) => {
+        const count = nodes.filter(node => node.column === column).length;
+        return count > capacity ? <Box key={`page:${column}`} position="absolute" top={plotHeight - 1} left={index * cellWidth + 1} width={cellWidth - 2}><ActionRow label="Next companies" onPress={() => advancePage(column, 1)} /></Box> : null;
+      })}
       {positioned.map(node => {
         const relationship = data.links.find(link => node.path?.linkIds.includes(link.id) && link.relationship !== "commerce")?.relationship;
         const role: SupplyRole | null = !node.hops ? null : node.related && relationship && relationship !== "commerce" ? relationship : node.column < 0 ? "supplier" : "customer";
