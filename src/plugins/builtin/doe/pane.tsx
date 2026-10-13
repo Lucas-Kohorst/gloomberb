@@ -65,7 +65,7 @@ function legendValue(row: DoeSeriesRow) {
  * The cursor rests on the latest week, so the legend reads that week across
  * the years; the plain read sits under the axis.
  */
-function SeasonalChart({ row, series, width, height, focused }: { row: DoeSeriesRow; series: ResolvedSeries[]; width: number; height: number; focused: boolean }) {
+function SeasonalChart({ row, series, width, height }: { row: DoeSeriesRow; series: ResolvedSeries[]; width: number; height: number }) {
   const colors = useThemeColors();
   const weeks = row.seasonal?.weeks ?? 52;
   const latestWeek = row.seasonal?.current.at(-1)?.[0] ?? null;
@@ -75,8 +75,8 @@ function SeasonalChart({ row, series, width, height, focused }: { row: DoeSeries
   return (
     <Box width={width} height={height} flexDirection="column">
       <CompositeChart series={series} panels={PANELS} width={width} height={Math.max(3, height - (read ? 1 : 0))}
-        focused={focused} navigable={focused} showLegend showTimeAxis viewport={viewport} clipToViewport xAxis={xAxis}
-        cursorDate={focused ? undefined : latestWeek ? doeWeekDate(latestWeek) : null} formatValue={legendValue(row)} formatAxisValue={doeAxisFormatter(row.unit)}
+        focused={false} navigable={false} showLegend showTimeAxis viewport={viewport} clipToViewport xAxis={xAxis}
+        cursorDate={latestWeek ? doeWeekDate(latestWeek) : null} formatValue={legendValue(row)} formatAxisValue={doeAxisFormatter(row.unit)}
         remoteKind="doe-seasonal" />
       {read ? <Box height={1} paddingX={1}><Text fg={colors.textMuted}>{read}</Text></Box> : null}
     </Box>
@@ -94,7 +94,7 @@ function DoeBoard({ payload, tab, initialSeries, width, height, focused }: {
   const series = useMemo(() => selected ? doeSeasonalSeries(selected, colors) : [], [selected, colors]);
   const meta = doeHeaderLine(doeReport(payload, tab));
   const chart: ChartTableChart | null = selected && series.length ? {
-    render: (size) => <SeasonalChart row={selected} series={series} width={size.width} height={size.height} focused={focused} />,
+    render: (size) => <SeasonalChart row={selected} series={series} width={size.width} height={size.height} />,
     minRows: CHART_MIN_ROWS,
     strip: doeSeasonalStrip(selected, colors.positive),
   } : null;

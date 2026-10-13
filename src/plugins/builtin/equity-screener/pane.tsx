@@ -894,7 +894,7 @@ function EquityScreenView({
               />
             ) : null
           }
-          renderCell={(row, column, _index, rowState) => {
+          renderCell={(row, column) => {
             const field = column.id.startsWith("m:")
               ? (column.id.slice(2) as NumericField)
               : null;
@@ -906,7 +906,7 @@ function EquityScreenView({
                 : undefined;
               return {
                 text: formatScreenValue(field, observation.value),
-                color: observation.state === "stale" && !rowState?.selected ? colors.warning : change,
+                color: observation.state === "stale" ? colors.warning : change,
               };
             }
             const focus = row.metrics[metric];
@@ -914,7 +914,7 @@ function EquityScreenView({
               return { text: rank(focus.percentile.value) };
             if (column.id === "date")
               return focus.state === "stale"
-                ? { text: metricDate(focus).text, color: rowState?.selected ? undefined : colors.warning }
+                ? { text: metricDate(focus).text, color: colors.warning }
                 : { text: "" };
             if (column.id === "name") return { text: row.name ?? "--" };
             return { text: String(row[column.id as "symbol"] ?? "--") };

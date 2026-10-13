@@ -63,7 +63,7 @@ const legendValue = (value: number) => `${value.toFixed(2)}%`;
  * line, with the headline's year over year for reference. The cursor rests on
  * the latest month so the legend reads it; the plain read sits under the axis.
  */
-function CpiChart({ row, series, width, height, focused }: { row: CpiRow; series: ResolvedSeries[]; width: number; height: number; focused: boolean }) {
+function CpiChart({ row, series, width, height }: { row: CpiRow; series: ResolvedSeries[]; width: number; height: number }) {
   const colors = useThemeColors();
   const latest = row.history.at(-1)?.[0] ?? null;
   const axis = useMemo(() => cpiTimeAxis(row.history), [row.history]);
@@ -71,7 +71,7 @@ function CpiChart({ row, series, width, height, focused }: { row: CpiRow; series
   return (
     <Box width={width} height={height} flexDirection="column">
       <CompositeChart series={series} panels={PANELS} width={width} height={Math.max(3, height - (read ? 1 : 0))}
-        focused={focused} navigable={focused} showLegend showTimeAxis cursorDate={focused ? undefined : latest ? cpiMonthDate(latest) : null}
+        focused={false} navigable={false} showLegend showTimeAxis cursorDate={latest ? cpiMonthDate(latest) : null}
         viewport={axis?.viewport} xAxis={axis?.xAxis} clipToViewport={!!axis}
         formatValue={legendValue} formatAxisValue={formatPercentAxis} remoteKind="cpi-component-history" />
       {read ? <Box height={1} paddingX={1}><Text fg={colors.textMuted}>{read}</Text></Box> : null}
@@ -92,7 +92,7 @@ function CpiBoard({ payload, initialRow, width, height, focused }: {
   const series = useMemo(() => selected ? cpiChartSeries(selected, headline, colors) : [], [selected, headline, colors]);
   const meta = cpiHeaderLine(payload.release);
   const chart: ChartTableChart | null = selected ? {
-    render: (size) => <CpiChart row={selected} series={series} width={size.width} height={size.height} focused={focused} />,
+    render: (size) => <CpiChart row={selected} series={series} width={size.width} height={size.height} />,
     minRows: CHART_MIN_ROWS,
     strip: cpiChartStrip(selected, colors.warning),
     empty: series.length ? undefined : `No history for ${selected.label}`,

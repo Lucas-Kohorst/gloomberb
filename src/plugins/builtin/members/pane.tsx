@@ -108,7 +108,7 @@ function Changes({ fund, width, height, focused, active }: ViewProps) {
   usePaneNoticeFooter({ registrationId: "members:changes-notices", focused, notices: resource.error || resource.data?.refreshError ? [resource.error ?? resource.data!.refreshError!] : [] });
   const renderCell = useCallback((row: FundChange, column: DataTableColumn): DataTableCell => {
     if (column.id === "effectiveDate") return { text: row.effectiveDate ?? "--" };
-    if (column.id === "daysToGo") return { text: row.daysToGo === null ? "--" : `${row.daysToGo}${column.label === "In" ? "d" : ""}`, value: row.daysToGo, color: row.daysToGo === null ? colors.textMuted : colors.warning };
+    if (column.id === "daysToGo") return { text: row.daysToGo === null ? "--" : `${row.daysToGo}${column.label === "In" ? "d" : ""}`, value: row.daysToGo, color: row.daysToGo === null ? colors.textMuted : colors.warning, keepColorWhenSelected: row.daysToGo !== null };
     if (column.id === "added") return { text: row.added ?? "--", color: colors.positive };
     if (column.id === "removed") return { text: row.removed ?? "--", color: colors.negative };
     if (column.id === "estimate") { const value = row.estimates.length === 1 ? row.estimates[0]!.days : null; return { text: percent(value, ""), value }; }
