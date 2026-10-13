@@ -212,6 +212,15 @@ export function useAppGlobalShortcuts({
       return;
     }
 
+    // Text fields keep Cmd+Z. Everywhere else it restores the previous layout.
+    if (action === "layout-undo" || action === "layout-redo") {
+      if (dialogOpen || state.commandBarOpen || event.targetEditable === true) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dispatch({ type: action === "layout-undo" ? "UNDO_LAYOUT" : "REDO_LAYOUT" });
+      return;
+    }
+
     if (dialogOpen) return;
 
     if (!isDetachedWindow && action === "command-bar") {
