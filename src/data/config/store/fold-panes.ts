@@ -280,8 +280,10 @@ export function foldCommoditiesPaneLayout(layout: LayoutConfig): LayoutConfig {
   const instances = layout.instances.map((instance) => {
     const tab = COMMODITIES_ENERGY_TABS[instance.paneId];
     if (!tab) return instance;
+    // The old function's title (CTM NG, CFTC Positioning) would outlive its tab; the workspace names itself.
+    const { title: _title, ...rest } = instance;
     return {
-      ...instance,
+      ...rest,
       paneId: COMMODITIES_ENERGY_PANE_ID,
       params: { ...(instance.params ?? {}), tab },
     };

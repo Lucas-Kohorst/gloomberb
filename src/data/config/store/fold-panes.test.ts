@@ -191,7 +191,7 @@ describe("fold fixed income views", () => {
 describe("fold Commodities & Energy panes", () => {
   test("moves each old view into its workspace tab and preserves saved module state", () => {
     const current = layout([
-      { instanceId: "curve:1", paneId: "futures-curve", binding: { kind: "none" }, params: { root: "CL" } },
+      { instanceId: "curve:1", paneId: "futures-curve", binding: { kind: "none" }, params: { root: "CL" }, title: "CTM CL" },
       { instanceId: "cot:1", paneId: "cot", binding: { kind: "none" }, params: { code: "CL" } },
       { instanceId: "outside", paneId: "ticker-chart", binding: { kind: "none" } },
     ], {
@@ -207,6 +207,7 @@ describe("fold Commodities & Energy panes", () => {
       { instanceId: "cot:1", paneId: "commodities-energy", params: { code: "CL", tab: "positioning" } },
       { instanceId: "outside", paneId: "ticker-chart" },
     ]);
+    expect(folded.instances[0]).not.toHaveProperty("title");
     expect(folded.dockRoot).toEqual(current.dockRoot);
     expect(folded.floating).toEqual(current.floating);
 
