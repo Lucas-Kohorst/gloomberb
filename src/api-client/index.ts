@@ -812,6 +812,7 @@ class GloomApiClient {
   getCloudAwards = this.data.getCloudAwards.bind(this.data);
   getCloudAward = this.data.getCloudAward.bind(this.data);
   getCloudDoeBoard = this.data.getCloudDoeBoard.bind(this.data);
+  getCloudDoePrices = this.data.getCloudDoePrices.bind(this.data);
   getCloudAttention = this.data.getCloudAttention.bind(this.data);
   getCloudPowerBoard = this.data.getCloudPowerBoard.bind(this.data);
   getCloudPowerHistory = this.data.getCloudPowerHistory.bind(this.data);

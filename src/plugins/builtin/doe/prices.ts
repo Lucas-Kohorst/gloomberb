@@ -1,117 +1,61 @@
+import { apiClient } from "../../../api-client";
+import type { DoePricesPayload } from "../../../api-client/doe";
 import { createPluginCache } from "../../../data/plugin-cache";
-import type { SeriesDefinition, SeriesPoint } from "../../../series/types";
-import { httpFetch } from "../../../utils/http-transport";
-import { createThrottledFetch } from "../../../utils/throttled-fetch";
+import type { SeriesDefinition } from "../../../series/types";
 import { cachedSeriesWarning } from "../shared/series-warning";
-import { loadCloudResource } from "../shared/cloud-resource";
+import { loadCloudResource, unavailableOnServer } from "../shared/cloud-resource";
 
 /**
- * EIA weekly retail prices the petroleum board does not carry.
- * The public series id is the request facet. No key: the open v2 route serves these.
+ * EIA weekly retail prices the petroleum board does not carry, served by Gloom
+ * Cloud from the EIA's history workbooks. `key` is the EIA series id a report
+ * of the series cites.
  */
 const PRICE_SERIES = [
   {
     id: "gasoline-price",
     name: "US regular gasoline retail price",
-    facet: "EMM_EPMR_PTE_NUS_DPG",
+    key: "EMM_EPMR_PTE_NUS_DPG",
     url: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMM_EPMR_PTE_NUS_DPG&f=W",
-    tags: ["gasoline", "retail", "pump price", "AAA"],
+    tags: ["gasoline", "retail", "pump price"],
   },
   {
     id: "diesel-price",
     name: "US No. 2 diesel retail price",
-    facet: "EMD_EPD2D_PTE_NUS_DPG",
+    key: "EMD_EPD2D_PTE_NUS_DPG",
     url: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMD_EPD2D_PTE_NUS_DPG&f=W",
     tags: ["diesel", "retail", "pump price"],
   },
 ] as const;
 
-const PRICE_API = "https://api.eia.gov/v2/petroleum/pri/gnd/data/";
-const HISTORY_LENGTH = 260;
-
-export const doePriceCache = createPluginCache<SeriesPoint[]>({
-  kind: "doe-retail-price", source: "eia", schemaVersion: 1,
+export const doePriceCache = createPluginCache<DoePricesPayload>({
+  kind: "doe-retail-prices", source: "gloom-cloud", schemaVersion: 1,
+  // Weekly data: a quarter hour is soon enough to catch a Monday release.
   policy: { staleMs: 15 * 60_000, expireMs: 14 * 24 * 60 * 60_000 },
 });
 
-const priceFetch = createThrottledFetch({
-  requestsPerMinute: 20,
-  maxRetries: 2,
-  timeoutMs: 15_000,
-  backoffBaseMs: 500,
-  dedupeGetRequests: true,
-  defaultHeaders: { Accept: "application/json", "User-Agent": "gloomberb" },
-  transport: (url, init) => httpFetch(url, init),
-});
+const isDate = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
-export function doePriceHistoryUrl(facet: string): string {
-  const params = new URLSearchParams();
-  params.set("frequency", "weekly");
-  params.set("data[0]", "value");
-  params.append("facets[series][]", facet);
-  params.set("sort[0][column]", "period");
-  params.set("sort[0][direction]", "desc");
-  params.set("offset", "0");
-  params.set("length", String(HISTORY_LENGTH));
-  return `${PRICE_API}?${params.toString()}`;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
+/** A payload that breaks the contract is refused whole rather than charted with holes in it. */
+function validatePrices(payload: DoePricesPayload): DoePricesPayload {
+  if (!payload || payload.source !== "EIA" || !Number.isFinite(Date.parse(payload.generatedAt))
+    || !["available", "partial", "unavailable"].includes(payload.status)
+    || !Array.isArray(payload.gaps) || !payload.gaps.every((gap) => typeof gap === "string")
+    || !Array.isArray(payload.series) || !payload.series.every((series) => typeof series?.id === "string"
+      && typeof series.key === "string" && series.unit === "usd-per-gallon" && Array.isArray(series.points)
+      && series.points.every((point) => Array.isArray(point) && isDate(point[0])
+        && typeof point[1] === "number" && Number.isFinite(point[1])))) {
+    throw new Error("The server returned invalid EIA retail prices");
   }
-  return null;
+  return payload;
 }
 
-function asPeriod(value: unknown): string | null {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return null;
-  const period = value.trim();
-  return new Date(`${period}T00:00:00Z`).toISOString().slice(0, 10) === period ? period : null;
-}
-
-/** Oldest first. A blank or non-numeric week is skipped. */
-export function parseDoePriceHistory(data: unknown): SeriesPoint[] {
-  const record = data && typeof data === "object" ? data as Record<string, unknown> : {};
-  const response = record.response && typeof record.response === "object" ? record.response as Record<string, unknown> : {};
-  const rows = Array.isArray(response.data) ? response.data : [];
-  const points: SeriesPoint[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const entry = row as Record<string, unknown>;
-    const period = asPeriod(entry.period);
-    const value = asNumber(entry.value);
-    if (!period || value == null || seen.has(period)) continue;
-    seen.add(period);
-    points.push({ date: period, value });
-  }
-  points.sort((left, right) => String(left.date).localeCompare(String(right.date)));
-  if (points.length === 0) throw new Error("No weekly prices");
-  return points;
-}
-
-function validatePrices(points: SeriesPoint[]): SeriesPoint[] {
-  if (!Array.isArray(points) || points.length === 0 || points.some((point) => !asPeriod(point?.date) || !Number.isFinite(point.value))) {
-    throw new Error("Invalid weekly prices");
-  }
-  return points;
-}
-
-async function fetchPrices(facet: string, label: string): Promise<SeriesPoint[]> {
-  const response = await priceFetch.fetch(doePriceHistoryUrl(facet), { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`${label} is unavailable`);
-  let payload: unknown;
+/** A server without the route (404), or without its tables yet (503), has no prices to give. */
+async function fetchDoePrices(): Promise<DoePricesPayload> {
   try {
-    payload = await response.json();
-  } catch {
-    throw new Error(`${label} is unavailable`);
-  }
-  try {
-    return parseDoePriceHistory(payload);
-  } catch {
-    throw new Error(`${label} is unavailable`);
+    return validatePrices(await apiClient.getCloudDoePrices());
+  } catch (error) {
+    throw unavailableOnServer(error, "EIA retail prices are not available yet.", [404, 503]);
   }
 }
 
@@ -126,15 +70,15 @@ export const DOE_PRICE_SERIES: readonly SeriesDefinition[] = PRICE_SERIES.map((s
   tags: ["oil", "petroleum", "EIA", "weekly", ...series.tags],
   description: "EIA weekly US retail price. Not gasoline stocks, and not the AAA daily average.",
   load: async () => {
-    const resource = await loadCloudResource(
-      doePriceCache,
-      series.id,
-      () => fetchPrices(series.facet, series.name),
-      { validate: validatePrices },
-    );
+    const resource = await loadCloudResource(doePriceCache, "prices", () => fetchDoePrices(), { validate: validatePrices });
+    const row = resource.payload.series.find((entry) => entry.id === series.id);
+    if (!row?.points.length) throw new Error(`${series.name} is not available yet.`);
     const warning = cachedSeriesWarning(resource);
-    return { points: resource.payload, ...(warning ? { warning } : {}) };
+    return {
+      points: row.points.map(([date, value]) => ({ date, value })),
+      ...(warning ? { warning } : {}),
+      // Cited as the EIA series it is, not as the route that served it.
+      attribution: { source: `EIA series ${series.key}`, publisher: "EIA" },
+    };
   },
 }));
-
-
