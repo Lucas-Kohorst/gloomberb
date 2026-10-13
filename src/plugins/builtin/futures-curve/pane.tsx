@@ -73,11 +73,13 @@ export function FuturesCurvePane(props: PaneProps) {
   const pane = usePaneInstance();
   const requested = pane?.settings?.root ?? pane?.params?.root ?? "ES";
   const root = normalizeCurveRoot(requested);
-  return root ? <FuturesCurveView key={root} {...props} root={root} />
+  // Inside the Commodities & Energy workspace the window's title is the workspace's, not this tab's.
+  const ownsTitle = pane?.paneId === "futures-curve";
+  return root ? <FuturesCurveView key={root} {...props} root={root} ownsTitle={ownsTitle} />
     : <PaneStatusBody error={unsupportedCurveRootMessage(requested)} subject="futures curve" />;
 }
 
-function FuturesCurveView({ width, height, focused, root }: PaneProps & { root: string }) {
+function FuturesCurveView({ width, height, focused, root, ownsTitle }: PaneProps & { root: string; ownsTitle: boolean }) {
   const colors = useThemeColors();
   const session = useResearchCloudSession();
   // A past date shows the curve as the settlement archive held it that day.
@@ -102,7 +104,7 @@ function FuturesCurveView({ width, height, focused, root }: PaneProps & { root: 
   const [horizon] = usePaneSettingValue("horizon", DEFAULT_CURVE_HORIZON);
   // A pending date change must never relabel the previous curve as the new one.
   const data = resource.data?.date === requestedDate ? resource.data.payload : null;
-  usePaneTitle(`CTM ${root}`);
+  usePaneTitle(ownsTitle ? `CTM ${root}` : null);
   const curveTab = tab === "curve";
   // The Curve tab of a crypto root reads against spot; a past date has no spot history.
   const spotSymbol = basisSpotSymbol(root);

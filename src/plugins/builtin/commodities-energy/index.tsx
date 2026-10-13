@@ -19,6 +19,7 @@ import { jodiModule } from "../jodi";
 import type { PluginModule } from "../plugin-module";
 
 const COMMODITIES_ENERGY_PANE_ID = "commodities-energy";
+const COMMODITIES_ENERGY_TITLE = "Commodities & Energy";
 
 const TABS = [
   { value: "markets", label: "Markets" },
@@ -68,8 +69,9 @@ function workspaceTemplate(
     createInstance: (context: PaneTemplateContext, createOptions?: PaneTemplateCreateOptions) => {
       const requested = createInstance?.(context, createOptions);
       const existing = reusableWorkspace(context);
+      // One window for every tab: the old functions' titles (CTM CL, CFTC Positioning) would outlive their tab.
       const reuse = (instance: PaneTemplateInstanceConfig | null) => instance
-        ? { ...instance, instanceId: existing?.instanceId ?? instance.instanceId }
+        ? { ...instance, instanceId: existing?.instanceId ?? instance.instanceId, title: COMMODITIES_ENERGY_TITLE }
         : null;
       return requested instanceof Promise ? requested.then(reuse) : reuse(requested ?? {});
     },
