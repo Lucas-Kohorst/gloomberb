@@ -8,10 +8,9 @@ import {
   type DataTableColumn,
 } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
-import { useUpdatedFooterInfo } from "../../../components/layout/pane/freshness-footer";
 import type { PaneFooterSegment } from "../../../components/layout/pane/footer";
 import { useAsyncResource } from "../../../react/async-resource";
-import { useAutoRefresh } from "../../../react/auto-refresh";
+import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes } from "../../../ui";
@@ -85,11 +84,12 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
     variant: "underline",
     queryBarWidth: width,
   } : null);
-  const updated = useUpdatedFooterInfo(updatedAt);
+  const updatedAgo = useUpdatedAgo(updatedAt);
   const info = useMemo<PaneFooterSegment[]>(() => {
     const year = data?.marketYear;
+    const updated: PaneFooterSegment[] = updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" }] }] : [];
     return year ? [...updated, { id: "year", parts: [{ text: year, tone: "muted" }] }] : updated;
-  }, [data?.marketYear, updated]);
+  }, [data?.marketYear, updatedAgo]);
 
   useAutoRefresh(updatedAt, load);
   usePaneRefreshKey(load, { focused });
