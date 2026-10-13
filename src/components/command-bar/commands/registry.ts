@@ -230,17 +230,13 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
-    id: "font-size-increase",
+    id: "font-size",
     prefix: "FONT+",
-    label: "Increase Font Size",
-    description: "Increase the app-wide font size",
-    category: "Config",
-  },
-  {
-    id: "font-size-decrease",
-    prefix: "FONT-",
-    label: "Decrease Font Size",
-    description: "Decrease the app-wide font size",
+    aliases: ["FONT-"],
+    label: "Font Size",
+    description: "Change the general view or the article reading size",
+    hasArg: true,
+    argPlaceholder: "article or general",
     category: "Config",
   },
   {

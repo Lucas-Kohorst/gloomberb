@@ -16,10 +16,8 @@ import type { ArticleBlock } from "./article-text";
 export const DESKTOP_LINE_HEIGHT = 1.65;
 
 /**
- * The reading size on the desktop against the app's own (12px by default):
- * 17.4px, or 16.2px in a column under 480px, where a phone sets its body. A
- * container query in styles.css picks it from the column's own width, so a
- * resize changes it with the layout and nothing counts cells.
+ * The reading size on the desktop, in em of the app font. `--reader-em` is the
+ * saved article size. A column under 480px caps it at 1.35em.
  */
 export const READER_COLUMN_FONT = "calc(var(--reader-em, 1.45) * 1em)";
 /** Back to the app's own size inside a reading column: chips, controls, tables. */

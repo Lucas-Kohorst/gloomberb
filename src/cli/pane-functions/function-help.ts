@@ -1299,14 +1299,14 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: [],
   },
   "FONT+": {
-    summary: "Increases the app-wide font size. FONT- decreases it.",
-    usage: ["FONT+"],
+    summary: "Opens a choice of the general view or the article reading size. FONT- steps that size down.",
+    usage: ["FONT+", "FONT+ general", "FONT+ article"],
     keys: [],
     data: null,
     bloomberg: [],
   },
   "FONT-": {
-    summary: "Decreases the app-wide font size. FONT+ increases it.",
+    summary: "Steps down the same font size FONT+ steps up.",
     usage: ["FONT-"],
     keys: [],
     data: null,

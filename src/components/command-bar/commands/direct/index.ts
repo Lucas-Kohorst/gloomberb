@@ -11,7 +11,7 @@ import {
   applyTheme,
   clearTransientThemePreview,
 } from "../../../../theme/colors";
-import { clampFontSize, MIN_FONT_SIZE_PX } from "../../../../theme/font-scale";
+import { clampFontSize, clampReaderFontEm, MIN_FONT_SIZE_PX, MIN_READER_FONT_EM, stepReaderFontEm } from "../../../../theme/font-scale";
 import type { AppAction, AppState } from "../../../../state/app/context";
 import { openBrokerAddFlow } from "../../../../plugins/builtin/broker-manager/add-request";
 import { isManualPortfolio } from "../../../../plugins/builtin/portfolio-list/mutations";
@@ -31,6 +31,13 @@ import { recordFunctionOpen } from "../../../../telemetry/usage-counts";
 import { reportTelemetryConfig } from "../../../../telemetry/live-config";
 
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
+
+function fontSizeTarget(arg: string): "article" | "general" | null {
+  const text = arg.trim().toLowerCase();
+  if (text === "article" || text === "articles" || text === "reading") return "article";
+  if (text === "general" || text === "view" || text === "app") return "general";
+  return null;
+}
 
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
@@ -352,20 +359,39 @@ export function runDirectCommandAction(options: {
       }
       return;
     }
-    case "font-size-increase":
-    case "font-size-decrease": {
-      const delta = command.id === "font-size-increase" ? 1 : -1;
+    case "font-size": {
+      const target = fontSizeTarget(arg);
+      if (!target) {
+        setRootQuery(`${command.prefix} `);
+        return;
+      }
+      const delta = command.prefix === "FONT-" ? -1 : 1;
+      if (target === "article") {
+        const current = clampReaderFontEm(state.config.readerFontEm);
+        const next = stepReaderFontEm(current, delta);
+        if (next === current) {
+          notify(`Article size already at ${next === MIN_READER_FONT_EM ? "minimum" : "maximum"} (${next.toFixed(1)}×)`, { type: "info" });
+          closeAll({ revertThemePreview: false });
+          return;
+        }
+        const nextConfig = { ...state.config, readerFontEm: next };
+        dispatch({ type: "SET_CONFIG", config: nextConfig });
+        persistConfig(nextConfig);
+        notify(`Article size: ${next.toFixed(1)}×`, { type: "success" });
+        closeAll({ revertThemePreview: false });
+        return;
+      }
       const current = clampFontSize(state.config.fontSize);
       const next = clampFontSize(current + delta);
       if (next === current) {
-        notify(`Font size already at ${next === MIN_FONT_SIZE_PX ? "minimum" : "maximum"} (${next}px)`, { type: "info" });
+        notify(`General size already at ${next === MIN_FONT_SIZE_PX ? "minimum" : "maximum"} (${next}px)`, { type: "info" });
         closeAll({ revertThemePreview: false });
         return;
       }
       const nextConfig = { ...state.config, fontSize: next };
       dispatch({ type: "SET_CONFIG", config: nextConfig });
       persistConfig(nextConfig);
-      notify(`Font size: ${next}px`, { type: "success" });
+      notify(`General size: ${next}px`, { type: "success" });
       closeAll({ revertThemePreview: false });
       return;
     }

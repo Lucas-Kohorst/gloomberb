@@ -1,5 +1,7 @@
 import { forwardRef, useMemo } from "react";
 import { t } from "../../i18n";
+import { useAppSelector } from "../../state/app/context";
+import { clampReaderFontEm } from "../../theme/font-scale";
 import { hoverBg } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { Box, Text, useUiCapabilities, type ScrollBoxRenderable } from "../../ui";
@@ -48,7 +50,7 @@ const DESKTOP_GEOMETRY: ReaderGeometry = { desktop: true, measure: 0, margin: 0 
 const PARAGRAPH_GAP = "0.9em";
 const URL_LINE = /^https?:\/\/\S+$/;
 
-const COLUMN_STYLE = { fontSize: READER_COLUMN_FONT, lineHeight: DESKTOP_LINE_HEIGHT } as const;
+const COLUMN_STYLE = { fontSize: READER_COLUMN_FONT, lineHeight: DESKTOP_LINE_HEIGHT };
 const META_STYLE = { marginBottom: "0.8em" } as const;
 /** Its columns come from styles.css: one pair to a row, or two in a wide reader. */
 const FACTS_STYLE = {
@@ -93,6 +95,7 @@ interface DetailContentProps {
 }
 
 function NativeDetail({ meta, facts, body, bodyFormat, note }: DetailContentProps) {
+  const readerFontEm = useAppSelector((state) => clampReaderFontEm(state.config.readerFontEm));
   const colors = useThemeColors();
   const blocks = useMemo(
     () => (bodyFormat === "text" && body?.trim() ? parseArticle([{ text: body }]) : []),
@@ -101,7 +104,7 @@ function NativeDetail({ meta, facts, body, bodyFormat, note }: DetailContentProp
   const noteLines = note?.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) ?? [];
   return (
     <Box flexDirection="column" width="100%" data-gloom-ui="detail-reader">
-      <Box flexDirection="column" width="100%" data-gloom-ui="reader-column" style={COLUMN_STYLE}>
+      <Box flexDirection="column" width="100%" data-gloom-ui="reader-column" style={{ ...COLUMN_STYLE, ["--reader-em"]: String(readerFontEm) }}>
         {facts.length > 0 ? (
           <Box data-gloom-ui="detail-facts" style={FACTS_STYLE}>
             {facts.flatMap((fact, index) => [

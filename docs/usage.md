@@ -409,7 +409,7 @@ FUT's 1W, 1M and YTD columns are returns on the contract the row names (LEZ26 fo
 | `SB` | Toggle the status bar |
 | `VF` | Toggle quote value flashing |
 | `TH <theme>` | Change color theme. The list shows each theme's id, the one `gloomberb config set theme <id>` takes; `gloomberb config themes` lists them, `colorblind`, `colorblind-light` and `high-contrast` included |
-| `FONT+` / `FONT-` | Increase or decrease desktop font size |
+| `FONT+` / `FONT-` | Choose general view or article reading size, then step it |
 | `CONN` | Connection health |
 | `POLL` | Political polls from VoteHub ([Polls plugin](https://github.com/gloom-sh/gloom-polls)) |
 | `UPGRADE` | Account upgrade |

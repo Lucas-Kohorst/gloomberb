@@ -14,6 +14,12 @@ const BASE_FONT_SIZE_PX = 12;
 export const MIN_FONT_SIZE_PX = 10;
 const MAX_FONT_SIZE_PX = 20;
 
+/** Article text against the app font. 1.45 is the size the reader used before it was a setting. */
+export const DEFAULT_READER_FONT_EM = 1.45;
+export const MIN_READER_FONT_EM = 1;
+export const MAX_READER_FONT_EM = 2.2;
+const READER_FONT_EM_STEP = 0.1;
+
 const BASE_CELL_WIDTH_PX = 8;
 const BASE_CELL_HEIGHT_PX = 18;
 
@@ -26,6 +32,17 @@ let appliedToDocument = false;
 export function clampFontSize(value: unknown): number {
   const numeric = typeof value === "number" && Number.isFinite(value) ? value : BASE_FONT_SIZE_PX;
   return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, Math.round(numeric)));
+}
+
+/** Reading size in tenths of an em. A missing or bad value stays at the previous fixed size. */
+export function clampReaderFontEm(value: unknown): number {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_READER_FONT_EM;
+  const stepped = Math.round(numeric * 10) / 10;
+  return Math.min(MAX_READER_FONT_EM, Math.max(MIN_READER_FONT_EM, stepped));
+}
+
+export function stepReaderFontEm(value: unknown, delta: number): number {
+  return clampReaderFontEm(clampReaderFontEm(value) + delta * READER_FONT_EM_STEP);
 }
 
 function roundToHundredth(value: number): number {

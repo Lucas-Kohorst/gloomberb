@@ -284,6 +284,8 @@ export interface AppConfig {
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
   fontSize: number;
+  /** Article reading size, in em of the app font. Absent configs keep 1.45. */
+  readerFontEm?: number;
   recentTickers: string[];
   /** Pane templates recently run from the command bar, newest first. */
   recentCommands: RecentCommand[];
@@ -970,6 +972,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     },
     valueFlashingEnabled: true,
     fontSize: 12,
+    readerFontEm: 1.45,
     recentTickers: [],
     recentCommands: [],
   };

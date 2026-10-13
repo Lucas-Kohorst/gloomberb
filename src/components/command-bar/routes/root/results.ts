@@ -12,6 +12,7 @@ import {
   type AssistRowHandlers,
 } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
+import { clampFontSize, clampReaderFontEm } from "../../../../theme/font-scale";
 import { isCollectionCommand } from "../../helpers";
 import { recentPaneTemplateArg } from "../../pane-templates/items";
 import { dedupeById } from "../../view-model";
@@ -23,6 +24,32 @@ import { buildRootShortcutItem } from "./shortcut-items";
 import { buildHelpArgumentItems } from "./help-items";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
+
+const FONT_SIZE_ROWS = [
+  { id: "article", label: "Article", detail: "Reading size for articles and detail text" },
+  { id: "general", label: "General", detail: "Size of the rest of the view" },
+] as const;
+
+function buildFontSizeItems(
+  state: AppState,
+  arg: string,
+  run: (target: "article" | "general") => void,
+): ResultItem[] {
+  const query = arg.trim().toLowerCase();
+  return FONT_SIZE_ROWS
+    .filter((row) => !query || row.id.startsWith(query) || row.label.toLowerCase().startsWith(query))
+    .map((row) => ({
+      id: `font-size:${row.id}`,
+      label: row.label,
+      detail: row.detail,
+      category: "Config",
+      kind: "command" as const,
+      right: row.id === "article"
+        ? `${clampReaderFontEm(state.config.readerFontEm).toFixed(1)}×`
+        : `${clampFontSize(state.config.fontSize)}px`,
+      action: () => run(row.id),
+    }));
+}
 
 interface PaneTemplateItemOptions {
   category?: string;
@@ -328,6 +355,8 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     }
   } else if (match && isCollectionCommand(match.command.id)) {
     if (shortcutItem) items.push(shortcutItem);
+  } else if (match && match.command.id === "font-size") {
+    items.push(...buildFontSizeItems(state, match.arg, (target) => runDirectCommand({ ...match.command, prefix: match.prefix }, target)));
   } else if (match && match.command.id === "help") {
     // HELP alone is the Help pane; HELP <fn> leads with the function's card.
     const helpItems = buildHelpArgumentItems(match.arg);

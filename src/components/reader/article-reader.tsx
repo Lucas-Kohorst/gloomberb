@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useShortcut } from "../../react/input";
 import { scrollByLines } from "../../state/pane-scroll-registry";
+import { useAppSelector } from "../../state/app/context";
+import { clampReaderFontEm } from "../../theme/font-scale";
 import { useThemeColors } from "../../theme/theme-context";
 import {
   Box,
@@ -196,6 +198,7 @@ function ArticleReaderView({
 }: ArticleReaderProps) {
   const colors = useThemeColors();
   const desktop = useUiCapabilities().nativePaneChrome === true;
+  const readerFontEm = useAppSelector((state) => clampReaderFontEm(state.config.readerFontEm));
   const nativeRenderer = useNativeRenderer();
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const idPrefix = `reader-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -419,6 +422,7 @@ function ArticleReaderView({
             width="100%"
             data-gloom-ui="reader-column"
             style={{
+              "--reader-em": String(readerFontEm),
               // The measure plus the column's own inset on both sides.
               maxWidth: `calc(${DESKTOP_MEASURE_CH}ch + 48px)`,
               fontSize: READER_COLUMN_FONT,

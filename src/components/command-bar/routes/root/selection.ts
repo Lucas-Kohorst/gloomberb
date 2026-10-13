@@ -223,6 +223,24 @@ export function buildImmediateRootSelection(options: RootSelectionCommandOptions
     };
   }
 
+  if (match.command.id === "font-size") {
+    const target = match.arg.trim().toLowerCase();
+    const chosen = target === "article" || target === "articles" || target === "reading"
+      ? "article"
+      : target === "general" || target === "view" || target === "app"
+        ? "general"
+        : null;
+    if (!chosen) return null;
+    return {
+      id: `font-size:${chosen}`,
+      label: chosen === "article" ? "Article" : "General",
+      detail: chosen === "article" ? "Reading size for articles and detail text" : "Size of the rest of the view",
+      category: "Config",
+      kind: "command",
+      action: () => options.runDirectCommand({ ...match.command, prefix: match.prefix }, chosen),
+    };
+  }
+
   if (match.command.id === "help" && match.arg) {
     const item = buildHelpArgumentItems(match.arg).find((candidate) => !candidate.disabled);
     if (item) return item;

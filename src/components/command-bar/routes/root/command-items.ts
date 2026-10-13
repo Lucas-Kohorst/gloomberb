@@ -157,9 +157,8 @@ export function createRootCommandItemBuilder({
         return state.config.telemetry?.attention === true
           ? "Currently on: share ticker research counts"
           : "Currently off: opt in to sharing ticker research counts";
-      case "font-size-increase":
-      case "font-size-decrease":
-        return `Currently ${state.config.fontSize ?? 12}px`;
+      case "font-size":
+        return "Article or general";
       default:
         return command.description;
     }

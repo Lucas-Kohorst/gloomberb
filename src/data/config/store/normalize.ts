@@ -18,7 +18,7 @@ import {
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
-import { clampFontSize } from "../../../theme/font-scale";
+import { clampFontSize, clampReaderFontEm } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig, type ConfigMigrationHost } from "./migrations";
 import { encodeBuiltinDisabledPluginIds, expandBuiltinPluginGroups } from "../../../plugins/ownership";
@@ -97,6 +97,7 @@ export function normalizeLoadedConfig(
     chartPreferences: sanitizeChartPreferences(candidate.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof candidate.valueFlashingEnabled === "boolean" ? candidate.valueFlashingEnabled : defaults.valueFlashingEnabled,
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
+    readerFontEm: sanitizeReaderFontEm(candidate.readerFontEm, defaults.readerFontEm),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     recentCommands: sanitizeRecentCommands(candidate.recentCommands, defaults.recentCommands),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
@@ -158,6 +159,7 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
     fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
+    readerFontEm: sanitizeReaderFontEm(config.readerFontEm, defaults.readerFontEm),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
     recentCommands: sanitizeRecentCommands(config.recentCommands, []),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
@@ -232,6 +234,11 @@ function sanitizeKeybindings(value: unknown): KeybindingsConfig | undefined {
 function sanitizeFontSize(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return clampFontSize(value);
+}
+
+function sanitizeReaderFontEm(value: unknown, fallback: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return clampReaderFontEm(fallback);
+  return clampReaderFontEm(value);
 }
 
 const ONBOARDING_STAGES = new Set<OnboardingProgress["stage"]>([
