@@ -60,8 +60,9 @@ export function balanceTitle(board: Board): string {
   return `${name}, ${formatBalanceMonth(board.month)}`;
 }
 
+/** Crude has no demand flow in the primary table, so its balance has no Demand column. */
 export function balanceColumns(commodity: BalanceCommodity): DataTableColumn[] {
-  return [
+  const columns: DataTableColumn[] = [
     { id: "country", label: "Country", width: 18, align: "left" },
     { id: "production", label: "Production", width: 12, align: "right" },
     { id: "demand", label: "Demand", width: 12, align: "right" },
@@ -70,4 +71,5 @@ export function balanceColumns(commodity: BalanceCommodity): DataTableColumn[] {
     { id: "stocks", label: "Stocks", width: 14, align: "right" },
     { id: "unit", label: "Unit", width: commodity === "oil" ? 14 : 12, align: "left" },
   ];
+  return commodity === "oil" ? columns.filter((column) => column.id !== "demand") : columns;
 }

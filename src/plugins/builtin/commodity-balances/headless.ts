@@ -19,6 +19,7 @@ export const commodityBalancesHeadless: HeadlessPaneDefinition<"bundle"> = {
     ],
   },
   describe: "Wheat, corn, soybean and cotton balances",
+  freshness: { source: "USDA", status: "not-a-feed", basis: "monthly supply and demand estimates" },
   async load(_args, ctx) {
     const data = await fetchCommodityBalances(ctx.signal);
     return {

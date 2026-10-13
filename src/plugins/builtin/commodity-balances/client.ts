@@ -1,3 +1,4 @@
+import { signalWithTimeout } from "../../../utils/async-deadline";
 import { httpFetch } from "../../../utils/http-transport";
 import { readZipTexts } from "../shared/zip-text";
 import {
@@ -69,21 +70,6 @@ function columnIndex(header: readonly string[], name: string): number {
 
 function optionalColumn(header: readonly string[], name: string): number {
   return header.indexOf(name);
-}
-
-/** Abort on the caller's signal or the timeout. AbortSignal.any is missing on older desktop webviews. */
-function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
-  const timeout = AbortSignal.timeout(ms);
-  if (!signal) return timeout;
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (signal.aborted || timeout.aborted) {
-    abort();
-    return controller.signal;
-  }
-  signal.addEventListener("abort", abort, { once: true });
-  timeout.addEventListener("abort", abort, { once: true });
-  return controller.signal;
 }
 
 export function parseBalanceCsv(text: string): BalanceRecord[] {
@@ -185,7 +171,7 @@ export function parsePriceForecasts(text: string): PriceForecast[] {
 async function fetchBytes(url: string, signal: AbortSignal | undefined): Promise<Uint8Array> {
   const response = await httpFetch(url, {
     headers: { Accept: "*/*", "User-Agent": "gloomberb" },
-    signal: withTimeout(signal, FETCH_TIMEOUT_MS),
+    signal: signalWithTimeout(signal, FETCH_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Balance file request failed (${response.status})`);
   return new Uint8Array(await response.arrayBuffer());
@@ -201,7 +187,7 @@ async function fetchPriceText(signal: AbortSignal | undefined): Promise<string> 
   try {
     const response = await httpFetch(PRICE_URL, {
       headers: { Accept: "*/*", "User-Agent": "gloomberb" },
-      signal: withTimeout(signal, FETCH_TIMEOUT_MS),
+      signal: signalWithTimeout(signal, FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return "";
     const text = await response.text();

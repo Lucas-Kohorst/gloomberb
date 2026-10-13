@@ -1,3 +1,5 @@
+import { signalWithTimeout } from "../../../utils/async-deadline";
+import { recordOrNull } from "../../../utils/guards";
 import { httpFetch } from "../../../utils/http-transport";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { readZipTexts } from "../shared/zip-text";
@@ -168,15 +170,10 @@ export function parseJodiCsv(text: string): Board {
   return { month, commodity: kind, rows };
 }
 
-function timed(signal?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
-  return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
 async function readBalanceCsv(url: string, signal?: AbortSignal): Promise<string> {
   let response: Response;
   try {
-    response = await jodiFetch.fetch(url, { signal: timed(signal) });
+    response = await jodiFetch.fetch(url, { signal: signalWithTimeout(signal, DOWNLOAD_TIMEOUT_MS) });
   } catch (error) {
     if (signal?.aborted) throw error instanceof Error ? error : new Error("The balance request was cancelled.");
     throw new Error("The balance file could not be downloaded.");
@@ -189,23 +186,20 @@ async function readBalanceCsv(url: string, signal?: AbortSignal): Promise<string
 }
 
 function gasZipUrl(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as { publicationId?: unknown; files?: unknown };
-  const id = record.publicationId;
-  if ((typeof id !== "number" && typeof id !== "string") || !Array.isArray(record.files)) return null;
-  const file = record.files.find((entry) => {
-    if (!entry || typeof entry !== "object") return false;
-    const row = entry as { filename?: unknown; format?: unknown; ignore?: unknown };
-    return row.format === "CSV" && row.ignore !== true
-      && typeof row.filename === "string" && row.filename.toLowerCase().endsWith(".zip");
-  }) as { filename: string } | undefined;
-  if (!file) return null;
-  return `https://www.jodidata.org/jodi-publisher/gas/${id}/${encodeURIComponent(file.filename)}`;
+  const record = recordOrNull(payload);
+  const id = record?.publicationId;
+  if ((typeof id !== "number" && typeof id !== "string") || !Array.isArray(record?.files)) return null;
+  const filename = record.files.map(recordOrNull).find((row) => (
+    row?.format === "CSV" && row.ignore !== true
+      && typeof row.filename === "string" && row.filename.toLowerCase().endsWith(".zip")
+  ))?.filename;
+  if (typeof filename !== "string") return null;
+  return `https://www.jodidata.org/jodi-publisher/gas/${id}/${encodeURIComponent(filename)}`;
 }
 
 async function readGas(signal?: AbortSignal): Promise<Board | null> {
   try {
-    const listing = await jodiFetch.fetchJson<unknown>(GAS_LISTING_URL, { signal: timed(signal) });
+    const listing = await jodiFetch.fetchJson<unknown>(GAS_LISTING_URL, { signal: signalWithTimeout(signal, DOWNLOAD_TIMEOUT_MS) });
     const url = gasZipUrl(listing);
     if (!url) return null;
     const board = parseJodiCsv(await readBalanceCsv(url, signal));

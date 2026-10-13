@@ -42,6 +42,7 @@ export const jodiHeadless: HeadlessPaneDefinition<"bundle"> = {
       "Natural gas is million cubic metres, including closing stocks.",
     ],
   },
+  freshness: { source: "JODI", status: "not-a-feed", basis: "monthly country reports", periodicity: "monthly" },
   describe: (args) => commodityOf(args.options.commodity) === "gas"
     ? "Monthly natural gas balances"
     : "Monthly crude oil balances",
@@ -51,8 +52,12 @@ export const jodiHeadless: HeadlessPaneDefinition<"bundle"> = {
     const board = commodity === "gas" ? balances.gas : balances.oil;
     if (!board) throw new Error("Gas balances are unavailable.");
     return {
-      sections: [{ title: balanceTitle(board), columns: COLUMNS, rows: board.rows.map(reportRow) }],
-      metadata: { month: board.month, commodity: board.commodity, unit: board.rows[0]?.unit ?? null },
+      sections: [{
+        title: balanceTitle(board),
+        columns: board.commodity === "oil" ? COLUMNS.filter((column) => column.key !== "demand") : COLUMNS,
+        rows: board.rows.map(reportRow),
+      }],
+      metadata: { asOf: `${board.month}-01`, month: board.month, commodity: board.commodity, unit: board.rows[0]?.unit ?? null },
     };
   },
 };
