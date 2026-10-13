@@ -31,6 +31,7 @@ import {
   formatPriceRange,
 } from "../helpers";
 import { cliStyles, colorBySign, renderSection, renderStats } from "../../utils/cli-output";
+import { statementHistoryNotes } from "../../utils/financial-statements";
 import { formatPerShareNumber } from "../../utils/reported-money";
 import {
   analystTargetCurrency,
@@ -48,19 +49,25 @@ import type { FuturesContractTermsPayload } from "../../api-client/futures-curve
 import { futuresSettleText, isFuturesInstrument } from "../../market-data/futures-contract";
 import {
   chainHasExpiry,
-  chainWithModelFigures,
   formatExpiryList,
   loadOptionModelInputs,
+  loadOptionsChainOpenInterest,
   formatOptionDeltaCell,
   formatOptionIvCell,
   formatOptionQuoteCell,
-  missingExpiryMessage,
   OPTION_MODEL_RATE,
   OPTIONS_USAGE,
   optionRows,
+  optionsBasisFields,
+  optionsBasisFootnote,
   parseOptionExpiration,
+  valueChainAtModelSpot,
+  type OptionsChainBasis,
 } from "./options-chain";
-import { DEFAULT_LEAPS_CRITERIA, LEAPS_USAGE, parseLeapsCriteria, runLeapsScreen, takeLeapsOptions } from "./options-leaps";
+import { missingExpiryMessage } from "../../utils/option-expiry";
+import {
+  DEFAULT_LEAPS_CRITERIA, LEAPS_EXTRA_COLUMNS, LEAPS_USAGE, parseLeapsCriteria, runLeapsScreen, takeLeapsOptions,
+} from "./options-leaps";
 import type { CliResultColumn } from "../result";
 import type { PriceHistoryResult } from "../../types/price-history";
 import {
@@ -137,7 +144,7 @@ import { formatBasisPoints, toBasisPoints } from "../../utils/basis-points";
 import { notATickerSymbol, providerMissReason } from "../../sources/provider-errors";
 import { isNotATickerMessage, withListingSuggestion } from "../not-a-ticker";
 import { describeSuggestion, suggestListing } from "../listing-suggestion";
-import { splitSymbolArgs } from "../symbol-args";
+import { splitSymbolArgs, uniqueSecuritySymbols } from "../symbol-args";
 import { cliPerpetualContract, perpetualContractStats, type PerpetualContractPayload } from "../perpetual-contract";
 import { subMinuteDataMessage } from "../known-gaps";
 import { secRegistrantMismatchMessage, SecRegistrantMismatchError, areDifferentCompanies } from "../../sources/sec-registrant";
@@ -218,9 +225,13 @@ function parseNewsFeed(value: string | undefined): NewsQuery["feed"] | undefined
   return value && VALID_NEWS_FEEDS.has(value as NewsFeed) ? value as NewsQuery["feed"] : undefined;
 }
 
-/** The symbols of a command's arguments, one each however they were separated: spaces, commas or pasted lines. */
+/**
+ * The symbols of a command's arguments, one each however they were separated
+ * (spaces, commas or pasted lines), and each security once however its case or
+ * share class was written: `AAPL aapl BRK.B BRK-B` is AAPL and BRK.B.
+ */
 function normalizeSymbols(args: string[]): string[] {
-  return splitSymbolArgs(args).map((symbol) => symbol.toUpperCase());
+  return uniqueSecuritySymbols(splitSymbolArgs(args).map((symbol) => symbol.toUpperCase()));
 }
 
 /** What JSON metadata says about the listing a command resolved. */
@@ -950,11 +961,13 @@ async function runFinancials(rawArgs: string[], ctx: Parameters<CliCommandDef["e
     const freshness = rowsFreshness(rows, {
       ...REPORTED_DATA, basis: "financial statements", observedKey: "date", oldest: null,
     });
+    // The rows are the annual years served; older ones are not, and the closing lines say so.
+    const historyNotes = statementHistoryNotes("annual", rows.map((row) => row.date), listing.key);
     // NDJSON keeps the raw statement rows it always wrote; CSV gets the table and its closing lines.
     const tables = tabular
       ? selectTables({
         tables: [exportRowsTable("Annual statements", STATEMENT_COLUMNS, rows)],
-        footer: reportFooterLines({ freshness }),
+        footer: reportFooterLines({ freshness, notes: historyNotes }),
       })
       : undefined;
     ctx.printResult({
@@ -966,6 +979,7 @@ async function runFinancials(rawArgs: string[], ctx: Parameters<CliCommandDef["e
         quarterlyStatements: financials.quarterlyStatements.length,
         fundamentals: exportedFundamentals(financials.fundamentals),
         profile: financials.profile,
+        ...(historyNotes.length > 0 ? { notes: historyNotes } : {}),
       },
       freshness,
       ...(choice.length > 0 ? { warnings: choice } : {}),
@@ -973,6 +987,7 @@ async function runFinancials(rawArgs: string[], ctx: Parameters<CliCommandDef["e
       heading: listingHeading(identity),
       rows: () => rows,
       columns: STATEMENT_COLUMNS,
+      ...(historyNotes.length > 0 ? { footnote: historyNotes.join("\n"), exportNotes: historyNotes } : {}),
       ...(tables && ctx.cliOptions.format === "csv" ? { tables } : {}),
       // Annual statements in the company's reporting currency.
       exportIdentity: { symbolOrSeries: listing.key, currencyOrUnit: rows.find((row) => row.currency)?.currency ?? null, interval: "annual" },
@@ -1462,10 +1477,9 @@ async function runOptions(rawArgs: string[], ctx: Parameters<CliCommandDef["exec
   const expiration = takeOption(args, "--expiration");
   const exchangeOption = takeOption(args, "--exchange");
   if (leapsOptions.leaps) {
-    if (expiration != null || rawArgs.includes("--expiration")) {
-      ctx.fail("--leaps reads every expiry more than a year out; drop --expiration.", `Usage: gloomberb ${LEAPS_USAGE}`);
-    }
-    const criteria = parseLeapsCriteria(leapsOptions.raw);
+    // With --leaps, --expiration is a window of one expiry.
+    const expirationGiven = expiration != null || rawArgs.some((arg) => arg === "--expiration" || arg.startsWith("--expiration="));
+    const criteria = parseLeapsCriteria({ ...leapsOptions.raw, ...expirationGiven ? { "--expiration": expiration ?? "" } : {} });
     if ("error" in criteria) ctx.fail(criteria.error, `Usage: gloomberb ${LEAPS_USAGE}`);
     const symbols = normalizeSymbols(args);
     if (symbols.length === 0) ctx.fail("--leaps needs at least one symbol.", `Usage: gloomberb ${LEAPS_USAGE}`);
@@ -1524,7 +1538,13 @@ async function runOptions(rawArgs: string[], ctx: Parameters<CliCommandDef["exec
     }
     const quote = await quotePromise;
     const identity = listingIdentity(listing, quote);
-    const chain = chainWithModelFigures(loaded, inputs);
+    // IV and delta are valued at one spot and instant, named under the table and on every exported row.
+    const { chain, spot: modelSpot } = valueChainAtModelSpot(loaded, inputs, Date.now(), identity.exchange);
+    const basis: OptionsChainBasis = { spot: modelSpot, dividendYield: inputs.dividendYield ?? null,
+      openInterest: await loadOptionsChainOpenInterest(symbol, chain) };
+    const basisFields = optionsBasisFields(basis);
+    const currency = [...chain.calls, ...chain.puts].find((contract) => contract.currency?.trim())?.currency.trim().toUpperCase()
+      ?? quote?.currency ?? null;
     // A failed refresh falls back to the stored chain, which can be days old.
     const refreshWarning = result?.refreshError == null ? null
       : `Options refresh failed; showing the chain stored ${new Date(result.fetchedAt).toISOString()}`
@@ -1546,23 +1566,54 @@ async function runOptions(rawArgs: string[], ctx: Parameters<CliCommandDef["exec
       ...(chain.delayMinutes != null ? { delayMinutes: chain.delayMinutes } : {}),
       stale: refreshWarning != null,
     });
+    const contractCount = chain.calls.length + chain.puts.length;
     ctx.printResult({
       data: chain,
       metadata: {
         ...listingMetadata(identity),
         expirations: chain.expirationDates,
+        currency,
+        interval: OPTIONS_EXPORT_INTERVAL,
+        // `iv` is annualised volatility and `delta` the option's change per 1.00 move in the underlying, both decimals.
+        units: { iv: "annualized decimal", delta: "decimal per 1.00 move in the underlying" },
         // What `iv` and `delta` on each contract are valued from; the provider's own impliedVolatility is left as sent.
-        model: { spot: inputs.spot ?? null, dividendYield: inputs.dividendYield ?? null, rate: OPTION_MODEL_RATE },
+        model: {
+          spot: basisFields.spot, spotBasis: basisFields.spotBasis, spotAsOf: basisFields.spotAsOf,
+          valuationTime: modelSpot ? new Date(modelSpot.valuationTime).toISOString() : null,
+          dividendYield: inputs.dividendYield ?? null, rate: OPTION_MODEL_RATE,
+        },
+        openInterest: { asOf: basisFields.openInterestAsOf, listedAsOf: basis.openInterest?.listedDate ?? null,
+          compared: basis.openInterest?.compared ?? 0, matched: basis.openInterest?.matched ?? 0 },
       },
       ...(warnings.length > 0 ? { warnings } : {}),
       freshness,
     }, {
       heading: listingHeading(identity),
-      rows: optionRows,
+      rows: (data: OptionsChain) => optionRows(data).map((row) => ({ ...row, ...basisFields })),
       // Choosing an expiry needs the list; once one is chosen the table is that expiry.
       summary: (data: OptionsChain) => expirationDate == null ? formatExpiryList(data.expirationDates) : "",
       empty: `No option contracts for ${listingTitle(identity)}.`,
+      ...(contractCount > 0 ? { footnote: optionsBasisFootnote(basis) } : {}),
+      exportIdentity: { symbolOrSeries: listing.key, currencyOrUnit: currency, interval: OPTIONS_EXPORT_INTERVAL },
+      // Exports state each decimal's unit in its header and end every row with the spot and dates it is as of.
       columns: [
+        { key: "side", header: "Side" },
+        { key: "contract", header: "Contract" },
+        { key: "expiration", header: "Expiry" },
+        { key: "strike", header: "Strike" },
+        { key: "last", header: "Last" },
+        { key: "bid", header: "Bid" },
+        { key: "ask", header: "Ask" },
+        { key: "iv", header: "IV (annualized decimal)" },
+        { key: "delta", header: "Delta (decimal)" },
+        { key: "volume", header: "Vol" },
+        { key: "openInterest", header: "OI" },
+        { key: "spot", header: "Spot" },
+        { key: "spotBasis", header: "Spot basis" },
+        { key: "spotAsOf", header: "Spot as of" },
+        { key: "openInterestAsOf", header: "OI as of" },
+      ],
+      textColumns: [
         { key: "side", header: "Side" },
         { key: "contract", header: "Contract", shrink: false },
         // The contract symbol already carries the date, so this goes first when the table is narrow.
@@ -1579,6 +1630,9 @@ async function runOptions(rawArgs: string[], ctx: Parameters<CliCommandDef["exec
     });
   });
 }
+
+/** What an options chain export's `interval` says: one quote snapshot, not bars. */
+const OPTIONS_EXPORT_INTERVAL = "snapshot";
 
 const FX_USAGE = "fx <currency> | fx <base>/<quote>";
 
@@ -1763,10 +1817,10 @@ export const marketDataCliCommands: BuiltinCliCommandDef[] = [
       options: [
         {
           flags: "--expiration <YYYY-MM-DD|unix>",
-          description: "Expiration as a date (2028-01-21) or Unix seconds; defaults to the nearest one, and lists the others",
+          description: "Expiration as a date (2028-01-21) or Unix seconds; defaults to the nearest one, and lists the others. With --leaps: rank that expiry alone",
         },
         EXCHANGE_OPTION,
-        { flags: "--leaps", description: "Rank contracts more than a year out across the symbols given, as a stock replacement" },
+        { flags: "--leaps", description: "Rank long-dated contracts across the symbols given, as a stock replacement; more than a year out unless a window says otherwise" },
         { flags: "--side <calls|puts>", description: `With --leaps: the side to rank (default ${DEFAULT_LEAPS_CRITERIA.side}s)` },
         {
           flags: "--delta <low-high>",
@@ -1778,6 +1832,17 @@ export const marketDataCliCommands: BuiltinCliCommandDef[] = [
         },
         { flags: "--min-oi <contracts>", description: `With --leaps: least open interest (default ${DEFAULT_LEAPS_CRITERIA.minOpenInterest})` },
         {
+          flags: "--min-days <days>",
+          description: `With --leaps: fewest calendar days to expiry (default ${DEFAULT_LEAPS_CRITERIA.minDays}); 180 reaches six months out`,
+        },
+        { flags: "--max-days <days>", description: "With --leaps: most calendar days to expiry; --min-days 365 --max-days 730 is 12 to 24 months" },
+        { flags: "--expiry-from <YYYY-MM-DD>", description: "With --leaps: first expiry date kept; replaces the one-year floor" },
+        { flags: "--expiry-to <YYYY-MM-DD>", description: "With --leaps: last expiry date kept" },
+        {
+          flags: "--columns <list>",
+          description: `With --leaps: add figures, comma-separated: ${LEAPS_EXTRA_COLUMNS.join(", ")}`,
+        },
+        {
           flags: "--sort <order>",
           description: "With --leaps: carry (extrinsic per year, lowest first; the default), spread, oi, delta, expiry or symbol",
         },
@@ -1785,7 +1850,10 @@ export const marketDataCliCommands: BuiltinCliCommandDef[] = [
       sections: [{
         title: "LEAPS",
         lines: [
-          "--leaps reads every expiry more than a year out for each symbol and keeps the liquid contracts in the delta band, ranked by extrinsic per year: time value (midpoint less intrinsic) as a percent of spot, per year to expiry.",
+          "--leaps reads each symbol's expiries in the window and keeps the liquid contracts in the delta band, ranked by extrinsic per year: time value (midpoint less intrinsic) as a percent of spot, per year to expiry.",
+          "--min-days, --max-days, --expiry-from and --expiry-to set the window together; without a lower bound it starts a year out. Each symbol reads at most 8 expiries, the ones nearest the window's start, and a warning names any it left.",
+          "--columns adds iv (the contract's implied vol), ivr (the underlying's IV rank), cost (midpoint x 100 per contract), breakeven (at the midpoint, and its distance from spot), next-earnings, ex-dividend and carry-net "
+            + `(extrinsic per year net of the ${Number((OPTION_MODEL_RATE * 100).toFixed(2))}% rate on the strike and the dividend yield). A figure a symbol lacks is blank, with a warning.`,
           "A symbol without LEAPS, a quote or a chain is named in a warning and the others still rank. docs/research-data.md defines each figure.",
         ],
       }],
@@ -1795,6 +1863,8 @@ export const marketDataCliCommands: BuiltinCliCommandDef[] = [
         "options AAPL:NASDAQ --json",
         "options AAPL MSFT NVDA GOOGL AMZN META --leaps",
         "options SPY QQQ --leaps --side puts --delta 0.20-0.40 --csv",
+        "options MSFT --leaps --min-days 365 --max-days 730",
+        "options AAPL MSFT NVDA --leaps --min-days 180 --columns iv,ivr,cost,breakeven,carry-net",
       ],
     },
     execute: runOptions,
