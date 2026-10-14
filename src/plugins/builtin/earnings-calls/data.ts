@@ -234,7 +234,7 @@ export function cachedEarningsCalls(
     sourceLimit: limit,
     sourceLimitReached: cached.value.calls.length >= limit,
     fetchedAt: cached.fetchedAt,
-    stale: cached.stale,
+    stale: cached.stale === true,
   };
 }
 

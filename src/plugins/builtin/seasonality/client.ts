@@ -22,13 +22,6 @@ export const SEASONALITY_HISTORY_RESOLUTION: Record<SeasonalityCadence, ManualCh
 /** Daily history is served to five years; a longer request can come back as weekly bars. */
 const BUFFER_RANGE = { monthly: "ALL", daily: "5Y" } as const;
 
-/**
- * Every month on record: the lookback is cut in the model, so changing it never
- * refetches. Monthly bars, because daily history is only served to 5Y where
- * provider support is not known yet, and a longer daily request comes back as
- * Monday-stamped weeks that file a week's close under the wrong month. The
- * Weekdays tab needs sessions, so it reads those five years of daily bars.
- */
 export function cachedSeasonalityHistory(
   request: { instrument: InstrumentRef; cadence?: SeasonalityCadence },
 ): SeasonalityHistory | null {
@@ -52,6 +45,13 @@ export function cachedSeasonalityHistory(
   };
 }
 
+/**
+ * Every month on record: the lookback is cut in the model, so changing it never
+ * refetches. Monthly bars, because daily history is only served to 5Y where
+ * provider support is not known yet, and a longer daily request comes back as
+ * Monday-stamped weeks that file a week's close under the wrong month. The
+ * Weekdays tab needs sessions, so it reads those five years of daily bars.
+ */
 export async function loadSeasonalityHistory(
   request: { instrument: InstrumentRef; cadence?: SeasonalityCadence; signal?: AbortSignal; forceRefresh?: boolean },
   marketData?: DataProvider,
