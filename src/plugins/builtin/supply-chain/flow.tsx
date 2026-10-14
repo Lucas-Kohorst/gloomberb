@@ -183,7 +183,7 @@ export function SupplyFlow({ rows, symbol, focusName, focusId, width, height, fo
   const hasBand = (band: "suppliers" | "customers") => nodes.some((node) => node.band === band);
   return <Box width={width} height={height} flexGrow={1} flexBasis={0} minHeight={0} position="relative" overflow="hidden">
     <ChartSurface ref={surfaceRef} width={width} height={height} position="absolute" left={0} top={0}
-      vectors={desktop ? vectors : undefined} bitmap={bitmap} flexDirection="column" aria-label="Supply chain flow"
+      vectors={desktop ? vectors : undefined} bitmap={bitmap} flexDirection="column"
       onMouseMove={hoverAt} onMouseOut={() => setHovered(null)}
       onMouseDown={() => { const node = hovered ? nodes.find((entry) => entry.id === hovered) : null; if (node) selectNode(node); }}
       aria-label={hovered ? flowNodeName(nodes.find((entry) => entry.id === hovered)!) : "Supply chain flow"}>
