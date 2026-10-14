@@ -148,14 +148,13 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     [hits, openHitId],
   );
   const openHit = openHitIndex >= 0 ? hits[openHitIndex]! : null;
+  // The document the cache holds paints at once; another document never
+  // shows under this hit's title while its own loads.
   const [seededDocumentKey, setSeededDocumentKey] = useState<string | null>(null);
-  if (openHit) {
-    const key = hitDocumentKey(openHit);
-    if (seededDocumentKey !== key) {
-      setSeededDocumentKey(key);
-      const cached = cachedSearchDocument(openHit.docType, openHit.sourceId);
-      if (cached) setDocument(cached);
-    }
+  const openDocumentKey = openHit ? hitDocumentKey(openHit) : null;
+  if (seededDocumentKey !== openDocumentKey) {
+    setSeededDocumentKey(openDocumentKey);
+    setDocument(openHit ? cachedSearchDocument(openHit.docType, openHit.sourceId) : null);
   }
 
   const focusField = useCallback((field: Exclude<ActiveField, null>) => {
@@ -175,7 +174,6 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     const controller = new AbortController();
     setDocumentLoading(true);
     setDocumentFailure(null);
-    setDocument((current) => current ?? cachedSearchDocument(openHit.docType, openHit.sourceId));
     void loadSearchDocument(openHit.docType, openHit.sourceId, controller.signal)
       .then((loaded) => {
         if (controller.signal.aborted) return;
@@ -183,7 +181,10 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbortError(error)) return;
-        setDocumentFailure({ message: errorMessage(error), status: statusOf(error) });
+        const status = statusOf(error);
+        // Losing entitlement re-gates the document, not the copy the cache seeded.
+        if (status === 401 || status === 402 || status === 403) setDocument(null);
+        setDocumentFailure({ message: errorMessage(error), status });
       })
       .finally(() => {
         if (!controller.signal.aborted) setDocumentLoading(false);
