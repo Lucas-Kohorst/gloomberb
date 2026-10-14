@@ -50,8 +50,8 @@ export function zoneScaleGeometry(
   // Some measures (dividend yield, excess CAPE yield) are cheaper when higher, so
   // their bands start at overvalued and the end captions swap with them.
   const inverted = raw[0]?.id.endsWith("overvalued") ?? false;
-  const underLabel = width >= 48 ? "undervalued" : width >= 28 ? "under" : "";
-  const overLabel = width >= 48 ? "overvalued" : width >= 28 ? "over" : "";
+  const underLabel = width >= 48 ? "cheap" : width >= 28 ? "under" : "";
+  const overLabel = width >= 48 ? "rich" : width >= 28 ? "over" : "";
 
   return {
     bands,

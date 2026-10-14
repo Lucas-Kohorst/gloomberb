@@ -276,7 +276,8 @@ test("a typed expiry date opens that expiry, and its report names it with the ch
     </RemoteUiRegistryProvider>, { width: 124, height: 16 });
   });
   await renderSettled();
-  expect(tui.frame()).toMatch(/Expiry\s+2026-06-25\s+\(24d\)/);
+  expect(tui.frame()).toContain("Jun 25 '26");
+  expect(tui.frame()).not.toMatch(/Expiry\s+2026-06-25/);
   expect(tui.frame()).not.toContain("NaN");
   const report = renderedReportNotices(registry.snapshot());
   expect(report.notices[0]).toBe("Expiry 2026-06-25 (24d)");

@@ -106,7 +106,6 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   useAutoRefresh(lastUpdated, refresh);
 
   usePaneRefreshKey(reload, { focused, enabled: !loading });
-  const partial = rows.length > 0 && rows.length < series.length;
   // Each row carries its own date in the AS OF column; a spread between
   // indexes from different sessions is a limitation behind the warning.
   usePaneNoticeFooter({
@@ -116,10 +115,9 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   });
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
-    ...(partial ? [{ id: "partial", parts: [{ text: `PARTIAL ${rows.length}/${series.length}`, tone: "warning" as const, bold: true }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...loadingErrorFooterInfo(loading, error),
-  ], [error, loading, partial, rows.length, series.length, stale]);
+  ], [error, loading, rows.length, series.length, stale]);
   usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (rows.length === 0) {

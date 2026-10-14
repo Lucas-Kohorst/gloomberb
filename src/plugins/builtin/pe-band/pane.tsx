@@ -132,8 +132,7 @@ export function PeBandPane({ width, height, focused }: PaneProps) {
   usePaneFooter("pe-band", () => ({ info: [
     ...(inputs.loading ? [{ id: "loading", parts: [{ text: "loading statements", tone: "muted" as const }] }] : []),
     ...(inputs.data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
-    ...(currency && model?.weeks.length ? [{ id: "units", parts: [{ text: `weekly closes, ${currency}`, tone: "muted" as const }] }] : []),
-  ] }), [inputs.loading, inputs.data?.stale, currency, model?.weeks.length]);
+  ] }), [inputs.loading, inputs.data?.stale]);
 
   const figures = useMemo((): StatItem[] => {
     if (!model?.current || model.error) return [];

@@ -82,9 +82,7 @@ function HistoryDetail({ row, peers, width, height, refreshVersion }: {
     <DataTableView columns={PERIOD_COLUMNS} items={periods} rootWidth={width} rootHeight={height} focused={false}
       rootBefore={<ChartTableHeader width={width} height={height} tableRows={periods.length} tableColumns={PERIOD_COLUMNS} figures={figures}
         chart={resource.error && !resource.data ? null : { series: chart, viewport,
-          ...(width >= 80 && plotted.some(entry => entry.basis === "reference") ? {
-            legendAccessory: <Text fg={colors.textDim}>Reference index (third party), anonymised</Text>, legendAccessoryWidth: 41,
-          } : {}), formatValue: (value) => `$${gpuPrice(value)}`, remoteKind: "gpu-rental-history",
+          formatValue: (value) => `$${gpuPrice(value)}`, remoteKind: "gpu-rental-history",
           loading: resource.loading && !resource.data,
           empty: resource.data?.histories.some((history) => history.payload.access?.locked) ? "Full history is available with Pro." : chart.length ? undefined : first ? `Collecting history since ${gpuTime(first.observedAt, true)} UTC` : "Collecting history" }} />}
       selection={{ kind: "none" }} getItemKey={(period) => period.from} sortColumnId={null} sortDirection="desc"

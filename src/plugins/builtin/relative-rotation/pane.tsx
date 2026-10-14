@@ -297,7 +297,7 @@ function RotationView({
             id: "asof",
             parts: [
               {
-                text: `${data.currency ?? "--"} · week ${data.asOf ?? "unavailable"} · ${trail}W trails`,
+                text: `${data.currency ?? "--"} · week ${data.asOf ?? "unavailable"}`,
                 tone: "muted",
               },
             ],

@@ -58,7 +58,7 @@ test("an after-hours print gets a column after 1D that outlasts the longer windo
 test("the footer names the close outside the regular session; in a session and from an older server it reads as before", () => {
   expect(snapshotFooterText({ regularSessionDate: "2026-10-09", regularSessionClosedAt: Date.UTC(2026, 9, 9, 20) }, "12m ago")).toBe("Fri 9 Oct close · snapshot 12m ago");
   for (const payload of [{ regularSessionDate: null, regularSessionClosedAt: null }, {}, { regularSessionDate: "Fri" }]) {
-    expect(snapshotFooterText(payload, "3m ago")).toBe("15m delayed · snapshot 3m ago");
+    expect(snapshotFooterText(payload, "3m ago")).toBe("snapshot 3m ago");
   }
 });
 

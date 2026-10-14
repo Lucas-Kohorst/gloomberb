@@ -1,4 +1,3 @@
-import { CATALYST_POLL_STATUS } from "./catalysts";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -56,7 +55,6 @@ const columnsFor = (width: number, lastCheck: boolean): DataTableColumn[] => [
 ];
 
 export function EventAlertsPane({ focused, width, height }: PaneProps) {
-  const [catalystStatus] = usePluginConfigState<string>(CATALYST_POLL_STATUS, "Catalyst alerts check every five minutes while the app is open");
   const [json, setJson] = usePluginConfigState<string>(EVENT_ALERTS_KEY, "[]");
   const { rules, error } = useMemo(() => readEventAlerts(json), [json]);
   const [selected, setSelected] = useState(0);
@@ -148,7 +146,6 @@ export function EventAlertsPane({ focused, width, height }: PaneProps) {
   }, [dialog, selectedRule, setJson]);
   const status =
     error ??
-    (selectedRule?.kind === "catalyst" ? catalystStatus : null) ??
     sync.error ??
     (sync.phase === "disabled"
       ? "Cloud sync disabled"

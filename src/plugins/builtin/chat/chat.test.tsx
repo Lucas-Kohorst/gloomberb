@@ -348,9 +348,10 @@ describe("ChatContent", () => {
     await emitKeypress({ name: "up", sequence: "\u001b[A" });
     await flushFrame();
 
-    const headerLine = tui.frame().split("\n").find((line) => line.includes("ada") && line.includes("Discord"));
+    const headerLine = tui.frame().split("\n").find((line) => line.includes("ada") && line.includes("Reply"));
     expect(headerLine).toContain("Reply");
     expect(headerLine).not.toContain("Edit");
+    expect(headerLine).not.toContain("Discord");
   });
 
   test("up arrow from an empty focused composer edits the latest own message", async () => {
@@ -1324,7 +1325,7 @@ describe("ChatContent", () => {
     expect(rows[caption + 2]).toContain("Checking image...");
   });
 
-  test("tags messages that came from Discord, and signs a ghost with its Discord name", async () => {
+  test("signs a Discord ghost with its Discord name and does not print the vendor", async () => {
     const at = (second: number) => `2026-03-28T00:00:${String(second).padStart(2, "0")}.000Z`;
     const bob = { id: "u1", username: "bob", displayName: "Bob" };
     const controller = createController({
@@ -1350,8 +1351,8 @@ describe("ChatContent", () => {
     const header = (author: string) => rows.find((row) => row.startsWith(` ${author} `))!;
     expect(rows.filter((row) => row.startsWith(" bob "))).toHaveLength(2);
     expect(header("bob")).not.toContain("Discord");
-    expect(rows.filter((row) => row.startsWith(" bob ") && row.includes("Discord"))).toHaveLength(1);
-    expect(header("Grace H")).toContain("Discord");
+    expect(header("Grace H")).toBeDefined();
+    expect(header("Grace H")).not.toContain("Discord");
     expect(header("cy")).not.toContain("Discord");
 
     // Every name opens a card but a Discord ghost's: there is no profile and no one to message.

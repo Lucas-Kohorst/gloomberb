@@ -147,15 +147,11 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const error = resource.error ?? bundle?.errors[0] ?? null;
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selected) return [];
-    const info: PaneFooterSegment[] = [
-      { id: "as-of", parts: [{ text: `reading for ${selected.reading}`, tone: "muted" }] },
-    ];
     // The cached first paint is being replaced; its age only counts once that load fails.
     const seeding = resource.loading && resource.updatedAt === null && !selected.refreshError;
-    if (selected.observationStale || (selected.cacheStale && !seeding)) {
-      info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });
-    }
-    return info;
+    return selected.observationStale || (selected.cacheStale && !seeding)
+      ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] }]
+      : [];
   }, [resource.loading, resource.updatedAt, selected]);
 
   usePaneStatusFooter({

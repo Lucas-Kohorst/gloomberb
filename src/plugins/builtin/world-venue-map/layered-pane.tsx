@@ -161,8 +161,7 @@ const SelectedEntityHeader = memo(function SelectedEntityHeader({
   ].filter(Boolean).join(" · ");
   return (
     <Box flexDirection="column" height={2} width={width} paddingX={1}>
-      <Box flexDirection="row" justifyContent="space-between" width="100%">
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{row.label}</Text>
+      <Box flexDirection="row" justifyContent="flex-end" width="100%">
         <Text fg={color}>{layer.name}</Text>
       </Box>
       <Text fg={colors.textMuted}>{meta}</Text>

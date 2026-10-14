@@ -123,7 +123,7 @@ test("the Prices tab boards each market's day-ahead price as of its own day, cha
   // The queue board is never asked for; the selected market's history is.
   expect(asked).not.toContain("/cloud/power/board");
   expect(asked).toContain("/cloud/europe-energy/power/DE/history");
-  expect(await tui.waitForFrameToContain("Germany day-ahead")).toContain("[o]pen Ember");
+  expect(await tui.waitForFrameToContain("Germany day-ahead")).toContain("[o]pen source");
   // The EU carbon allowance sits in the figures above, in its own unit and dated by its auction.
   const figures = await tui.waitForFrameToContain("EUA EUR/tCO2");
   expect(figures).toContain("86.11");

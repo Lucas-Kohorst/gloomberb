@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import type { TeamSummary } from "../../../api-client";
 import { ChoiceDialog } from "../../../components/ui/choice-dialog";
+import { Notice } from "../../../components/ui/status";
 import { QueryBar } from "../../../components/ui/query-bar";
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import type { DialogApi, PromptContext } from "../../../ui/dialog";
 import { colors } from "../../../theme/colors";
 import { teamAccentHex, teamPrefix } from "../../../team/model";
@@ -118,12 +119,10 @@ export async function resolveNoteConflict(dialog: DialogApi, error: NoteConflict
 
 export function ReadOnlyBanner({ owner, teams }: { owner: NoteOwner; teams: readonly TeamSummary[] }) {
   return (
-    <Box height={1} paddingLeft={1}>
-      <Text fg={colors.warning}>
-        {owner.kind === "user"
-          ? "Offline: notes are read-only until Gloom Cloud is reachable."
-          : `Offline: ${ownerLabel(owner, teams)} notes are read-only.`}
-      </Text>
-    </Box>
+    <Notice>
+      {owner.kind === "user"
+        ? "Offline: notes are read-only until Gloom Cloud is reachable."
+        : `Offline: ${ownerLabel(owner, teams)} notes are read-only.`}
+    </Notice>
   );
 }
