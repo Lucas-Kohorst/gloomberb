@@ -214,6 +214,12 @@ function ThemedCompositeChart({
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
   const xMarkerRows = xMarkers.some((marker) => marker.label) ? 1 : 0;
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
+  // A forming bar can change its extremes or volume without moving its close.
+  const lastTickKey = visibleSeries.map((entry) => {
+    const last = entry.points.at(-1);
+    if (!last) return entry.id;
+    return `${entry.id}:${last.date.getTime()}:${last.close ?? ""}:${last.value ?? ""}:${last.high ?? ""}:${last.low ?? ""}:${last.volume ?? ""}:${entry.latestChangePercent ?? ""}`;
+  }).join("|");
   const plotHeight = Math.max(panelCount, totalHeight - legendRows - timeAxisRows - xMarkerRows);
   const paneSurface = usePaneSurface();
   const resolvedColors = useMemo<CompositeChartColors>(() => ({
@@ -227,16 +233,21 @@ function ThemedCompositeChart({
   // A custom x axis means x is not time: a tenor, a fraction, a return. Its
   // last observation belongs at the right edge, under its own label.
   const rightOffsetRatio = xAxis ? 0 : COMPOSITE_RIGHT_OFFSET_RATIO;
-  const projectedScene = useMemo(() => buildCompositeChartScene(panelSeries, panels, {
-    width: 1,
-    height: Math.max(panelCount, 1),
-    viewport: effectiveViewport ?? undefined,
-    clipToViewport,
-    timelineSeries: marketTimelineSeries,
-    rightOffsetRatio,
-  }), [
+  const projectedScene = useMemo(() => {
+    // lastTickKey busts this memo when a live tick mutates series identity in place.
+    void lastTickKey;
+    return buildCompositeChartScene(panelSeries, panels, {
+      width: 1,
+      height: Math.max(panelCount, 1),
+      viewport: effectiveViewport ?? undefined,
+      clipToViewport,
+      timelineSeries: marketTimelineSeries,
+      rightOffsetRatio,
+    });
+  }, [
     clipToViewport,
     effectiveViewport,
+    lastTickKey,
     marketTimelineSeries,
     panelCount,
     panelSeries,

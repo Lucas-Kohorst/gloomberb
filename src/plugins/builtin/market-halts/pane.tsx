@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody, usePaneTabs, usePaneStatusFooter,
@@ -43,15 +43,6 @@ import {
 
 /** Halted rows flip to resumed on the clock alone, so the pane re-reads it. */
 const EMPTY_RECORDS: HaltRecord[] = [];
-
-function haltClockStamp(record: HaltRecord, now: number): string {
-  const end = record.tradeResumeAt == null ? now : Math.min(now, record.tradeResumeAt);
-  const elapsed = Math.max(0, end - record.haltedAt);
-  const bucket = elapsed >= 86_400_000
-    ? `d${Math.floor(elapsed / 86_400_000)}`
-    : elapsed >= 3_600_000 ? `h${Math.floor(elapsed / 3_600_000)}` : `m${Math.floor(elapsed / 60_000)}`;
-  return `${record.id}:${resolveHaltStatus(record, now)}:${bucket}`;
-}
 const STATUS_TICK_MS = 15_000;
 const HALT_REFRESH_MS = 60_000;
 const HALT_FILTER_TABS = HALT_FILTERS.map((entry) => ({ label: entry.label, value: entry.value as string }));
@@ -80,17 +71,10 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const rowsRef = useRef<{ records: HaltRecord[]; filter: HaltFilter; sort: HaltSortPreference; at: number; rows: HaltRecord[] } | null>(null);
-  const rows = useMemo(() => {
-    const held = rowsRef.current;
-    if (held && held.records === records && held.filter === filter && held.sort === sortPreference
-      && held.rows.every((record) => haltClockStamp(record, now) === haltClockStamp(record, held.at))) {
-      return held.rows;
-    }
-    const next = sortHalts(filterHalts(records, filter, now), sortPreference, now);
-    rowsRef.current = { records, filter, sort: sortPreference, at: now, rows: next };
-    return next;
-  }, [filter, now, records, sortPreference]);
+  const rows = useMemo(
+    () => sortHalts(filterHalts(records, filter, now), sortPreference, now),
+    [filter, now, records, sortPreference],
+  );
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;

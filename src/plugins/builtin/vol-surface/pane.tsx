@@ -139,7 +139,7 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
     liveController.current?.abort();
     const abort = new AbortController();
     liveController.current = abort;
-    const snapshot = await loadVolatilitySurface({ ...surfaceRequest(false, abort.signal),
+    const snapshot = await loadVolatilitySurface({ ...surfaceRequest(true, abort.signal),
       // Each expiry is fitted as its chain arrives, never all together at the end.
       onSnapshot: () => {} }, liveDependencies);
     if (!abort.signal.aborted) setLive({ key: requestKey, snapshot, at: Date.now() });
