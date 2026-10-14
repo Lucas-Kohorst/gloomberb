@@ -177,6 +177,7 @@ export function ChatMessageHeader({
         </Text>
       </Box>
       <ChatPersonIcons icons={besideName} selectedColor={iconColor} terminalTarget={profileTarget} />
+      {msg.origin === "discord" && <Text fg={state.originTagColor}> Discord</Text>}
       <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
       {showOnPoint && <ChatPersonIcons icons={onPoint} selectedColor={iconColor} terminalTarget={profileTarget} />}
       {(state.showReplyAction || (state.showRetryAction && actionProps.retryMessage)) && <Text fg={state.headerStatusColor}> </Text>}
