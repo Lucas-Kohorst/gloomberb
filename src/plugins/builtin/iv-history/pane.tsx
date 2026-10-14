@@ -84,16 +84,17 @@ export function IvHistoryPane({ width, height, focused }: PaneProps) {
   }, { enabled: focused });
   // In a pane too narrow for the whole footer, the history start drops its prefix.
   const sinceText = model?.since ? `trade closes since ${model.since}` : null;
-  const footerText = [sinceText, model?.oneYearNote].filter(Boolean).join(" ");
+  const footerText = [sinceText, model?.oneYearNote, model?.asOf].filter(Boolean).join(" ");
   const since = sinceText && footerText.length + FOOTER_RESERVE > width ? `since ${model!.since}` : sinceText;
   usePaneFooter("iv-history", () => ({ info: [
     ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(since ? [{ id: "since", parts: [{ text: since, tone: "muted" as const }] }] : []),
     ...(model?.oneYearNote ? [{ id: "one-year", parts: [{ text: model.oneYearNote, tone: "muted" as const }] }] : []),
+    ...(model?.asOf ? [{ id: "date", parts: [{ text: model.asOf, tone: "muted" as const }] }] : []),
   ], hints: [
     // Lookback (y) and realized window (w) keep their keys; the query bar shows them.
     ...(symbol ? [{ id: "surface", key: "s", label: "urface", onPress: openSurface }] : []),
-  ] }), [resource.loading, since, model?.oneYearNote, lookback, hvWindow, symbol]);
+  ] }), [resource.loading, since, model?.oneYearNote, model?.asOf, lookback, hvWindow, symbol]);
 
   const statsHeight = model ? model.stats.length + 1 : 0;
   const statSelection = statSelectionValue ?? model?.stats[0]?.id ?? "";

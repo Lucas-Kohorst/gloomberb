@@ -174,7 +174,7 @@ function PowerPriceBoard({ width, height, focused }: { width: number; height: nu
   const sourceUrl = board?.source.url;
   const chartExpression = carbonCharted ? "CAP:carbon:eua" : selected?.price.date ? `CAP:day-ahead:${selected.id.toLowerCase()}` : null;
   const hints: PaneHint[] = [
-    ...(sourceUrl ? [{ id: "source", key: "o", label: "pen source", title: "Open the publisher's page",
+    ...(sourceUrl ? [{ id: "source", key: "o", label: `pen ${carbonCharted ? carbon!.source.name : board!.source.name}`, title: "Open the publisher's page",
       onPress: () => void host.openExternal(carbonCharted ? carbon!.source.url : sourceUrl) }] : []),
     ...(chartExpression ? [{ id: "chart", key: "g", label: "raph", title: "Chart in a custom chart",
       onPress: () => createPaneFromTemplate("chart-composer-pane", { arg: chartExpression }) }] : []),

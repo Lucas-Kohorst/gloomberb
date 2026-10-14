@@ -43,7 +43,7 @@ function RiskLine({
 }: {
   tag: string;
   group: string | null;
-  heading?: string;
+  heading: string;
   note?: string;
   width: number;
 }) {
@@ -53,13 +53,11 @@ function RiskLine({
         <Text fg={colors.textBright}>{tag}</Text>
         {group ? <Text fg={colors.textDim}>{group}</Text> : null}
       </Box>
-      {heading ? (
-        <Prose
-          text={heading}
-          width={width}
-          color={colors.text}
-        />
-      ) : null}
+      <Prose
+        text={heading}
+        width={width}
+        color={colors.text}
+      />
       {note ? (
         <Prose
           text={note}
@@ -243,6 +241,7 @@ function RiskFactorsReader({
                     key={`new-${index}`}
                     tag="NEW"
                     group={report.risks[index]?.group ?? null}
+                    heading={report.risks[index]?.heading ?? ""}
                     note={noteFor(report.notes.added, index)}
                     width={proseWidth}
                   />
@@ -252,6 +251,7 @@ function RiskFactorsReader({
                     key={`dropped-${risk.heading}`}
                     tag="DROPPED"
                     group={risk.group}
+                    heading={risk.heading}
                     note={noteFor(report.notes.removed, index)}
                     width={proseWidth}
                   />
@@ -261,6 +261,7 @@ function RiskFactorsReader({
                     key={`reworded-${item.index}`}
                     tag={`${Math.round((1 - item.similarity) * 100)}% REWRITTEN`}
                     group={report.risks[item.index]?.group ?? null}
+                    heading={report.risks[item.index]?.heading ?? ""}
                     note={noteFor(report.notes.reworded, item.index)}
                     width={proseWidth}
                   />

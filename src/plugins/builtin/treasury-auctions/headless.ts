@@ -8,7 +8,7 @@ import { loadTreasuryAuctions, type TreasuryAuctionsResult } from "./cache";
 import type { TreasuryAuction } from "./types";
 import {
   AUCTION_HISTORY_WINDOWS,
-
+  AUCTION_SEARCH_FIELDS,
   auctionHistoryLabel,
   auctionHistoryPhrase,
   auctionSize,
@@ -70,7 +70,7 @@ const defaultDependencies: TreasuryAuctionsHeadlessDependencies = {
 function emptyNote(query: string, filter: AuctionFilter, historyDays: number): string {
   const searched = query.trim() ? `match "${query.trim()}"` : "found";
   const group = filter === "all" ? "" : ` in the ${filter} group`;
-  return `No auctions ${searched}${group} in ${auctionHistoryPhrase(historyDays)}.`;
+  return `No auctions ${searched}${group} in ${auctionHistoryPhrase(historyDays)}. Search by ${AUCTION_SEARCH_FIELDS}.`;
 }
 
 function createTreasuryAuctionsHeadless(

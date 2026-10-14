@@ -1,6 +1,7 @@
 import { THEME_PERIODS, type ThemeMembersPayload, type ThemesPayload } from "../../../api-client/themes";
 import { EXTENDED_SESSION_LABELS, type ExtendedSession } from "../../../market-data/market/status";
 import type { HeadlessPaneColumn, HeadlessPaneDefinition, HeadlessPaneFreshness } from "../../../types/plugin";
+import { formatRelativeAge } from "../../../utils/datetime-format";
 import { fetchThemeMembers, fetchThemes } from "./client";
 import {
   aggregateText, boardClose, DEFAULT_SORT, matchTheme, memberExtended, memberExtendedSessions, memberPrice, percent, PERIOD_LABELS,
@@ -48,7 +49,7 @@ function boardObservation(payload: ThemesPayload | ThemeMembersPayload, now = Da
   if (close && now - assembledAt <= SNAPSHOT_STALE_MS) {
     return {
       metadata: { asOf: close.closedAt != null ? new Date(close.closedAt).toISOString() : close.date, sessionExchange: "NYSE", ...snapshot },
-      freshness: { tradingDayMarket: "US" },
+      freshness: { tradingDayMarket: "US", note: `snapshot ${formatRelativeAge(assembledAt, now)}` },
     };
   }
   return { metadata: { asOf: payload.asOf, ...snapshot }, freshness: { maxAgeMinutes: 30 } };

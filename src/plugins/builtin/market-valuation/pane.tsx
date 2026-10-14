@@ -135,6 +135,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     if (!selectedView) return [];
     const info: PaneFooterSegment[] = [
+      { id: "as-of", parts: [{ text: `as of ${selectedView.asOf}`, tone: "muted" }] },
       ...(width >= 80 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ];
     if (selectedView.observationStale) {

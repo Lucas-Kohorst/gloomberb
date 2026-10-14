@@ -28,6 +28,7 @@ import { useAutoRefresh } from "../../../react/auto-refresh";
 import { loadTreasuryAuctions } from "./cache";
 import {
   AUCTION_FILTERS,
+  AUCTION_SEARCH_FIELDS,
   AUCTION_SORT_COLUMN_IDS,
   DEFAULT_AUCTION_SORT,
   auctionDatesShowYear,
@@ -388,7 +389,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         getItemKey={auctionKey}
         renderCell={renderAuctionRow}
         emptyStateTitle={searchQuery.trim() ? "No matching auctions." : "No recent auctions."}
-        emptyStateHint={`${searchQuery.trim() ? "Searched" : "Showing"} ${auctionHistoryPhrase(historyDays)}; older auctions are in the History window setting.`}
+        emptyStateHint={`${searchQuery.trim() ? "Searched" : "Showing"} ${auctionHistoryPhrase(historyDays)}; older auctions are in the History window setting. Search by ${AUCTION_SEARCH_FIELDS}.`}
       />
     </Box>
   );

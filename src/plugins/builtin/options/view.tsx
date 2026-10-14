@@ -856,12 +856,22 @@ export function OptionsView({ width, height, focused, nestedInTabs = false, ivRa
   // columns and push the chain down; the detail is cut short instead.
   const statRowBudget = width >= 110 ? 3 : width >= 65 ? 4 : 6;
   const figureColumns = Math.max(statGridColumns(figures, statWidth), Math.ceil(figures.length / statRowBudget));
-  const statColumns = figureColumns;
-  const statItems = figures;
+  // The expiry leads the band, since the strip above can scroll it out of
+  // view. It joins the figures as one more cell where the row budget leaves a
+  // cell wide enough for all of it, and otherwise takes a row of its own so no
+  // figure is squeezed. Sized for four-digit days, so the band does not
+  // reflow as the chain's as-of arrives or the expiry steps.
+  const expiryItem: StatItem = { id: "expiry", label: "Expiry", value: expiryDate, detail: `(${expiryDays})` };
+  const cellColumns = Math.max(figureColumns, Math.ceil((figures.length + 1) / statRowBudget));
+  const expiryCells = Math.max(...figures.map((item) => item.label.length), expiryItem.label.length) + 1
+    + expiryDate.length + 2 + "(9999d)".length;
+  const expiryInline = Math.floor((statWidth - 2 * (cellColumns - 1)) / cellColumns) >= expiryCells;
+  const statColumns = expiryInline ? cellColumns : figureColumns;
+  const statItems = [expiryInline ? expiryItem : { ...expiryItem, wide: true }, ...figures];
   const summaryRowCount = Math.min(statGridRows(statItems, statWidth, statColumns), Math.max(0, height - 6));
-  // A short band gives up figures from the end. The selected expiry stays in the query bar.
+  // A short band gives up figures from the end; the expiry stays.
   const shownStatItems = summaryRowCount === 0 ? []
-    : figures.slice(0, summaryRowCount * statColumns);
+    : [statItems[0]!, ...figures.slice(0, summaryRowCount * statColumns - (expiryInline ? 1 : statColumns))];
   // No term here follows the selection or the load, so an empty cold-expiry
   // response cannot resize the table: growing it during loading would turn a
   // clamped scroll into apparent user navigation.

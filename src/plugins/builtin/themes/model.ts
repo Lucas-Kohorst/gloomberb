@@ -62,12 +62,12 @@ function closeLabel(date: string): string {
  * How current the board is, for its footer. Outside the regular session the
  * close its figures describe and how old the snapshot is, `Fri 9 Oct close ·
  * snapshot 12m ago`; while a session trades, or from a server that does not
- * name the close, the snapshot's age. The delay is the report's own status.
- * `age` is the relative age (`12m ago`).
+ * name the close, the delay and the snapshot's age. `age` is the relative age
+ * (`12m ago`).
  */
 export function snapshotFooterText(payload: { regularSessionDate?: unknown; regularSessionClosedAt?: unknown }, age: string): string {
   const close = boardClose(payload);
-  return close ? `${closeLabel(close.date)} · snapshot ${age}` : `snapshot ${age}`;
+  return close ? `${closeLabel(close.date)} · snapshot ${age}` : `15m delayed · snapshot ${age}`;
 }
 
 /** A member's pre-market or after-hours print and its move from the close in Price, when it has a valid one. */
