@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { createOpenTuiTestHarness } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app/context";
 import { createStaticAppStore } from "../../test-support/app-store";
@@ -8,7 +6,7 @@ import { createDefaultConfig } from "../../types/config";
 import { MarketBoardStack, type MarketBoardRow } from "./index";
 
 const tui = createOpenTuiTestHarness();
-const store = createStaticAppStore(createInitialState(createDefaultConfig(join(homedir(), ".cache/gloom-smoke/glo-750/market-board-test"))));
+const store = createStaticAppStore(createInitialState(createDefaultConfig("/tmp/gloomberb-market-board")));
 
 function row(id: string, status: MarketBoardRow["status"]): MarketBoardRow {
   return {
