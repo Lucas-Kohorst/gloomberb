@@ -119,10 +119,12 @@ export async function resolveNoteConflict(dialog: DialogApi, error: NoteConflict
 
 export function ReadOnlyBanner({ owner, teams }: { owner: NoteOwner; teams: readonly TeamSummary[] }) {
   return (
-    <Notice>
-      {owner.kind === "user"
-        ? "Offline: notes are read-only until Gloom Cloud is reachable."
-        : `Offline: ${ownerLabel(owner, teams)} notes are read-only.`}
-    </Notice>
+    <Box paddingLeft={1}>
+      <Notice>
+        {owner.kind === "user"
+          ? "Offline: notes are read-only until Gloom Cloud is reachable."
+          : `Offline: ${ownerLabel(owner, teams)} notes are read-only.`}
+      </Notice>
+    </Box>
   );
 }
