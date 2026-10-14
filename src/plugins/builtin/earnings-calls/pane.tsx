@@ -180,10 +180,13 @@ interface EarningsCallsViewProps {
 export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewProps) {
   const { symbol, exchange, ticker: boundTicker } = useSymbolBinding();
   const access = usePlanAccess();
-  const initialTicker = symbol ? symbol.toUpperCase() : null;
-  const initialAbroad = initialTicker ? listingAbroad(initialTicker, exchange, boundTicker?.metadata.name) : null;
-  const initialShelf = cachedEarningsCalls(initialTicker, {
-    limit: CALL_PAGE_SIZE, exchange: initialAbroad?.exchange, name: initialAbroad?.name,
+  // Read once per mount: a binding change reads the cache again in its own effect.
+  const [initialShelf] = useState(() => {
+    const initialTicker = symbol ? symbol.toUpperCase() : null;
+    const initialAbroad = initialTicker ? listingAbroad(initialTicker, exchange, boundTicker?.metadata.name) : null;
+    return cachedEarningsCalls(initialTicker, {
+      limit: CALL_PAGE_SIZE, exchange: initialAbroad?.exchange, name: initialAbroad?.name,
+    });
   });
 
   const [calls, setCalls] = useState<CloudEarningsCallPayload[]>(initialShelf?.calls ?? []);
