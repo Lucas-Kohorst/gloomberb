@@ -83,7 +83,7 @@ async function boot(): Promise<void> {
   // here must not stop the app: the built-in catalog is enough to run on, and
   // the marketplace reports what broke.
   const bundledPlugins = loadWebBundledPlugins().catch(() => []);
-  const sessionRestored = restoreBrowserCloudSession();
+  await restoreBrowserCloudSession();
   recordResearchActivity("workspace_opened");
   // Nothing was restored on a first visit, only the starter workspace shown.
   if (!hasSavedBrowserConfig()) recordRestoredFunctions([]);
@@ -111,7 +111,6 @@ async function boot(): Promise<void> {
     </DomErrorBoundary>,
   );
   appRootElement.focus({ preventScroll: true });
-  await sessionRestored;
 }
 
 void boot().catch((error) => {
