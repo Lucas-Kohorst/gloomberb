@@ -1241,6 +1241,7 @@ const FRED_CATALOG_UNITS: Readonly<Record<string, string>> = {
   "millions of dollars": "million USD",
   "billions of dollars": "billion USD",
   "billions of u.s. dollars": "billion USD",
+  "billions of us dollars": "billion USD",
   "dollars per barrel": "USD/barrel",
   "thousands of persons": "thousand people",
 };
@@ -1258,14 +1259,14 @@ function baseEconomicSeries(
   const { data } = loaded;
   const units = data.info?.units?.trim() || "value";
   const catalogUnit = fredCatalogUnit(units);
-  const isPercent = catalogUnit === "%";
+  // "Percent Change from Year Ago" and "Percent per Annum" are percent too.
+  const isPercent = units.toLowerCase().includes("percent");
   return {
     id: spec.id,
     label: spec.label?.trim() || data.info?.title?.trim() || spec.source.seriesId,
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
-    unit: catalogUnit,
+    unit: isPercent ? "%" : catalogUnit,
     unitGroup: isPercent ? "percent" : `economic:${catalogUnit.toLowerCase()}`,
-    attribution: { source: `FRED series ${spec.source.seriesId}`, publisher: "FRED" },
     nativeFrequency: "auto",
     timestampMode: "period-end",
     dataShape: "scalar",
