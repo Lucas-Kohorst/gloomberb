@@ -1038,7 +1038,7 @@ the last regular close and its move, as `quote` shows them, and a PRE-MKT,
 AFTER-HRS or OVERNIGHT column beside CHG% carries the extended print's move from
 that close while a row has one. The screen filters, sorts and ranks by the close.
 Click a metric header to sort by it and make it the focus; click again to reverse.
-The table shows the matches. The footer shows the snapshot time.
+The footer shows matches, covered listings, currency and the snapshot time.
 Enter opens a company's dated observations; `o` opens it in Ticker Research.
 
 `s` saves a named screen to your Cloud account; **Saved** restores one. Saving an
