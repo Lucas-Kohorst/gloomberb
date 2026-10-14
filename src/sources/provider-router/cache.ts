@@ -174,6 +174,7 @@ export function listCachedResources<T>(
     sourceKeys,
     allowExpired,
     ...(SCHEMA_VERSIONS[kind] ? { schemaVersion: SCHEMA_VERSIONS[kind] } : {}),
+    ...(kind === "quote" || kind === "price-history" || kind === "price-history-recheck" ? { touch: false } : {}),
   }).filter((record) => {
     if (!record.sourceKey.startsWith("provider:") || entityKey.startsWith("contract:")
       || (kind !== "financials" && kind !== "quote")) return true;

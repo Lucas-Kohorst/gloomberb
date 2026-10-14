@@ -480,20 +480,22 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     if (!check || unlistedKey.length === 0) return;
     let cancelled = false;
     setCheckingRemotes(true);
-    void check(unlistedKey.split(","))
+    const pending = unlistedKey.split(",").filter((directory) => remoteHeads[directory] == null);
+    if (pending.length === 0) return;
+    void check(pending)
       // Offline, or a private repository this machine has no credentials for:
       // the row keeps whatever it knew, without an error in the way.
       .catch(() => ({}))
       .then((heads) => {
         if (cancelled) return;
-        setRemoteHeads(heads);
+        setRemoteHeads((current) => ({ ...current, ...heads }));
         setCheckingRemotes(false);
       });
     return () => {
       cancelled = true;
       setCheckingRemotes(false);
     };
-  }, [manager, unlistedKey, localRevision]);
+  }, [manager, remoteHeads, unlistedKey, localRevision]);
 
   const visible = useMemo(
     () => filterEntries(entries, { query, category, showBuiltin }),

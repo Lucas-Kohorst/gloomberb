@@ -22,6 +22,28 @@ function samePoint(left: TimeSeriesPoint, right: TimeSeriesPoint): boolean {
     );
 }
 
+function pointLevel(point: TimeSeriesPoint): number | null {
+  const value = point.close ?? point.value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** A forming bar whose close stays inside one visible step of the plotted range. */
+function lastPointVisibleStepUnchanged(previous: readonly TimeSeriesPoint[], next: readonly TimeSeriesPoint[]): boolean {
+  if (previous.length < 2 || previous.length !== next.length) return false;
+  const lastPrev = previous[previous.length - 1]!;
+  const lastNext = next[next.length - 1]!;
+  if (samePoint(lastPrev, lastNext)) return false;
+  if (!sameTime(lastPrev.date, lastNext.date) || lastPrev.high !== lastNext.high || lastPrev.low !== lastNext.low
+    || lastPrev.volume !== lastNext.volume || lastPrev.open !== lastNext.open) return false;
+  const before = pointLevel(lastPrev);
+  const after = pointLevel(lastNext);
+  if (before == null || after == null || before === after) return false;
+  const levels = previous.slice(0, -1).map(pointLevel).filter((value): value is number => value != null);
+  if (levels.length === 0) return false;
+  const span = Math.max(...levels) - Math.min(...levels);
+  return span > 0 && Math.abs(after - before) * 64 <= span;
+}
+
 function sameSeriesMeta(left: ResolvedSeries, right: ResolvedSeries): boolean {
   return left.id === right.id
     && left.label === right.label
@@ -75,6 +97,7 @@ export function reuseResolvedSeriesIdentity(
   const lastNext = next.points[next.points.length - 1]!;
   if (!samePoint(lastPrev, lastNext)) {
     if (!prefixPointsEqual(previous.points, next.points)) return next;
+    if (lastPointVisibleStepUnchanged(previous.points, next.points)) return previous;
     previous.points[previous.points.length - 1] = lastNext;
     previous.latestChangePercent = next.latestChangePercent;
     return previous;

@@ -66,7 +66,7 @@ export function createPluginCache<T, Stored = T>(options: {
       }
       const owner = generation;
       const before = query.getSnapshot().result;
-      const result = await query.load({ force, replace, fetch: async () => {
+      const result = await query.load({ force, replace, background: !force, fetch: async () => {
         const version = (versions.get(key) ?? 0) + 1;
         versions.set(key, version);
         const value = await loader();

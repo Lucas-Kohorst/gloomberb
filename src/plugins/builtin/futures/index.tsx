@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   DataTableView,
@@ -146,10 +146,20 @@ export function FuturesPane({ focused, width, height }: PaneProps) {
   );
 
   const sessionText = usesSessionText(width);
+  const quotesRef = useRef(quotes);
+  const returnsRef = useRef(returns);
+  quotesRef.current = quotes;
+  returnsRef.current = returns;
   const renderCell = useCallback((
     row: FuturesTableRow,
     column: FuturesColumn,
-  ) => renderFuturesCell(row, column, quotes, { sessionText, returns }), [quotes, returns, sessionText]);
+  ) => renderFuturesCell(row, column, quotesRef.current, { sessionText, returns: returnsRef.current }), [sessionText]);
+  const getRowVersion = useCallback((row: FuturesTableRow) => {
+    if (row.type !== "row") return row.sector;
+    const quote = quotes.get(row.contract.symbol)?.quote;
+    const values = returns.get(row.contract.symbol);
+    return `${quote?.price ?? ""}:${quote?.change ?? ""}:${quote?.changePercent ?? ""}:${quote?.volume ?? ""}:${quote?.lastUpdated ?? ""}:${quote?.marketState ?? ""}:${values?.loading ?? ""}:${values?.values["1W"] ?? ""}:${values?.values["1M"] ?? ""}:${values?.values.YTD ?? ""}`;
+  }, [quotes, returns]);
 
   const toggleSector = useCallback((sector: FuturesSector) => {
     setCollapsedSectors((current) => {
@@ -297,6 +307,7 @@ export function FuturesPane({ focused, width, height }: PaneProps) {
       onVisibleRangeChange={setVisibleRange}
       renderSectionHeader={renderSectorHeader}
       renderCell={renderCell}
+      getRowVersion={getRowVersion}
       selectedTextOverridesCellColor
       reportEveryRow
       emptyStateTitle={searchQuery.trim()

@@ -21,6 +21,8 @@ import { useAutoRefresh } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { CLOUD_QUOTE_DELAY_MINUTES } from "../../../api-client/plan-access";
 import { useLiveSessionRefresh } from "../shared/volatility/live-session";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { hasFreshReadyEntry } from "../../../market-data/coordinator/entries";
 import { createSurfaceDependencies, loadVolatilitySurface, withReusedYieldCurve, type SurfaceLoadRequest } from "./client";
 import { stableSurfaceSheet, SURFACE_LIVE_RELOAD_MS, surfaceFreshnessLabel, type SurfaceSheetAxes } from "./live";
 import { loadStoredSurface, loadSurfaceDates } from "../iv-history/client";
@@ -120,19 +122,32 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
   // never collapses to the first few expiries while the rest reload.
   const [live, setLive] = useState<{ key: string; snapshot: SurfaceSnapshot; at: number } | null>(null);
   const liveController = useRef<AbortController | null>(null);
+  const settledRef = useRef<SurfaceSnapshot | null | undefined>(null);
   const liveDependencies = useMemo(() => withReusedYieldCurve(createSurfaceDependencies()), []);
   const reloadLive = useCallback(async () => {
+    const coordinator = getSharedMarketDataCoordinator();
+    const instrument = target?.instrument;
+    const chainInstrument = { symbol: target?.effectiveTicker ?? symbol!, exchange: target?.effectiveExchange ?? "",
+      brokerId: instrument?.brokerId, brokerInstanceId: instrument?.brokerInstanceId, instrument };
+    const shown = settledRef.current;
+    const expiries = shown?.expiries.map((entry) => entry.expiration) ?? [];
+    const freshChain = coordinator != null && expiries.length > 0 && expiries.every((expiration) => {
+      const entry = coordinator.getOptionsEntry({ instrument: chainInstrument, expirationDate: expiration });
+      return hasFreshReadyEntry(entry, SURFACE_LIVE_RELOAD_MS);
+    });
+    if (freshChain) return;
     liveController.current?.abort();
     const abort = new AbortController();
     liveController.current = abort;
-    const snapshot = await loadVolatilitySurface({ ...surfaceRequest(true, abort.signal),
+    const snapshot = await loadVolatilitySurface({ ...surfaceRequest(false, abort.signal),
       // Each expiry is fitted as its chain arrives, never all together at the end.
       onSnapshot: () => {} }, liveDependencies);
     if (!abort.signal.aborted) setLive({ key: requestKey, snapshot, at: Date.now() });
-  }, [surfaceRequest, liveDependencies]);
+  }, [surfaceRequest, liveDependencies, symbol, target]);
   useEffect(() => () => liveController.current?.abort(), [reloadLive]);
   const liveReload = live?.key === requestKey && (resource.updatedAt == null || live.at > resource.updatedAt) ? live.snapshot : null;
   const settledSnapshot = liveReload ?? resource.data;
+  settledRef.current = settledSnapshot;
   // Stored close surfaces and IV rank come from the Cloud IV history of the underlying.
   const underlying = (target?.effectiveTicker ?? symbol ?? "").toUpperCase();
   const datesLoader = useCallback(async () => (await loadSurfaceDates(underlying)).dates, [underlying]);

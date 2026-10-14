@@ -31,6 +31,10 @@ function scheduleResize(render: () => void): () => void {
   };
 }
 
+function sameDrawnSeries(previous: CompositePanelScene["series"], next: CompositePanelScene["series"]): boolean {
+  return previous.length === next.length && previous.every((entry, index) => entry === next[index]);
+}
+
 function renderPanelBitmap(
   panel: CompositePanelScene,
   bitmapSize: StaticChartBitmapSize,
@@ -69,6 +73,7 @@ export function useCompositePanelBitmap({
   } | null>(null);
   const desktopRequestedSizeRef = useRef<{ pixelWidth: number; pixelHeight: number } | null>(null);
   const desktopRenderedSizeRef = useRef<{ pixelWidth: number; pixelHeight: number } | null>(null);
+  const desktopRenderedSeriesRef = useRef<CompositePanelScene["series"] | null>(null);
   const desktopCancelRenderRef = useRef<(() => void) | null>(null);
   const desktopActiveRef = useRef(false);
   const pixelWidth = bitmapSize?.pixelWidth ?? null;
@@ -78,11 +83,18 @@ export function useCompositePanelBitmap({
     ? { panel, pixelWidth, pixelHeight, colors }
     : null;
 
+  const terminalBitmapRef = useRef<{ series: CompositePanelScene["series"]; bitmap: NativeChartBitmap } | null>(null);
   // The cursor is drawn as a separate overlay, so the plot raster stays cached
-  // (and resident in the terminal) while the crosshair moves.
+  // (and resident in the terminal) while the crosshair moves. A forming bar
+  // that kept its series objects has not moved a visible step.
   const terminalBitmap = useMemo(() => {
     if (isDesktopWeb || !bitmapSize) return null;
-    return renderPanelBitmap(panel, bitmapSize, colors, true);
+    const held = terminalBitmapRef.current;
+    const seriesHeld = held != null && sameDrawnSeries(held.series, panel.series);
+    if (seriesHeld) return held.bitmap;
+    const next = renderPanelBitmap(panel, bitmapSize, colors, true);
+    terminalBitmapRef.current = { series: panel.series, bitmap: next };
+    return next;
   }, [bitmapSize, colors, isDesktopWeb, panel]);
 
   // A newly mounted plot, or a new palette, must have pixels before the
@@ -97,6 +109,14 @@ export function useCompositePanelBitmap({
       const first = desktopBitmapRef.current === null;
       const input = desktopRenderInputRef.current;
       if (!input) return;
+      const renderedSeries = desktopRenderedSeriesRef.current;
+      if (
+        renderedSeries
+        && desktopRenderedColorsRef.current === input.colors
+        && desktopRenderedSizeRef.current?.pixelWidth === input.pixelWidth
+        && desktopRenderedSizeRef.current.pixelHeight === input.pixelHeight
+        && sameDrawnSeries(renderedSeries, input.panel.series)
+      ) return;
       const next = renderPanelBitmap(
         input.panel,
         { pixelWidth: input.pixelWidth, pixelHeight: input.pixelHeight },
@@ -107,6 +127,7 @@ export function useCompositePanelBitmap({
         pixelHeight: input.pixelHeight,
       };
       desktopRenderedColorsRef.current = input.colors;
+      desktopRenderedSeriesRef.current = input.panel.series;
       desktopBitmapRef.current = next;
       setDesktopBitmap(next);
       // A chart that fills its box when it opens takes its measured size

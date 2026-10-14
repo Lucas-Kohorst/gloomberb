@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DataProvider } from "../../../types/data-provider";
 import type { PricePoint } from "../../../types/financials";
 import type { BoardQuoteMap } from "../shared/use-quote-board";
@@ -95,26 +95,30 @@ export function useFrontContractReturns(
     };
   }, [candidates, enabled, provider, today]);
 
-  return useMemo(() => {
-    const result = new Map<string, FrontReturnsState>();
-    if (!enabled) return result;
-    for (const contract of contracts) {
-      const quote = quotes.get(contract.symbol)?.quote;
-      const symbols = candidates.get(contract.symbol) ?? [];
-      const loaded = symbols.map((symbol) => ({ symbol, cached: historyCache.get(symbol) }));
-      if (loaded.some((entry) => !entry.cached)) {
-        result.set(contract.symbol, { loading: true, values: NO_FUTURES_RETURNS });
-        continue;
-      }
-      const available = loaded.flatMap((entry) => entry.cached?.points ? [{ symbol: entry.symbol, history: entry.cached.points }] : []);
-      const front = pickFrontContract(available, quote?.price);
-      const history = available.find((entry) => entry.symbol === front)?.history;
-      result.set(contract.symbol, {
-        loading: false,
-        values: history ? frontContractReturns(history, quote?.price, quote?.lastUpdated) : NO_FUTURES_RETURNS,
-      });
-    }
-    return result;
-    // `version` re-reads the history cache as loads land.
-  }, [candidates, contracts, enabled, quotes, version]);
+  const heldRef = useRef<{ quotes: BoardQuoteMap; version: number; result: FrontReturnsMap } | null>(null);
+  const resultRef = useRef(new Map<string, FrontReturnsState>());
+  if (!enabled) return new Map<string, FrontReturnsState>();
+  const held = heldRef.current;
+  if (held && held.version === version && held.quotes === quotes) return held.result;
+  const changed = !held || held.version !== version
+    ? null
+    : contracts.filter((contract) => quotes.get(contract.symbol)?.quote !== held.quotes.get(contract.symbol)?.quote);
+  if (changed && changed.length === 0) return held!.result;
+  const result = changed ? new Map(resultRef.current) : new Map<string, FrontReturnsState>();
+  for (const contract of changed ?? contracts) {
+    const quote = quotes.get(contract.symbol)?.quote;
+    const symbols = candidates.get(contract.symbol) ?? [];
+    const loaded = symbols.map((symbol) => ({ symbol, cached: historyCache.get(symbol) }));
+    result.set(contract.symbol, loaded.some((entry) => !entry.cached)
+      ? { loading: true, values: NO_FUTURES_RETURNS }
+      : (() => {
+        const available = loaded.flatMap((entry) => entry.cached?.points ? [{ symbol: entry.symbol, history: entry.cached.points }] : []);
+        const front = pickFrontContract(available, quote?.price);
+        const history = available.find((entry) => entry.symbol === front)?.history;
+        return { loading: false, values: history ? frontContractReturns(history, quote?.price, quote?.lastUpdated) : NO_FUTURES_RETURNS };
+      })());
+  }
+  resultRef.current = result;
+  heldRef.current = { quotes, version, result };
+  return result;
 }

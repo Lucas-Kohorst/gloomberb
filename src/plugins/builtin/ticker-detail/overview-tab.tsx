@@ -1,5 +1,5 @@
 import { TrendingSummary } from "../attention/trending";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { EmptyState, PaneLinkMenu, SectionHeading, usePaneNoticeFooter } from "../../../components";
 import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
 import { CompanyLogo, resolveCompanyLogoSrc } from "../../../components/company-logo";
@@ -61,6 +61,27 @@ const LOGO_GAP_PX = 6;
 function contractRowBudget(height: number | undefined): number {
   if (height == null || height >= 32) return Number.POSITIVE_INFINITY;
   return height >= 24 ? 3 : 2;
+}
+
+function useLivePriceReturnFields(
+  history: readonly import("../../../types/financials").PricePoint[],
+  quote: Parameters<typeof appendQuoteToPriceReturnHistory>[1],
+) {
+  const held = useRef<{ history: typeof history; price: number | undefined; at: number | undefined; fields: ReturnType<typeof buildPriceReturnFields> } | null>(null);
+  const price = quote?.price;
+  const at = quote?.lastUpdated;
+  const previous = held.current;
+  if (previous && previous.history === history && previous.price === price && previous.at === at) return previous.fields;
+  const sameDay = previous != null && previous.history === history && previous.price != null && previous.at != null
+    && price != null && Number.isFinite(price) && previous.price !== 0 && at != null
+    && new Date(at).toISOString().slice(0, 10) === new Date(previous.at).toISOString().slice(0, 10);
+  const fields = sameDay
+    ? previous.fields.map((field) => field.value == null
+      ? field
+      : { ...field, value: ((1 + field.value) * price!) / previous.price! - 1 })
+    : buildPriceReturnFields(appendQuoteToPriceReturnHistory(history, quote));
+  held.current = { history, price, at, fields };
+  return fields;
 }
 
 function contractField(line: FuturesContractLine): StatField {
@@ -244,9 +265,7 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
     profile,
     isin: ticker.metadata.isin,
   });
-  const performanceFields = buildPriceReturnFields(
-    appendQuoteToPriceReturnHistory(financials?.priceHistory ?? [], historyQuote),
-  );
+  const performanceFields = useLivePriceReturnFields(financials?.priceHistory ?? [], historyQuote);
   const hasPerformance = performanceFields.some((field) => field.value != null || field.unavailableReason);
   const positionRows = buildPositionRows({
     ticker,
