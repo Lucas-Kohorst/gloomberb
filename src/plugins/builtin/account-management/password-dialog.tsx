@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button, TextField } from "../../../components";
 import { DialogFrame } from "../../../components/ui/frame";
 import { Box } from "../../../ui";
@@ -60,6 +60,8 @@ export function PasswordChangeDialog({
       return fieldOrder[(index + delta + fieldOrder.length) % fieldOrder.length] ?? "current";
     });
   }, []);
+  const activeFieldRef = useRef(activeField);
+  activeFieldRef.current = activeField;
 
   useDialogKeyboard((event) => {
     if (event.name === "escape") {
@@ -72,6 +74,12 @@ export function PasswordChangeDialog({
       event.preventDefault?.();
       event.stopPropagation?.();
       cycleDialogField((tab ? event.shift : event.name === "up" || event.name === "k") ? -1 : 1);
+      return;
+    }
+    if (event.name === "return" && activeFieldRef.current === "confirm" && !event.ctrl && !event.meta && !event.alt) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void submit();
     }
   }, { allowEditable: true });
 

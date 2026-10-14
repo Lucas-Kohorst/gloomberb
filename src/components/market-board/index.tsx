@@ -159,8 +159,10 @@ export function MarketBoardStack<T extends MarketBoardRow>({ rows, width, height
     if (column.id === "percentile") return { text: row.percentileText ?? row.percentile?.toFixed(0) ?? "--", color: row.percentile != null && (row.percentile <= 10 || row.percentile >= 90) ? colors.warning : colors.textMuted };
     if (column.id === "history") return { text: "", content: <PriceSparkline priceHistory={row.history} width={column.width} period="1Y" trend="neutral" /> };
     const asOf = row.asOfText ?? row.asOf ?? "--";
-    // A narrow board drops the year; the export keeps the full date.
-    return { text: shortAsOf ? shortIsoDate(asOf) : asOf, ...(row.asOf ? { value: row.asOf } : {}),
+    const asOfText = shortAsOf ? shortIsoDate(asOf) : asOf;
+    // A narrow board drops the year; the export keeps the full date. The word
+    // stays with the color, so a stale row is not color alone.
+    return { text: row.status === "stale" ? `${asOfText} stale` : asOfText, ...(row.asOf ? { value: row.asOf } : {}),
       color: row.status === "stale" ? colors.warning : colors.textDim };
   };
   return <DataTableStackView columns={columns} items={items} getItemKey={(row) => row.id} renderCell={renderCell}

@@ -467,7 +467,7 @@ export function CompositePanelSurface({
     .map(({ level, yRatio }) => ({
       side: levelDomain.side,
       yRatio,
-      label: formatAxisValue ? formatAxisValue(level.value, levelDomain) : formatCompositeCursorValue(level.value, levelDomain),
+      label: `${formatAxisValue ? formatAxisValue(level.value, levelDomain) : formatCompositeCursorValue(level.value, levelDomain)}${level.label ? ` ${level.label}` : ""}`,
       color: level.color,
     })) : [], [formatAxisValue, levelDomain, projectedLevels, selectedLevelId]);
   const buildAxisMarkers = (side: "left" | "right") => {

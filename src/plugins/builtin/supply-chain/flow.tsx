@@ -185,7 +185,8 @@ export function SupplyFlow({ rows, symbol, focusName, focusId, width, height, fo
     <ChartSurface ref={surfaceRef} width={width} height={height} position="absolute" left={0} top={0}
       vectors={desktop ? vectors : undefined} bitmap={bitmap} flexDirection="column" aria-label="Supply chain flow"
       onMouseMove={hoverAt} onMouseOut={() => setHovered(null)}
-      onMouseDown={() => { const node = hovered ? nodes.find((entry) => entry.id === hovered) : null; if (node) selectNode(node); }}>
+      onMouseDown={() => { const node = hovered ? nodes.find((entry) => entry.id === hovered) : null; if (node) selectNode(node); }}
+      aria-label={hovered ? flowNodeName(nodes.find((entry) => entry.id === hovered)!) : "Supply chain flow"}>
       {fallback ? fallback.map((spans, y) => <Text key={y}>{spans.map((span, i) => <Span key={i} fg={span.color}>{span.text}</Span>)}</Text>) : null}
     </ChartSurface>
     {header("suppliers", 1)}
@@ -215,6 +216,13 @@ export function SupplyFlow({ rows, symbol, focusName, focusId, width, height, fo
     </Box> : null}
     {hoveredNode && hoveredNode.band !== "related" ? <FlowTooltip node={hoveredNode} focusId={focusId} width={width} desktop={desktop} anchor={tooltipAnchor(hoveredNode, ribbons, width)} /> : null}
   </Box>;
+}
+
+function flowNodeName(node: PositionedNode): string {
+  if (node.more) return `Show ${node.more} more ${node.role ? ROLE_PLURAL[node.role].toLowerCase() : node.band}`;
+  const name = node.row ? counterpartyLabel(node.row) : node.label;
+  const role = node.role ? roleLabel(node.role) : node.band;
+  return `Open ${name}, ${role}`;
 }
 
 function tooltipAnchor(node: PositionedNode, ribbons: readonly FlowRibbon[], width: number) {
@@ -275,7 +283,8 @@ function FlowCard({ node, focusId, desktop, active, onPress, onHover }: {
     backgroundColor={node.more ? undefined : active ? desktop ? blendHex(colors.bg, accent, 0.2) : colors.selected : blendHex(colors.bg, accent, desktop ? 0.09 : 0.12)}
     style={desktop ? { borderLeft: `3px ${node.more ? "dotted" : "solid"} ${node.more ? blendHex(colors.bg, accent, 0.5) : accent}`, borderRadius: 3, paddingLeft: 6, cursor: "pointer",
       boxShadow: active ? `inset 0 0 0 1px ${blendHex(colors.bg, accent, 0.6)}` : undefined } : undefined}
-    onMouseDown={onPress} onMouseOver={() => onHover(true)} onMouseOut={() => onHover(false)} data-gloom-role="supply-flow-node">
+    onMouseDown={onPress} onMouseOver={() => onHover(true)} onMouseOut={() => onHover(false)} data-gloom-role="supply-flow-node"
+    role="button" aria-label={flowNodeName(node)}>
     {/* The ticker shows only beside the whole name. On the desktop that is CSS: the row wraps, one line shows, and a ticker that does not fit goes to the hidden line. */}
     <Box flexDirection="row" height={1} overflow="hidden" style={desktop ? { flexWrap: "wrap" } : undefined}>
       {!desktop ? <Text fg={node.more ? colors.textMuted : accent}>▍</Text> : null}
@@ -295,7 +304,8 @@ function FlowChip({ node, desktop, active, onPress, onHover }: { node: Positione
   const background = active ? blendHex(colors.bg, accent, desktop ? 0.32 : 0.45) : node.more ? undefined : blendHex(colors.bg, accent, 0.14);
   const text = <ClippedText fg={node.more ? colors.textDim : active ? colors.textBright : accent} text={flowChipLabel(node)} width={node.width - 2} />;
   return <Box position="absolute" left={node.x} top={node.y} width={node.width} height={1} justifyContent={desktop ? "center" : undefined}
-    onMouseDown={onPress} onMouseOver={() => onHover(true)} onMouseOut={() => onHover(false)} data-gloom-role="supply-flow-chip">
+    onMouseDown={onPress} onMouseOver={() => onHover(true)} onMouseOut={() => onHover(false)} data-gloom-role="supply-flow-chip"
+    role="button" aria-label={flowNodeName(node)}>
     {/* The desktop chip leaves a hairline of row above and below, like ticker chips. */}
     {desktop ? <Box paddingX={1} minWidth={0} backgroundColor={background} justifyContent="center" style={{ height: "calc(100% - 4px)", borderRadius: 3, cursor: "pointer" }}>{text}</Box>
       : <Box paddingX={1} height={1} backgroundColor={background}>{text}</Box>}

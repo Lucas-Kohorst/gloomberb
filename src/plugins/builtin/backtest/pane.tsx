@@ -206,6 +206,7 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
           id: "lookback",
           label: "Lookback",
           inline: true,
+          focused,
           value: LOOKBACK_FILTER_OPTIONS.some((option) => option.value === String(lookback)) ? String(lookback) : "10",
           options: LOOKBACK_FILTER_OPTIONS,
           onChange: (value: string) => setLookback(value),

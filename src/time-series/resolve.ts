@@ -1235,6 +1235,20 @@ function baseSecuritySeries(
   };
 }
 
+const FRED_CATALOG_UNITS: Readonly<Record<string, string>> = {
+  "percent": "%",
+  "millions of u.s. dollars": "million USD",
+  "millions of dollars": "million USD",
+  "billions of dollars": "billion USD",
+  "billions of u.s. dollars": "billion USD",
+  "dollars per barrel": "USD/barrel",
+  "thousands of persons": "thousand people",
+};
+
+function fredCatalogUnit(units: string): string {
+  return FRED_CATALOG_UNITS[units.toLowerCase()] ?? units;
+}
+
 function baseEconomicSeries(
   spec: ChartSeriesSpec,
   loaded: FredSeriesLoadResult,
@@ -1243,13 +1257,15 @@ function baseEconomicSeries(
   if (spec.source.kind !== "economic") return null;
   const { data } = loaded;
   const units = data.info?.units?.trim() || "value";
-  const isPercent = units.toLowerCase().includes("percent");
+  const catalogUnit = fredCatalogUnit(units);
+  const isPercent = catalogUnit === "%";
   return {
     id: spec.id,
     label: spec.label?.trim() || data.info?.title?.trim() || spec.source.seriesId,
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
-    unit: isPercent ? "%" : units,
-    unitGroup: isPercent ? "percent" : `economic:${units.toLowerCase()}`,
+    unit: catalogUnit,
+    unitGroup: isPercent ? "percent" : `economic:${catalogUnit.toLowerCase()}`,
+    attribution: { source: `FRED series ${spec.source.seriesId}`, publisher: "FRED" },
     nativeFrequency: "auto",
     timestampMode: "period-end",
     dataShape: "scalar",

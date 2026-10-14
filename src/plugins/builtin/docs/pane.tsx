@@ -30,6 +30,7 @@ import {
   type PaneHint,
   type SectionedRow,
 } from "../../../components";
+import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import type { DocsFeed, DocsFunction } from "../../../docs/content";
 import {
   docsEntries,
@@ -257,7 +258,8 @@ export function DocsPane({ focused, width, height }: PaneProps) {
   const instance = usePaneInstance();
   const requestKey = instance?.params?.topic ?? null;
   const requestAt = instance?.params?.at ?? null;
-  const { feed, offline } = useDocsFeed();
+  const { feed, offline, reload } = useDocsFeed();
+  usePaneRefreshKey(reload, { focused });
   const [stack, setStack] = usePluginPaneState<string[]>("stack", []);
   const [query, setQuery] = usePluginPaneState<string>("query", "");
   const [show, setShow] = usePluginPaneState<DocsShow>("show", "all");

@@ -208,18 +208,16 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
     const reference = (referenceRates.get(row) ?? base) / (referenceRates.get(quoteCurrency) ?? quote);
     const rowReference = directionReferences.get(row);
     const columnReference = directionReferences.get(quoteCurrency);
-    const level = nextTintLevel(
-      tintLevels.current,
-      `${row}/${quoteCurrency}`,
-      rowReference != null && columnReference != null
-        ? crossMovePercent(base, rowReference, quote, columnReference)
-        : null,
-    );
+    const move = rowReference != null && columnReference != null
+      ? crossMovePercent(base, rowReference, quote, columnReference)
+      : null;
+    const level = nextTintLevel(tintLevels.current, `${row}/${quoteCurrency}`, move);
     // The cursor row keeps its selection colours; the tint leans on them.
     const backgroundColor = rowState.selected
       ? directionTint(level, { background: colors.selected, text: colors.selectedText })
       : directionTint(level, { background: colors.bg, text: colors.text });
-    return { text: formatRate(base / quote, reference), color: colors.text, backgroundColor };
+    const sign = move == null || move === 0 ? "" : move > 0 ? "+" : "-";
+    return { text: `${sign}${formatRate(base / quote, reference)}`, color: colors.text, backgroundColor };
   }, [directionReferences, flagged, rates, referenceRates, status.loading]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => handleRefreshKey(event, refresh), [refresh]);

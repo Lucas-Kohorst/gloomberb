@@ -15,6 +15,7 @@ export const DIVIDEND_SERIES: readonly SeriesDefinition[] = [{
   load: async ({ ticker }) => {
     const data = await fetchDividendData(ticker!, null);
     if (data.historyAvailable === false) throw new Error(data.historyError ?? `No dividend history for ${ticker}.`);
+    if (data.stale) throw new Error(`Dividend history for ${ticker} is stale.`);
     return buildTrailingCashChartPoints(data.payments).map((point) => ({ date: point.date, value: point.close }));
   },
 }];

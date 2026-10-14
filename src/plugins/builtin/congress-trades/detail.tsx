@@ -1,9 +1,10 @@
 import { aggregateLoadedCongress } from "./aggregates";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Box, ScrollBox, Text, useRendererHost, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { ClippedText } from "../../../components/ui/display";
 import {
   DataTableView,
+  DetailScrollBody,
   KeyValueRow,
   StatGrid,
   usePaneFooter,
@@ -47,16 +48,18 @@ const DETAIL_ROW = { labelWidth: 16, emphasis: false } as const;
 export function TradeDetail({
   trade,
   width,
+  scrollRef,
 }: {
   trade: CloudCongressTradePayload;
   width: number;
+  scrollRef?: RefObject<ScrollBoxRenderable | null>;
 }) {
   const lineWidth = Math.max(1, width - 2);
   // The desktop's rows cut long values where they end, by CSS; the terminal at its columns.
   const desktop = !!useUiCapabilities().nativePaneChrome;
   const fit = (value: string) => desktop ? value : truncateWithEllipsis(value, Math.max(10, lineWidth - 16));
   return (
-    <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
+    <DetailScrollBody ref={scrollRef}>
       <Box flexDirection="column" width={lineWidth}>
         {/* The detail title already carries the member and ticker. */}
         <KeyValueRow {...DETAIL_ROW} label="chamber" value={`${trade.chamber === "senate" ? "Senate" : "House"}${trade.stateDistrict ? ` · ${trade.stateDistrict}` : ""}`} tone="muted" />
@@ -82,7 +85,7 @@ export function TradeDetail({
           </>
         ) : null}
       </Box>
-    </ScrollBox>
+    </DetailScrollBody>
   );
 }
 

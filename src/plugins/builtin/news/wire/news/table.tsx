@@ -118,7 +118,7 @@ const FIXED_COLUMN_WIDTHS: Record<Exclude<NewsColumnId, "title">, number> = {
   source: 15,
   tickers: 18,
   categories: 10,
-  sentiment: 4,
+  sentiment: 10,
   // Wide enough to keep the sort indicator next to the label.
   importance: 7,
 };
@@ -318,7 +318,7 @@ export function NewsArticleStackView({
       case "sentiment": {
         const sentiment = item.sentiment;
         return {
-          text: sentiment ? sentiment.slice(0, 3) : "-",
+          text: sentiment === "positive" ? "+ positive" : sentiment === "negative" ? "- negative" : sentiment === "neutral" ? "neutral" : "-",
           color: (
             sentiment === "positive"
               ? colors.positive
