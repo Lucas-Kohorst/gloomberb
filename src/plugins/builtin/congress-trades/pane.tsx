@@ -370,11 +370,6 @@ export function CongressTradesPane({ focused, width, height, tickerFilter }: Pan
       if (isPlainKey(event, "f")) void openFilters(); else setMine(!mine);
       return true;
     }
-    if (activeTab === "trades" && isPlainKey(event, "t") && (selectedTrade?.ticker)) {
-      event.preventDefault?.(); event.stopPropagation?.();
-      openSelectedTicker();
-      return true;
-    }
     return handleRootKeyDown(event);
   };
   usePaneFooter(`${CONGRESS_TRADES_PANE_ID}:${tickerFilter ?? "all"}:filters`, () => ({ hints: !detailMode ? [
