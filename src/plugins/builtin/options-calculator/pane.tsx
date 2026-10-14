@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FieldGrid, KeyValueRow, QueryBar, usePaneFooter, usePaneNoticeFooter, type GridField } from "../../../components";
 import { CompositeChart } from "../../../components/chart/composite/composite-chart";
+import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useInputCapture } from "../../../public/react";
 import { useShortcut } from "../../../react/input";
 import { useAppSelector, usePaneInstance, usePaneStateValue } from "../../../state/app/context";
@@ -262,9 +263,6 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
     } else if (american && isPlainKey(event, "d")) {
       consume();
       setActiveFieldId("dividends");
-    } else if (surfaceSource && isPlainKey(event, "r")) {
-      consume();
-      void surfaceResource.reload();
     }
   }, {
     allowEditable: true,
@@ -273,6 +271,7 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
     scope: "options-calculator:fields",
   });
 
+  usePaneRefreshKey(() => { void surfaceResource.reload(); }, { focused: focused && !commandBarOpen && surfaceSource });
   usePaneFooter(OPTIONS_CALCULATOR_PANE_ID, () => ({
     info: [
       ...(problem ? [{ id: "input", parts: [{ text: problem, tone: "warning" as const }] }] : []),
