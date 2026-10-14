@@ -41,6 +41,7 @@ import { usePlanAccess } from "../../../api-client/plan-access";
 import {
   createSavedSearch,
   deleteSavedSearch,
+  cachedSearchDocument,
   isAbortError,
   loadSavedSearches,
   loadSearchDocument,
@@ -147,6 +148,15 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     [hits, openHitId],
   );
   const openHit = openHitIndex >= 0 ? hits[openHitIndex]! : null;
+  const [seededDocumentKey, setSeededDocumentKey] = useState<string | null>(null);
+  if (openHit) {
+    const key = hitDocumentKey(openHit);
+    if (seededDocumentKey !== key) {
+      setSeededDocumentKey(key);
+      const cached = cachedSearchDocument(openHit.docType, openHit.sourceId);
+      if (cached) setDocument(cached);
+    }
+  }
 
   const focusField = useCallback((field: Exclude<ActiveField, null>) => {
     setActiveField(field);
@@ -165,7 +175,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     const controller = new AbortController();
     setDocumentLoading(true);
     setDocumentFailure(null);
-    setDocument(null);
+    setDocument((current) => current ?? cachedSearchDocument(openHit.docType, openHit.sourceId));
     void loadSearchDocument(openHit.docType, openHit.sourceId, controller.signal)
       .then((loaded) => {
         if (controller.signal.aborted) return;

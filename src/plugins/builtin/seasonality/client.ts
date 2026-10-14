@@ -29,6 +29,29 @@ const BUFFER_RANGE = { monthly: "ALL", daily: "5Y" } as const;
  * Monday-stamped weeks that file a week's close under the wrong month. The
  * Weekdays tab needs sessions, so it reads those five years of daily bars.
  */
+export function cachedSeasonalityHistory(
+  request: { instrument: InstrumentRef; cadence?: SeasonalityCadence },
+): SeasonalityHistory | null {
+  const coordinator = getSharedMarketDataCoordinator();
+  if (!coordinator) return null;
+  const cadence = request.cadence ?? "monthly";
+  const entry = coordinator.getChartEntry({
+    instrument: request.instrument,
+    bufferRange: BUFFER_RANGE[cadence],
+    granularity: "resolution",
+    resolution: SEASONALITY_HISTORY_RESOLUTION[cadence],
+  });
+  const history = resolveEntryValue(entry);
+  if (!history?.length) return null;
+  const now = Date.now();
+  return {
+    history,
+    stale: !!entry.error || (entry.staleAt != null && entry.staleAt <= now),
+    error: entry.error?.message ?? null,
+    fetchedAt: entry.fetchedAt ?? now,
+  };
+}
+
 export async function loadSeasonalityHistory(
   request: { instrument: InstrumentRef; cadence?: SeasonalityCadence; signal?: AbortSignal; forceRefresh?: boolean },
   marketData?: DataProvider,

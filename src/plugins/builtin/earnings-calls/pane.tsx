@@ -35,6 +35,7 @@ import { usePlanAccess } from "../../../api-client/plan-access";
 import { listingAbroad } from "../../../api-client/paths";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 import {
+  cachedEarningsCalls,
   callStatusLabel,
   isPendingTranscript,
   loadEarningsCalls,
@@ -179,19 +180,24 @@ interface EarningsCallsViewProps {
 export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewProps) {
   const { symbol, exchange, ticker: boundTicker } = useSymbolBinding();
   const access = usePlanAccess();
+  const initialTicker = symbol ? symbol.toUpperCase() : null;
+  const initialAbroad = initialTicker ? listingAbroad(initialTicker, exchange, boundTicker?.metadata.name) : null;
+  const initialShelf = cachedEarningsCalls(initialTicker, {
+    limit: CALL_PAGE_SIZE, exchange: initialAbroad?.exchange, name: initialAbroad?.name,
+  });
 
-  const [calls, setCalls] = useState<CloudEarningsCallPayload[]>([]);
-  const [listStatus, setListStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [calls, setCalls] = useState<CloudEarningsCallPayload[]>(initialShelf?.calls ?? []);
+  const [listStatus, setListStatus] = useState<"idle" | "loading" | "loaded" | "error">(initialShelf ? "loaded" : "idle");
   const [listError, setListError] = useState<{ message: string; status?: number } | null>(null);
-  const [stale, setStale] = useState(false);
-  const [listFetchedAt, setListFetchedAt] = useState(0);
+  const [stale, setStale] = useState(initialShelf?.stale === true);
+  const [listFetchedAt, setListFetchedAt] = useState(initialShelf?.fetchedAt ?? 0);
   const listRequestVersion = useRef(0);
   const [listCompletedRequest, setListCompletedRequest] = useState(0);
   // The shelf is paged: the server answers a page at a time and reports no
   // total, so a full page means there is probably another one behind it.
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore] = useState(initialShelf?.sourceLimitReached === true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [nextOffset, setNextOffset] = useState(0);
+  const [nextOffset, setNextOffset] = useState(initialShelf?.calls.length ?? 0);
   const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selectedId", null);
@@ -224,7 +230,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   // Set while a call opened without a transcript is being produced.
   const [producing, setProducing] = useState(false);
   // The list answered "pending": the server is still searching for calls.
-  const [listPending, setListPending] = useState(false);
+  const [listPending, setListPending] = useState(initialShelf?.pending === true && initialShelf.calls.length === 0);
 
   const ticker = symbol ? symbol.toUpperCase() : null;
   // A listing abroad asks for its own calls by venue and company, never a US namesake's.
@@ -307,14 +313,15 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   useEffect(() => {
     const keepRestoredCall = firstShelfLoadRef.current;
     firstShelfLoadRef.current = false;
-    setCalls([]);
-    setHasMore(false);
+    const held = cachedEarningsCalls(ticker, { limit: CALL_PAGE_SIZE, exchange: listingVenue, name: listingName });
+    setCalls(held?.calls ?? []);
+    setHasMore(held?.sourceLimitReached === true);
     setLoadingMore(false);
-    setNextOffset(0);
-    setListStatus("idle");
-    setListPending(false);
-    setStale(false);
-    setListFetchedAt(0);
+    setNextOffset(held?.calls.length ?? 0);
+    setListStatus(held ? "loaded" : "idle");
+    setListPending(held?.pending === true && held.calls.length === 0);
+    setStale(held?.stale === true);
+    setListFetchedAt(held?.fetchedAt ?? 0);
     setListError(null);
     setLookup(null);
     setLookupRefresh(null);
