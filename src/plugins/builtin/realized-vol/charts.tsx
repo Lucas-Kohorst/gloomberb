@@ -1,7 +1,6 @@
 import { useRealizedVolEvidence, type RealizedVolEvidenceStatus } from "./evidence";
 import { useMemo } from "react";
 import { CompositeChart } from "../../../components";
-import { usePaneArrowHold } from "../../../components/layout/pane/footer/registration";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
 import { blendHex } from "../../../theme/color-utils";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -16,7 +15,6 @@ function useChartColors() {
 }
 
 export function RealizedVolGraph({ input, width, height, evidence, focused = false }: { input: RealizedChartInput; width: number; height: number; evidence: RealizedVolEvidenceStatus; focused?: boolean }) {
-  usePaneArrowHold(focused);
   const { colors, chart } = useChartColors();
   const series = useMemo(() => realizedChartSeries(input, [colors.positive, colors.borderFocused, colors.negative,
     colors.text, colors.textDim, blendHex(colors.positive, colors.borderFocused, 0.5), colors.warning, colors.warning], colors.textBright), [input, colors]);

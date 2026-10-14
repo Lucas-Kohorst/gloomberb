@@ -497,9 +497,8 @@ export function useCompositeChartKeyboard({
       || (interaction === "delete-drawing" && !canDeleteDrawing)
       || (interaction === "cycle-colour" && !isDrawingTool(armedTool) && !selectedDrawingId)
       // A focused tab strip in the pane keeps the arrows until the user moves
-      // into a chart they pan and draw on. A read-only chart takes them while
-      // it is focused and the strip has let go.
-      || ((interaction === "cursor-left" || interaction === "cursor-right") && (!scene || (arrowsClaimed && !inside && navigable)))
+      // into a chart they pan and draw on; a read-only chart never takes them.
+      || ((interaction === "cursor-left" || interaction === "cursor-right") && (!scene || (arrowsClaimed && !inside)))
       || ((interaction === "zoom-in"
         || interaction === "zoom-out"
         || interaction === "pan-left"

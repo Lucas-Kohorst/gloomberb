@@ -10,7 +10,6 @@ export interface CompositeChartLevel {
   id: string;
   value: number;
   color: string;
-  label?: string;
   /** False for a level the chart shows but something else owns, such as a price alert. */
   editable: boolean;
   /** Whether the chart's level action applies to it. */

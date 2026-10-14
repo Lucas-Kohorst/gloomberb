@@ -54,7 +54,7 @@ export function createWorldIndexColumns(width: number): WorldIndexColumn[] {
   const nameWidth = Math.max(10, width - 6 - columnCount - fixedWidth);
 
   return [
-    { id: "status", label: "SESSION", width: statusWidth, align: "left" },
+    { id: "status", label: usesSessionText(width) ? "SESSION" : "", width: statusWidth, align: "left" },
     { id: "symbol", label: "INDEX", width: symbolWidth, align: "left" },
     // The leftover width lands here rather than being spread across the number
     // columns, which is what left a dead zone between NAME and LAST.

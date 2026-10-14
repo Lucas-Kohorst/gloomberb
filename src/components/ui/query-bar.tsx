@@ -54,8 +54,6 @@ export interface QueryBarSelectFilter<T extends string = string> extends QueryBa
   title?: string;
   /** Draw the options inline (one click) instead of a menu. For four or fewer short values. */
   inline?: boolean;
-  /** Left and Right step an inline strip while the pane is focused. */
-  focused?: boolean;
 }
 
 export interface QueryBarMultiFilter extends QueryBarFilterBase {
@@ -481,7 +479,6 @@ export function QueryBar({ width, search, filters = [], view, meta: given, asOf,
                 options={filter.options.map((option) => ({ value: option.value, label: option.short ?? option.label, hint: option.hint, disabled: option.disabled }))}
                 value={filter.value}
                 onChange={filter.onChange}
-                focused={filter.focused}
               />
             </Box>
           );

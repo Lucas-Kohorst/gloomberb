@@ -651,9 +651,8 @@ export function renderQuoteBoardCell(
         return { text: quoteSessionLabel(quote) ?? "—", color: quoteSessionColor(quote) };
       }
       const dot = marketStatusDot(quote?.marketState);
-      const session = quoteSessionLabel(quote);
-      // The dot stays; the word is in the cell so a one-cell column is not color alone.
-      return { text: session ? `${dot.char} ${session}` : dot.char, value: session, color: dot.color };
+      // The dot is a picture; the export says which session it means.
+      return { text: dot.char, value: quoteSessionLabel(quote), color: dot.color };
     }
     case "price":
       if (!quote || !Number.isFinite(quote.price)) return { text: "—", color: colors.textDim };

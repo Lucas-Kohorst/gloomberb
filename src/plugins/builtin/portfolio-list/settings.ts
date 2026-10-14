@@ -176,7 +176,7 @@ function withTargetColumns(columnIds: string[]): string[] {
 }
 
 function describeColumnOption(column: ColumnConfig): string {
-  if (column.id === PRICE_SPARKLINE_COLUMN_ID) return "One-month sparkline from the loaded price history, not a catalog close series.";
+  if (column.id === PRICE_SPARKLINE_COLUMN_ID) return "One-month price sparkline.";
   if (TARGET_COLUMN_IDS.has(column.id)) return "Shown by default once the portfolio has target weights.";
   if (column.id === "perp_premium") return "Premium of the stock's perpetual to its last price.";
   if (column.id === "perp_funding") return "Funding of the stock's perpetual, per 8 hours.";
