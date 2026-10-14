@@ -37,7 +37,6 @@ import type { PaneProps } from "../../../types/plugin";
 import { formatPercentileRank } from "../../../utils/format";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { isPlainKey } from "../../../utils/keyboard";
-import { scrollByLines } from "../../../state/pane-scroll-registry";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { SignInWall } from "../cloud/auth-actions";
 import {
@@ -302,15 +301,6 @@ export function EstimateRevisionsPane({ width, height, focused }: PaneProps) {
   // PageUp/PageDown read the cited guidance above the sources table first,
   // and fall through to the table once the text is at that end.
   const pageGuidance = useCallback((event: DataTableKeyEvent) => {
-    const line = isPlainKey(event, "j", "down") ? 1 : isPlainKey(event, "k", "up") ? -1 : 0;
-    if (line && tab === "guidance") {
-      const prose = guidanceScrollRef.current;
-      if (!prose) return false;
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      scrollByLines(prose, line);
-      return true;
-    }
     if (!isPlainKey(event, "pageup", "pagedown")) return false;
     const prose = guidanceScrollRef.current;
     const viewportHeight = prose?.viewport?.height ?? 0;
@@ -322,7 +312,7 @@ export function EstimateRevisionsPane({ width, height, focused }: PaneProps) {
     prose.scrollTo(next);
     event.stopPropagation?.();
     return true;
-  }, [tab]);
+  }, []);
   const pinnedTarget = useMemo(() => {
     if (!pinnedPeriod || !data) return { id: null, notice: null };
     try {
