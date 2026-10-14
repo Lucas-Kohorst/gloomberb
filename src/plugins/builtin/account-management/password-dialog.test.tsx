@@ -41,5 +41,5 @@ test("Enter on the confirm field changes the password once", async () => {
 
 test("Enter on a confirm that differs from the new password changes nothing", async () => {
   expect(await fill("other-password")).toEqual([]);
-  expect(tui.frame()).toContain("New passwords do not match");
+  await tui.waitForFrameToContain("New passwords do not match");
 });

@@ -24,8 +24,7 @@ async function board(width: number, rows: MarketBoardRow[]) {
     </AppContext>,
     { width, height: 8 },
   );
-  await tui.renderFrames(2);
-  return tui.frame();
+  return tui.waitForFrameToContain("DGS");
 }
 
 describe("MarketBoardStack", () => {
