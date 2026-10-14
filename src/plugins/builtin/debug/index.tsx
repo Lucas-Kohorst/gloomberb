@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../ui";
+import { Box, Text, type ScrollBoxRenderable } from "../../../ui";
 import { useState, useEffect, useCallback, useMemo, useRef, type RefObject } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
@@ -90,7 +90,7 @@ function renderDebugCell(entry: LogEntry, column: DebugColumn, _index: number, s
   return { text: entry.message.replace(/\s+/g, " "), color: state.selected ? colors.selectedText : colors.text };
 }
 
-function DebugEntryDetail({ entry, scrollRef }: { entry: LogEntry; scrollRef: React.RefObject<ScrollBoxRenderable | null> }) {
+function DebugEntryDetail({ entry, scrollRef }: { entry: LogEntry; scrollRef: RefObject<ScrollBoxRenderable | null> }) {
   return (
     <DetailScrollBody ref={scrollRef} resetScrollKey={entry.id}>
       <Text fg={colors.text} wrapText selectable>{entry.message}</Text>
