@@ -267,12 +267,8 @@ describe("CompositeChart", () => {
     });
     expect(tui.frame()).toContain("$102");
 
-    await act(async () => {
-      setLast?.(150);
-      await tui.setup().renderOnce();
-      await tui.setup().renderOnce();
-    });
-    expect(tui.frame()).toContain("$150");
+    await act(async () => { setLast?.(150); });
+    await tui.waitForFrameToContain("$150");
   });
 
   test("does not allocate a native raster when braille rendering is forced", async () => {
