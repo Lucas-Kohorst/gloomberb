@@ -28,6 +28,7 @@ import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { quoteObservation } from "../shared/report-freshness";
 import {
   boardErrorMessage,
+  boardHeadlineQuote,
   quoteBoardFooterInfo,
   quoteBoardStatus,
   useQuoteBoard,
@@ -154,11 +155,18 @@ export function FuturesPane({ focused, width, height }: PaneProps) {
     row: FuturesTableRow,
     column: FuturesColumn,
   ) => renderFuturesCell(row, column, quotesRef.current, { sessionText, returns: returnsRef.current }), [sessionText]);
+  // Everything a cell reads: the headline figures the board shows, the quote's
+  // other fields, whether the last good quote is held over, and the returns.
   const getRowVersion = useCallback((row: FuturesTableRow) => {
     if (row.type !== "row") return row.sector;
-    const quote = quotes.get(row.contract.symbol)?.quote;
+    const state = quotes.get(row.contract.symbol);
+    const quote = state?.quote ? boardHeadlineQuote(state.quote) : null;
     const values = returns.get(row.contract.symbol);
-    return `${quote?.price ?? ""}:${quote?.change ?? ""}:${quote?.changePercent ?? ""}:${quote?.volume ?? ""}:${quote?.lastUpdated ?? ""}:${quote?.marketState ?? ""}:${values?.loading ?? ""}:${values?.values["1W"] ?? ""}:${values?.values["1M"] ?? ""}:${values?.values.YTD ?? ""}`;
+    return [
+      state?.loading, state?.stale,
+      quote?.price, quote?.change, quote?.changePercent, quote?.previousClose, quote?.volume, quote?.lastUpdated, quote?.marketState, quote?.symbol, quote?.name,
+      values?.loading, values?.values["1W"], values?.values["1M"], values?.values.YTD,
+    ].join(":");
   }, [quotes, returns]);
 
   const toggleSector = useCallback((sector: FuturesSector) => {
