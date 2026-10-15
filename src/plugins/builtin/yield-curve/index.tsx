@@ -46,6 +46,9 @@ const BASIS_LABEL: Record<CurveBasis, string> = {
   spread: "Spread",
 };
 const basisText = (basis: CurveBasis | undefined): string | null => basis ? BASIS_LABEL[basis] : null;
+/** TIPS par yields are real yields, and the breakeven curve is the spread readers call a breakeven. */
+const CURVE_LEVEL: Partial<Record<CurveId, string>> = { "us-real": "Real par yield", "us-breakeven": "Breakeven" };
+const curveLevel = (curve: CurveId, basis: CurveBasis | undefined): string | null => CURVE_LEVEL[curve] ?? basisText(basis);
 const TENOR: DataTableColumn = { id: "tenor", label: "Tenor", width: 7, align: "left" };
 const YIELD: DataTableColumn = { id: "yield", label: "Yield", width: 8, align: "right" };
 const CHANGE_1D: DataTableColumn = { id: "change1d", label: "1D chg", width: 8, align: "right" };
@@ -267,7 +270,7 @@ function CurveTab({ curve, onCurveChange, focused, width, height }: {
   useChartTableSelection({ rows, getId: tenorKey, getDate: tenorPosition, selectedId, onSelect: setSelectedTenor,
     focused: focused && !editing });
   const compareName = curveLookbackLabel(compareLabel);
-  const level = basisText(current?.basis);
+  const level = curveLevel(curve, current?.basis);
   const levelName = level ?? "Yield";
   const series = useMemo(() => differenceView
     ? [yieldDifferenceSeries(rows, compareName, { positive: colors.positive, negative: colors.negative })]
