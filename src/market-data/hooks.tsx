@@ -22,7 +22,6 @@ import {
   buildSnapshotKey,
 } from "./selectors";
 import { instrumentIdentityKey } from "../utils/instrument-identity";
-import { getPricePointTimestamp } from "../utils/price-history";
 import { createBaselineChartRequest } from "./coordinator/chart";
 
 const TICKER_FINANCIALS_LOAD_DELAY_MS = 250;
@@ -347,23 +346,6 @@ export function useQuoteEntries(
   );
 }
 
-function extendHeldSeries(held: readonly PricePoint[], incoming: readonly PricePoint[]): readonly PricePoint[] {
-  if (held.length === 0) return incoming;
-  if (incoming.length === 0 || incoming === held) return held;
-  const lastTime = getPricePointTimestamp(held[held.length - 1]!);
-  if (!Number.isFinite(lastTime)) return incoming;
-  let start = 0;
-  for (; start < incoming.length; start += 1) {
-    const time = getPricePointTimestamp(incoming[start]!);
-    if (Number.isFinite(time) && time >= lastTime) break;
-  }
-  if (start === incoming.length) return held;
-  const tailTime = getPricePointTimestamp(incoming[start]!);
-  if (tailTime > lastTime) return [...held, ...incoming.slice(start)];
-  if (start === incoming.length - 1 && incoming[start] === held[held.length - 1]) return held;
-  return [...held.slice(0, -1), ...incoming.slice(start)];
-}
-
 export function useChartQueries(
   requests: readonly ChartRequest[],
   options: ChartQueryOptions = {},
@@ -377,41 +359,11 @@ export function useChartQueries(
   const appActive = useAppVisible();
   const paneVisible = usePaneVisible();
   const wasPaneVisibleRef = useRef(paneVisible);
-  const heldSeriesRef = useRef<{ coordinator: SharedCoordinator | null; series: Map<string, readonly PricePoint[]> }>({
-    coordinator: null,
-    series: new Map(),
-  });
-  const entries = useMemo(() => {
-    if (!coordinator) return [] as Array<readonly [string, QueryEntry<PricePoint[]>]>;
-    const held = heldSeriesRef.current;
-    if (held.coordinator !== coordinator) {
-      held.coordinator = coordinator;
-      held.series = new Map();
-    }
-    const live = new Set<string>();
-    const next = requests.map((request) => {
-      const key = buildChartKey(request);
-      live.add(key);
-      const entry = coordinator.getChartEntry(request);
-      const incoming = entry.data ?? entry.lastGoodData;
-      const previous = held.series.get(key);
-      const series = previous && previous.length > 0
-        ? (incoming && incoming.length > 0 ? extendHeldSeries(previous, incoming) : previous)
-        : incoming ?? undefined;
-      if (series && series.length > 0) held.series.set(key, series);
-      if (!series || series === entry.data || series === entry.lastGoodData) {
-        return [key, entry] as const;
-      }
-      const data = series.slice();
-      return [key, { ...entry, data, lastGoodData: data }] as const;
-    });
-    if (held.series.size > live.size) {
-      for (const key of held.series.keys()) {
-        if (!live.has(key)) held.series.delete(key);
-      }
-    }
-    return next;
-  }, [coordinator, keys, keysVersion, requestKey]);
+  const entries = useMemo(() => (
+    coordinator
+      ? requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
+      : [] as Array<readonly [string, QueryEntry<PricePoint[]>]>
+  ), [coordinator, keys, keysVersion, requestKey]);
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();

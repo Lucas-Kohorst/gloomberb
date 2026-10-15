@@ -340,66 +340,6 @@ test("one tick on a two-ticker board keeps the other ticker object identical", a
   expect(quoteReads).toBe(quoteReadsAfterPaint + 1);
 });
 
-test("a chart refresh keeps the held prefix and appends the new tail", async () => {
-  const held = [
-    { date: new Date("2026-01-01T00:00:00Z"), close: 10 },
-    { date: new Date("2026-01-02T00:00:00Z"), close: 11 },
-  ];
-  const revisedLast = { date: new Date("2026-01-02T00:00:00Z"), close: 12 };
-  const tail = { date: new Date("2026-01-03T00:00:00Z"), close: 13 };
-  let series: PricePoint[] = held;
-  let version = 1;
-  const listeners = new Set<() => void>();
-  let latest: Map<string, QueryEntry<PricePoint[]>> | null = null;
-  function Harness() {
-    latest = useChartQueries([makeChartRequest("1M")]);
-    return <text />;
-  }
-  setSharedMarketDataCoordinator({
-    subscribe: (listener: () => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    getVersion: () => version,
-    getChartEntry: () => ({
-      phase: "ready" as const,
-      data: series,
-      lastGoodData: series,
-      source: "test",
-      fetchedAt: version,
-      staleAt: null,
-      error: null,
-      attempts: [],
-    }),
-    loadChart: async () => ({
-      phase: "ready" as const,
-      data: series,
-      lastGoodData: series,
-      source: "test",
-      fetchedAt: version,
-      staleAt: null,
-      error: null,
-      attempts: [],
-    }),
-  } as unknown as MarketDataCoordinator);
-
-  await tui.render(<Harness />, { width: 20, height: 1 });
-  const key = buildChartKey(makeChartRequest("1M"));
-  expect(latest?.get(key)?.data?.[0]).toBe(held[0]);
-
-  series = [{ date: held[0]!.date, close: 99 }, revisedLast, tail];
-  await act(async () => {
-    version += 1;
-    for (const listener of listeners) listener();
-    await tui.setup().renderOnce();
-  });
-
-  const data = latest?.get(key)?.data;
-  expect(data?.[0]).toBe(held[0]);
-  expect(data?.[1]).toBe(revisedLast);
-  expect(data?.[2]).toBe(tail);
-});
-
 test("a fresh loadQuoteEntry does not open a flight", async () => {
   const realNow = Date.now;
   Date.now = () => Date.parse("2026-09-14T18:00:00Z");
