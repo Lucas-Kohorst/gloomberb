@@ -1,5 +1,6 @@
 import { parseViewSpecOr, type ViewSpec } from "../custom-view/view-spec";
 import { isRecord } from "../../../utils/guards";
+import { rankedBriefBuiltins, type BriefProfile } from "./profile";
 
 /** Plugin setting that holds the small-table list. Ask Gloom writes the same JSON. */
 export const BRIEF_SECTIONS_SETTING = "sections";
@@ -41,10 +42,11 @@ export interface BriefLayout {
   sections: BriefSection[];
 }
 
-export function defaultBriefLayout(): BriefLayout {
+export function defaultBriefLayout(profile?: BriefProfile): BriefLayout {
+  const builtins = profile ? rankedBriefBuiltins(profile) : [...BRIEF_BUILTINS];
   return {
     version: 1,
-    sections: BRIEF_BUILTINS.map((builtin) => ({ kind: "builtin", id: builtin, builtin })),
+    sections: builtins.map((builtin) => ({ kind: "builtin", id: builtin, builtin })),
   };
 }
 

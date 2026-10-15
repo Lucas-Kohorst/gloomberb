@@ -16,6 +16,7 @@ import { openUrl } from "../../../components/ui/external-link";
 import { getActiveQuoteDisplay } from "../../../market-data/market/status";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
 import {
+  useAppSelector,
   useAsyncResource,
   useAutoRefresh,
   useMarketData,
@@ -60,6 +61,7 @@ import {
   type BriefBuiltinSection,
   type BriefViewSection,
 } from "./sections";
+import { buildBriefProfile } from "./profile";
 import {
   BriefTable,
   earningsColumns,
@@ -212,6 +214,9 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   const [viewLines, setViewLines] = useState<Record<string, BriefViewLine[]>>({});
   const [viewErrors, setViewErrors] = useState<Record<string, string>>({});
   const [storedSections] = usePluginConfigState<unknown>(BRIEF_SECTIONS_SETTING, "");
+  const recentTickers = useAppSelector((state: any) => state?.recentTickers ?? []);
+  const recentCommands = useAppSelector((state: any) => state?.recentCommands ?? []);
+  const paneIds = useAppSelector((state: any) => (state?.config?.layout?.instances ?? []).map((i: any) => i?.paneId).filter(Boolean));
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selectedId", null);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const rowAt = useRef(new Map<string, number>());
@@ -331,7 +336,8 @@ export function DailyBriefPane({ width, height, focused }: PaneProps) {
   }, []);
 
   const parsedSections = useMemo(() => parseBriefSections(storedSections), [storedSections]);
-  const layout = "layout" in parsedSections ? parsedSections.layout : defaultBriefLayout();
+  const profile = useMemo(() => buildBriefProfile({ recentTickers, recentCommands, layout: { instances: paneIds.map((id: string) => ({ paneId: id })) } } as any), [recentTickers, recentCommands, paneIds]);
+  const layout = "layout" in parsedSections ? parsedSections.layout : defaultBriefLayout(profile);
   const sectionsError = "error" in parsedSections ? parsedSections.error : null;
 
   const headlineBase = useMemo<HeadlineRow[]>(() => {
