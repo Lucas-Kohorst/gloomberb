@@ -1,18 +1,21 @@
 import type { DataProvider } from "../types/data-provider";
+import { fixedUsdRate } from "../utils/currency-units";
+import { logFailure } from "../utils/log-failure";
 
 export function createBaseConverter(dataProvider: Pick<DataProvider, "getExchangeRate">, baseCurrency: string) {
   const rateCache = new Map<string, number>([["USD", 1]]);
 
   const getRate = async (currency: string): Promise<number> => {
     const normalizedCurrency = currency.toUpperCase();
-    const cached = rateCache.get(normalizedCurrency);
+    const cached = rateCache.get(normalizedCurrency) ?? fixedUsdRate(normalizedCurrency);
     if (cached != null) return cached;
     try {
       const rate = await dataProvider.getExchangeRate(normalizedCurrency);
       const validRate = Number.isFinite(rate) && rate > 0 ? rate : Number.NaN;
       rateCache.set(normalizedCurrency, validRate);
       return validRate;
-    } catch {
+    } catch (error) {
+      logFailure("cli-base-converter", "Could not load base conversion exchange rate")(error);
       return Number.NaN;
     }
   };

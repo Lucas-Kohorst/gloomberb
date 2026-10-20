@@ -268,7 +268,7 @@ export const ThemePicker = memo(forwardRef<ThemePickerHandle, ThemePickerProps>(
         paddingX={contentPadding}
         width="100%"
         data-command-bar-row-selected={nativePaneChrome && state.selected ? "true" : undefined}
-        style={nativePaneChrome ? { borderRadius: 6 } : undefined}
+        style={nativePaneChrome ? { borderRadius: "var(--gloom-radius-md)" } : undefined}
       >
         <Box width={GLYPH_GUTTER_WIDTH}>
           <Text fg={subtle}>
@@ -314,6 +314,8 @@ export const ThemePicker = memo(forwardRef<ThemePickerHandle, ThemePickerProps>(
       surface="plain"
       bgColor={nativePaneChrome ? palette.panelBg : palette.bg}
       selectedBgColor={palette.selectedBg}
+      // A row of the command bar's list: the chosen one is filled, as the command bar's own rows are.
+      selection="fill"
       hoverBgColor={palette.hoverBg}
       emptyMessage={truncateToDisplayWidth(t("No themes match"), queryDisplayWidth)}
       showSelectedDescription={false}

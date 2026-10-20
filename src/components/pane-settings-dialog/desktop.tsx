@@ -1,9 +1,11 @@
 import { Box, Text } from "../../ui";
 import { useEffect, useId, type ReactNode } from "react";
 import type { PaneSettingField } from "../../types/plugin";
-import { blendHex, colors } from "../../theme/colors";
+import { colors } from "../../theme/colors";
 import { SelectField, type SelectFieldHandle } from "../ui/select-field";
 import { Checkbox } from "../ui/checkbox";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/display";
 import { DialogFrame } from "../ui/frame";
 import { isPaneSettingDisabled, summarizePaneSettingValue } from "./value";
 
@@ -16,13 +18,6 @@ export function desktopText(weight?: number) {
   return weight ? { ...DESKTOP_TEXT_STYLE, fontWeight: weight } : DESKTOP_TEXT_STYLE;
 }
 
-function desktopSubtleSurface(): string {
-  return blendHex(colors.panel, colors.bg, 0.22);
-}
-
-function desktopHoverSurface(): string {
-  return blendHex(colors.bg, colors.borderFocused, 0.08);
-}
 
 /** Pane settings dialogs: the kit DialogFrame at the settings width. */
 export function DesktopDialogSurface({
@@ -41,40 +36,6 @@ export function DesktopDialogSurface({
       <DialogFrame title={title} subtitle={subtitle} onClose={dismiss}>
         {children}
       </DialogFrame>
-    </Box>
-  );
-}
-
-function DesktopValuePill({ value }: { value: string }) {
-  return (
-    <Box
-      flexDirection="row"
-      alignItems="center"
-      backgroundColor={desktopSubtleSurface()}
-      style={{
-        border: `1px solid ${colors.border}`,
-        borderRadius: 6,
-        padding: "1px 7px",
-      }}
-    >
-      <Text fg={colors.textDim} style={desktopText(600)}>{value}</Text>
-    </Box>
-  );
-}
-
-function DesktopActionPill({ disabled, label }: { disabled: boolean; label: string }) {
-  return (
-    <Box
-      flexDirection="row"
-      alignItems="center"
-      backgroundColor={disabled ? "transparent" : desktopSubtleSurface()}
-      style={{
-        border: `1px solid ${colors.border}`,
-        borderRadius: 6,
-        padding: "1px 7px",
-      }}
-    >
-      <Text fg={disabled ? colors.textMuted : colors.text} style={desktopText(650)}>{label}</Text>
     </Box>
   );
 }
@@ -142,11 +103,12 @@ function DesktopSettingsRow({
       onChange={(value) => onApply(field, value)}
     />
   ) : field.type === "action" ? (
-    <DesktopActionPill disabled={disabled} label={summary} />
+    // The button says what pressing the row does, and presses it: the row's own press is not repeated.
+    <Button label={summary} variant="secondary" disabled={disabled} onPress={onEdit} stopPropagation />
   ) : (
     <Box flexDirection="row" alignItems="center" gap={1}>
-      <DesktopValuePill value={summary} />
-      <Text fg={colors.textMuted} style={desktopText(600)}>Edit</Text>
+      <Badge label={summary} />
+      <Text fg={colors.textMuted} style={desktopText()}>Edit</Text>
     </Box>
   );
 
@@ -157,7 +119,7 @@ function DesktopSettingsRow({
       minHeight={field.description ? undefined : 2}
       data-gloom-role="pane-setting-row"
       data-selected={selected ? "true" : "false"}
-      backgroundColor={selected ? desktopHoverSurface() : "transparent"}
+      backgroundColor={selected ? "var(--gloom-hover-fill)" : "transparent"}
       onMouseOver={disabled ? undefined : onHover}
       onMouseDown={field.type === "select" ? undefined : (event: any) => {
         event.stopPropagation?.();
@@ -168,16 +130,16 @@ function DesktopSettingsRow({
       }}
       data-gloom-interactive={field.type === "select" || disabled ? undefined : "true"}
       style={{
-        borderRadius: 6,
+        borderRadius: "var(--gloom-radius-md)",
         cursor: field.type === "select" || disabled ? "default" : "pointer",
         opacity: disabled ? 0.6 : 1,
-        padding: "7px 4px 8px",
+        padding: "var(--gloom-space-sm)",
         transition: "background-color 100ms ease",
       }}
     >
       <Box flexDirection="row" alignItems="center" width="100%">
-        <Box flexDirection="row" flexGrow={1} minWidth={0} style={{ paddingRight: 12 }}>
-          <Text fg={colors.text} style={desktopText(650)}>{field.label}</Text>
+        <Box flexDirection="row" flexGrow={1} minWidth={0} style={{ paddingRight: "var(--gloom-space-md)" }}>
+          <Text fg={colors.text} style={desktopText()}>{field.label}</Text>
         </Box>
         {control}
       </Box>

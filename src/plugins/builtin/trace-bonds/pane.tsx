@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo } from "react";
 import {
   DataTableView,
-  PaneStatusBody,
+  loadingText,
+  Notice,
   QueryBar,
+  unavailableText,
+  usePaneNoticeFooter,
   usePaneStatusFooter,
   useQueryBarSearch,
   type DataTableCell,
@@ -18,25 +21,33 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes } from "../../../ui";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { nextHeaderSort } from "../../../utils/sort-values";
-import { usePluginPaneState } from "../../runtime";
-import { fetchCorporateBonds, type CorporateBond } from "./client";
+import { useAssetData, usePluginPaneState } from "../../runtime";
+import {
+  TRUNCATED_TEXT,
+  fetchBondTape,
+  issuerFallbackText,
+  noPrintsText,
+  parseBondQuery,
+  quotedCompanyName,
+  type CorporateBond,
+} from "./client";
 import {
   DEFAULT_BOND_SORT,
   TRACE_BONDS_PANE_ID,
   bondChangeColor,
   buildBondColumns,
-  filterBondsByIssuer,
   firstBondSortDirection,
   formatBondChange,
   formatBondDecimal,
   isBondColumnId,
-  latestTradeDate,
   sortBonds,
   type BondColumn,
   type BondSort,
 } from "./model";
 
 const NO_BONDS: CorporateBond[] = [];
+/** The tape is asked again for what was typed, once typing pauses. */
+const SEARCH_DEBOUNCE_MS = 350;
 
 function dash(value: string | null): string {
   return value ?? "—";
@@ -44,10 +55,17 @@ function dash(value: string | null): string {
 
 export function TraceBondsPane({ focused, width, height }: PaneProps) {
   const presetIssuer = usePaneInstance()?.params?.issuer ?? "";
-  const request = useCallback(() => fetchCorporateBonds(), []);
-  const { data, loading, error, updatedAt, load, reload } = useAsyncResource(request);
-  const bonds = data ?? NO_BONDS;
   const [query, setQuery] = usePluginPaneState("issuer", presetIssuer);
+  const needle = query.trim();
+  const marketData = useAssetData();
+  // A stock ticker with no bonds of its own is asked again by its company, as its quote names it.
+  const companyName = useCallback((ticker: string) => quotedCompanyName(marketData, ticker), [marketData]);
+  // An issuer, symbol or CUSIP is asked of the tape itself, not looked for in the latest page.
+  const request = useCallback(() => fetchBondTape(needle, { companyName }), [companyName, needle]);
+  const { data, loading, error, updatedAt, load, reload } = useAsyncResource(request, { keepPreviousData: true });
+  // The last answer stays loaded while the next query runs, and through its failure; its rows never stand in for it.
+  const answered = data != null && (data.query?.text ?? "") === (parseBondQuery(needle)?.text ?? "");
+  const bonds = answered ? data.bonds : NO_BONDS;
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selectedId", null);
   const [sort, setSort] = usePluginPaneState<BondSort>("sort", DEFAULT_BOND_SORT);
   const { active: searchActive, focus: focusSearch, searchProps } = useQueryBarSearch();
@@ -55,25 +73,26 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
   useAutoRefresh(updatedAt, load);
   usePaneRefreshKey(() => void reload(), { focused, enabled: !searchActive });
 
-  const rows = useMemo(
-    () => sortBonds(filterBondsByIssuer(bonds, query), sort),
-    [bonds, query, sort],
-  );
+  const rows = useMemo(() => sortBonds(bonds, sort), [bonds, sort]);
   const columns = useMemo(() => buildBondColumns(width), [width]);
-  const tradeDate = latestTradeDate(bonds);
+  const tradeDate = answered ? data.tradeDate : null;
   const footerInfo = useMemo(
     () => (tradeDate ? [{ id: "trade-date", parts: [{ text: tradeDate }] }] : []),
     [tradeDate],
   );
+  const notices = answered ? [...(data.truncated ? [TRUNCATED_TEXT] : []), ...data.failures] : [];
+  const fallback = answered && data.query && data.issuer && bonds.length > 0
+    ? issuerFallbackText(data.query, data.issuer)
+    : null;
 
   useEffect(() => {
-    if (bonds.length === 0 && loading) return;
+    if (!answered) return;
     if (rows.length === 0) {
       if (selectedId !== null) setSelectedId(null);
       return;
     }
     if (!selectedId || !rows.some((row) => row.id === selectedId)) setSelectedId(rows[0]!.id);
-  }, [bonds.length, loading, rows, selectedId, setSelectedId]);
+  }, [answered, rows, selectedId, setSelectedId]);
 
   const onHeaderClick = useCallback((columnId: string) => {
     if (!isBondColumnId(columnId)) return;
@@ -103,6 +122,8 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
           color: colors.textBright,
           attributes: TextAttributes.BOLD,
         };
+      case "cusip":
+        return { text: dash(row.cusip), value: row.cusip, color: colors.textMuted };
       case "coupon":
         return { text: formatBondDecimal(row.couponRate, 3), value: row.couponRate, color: colors.text };
       case "maturity":
@@ -125,46 +146,40 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
+  // A failure or a load for another query is the table's own message; the footer keeps the answered query's status.
   usePaneStatusFooter({
     registrationId: TRACE_BONDS_PANE_ID,
-    loading,
-    error,
+    loading: loading && answered,
+    error: answered ? error : null,
     info: footerInfo,
   });
+  usePaneNoticeFooter({
+    registrationId: `${TRACE_BONDS_PANE_ID}-notices`,
+    notices,
+    focused,
+  });
 
-  if (loading && bonds.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <PaneStatusBody loading align="center" />
-      </Box>
-    );
-  }
-
-  if (error && bonds.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <PaneStatusBody error={error} subject="Bond tape" />
-      </Box>
-    );
-  }
-
-  const needle = query.trim();
   return (
     <DataTableView
       focused={focused && !searchActive}
       rootWidth={width}
       rootHeight={height}
       rootBefore={(
-        <QueryBar
-          width={width}
-          search={{
-            value: query,
-            onChange: setQuery,
-            placeholder: "issuer",
-            focused,
-            ...searchProps,
-          }}
-        />
+        <Box flexDirection="column" width={width}>
+          <QueryBar
+            width={width}
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: "issuer, symbol or CUSIP",
+              focused,
+              debounceMs: SEARCH_DEBOUNCE_MS,
+              normalizeValue: (value) => value.trim(),
+              ...searchProps,
+            }}
+          />
+          {fallback ? <Box paddingX={1} width={width}><Notice tone="muted">{fallback}</Notice></Box> : null}
+        </Box>
       )}
       onRootKeyDown={handleRootKeyDown}
       selection={{
@@ -185,7 +200,10 @@ export function TraceBondsPane({ focused, width, height }: PaneProps) {
       getItemKey={(row) => row.id}
       renderCell={renderCell}
       selectedTextOverridesCellColor
-      emptyStateTitle={needle ? "No matching issuers." : "No recent sales."}
+      emptyStateTitle={error && !answered ? unavailableText("Bond tape")
+        : !answered ? loadingText("bond sales")
+          : data.query ? noPrintsText(data.query, data.tradeDate, data.issuer) : "No recent sales."}
+      emptyStateHint={error && !answered ? error : undefined}
     />
   );
 }

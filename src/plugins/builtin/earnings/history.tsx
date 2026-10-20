@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   ChartTableHeader,
   DataTableView,
@@ -12,12 +12,15 @@ import { staticSeries } from "../../../components/chart/static/series";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePluginPaneState, useUpdatedAgo } from "../../../public/react";
 import { colors } from "../../../theme/colors";
+import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { useAssetData } from "../../runtime";
-import { newYorkToday } from "./board-model";
+import { isBoardRowLoading, useQuoteBoard } from "../shared/use-quote-board";
+import { newYorkToday, reportMove } from "./board-model";
 import { cachedEarningsHistory, loadEarningsHistory } from "./client";
 import { loadEarningsCalendar } from "./data/cache";
 import { chartAxis, chartPoints, chartRows, historyFigures, historyRows, type HistoryRow } from "./history-model";
-import { historyColumns, renderHistoryCell, type HistoryColumn } from "./history-table";
+import { historyColumns, renderHistoryCell, type HistoryColumn, type LiveMove } from "./history-table";
+import { loadNoEarningsText } from "./no-earnings";
 import { listingAbroadVenue } from "../../../utils/sec";
 
 const barDate = (row: HistoryRow) => (row.implied != null || row.move != null ? new Date(`${row.date}T00:00:00Z`) : null);
@@ -49,6 +52,25 @@ export function EarningsHistoryView({ symbol, width, height, focused, registrati
   const today = newYorkToday();
   const rows = useMemo(() => historyRows(payload, today, upcoming.data ?? null), [payload, today, upcoming.data]);
   const columns = useMemo(() => historyColumns(width, rows), [rows, width]);
+  // A report out today shows its move so far, from the quotes EVTS reads, until its first close after settles it.
+  const outToday = rows.some((row) => row.date === today && row.dateStatus === "reported" && row.move == null);
+  const quoteSymbols = useMemo(() => (outToday ? [symbol] : []), [outToday, symbol]);
+  const liveStreaming = useLiveStreamingSetting();
+  const { quotes } = useQuoteBoard(quoteSymbols, { liveStreaming });
+  const quoteState = quotes.get(symbol);
+  const quoteRef = useRef(quoteState);
+  quoteRef.current = quoteState;
+  const renderCell = useCallback((row: HistoryRow, column: HistoryColumn) => {
+    const liveMove: LiveMove = (report) => {
+      const move = reportMove(report, quoteRef.current?.quote, today);
+      return move == null && report.date === today && report.dateStatus === "reported" && isBoardRowLoading(quoteRef.current) ? "loading" : move;
+    };
+    return renderHistoryCell(row, column, liveMove);
+  }, [today]);
+  const rowVersion = useCallback(
+    (row: HistoryRow) => (row.date === today && quoteState ? `${row.key}:${quoteState.quote?.lastUpdated ?? ""}:${quoteState.loading}` : row.key),
+    [quoteState, today],
+  );
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>(`history:${symbol}:selected`, null);
   const selected = rows.find((row) => row.key === selectedId) ?? rows[0] ?? null;
   const bars = useMemo(() => chartRows(rows), [rows]);
@@ -69,13 +91,20 @@ export function EarningsHistoryView({ symbol, width, height, focused, registrati
     series, xAxis: axis, formatValue: (value) => `${value.toFixed(1)}%`, formatAxisValue: formatPercentAxis,
     remoteKind: "earnings-moves", ...link, cursorDate,
   } : null, [axis, cursorDate, link, series]);
+  // A symbol with no reports on record may be one that never has any (an ETF, an index, a coin): its type says so.
+  const bare = !resource.loading && rows.length === 0;
+  const noEarningsLoader = useCallback(() => (dataProvider ? loadNoEarningsText(dataProvider, symbol, "pane") : Promise.resolve(null)), [dataProvider, symbol]);
+  const noEarnings = useAsyncResource(bare && !abroad ? noEarningsLoader : null);
+  const emptyTitle = noEarnings.data ?? "No earnings reports on record.";
+  // A coin's history fails (it is no US ticker), which says nothing once its type has answered.
+  const historyError = noEarnings.loading || noEarnings.data ? null : resource.error;
   const updatedAgo = useUpdatedAgo(resource.updatedAt);
   useAutoRefresh(resource.updatedAt, resource.load);
   usePaneRefreshKey(() => { void resource.reload(); void upcoming.reload(); }, { focused });
   usePaneStatusFooter({
     registrationId,
     loading: resource.loading,
-    error: resource.error,
+    error: historyError,
     stale: !!resource.data?.stale,
     info: abroad ? [{ id: "us-listings", parts: [{ text: "past reports: US listings only", tone: "muted" as const }] }]
       : payload && updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : [],
@@ -83,10 +112,10 @@ export function EarningsHistoryView({ symbol, width, height, focused, registrati
 
   return (
     <PaneStatusBody
-      loading={resource.loading && !payload && rows.length === 0}
-      error={!payload && rows.length === 0 ? resource.error : null}
-      empty={!resource.loading && rows.length === 0}
-      emptyTitle="No earnings reports on record."
+      loading={(resource.loading && !payload && rows.length === 0) || noEarnings.loading}
+      error={!payload && rows.length === 0 ? historyError : null}
+      empty={bare}
+      emptyTitle={emptyTitle}
       subject="earnings history"
     >
       <DataTableView<HistoryRow, HistoryColumn>
@@ -96,14 +125,15 @@ export function EarningsHistoryView({ symbol, width, height, focused, registrati
         columns={columns}
         items={rows}
         getItemKey={(row) => row.key}
-        renderCell={renderHistoryCell}
+        renderCell={renderCell}
+        getRowVersion={rowVersion}
         selectedTextOverridesCellColor
         sortColumnId={null}
         sortDirection="desc"
         resetScrollKey={symbol}
         selection={{ kind: "index", selectedIndex: selected ? rows.indexOf(selected) : -1, onChange: (index) => setSelectedId(rows[index]?.key ?? null) }}
         onActivate={(row) => setSelectedId(row.key)}
-        emptyStateTitle="No earnings reports on record."
+        emptyStateTitle={emptyTitle}
         rootBefore={<ChartTableHeader width={width} height={height} tableRows={rows.length} tableColumns={columns} figures={figures} chart={chart} />}
       />
     </PaneStatusBody>

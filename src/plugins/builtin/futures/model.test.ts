@@ -49,27 +49,45 @@ describe("buildFuturesRows search", () => {
     // Cut off inside the year: the month alone could be a year out.
     expect(name("ZW=F", "Chicago SRW Wheat Futures,Dec-2")).toBe("Chicago SRW Wheat");
     expect(name("6C=F", "Canadian Dollar Futures,Dec-202")).toBe("Canadian Dollar");
+    // Cut two digits into the year, it would read as 2020.
+    expect(name("QM=F", "E-mini Crude Oil Futures,Nov-20")).toBe("E-Mini Crude Oil");
     expect(futuresContractName(contract("CL=F"), { symbol: "OTHER", name: "Crude Oil Nov 26" } as Quote)).toBe("WTI Crude Oil");
   });
 
-  test("names the nearer month and its expiry while the alias quotes the most active one", () => {
+  test("names the nearer month and its expiry once the alias has rolled past it, and the day's most active month apart", () => {
     const crude = [...contractsBySector.values()].flat().find((row) => row.symbol === "CL=F")!;
+    // 2026-10-19, CLX26's roll date: CL=F is on December while November trades until the 20th.
     const december = { symbol: "CL=F", name: "WTI Crude Oil Dec 26" } as Quote;
     const nearest = { contract: "CLX26", contractSymbol: "CLX26.NYM", deliveryMonth: "2026-11", lastTrade: "2026-10-20" };
     const terms = { deliveryMonth: "2026-12", nearest };
-    expect(futuresContractHeadline(crude, december, terms)).toBe("WTI Crude Oil Dec 26, most active (Nov expires 20 Oct)");
-    // The month leads, so a column clipping the tail keeps it; one too narrow for "most active" shows the plain name.
-    expect(futuresContractHeadline(crude, december, terms, 33)).toBe("WTI Crude Oil Dec 26, most active (Nov expires 20 Oct)");
-    expect(futuresContractHeadline(crude, december, terms, 32)).toBe("WTI Crude Oil Dec 26");
+    expect(futuresContractHeadline(crude, december, terms)).toBe("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct)");
+    // The month leads, so a column clipping the tail keeps it; one too narrow for "rolled" shows the plain name.
+    expect(futuresContractHeadline(crude, december, terms, 28)).toBe("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct)");
+    expect(futuresContractHeadline(crude, december, terms, 27)).toBe("WTI Crude Oil Dec 26");
     // A quote whose name carries no month is placed by its terms.
-    expect(futuresContractHeadline(crude, { symbol: "CL=F" } as Quote, terms)).toBe("WTI Crude Oil Dec 26, most active (Nov expires 20 Oct)");
+    expect(futuresContractHeadline(crude, { symbol: "CL=F" } as Quote, terms)).toBe("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct)");
     // Once the alias quotes the nearest month itself, or before the terms load, it is the plain name.
     expect(futuresContractHeadline(crude, december, { deliveryMonth: "2026-12", nearest: null })).toBe("WTI Crude Oil Dec 26");
     expect(futuresContractHeadline(crude, december, null)).toBe("WTI Crude Oil Dec 26");
     // Terms read before a roll the quote already took never mix months.
     expect(futuresContractHeadline(crude, { ...december, name: "WTI Crude Oil Jan 27" }, terms)).toBe("WTI Crude Oil Jan 27");
     expect(futuresContractHeadline(crude, december, { deliveryMonth: "2026-12", nearest: { ...nearest, lastTrade: null } }))
-      .toBe("WTI Crude Oil Dec 26, most active (Nov still trading)");
+      .toBe("WTI Crude Oil Dec 26, rolled (Nov still trading)");
+
+    // 2026-10-16: CL=F on November, its front until the roll; the day's volume was December's.
+    const november = { symbol: "CL=F", name: "WTI Crude Oil Nov 26" } as Quote;
+    const mostActive = { contract: "CLZ26", contractSymbol: "CLZ26.NYM", deliveryMonth: "2026-12", volume: 304_249, date: "2026-10-16" };
+    expect(futuresContractHeadline(crude, november, { deliveryMonth: "2026-11", nearest: null, mostActive }))
+      .toBe("WTI Crude Oil Nov 26, Dec most active");
+    // The most active month in another year says which; the month the alias prices adds nothing.
+    expect(futuresContractHeadline(crude, november, { deliveryMonth: "2026-11", mostActive: { ...mostActive, deliveryMonth: "2027-01" } }))
+      .toBe("WTI Crude Oil Nov 26, Jan 27 most active");
+    expect(futuresContractHeadline(crude, november, { deliveryMonth: "2026-11", mostActive: { ...mostActive, deliveryMonth: "2026-11" } }))
+      .toBe("WTI Crude Oil Nov 26");
+    // Both notes: the roll's first; a column without room for the second drops it.
+    const both = { ...terms, mostActive: { ...mostActive, deliveryMonth: "2027-03" } };
+    expect(futuresContractHeadline(crude, december, both)).toBe("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct), Mar 27 most active");
+    expect(futuresContractHeadline(crude, december, both, 60)).toBe("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct)");
   });
 
   test("a row's unit is the exchange's from its terms, else the catalog's", () => {
@@ -84,7 +102,7 @@ describe("buildFuturesRows search", () => {
     expect(rowIds(buildFuturesRows(contractsBySector, DEFAULT_FUTURES_SORT, EMPTY_QUOTES, { query: "gc" })))
       .toEqual(["header:metals", "GC=F"]);
     expect(rowIds(buildFuturesRows(contractsBySector, DEFAULT_FUTURES_SORT, EMPTY_QUOTES, { query: "crude" })))
-      .toEqual(["header:energy", "CL=F", "BZ=F"]);
+      .toEqual(["header:energy", "CL=F", "BZ=F", "QM=F", "MCL=F"]);
     expect(rowIds(buildFuturesRows(contractsBySector, DEFAULT_FUTURES_SORT, EMPTY_QUOTES, { query: "6J=f" })))
       .toEqual(["header:currencies", "6J=F"]);
   });
@@ -128,20 +146,23 @@ describe("buildFuturesRows collapse", () => {
 
 describe("futures sorting", () => {
   test("sorts within a sector, never across sectors", () => {
+    // The micro Russell is priced below the micro crude, and still sorts inside its own sector.
     const quotes = quoteMap({
-      "ES=F": { price: 7731 },
-      "NQ=F": { price: 29670 },
-      "YM=F": { price: 53499 },
-      "RTY=F": { price: 3046 },
+      "MES=F": { price: 7731 },
+      "MNQ=F": { price: 29670 },
+      "MYM=F": { price: 53499 },
+      "M2K=F": { price: 30 },
+      "MCL=F": { price: 95 },
+      "MNG=F": { price: 3.2 },
       "GC=F": { price: 4451 },
     });
     const rows = buildFuturesRows(
       contractsBySector,
       { columnId: "price", direction: "desc" },
       quotes,
-      { query: "e-mini" },
+      { query: "micro" },
     );
-    expect(rowIds(rows)).toEqual(["header:equity-index", "YM=F", "NQ=F", "ES=F", "RTY=F"]);
+    expect(rowIds(rows)).toEqual(["header:equity-index", "MYM=F", "MNQ=F", "MES=F", "M2K=F", "header:energy", "MCL=F", "MNG=F"]);
   });
 
   test("the keyboard cycle reaches every state a header click can, and wraps", () => {

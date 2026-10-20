@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { serializeCliResult } from "../../../../cli/result";
 import { DEFAULT_CLI_OPTIONS } from "../../../../cli/options";
 import { renderHeadlessPaneText } from "../../../../cli/pane-functions/headless";
@@ -15,7 +15,10 @@ import { collectionHoldingsHeadless } from "../headless";
 import { showCollection } from "./render";
 import { portfolioCliCommand } from "./portfolio-command";
 
-afterEach(() => setCliColorEnabledOverride(null));
+afterEach(() => {
+  setCliColorEnabledOverride(null);
+  setSystemTime();
+});
 
 const config = {
   ...createDefaultConfig("/unused-collection-sessions"),
@@ -47,6 +50,8 @@ async function show(quote: Quote) {
 test("portfolio and watchlist show headline the regular close beside the extended print, and value at the live price", async () => {
   for (const state of ["weekend", "afterHours", "preMarket", "overnight"] as const) {
     const quote = sessionQuotes()[state];
+    // Read in the session it is from, so the print is current rather than a stale row.
+    setSystemTime(quote.lastUpdated + 3_600_000);
     const headline = getRegularSessionDisplay(quote)!;
     const extended = getExtendedSessionDisplay(quote)!;
     const { text, rows, json } = await show(quote);
@@ -156,9 +161,10 @@ describe("what a portfolio is priced at and when each row's price is from", () =
 
     const csv = await showExport(["show", "Main", "--close"], "csv");
     const [header, ...lines] = csv.split("\n");
-    // The valuation fields come last before the five fixed columns every export ends with.
-    expect(header!.split(",").slice(-8)).toEqual(["valuationBasis", "valuationPrice", "valuationAsOf", "symbol_or_series", "currency_or_unit", "interval", "source", "as_of"]);
-    expect(lines.find((line) => line.startsWith("XLK"))).toMatch(/,regular-close,198\.78,2026-10-09T20:00:00\.000Z,XLK,[^,]*,,[^,]+,2026-10-09T20:00:00\.000Z$/);
+    // The valuation fields keep their place; the dividend fields come after them, before the five fixed columns every export ends with.
+    expect(header!.split(",").slice(-12)).toEqual(["valuationBasis", "valuationPrice", "valuationAsOf",
+      "dividendPerShare", "dividendCurrency", "annualIncome", "incomeYield", "symbol_or_series", "currency_or_unit", "interval", "source", "as_of"]);
+    expect(lines.find((line) => line.startsWith("XLK"))).toMatch(/,regular-close,198\.78,2026-10-09T20:00:00\.000Z,,,,,XLK,[^,]*,,[^,]+,2026-10-09T20:00:00\.000Z$/);
     expect(csv).toMatch(/# Source: .* · priced at the regular close\n/);
     expect(csv).toContain("# Observation date: 2026-10-09T20:00:00.000Z\n# Oldest observation: 2026-10-09T15:38:00.000Z\n");
 

@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import type { PriceHistoryResult } from "../../types/price-history";
 import type { ResourceStore } from "../../data/resource-store";
 import type { ConnectionHealthRegistry } from "../../core/connection-health";
@@ -174,8 +175,8 @@ export class AssetDataRouter implements DataProvider {
         if (!provider.canProvide || await provider.canProvide(ticker, exchange, context)) {
           return true;
         }
-      } catch {
-        // continue through provider chain
+      } catch (error) {
+        logFailure("sources.provider-router.index", "Checking provider availability failed")(error);
       }
     }
     return false;
@@ -252,7 +253,9 @@ export class AssetDataRouter implements DataProvider {
           known = mergeQuoteMetadata(known, metadata);
           if (known?.currency && known.instrumentType) return known;
         }
-      } catch { /* Optional listing metadata must not prevent historical research. */ }
+      } catch (error) {
+        logFailure("sources.provider-router.index", "Loading listing metadata failed")(error);
+      }
     }
     return known ?? null;
   }
@@ -287,6 +290,18 @@ export class AssetDataRouter implements DataProvider {
 
   async getCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData> {
     return (await this.getCachedQuery("getCorporateActions", [ticker, exchange, context]).load({ force: context?.cacheMode === "refresh", background: this.revalidateInBackground })).value;
+  }
+
+  searchBatch(queries: string[], options?: { limit?: number; signal?: AbortSignal }): Promise<Map<string, InstrumentSearchResult[]> | null> {
+    return this.searchRoutes.searchBatch(queries, options);
+  }
+
+  /** The first source that answers a batch of symbol changes; null when none can or it fails. */
+  async getTickerChangesBatch(symbols: string[], options?: { signal?: AbortSignal }): Promise<Map<string, TickerChanges | null> | null> {
+    const provider = this.providersInPriorityOrder().find((candidate) => candidate.getTickerChangesBatch);
+    if (!provider) return null;
+    return await provider.getTickerChangesBatch!(symbols, options)
+      .catch(logFailure("sources.provider-router.index", "Batched ticker changes failed", null));
   }
 
   /** The first source that keeps symbol changes answers; one that fails is passed over. */

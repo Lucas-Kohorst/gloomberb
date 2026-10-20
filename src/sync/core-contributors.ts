@@ -1,6 +1,6 @@
 import { scheduleConfigSave } from "../state/config-save-scheduler";
 import { debugLog } from "../utils/debug-log";
-import { stableStringify } from "../utils/hash";
+import { fnv1aHex, stableStringify } from "../utils/hash";
 import type { AppConfig, BrokerInstanceConfig, SavedLayout } from "../types/config";
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { Portfolio, TickerMetadata, TickerPosition, TickerRecord, Watchlist } from "../types/ticker";
@@ -15,6 +15,8 @@ import {
   computeWeightedPortfolioReturns,
   syntheticAccountUnsupportedReason,
   syntheticPositionUnsupportedReason,
+  type DatedReturn,
+  type ReturnHistoryResult,
   type WeightedReturnSeries,
 } from "../plugins/builtin/analytics/metrics";
 import {
@@ -28,8 +30,15 @@ import {
   encodeBuiltinDisabledPluginIds,
   normalizeBuiltinPluginStateMap,
 } from "../plugins/ownership";
-import { isRecord } from "../utils/guards";
-import { withoutMissingWatchlists } from "../plugins/builtin/portfolio-list/mutations";
+import { isFiniteNumber, isRecord, recordOrNull } from "../utils/guards";
+import { getBrokerInstance } from "../utils/broker-instances";
+import { withoutMissingWatchlists } from "../portfolio/mutations";
+import { positionContractMultiplier } from "../portfolio/position-metrics";
+import {
+  clearLeftoverBrokerHoldings,
+  knownBrokerHoldings,
+  type KnownBrokerHoldings,
+} from "../brokers/broker-portfolio-sync";
 
 /**
  * What a saved layout mirrors from the live session rather than from the
@@ -39,6 +48,9 @@ import { withoutMissingWatchlists } from "../plugins/builtin/portfolio-list/muta
  * cursor and scroll position, and each apply pushed the view straight back.
  */
 const SESSION_SAVED_LAYOUT_KEYS = ["paneState", "focusedPaneId", "activePanel"] as const;
+
+/** Together these are the workspace: the tabs, the one showing, and its arrangement. */
+const LAYOUT_SYNC_KEYS = ["layout", "layouts", "activeLayoutIndex"] as const;
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -107,7 +119,12 @@ function sanitizePortfolio(portfolio: Portfolio): Portfolio {
     // them would erase them on this device.
     ...(portfolio.cash ? { cash: { ...portfolio.cash } } : {}),
     ...(portfolio.targetWeights ? { targetWeights: { ...portfolio.targetWeights } } : {}),
-    ...(portfolio.importedFrom ? { importedFrom: { ...portfolio.importedFrom } } : {}),
+    ...(portfolio.importedFrom ? {
+      importedFrom: {
+        ...portfolio.importedFrom,
+        ...(portfolio.importedFrom.weights ? { weights: { ...portfolio.importedFrom.weights } } : {}),
+      },
+    } : {}),
   };
 }
 
@@ -247,6 +264,7 @@ function sanitizePosition(position: TickerPosition): TickerPosition {
     avgCost: position.avgCost,
     currency: position.currency,
     dateAcquired: position.dateAcquired,
+    ...(position.costFxRate != null && position.costFxCurrency ? { costFxRate: position.costFxRate, costFxCurrency: position.costFxCurrency } : {}),
     broker: position.broker,
     side: position.side,
     marketValue: position.marketValue,
@@ -294,12 +312,15 @@ function pricePointTime(point: { date: Date | string | number }): number {
   return new Date(value).getTime();
 }
 
+/** The bars a week's move can start from, oldest first. */
+const datedCloses = historyMemo((history) => history
+  .filter((point) => Number.isFinite(point.close) && point.close > 0 && Number.isFinite(pricePointTime(point)))
+  .sort((left, right) => pricePointTime(left) - pricePointTime(right)));
+
 function weeklyQuoteMove(financials: TickerFinancials | null | undefined) {
   const quote = financials?.quote;
   if (!quote || !Number.isFinite(quote.price) || quote.price <= 0) return undefined;
-  const history = (financials?.priceHistory ?? [])
-    .filter((point) => Number.isFinite(point.close) && point.close > 0 && Number.isFinite(pricePointTime(point)))
-    .sort((left, right) => pricePointTime(left) - pricePointTime(right));
+  const history = datedCloses(financials?.priceHistory);
   if (history.length === 0) return undefined;
   const latestTime = Number.isFinite(quote.lastUpdated)
     ? quote.lastUpdated
@@ -351,6 +372,14 @@ function sanitizeTickerMetadata(metadata: TickerMetadata, financials?: TickerFin
   };
 }
 
+function collectLayoutPayload(config: Pick<AppConfig, typeof LAYOUT_SYNC_KEYS[number]>) {
+  return sanitizeUnknown({
+    layout: config.layout,
+    layouts: config.layouts.map(withoutSessionLayoutState),
+    activeLayoutIndex: config.activeLayoutIndex,
+  }) as Record<string, unknown>;
+}
+
 function collectCoreConfigPayload(config: AppConfig) {
   return sanitizeUnknown({
     configVersion: config.configVersion,
@@ -358,9 +387,7 @@ function collectCoreConfigPayload(config: AppConfig) {
     refreshIntervalMinutes: config.refreshIntervalMinutes,
     portfolios: config.portfolios.map(sanitizePortfolio),
     watchlists: config.watchlists.map(sanitizeWatchlist),
-    layout: config.layout,
-    layouts: config.layouts.map(withoutSessionLayoutState),
-    activeLayoutIndex: config.activeLayoutIndex,
+    ...collectLayoutPayload(config),
     brokerInstances: config.brokerInstances.map(sanitizeBrokerInstance),
     // This build merges profiles one by one before it pushes, so a profile
     // missing from its list was removed, not one it never pulled.
@@ -380,6 +407,7 @@ function collectCoreConfigPayload(config: AppConfig) {
 }
 
 function positionValueBase(
+  ticker: TickerRecord,
   position: TickerPosition,
   financials: TickerFinancials | null | undefined,
   baseCurrency: string,
@@ -393,9 +421,11 @@ function positionValueBase(
   const hasMarkPrice = typeof position.markPrice === "number" && Number.isFinite(position.markPrice);
   const hasQuotePrice = typeof financials?.quote?.price === "number" && Number.isFinite(financials.quote.price);
   const price = hasMarkPrice ? position.markPrice : hasQuotePrice ? financials!.quote!.price : position.avgCost;
-  if (!Number.isFinite(position.shares) || typeof price !== "number" || !Number.isFinite(price)) return null;
+  // The multiplier the portfolio values the lot by: a future of unknown size has no value, never one at 1x.
+  const multiplier = positionContractMultiplier(ticker, position);
+  if (!Number.isFinite(position.shares) || typeof price !== "number" || !Number.isFinite(price) || multiplier === null) return null;
   return convertCurrency(
-    Math.abs(position.shares * price * (position.multiplier ?? 1)),
+    Math.abs(position.shares * price * multiplier),
     hasQuotePrice && !hasMarkPrice ? quoteCurrency : positionCurrency,
     baseCurrency,
     exchangeRates,
@@ -423,6 +453,40 @@ function recentPriceHistory(history: PricePoint[], days: number): PricePoint[] {
   });
 }
 
+/**
+ * Work derived from a bar history, kept with the history. Every sync values
+ * every portfolio and quotes every filed ticker (each 15 s poll, and after
+ * each workspace change), and redoing that work from each holding's bars
+ * blocked the view for a quarter of a second on a few hundred holdings
+ * (GLO-925). Bars change when a history loads again, which replaces the
+ * array; a last bar extended or revised in place, or one appended, is caught
+ * by its length, time and close.
+ */
+function historyMemo<T>(derive: (history: PricePoint[]) => T): (history: PricePoint[] | undefined) => T {
+  const kept = new WeakMap<PricePoint[], { length: number; lastTime: number | null; lastClose: number | undefined; value: T }>();
+  const empty = derive([]);
+  return (history) => {
+    if (!history || history.length === 0) return empty;
+    const last = history[history.length - 1]!;
+    const lastTime = pricePointTimeOrNull(last);
+    const cached = kept.get(history);
+    if (cached && cached.length === history.length && cached.lastTime === lastTime && cached.lastClose === last.close) return cached.value;
+    const value = derive(history);
+    kept.set(history, { length: history.length, lastTime, lastClose: last.close, value });
+    return value;
+  };
+}
+
+/** A holding's daily returns over its last year of bars. */
+const lastYearReturns = historyMemo((history): ReturnHistoryResult => resolveDatedReturns(recentPriceHistory(history, 366)));
+
+/** The holdings' beta to SPY at today's weights, worked out only when no preview supplies one. */
+function holdingsBeta(series: WeightedReturnSeries[], spyReturns: DatedReturn[]): number | null {
+  if (series.length === 0 || spyReturns.length === 0) return null;
+  const returns = computeWeightedPortfolioReturns(series);
+  return returns.length > 0 ? computeDatedBeta(returns, spyReturns) : null;
+}
+
 function collectAnalyticsByPortfolio(
   config: AppConfig,
   tickers: Map<string, TickerRecord>,
@@ -431,7 +495,7 @@ function collectAnalyticsByPortfolio(
   brokerAccounts: Record<string, BrokerAccount[]>,
 ) {
   const output: Record<string, Record<string, unknown>> = {};
-  const spySample = resolveDatedReturns(recentPriceHistory(financials.get("SPY")?.priceHistory ?? [], 366));
+  const spySample = lastYearReturns(financials.get("SPY")?.priceHistory);
   const spyReturns = spySample.returns;
   for (const portfolio of config.portfolios) {
     const account = portfolio.brokerInstanceId && portfolio.brokerAccountId
@@ -449,19 +513,18 @@ function collectAnalyticsByPortfolio(
       );
       for (const position of portfolioPositions) {
         if (position.shares === 0) continue;
-        const value = positionValueBase(position, tickerFinancials, config.baseCurrency, exchangeRates);
+        const value = positionValueBase(ticker, position, tickerFinancials, config.baseCurrency, exchangeRates);
         if (value == null || !Number.isFinite(value)) {
           unsupported = true;
           continue;
         }
-        const sample = resolveDatedReturns(recentPriceHistory(tickerFinancials?.priceHistory ?? [], 366));
+        const sample = lastYearReturns(tickerFinancials?.priceHistory);
         invalidHistory ||= sample.integrity != null;
         const returns = sample.returns;
         if (returns.length >= 10) datedReturnSeries.push({ weight: value, returns });
         else unsupported = true;
       }
     }
-    const portfolioReturns = unsupported ? [] : computeWeightedPortfolioReturns(datedReturnSeries);
     const previewAnalytics = getSyncedProfileAnalytics(portfolio.id);
     // The broker's own returns do not depend on the holdings' price histories.
     const accountBasis = previewAnalytics?.basis === "account";
@@ -469,11 +532,7 @@ function collectAnalyticsByPortfolio(
     // one-year account return. Only preserve an explicitly supplied preview.
     const oneYearReturn = invalidHistory && !accountBasis ? null : previewAnalytics?.oneYearReturn ?? null;
     const spyBeta = (invalidHistory && !accountBasis) || spySample.integrity ? null : previewAnalytics?.spyBeta
-      ?? (
-        portfolioReturns.length > 0 && spyReturns.length > 0
-          ? computeDatedBeta(portfolioReturns, spyReturns)
-          : null
-      );
+      ?? holdingsBeta(unsupported ? [] : datedReturnSeries, spyReturns);
     output[portfolio.id] = {
       oneYearReturn,
       spyBeta,
@@ -622,11 +681,204 @@ function withLocalSessionLayoutState(
   });
 }
 
+/**
+ * A layout as the user arranged it. Stacking order follows whichever floating
+ * pane was focused last, and a pane in its own desktop window is one a
+ * terminal draws inline as a floating pane, so neither tells two copies apart.
+ */
+function arrangedLayout(layout: unknown): unknown {
+  if (!isRecord(layout)) return layout;
+  const windows = [
+    ...(Array.isArray(layout.floating) ? layout.floating : []),
+    ...(Array.isArray(layout.detached) ? layout.detached : []),
+  ].map((entry) => {
+    if (!isRecord(entry)) return entry;
+    const { zIndex: _zIndex, ...rest } = entry;
+    return rest;
+  });
+  const instanceId = (entry: unknown) => (isRecord(entry) ? String(entry.instanceId) : "");
+  windows.sort((left, right) => instanceId(left).localeCompare(instanceId(right)));
+  return { ...layout, floating: windows, detached: [] };
+}
+
+// Pulled and last synced payloads are compared on every sync and never change.
+const layoutIntents = new WeakMap<object, string | null>();
+
+/**
+ * A key for the workspace a payload describes, equal for two copies that only
+ * differ in what reflects one device, so a real edit can be told from them.
+ * Null when the payload holds no complete workspace.
+ */
+function layoutIntent(payload: unknown): string | null {
+  if (!isRecord(payload) || !Array.isArray(payload.layouts)) return null;
+  if (!LAYOUT_SYNC_KEYS.every((key) => key in payload)) return null;
+  const cached = layoutIntents.get(payload);
+  if (cached !== undefined) return cached;
+  const intent = stableStringify(sanitizeUnknown({
+    layout: arrangedLayout(payload.layout),
+    layouts: payload.layouts.map((entry) => (
+      isRecord(entry)
+        ? { ...withoutSessionLayoutState(entry as unknown as SavedLayout), layout: arrangedLayout(entry.layout) }
+        : entry
+    )),
+    activeLayoutIndex: payload.activeLayoutIndex,
+  }));
+  const key = `${fnv1aHex(intent)}:${intent.length}`;
+  layoutIntents.set(payload, key);
+  return key;
+}
+
+/** The workspace keys of a payload, with the time its layout was last edited when it says. */
+function pickLayoutPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const picked = Object.fromEntries([...LAYOUT_SYNC_KEYS, "layoutEditedAt"].flatMap((key) => (
+    key in payload ? [[key, payload[key]]] : []
+  )));
+  // An older build still sent the view it was looking at with each layout.
+  if (Array.isArray(picked.layouts)) {
+    picked.layouts = picked.layouts.map((entry) => (isRecord(entry) ? withoutSessionLayoutState(entry as unknown as SavedLayout) : entry));
+  }
+  return picked;
+}
+
+/**
+ * What this device remembers about its workspace between syncs: when it last
+ * edited it (null when that happened while the app was closed, so the time is
+ * unknown), or, when it took the workspace from the cloud, that copy as synced.
+ */
+interface LayoutMemo {
+  intent: string;
+  editedAt: number | null;
+  synced?: Record<string, unknown>;
+}
+
+function readLayoutMemo(value: unknown): LayoutMemo | null {
+  if (!isRecord(value) || typeof value.intent !== "string") return null;
+  return {
+    intent: value.intent,
+    editedAt: typeof value.editedAt === "number" && Number.isFinite(value.editedAt) ? value.editedAt : null,
+    ...(isRecord(value.synced) ? { synced: value.synced } : {}),
+  };
+}
+
+/**
+ * When a pulled workspace was last edited. A copy from a build that did not
+ * date edits counts as edited when it was pushed, which is never earlier.
+ */
+function pulledLayoutEditedAt(payload: Record<string, unknown>, pushedAt: string | undefined): number {
+  if (typeof payload.layoutEditedAt === "number" && Number.isFinite(payload.layoutEditedAt)) return payload.layoutEditedAt;
+  const pushed = pushedAt ? Date.parse(pushedAt) : Number.NaN;
+  return Number.isFinite(pushed) ? pushed : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Whether a pulled workspace replaces this device's, three ways: against the
+ * copy this device last synced, the one it had when the pull started, and the
+ * pulled one. Only a real edit here keeps the local copy; the pane state,
+ * focus and window stacking that change on every launch never do.
+ */
+function shouldAdoptPulledLayout({
+  local,
+  atPullStart,
+  lastSynced,
+  pulled,
+  memo,
+  pulledEditedAt,
+}: {
+  local: string | null;
+  atPullStart: string | null;
+  lastSynced: string | null;
+  pulled: string | null;
+  memo: LayoutMemo | null;
+  pulledEditedAt: number;
+}): boolean {
+  if (pulled === null || pulled === local) return false;
+  // Edited while the pull was in flight: newer than anything it carries.
+  if (local !== atPullStart) return false;
+  const takenFromCloud = !!memo?.synced && memo.intent === local;
+  const editedHere = lastSynced !== null && local !== lastSynced && !takenFromCloud;
+  if (!editedHere) return true;
+  // The cloud still holds what this device last synced: only this side changed.
+  if (pulled === lastSynced) return false;
+  // Both sides changed since: the later edit wins, and an undated local one loses.
+  const localEditedAt = memo?.intent === local ? memo.editedAt : null;
+  return localEditedAt === null || localEditedAt <= pulledEditedAt;
+}
+
+/**
+ * The workspace as the cloud already has it unless this device really edited
+ * it, so what only reflects this device never replaces another device's copy,
+ * and a real edit goes out dated.
+ */
+function withLayoutProvenance(
+  payload: Record<string, unknown>,
+  lastSyncedPayload: unknown,
+  memoValue: unknown,
+): Record<string, unknown> {
+  const local = layoutIntent(payload);
+  if (local === null) return payload;
+  const memo = readLayoutMemo(memoValue);
+  if (memo?.synced && memo.intent === local) return { ...payload, ...memo.synced };
+  if (isRecord(lastSyncedPayload) && layoutIntent(lastSyncedPayload) === local) {
+    return { ...payload, ...pickLayoutPayload(lastSyncedPayload) };
+  }
+  return {
+    ...payload,
+    layoutEditedAt: memo?.intent === local && memo.editedAt !== null ? memo.editedAt : Date.now(),
+  };
+}
+
+/**
+ * Dates a workspace edit when it happens, online or not, so a later conflict
+ * with another device's edit goes to the newer one.
+ */
+function noteLayoutEdit(config: AppConfig, lastSyncedPayload: unknown, memoValue: unknown, launch: boolean): LayoutMemo | null {
+  const lastSynced = layoutIntent(lastSyncedPayload);
+  if (lastSynced === null) return null;
+  const local = layoutIntent(collectLayoutPayload(config));
+  if (local === null || local === lastSynced) return null;
+  if (readLayoutMemo(memoValue)?.intent === local) return null;
+  // Seen at launch, it was made while the app was closed or just before it
+  // quit; when is unknown, so it gives way to a dated edit elsewhere.
+  return { intent: local, editedAt: launch ? null : Date.now() };
+}
+
+/**
+ * Once this device holds the cloud's workspace, by taking it or because the
+ * two already matched, it remembers that copy as synced, keyed by how it
+ * looks here once applied. The next push then sends the cloud's own copy back
+ * rather than this device's rendering of it.
+ */
+function rememberCloudLayout(
+  payload: Record<string, unknown>,
+  pushedAt: string | undefined,
+  applied: AppConfig,
+  memo: { get(): unknown; set(value: unknown): void },
+  adopted: boolean,
+): void {
+  const local = layoutIntent(collectLayoutPayload(applied));
+  if (local === null || (!adopted && local !== layoutIntent(payload))) return;
+  const current = readLayoutMemo(memo.get());
+  if (!adopted && current?.synced && current.intent === local) return;
+  const editedAt = pulledLayoutEditedAt(payload, pushedAt);
+  memo.set({
+    intent: local,
+    editedAt: Number.isFinite(editedAt) ? editedAt : null,
+    synced: pickLayoutPayload(payload),
+  } satisfies LayoutMemo);
+}
+
+interface LayoutMergeContext {
+  memo?: unknown;
+  /** When the pulled copy was pushed, for one from a build that did not date layout edits. */
+  pushedAt?: string;
+}
+
 function mergeConfigPayload(
   config: AppConfig,
   payload: unknown,
   baselineConfig: AppConfig = config,
   lastSyncedPayload?: unknown,
+  layoutContext: LayoutMergeContext = {},
 ): AppConfig | null {
   if (!isRecord(payload)) return null;
   const next: AppConfig = { ...config };
@@ -634,11 +886,9 @@ function mergeConfigPayload(
   // was in flight; lastSyncedPayload catches edits made while the app was not
   // running at all (CLI writes, offline edits), which otherwise look pristine.
   const lastSynced = isRecord(lastSyncedPayload) ? lastSyncedPayload : null;
-  const localPayload = lastSynced
-    ? collectCoreConfigPayload(config) as Record<string, unknown>
-    : null;
+  const localPayload = collectCoreConfigPayload(config) as Record<string, unknown>;
   const matchesLastSynced = (key: string) => (
-    !lastSynced || valuesEqual(localPayload?.[key], lastSynced[key])
+    !lastSynced || valuesEqual(localPayload[key], lastSynced[key])
   );
   const canApply = <K extends keyof AppConfig>(key: K) => (
     valuesEqual(config[key], baselineConfig[key]) && matchesLastSynced(key as string)
@@ -689,15 +939,20 @@ function mergeConfigPayload(
     );
   }
 
-  const layoutStateUntouched = config.layout === baselineConfig.layout
-    && config.layouts === baselineConfig.layouts
-    && config.activeLayoutIndex === baselineConfig.activeLayoutIndex
-    && ["layout", "layouts", "activeLayoutIndex"].every(matchesLastSynced);
-  if (
-    layoutStateUntouched
-    && ["layout", "layouts", "activeLayoutIndex"].every((key) => key in payload)
-    && Array.isArray(payload.layouts)
-  ) {
+  // Compared by content, not identity: the active layout mirrors pane state,
+  // so a cursor settling at launch replaced it mid-pull, the pulled workspace
+  // was refused, and the push that followed wrote this device's older one
+  // over it on every other device.
+  const localIntent = layoutIntent(localPayload);
+  const adoptLayout = shouldAdoptPulledLayout({
+    local: localIntent,
+    atPullStart: baselineConfig === config ? localIntent : layoutIntent(collectLayoutPayload(baselineConfig)),
+    lastSynced: layoutIntent(lastSynced),
+    pulled: layoutIntent(payload),
+    memo: readLayoutMemo(layoutContext.memo),
+    pulledEditedAt: pulledLayoutEditedAt(payload, layoutContext.pushedAt),
+  });
+  if (adoptLayout) {
     next.layout = payload.layout as unknown as AppConfig["layout"];
     next.layouts = withLocalSessionLayoutState(payload.layouts as AppConfig["layouts"], config.layouts);
     next.activeLayoutIndex = payload.activeLayoutIndex as number;
@@ -715,6 +970,13 @@ function mergeConfigPayload(
     if (syncedIds) next.portfolios = withoutRemovedBrokerPortfolios(config, next, syncedIds, payload.portfolios);
   }
   return next;
+}
+
+/** The entries of a pulled list that carry an id. */
+function idEntries(entries: unknown): Array<{ id: string }> {
+  return Array.isArray(entries)
+    ? entries.flatMap((entry) => (isRecord(entry) && typeof entry.id === "string" ? [{ id: entry.id }] : []))
+    : [];
 }
 
 function idsOf(entries: unknown[]): Set<string> {
@@ -853,43 +1115,191 @@ function lastSyncedTickersById(baselinePayload: unknown): Map<string, Record<str
   return byId;
 }
 
-/** Quotes churn on every refresh, so they cannot signal a user edit. */
-function withoutQuote(metadata: Record<string, unknown>): Record<string, unknown> {
-  const { quote: _quote, ...rest } = metadata;
+/**
+ * Compared as stored. What this device last synced is read back from storage
+ * at launch without the fields that were undefined, so set against a copy
+ * collected fresh as is, every ticker read as edited here: a device started
+ * after a while away kept all its old rows and pushed them over newer ones.
+ */
+function sameAsStored(left: unknown, right: unknown): boolean {
+  const stored = (value: unknown) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
+  return stableStringify(stored(left)) === stableStringify(stored(right));
+}
+
+/**
+ * A ticker's own fields. Quotes churn on every refresh, and which portfolios
+ * hold it, and how much, merges portfolio by portfolio.
+ */
+function tickerOwnFields(metadata: Record<string, unknown>): Record<string, unknown> {
+  const { quote: _quote, positions: _positions, portfolios: _portfolios, ...rest } = metadata;
   return rest;
 }
 
-function tickerChangedSinceLastSync(
-  current: TickerRecord | null | undefined,
-  lastSyncedTickers: Map<string, Record<string, unknown>> | null,
-): boolean {
-  if (!lastSyncedTickers || !current) return false;
-  const local = sanitizeTickerMetadata(current.metadata);
-  const baseline = lastSyncedTickers.get(current.metadata.ticker);
-  // No baseline entry means this device never uploaded the ticker: filed
-  // locally it is unsynced work, unfiled it is not something sync tracks.
-  if (!baseline) return isSyncableTicker(local);
-  return !valuesEqual(withoutQuote(local), withoutQuote(baseline));
+/** One portfolio's part of a ticker: whether it lists the ticker, and the positions it holds in it. */
+function holdingIn(positions: readonly TickerPosition[], links: readonly unknown[], portfolioId: string) {
+  return {
+    linked: links.includes(portfolioId),
+    positions: positions.filter((position) => position.portfolio === portfolioId).map(sanitizePosition),
+  };
 }
 
-export const coreConfigSyncContributor: SyncContributor = {
-  id: "core.config",
-  schemaVersion: 1,
-  collect: ({ state }) => collectCoreConfigPayload(state.config),
-  apply: async (payload, { baselinePayload, baselineState, state, getState, isCurrent, dispatch, tickerRepository }) => {
-    const nextConfig = mergeConfigPayload(state.config, payload, baselineState.config, baselinePayload);
-    if (!nextConfig || valuesEqual(nextConfig, state.config)) return;
-    // Adopting another device's workspace rearranges the screen under the
-    // user, so it is worth a line in the log when a report says "my panes
-    // moved on their own".
-    if (nextConfig.layout !== state.config.layout) {
-      log.info("config.layout.adopted", {
-        panes: nextConfig.layout.instances.length,
-        activeLayoutIndex: nextConfig.activeLayoutIndex,
-      });
+interface PulledTickersMerge {
+  lastSyncedTickers: Map<string, Record<string, unknown>> | null;
+  /** This device's live broker portfolios, each with the side holding its latest broker sync. */
+  brokerPortfolios: ReadonlyMap<string, "local" | "pulled">;
+  known: KnownBrokerHoldings;
+}
+
+/**
+ * Which side holds the latest sync of each live broker portfolio. Its
+ * positions are what the broker last reported, so only a later sync replaces
+ * them: a pushed copy older than this device's (from a device that was away,
+ * or an older build) never takes away positions this device's broker reported
+ * since, whatever other portfolios hold on the same ticker.
+ */
+function latestBrokerPortfolioSyncs(
+  atPullStart: AppConfig,
+  live: AppConfig,
+  pulledPortfolios: unknown,
+): Map<string, "local" | "pulled"> {
+  const pulledSyncedAt = new Map<string, number>();
+  for (const portfolio of Array.isArray(pulledPortfolios) ? pulledPortfolios : []) {
+    if (isRecord(portfolio) && typeof portfolio.id === "string" && isFiniteNumber(portfolio.lastSyncedAt)) {
+      pulledSyncedAt.set(portfolio.id, portfolio.lastSyncedAt);
     }
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    scheduleConfigSave(nextConfig);
+  }
+  const sides = new Map<string, "local" | "pulled">();
+  for (const portfolio of live.portfolios) {
+    if (!getBrokerInstance(live.brokerInstances, portfolio.brokerInstanceId)) continue;
+    const localSyncedAt = atPullStart.portfolios.find((entry) => entry.id === portfolio.id)?.lastSyncedAt;
+    // Never synced here: its positions merge like a manual portfolio's.
+    if (!isFiniteNumber(localSyncedAt)) continue;
+    const pulled = pulledSyncedAt.get(portfolio.id);
+    // Later than this device's copy, and than a sync here that ended while the pull was out.
+    const pulledIsLater = pulled !== undefined
+      && pulled > localSyncedAt
+      && pulled >= (isFiniteNumber(portfolio.lastSyncedAt) ? portfolio.lastSyncedAt : 0);
+    sides.set(portfolio.id, pulledIsLater ? "pulled" : "local");
+  }
+  return sides;
+}
+
+/**
+ * A pulled ticker merged with this device's, portfolio by portfolio: this
+ * device's part in a portfolio stays when it changed it since it last synced,
+ * a live broker portfolio goes to the side with its latest sync, and the rest
+ * comes from the pull. Broker contracts never sync and stay local.
+ */
+function mergePulledTicker(
+  current: TickerRecord | undefined,
+  pulled: Record<string, unknown>,
+  merge: PulledTickersMerge,
+): TickerRecord {
+  const local = current?.metadata;
+  const baseline = merge.lastSyncedTickers?.get(String(pulled.ticker));
+  // Nothing to compare with (no copy here, or this device never synced): the pull is taken.
+  const comparable = !!local && !!merge.lastSyncedTickers;
+  // No copy last synced means this device never uploaded the ticker: filed
+  // locally it is unsynced work, unfiled it is not something sync tracks.
+  const ownFieldsEdited = comparable && (baseline
+    ? !sameAsStored(tickerOwnFields(sanitizeTickerMetadata(local)), tickerOwnFields(baseline))
+    : isSyncableTicker(sanitizeTickerMetadata(local)));
+
+  const localPositions = local?.positions ?? [];
+  const localLinks = local?.portfolios ?? [];
+  const pulledPositions = Array.isArray(pulled.positions)
+    ? mergeLocalBrokerPositionIdentity(localPositions, pulled.positions as TickerPosition[])
+    : localPositions;
+  const pulledLinks = Array.isArray(pulled.portfolios)
+    ? pulled.portfolios.filter((portfolioId): portfolioId is string => typeof portfolioId === "string")
+    : localLinks;
+  const baselinePositions = Array.isArray(baseline?.positions) ? baseline.positions as TickerPosition[] : [];
+  const baselineLinks = Array.isArray(baseline?.portfolios) ? baseline.portfolios : [];
+
+  const portfolioIds = [...new Set([
+    ...localLinks, ...localPositions.map((position) => position.portfolio),
+    ...pulledLinks, ...pulledPositions.map((position) => position.portfolio),
+  ])];
+  const positions: TickerPosition[] = [];
+  const portfolios: string[] = [];
+  for (const portfolioId of portfolioIds) {
+    const brokerSide = merge.brokerPortfolios.get(portfolioId);
+    const takePulled = brokerSide
+      ? brokerSide === "pulled"
+      : !comparable || sameAsStored(
+        holdingIn(localPositions, localLinks, portfolioId),
+        holdingIn(baselinePositions, baselineLinks, portfolioId),
+      );
+    const [sidePositions, sideLinks] = takePulled ? [pulledPositions, pulledLinks] : [localPositions, localLinks];
+    positions.push(...sidePositions.filter((position) => position.portfolio === portfolioId));
+    if (sideLinks.includes(portfolioId)) portfolios.push(portfolioId);
+  }
+
+  const record: TickerRecord = {
+    metadata: hydrateTickerMetadata({
+      ...(ownFieldsEdited ? local : { ...local, ...pulled }),
+      positions,
+      portfolios,
+      broker_contracts: local?.broker_contracts ?? [],
+    }),
+  };
+  return clearLeftoverBrokerHoldings(record, merge.known) ?? record;
+}
+
+/**
+ * A ticker the pull did not carry: without what removed broker profiles left,
+ * and without positions in a broker portfolio whose later sync elsewhere no
+ * longer reports the ticker. Null when nothing changes.
+ */
+function withoutUnpulledHoldings(ticker: TickerRecord, merge: PulledTickersMerge): TickerRecord | null {
+  const sold = (portfolioId: string) => merge.brokerPortfolios.get(portfolioId) === "pulled";
+  const { metadata } = ticker;
+  const positions = metadata.positions.filter((position) => !sold(position.portfolio));
+  const portfolios = metadata.portfolios.filter((portfolioId) => !sold(portfolioId));
+  const kept = positions.length === metadata.positions.length && portfolios.length === metadata.portfolios.length
+    ? ticker
+    : { ...ticker, metadata: { ...metadata, positions, portfolios } };
+  const cleaned = clearLeftoverBrokerHoldings(kept, merge.known) ?? kept;
+  return cleaned === ticker ? null : cleaned;
+}
+
+const CORE_CONFIG_CONTRIBUTOR_ID = "core.config";
+
+export const coreConfigSyncContributor: SyncContributor = {
+  id: CORE_CONFIG_CONTRIBUTOR_ID,
+  schemaVersion: 1,
+  collect: ({ state, baselinePayload, memo }) => withLayoutProvenance(
+    collectCoreConfigPayload(state.config) as Record<string, unknown>,
+    baselinePayload,
+    memo?.get(),
+  ),
+  observe: ({ state, baselinePayload, memo, launch }) => {
+    const edit = noteLayoutEdit(state.config, baselinePayload, memo.get(), launch);
+    if (edit) memo.set(edit);
+  },
+  apply: async (payload, { snapshot, baselinePayload, baselineState, state, getState, isCurrent, dispatch, tickerRepository, memo }) => {
+    const pushedAt = snapshot?.contributors[CORE_CONFIG_CONTRIBUTOR_ID]?.updatedAt;
+    const nextConfig = mergeConfigPayload(state.config, payload, baselineState.config, baselinePayload, {
+      memo: memo?.get(),
+      pushedAt,
+    });
+    if (!nextConfig) return;
+    const configChanged = !valuesEqual(nextConfig, state.config);
+    if (configChanged) {
+      // Adopting another device's workspace rearranges the screen under the
+      // user, so it is worth a line in the log when a report says "my panes
+      // moved on their own".
+      if (nextConfig.layout !== state.config.layout) {
+        log.info("config.layout.adopted", {
+          panes: nextConfig.layout.instances.length,
+          activeLayoutIndex: nextConfig.activeLayoutIndex,
+        });
+      }
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      scheduleConfigSave(nextConfig);
+    }
+    if (memo && isRecord(payload)) rememberCloudLayout(payload, pushedAt, getState().config, memo, nextConfig.layouts !== state.config.layouts);
+    if (!configChanged) return;
 
     // A profile removed on another device takes its positions with it here
     // too; kept, this device would push them back and recreate the tickers
@@ -925,59 +1335,64 @@ export const coreCollectionsSyncContributor: SyncContributor = {
     await loadHoldingExchangeRates(state.config, state.tickers, state.financials),
     state.brokerAccounts,
   ),
-  apply: async (payload, { baselinePayload, getState, isCurrent, dispatch, tickerRepository }) => {
+  apply: async (payload, { snapshot, baselinePayload, baselineState, getState, isCurrent, dispatch, tickerRepository }) => {
     if (!isRecord(payload)) return;
     hydrateProfileAnalytics(payload);
-    const lastSyncedTickers = lastSyncedTickersById(baselinePayload);
-    // The config contributor applies first, so these are the watchlists this
-    // pull left. Tickers here and pulled ones drop the ids of any list that is
-    // gone (removed elsewhere, or deleted by an older build that left its id on
-    // the tickers), so this device never pushes them back.
-    const watchlistIds = new Set(getState().config.watchlists.map((watchlist) => watchlist.id));
-    const incomingRecords: TickerRecord[] = [];
-    const rawTickers = Array.isArray(payload.tickers) ? payload.tickers : [];
-    for (const rawTicker of rawTickers) {
-      if (!isCurrent()) return;
-      if (!isRecord(rawTicker)) continue;
-      const current = typeof rawTicker.ticker === "string"
-        ? getState().tickers.get(rawTicker.ticker)
-        : null;
-      // Local edits the cloud has never seen (CLI positions, offline changes)
-      // win here and are uploaded by the push that follows this pull.
-      if (tickerChangedSinceLastSync(current, lastSyncedTickers)) continue;
-      const syncedPositions = Array.isArray(rawTicker.positions)
-        ? mergeLocalBrokerPositionIdentity(
-          current?.metadata.positions ?? [],
-          rawTicker.positions as TickerPosition[],
-        )
-        : current?.metadata.positions ?? [];
-      const metadata = hydrateTickerMetadata({
-        ...current?.metadata,
-        ...rawTicker,
-        positions: syncedPositions,
-        broker_contracts: current?.metadata.broker_contracts ?? [],
-      });
-      const record = withoutMissingWatchlists({ metadata }, watchlistIds);
-      await tickerRepository.saveTicker(record);
-      incomingRecords.push(record);
-    }
-
     if (!isCurrent()) return;
-    const nextTickers = new Map(getState().tickers);
-    for (const record of incomingRecords) {
+    // The config contributor applies first, so this is the config this pull left.
+    const state = getState();
+    const pulledConfig = recordOrNull(snapshot?.contributors[CORE_CONFIG_CONTRIBUTOR_ID]?.payload);
+    const pulledPortfolios = Array.isArray(payload.portfolios) ? payload.portfolios : pulledConfig?.portfolios;
+    // A copy without its ticker list says nothing of what any portfolio holds:
+    // a later sync stamp there must not take this device's broker positions.
+    const pulledTickers = Array.isArray(payload.tickers) ? payload.tickers : null;
+    const merge: PulledTickersMerge = {
+      lastSyncedTickers: lastSyncedTickersById(baselinePayload),
+      brokerPortfolios: pulledTickers
+        ? latestBrokerPortfolioSyncs(baselineState.config, state.config, pulledPortfolios)
+        : new Map(),
+      // A broker portfolio the pull still lists may only exist on another device: it stays.
+      known: knownBrokerHoldings(state.config, {
+        portfolios: [pulledPortfolios, pulledConfig?.portfolios].flatMap(idEntries),
+        brokerInstances: idEntries(pulledConfig?.brokerInstances),
+      }),
+    };
+    // Tickers here and pulled ones drop the ids of any watchlist that is gone
+    // (removed elsewhere, or deleted by an older build that left its id on the
+    // tickers), so this device never pushes them back.
+    const watchlistIds = new Set(state.config.watchlists.map((watchlist) => watchlist.id));
+
+    // Merged and handed to the app in one go, with no wait in between, so a
+    // broker sync committing meanwhile is not overwritten with an older row.
+    const nextTickers = new Map(state.tickers);
+    const changed: TickerRecord[] = [];
+    const pulledSymbols = new Set<string>();
+    for (const rawTicker of pulledTickers ?? []) {
+      if (!isRecord(rawTicker) || typeof rawTicker.ticker !== "string") continue;
+      pulledSymbols.add(rawTicker.ticker);
+      const current = state.tickers.get(rawTicker.ticker);
+      const record = withoutMissingWatchlists(mergePulledTicker(current, rawTicker, merge), watchlistIds);
+      if (current ? sameAsStored(record.metadata, hydrateTickerMetadata({ ...current.metadata })) : !isSyncableTicker(record.metadata)) continue;
       nextTickers.set(record.metadata.ticker, record);
+      changed.push(record);
     }
-    let pruned = false;
-    for (const ticker of nextTickers.values()) {
-      const next = withoutMissingWatchlists(ticker, watchlistIds);
+    for (const ticker of state.tickers.values()) {
+      if (pulledSymbols.has(ticker.metadata.ticker)) continue;
+      const kept = withoutUnpulledHoldings(ticker, merge) ?? ticker;
+      const next = withoutMissingWatchlists(kept, watchlistIds);
       if (next === ticker) continue;
-      if (!isCurrent()) return;
-      await tickerRepository.saveTicker(next);
       nextTickers.set(next.metadata.ticker, next);
-      pruned = true;
+      changed.push(next);
     }
-    if (!isCurrent() || (incomingRecords.length === 0 && !pruned)) return;
+    if (changed.length === 0) return;
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
+    // Written one at a time, so an edit or a broker sync can replace a row
+    // before its turn. That copy is newer and its writer saves it; this one
+    // written over it would come back at launch as an edit and be pushed.
+    for (const record of changed) {
+      if (getState().tickers.get(record.metadata.ticker) !== record) continue;
+      await tickerRepository.saveTicker(record);
+    }
   },
 };
 

@@ -7,7 +7,7 @@ import {
   type NoteKind,
 } from "../../../api-client";
 import type { PluginPersistence } from "../../../types/plugin";
-import type { NoteFileEntry, QuickNoteEntry } from "./files";
+import type { NoteFileEntry, NotesListOptions, QuickNoteEntry } from "./files";
 
 export { NoteConflictError };
 
@@ -27,8 +27,18 @@ export interface NotesStore {
   load(key: string): Promise<string>;
   save(key: string, text: string, options?: { title?: string | null }): Promise<void>;
   delete(key: string): Promise<void>;
-  list(): Promise<NoteFileEntry[]>;
-  loadQuickNotesIndex(): Promise<QuickNoteEntry[]>;
+  /**
+   * Every note, newest first. A note that cannot be read is left out and
+   * handed to `skipped`; with `strict`, notes that cannot be listed at all
+   * reject instead of coming back as none.
+   */
+  list(options?: NotesListOptions): Promise<NoteFileEntry[]>;
+  /**
+   * The quick notes' ids and titles. With `strict`, an index that exists but
+   * cannot be read rejects instead of reading as empty, for a caller that
+   * would otherwise save a replacement over it.
+   */
+  loadQuickNotesIndex(options?: { strict?: boolean }): Promise<QuickNoteEntry[]>;
   saveQuickNotesIndex(entries: QuickNoteEntry[]): Promise<void>;
   quickNoteKey(id: string): string;
   /** Called after a server-side change so the next load sees it. */

@@ -67,7 +67,7 @@ import {
   type PanGesture,
   type PendingWheel,
 } from "./panel-gestures";
-import { resolvePanelCrosshair, axisLabelRows, cursorAxisLabel, resolveSeriesCursorYRatio } from "./panel-labels";
+import { resolvePanelCrosshair, axisLabelRows, cursorAxisLabel, resolveSeriesCursorYRatio, resolveSeriesAxisTags } from "./panel-labels";
 import type { KeyboardToolDrag } from "./use-composite-chart-keyboard";
 
 const webFrame = globalThis as typeof globalThis & {
@@ -101,6 +101,8 @@ interface CompositePanelSurfaceProps {
   onSelectDrawing: (id: string | null) => void;
   onActivate?: () => void;
   onCursorDateChange: (date: Date | null) => void;
+  /** The cursor shown is another chart's, so the pointer's level is not part of it. */
+  sharedCursor: boolean;
   /** Positive positions move toward older observations. A gesture supplies the frame and origin it started from. */
   onPanViewport: (
     deltaPositions: number,
@@ -147,6 +149,7 @@ export function CompositePanelSurface({
   onSelectDrawing,
   onActivate,
   onCursorDateChange,
+  sharedCursor,
   onPanViewport,
   onZoomViewport,
   onSetViewport,
@@ -171,7 +174,7 @@ export function CompositePanelSurface({
   const activeDrag = toolDrag ?? keyboardDrag?.drag ?? null;
   // A keyboard placement's end sits at the level the user put it, so it
   // draws a level line where otherwise only the pointer would.
-  const heldCursorYRatio = keyboardDrag ? keyboardDrag.drag.endYRatio : cursorYRatio;
+  const heldCursorYRatio = keyboardDrag ? keyboardDrag.drag.endYRatio : sharedCursor ? null : cursorYRatio;
   const seriesCursorYRatio = useMemo(
     () => resolveSeriesCursorYRatio(panel, scene),
     [panel, scene],
@@ -203,10 +206,12 @@ export function CompositePanelSurface({
   // read the pointer in plot space, so they convert through this.
   const plotSpanFactor = 1 + compositeRightOffsetRatio(scene.timeScale);
   const bitmapSize = useStaticChartBitmapSize(plotSize.width, plotSize.height);
-  const bitmap = useCompositePanelBitmap({ panel, bitmapSize, colors, isDesktopWeb });
-  // The level line follows the pointer only. A keyboard or shared cursor knows
-  // its column, and the series markers and axis readout already say the value.
-  // A tool placed from the keyboard is the exception: its end is a level.
+  const bitmap = useCompositePanelBitmap({ panel, bitmapSize, colors, isDesktopWeb, revealed: plotSize.revealed === true });
+  // The chart under the pointer draws both lines: the level line follows the
+  // pointer, and its value sits on the axes, beside each series' own tag on
+  // the desktop and the web. A keyboard or shared cursor knows its column
+  // only, so a chart following another chart's cursor draws the time line
+  // alone. A tool placed from the keyboard is the exception: its end is a level.
   const pointerCursorYRatio = scene.cursorXRatio === null ? null : heldCursorYRatio;
   const crosshair = useMemo(
     () => resolvePanelCrosshair(panel, bitmap, scene, pointerCursorYRatio, colors.crosshair),
@@ -293,6 +298,10 @@ export function CompositePanelSurface({
     () => levels && levelDomain ? projectLevels(levels.items, levelDomain, levelDraft) : NO_LEVELS,
     [levelDomain, levelDraft, levels],
   );
+  // Drawings project through the time scale alone: the crosshair moving,
+  // here or on a linked chart, must not repaint the plot, which the terminal's
+  // kitty surface would upload whole again.
+  const drawingProjection = useMemo(() => ({ timeScale: scene.timeScale }), [scene.timeScale]);
   const bitmapLayers = useMemo(() => {
     if (!bitmap) return null;
     // The desktop composites overlays as vectors, so the plot raster stays put
@@ -309,7 +318,7 @@ export function CompositePanelSurface({
         draw: drawColor,
       },
       toolReadout?.direction ?? "up",
-      { scene, panel, items: panelDrawings, selectedId: selectedDrawingId },
+      { scene: drawingProjection, panel, items: panelDrawings, selectedId: selectedDrawingId },
     );
     return [projectedLevels.length > 0 ? paintLevels(base, projectedLevels, selectedLevelId) : base];
   }, [
@@ -318,11 +327,11 @@ export function CompositePanelSurface({
     colors.crosshair,
     colors.negative,
     drawColor,
+    drawingProjection,
     isDesktopWeb,
     panel,
     panelDrawings,
     projectedLevels,
-    scene,
     selectedDrawingId,
     selectedLevelId,
     toolReadout?.direction,
@@ -394,8 +403,11 @@ export function CompositePanelSurface({
   const cursorPixelY = activeCursorYRatio === null
     ? null
     : activeCursorYRatio * Math.max(panel.height * cellHeightPx - 1, 0);
-  const leftCursorLabel = cursorAxisLabel(panel, "left", activeCursorYRatio, formatAxisValue);
-  const rightCursorLabel = cursorAxisLabel(panel, "right", activeCursorYRatio, formatAxisValue);
+  // The pointer's value on the axes follows the level line it belongs to.
+  const axisCursorYRatio = isDesktopWeb ? pointerCursorYRatio : activeCursorYRatio;
+  const leftCursorLabel = cursorAxisLabel(panel, "left", axisCursorYRatio, formatAxisValue);
+  const rightCursorLabel = cursorAxisLabel(panel, "right", axisCursorYRatio, formatAxisValue);
+  const seriesAxisTags = useMemo(() => isDesktopWeb ? resolveSeriesAxisTags(panel, scene, formatAxisValue) : [], [formatAxisValue, isDesktopWeb, panel, scene]);
   const measureReadout = useMemo(() => {
     if (!activeDrag || !toolReadout?.summary) return null;
     const text = toolReadout.summary;
@@ -820,8 +832,8 @@ export function CompositePanelSurface({
           style={isDesktopWeb
             ? {
               width: "auto",
-              paddingInline: 4,
-              borderRadius: 4,
+              paddingInline: "var(--gloom-space-xs)",
+              borderRadius: "var(--gloom-radius-sm)",
               backgroundColor: `color-mix(in srgb, ${colors.background} 82%, transparent)`,
             }
             : undefined}
@@ -846,6 +858,8 @@ export function CompositePanelSurface({
             cursorBackgroundColor={colors.background}
             axisColor={colors.textDim}
             extraMarkers={leftAxisMarkers}
+            seriesTags={isDesktopWeb ? seriesAxisTags.filter((tag) => tag.side === "left") : undefined}
+            measuredPixelHeight={plotSize.height * cellHeightPx}
           />
           <Box width={axisGap} />
         </>
@@ -893,6 +907,8 @@ export function CompositePanelSurface({
             cursorBackgroundColor={colors.background}
             axisColor={colors.textDim}
             extraMarkers={rightAxisMarkers}
+            seriesTags={isDesktopWeb ? seriesAxisTags.filter((tag) => tag.side === "right") : undefined}
+            measuredPixelHeight={plotSize.height * cellHeightPx}
           />
         </>
       ) : null}

@@ -1,4 +1,5 @@
 import { formatMarketPrice, formatMarketPriceWithCurrency, stablePriceFractionDigits, type MarketFormatOptions } from "../../../market-data/market/format";
+import { INDEX_POINTS_UNIT } from "../../../market-data/market/index-level";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import type { CompositeAxisDomain, CompositePanelScene } from "./types";
 import { timeZoneLabel, zonedWallClockMs } from "../../../utils/zoned-date-time";
@@ -39,12 +40,14 @@ function currencyPrefix(unit: string): string {
   return currency ? CURRENCY_SYMBOLS[currency] ?? "" : "";
 }
 
+/** A price in full, as the crosshair tag and a live label read it: $343.46 in a currency, 7,805.45 in index points. */
 function formatFullCurrencyValue(
   value: number,
   unit: string,
   assetCategory?: string,
   options: MarketFormatOptions = {},
 ): string | null {
+  if (unit.trim() === INDEX_POINTS_UNIT) return formatMarketPrice(value, { ...options, assetCategory, priceBasis: "points" });
   const currency = unitCurrencyCode(unit);
   return currency ? formatMarketPriceWithCurrency(value, currency, { ...options, assetCategory }) : null;
 }
@@ -241,6 +244,16 @@ export function formatCompositeSeriesValue(
   series: ResolvedSeries,
   referencePrice = seriesPriceReference(series),
 ): string {
+  if (series.statedUnit) {
+    // The number alone: the legend prints the unit beside it, as FUT prints
+    // a price beside its unit (4.6242 USD / gallon, not $4.6242).
+    const currency = unitCurrencyCode(series.unit) ?? undefined;
+    return formatMarketPrice(value, {
+      assetCategory: series.priceAssetCategory,
+      ...(currency ? { currency } : {}),
+      ...stablePriceOptions(series.unit, series.priceAssetCategory, referencePrice),
+    });
+  }
   return formatChartLegendValue(value, series.unit, series.unitGroup, series.priceAssetCategory, referencePrice);
 }
 
@@ -499,6 +512,13 @@ export function formatCompositeCursorAxisDate(
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** A dataset observation's day as the axis words it, `Oct 4`, with the year when the chart ends in another. */
+export function formatCompositeDatasetDate(date: Date, endTime: number | undefined): string {
+  const text = `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}`;
+  const endYear = endTime === undefined ? null : new Date(endTime).getUTCFullYear();
+  return endYear === null || endYear === date.getUTCFullYear() ? text : `${text} ${date.getUTCFullYear()}`;
+}
 
 /**
  * When a value carried under the cursor was observed: its time when it is

@@ -1,5 +1,6 @@
+import { logFailure } from "../../utils/log-failure";
 import type { CachedAssetArgs, CachedAssetMethod, CachedAssetValue, DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
-import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../../types/financials";
+import type { CorporateActionsData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import { fetchHistoryResult, type HistoryResultRequest } from "../../sources/history-result";
 import type { ChartRequest, InstrumentRef, OptionsRequest, SecFilingsRequest } from "../request-types";
 import { QueryStore, type QueryStoreRetention } from "../query-store";
@@ -21,6 +22,8 @@ import {
 } from "../selectors";
 import { resolveTickerFinancialsQuoteState } from "../quotes/resolution";
 import { measurePerf } from "../../utils/perf-marks";
+import { startTickerChangeLookup, type TickerChangeLookup } from "../../tickers/ticker-changes";
+import { fateListing, loadListingFate, NO_FATE, type ListingFate } from "../../tickers/listing-fate";
 import { hasLikelyQuoteUnitMismatch } from "../../utils/currency-units";
 import { hasUsablePriceHistory, normalizePriceHistory } from "../../utils/price-history";
 import { fxFreshUntil } from "../../utils/fx-market-hours";
@@ -218,6 +221,10 @@ export class MarketDataCoordinator {
     return this.events.getVersion();
   }
 
+  getKeyVersion(key: string): number {
+    return this.events.getKeyVersion(key);
+  }
+
   getKeysVersion(keys: readonly string[]): number {
     return this.events.getKeysVersion(keys);
   }
@@ -290,6 +297,37 @@ export class MarketDataCoordinator {
     return financials;
   }
 
+  /**
+   * The ticker change lookup for an instrument's symbol (`startTickerChangeLookup`), through
+   * this coordinator's source: what `listingFateGate` reads beside the quote. A broker's
+   * contract has none.
+   */
+  lookupTickerChanges(instrument: InstrumentRef): TickerChangeLookup {
+    const listing = fateListing(instrument);
+    return startTickerChangeLookup(listing ? this.dataProvider : null, listing?.symbol ?? "", listing?.exchange);
+  }
+
+  /**
+   * What became of an instrument's listing (`loadListingFate`): its quote as this store
+   * has or loads it, its changes from `lookupTickerChanges`. A line that trades waits only
+   * a short grace for the lookup once its quote is in; a stopped one waits for it.
+   */
+  async loadListingFate(instrument: InstrumentRef): Promise<ListingFate> {
+    const listing = fateListing(instrument);
+    if (!listing) return NO_FATE;
+    const quote = this.loadQuote(instrument).then(resolveEntryData, logFailure("market-data.coordinator.index", "Loading a listing fate quote failed", null));
+    return loadListingFate(listing, this.dataProvider, { quote, changes: this.lookupTickerChanges(instrument) });
+  }
+
+  /**
+   * The instrument's dividends, splits and earnings dates from this coordinator's source,
+   * which caches them; null from a source that has none.
+   */
+  async loadCorporateActions(instrument: InstrumentRef): Promise<CorporateActionsData | null> {
+    if (!this.dataProvider.getCorporateActions) return null;
+    return this.dataProvider.getCorporateActions(instrument.symbol, instrument.exchange ?? "");
+  }
+
   primeCachedFinancials(entries: Array<{ instrument: InstrumentRef; financials: TickerFinancials }>): void {
     for (const { instrument, financials } of entries) {
       primeFinancialsCache(this.financialCacheStores, instrument, financials, this.dataProvider.id);
@@ -298,8 +336,8 @@ export class MarketDataCoordinator {
 
   prefetchTicker(instrument: InstrumentRef | null | undefined): void {
     if (!instrument) return;
-    void this.loadSnapshot(instrument).catch(() => {});
-    void this.loadChart(createBaselineChartRequest(instrument)).catch(() => {});
+    void this.loadSnapshot(instrument).catch(logFailure("market-data.coordinator.index", "Loading a financial snapshot failed"));
+    void this.loadChart(createBaselineChartRequest(instrument)).catch(logFailure("market-data.coordinator.index", "Loading chart data failed"));
   }
 
   /**
@@ -311,11 +349,11 @@ export class MarketDataCoordinator {
   warmTickerGaps(instrument: InstrumentRef | null | undefined): void {
     if (!instrument) return;
     if (resolveEntryData(this.getSnapshotEntry(instrument)) == null) {
-      void this.loadSnapshot(instrument).catch(() => {});
+      void this.loadSnapshot(instrument).catch(logFailure("market-data.coordinator.index", "Loading a financial snapshot failed"));
     }
     const chartRequest = createBaselineChartRequest(instrument);
     if (resolveEntryData(this.getChartEntry(chartRequest)) == null) {
-      void this.loadChart(chartRequest).catch(() => {});
+      void this.loadChart(chartRequest).catch(logFailure("market-data.coordinator.index", "Loading chart data failed"));
     }
   }
 

@@ -1,22 +1,23 @@
 import { memo } from "react";
 import { Box, Text } from "../../../../ui";
+import { accentRuleOverlayStyle } from "../../../../components/ui/quote";
 import { useThemeColors } from "../../../../theme/theme-context";
 import { t } from "../../../../i18n";
 import { useAppLanguage } from "../../../../i18n/react";
 import { normalizeInlinePreview } from "../layout";
 import { DesktopChatMessageImages } from "../attachments/desktop";
 import { chatReplyQuoteText } from "../attachments/model";
-import { chatAuthorName, isQuotedAuthorManagedBot } from "../ghost-user";
+import { chatAuthorName, heldMessage, isQuotedAuthorManagedBot } from "../ghost-user";
 import { ChatBotIcon } from "./person-icons";
 import { ChatMessageActions, ChatMessageHeader, chatHeaderFitsEveryIcon } from "./header";
 import { MESSAGE_ACTION_WIDTH } from "../layout";
 import { canReactToMessage } from "../reactions";
 import { DesktopChatReactions, DesktopReactionAction } from "./reactions";
-import { ResponsiveTickerBadgeText } from "./inline-tokens";
+import { DesktopChatMessageText } from "./inline-tokens";
 import { DesktopChatPaneChip } from "./pane-chip";
 import { chatMessagePaneLinks } from "../pane-links/model";
 import { useSlowPendingSend } from "./pending-send";
-import { chatHighlightBg, getChatMessageRenderState } from "./render-state";
+import { chatAnnouncementBg, chatHighlightBg, getChatMessageRenderState } from "./render-state";
 import type { ChatMessageBaseProps } from "./types";
 
 const DESKTOP_MESSAGE_RIGHT_PADDING = 2;
@@ -99,7 +100,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
   ) : null;
   const actionProps = { state, index, beginReplyTo, beginEditMessage, retryMessage, reactAction, reactionPickerOpen };
   const { links: paneLinks, content } = chatMessagePaneLinks(msg);
-  // A share posted with its picture (what Share > Post to chat sends): the
+  // A share link sent with one picture, such as a pasted screenshot: the
   // picture is the chip's thumbnail rather than a second copy below it.
   const chipPreview = paneLinks.length === 1 && paneLinks[0]!.kind === "share"
     && msg.attachments?.length === 1 && !msg.attachmentReview
@@ -131,7 +132,12 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
       data-selected={state.isSelected ? "true" : "false"}
       data-hovered={state.isHovered ? "true" : "false"}
       data-highlighted={state.isHighlighted ? "true" : "false"}
-      style={{ "--chat-highlight-bg": chatHighlightBg(themeColors), minWidth: 0 }}
+      data-announcement={state.isAnnouncement ? "true" : undefined}
+      style={{
+        "--chat-highlight-bg": chatHighlightBg(themeColors),
+        minWidth: 0,
+        ...(state.isAnnouncement ? { position: "relative", "--chat-highlight-rest": chatAnnouncementBg("desktop") } : {}),
+      }}
     >
       {msg.replyTo && (
         <Box
@@ -140,13 +146,15 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
           height={1}
           paddingLeft={2}
           onMouseDown={() => {
+            // The thread handles background clearing in capture, before this
+            // jump. Keep bubbling so the pane shell also receives the focus.
             if (msg.replyToId) jumpToMessage(msg.replyToId);
           }}
           style={{ minWidth: 0, alignItems: "flex-start", cursor: "pointer", overflow: "hidden" }}
         >
           {/* One line: the quoted text ends in an ellipsis, the whole message is a click away. */}
           <Text fg={state.replyMetaColor} style={{ flexShrink: 0, whiteSpace: "pre" }}>{`${t("reply")} `}</Text>
-          {isQuotedAuthorManagedBot(msg.replyTo, userByUsername) ? (
+          {isQuotedAuthorManagedBot(msg.replyTo, userByUsername, () => heldMessage(messages, msg.replyToId)) ? (
             // The bot's icon stands where the colon would.
             <>
               <Text fg={state.replyAuthorColor} style={{ flexShrink: 0, whiteSpace: "pre" }}>{msg.replyTo.user.username}</Text>
@@ -192,10 +200,11 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
           style={{ minWidth: 0, alignItems: "flex-start" }}
         >
           <Box flexGrow={1} data-gloom-role="chat-message-body" data-gloom-selectable="true" style={{ minWidth: 0 }}>
-            <ResponsiveTickerBadgeText
+            <DesktopChatMessageText
               text={content}
               catalog={catalog}
               textColor={state.bodyColor}
+              mutedColor={state.bodyMutedColor}
               openTicker={openTicker}
               userByUsername={userByUsername}
               onUserHover={onUserHover}
@@ -259,6 +268,8 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
           />
         </Box>
       )}
+      {/* Last, so it draws over the rows' backgrounds. */}
+      {state.isAnnouncement && <Box data-gloom-role="chat-announcement-rule" style={accentRuleOverlayStyle()} />}
     </Box>
   );
 });

@@ -1,3 +1,4 @@
+import { INDEX_POINTS_EXPORT_UNIT, INDEX_POINTS_LABEL, isIndexLevel } from "../market-data/market/index-level";
 import type { PricePoint } from "../types/financials";
 import { marketPriceFractionDigitCeiling, resolveAssetDisplayKind } from "../market-data/market/format";
 import { TIME_RANGES, type TimeRange } from "../time-series/range";
@@ -13,9 +14,11 @@ import { isRoundTheClockCoin } from "../utils/crypto-pair";
 import { currencyPairCode } from "../utils/currency-pair";
 import { currencyUnitLabel } from "../utils/currency-units";
 import { getPricePointTimestamp } from "../utils/price-history";
-import { pricePointIntegrityFlags, pricePointValues } from "../utils/price-history-integrity";
+import { latestTradeIndex, missingVolumeNotice, pricePointIntegrityFlags, pricePointValues } from "../utils/price-history-integrity";
 import { formatUtcTime } from "../utils/utc-time";
 import { historyCoverageNotice } from "../sources/history-coverage";
+import { barLastSession, barPeriodToDate, type BarPeriodToDate } from "../market-data/market/bar-period";
+import { barSizeFromGap, medianBarGap } from "../time-series/bar-spacing";
 
 const PRICE_KEYS = ["open", "high", "low", "close"] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,7 +36,7 @@ const BREAK_JUMP_RATIO = 100;
 const BREAK_FLAGS: ReadonlySet<string> = new Set(["gap", "jump"]);
 const FIRST_MONDAY_MS = Date.UTC(1970, 0, 5);
 
-const BAR_INTERVAL_LABELS: Record<ManualChartResolution, string> = {
+export const BAR_INTERVAL_LABELS: Record<ManualChartResolution, string> = {
   "1m": "1-minute",
   "5m": "5-minute",
   "15m": "15-minute",
@@ -71,7 +74,7 @@ export interface HistoryRow {
   unsettled?: true;
   /** What the volume counts, when the history says: a coin's is traded value in its quote currency (`USD`). */
   volumeUnit?: string;
-  /** Why a coin's bar has no volume: `day in progress`, `rebuilt from hourly bars`, `not reported`. */
+  /** Why a coin's bar has no volume: `day in progress`, `rebuilt from hourly bars`, `latest trade` (not a bar), `not reported`. */
   volumeNote?: string;
 }
 
@@ -107,32 +110,25 @@ function isUtcMidnight(time: number): boolean {
   return new Date(time).toISOString().endsWith("T00:00:00.000Z");
 }
 
-function medianGap(times: readonly number[]): number | null {
-  const finite = times.filter(Number.isFinite).sort((left, right) => left - right);
-  const gaps = finite.slice(1).map((time, index) => time - finite[index]!).filter((gap) => gap > 0).sort((left, right) => left - right);
-  return gaps.length > 0 ? gaps[Math.floor((gaps.length - 1) / 2)]! : null;
-}
-
 /** Without a declared cadence, bar spacing decides: daily bars may be stamped at the session open. */
 function looksIntraday(times: readonly number[]): boolean {
   const finite = times.filter(Number.isFinite);
   if (finite.length < 2) return finite.some((time) => !isUtcMidnight(time));
-  const gap = medianGap(finite);
+  const gap = medianBarGap(finite);
   return gap != null && gap < INTRADAY_MAX_GAP_MS;
 }
 
 /** The bar size served: as the source declared it, otherwise read from the typical spacing of the bars. */
 function historyInterval(times: readonly number[], resolution: ManualChartResolution | null): ManualChartResolution | null {
   if (resolution) return resolution;
-  const gap = medianGap(times);
+  const gap = medianBarGap(times);
   if (gap == null) return null;
   if (gap < INTRADAY_MAX_GAP_MS) {
     return INTRADAY_RESOLUTIONS.reduce((best, candidate) => (
       Math.abs(CHART_RESOLUTION_STEP_MS[candidate] - gap) < Math.abs(CHART_RESOLUTION_STEP_MS[best] - gap) ? candidate : best
     ));
   }
-  const days = gap / DAY_MS;
-  return days >= 25 ? "1mo" : days >= 6 ? "1wk" : "1d";
+  return barSizeFromGap(gap);
 }
 
 /**
@@ -199,6 +195,8 @@ export function historyRows(
   const times = points.map(getPricePointTimestamp);
   const intraday = resolution ? isIntradayResolution(resolution) : looksIntraday(times);
   const interval = historyInterval(times, resolution);
+  // The latest trade some sources end intraday bars with is part of the bar before it, with no volume of its own.
+  const latestTrade = intraday ? latestTradeIndex(times) : -1;
   const rows = points.map((point, index) => {
     const time = times[index]!;
     const iso = Number.isFinite(time) ? new Date(time).toISOString() : "";
@@ -222,7 +220,10 @@ export function historyRows(
       ...(volume ? { volumeUnit: volume.unit } : {}),
       // A coin trades every day, so a bar without volume says why.
       ...(volume && values.volume == null
-        ? { volumeNote: point.partial ? "day in progress" : point.filled ? "rebuilt from hourly bars" : "not reported" }
+        ? {
+          volumeNote: index === latestTrade ? "latest trade" : point.partial ? "day in progress"
+            : point.filled ? "rebuilt from hourly bars" : "not reported",
+        }
         : {}),
     };
   });
@@ -231,6 +232,41 @@ export function historyRows(
     const flags = [...flagCodes(row), ...breaks[index]!];
     return flags.length > 0 ? { ...row, flag: flags.join(",") } : row;
   });
+}
+
+/**
+ * The newest weekly or monthly bar while its period has not ended at `now`
+ * (barPeriodToDate): marked `partial`, as a bar its source marks is, with
+ * how far into its period it runs, which the status line names (`month to
+ * date, through Thu 15 Oct 2026`). Daily and intraday bars are left as the
+ * source marks them. Null when the newest bar is complete.
+ */
+export function formingPeriodBar(
+  rows: readonly HistoryRow[],
+  venue: string | undefined,
+  now = Date.now(),
+): { rows: HistoryRow[]; periodToDate: BarPeriodToDate } | null {
+  const last = rows.at(-1);
+  const period = last?.interval === "1mo" ? "month" : last?.interval === "1wk" ? "week" : null;
+  const forming = last && period ? barPeriodToDate(last.date, period, venue, now) : null;
+  if (!forming) return null;
+  return { rows: [...rows.slice(0, -1), { ...last!, partial: true }], periodToDate: forming };
+}
+
+/**
+ * The day the newest weekly or monthly bar closed on once its period has
+ * ended (barLastSession), which dates the history instead of the day its
+ * period starts: Fri 16 Oct 2026 for the week of Mon 12 Oct. Null while it
+ * forms (formingPeriodBar), and for daily and intraday bars.
+ */
+export function closedPeriodBarDay(
+  rows: readonly HistoryRow[],
+  venue: string | undefined,
+  now = Date.now(),
+): string | null {
+  const last = rows.at(-1);
+  const period = last?.interval === "1mo" ? "month" : last?.interval === "1wk" ? "week" : null;
+  return last && period && !barPeriodToDate(last.date, period, venue, now) ? barLastSession(last.date, period, venue, now) : null;
 }
 
 /**
@@ -260,14 +296,16 @@ function listDates(dates: readonly string[]): string {
 /**
  * What the partial, filled and unsettled bars are: "2026-10-12 is still
  * forming (partial), with no volume until the day closes", the bars rebuilt
- * from hourly bars, and a future's closed session that "closes on its last
- * trade until its settlement is confirmed (unsettled)". Null when no bar is
- * any of them.
+ * from hourly bars, a future's closed session that "closes on its last trade
+ * until its settlement is confirmed (unsettled)", and the latest trade an
+ * intraday history ends with when it has no volume (latestTradeIndex). Null
+ * when no bar is any of them.
  */
 export function historyBarStatusNote(
   rows: readonly Pick<HistoryRow, "date" | "partial" | "filled" | "unsettled" | "volume">[],
 ): string | null {
   const partial = rows.filter((row) => row.partial);
+  const latest = rows[latestTradeIndex(rows.map((row) => Date.parse(row.date)))];
   const filled = rows.filter((row) => row.filled);
   const unsettled = rows.filter((row) => row.unsettled);
   const notes = [
@@ -283,8 +321,35 @@ export function historyBarStatusNote(
       ? `${listDates(unsettled.map((row) => row.date))} ${unsettled.length === 1 ? "closes" : "close"} on the last trade until the`
         + ` settlement is confirmed (unsettled)`
       : null,
+    // Its blank volume beside bars that have one, said once rather than counted as a bar without volume.
+    latest && latest.volume == null && historyReportsVolume(rows)
+      ? `${latest.date} is the latest trade, inside the bar before it, with no volume of its own`
+      : null,
   ].filter((note): note is string => note != null);
   return notes.length > 0 ? notes.join("; ") : null;
+}
+
+/**
+ * Whether a history reports volume at all. An index or a currency pair has none, so its blank column says nothing;
+ * a history that does marks each bar without one (`MISSING_VOLUME_TEXT`).
+ */
+export function historyReportsVolume(rows: readonly Pick<HistoryRow, "volume">[]): boolean {
+  return rows.some((row) => row.volume != null);
+}
+
+/**
+ * "2 of 177 bars have no reported volume (\u2014)" for a history that reports volume, or null. A bar still forming,
+ * rebuilt from hourly bars or left blank for contradictory prices, and the latest trade an intraday history ends with,
+ * are said by their own notes and not counted.
+ */
+export function historyMissingVolumeNote(
+  rows: readonly Pick<HistoryRow, "date" | "volume" | "partial" | "filled" | "flag">[],
+): string | null {
+  if (!historyReportsVolume(rows)) return null;
+  const latestTrade = latestTradeIndex(rows.map((row) => Date.parse(row.date)));
+  const missing = rows.filter((row, index) => row.volume == null && !row.partial && !row.filled
+    && !flagCodes(row).some((code) => !BREAK_FLAGS.has(code)) && index !== latestTrade).length;
+  return missingVolumeNotice(missing, rows.length) ?? null;
 }
 
 function neededDecimals(value: number, cap: number): number {
@@ -358,7 +423,7 @@ export function historyUnit(listing: string, quote: { currency?: string; instrum
     const [base, counter] = [pair.slice(0, 3), pair.slice(3)];
     return { kind: "pair", currency: counter, unit: `${counter} per ${base}` };
   }
-  if (quote?.instrumentType?.trim().toUpperCase() === "INDEX") return { kind: "points", currency: null, unit: "index points" };
+  if (isIndexLevel(quote?.instrumentType)) return { kind: "points", currency: null, unit: INDEX_POINTS_EXPORT_UNIT };
   const code = quote?.currency?.trim();
   return code
     ? { kind: "currency", currency: code, unit: currencyUnitLabel(code, { ofMajor: true }) }
@@ -386,7 +451,7 @@ export function historyFacts(unit: HistoryUnit, rows: readonly Pick<HistoryRow, 
   const interval = rows[0]?.interval;
   const unbroken = historyUnbrokenFrom(rows);
   return [
-    unit.kind === "pair" ? unit.unit! : unit.kind === "points" ? "Index points" : `Currency ${unit.unit ?? "unknown"}`,
+    unit.kind === "pair" ? unit.unit! : unit.kind === "points" ? INDEX_POINTS_LABEL : `Currency ${unit.unit ?? "unknown"}`,
     interval ? `${BAR_INTERVAL_LABELS[interval]} bars` : "",
     first && last ? (first === last ? historyDate(first) : `${historyDate(first)} to ${historyDate(last)}`) : "",
     `${rows.length} ${rows.length === 1 ? "bar" : "bars"}`,

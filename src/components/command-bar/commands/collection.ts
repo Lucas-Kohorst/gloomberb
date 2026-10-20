@@ -4,7 +4,7 @@ import {
   addTickerToPortfolio,
   isManualPortfolio,
   removeTickerFromPortfolio,
-} from "../../../plugins/builtin/portfolio-list/mutations";
+} from "../../../portfolio/mutations";
 import {
   applyCollectionMembershipChange,
   getCollectionTargetOptions,
@@ -20,8 +20,8 @@ import {
 } from "../helpers";
 import type { CommandBarRoute } from "../workflow/types";
 import { AmbiguousCollectionTickerError, resolveCollectionTicker } from "../workflow/collection-ticker";
-import { describeTickerChange, startTickerChangeLookup, tickerChangeLine } from "../../../tickers/ticker-changes";
-import { addPastedListToWatchlist, pastedSymbolList } from "./collection-list";
+import { describeFormerIssuer, describeTickerChange, startTickerChangeLookup, tickerChangeLine } from "../../../tickers/ticker-changes";
+import { addPastedListToWatchlist, pastedSymbolList, refuseTypedChoice } from "./collection-list";
 
 type WorkflowDeps = Parameters<typeof resolveTickerInput>[3];
 
@@ -61,6 +61,12 @@ export async function executeCollectionCommandAction(options: {
     closeAll: options.closeAll,
   });
   if (list?.separated && await addList(list)) return;
+  // One typed symbol is decided as a symbol of a pasted list is: a match the list would leave for a choice is not added.
+  if (action === "add" && !options.selectedTicker && !list && options.rawInput?.trim()
+    && await refuseTypedChoice(options.rawInput, deps, options.notify)) {
+    options.closeAll({ revertThemePreview: false });
+    return;
+  }
   const resolvedInput = options.selectedTicker
     ? { symbol: options.selectedTicker.metadata.ticker, ticker: options.selectedTicker }
     : await resolveTickerInput(
@@ -266,7 +272,8 @@ function notifyTickerChange(
 ): void {
   const { ticker: symbol, exchange, name } = ticker.metadata;
   void startTickerChangeLookup(dataProvider, symbol, exchange).settle(CHANGE_TOAST_WAIT_MS).then((payload) => {
-    const line = tickerChangeLine(describeTickerChange(symbol, payload, { name }));
+    // Else the company that merged away from it: GOGL was Golden Ocean, now CMB.Tech's CMBT.
+    const line = tickerChangeLine(describeTickerChange(symbol, payload, { name })) ?? describeFormerIssuer(symbol, payload, { name })?.note;
     if (line) notify(line, { type: "info" });
   });
 }

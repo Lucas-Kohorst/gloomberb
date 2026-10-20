@@ -67,7 +67,9 @@ export type ChartStudyKind =
   | "atr"
   | "ratio"
   | "spread"
-  | "correlation";
+  | "correlation"
+  /** A weighted sum of any number of series over a divisor: `(2*42*RB=F + 42*HO=F - 3*CL=F)/3`. */
+  | "formula";
 
 export interface ChartStudySpec {
   id: string;
@@ -120,6 +122,12 @@ export interface TimeSeriesPoint {
   close?: number | null;
   volume?: number | null;
   periodLabel?: string;
+  /**
+   * A financial statement period as the FA columns name it: `FY2025`, `Q3 FY26`,
+   * `TTM Q3 FY26`, or the period's end date off the issuer's fiscal calendar.
+   * The legend prints it beside the value.
+   */
+  fiscalPeriod?: string;
   provenance?: {
     priceHistoryIntegrity?: import("../utils/price-history-integrity").PriceHistoryIntegrity;
     valuationPriceIssues?: import("./valuation-price").ValuationPriceIssue[];
@@ -156,11 +164,22 @@ export interface ResolvedSeries {
   /** Unit of rawValue, retained when presentation transforms change unit. */
   rawUnit?: string;
   unitGroup: string;
+  /**
+   * The unit the legend states beside each value, read bare as FUT prints its
+   * price beside its unit: what a futures price counts ("USD / gallon"), where
+   * the currency alone does not say it, and what a formula of them counts.
+   */
+  statedUnit?: string;
   /** Source instrument category used only for monetary market-price precision. */
   priceAssetCategory?: string;
   /** Volume basis established by the source instrument; omitted when unspecified. */
   volumeUnit?: "shares" | "contracts";
   nativeFrequency: SeriesPeriod;
+  /**
+   * Set on a series with nothing to draw because its company reports no
+   * figures of the period asked for, while its annual ones exist.
+   */
+  unreportedPeriod?: "quarterly";
   /** Acquired market-history cadence; null is explicitly unknown, undefined is legacy or nonmarket. */
   historyResolution?: ManualChartResolution | null;
   /**
@@ -195,11 +214,22 @@ export interface ResolvedSeries {
   points: TimeSeriesPoint[];
   /** Who a report of a loaded series cites, when its loader names the dataset and publisher. */
   attribution?: SeriesAttribution;
+  /**
+   * The ticker whose price the values are in, such as a moving average of it:
+   * the chart draws the series on that price's axis when it shows the price.
+   */
+  priceOf?: string;
   /** Rejected valuation price inputs, retained independently of usable observations. */
   valuationPriceIssues?: import("./valuation-price").ValuationPriceIssue[];
   warning?: string;
   /** Listed in the legend so it can be restored, but not drawn. */
   hidden?: boolean;
+  /**
+   * A layer of a stacked area (`stackedSeries`): a band from the layers below
+   * to its own top, each point's `value` the top and `rawValue` the layer's own
+   * amount, which the legend shows.
+   */
+  stacked?: boolean;
   /** Columns below zero take this colour instead, so a change reads by its sign. */
   negativeColor?: string;
   /**
@@ -213,6 +243,8 @@ export interface TimeSeriesFieldDefinition {
   id: string;
   label: string;
   shortLabel: string;
+  /** What a charted series is called after its symbol when that says more than `shortLabel`: the basis of its figures. */
+  seriesLabel?: string;
   sourceKind: ChartSeriesSource["kind"];
   dataShape: SeriesDataShape;
   unit: string;

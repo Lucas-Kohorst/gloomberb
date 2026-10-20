@@ -1,3 +1,6 @@
+import type { DividendLapse } from "../../../utils/forward-dividend";
+import type { DistributionCadence } from "../../../utils/trailing-dividend";
+
 export interface DividendPayment {
   exDate: Date;
   recordDate: Date | null;
@@ -15,10 +18,12 @@ export interface DividendMetrics {
   forwardRate: number | null;
   /** The ex-date of the distribution the forward rate annualizes, YYYY-MM-DD. */
   forwardRateAsOf: string | null;
+  /** Set once the dividend has stopped (lapsedDividend), when there is no forward rate or yield. */
+  lapse?: DividendLapse | null;
   payoutRatio: number | null;
   growth1Y: number | null;
   growth3Y: number | null;
-  paymentFrequency: "monthly" | "quarterly" | "semi-annual" | "annual" | "irregular" | null;
+  paymentFrequency: DistributionCadence | null;
   lastExDividendDate: Date | null;
   /** Announced ex-date after now, from the summary or a future-dated history record. */
   nextExDividendDate: Date | null;

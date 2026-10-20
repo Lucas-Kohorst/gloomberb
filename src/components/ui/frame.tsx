@@ -2,7 +2,8 @@ import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { type ComponentType, type ReactNode } from "react";
 import { t } from "../../i18n";
-import { blendHex, type ThemeColors } from "../../theme/colors";
+import type { ThemeColors } from "../../theme/colors";
+import { RADIUS, SPACE, controlBorderColour, surfaceRaisedColour } from "../../theme/ui-tokens";
 import { useThemeColors } from "../../theme/theme-context";
 
 export interface ModalSurfaceOptions {
@@ -22,15 +23,41 @@ export function modalSurfaceStyle(colors: ThemeColors, options: ModalSurfaceOpti
     width: options.width ?? "min(540px, 100%)",
     height: "auto",
     maxHeight: options.maxHeight ?? "calc(100vh - 88px)",
-    padding: options.padding ?? 14,
-    backgroundColor: blendHex(colors.panel, colors.bg, 0.12),
-    border: `1px solid ${blendHex(colors.border, colors.borderFocused, 0.18)}`,
-    borderRadius: 6,
-    boxShadow: `0 18px 48px color-mix(in srgb, ${colors.bg} 46%, transparent), inset 0 1px 0 color-mix(in srgb, ${colors.textBright} 5%, transparent)`,
+    padding: options.padding ?? SPACE.lg,
+    // The floating surface (docs/pane-conventions.md, "Dialogs, menus and surfaces").
+    backgroundColor: surfaceRaisedColour(colors),
+    border: `1px solid ${controlBorderColour(colors)}`,
+    borderRadius: RADIUS.lg,
+    boxShadow: "var(--gloom-elevation)",
     boxSizing: "border-box" as const,
     overflowY: "auto" as const,
   };
 }
+
+/**
+ * Desktop and web: a small panel that sits on a chart rather than over it (a
+ * legend's key): the raised fill, the control border, the surface radius, the
+ * app's type, 4px by 8px inside, and no elevation.
+ */
+export const FLAT_SURFACE_STYLE = {
+  background: "var(--gloom-surface-raised)",
+  border: "1px solid var(--gloom-control-border)",
+  borderRadius: "var(--gloom-radius-lg)",
+  padding: "var(--gloom-space-xs) var(--gloom-space-sm)",
+  fontSize: "var(--gloom-type-ui)",
+  boxSizing: "border-box",
+} as const;
+
+/**
+ * Desktop and web: what the pointer is over, explained (a heat map tile, a
+ * map feature, a flow's relationship): the flat surface lifted by the one
+ * elevation, as everything floating is. A tooltip never takes the pointer.
+ */
+export const TOOLTIP_SURFACE_STYLE = {
+  ...FLAT_SURFACE_STYLE,
+  boxShadow: "var(--gloom-elevation)",
+  pointerEvents: "none",
+} as const;
 
 /** A key and what it does, drawn on the desktop and the web as a keycap and a word. */
 export interface DialogKeyHint {
@@ -50,6 +77,13 @@ export interface DialogDesktopFooter {
   /** After the keys; translated where it is drawn. */
   note?: string;
 }
+
+/**
+ * A form dialog's width, in cells: pane settings and New Portfolio, whose
+ * broker connect step fits in it (its QR code, the link, the note wrapped),
+ * and the browser sign-in dialogs, which match that step.
+ */
+export const FORM_DIALOG_WIDTH = 68;
 
 /**
  * Desktop and web: the width of a dialog body laid out `columns` cells wide,

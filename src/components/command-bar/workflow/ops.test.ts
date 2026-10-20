@@ -12,6 +12,7 @@ import { AppPersistence } from "../../../data/app-persistence";
 import { TickerRepository } from "../../../data/ticker-repository";
 import { PluginRegistry } from "../../../plugins/registry";
 import { PluginOffError } from "../../../plugins/plugin-off";
+import { insiderModule } from "../../../plugins/builtin/insider";
 
 type TemplateDeps = Parameters<typeof createPaneTemplateOrThrow>[2];
 
@@ -240,6 +241,53 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(createdOptions?.symbol).toBeUndefined();
     expect(createdBinding).toBeUndefined();
+  });
+
+  // INS alone with no ticker active opens the market's insider buying; with
+  // one active it still opens on that ticker.
+  test("opens INS without a ticker only when none is named or active", async () => {
+    const template = insiderModule.paneTemplates![0]!;
+    const open = async (focused: string | null) => {
+      const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+      const layout = cloneLayout(config.layout);
+      layout.instances = [{ instanceId: "quote-monitor:1", paneId: "quote-monitor", binding: { kind: "fixed", symbol: "TSLA" } }] as never;
+      const state = createInitialState({ ...config, layout });
+      state.focusedPaneId = focused;
+      state.tickers.set("TSLA", createTestTicker("TSLA", "Tesla", { broker_contracts: [] }));
+      const built: unknown[] = [];
+      await createPaneTemplateOrThrow(template.id, undefined, templateDeps(state, {
+        template: template as never,
+        pane: { id: "insider", name: "Insider", component: () => null, defaultPosition: "right" },
+        buildPaneInstance: (_paneType: string, options?: { binding?: unknown; title?: string }) => {
+          built.push({ binding: options?.binding, title: options?.title });
+          return { instanceId: "insider:1", paneId: "insider" };
+        },
+      }));
+      return built;
+    };
+
+    // Bound to nothing, or the app would link it to the focused list.
+    expect(await open(null)).toEqual([{ binding: { kind: "none" }, title: "Insider Activity" }]);
+    expect(await open("quote-monitor:1")).toMatchObject([{ binding: { kind: "fixed", symbol: "TSLA" }, title: "INS TSLA" }]);
+  });
+
+  // A company function refused for an index or a fund says what the ticker is;
+  // a refusal for any other reason keeps the generic line.
+  test("names what an uncovered ticker is when a company-only template refuses it", async () => {
+    const template = insiderModule.paneTemplates![0]!;
+    const open = (symbol: string, canCreate?: () => boolean) => {
+      const state = createInitialState(createDefaultConfig("/tmp/gloomberb-workflow-ops-test"));
+      const assetCategory = { "^VIX": "IND", VOO: "ETF" }[symbol] ?? "STK";
+      state.tickers.set(symbol, createTestTicker(symbol, symbol, { broker_contracts: [], assetCategory }));
+      return createPaneTemplateOrThrow(template.id, { symbol }, templateDeps(state, {
+        template: { ...template, ...(canCreate ? { canCreate } : {}) } as never,
+        pane: { id: "insider", name: "Insider", component: () => null, defaultPosition: "right", instruments: ["equity"] },
+        buildPaneInstance: () => ({ instanceId: "insider:1", paneId: "insider" }),
+      }));
+    };
+    await expect(open("^VIX")).rejects.toThrow("INS covers companies only, and ^VIX is an index.");
+    await expect(open("VOO")).rejects.toThrow("INS covers companies only, and VOO is an ETF.");
+    await expect(open("AAPL", () => false)).rejects.toThrow("Can't create insider right now.");
   });
 
   test("passes pane template instance ids through to pane creation", async () => {

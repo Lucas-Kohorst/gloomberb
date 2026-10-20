@@ -2,6 +2,7 @@ import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "..
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
 import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
 import { t } from "../../../i18n";
+import type { SinceLastSeenAfter } from "./since-last-seen";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 export type PortfolioViewMode = "table" | "grid";
@@ -15,6 +16,8 @@ export interface PortfolioPaneSettings {
   hideCash: boolean;
   /** Value a portfolio at the regular close rather than the latest print (`fn PF --close`). */
   valueAtClose: boolean;
+  /** How long the pane is out of sight before coming back tints LAST by each row's move since then. */
+  sinceLastSeen: SinceLastSeenAfter;
 }
 
 export interface CollectionEntry {
@@ -127,6 +130,17 @@ const VIEW_MODE_OPTIONS: PaneSettingOption[] = [
   },
 ];
 
+const SINCE_LAST_SEEN_OPTIONS: PaneSettingOption[] = [
+  { value: "off", label: "Off" },
+  { value: "30s", label: "After 30 Seconds" },
+  { value: "2m", label: "After 2 Minutes" },
+  { value: "10m", label: "After 10 Minutes" },
+];
+
+function isSinceLastSeenAfter(value: unknown): value is SinceLastSeenAfter {
+  return SINCE_LAST_SEEN_OPTIONS.some((option) => option.value === value);
+}
+
 function isCollectionScope(value: unknown): value is CollectionScope {
   return value === "all" || value === "portfolios" || value === "watchlists" || value === "custom";
 }
@@ -202,6 +216,7 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
     valueAtClose: settings?.valueAtClose === true,
+    sinceLastSeen: isSinceLastSeenAfter(settings?.sinceLastSeen) ? settings.sinceLastSeen : "2m",
   };
 }
 
@@ -334,6 +349,13 @@ export function buildPortfolioPaneSettingsDef(
     });
   }
 
+  fields.push({
+    key: "sinceLastSeen",
+    label: "Moves Since Last Seen",
+    description: "Back after this long out of sight, LAST is tinted green or red for a few seconds on rows that moved since you left.",
+    type: "select",
+    options: SINCE_LAST_SEEN_OPTIONS,
+  });
   fields.push({
     key: "hideHeader",
     label: "Hide Header Bar",

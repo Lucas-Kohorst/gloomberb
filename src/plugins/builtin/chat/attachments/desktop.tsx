@@ -8,6 +8,7 @@ import { useThemeColors } from "../../../../theme/theme-context";
 import { t, tf } from "../../../../i18n";
 import type { ChatAttachment } from "../../../../api-client";
 import type { ChatDraftAttachment } from "../controller/attachments";
+import { chatPlainText } from "../markdown";
 import {
   CHAT_IMAGE_TYPES,
   chatImageReviewNote,
@@ -324,6 +325,9 @@ function DraftAttachmentChip({
   );
 }
 
+/** Where what waits for the next message sits above the field: the images, then the share links. */
+export const DESKTOP_DRAFT_STRIP_STYLE = { gap: 6, padding: "6px 10px 2px 10px", flex: "none" } as const;
+
 /** The images waiting in the composer, above the field. */
 export function DesktopChatAttachmentStrip({
   attachments,
@@ -340,7 +344,7 @@ export function DesktopChatAttachmentStrip({
       flexDirection="row"
       flexWrap="wrap"
       data-gloom-role="chat-draft-attachments"
-      style={{ gap: 6, padding: "6px 10px 2px 10px", flex: "none" }}
+      style={DESKTOP_DRAFT_STRIP_STYLE}
     >
       {attachments.map((attachment) => (
         <DraftAttachmentChip
@@ -355,7 +359,7 @@ export function DesktopChatAttachmentStrip({
 }
 
 function imageAlt(index: number, count: number, caption: string, author: string): string {
-  const text = caption.replace(/\s+/g, " ").trim();
+  const text = chatPlainText(caption).replace(/\s+/g, " ").trim();
   const position = count > 1 ? ` ${index + 1} of ${count}` : "";
   if (text) return `Image${position}: ${text.length > 120 ? `${text.slice(0, 117)}...` : text}`;
   return `Image${position} from @${author}`;

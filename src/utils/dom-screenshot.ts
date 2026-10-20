@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import { logFailure } from "./log-failure";
 import {
   cssUrl,
   imageLayerRect,
@@ -172,7 +173,7 @@ function paintImageLayer(
     for (const stop of gradient.stops) fill.addColorStop(stop.offset, stop.color);
     context.fillStyle = fill;
   } catch {
-    // A stop colour the canvas cannot read.
+    // Intentional ignore: Unsupported canvas colors leave this optional gradient unpainted.
     return false;
   }
   context.fillRect(tile.x, tile.y, tile.width, tile.height);
@@ -464,7 +465,7 @@ function drawCanvasElement(
   try {
     context.drawImage(canvas, rect.left - origin.left, rect.top - origin.top, rect.width, rect.height);
   } catch {
-    // Ignore canvases the browser considers unsafe to read.
+    // Intentional ignore: Browser security can exclude a source canvas from the screenshot.
   }
 }
 
@@ -508,16 +509,19 @@ function drawRaster(
     if (element instanceof HTMLImageElement) {
       const fitted = objectFitRect(style.objectFit, local, { width: element.naturalWidth, height: element.naturalHeight });
       context.save();
-      context.beginPath();
-      context.rect(local.x, local.y, local.width, local.height);
-      context.clip();
-      context.drawImage(raster, fitted.x, fitted.y, fitted.width, fitted.height);
-      context.restore();
+      try {
+        context.beginPath();
+        context.rect(local.x, local.y, local.width, local.height);
+        context.clip();
+        context.drawImage(raster, fitted.x, fitted.y, fitted.width, fitted.height);
+      } finally {
+        context.restore();
+      }
     } else {
       context.drawImage(raster, local.x, local.y, local.width, local.height);
     }
-  } catch {
-    // A raster that cannot be drawn is left out, like a failed one.
+  } catch (error) {
+    logFailure("utils-dom-screenshot", "Could not draw screenshot image")(error);
   }
 }
 
@@ -691,7 +695,7 @@ async function waitForFonts(): Promise<void> {
   await Promise.race([
     fontSet.ready,
     new Promise((resolve) => setTimeout(resolve, 250)),
-  ]).catch(() => {});
+  ]).catch(() => { /* Intentional ignore: Missing fonts retain the browser fallback fonts for the screenshot. */ });
 }
 
 async function paintElement(

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useReducer, type ReactElement } from "react";
+import { act, useEffect, useReducer, type ReactElement } from "react";
 import { createOpenTuiTestHarness } from "../../../renderers/opentui/test-utils";
 import { Box } from "../../../ui";
 import {
@@ -10,7 +10,7 @@ import {
   type AppAction,
 } from "../../../state/app/context";
 import { createStaticAppStore } from "../../../test-support/app-store";
-import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { getSharedMarketDataCoordinator, MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { createTestDataProvider, createTestFinancials } from "../../../test-support/data-provider";
 import {
   createDefaultConfig,
@@ -35,6 +35,11 @@ import { mayBeUsEquityTicker } from "../../../utils/sec";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import { createTestTicker } from "../../../test-support/ticker";
 import { createTestPaneConfig } from "../../../test-support/pane";
+import { createMovedSymbolsProvider } from "../../../test-support/moved-symbols";
+import { PaneContent } from "../../../components/layout/pane/content";
+import { LATE_CHANGE_WAIT_MS } from "../../../tickers/listing-fate";
+import { instrumentFromTicker } from "../../../market-data/request-types";
+import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 
 const TEST_PANE_ID = "ticker-research:test";
 
@@ -687,4 +692,139 @@ describe("TickerResearchPane", () => {
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("chart");
   });
 
+});
+
+describe("TickerResearchPane on a symbol whose company moved", () => {
+  // What the pane asks its source for, beside the quote and ticker changes the gate reads.
+  const GATE_READS = new Set(["getQuote", "getQuotesBatch", "getTickerChanges", "getExchangeRate"]);
+  function recordingProvider(changes?: DataProvider["getTickerChanges"], overrides: Partial<DataProvider> = {}) {
+    const requested: string[] = [];
+    const provider = new Proxy(createMovedSymbolsProvider(changes, overrides), {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (typeof value !== "function" || GATE_READS.has(String(key))) return value;
+        return (...args: unknown[]) => {
+          requested.push(`${String(key)} ${String(args[0])}`);
+          return value.apply(target, args);
+        };
+      },
+    });
+    setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
+    return requested;
+  }
+
+  function GatedDetailHarness({ symbol }: { symbol: string }) {
+    const [state, dispatch] = useReducer(appReducer, createDetailState(createDetailConfig(symbol), createTestTicker(symbol), null));
+    return (
+      <AppContext value={createStaticAppStore(state, dispatch)}>
+        <PluginRenderProvider pluginId="ticker-research" runtime={runtime}>
+          <PaneContent component={DetailPane} paneId={TEST_PANE_ID} paneType={TICKER_RESEARCH_PANE_ID} title={symbol} focused width={90} height={24} />
+        </PluginRenderProvider>
+      </AppContext>
+    );
+  }
+
+  /** Frames drawn every 20 ms for `waitMs`; the last one. */
+  async function settleFrames(waitMs: number, frames: string[] = []) {
+    const started = performance.now();
+    while (performance.now() - started < waitMs) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await tui.setup().renderOnce();
+      });
+      frames.push(tui.frame());
+    }
+    return tui.frame();
+  }
+
+  async function renderGated(symbol: string, waitMs = 400) {
+    await tui.render(<GatedDetailHarness symbol={symbol} />, { width: 90, height: 24 });
+    return settleFrames(waitMs);
+  }
+
+  afterEach(() => { setSharedMarketDataCoordinator(null); });
+
+  test("HFC and RDS-A show where the company went, and with their stopped quote in hand ask for nothing of theirs", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    for (const [symbol, line, open] of [
+      ["HFC", "HFC became DINO on 2022-03-15.", "Open DINO"],
+      ["RDS-A", "RDS-A became SHEL on 2022-01-31.", "Open SHEL"],
+    ] as const) {
+      // Opened cold, the pane gives way as soon as the quote and the lookup say the company moved.
+      recordingProvider();
+      const cold = await renderGated(symbol);
+      expect(cold).toContain(line);
+      expect(cold).toContain(open);
+      expect(cold).not.toContain("Overview");
+      // With the old line's quote already in hand (a watchlist streams it), the pane waits for the lookup
+      // and never asks for the bars, profile or anything else under the old symbol.
+      const requested = recordingProvider();
+      await getSharedMarketDataCoordinator()!.loadQuote(instrumentFromTicker(createTestTicker(symbol), symbol)!);
+      const held = await renderGated(symbol);
+      expect(held).toContain(line);
+      expect(requested).toEqual([]);
+    }
+  });
+
+  test("META, which a new company holds, and AAPL with a change lookup that hangs or fails render as before, without waiting on it", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    const meta = recordingProvider();
+    const frame = await renderGated("META");
+    expect(frame).toContain("Overview");
+    expect(frame).not.toContain("became");
+    expect(meta).toContain("getTickerFinancials META");
+
+    const hung: DataProvider["getTickerChanges"] = (_symbol, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+    for (const changes of [hung, async () => { throw new Error("fetch failed"); }] as Array<DataProvider["getTickerChanges"]>) {
+      recordingProvider(changes);
+      // Well inside the longest a stopped line's lookup is waited for.
+      const served = await renderGated("AAPL", LATE_CHANGE_WAIT_MS / 10);
+      expect(served).toContain("Overview");
+      expect(served).not.toContain("Loading");
+    }
+  });
+
+  test("a trading symbol opens at once and keeps its pane across a switch, while its quote and change lookup are still out", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    // Neither the quote nor the change lookup answers: a cold open on a slow link.
+    const pending = () => new Promise<never>(() => {});
+    const out = { getQuote: pending, getQuotesBatch: pending };
+    const requested = recordingProvider(pending, out);
+    const frame = await renderGated("AAPL");
+    expect(frame).toContain("Overview");
+    expect(frame).not.toContain("Loading");
+    // The pane asked for its profile without waiting on either.
+    expect(requested).toContain("getTickerFinancials AAPL");
+
+    // A linked switch to another uncached symbol keeps the pane mounted and never shows a loading body.
+    recordingProvider(pending, out);
+    let mounts = 0;
+    function Probe() {
+      const { symbol } = usePaneTickerIdentity();
+      useEffect(() => { mounts += 1; }, []);
+      return <text>{`probe:${symbol}`}</text>;
+    }
+    let switchTo: (symbol: string) => void = () => {};
+    function SwitchHarness() {
+      const initial = createDetailState(createDetailConfig("AAPL"), createTestTicker("AAPL"), null);
+      initial.tickers.set("MSFT", createTestTicker("MSFT"));
+      const [state, dispatch] = useReducer(appReducer, initial);
+      switchTo = (symbol) => dispatch({ type: "UPDATE_LAYOUT", layout: { ...state.config.layout, instances: state.config.layout.instances.map((instance) => (
+        instance.instanceId === TEST_PANE_ID ? { ...instance, binding: { kind: "fixed" as const, symbol } } : instance)) } });
+      return (
+        <AppContext value={createStaticAppStore(state, dispatch)}>
+          <PaneContent component={Probe} paneId={TEST_PANE_ID} paneType={TICKER_RESEARCH_PANE_ID} title="probe" focused width={90} height={24} />
+        </AppContext>
+      );
+    }
+    await tui.render(<SwitchHarness />, { width: 90, height: 24 });
+    expect(await settleFrames(100)).toContain("probe:AAPL");
+    act(() => switchTo("MSFT"));
+    const frames: string[] = [];
+    expect(await settleFrames(200, frames)).toContain("probe:MSFT");
+    expect(frames.some((drawn) => drawn.includes("Loading"))).toBe(false);
+    expect(mounts).toBe(1);
+  });
 });

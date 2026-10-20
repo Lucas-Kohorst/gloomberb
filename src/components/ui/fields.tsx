@@ -48,6 +48,8 @@ export interface TextFieldProps {
   labelWidth?: number;
   value?: string;
   placeholder?: string;
+  /** The most characters it takes; typing and pasting stop there. */
+  maxLength?: number;
   focused?: boolean;
   width?: number;
   inputRef?: RefObject<InputRenderable | null>;
@@ -86,6 +88,18 @@ export interface TextFieldProps {
  */
 export const FRAMED_TEXTAREA_DESKTOP_STYLE = { padding: "6px var(--cell-w)", lineHeight: "var(--cell-h)" } as const;
 
+/**
+ * The field look on the desktop and the web (docs/pane-conventions.md, "Design
+ * system"): a sunken fill inside the control border, the accent while focused.
+ */
+export function fieldFrameStyle(focused: boolean) {
+  return {
+    border: `1px solid ${focused ? "var(--gloom-accent)" : "var(--gloom-control-border)"}`,
+    borderRadius: "var(--gloom-radius-md)",
+    backgroundColor: "var(--gloom-surface-sunken)",
+  } as const;
+}
+
 const PASSWORD_MASK_CHAR = "*";
 
 function maskPassword(value: string): string {
@@ -119,6 +133,7 @@ function TextFieldControl({
   active,
   value,
   placeholder,
+  maxLength,
   focused,
   width,
   inputRef,
@@ -163,6 +178,7 @@ function TextFieldControl({
         label={label}
         value={value}
         placeholder={placeholder}
+        maxLength={maxLength}
         focused={focused}
         width={width}
         inputRef={inputRef}
@@ -226,6 +242,7 @@ function TextFieldControl({
           value={value}
           selectable={!isPassword}
           placeholder={isPassword ? "" : placeholder}
+          {...(maxLength === undefined ? {} : { maxLength })}
           focused={focused}
           textColor={isPassword ? backgroundColor : textColor}
           placeholderColor={placeholderColor}

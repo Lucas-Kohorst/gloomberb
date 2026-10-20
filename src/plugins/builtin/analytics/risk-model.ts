@@ -6,12 +6,17 @@ import {
   getPortfolioPositionMetrics,
   resolvePortfolioMarketValue,
 } from "../../../portfolio/position-metrics";
+import type { Quote } from "../../../types/financials";
+import type { CloudQuotePayload } from "../../../api-client/types";
+import { getCompletedRegularSessionDisplay } from "../../../market-data/market/status";
+import { quoteTradingDay } from "../../../market-data/quotes/day-range";
 import type { DatedReturn } from "./metrics";
 import {
   computeWeightedPortfolioReturns,
   syntheticPositionUnsupportedReason,
 } from "./metrics";
 import {
+  buyAndHoldReturns,
   concentration,
   pairedReturns,
   regressReturns,
@@ -31,6 +36,7 @@ import {
   type RiskHoldingRequest,
   type RiskMarketSnapshot,
 } from "./risk-client";
+import { accountFxPair, accountFxReason, convertReturnsToAccount, FX_UNAVAILABLE, type AccountFx } from "./risk-fx";
 
 interface PortfolioRiskHolding {
   id: string;
@@ -38,18 +44,26 @@ interface PortfolioRiskHolding {
   exchange: string;
   quantity: number;
   currency: string;
-  /** Signed USD value at the current mark; only these marks weight the basket. */
+  /**
+   * Signed value at the current USD mark, in the account currency at its
+   * current rate; only these marks weight the basket.
+   */
   value: number | null;
   /** Weight in the covered basket, null outside it. */
   weight: number | null;
   /** Gross current value in the portfolio currency, for the covered share only; null when nothing values it. */
   marketValue: number | null;
   priceAsOf: string | null;
-  /** "close" when no current quote arrived and the latest completed close marks the holding. */
-  markSource?: "quote" | "close" | null;
+  /**
+   * "close" when no current quote arrived and the latest completed close marks
+   * the holding; "regular-close" when the quote's regular session is over and
+   * its close marks it, not a pre-market or after-hours print.
+   */
+  markSource?: "quote" | "close" | "regular-close" | null;
   /** The listing currency its closes were converted from at daily FX closes; null for a USD listing. */
   convertedFrom: string | null;
   historyAsOf: string | null;
+  /** Daily returns in the account currency. */
   returns: DatedReturn[];
   error: string | null;
   /** Why the holding is outside the basket; null when it qualifies. */
@@ -141,6 +155,63 @@ const RISK_BENCHMARK = "SPY";
  */
 export interface RiskWindowRequest {
   since?: "filed";
+  /**
+   * Since the filing: "13f" (the default) buys the 13F's own weights at the
+   * filing-date close and holds them; "current" holds today's weights fixed
+   * over the same sessions.
+   */
+  weights?: "13f" | "current";
+}
+
+/** How the since-filing basket is weighted, and where 13F weights came from. */
+type RiskWeighting =
+  | { kind: "13f"; weights: ReadonlyMap<string, number>; source: "stored" | "cost" }
+  | { kind: "current"; reason?: string };
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "14 Aug 2026" for 2026-08-14. */
+const dayText = (date: string) => `${Number(date.slice(8, 10))} ${MONTHS[Number(date.slice(5, 7)) - 1] ?? ""} ${date.slice(0, 4)}`;
+
+/**
+ * The 13F's own weights of an imported portfolio, by ticker: stored by the
+ * import, else rebuilt from its positions. An import sizes every position at
+ * the filing's reported shares, scaled, and costs it at the filing's implied
+ * price, so shares times cost is each line's reported value. A position
+ * without a USD cost cannot be rebuilt, and the basket says so.
+ */
+function thirteenFWeighting(
+  portfolio: Portfolio,
+  tickers: readonly TickerRecord[],
+): RiskWeighting {
+  const stored = Object.entries(portfolio.importedFrom?.weights ?? {})
+    .filter(([, weight]) => Number.isFinite(weight) && weight > 0);
+  if (stored.length) return { kind: "13f", weights: new Map(stored), source: "stored" };
+  const values = new Map<string, number>();
+  for (const ticker of portfolioRiskTickers(tickers, portfolio.id)) {
+    const lots = positions(ticker, portfolio.id);
+    const value = lots.reduce((sum, lot) =>
+      lot.side !== "short" && lot.shares > 0 && Number.isFinite(lot.avgCost) && lot.avgCost! > 0 && (lot.currency ?? "USD") === "USD"
+        ? sum + lot.shares * lot.avgCost!
+        : Number.NaN, 0);
+    if (!Number.isFinite(value) || value <= 0)
+      return {
+        kind: "current",
+        reason: `"${portfolio.name}" has no stored 13F weights and ${ticker.metadata.ticker} has no USD cost to rebuild them from, so the rows hold today's weights fixed. Re-import it (portfolio import --13f ${portfolio.importedFrom?.cik ?? "<CIK>"} --replace) for buy-and-hold.`,
+      };
+    values.set(ticker.metadata.ticker, value);
+  }
+  const total = [...values.values()].reduce((sum, value) => sum + value, 0);
+  return total > 0
+    ? { kind: "13f", weights: new Map([...values].map(([symbol, value]) => [symbol, value / total])), source: "cost" }
+    : { kind: "current", reason: `"${portfolio.name}" has no positions to weight.` };
+}
+
+/** One line naming how the since-filing rows are measured, from the close they start at. */
+export function sinceFiledMethod(window: { start: string | null; filed: string; weights: "13f" | "current" }, benchmark: string): string {
+  const close = dayText(window.start ?? window.filed);
+  return window.weights === "13f"
+    ? `Buy-and-hold from the ${close} close at the 13F's weights, against ${benchmark}`
+    : `Current weights held fixed since the ${close} close, against ${benchmark}; not buy-and-hold`;
 }
 
 /** Why a portfolio asked for risk since its filing shows the trailing window instead. */
@@ -169,6 +240,19 @@ function quoteDate(value: number | undefined): string | null {
   return Number.isFinite(value) && value! > 0
     ? new Date(value!).toISOString()
     : null;
+}
+/**
+ * A current quote's close once its regular session is over (after hours,
+ * overnight, through a weekend, and in the pre-market while the quote reports
+ * the last close), as `portfolio show --close` values a book: a pre-market or
+ * after-hours print never marks a holding. Null while the session trades.
+ */
+function regularCloseMark(quote: CloudQuotePayload): { price: number; date: string } | null {
+  const read: Quote = { ...quote, change: quote.change ?? Number.NaN, changePercent: quote.changePercent ?? Number.NaN,
+    priceBasis: quote.priceBasis === "nav" ? undefined : quote.priceBasis };
+  const close = getCompletedRegularSessionDisplay(read);
+  const date = quote.regularCloseSessionDate ?? quoteTradingDay(read);
+  return close && Number.isFinite(close.price) && close.price > 0 && date ? { price: close.price, date } : null;
 }
 function positions(ticker: TickerRecord, id: string) {
   return ticker.metadata.positions.filter(
@@ -246,22 +330,70 @@ function outsideValue(
   const value = resolvePortfolioMarketValue(metrics, unit != null && Number.isFinite(unit) ? unit : null)?.gross;
   return value != null && Number.isFinite(value) ? value : null;
 }
-const coveragePercent = (share: number) => Math.floor(share * 100);
+/** USD returns in the account currency, or none with the reason its daily closes cannot convert them. */
+function accountReturns(returns: readonly DatedReturn[], account: AccountFx): { returns: DatedReturn[]; error: string | null } {
+  if (account.error) return { returns: [], error: account.error };
+  try {
+    return { returns: convertReturnsToAccount(returns, account), error: null };
+  } catch (error) {
+    return { returns: [], error: error instanceof Error ? error.message : accountFxReason(account.currency, FX_UNAVAILABLE) };
+  }
+}
+/**
+ * "returns in TRY at daily USD/TRY closes": the currency the basket views of a
+ * non-USD account are in and how they got there; null for a USD account, or
+ * when its daily closes were unavailable and nothing converted.
+ */
+export function riskReturnsCurrency(model: Pick<PortfolioRiskModel, "accountConversion"> | null | undefined): string | null {
+  const conversion = model?.accountConversion;
+  return conversion ? `returns in ${conversion.currency} at daily ${conversion.pair} closes` : null;
+}
+// The epsilon keeps 29 of 100 at 29%, not the 28 that 0.29 * 100 rounds down to.
+const coveragePercent = (share: number) => Math.floor(share * 100 + 1e-9);
 const holdingCount = (count: number) => `${count} holding${count === 1 ? "" : "s"}`;
 const shareText = (share: number) =>
   share < 0.001 ? "under 0.1%" : `${(share * 100).toFixed(1)}%`;
+const convertedText = (coverage: RiskCoverage) =>
+  coverage.converted ? `${holdingCount(coverage.converted)} converted from local currency` : null;
 /**
  * "covers 78% of market value · 9 holdings left out · 2 converted from local
  * currency", or null when every holding is in the basket in its own USD listing.
+ * The compact result for Ask Gloom reads this form; the report and the pane
+ * name what is left out with `riskCoverageHeadline`.
  */
 export function riskCoverageText(coverage: RiskCoverage | undefined): string | null {
   if (!coverage) return null;
-  const converted = coverage.converted ? `${holdingCount(coverage.converted)} converted from local currency` : null;
+  const converted = convertedText(coverage);
   if (!coverage.leftOut.length) return converted;
   const covers = coverage.share == null
     ? "covers an unknown share of market value"
     : `covers ${coverage.unvalued ? "at most " : ""}${coveragePercent(coverage.share)}% of market value`;
   return [covers, `${holdingCount(coverage.leftOut.length)} left out`, ...(converted ? [converted] : [])].join(" · ");
+}
+/** Holdings named before "+N more" in the exclusion text. */
+const NAMED_EXCLUSIONS = 2;
+/**
+ * What the basket leaves out, by name and combined share, from the same
+ * covered share every other line reads: "excludes SQM, 12% of value" or
+ * "excludes SQM, ALB +1 more, 41% of value". The share is the complement of the
+ * covered percent, so the two always add to 100; it reads "at least" while a
+ * holding has no value, and a holding nothing values is named with "value
+ * unknown". Null when every holding is in the basket.
+ */
+export function riskExclusionText(coverage: RiskCoverage | undefined): string | null {
+  if (!coverage?.leftOut.length) return null;
+  const named = coverage.leftOut.slice(0, NAMED_EXCLUSIONS).map((row) => row.symbol).join(", ");
+  const more = coverage.leftOut.length - NAMED_EXCLUSIONS;
+  const names = more > 0 ? `${named} +${more} more` : named;
+  if (coverage.share == null || !coverage.leftOut.some((row) => (row.share ?? 0) > 0))
+    return `excludes ${names}, value unknown`;
+  const percent = 100 - coveragePercent(coverage.share);
+  return `excludes ${names}, ${coverage.unvalued ? "at least " : ""}${percent > 0 ? `${percent}%` : "under 1%"} of value`;
+}
+/** The line that leads what the basket views cover: what is left out, then what converted from local currency. */
+export function riskCoverageHeadline(coverage: RiskCoverage | undefined): string | null {
+  if (!coverage) return null;
+  return [riskExclusionText(coverage), convertedText(coverage)].filter(Boolean).join(" · ") || null;
 }
 /** A reason reads as the tail of a sentence, so its first word loses its capital unless it is an acronym ("FX", "USD"). */
 const lowerFirst = (text: string) => (/^[A-Z][a-z]/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text);
@@ -332,7 +464,27 @@ export function buildPortfolioRisk(
   const byId = new Map(
     market.histories.map((row) => [riskInstrumentId(row.instrument), row]),
   );
-  const rates = market.fxRates ?? {};
+  // A non-USD account converts every USD return at its currency's daily closes and every USD mark at its current rate.
+  const account: AccountFx | null =
+    portfolio.currency === "USD"
+      ? null
+      : market.accountFx?.currency === portfolio.currency
+        ? market.accountFx
+        : {
+            currency: portfolio.currency,
+            pair: accountFxPair(portfolio.currency),
+            closes: {},
+            first: null,
+            asOf: null,
+            error: accountFxReason(portfolio.currency, FX_UNAVAILABLE),
+          };
+  // Without a current rate the latest daily close values the account.
+  const latestAccountClose = account?.asOf ? account.closes[account.asOf] : undefined;
+  const rates: Readonly<Record<string, number>> =
+    account && !((market.fxRates?.[account.currency] ?? 0) > 0) && latestAccountClose
+      ? { ...market.fxRates, [account.currency]: latestAccountClose }
+      : (market.fxRates ?? {});
+  const accountRate = account ? rates[account.currency] : undefined;
   const holdings: PortfolioRiskHolding[] = portfolioRiskTickers(
     tickers,
     portfolio.id,
@@ -345,12 +497,16 @@ export function buildPortfolioRisk(
     const history = byId.get(id),
       quote = history?.quote,
       lots = positions(ticker, portfolio.id);
-    // A current quote marks the holding; otherwise its latest completed close does.
+    // A current quote marks the holding, at its close once the regular session
+    // is over; otherwise its latest completed close does. A converted quote's
+    // session fields are still in its listing currency, and its venue has no
+    // extended prints to leave out.
     const close = history?.closeMark ?? null;
+    const regularClose = !close && quote && !quote.stale && !history?.converted ? regularCloseMark(quote) : null;
     const mark = close
       ? { price: close.price, currency: close.currency, stale: false }
       : quote
-        ? { price: quote.price, currency: quote.currency, stale: !!quote.stale }
+        ? { price: regularClose?.price ?? quote.price, currency: quote.currency, stale: !!quote.stale }
         : null;
     const quantity = signedQuantity(lots);
     // A converted listing is marked and returned in USD; its own currency is what the holding records.
@@ -358,13 +514,10 @@ export function buildPortfolioRisk(
     const listingCurrency =
       quote?.currency ?? close?.currency ?? history?.listing?.currency ?? ticker.metadata.currency;
     const foreign = !convertedFrom && listingCurrency !== "USD";
-    const error =
+    const usdError =
       syntheticPositionUnsupportedReason(ticker, "USD", portfolio.id) ??
       (lots.some((row) => !Number.isFinite(row.shares))
         ? "Invalid position quantity"
-        : null) ??
-      (portfolio.currency !== "USD"
-        ? "Historical account-currency FX is required"
         : null) ??
       (ticker.metadata.currency &&
       (convertedFrom ?? mark?.currency) &&
@@ -377,10 +530,13 @@ export function buildPortfolioRisk(
         : null) ??
       history?.error ??
       (!history ? "Daily history unavailable" : null);
-    const priceDate = close ? close.date : quoteDate(quote?.lastUpdated);
+    // A holding with a USD history converts into the account currency, or is left out with the reason it cannot.
+    const inAccount = account && !usdError ? accountReturns(history?.returns ?? [], account) : null;
+    const error = usdError ?? inAccount?.error ?? null;
+    const priceDate = close ? close.date : regularClose ? regularClose.date : quoteDate(quote?.lastUpdated);
     const marked =
       mark &&
-      mark.currency === portfolio.currency &&
+      mark.currency === "USD" &&
       !mark.stale &&
       Number.isFinite(mark.price) &&
       mark.price > 0 &&
@@ -393,8 +549,9 @@ export function buildPortfolioRisk(
         error?.startsWith("Short positions"))
         ? quantity * mark.price
         : null;
-    const value = marked != null && Number.isFinite(marked) ? marked : null;
-    const returns = history?.returns ?? [];
+    const accountValue = marked == null || !account ? marked : accountRate! > 0 ? marked / accountRate! : null;
+    const value = accountValue != null && Number.isFinite(accountValue) ? accountValue : null;
+    const returns = inAccount?.returns ?? history?.returns ?? [];
     const leftOut =
       error ??
       (value == null || value <= 0
@@ -414,9 +571,10 @@ export function buildPortfolioRisk(
           ? Math.abs(value)
           : outsideValue(ticker, portfolio, quote ?? history?.listing ?? null, rates),
       priceAsOf: priceDate,
-      markSource: close ? "close" : quote ? "quote" : null,
+      markSource: close ? "close" : regularClose ? "regular-close" : quote ? "quote" : null,
       convertedFrom,
-      historyAsOf: history?.asOf ?? null,
+      // Converted returns end with the account currency's last daily close.
+      historyAsOf: (inAccount ? inAccount.returns.at(-1)?.dateKey : null) ?? history?.asOf ?? null,
       returns,
       error,
       leftOut,
@@ -452,10 +610,14 @@ export function buildPortfolioRisk(
   };
   // Weights renormalize over the covered basket; nothing outside it is approximated into it.
   const members = sufficient ? qualifying : [];
-  const book = members.length ? concentration(members) : null;
+  const basketWeights = members.length ? concentration(members) : null;
   for (const holding of members)
     holding.weight =
-      book?.rows.find((row) => row.id === holding.id)?.weight ?? null;
+      basketWeights?.rows.find((row) => row.id === holding.id)?.weight ?? null;
+  // Concentration needs a value, not a return history: it reads every holding that has one, left out of the basket or not.
+  const book = concentration(
+    valued.filter((row) => row.marketValue! > 0).map((row) => ({ id: row.id, value: row.marketValue })),
+  );
   const closeMarked = members.filter((row) => row.markSource === "close").length;
   const converted = members.filter((row) => row.convertedFrom != null).length;
   const held = new Set(holdings.map((row) => row.id));
@@ -493,21 +655,57 @@ export function buildPortfolioRisk(
     );
     return (instrument && byId.get(riskInstrumentId(instrument))?.returns) || [];
   };
-  const benchmark = proxy(RISK_BENCHMARK),
-    sample = pairedReturns(basket, benchmark);
+  // SPY's USD returns are the market factor and the equity stress; the risk
+  // rows compare the basket with SPY in the basket's own currency. A session
+  // without an account close is a gap in that benchmark, never bridged, so it
+  // cannot blank the holdings the closes do cover.
+  const spy = proxy(RISK_BENCHMARK);
+  const benchmark = account
+    ? accountReturns(spy.filter((point) => account.closes[point.startDateKey] && account.closes[point.dateKey]), account).returns
+    : spy;
   // Since the filing only for a portfolio that has one; any other keeps the trailing window and says why.
   const filed = window.since === "filed" ? portfolio.importedFrom?.filed ?? null : null;
   if (window.since === "filed" && !filed)
     notes.push(sinceFallbackNote(portfolio));
+  // Since the filing, the copier's basket by default: the 13F's weights bought at the filing-date close and held.
+  const weighting: RiskWeighting | null = !filed ? null
+    : window.weights === "current" ? { kind: "current" } : thirteenFWeighting(portfolio, tickers);
+  if (weighting?.kind === "current" && weighting.reason) notes.push(weighting.reason);
+  let sample = pairedReturns(basket, benchmark);
+  if (filed && weighting?.kind === "13f") {
+    const weights = weighting.weights;
+    const held = members.filter((row) => weights.has(row.symbol));
+    const outside = members.filter((row) => !weights.has(row.symbol)).map((row) => row.symbol);
+    const owned = new Set(holdings.map((row) => row.symbol));
+    const sold = [...weights.keys()].filter((symbol) => !owned.has(symbol));
+    if (weighting.source === "cost")
+      notes.push("13F weights rebuilt from each position's shares and cost, as imported; this portfolio predates stored 13F weights.");
+    if (outside.length)
+      notes.push(`Not in the 13F import, so outside the buy-and-hold basket: ${outside.join(", ")}.`);
+    if (sold.length)
+      notes.push(`No longer held, so the 13F weights are renormalised without: ${sold.join(", ")}.`);
+    const basket = buyAndHoldReturns(
+      held.map((row) => ({ weight: weights.get(row.symbol)!, returns: row.returns })),
+      filed,
+      benchmark,
+    );
+    // A basket that stops early, or a holding it could not buy, is named rather than read as the whole span.
+    if (basket.cutShort)
+      notes.push(`The buy-and-hold rows end on ${basket.cutShort.date}: ${held[basket.cutShort.holding]!.symbol} has no daily close after it.`);
+    if (basket.unpriced.length)
+      notes.push(`No close on or before the ${filed} filing, so outside the buy-and-hold basket: ${basket.unpriced.map((index) => held[index]!.symbol).join(", ")}.`);
+    sample = pairedReturns(basket.returns, benchmark);
+  }
   const metrics = filed
     ? sinceBasketRisk(sample, filed, RISK_BENCHMARK)
     : rollingBasketRisk(sample, undefined, RISK_BENCHMARK);
+  // Factor proxies stay in USD: a beta is the account-currency move per unit of the factor as it trades.
   const factors = [
-    { id: "market", label: "Market (SPY)", series: benchmark },
+    { id: "market", label: "Market (SPY)", series: spy },
     {
       id: "size",
       label: "Size (IWM - SPY)",
-      series: subtractReturns(proxy("IWM"), benchmark),
+      series: subtractReturns(proxy("IWM"), spy),
     },
     {
       id: "value",
@@ -517,7 +715,12 @@ export function buildPortfolioRisk(
     {
       id: "momentum",
       label: "Momentum (MTUM - SPY)",
-      series: subtractReturns(proxy("MTUM"), benchmark),
+      series: subtractReturns(proxy("MTUM"), spy),
+    },
+    {
+      id: "quality",
+      label: "Quality (QUAL - SPY)",
+      series: subtractReturns(proxy("QUAL"), spy),
     },
     { id: "rates", label: "Rates (IEF)", series: proxy("IEF") },
     {
@@ -545,7 +748,7 @@ export function buildPortfolioRisk(
     {
       id: "equity",
       label: `Index ${shifts.equity > 0 ? "+" : ""}${shifts.equity}%`,
-      series: benchmark,
+      series: spy,
       shock: shifts.equity / 100,
       source: "SPY price return",
     },
@@ -603,7 +806,7 @@ export function buildPortfolioRisk(
       return {
         ...row,
         percentile: row.rank.percentile,
-        // The method (price returns at fixed current weights) is in docs; the footer keeps room for coverage.
+        // The method (price returns, bought and held or at fixed current weights) is in docs; the footer keeps room for coverage.
         detail: filed && row.value == null && TAIL_ROW_IDS.has(row.id) ? `${row.samples} sessions; needs 60` : `${row.samples} sessions`,
         ...(tail
           ? { amount: (row.value! / 100) * coverage.coveredValue, amountCurrency: coverage.currency, amountBase: coverage.coveredValue }
@@ -627,7 +830,7 @@ export function buildPortfolioRisk(
       asOf: row.priceAsOf,
       detail: row.leftOut
         ? row.leftOut
-        : `${row.quantity} shares; ${formatNumber(row.value ?? undefined)} ${row.currency}${row.markSource === "close" ? ` at ${row.priceAsOf} close` : ""}${row.convertedFrom ? ` from ${row.convertedFrom} at daily FX` : ""}; history ${row.historyAsOf}`,
+        : `${row.quantity} shares; ${formatNumber(row.value ?? undefined)} ${portfolio.currency}${row.markSource === "close" || row.markSource === "regular-close" ? ` at ${row.priceAsOf} close` : ""}${row.convertedFrom ? ` from ${row.convertedFrom} at daily FX` : ""}; history ${row.historyAsOf}`,
       ...(row.leftOut ? { leftOut: row.leftOut } : {}),
     })),
     correlation: correlation.map((row) => ({
@@ -754,19 +957,19 @@ export function buildPortfolioRisk(
         id: "top",
         label: "Largest holding",
         value: book.top * 100,
-        unit: "% basket",
+        unit: "% value",
         percentile: null,
         asOf: market.fetchedAt,
-        detail: "Current value in the covered basket",
+        detail: "Current value of every priced holding",
       },
       {
         id: "top-five",
         label: "Largest five",
         value: book.topFive * 100,
-        unit: "% basket",
+        unit: "% value",
         percentile: null,
         asOf: market.fetchedAt,
-        detail: "Current value in the covered basket",
+        detail: "Current value of every priced holding",
       },
       {
         id: "hhi",
@@ -802,8 +1005,20 @@ export function buildPortfolioRisk(
     notes,
     fetchedAt: market.fetchedAt,
     benchmark: RISK_BENCHMARK,
+    /** The currency a non-USD account's returns converted into, at the daily closes of `pair`; null for USD. */
+    accountConversion:
+      account && !account.error && account.pair
+        ? { currency: account.currency, pair: account.pair, asOf: account.asOf }
+        : null,
     window: filed
-      ? { kind: "since-filed" as const, filed, start: metrics[0]?.startDate ?? null, sessions: metrics[0]?.samples ?? 0 }
+      ? {
+          kind: "since-filed" as const,
+          filed,
+          start: metrics[0]?.startDate ?? null,
+          sessions: metrics[0]?.samples ?? 0,
+          weights: weighting?.kind ?? "current",
+          ...(weighting?.kind === "13f" ? { weightsSource: weighting.source } : {}),
+        }
       : { kind: "trailing" as const, sessions: 60 },
   };
 }

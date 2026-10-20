@@ -23,12 +23,14 @@ const FuturesPane = futuresModule.panes![0]!.component as (props: {
 const tui = createOpenTuiTestHarness();
 const pinned: Array<{ symbol: string; options?: PinTickerOptions }> = [];
 
-/** Contract terms as the server sends them on 2026-10-14: CL=F on December while November trades until the 20th. */
+/** Contract terms as the server sends them on 2026-10-19: CL=F on December from its roll date while November trades until the 20th. */
 const contractTerms: Record<string, FuturesContractTermsPayload> = {
   "CL=F": { symbol: "CL=F", root: "CL", name: "WTI Crude Oil", contract: "CLZ26", contractSymbol: "CLZ26.NYM", deliveryMonth: "2026-12",
     spec: { unit: "USD / barrel", size: "1,000 barrels", pointValue: 1000, tick: 0.01, tickValue: 10, settlement: "physical" },
     lastTrade: "2026-11-20", firstNotice: null, inDelivery: false, settlement: { price: 93.17, date: "2026-10-13" },
-    nearest: { contract: "CLX26", contractSymbol: "CLX26.NYM", deliveryMonth: "2026-11", lastTrade: "2026-10-20" } },
+    nearest: { contract: "CLX26", contractSymbol: "CLX26.NYM", deliveryMonth: "2026-11", lastTrade: "2026-10-20" },
+    roll: { label: "1 day before last trade", date: "2026-11-19" },
+    mostActive: { contract: "CLZ26", contractSymbol: "CLZ26.NYM", deliveryMonth: "2026-12", volume: 304_249, date: "2026-10-16" } },
 };
 let termsSpy: { mockRestore(): void } | null = null;
 
@@ -112,11 +114,11 @@ function makeRuntime(quoteError?: string): PluginRuntimeAccess {
   } as unknown as PluginRuntimeAccess;
 }
 
-function Harness({ quoteError, width = 80 }: { quoteError?: string; width?: number }) {
+function Harness({ quoteError, width = 80, height = 24 }: { quoteError?: string; width?: number; height?: number }) {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-futures-pane-test"));
   return (
     <TestPaneProvider state={state} paneId="futures" runtime={makeRuntime(quoteError)} pluginId="market-overview">
-      <FuturesPane paneId="futures" paneType="futures" focused width={width} height={24} />
+      <FuturesPane paneId="futures" paneType="futures" focused width={width} height={height} />
     </TestPaneProvider>
   );
 }
@@ -141,7 +143,7 @@ describe("FuturesPane", () => {
     expect(collapsed).toContain("▸ Equity Index");
     expect(collapsed).not.toContain("E-Mini S&P 500");
     // Other sectors keep their contracts.
-    expect(collapsed).toContain("WTI Crude Oil");
+    expect(collapsed).toContain("S&P Energy");
 
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderSettled();
@@ -230,7 +232,8 @@ describe("FuturesPane", () => {
   });
 
   test("a row names the month its symbol rolled past and the unit its price counts, as quote does", async () => {
-    await tui.render(<Harness width={190} />, { width: 190, height: 24 });
+    // Tall enough to reach the energy rows below the equity groups.
+    await tui.render(<Harness width={190} height={64} />, { width: 190, height: 64 });
     await renderSettled();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -238,14 +241,14 @@ describe("FuturesPane", () => {
     });
     await renderSettled();
     const crude = tui.frame().split("\n").find((line) => line.includes("WTI Crude Oil"));
-    expect(crude).toContain("WTI Crude Oil Dec 26, most active (Nov expires 20 Oct)");
+    expect(crude).toContain("WTI Crude Oil Dec 26, rolled (Nov expires 20 Oct)");
     expect(crude).toContain("USD / barrel");
     // A root the server has no terms for keeps its catalog name, and its catalog unit where there is one.
     const ttf = tui.frame().split("\n").find((line) => line.includes("Dutch TTF Gas"));
     expect(ttf).toContain("EUR / MWh");
-    expect(ttf).not.toContain("most active");
+    expect(ttf).not.toContain("rolled");
     // A narrow board keeps the month the quote prices and the unit, and drops the note it has no room for.
-    await tui.render(<Harness />, { width: 80, height: 24 });
+    await tui.render(<Harness height={64} />, { width: 80, height: 64 });
     await renderSettled();
     const narrow = tui.frame().split("\n").find((line) => line.includes("WTI Crude Oil"));
     expect(narrow).toContain("WTI Crude Oil Dec 26");

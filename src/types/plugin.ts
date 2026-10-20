@@ -28,6 +28,7 @@ export type {
   HeadlessSeries,
   HeadlessSeriesPoint,
   HeadlessSeriesResult,
+  HeadlessShotState,
   HeadlessSnapshotResult,
 } from "./headless";
 import type { ConnectionHealthRegistry } from "../core/connection-health";
@@ -100,11 +101,16 @@ export interface PanePortableShareDef {
     state?: PaneSharePrivateFields;
   };
   /**
-   * Rewrites the instance before it leaves the device. The receiver has none
-   * of the sender's local ticker records, so anything resolved through them
-   * (a listing's venue, for example) must be pinned into the instance here.
+   * Rewrites the instance before it leaves the device, on every publish. The
+   * receiver has none of the sender's local ticker records, so anything
+   * resolved through them (a listing's venue, for example) must be pinned into
+   * the instance here; a layout published to the gallery passes none.
    */
-  prepare?(pane: PaneInstanceConfig, context: { tickers: ReadonlyMap<string, TickerRecord> }): PaneInstanceConfig;
+  prepare?(pane: PaneInstanceConfig, context: {
+    tickers: ReadonlyMap<string, TickerRecord>;
+    /** The moment the pane's layout tab has its crosshair pinned at, so a link opens there. */
+    pinnedTime?: number;
+  }): PaneInstanceConfig;
 }
 
 /** What covers a pane when a report of it is refused: see `PaneDef.reportLockNote`. */
@@ -139,6 +145,13 @@ export interface PaneDef {
    */
   tickerFollower?: boolean | ((pane: PaneInstanceConfig) => boolean);
   /**
+   * Instrument kinds this pane has data for, such as `["equity"]` for company
+   * data, as a research tab declares them. Bound to a ticker of another known
+   * kind (an index, an ETF), the pane says so in place of its data, and `fn`
+   * and `shot` answer before loading. Omit when every ticker has it.
+   */
+  instruments?: readonly TickerInstrumentKind[];
+  /**
    * For a pane type that two or more functions open (ERN and EVTS): the settings that say
    * what a window shows, as against how (a range, a toggle, a column choice). Opening a
    * function again focuses a window whose binding, params and settings match what the
@@ -149,6 +162,13 @@ export interface PaneDef {
    * An empty list says binding and params alone name the window.
    */
   identitySettings?: readonly string[];
+  /**
+   * The title a saved window of this pane has, from its params and settings,
+   * for lists that name windows without rendering them (the Layouts browser).
+   * A pane that titles itself by what it shows ("Curve \u00b7 BZ") gives the same
+   * title here, so two of its windows are told apart before either is opened.
+   */
+  instanceTitle?(pane: PaneInstanceConfig): string | null;
   /** Renderer-neutral data model used by CLI functions, automation, and hosted tools. */
   headless?: HeadlessPaneDefinition;
   /**
@@ -187,9 +207,10 @@ export interface PaneDef {
   /**
    * A `shot` without `--height` grows to the pane's natural height, up to the
    * height limit, so a fixed board (FUT) shows every row instead of cutting
-   * the last ones. Leave it off for long or paged lists.
+   * the last ones. Leave it off for long or paged lists; a pane with tabs
+   * answers for the instance shown, so only its fixed board's tab grows.
    */
-  shotFitsRows?: true;
+  shotFitsRows?: true | ((pane: PaneInstanceConfig) => boolean);
   /**
    * A report of the pane grows to the whole text of the page its reader has
    * open (a docs page), so it is not cut at the first screen. A list the reader
@@ -202,8 +223,9 @@ export interface PaneDef {
   /** Portable sharing is public by default; list the few pane-owned fields that must remain local. */
   portableShare?: PanePortableShareDef;
   /**
-   * The person's own data the pane shows, so posting a picture of it to chat
-   * and attaching it to an Ask Gloom question ask first. A function decides
+   * The person's own data the pane shows, so copying a public link to it,
+   * posting its picture in a bug report and attaching it to an Ask Gloom
+   * question ask first. A function decides
    * per instance from what it shows now (a chat pane on a public channel, a
    * quote of a ticker not held), and a function that returns null opts that
    * instance out. Leave it off for market data. A pane that says nothing is
@@ -452,6 +474,14 @@ export interface PaneTemplateDef {
   shortcut?: PaneTemplateShortcut;
   /** Template-specific headless model. Takes precedence over the pane-level model. */
   headless?: HeadlessPaneDefinition;
+  /**
+   * Source and status of the view this template opens, for a template that
+   * opens one view of a pane hosting several (Fixed Income's Issuer Debt).
+   * Captures and rendered-view reports merge it over the pane's own
+   * `reportFreshness`: each field set here wins, the rest are the pane's. So
+   * they date the filings on screen, not the issuer's stock quote.
+   */
+  reportFreshness?: Pick<HeadlessPaneFreshness, "source" | "status" | "basis">;
   wizard?: WizardStep[];
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
   createInstance?: (
@@ -936,7 +966,7 @@ export interface GloomPluginContext {
   pinTicker(symbol: string, options?: PinTickerOptions): void;
   navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }): void;
   openPaneSettings(paneId?: string): void;
-  /** Opens Share for a pane instance (the focused pane when omitted): post a picture or copy a live link. */
+  /** Shares a pane instance (the focused pane when omitted): copies a live link to it. */
   sharePane(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;

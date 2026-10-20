@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import type { ListRowState, ListViewItem, ListViewProps } from "../../../components/ui/list-view";
-import { blendHex, hoverBg, type ThemeColors } from "../../../theme/colors";
+import { hoverBg, type ThemeColors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { WEB_CELL_HEIGHT } from "../../../theme/font-scale";
 import { isInsideDialogSurface } from "../host/focus-scope";
@@ -63,16 +63,15 @@ const FRAMED_LIST_PADDING_PX = 4;
 /** What a framed list adds above and below its rows: padding and a 1px border on each side. */
 const FRAMED_LIST_CHROME_PX = 2 * (FRAMED_LIST_PADDING_PX + 1);
 
-function listRowStyle(selected: boolean, disabled: boolean, colors: ThemeColors): CSSProperties {
+function listRowStyle(selected: boolean, disabled: boolean, colors: ThemeColors, framed: boolean): CSSProperties {
   return {
     borderRadius: CONTROL_RADIUS,
-    border: `1px solid ${selected ? colors.borderFocused : "transparent"}`,
-    boxShadow: selected ? `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}` : undefined,
+    border: `1px solid ${selected && framed ? colors.borderFocused : "transparent"}`,
     boxSizing: "border-box",
     cursor: disabled ? "default" : "pointer",
     maxWidth: "100%",
     minWidth: 0,
-    paddingInline: 10,
+    paddingInline: "var(--gloom-space-sm)",
   };
 }
 
@@ -92,6 +91,7 @@ export function WebListView({
   rowGap = 1,
   rowHeight = 1,
   surface,
+  selection = "frame",
   height,
   flexGrow,
   scrollable = false,
@@ -238,7 +238,7 @@ export function WebListView({
             const rows = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]');
             rows?.[nextIndex]?.focus();
           }}
-          style={listRowStyle(selected, disabled, colors)}
+          style={listRowStyle(selected, disabled, colors, selection === "frame")}
         >
           {renderRow
             ? renderRow(item, state, index)

@@ -1,3 +1,4 @@
+import { logFailure } from "../../../utils/log-failure";
 import type { NoteOwner, NotesStore } from "./store";
 
 export interface QuickNoteEntry {
@@ -24,11 +25,23 @@ export interface NotesFilesIO {
   write(file: string, text: string): Promise<void>;
   /** A file that is already gone is not an error. */
   delete(file: string): Promise<void>;
-  /** Every note's key (its `.md` file name without the extension) and when it was last written. */
-  listKeys(): Promise<Array<[string, number]>>;
+  /**
+   * Every note's key (its `.md` file name without the extension) and when it
+   * was last written. A folder that does not exist yet, or a note gone before
+   * it was looked at, lists nothing. Any other failure is logged and that part
+   * left out, or, with `strict`, rejects.
+   */
+  listKeys(options?: { strict?: boolean }): Promise<Array<[string, number]>>;
 }
 
 const QUICK_NOTES_INDEX_FILE = "__quick-notes-index__.json";
+
+export interface NotesListOptions {
+  /** A notes folder that cannot be listed rejects instead of listing nothing. */
+  strict?: boolean;
+  /** Hears each note left out because it could not be read, for a caller that says so. */
+  skipped?: (key: string, error: unknown) => void;
+}
 const LOCAL_KEY_PREFIX = "gloomberb:notes:";
 const LOCAL_TIMESTAMP_KEY = "gloomberb:notes:__updated-at__";
 
@@ -74,12 +87,16 @@ export function diskNotesFilesIO(dataDir: string): NotesFilesIO {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     },
-    async listKeys() {
+    async listKeys(options) {
       const { readdir, stat } = await nodeFs();
       let names: string[];
       try {
         names = await readdir(dataDir);
-      } catch {
+      } catch (error) {
+        // A data directory that was never created holds no notes yet.
+        if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+        if (options?.strict) throw error;
+        logFailure("notes.files", "List the notes folder failed")(error);
         return [];
       }
       const keys: Array<[string, number]> = [];
@@ -88,7 +105,12 @@ export function diskNotesFilesIO(dataDir: string): NotesFilesIO {
         try {
           const info = await stat(pathOf(name));
           keys.push([name.slice(0, -3), Math.round(info.mtimeMs)]);
-        } catch {}
+        } catch (error) {
+          // A note deleted since the folder was listed is simply gone.
+          if ((error as NodeJS.ErrnoException)?.code === "ENOENT") continue;
+          if (options?.strict) throw error;
+          logFailure("notes.files", "Read when a note was last written failed")(error);
+        }
       }
       return keys;
     },
@@ -113,8 +135,8 @@ function readLocalTimestamps(): Record<string, number> {
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? parsed as Record<string, number>
       : {};
-  } catch {
-    return {};
+  } catch (error) {
+    return logFailure("notes.files", "Read the browser note timestamp index failed", {})(error);
   }
 }
 
@@ -124,7 +146,11 @@ function writeLocalTimestamp(path: string, updatedAt: number | null): void {
   const timestamps = readLocalTimestamps();
   if (updatedAt == null) delete timestamps[path];
   else timestamps[path] = updatedAt;
-  try { storage.setItem(LOCAL_TIMESTAMP_KEY, JSON.stringify(timestamps)); } catch {}
+  try {
+    storage.setItem(LOCAL_TIMESTAMP_KEY, JSON.stringify(timestamps));
+  } catch (error) {
+    logFailure("notes.files", "Save the browser note timestamp index failed")(error);
+  }
 }
 
 function localStorageNotesFilesIO(dataDir: string): NotesFilesIO {
@@ -141,6 +167,8 @@ function localStorageNotesFilesIO(dataDir: string): NotesFilesIO {
       getLocalStorage()?.removeItem(`${LOCAL_KEY_PREFIX}${pathOf(file)}`);
       writeLocalTimestamp(pathOf(file), null);
     },
+    // Nothing here can leave a note out: notes missing from the timestamp
+    // index are stamped from what localStorage holds, so `strict` changes nothing.
     async listKeys() {
       const prefix = joinPath(dataDir, "");
       const timestamps = readLocalTimestamps();
@@ -172,7 +200,7 @@ export function remoteNotesFilesIO(
     read: async (file) => await invoke("read", { dataDir, file }) as string | null,
     write: async (file, text) => { await invoke("write", { dataDir, file, text }); },
     delete: async (file) => { await invoke("delete", { dataDir, file }); },
-    listKeys: async () => await invoke("listKeys", { dataDir }) as Array<[string, number]>,
+    listKeys: async (options) => await invoke("listKeys", { dataDir, ...(options?.strict ? { strict: true } : {}) }) as Array<[string, number]>,
   };
 }
 
@@ -216,24 +244,23 @@ export class NotesFiles implements NotesStore {
   }
 
   /** Every stored note, ticker notes and quick notes alike, newest first. */
-  async list(): Promise<NoteFileEntry[]> {
-    const entries: NoteFileEntry[] = [];
-    for (const [key, updatedAt] of await this.io.listKeys()) {
-      try {
-        entries.push({ key, text: await this.load(key), updatedAt });
-      } catch {
-        // An unreadable note is skipped rather than synced as empty.
-      }
-    }
+  async list(options: NotesListOptions = {}): Promise<NoteFileEntry[]> {
+    const { entries } = await this.readEach(await this.io.listKeys({ strict: options.strict }), options.skipped);
     return entries.sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
-  async loadQuickNotesIndex(): Promise<QuickNoteEntry[]> {
+  /**
+   * The quick notes' ids and titles. An index never written is empty; one that
+   * cannot be read or parsed is logged and read as empty, or, with `strict`,
+   * rejects, so the caller cannot mistake it for none.
+   */
+  async loadQuickNotesIndex(options: { strict?: boolean } = {}): Promise<QuickNoteEntry[]> {
     try {
       const raw = await this.io.read(QUICK_NOTES_INDEX_FILE);
       return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
+    } catch (error) {
+      if (options.strict) throw error;
+      return logFailure("notes.files", "Read the quick notes index failed", [])(error);
     }
   }
 
@@ -243,5 +270,35 @@ export class NotesFiles implements NotesStore {
 
   quickNoteKey(id: string): string {
     return `__note-${id}__`;
+  }
+
+  /**
+   * The notes the move to Cloud uploads: every note that can be read, and how
+   * many cannot. Unlike `list`, a folder that cannot be read rejects, so the
+   * move never mistakes a failed read for having no notes.
+   */
+  async listForMove(): Promise<{ entries: NoteFileEntry[]; unreadable: number }> {
+    const listed = await this.readEach(await this.io.listKeys({ strict: true }));
+    listed.entries.sort((left, right) => right.updatedAt - left.updatedAt);
+    return listed;
+  }
+
+  /** An unreadable note is left out and counted rather than synced as empty. */
+  private async readEach(
+    keys: Array<[string, number]>,
+    skipped?: NotesListOptions["skipped"],
+  ): Promise<{ entries: NoteFileEntry[]; unreadable: number }> {
+    const entries: NoteFileEntry[] = [];
+    let unreadable = 0;
+    for (const [key, updatedAt] of keys) {
+      try {
+        entries.push({ key, text: await this.load(key), updatedAt });
+      } catch (error) {
+        unreadable += 1;
+        logFailure("notes.files", "Read a note while listing notes failed")(error);
+        skipped?.(key, error);
+      }
+    }
+    return { entries, unreadable };
   }
 }

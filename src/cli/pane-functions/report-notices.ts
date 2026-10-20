@@ -1,6 +1,19 @@
 import type { RemoteUiNodeSnapshot } from "../../remote/types";
 import type { HeadlessFreshnessStatus, HeadlessPaneFreshness } from "../../types/headless";
+import type { PaneDef, PaneTemplateDef } from "../../types/plugin";
 import { isFiniteNumber, isRecord } from "../../utils/guards";
+
+/**
+ * What a function declares its view's data to be: its pane's
+ * `reportFreshness`, or its template's, which names the one view it opens
+ * when the pane hosts several (DDIS in Fixed Income).
+ */
+export function declaredReportFreshness(resolved: {
+  pane: Pick<PaneDef, "reportFreshness">;
+  template?: Pick<PaneTemplateDef, "reportFreshness">;
+}): NonNullable<PaneDef["reportFreshness"]> {
+  return { ...resolved.pane.reportFreshness, ...resolved.template?.reportFreshness };
+}
 
 export interface RenderedReportNotices {
   /** Lines a report prints under its title, such as "21 of 145 strikes". */
@@ -56,7 +69,7 @@ function publishedSources(value: unknown): NonNullable<HeadlessPaneFreshness["so
 /**
  * How current a rendered pane says its data is, from the `report-freshness`
  * node it publishes: `{ asOf?, status?, delayMinutes?, source?, sources?,
- * maxAgeMinutes?, oldestAge?, note?, basis? }`; `basis` names what a pane
+ * maxAgeMinutes?, oldestAge?, note?, basis?, asOfLabel? }`; `basis` names what a pane
  * that is not a feed lists, when one pane lists different things (NI's
  * stories, and its LTR code's letters). A capture keeps no footer status and
  * few cells carry a time, so a pane that knows its feed (OMON's chain) dates
@@ -67,10 +80,10 @@ function publishedSources(value: unknown): NonNullable<HeadlessPaneFreshness["so
  */
 export function renderedReportFreshness(
   semanticUi: readonly RemoteUiNodeSnapshot[],
-): Pick<HeadlessPaneFreshness, "asOf" | "status" | "delayMinutes" | "source" | "sources" | "maxAgeMinutes" | "oldestAge" | "note" | "basis"> {
+): Pick<HeadlessPaneFreshness, "asOf" | "status" | "delayMinutes" | "source" | "sources" | "maxAgeMinutes" | "oldestAge" | "note" | "basis" | "asOfLabel"> {
   const metadata = semanticUi.find((node) => node.role === "report-freshness")?.metadata;
   if (!metadata) return {};
-  const { asOf, status, delayMinutes, source, maxAgeMinutes, oldestAge, note, basis } = metadata as Record<string, unknown>;
+  const { asOf, status, delayMinutes, source, maxAgeMinutes, oldestAge, note, basis, asOfLabel } = metadata as Record<string, unknown>;
   const sources = publishedSources(metadata.sources);
   return {
     ...(typeof asOf === "string" || isFiniteNumber(asOf) ? { asOf } : {}),
@@ -82,6 +95,7 @@ export function renderedReportFreshness(
     ...(oldestAge === true ? { oldestAge } : {}),
     ...(typeof note === "string" && note.trim() ? { note } : {}),
     ...(typeof basis === "string" && basis.trim() ? { basis } : {}),
+    ...(typeof asOfLabel === "string" && asOfLabel.trim() ? { asOfLabel } : {}),
   };
 }
 

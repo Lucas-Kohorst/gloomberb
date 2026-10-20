@@ -27,7 +27,7 @@ import { cliStyles, setCliColorEnabledOverride, setCliWidthOverride } from "../u
 import { setDisplayTimeZone } from "../utils/utc-time";
 import { search, searchCandidatesForCli, buildSearchReport } from "./commands/search";
 import { ticker } from "./commands/ticker";
-import { requireOneArg, takeOption } from "./commands/command-utils";
+import { requireOneArg, takeFlag, takeOption } from "./commands/command-utils";
 import { EXCHANGE_OPTION } from "./listing-arg";
 import { apiCliCommand } from "./commands/api";
 import { marketDataCliCommands } from "./commands/market";
@@ -37,13 +37,23 @@ import { createSystemCliCommands } from "./commands/system";
 import { brokerCliCommand, ibkrCliCommand } from "./commands/broker";
 import { listPlugins, updatePlugins } from "./commands/plugins";
 import { installListedPlugin, removePlugin } from "../plugins/installer";
-import { catalogCommandHits, functionCodeCommand, runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
-import { catalogPointer, type CatalogCommandHit } from "./unknown-command";
+import {
+  catalogCommandHits,
+  functionCodeCommand,
+  nearFunctionCodeCommand,
+  runPaneCatalog,
+  runPaneFunction,
+  runPaneFunctionHelp,
+  runPaneScreenshot,
+} from "./pane-functions";
+import { catalogPointer, tickerPointer, type CatalogCommandHit } from "./unknown-command";
 import { catalogFredSeriesIds } from "./series-search";
+import { primeBoardCoins } from "./board-coins";
 
 const { width: SHOT_WIDTH, height: SHOT_HEIGHT } = SHOT_SIZE_LIMITS;
 
-function createCoreCliCommands(
+/** The commands the CLI itself defines (help, ticker, search, ...), which plugins' commands join. */
+export function createCoreCliCommands(
   helpEntries: () => CliHelpEntry[],
   lookupCommand: (token: string) => CliCommandDef | null,
   allCommands: () => CliCommandDef[],
@@ -58,14 +68,16 @@ function createCoreCliCommands(
       description: "Show every command, or the usage, options, and examples for one",
       help: {
         group: CLI_COMMAND_GROUPS.app,
-        usage: ["help [command]", "<command> --help"],
-        examples: ["help", "help quote", "quote --help"],
+        usage: ["help [command]", "<command> --help", "help fn <function>", "fn <function> --help"],
+        examples: ["help", "help quote", "quote --help", "fn BT --help"],
       },
       execute: async (args, ctx) => {
         const topic = args[0];
         if (topic) {
           const command = lookupCommand(topic);
           if (!command) failUnknownCommand(topic, allCommands(), await unknownCommandPointers(ctx, topic, [], allCommands()));
+          // A command that runs a function is helped by that function's own options when one is named.
+          if (FUNCTION_COMMANDS.has(command.name) && args.length > 1 && await runPaneFunctionHelp(command.name, args.slice(1), ctx)) return;
           printCommandHelp(command, ctx);
           return;
         }
@@ -110,15 +122,20 @@ function createCoreCliCommands(
       help: {
         group: CLI_COMMAND_GROUPS.research,
         usage: ["ticker <symbol>"],
-        options: [EXCHANGE_OPTION],
+        options: [
+          EXCHANGE_OPTION,
+          { flags: "--all", description: "List a bank's pricing supplements (424B2, FWP, its notes' 424B3) and the 13D/13G it filed about other companies among the recent SEC filings" },
+        ],
         examples: ["ticker AAPL", "ticker SAN:EPA", "ticker 7203.T", "ticker AAPL --json"],
       },
       execute: async (rawArgs, ctx) => {
         const args = [...rawArgs];
         const exchange = takeOption(args, "--exchange");
+        const allFilings = takeFlag(args, "--all");
         const symbol = requireOneArg(args, "ticker <symbol>", "symbol", ctx);
         await ticker(symbol, {
           exchange,
+          allFilings,
           initMarketData: ctx.initMarketData,
           fail: ctx.fail,
           ...(ctx.cliOptions.format === "text" ? {} : { printResult: ctx.printResult }),
@@ -251,6 +268,12 @@ function createCoreCliCommands(
       help: {
         group: CLI_COMMAND_GROUPS.plugins,
         usage: ["update [name]"],
+        sections: [{
+          title: "Updating Gloomberb itself",
+          lines: [
+            "The app updates itself from stable releases. config set updates.channel nightly adds the nightly build of main; see gloomberb help config.",
+          ],
+        }],
         examples: ["update", "update gloom-tv"],
       },
       execute: async (args) => {
@@ -284,12 +307,15 @@ function createCoreCliCommands(
   ];
 }
 
+/** Commands whose first argument is a function, so `<command> <function> --help` is that function's help. */
+const FUNCTION_COMMANDS: ReadonlySet<string> = new Set(["fn", "shot"]);
+
 function requirePaneFunctionTarget(args: string[], commandName: string, ctx: CliCommandContext): void {
   let target: string;
   try {
     target = parsePaneFunctionArgs(args).target;
   } catch {
-    // Invalid options are reported by the runner, with its error code.
+    // Intentional ignore: The pane function runner reports invalid options with its error code.
     return;
   }
   if (!target) ctx.fail(`Usage: gloomberb ${commandName} <function> [argument] [options]`);
@@ -317,6 +343,8 @@ function nearCommand(token: string, commands: CliCommandDef[]): string | null {
 interface UnknownCommandPointers {
   /** The word is a function's code: the command that runs it. */
   fn: { code: string; command: string } | null;
+  /** The word is a slip from one function's code (RCDF for RDCF), read only when it is no code, no command is close to it and the catalog finds nothing for it. */
+  nearFn: { code: string; label: string; command: string } | null;
   /** Functions the catalog finds for the word, read only when it is no code and no command is close to it. */
   hits: CatalogCommandHit[];
   /** What the reader typed after the word, which a pointer runs the function with. */
@@ -331,24 +359,34 @@ async function unknownCommandPointers(
   commands: CliCommandDef[],
 ): Promise<UnknownCommandPointers> {
   const fn = await functionCodeCommand(ctx, token, args);
-  const hits = fn || nearCommand(token, commands) ? [] : await catalogCommandHits(ctx, token);
-  return { fn, hits, args };
+  const command = fn || nearCommand(token, commands);
+  const hits = command ? [] : await catalogCommandHits(ctx, token);
+  // What the catalog finds for a word (`comps`) outranks the code it happens to be a slip from.
+  const nearFn = command || hits.length > 0 ? null : await nearFunctionCodeCommand(ctx, token, args);
+  return { fn, nearFn, hits, args };
 }
 
 /**
  * A function's code is pointed at `fn`; a typo of a command at the command;
- * a word the catalog knows (`comps`, `peers`) at the functions it finds.
+ * a typo of a function's code (`RCDF`) at that function; a word the catalog
+ * knows (`comps`, `peers`) at the functions it finds. A word written as a
+ * ticker (`PLTR`) is also pointed at `quote` and `search`.
  */
 function failUnknownCommand(token: string, commands: CliCommandDef[], pointers: UnknownCommandPointers): never {
   if (pointers.fn) fail(`${pointers.fn.code} is a function: ${pointers.fn.command}`);
+  const ticker = tickerPointer(token);
   const suggestion = nearCommand(token, commands);
+  if (!suggestion && pointers.nearFn) {
+    fail(
+      `Unknown command "${token}". Did you mean the function ${pointers.nearFn.code} (${pointers.nearFn.label})?`,
+      [`Run: ${pointers.nearFn.command}`, ticker].filter(Boolean).join("\n"),
+    );
+  }
   const catalog = suggestion ? null : catalogPointer(token, pointers.hits, pointers.args);
-  fail(
-    `Unknown command "${token}".`,
-    suggestion
-      ? `Did you mean ${suggestion}? Run gloomberb help to see every command.`
-      : catalog ? `${catalog}\nRun gloomberb help to see every command.` : "Run gloomberb help to see every command.",
-  );
+  const help = suggestion
+    ? `Did you mean ${suggestion}? Run gloomberb help to see every command.`
+    : catalog ? `${catalog}\nRun gloomberb help to see every command.` : "Run gloomberb help to see every command.";
+  fail(`Unknown command "${token}".`, ticker ? `${ticker}\n${help}` : help);
 }
 
 const CLI_DESCRIPTION = "Market research and portfolio tracker for the terminal";
@@ -410,7 +448,10 @@ export async function dispatchCli(args: string[], options: DispatchCliOptions = 
   // plugin name, or a note to write.
   const helpOnly = parsed.help && resolved.command.name !== "help";
   const target = helpOnly ? registry.lookup.get("help")! : resolved;
-  const commandArgs = helpOnly ? [resolved.command.name] : parsed.args.slice(1);
+  // The words after a command that runs a function name the function whose help it is (`fn BT --help`).
+  const commandArgs = helpOnly
+    ? [resolved.command.name, ...FUNCTION_COMMANDS.has(resolved.command.name) ? parsed.args.slice(1) : []]
+    : parsed.args.slice(1);
   try {
     if (!helpOnly && resolved.builtin) checkCliCommandOptions(resolved.command, commandArgs, parsed.literalStart - 1);
     const result = await target.command.execute(
@@ -419,6 +460,8 @@ export async function dispatchCli(args: string[], options: DispatchCliOptions = 
     );
     return normalizeCliDispatchResult(result);
   } catch (error) {
+    // A coin typed without its quote currency (USDT) is named by its one symbol (USDT-USD) in the hint.
+    if (parsed.options.format !== "json") await primeBoardCoins([error instanceof Error ? error.message : String(error)]);
     printCliError(error, parsed.options, { command: resolved.command.name, args: commandArgs,
       isFredSeries: (id) => catalogFredSeriesIds(registry.plugins).has(id) });
     process.exitCode = 1;
@@ -435,7 +478,7 @@ export async function failUnknownCliCommand(args: string[], options: DispatchCli
     parsed = parseCliGlobalArgs(args);
     token = parsed.args[0] ?? token;
   } catch {
-    // dispatchCli already reported flags that do not parse.
+    // Intentional ignore: dispatchCli already reports invalid flags.
   }
   const registry = await createRegistry(options);
   const commands = listedCommands(registry).map((entry) => entry.command);
@@ -443,7 +486,7 @@ export async function failUnknownCliCommand(args: string[], options: DispatchCli
   // functions, with the arguments the reader gave.
   const pointers = token && parsed
     ? await unknownCommandPointers(createCliCommandContext("core", registry, parsed.options, parsed.args.slice(1)), token, parsed.args.slice(1), commands)
-    : { fn: null, hits: [], args: [] };
+    : { fn: null, nearFn: null, hits: [], args: [] };
   return failUnknownCommand(token, commands, pointers);
 }
 

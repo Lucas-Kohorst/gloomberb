@@ -11,11 +11,14 @@ import {
   riskCoverageNotices,
   riskCoverageShortfall,
   riskCoverageText,
+  riskExclusionText,
   RISK_VIEWS,
   riskEvidence,
   riskPercentile,
+  riskReturnsCurrency,
   riskValue,
   sinceFallbackNote,
+  sinceFiledMethod,
   type PortfolioRiskModel,
   type RiskCoverage,
   type RiskDisplayRow,
@@ -48,14 +51,18 @@ const COMPACT_ROW_LIMIT = 100;
 /** The correlation view is every pair of holdings; the compact result keeps the strongest. */
 const COMPACT_PAIR_LIMIT = 25;
 
-/** Formatted like the pane; metadata.model keeps full precision. */
-function displayRow(row: RiskDisplayRow) {
+/**
+ * Formatted like the pane; metadata.model keeps full precision. A tail loss in
+ * money is of the covered basket, so its evidence names what the basket leaves
+ * out, as the pane's footer does beside the same figure.
+ */
+function displayRow(row: RiskDisplayRow, exclusion: string | null) {
   return {
     label: row.label,
     value: riskValue(row),
     percentile: riskPercentile(row),
     asOf: row.asOf?.slice(0, 10) ?? null,
-    detail: riskEvidence(row),
+    detail: exclusion && row.amount != null ? `${riskEvidence(row)}; ${exclusion}` : riskEvidence(row),
     ...(row.amount != null ? { amount: row.amount, currency: row.amountCurrency ?? null } : {}),
   };
 }
@@ -136,7 +143,8 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
       "Explicit local evidence for account returns and attribution",
     ],
     limitations: [
-      `Fixed-current-weight USD equity basket over the holdings that qualify, largest ${RISK_HISTORY_LIMIT} by value; foreign listings convert to USD at daily FX closes; metadata.coverage states the covered share of market value and each holding left out.`,
+      `Fixed-current-weight equity basket over the holdings that qualify, largest ${RISK_HISTORY_LIMIT} by value, in the account's currency; foreign listings convert to USD at daily FX closes, and a non-USD account's returns then convert into its currency at its own daily FX closes; metadata.coverage states the covered share of market value and each holding left out.`,
+      "--since filed buys the 13F's own weights at the filing-date close and holds them (--weights current holds today's weights fixed instead).",
       "No account performance inferred.",
       "ETF price-return factor proxies.",
       "Historical percentiles need 20 rolling samples.",
@@ -157,6 +165,13 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
       settingKey: "riskSince",
       values: [{ value: "filed" }],
       description: "Risk rows since the 13F filing date of a portfolio made with portfolio import --13f, instead of the trailing 60 sessions.",
+    },
+    {
+      key: "weights",
+      type: "enum",
+      settingKey: "riskWeights",
+      values: [{ value: "13f" }, { value: "current" }],
+      description: "With --since filed: 13f (when left out) buys the 13F's own weights at the filing-date close and holds them; current holds today's weights fixed over the same sessions.",
     },
     {
       key: "evidence",
@@ -232,6 +247,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
             ctx.apiClient,
             new Date(),
             ctx.signal,
+            local.portfolio.currency,
           ),
       localOnly
         ? Promise.resolve(undefined)
@@ -249,16 +265,24 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
         rates: Number(args.options["rate-shift"] ?? 100),
         volatility: Number(args.options["vol-shift"] ?? 10),
       },
-      args.options.since === "filed" ? { since: "filed" } : {},
+      args.options.since === "filed"
+        ? { since: "filed", weights: args.options.weights === "current" ? "current" : "13f" }
+        : {},
     );
     // Options for views the report does not print are named, not dropped silently; the fallback from --since opens the report.
     const fallback = sinceFallbackNote(local.portfolio);
     const shifted = ["equity-shift", "rate-shift", "vol-shift"].filter((key) => args.options[key] != null);
+    // A non-USD account's returns were converted, and the basket views say into what.
+    const returnsCurrency = riskReturnsCurrency(model);
     const notices = [
-      ...(model.window.kind === "since-filed" ? [`Risk rows since the 13F filing on ${model.window.filed}, against ${model.benchmark}`] : []),
+      ...(returnsCurrency && (!requestedView || (BASKET_VIEWS.has(requestedView) && requestedView !== "holdings"))
+        ? [`${returnsCurrency[0]!.toUpperCase()}${returnsCurrency.slice(1)}.`]
+        : []),
+      ...(model.window.kind === "since-filed" ? [sinceFiledMethod(model.window, model.benchmark)] : []),
       ...(args.options.since === "filed" && model.window.kind !== "since-filed" ? [fallback] : []),
       ...(requestedView && requestedView !== "stress" && shifted.length ? [`${shifted.map((key) => `--${key}`).join(", ")} change${shifted.length === 1 ? "s" : ""} the stress view only, not --view ${requestedView}`] : []),
       ...(requestedView && args.options.since != null && requestedView !== "risk" ? [`--since changes the risk view only, not --view ${requestedView}`] : []),
+      ...(args.options.weights != null && args.options.since !== "filed" ? ["--weights applies with --since filed only"] : []),
     ];
     // A basket view is complete only when the basket covers every holding.
     const covered = model.coverage.leftOut.length === 0;
@@ -276,6 +300,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
                 : model.complete;
     // A basket view with too little covered shows no estimate, and the report says why rather than leaving dashes.
     const shortfall = BASKET_VIEWS.has(view as RiskView) ? coverageLine(model.coverage).error : undefined;
+    const exclusion = riskExclusionText(model.coverage);
     return {
       complete,
       errors: [...(shortfall ? [shortfall] : []), ...model.warnings],
@@ -283,7 +308,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
       sections: (requestedView ? [requestedView] : RISK_VIEWS).map((view) => ({
         title: view,
         columns: RISK_COLUMNS,
-        rows: model.rows[view].map(displayRow),
+        rows: model.rows[view].map((row) => displayRow(row, exclusion)),
       })),
       metadata: { coverage: coverageSummary(model.coverage), model, benchmark: model.benchmark, window: model.window, notices },
     };
@@ -296,6 +321,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
     // Each left-out holding is in metadata.coverage; the notes keep one line for all of them.
     const perHolding = new Set(riskCoverageNotices(model.coverage));
     const basketView = BASKET_VIEWS.has(view);
+    const exclusion = riskExclusionText(model.coverage);
     const coverage = basketView ? coverageLine(model.coverage) : {};
     const errors = [...new Set([...(coverage.error ? [coverage.error] : []), ...(result.errors ?? [])])];
     const notes = [...(coverage.note ? [coverage.note] : []), ...(result.notes ?? []).filter((note) => !perHolding.has(note))];
@@ -303,7 +329,7 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
       complete: result.complete,
       ...(errors.length ? { errors } : {}),
       ...(notes.length ? { notes } : {}),
-      sections: [{ title: view, columns: RISK_COLUMNS, rows: rows.map(displayRow) }],
+      sections: [{ title: view, columns: RISK_COLUMNS, rows: rows.map((row) => displayRow(row, exclusion)) }],
       metadata: {
         portfolio: {
           id: model.portfolio.id,
@@ -316,6 +342,8 @@ export const portfolioRiskHeadless: HeadlessPaneDefinition<"bundle"> = {
         ...(basketView && model.coverage
           ? { coverage: coverageSummary(model.coverage, COMPACT_LEFT_OUT_LIMIT) }
           : {}),
+        // The currency a non-USD account's returns and amounts are in, and the daily pair they converted at.
+        ...(basketView && model.accountConversion ? { accountConversion: model.accountConversion } : {}),
         asOf: model.fetchedAt,
         ...(notices.length ? { notices } : {}),
       },

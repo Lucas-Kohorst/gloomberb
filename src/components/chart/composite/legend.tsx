@@ -1,11 +1,17 @@
 import { useEffect, useRef } from "react";
-import { Box, ScrollBox, Text, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
+import { Box, ScrollBox, Span, Text, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { colors as themeColors, hoverBg } from "../../../theme/colors";
 import { CANONICAL_EXCHANGE_ALIASES } from "../../../utils/exchanges";
 import { displayWidth, formatPercentRaw, truncateToDisplayWidth } from "../../../utils/format";
 import type { ResolvedSeries } from "../../../time-series/types";
 import { consumeChartMouseEvent, type ChartMouseEvent } from "../core/pointer";
-import { formatCompositeCarriedStamp, formatCompositePointDetails, formatCompositeSeriesValue, seriesPriceReference } from "./format";
+import {
+  formatCompositeCarriedStamp,
+  formatCompositeDatasetDate,
+  formatCompositePointDetails,
+  formatCompositeSeriesValue,
+  seriesPriceReference,
+} from "./format";
 import type { CompositeChartProps, CompositeChartScene } from "./types";
 import { seriesCueCssBackground, type SeriesLineCue } from "./series-cues";
 
@@ -45,15 +51,6 @@ function axisPriceReference(scene: CompositeChartScene | null, series: ResolvedS
   return own;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-/** `Oct 4`, the axis's own wording, with the year when the chart ends in another. */
-function legendDateText(date: Date, endTime: number | undefined): string {
-  const text = `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
-  const endYear = endTime === undefined ? null : new Date(endTime).getUTCFullYear();
-  return endYear === null || endYear === date.getUTCFullYear() ? text : `${text} ${date.getUTCFullYear()}`;
-}
-
 /**
  * A dataset's values arrive days late, so the legend dates them. Idle, one
  * date leads the legend when it is every value's; otherwise, and under the
@@ -72,7 +69,7 @@ function legendValueDates(
     valued += 1;
     if (entry.observationKind === "dataset" && cursorValue.point) dates.set(entry.id, cursorValue.point.date);
   }
-  const text = new Map([...dates].map(([id, date]) => [id, legendDateText(date, scene?.endTime)] as const));
+  const text = new Map([...dates].map(([id, date]) => [id, formatCompositeDatasetDate(date, scene?.endTime)] as const));
   const cursorDate = scene?.cursorDate;
   if (cursorDate) {
     const cursorDay = cursorDate.toISOString().slice(0, 10);
@@ -99,6 +96,27 @@ function withoutListingExchange(label: string): string {
   return label.replace(LISTED_TICKER_PATTERN, (match, lead: string, symbol: string, exchange: string) => (
     CANONICAL_EXCHANGE_ALIASES[exchange] ? `${lead}${symbol}` : match
   ));
+}
+
+/**
+ * Entries laid left to right into lines of `available` cells, one cell apart,
+ * a new line when the next does not fit. With `maxLines`, what does not fit in
+ * the last line stays on it (that line scrolls).
+ */
+function packLegendLines(widths: readonly number[], available: number, maxLines = Infinity): number[][] {
+  const lines: number[][] = [];
+  let used = 0;
+  widths.forEach((width, index) => {
+    const line = lines.at(-1);
+    if (line && (used + 1 + width <= available || lines.length >= maxLines)) {
+      line.push(index);
+      used += 1 + width;
+    } else {
+      lines.push([index]);
+      used = width;
+    }
+  });
+  return lines;
 }
 
 /** The legend's marker for a series on the desktop: its line as the plot strokes it, or a dot. */
@@ -128,7 +146,7 @@ function CompositeSeriesSwatch({ series, cue, filled = true }: {
         width: 8,
         height: 8,
         marginInlineEnd: 6,
-        borderRadius: 999,
+        borderRadius: "var(--gloom-radius-full)",
         border: `1px solid ${series.color}`,
         backgroundColor: filled ? series.color : "transparent",
       }}
@@ -152,6 +170,8 @@ export function CompositeLegend({
   onToggleSeries,
   isSeriesToggleable,
   keyboardIndex,
+  rows = 1,
+  onWantedRowsChange,
 }: {
   scene: CompositeChartScene | null;
   series: ResolvedSeries[];
@@ -169,6 +189,10 @@ export function CompositeLegend({
   onToggleSeries: CompositeChartProps["onToggleSeries"];
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
   keyboardIndex?: number | null;
+  /** Lines the chart gives the legend; more than one lets entries that cannot share a line wrap. */
+  rows?: number;
+  /** The lines the legend needs to show every entry whole, told while no cursor moves the values. */
+  onWantedRowsChange?: (rows: number) => void;
 }) {
   const isDesktopWeb = useUiCapabilities().nativePaneChrome === true;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -176,12 +200,14 @@ export function CompositeLegend({
     scene?.cursorValues.map((entry) => [entry.seriesId, entry] as const) ?? [],
   );
   const valueDates = legendValueDates(series, scene, cursorValueById);
-  const entries = series.map((entry) => {
+  const buildEntries = (withFiscalPeriods: boolean) => series.map((entry) => {
     const cue = lineCues.get(entry.id) ?? null;
     const marker = cue ? `${cellPlot ? cue.glyph : cue.sample} ` : DOT_MARKER;
     const markerWidth = isDesktopWeb ? cue ? DOM_LINE_CELLS : DOM_DOT_CELLS : displayWidth(marker);
     const toggleable = !!onToggleSeries && (isSeriesToggleable?.(entry) ?? true);
     const cursorValue = cursorValueById.get(entry.id);
+    // A stacked layer reads its own amount, not the top of the stack it is drawn to.
+    const legendValue = entry.stacked ? cursorValue?.point?.rawValue ?? null : cursorValue?.value ?? null;
     const changeText = showLatestChangePercent
         && !scene?.cursorDate
         && typeof entry.latestChangePercent === "number"
@@ -191,14 +217,19 @@ export function CompositeLegend({
     const ownDate = valueDates.own.get(entry.id);
     // Carried from an earlier observation: another venue's closed session, a coarser series.
     const carried = !!scene?.cursorDate && !!cursorValue?.carried && cursorValue.value != null;
+    // What a futures price counts, beside its number as FUT prints it.
+    const statedUnit = entry.points.length > 0 && !formatValue && entry.statedUnit ? ` ${entry.statedUnit}` : "";
+    // A statement value names the fiscal period it reports, as FA's columns do.
+    const fiscalPeriod = withFiscalPeriods && cursorValue?.value != null ? cursorValue.point?.fiscalPeriod : undefined;
+    const valueTail = `${ownDate ? ` ${ownDate}` : ""}${fiscalPeriod ? ` ${fiscalPeriod}` : ""}${changeText}`;
     const valueText = entry.points.length === 0
       ? entry.hidden ? "" : "no data"
       : `${formatLegendSeriesValue(
         entry,
-        cursorValue?.value ?? null,
+        legendValue,
         formatValue,
         scene,
-      )}${ownDate ? ` ${ownDate}` : ""}${changeText}`;
+      )}${statedUnit}${valueTail}`;
     const fullText = [entry.label, valueText].filter(Boolean).join(" ");
     const details = formatCompositePointDetails(cursorValue?.point);
     const exactTotal = entry.unitGroup.split(":")[0] === "currency-total"
@@ -220,11 +251,15 @@ export function CompositeLegend({
       width: Math.max(1, displayWidth(text)) + markerWidth,
       labelWidth,
       valueText,
+      statedUnit,
+      valueTail,
+      fiscalPeriod,
       toggleable,
       tooltip,
       carried,
     };
   });
+  let entries = buildEntries(true);
   type LegendEntry = (typeof entries)[number];
   const setEntryLabel = (target: LegendEntry, label: string, labelWidth: number) => {
     target.label = label;
@@ -252,12 +287,43 @@ export function CompositeLegend({
   // The value (including its sign/unit) always stays intact. If the row cannot
   // fit even with every name at a readable fragment, it keeps the old 30-cell
   // entries and scrolls.
-  const minimumSeriesWidth = entries.reduce((total, entry, index) => {
+  const minimumWidthOf = (list: LegendEntry[]) => list.reduce((total, entry, index) => {
     const text = [truncateToDisplayWidth(entry.compactLabel, Math.min(8, displayWidth(entry.compactLabel))), entry.valueText]
       .filter(Boolean).join(" ");
     return total + Math.max(1, displayWidth(text)) + entry.markerWidth + (index > 0 ? 1 : 0);
   }, 0);
-  if (minimumSeriesWidth <= widthBeforeAccessory) {
+  // A fiscal period is context beside a value. Where it would push the row past
+  // what fits with every name at a fragment, the row reads as it did without
+  // them (the tooltip keeps the period's dates) and does not scroll a value away.
+  if (entries.some(({ fiscalPeriod }) => fiscalPeriod) && minimumWidthOf(entries) > widthBeforeAccessory) {
+    entries = buildEntries(false);
+  }
+  const minimumSeriesWidth = minimumWidthOf(entries);
+  const fitsOneLine = minimumSeriesWidth <= widthBeforeAccessory;
+  // Entries that cannot share a line even with names cut to fragments wrap onto
+  // more lines when the chart gives them room, each whole, its name only cut
+  // past a line's width; with one line they keep the old 30-cell entries and scroll.
+  let lines: number[][] | null = null;
+  let wantedRows = 1;
+  if (!fitsOneLine) {
+    const wrappedLabelWidth = (entry: LegendEntry) => Math.min(
+      displayWidth(entry.compactLabel),
+      Math.max(1, widthBeforeAccessory - entry.markerWidth - (entry.valueText ? displayWidth(entry.valueText) + 1 : 0)),
+    );
+    const wrappedWidths = entries.map((entry) => entry.markerWidth + Math.max(1, displayWidth(
+      [truncateToDisplayWidth(entry.compactLabel, wrappedLabelWidth(entry)), entry.valueText].filter(Boolean).join(" "),
+    )));
+    wantedRows = packLegendLines(wrappedWidths, widthBeforeAccessory).length;
+    if (rows > 1) {
+      for (const entry of entries) setEntryLabel(entry, entry.compactLabel, wrappedLabelWidth(entry));
+      lines = packLegendLines(wrappedWidths, widthBeforeAccessory, rows);
+    }
+  }
+  const idle = !scene?.cursorDate;
+  useEffect(() => {
+    if (idle) onWantedRowsChange?.(wantedRows);
+  }, [idle, onWantedRowsChange, wantedRows]);
+  if (fitsOneLine) {
     while (measureSeriesWidth() > widthBeforeAccessory) {
       const shrinkable = entries
         .filter((entry) => entry.label !== entry.compactLabel || entry.labelWidth > 8)
@@ -269,18 +335,22 @@ export function CompositeLegend({
         setEntryLabel(shrinkable, shrinkable.label, shrinkable.labelWidth - 1);
       }
     }
-  } else {
+  } else if (!lines) {
     for (const entry of entries) {
       const budget = Math.max(0, 30 - (entry.valueText ? displayWidth(entry.valueText) + 1 : 0));
       if (entry.labelWidth > budget) setEntryLabel(entry, entry.compactLabel, budget);
     }
   }
-  const desiredSeriesWidth = measureSeriesWidth();
-  const seriesWidth = Math.min(desiredSeriesWidth, widthBeforeAccessory);
+  const lineWidth = (line: readonly number[]) => line.reduce(
+    (total, index, position) => total + entries[index]!.width + (position > 0 ? 1 : 0),
+    0,
+  );
+  const desiredSeriesWidth = lines ? lineWidth(lines.at(-1)!) : measureSeriesWidth();
+  const seriesWidth = lines ? widthBeforeAccessory : Math.min(desiredSeriesWidth, widthBeforeAccessory);
   const accessorySpacerWidth = accessory
     ? Math.max(reservedAccessoryGap, innerWidth - seriesWidth - resolvedAccessoryWidth)
     : 0;
-  const keyboardEntryStart = keyboardIndex === null || keyboardIndex === undefined
+  const keyboardEntryStart = keyboardIndex === null || keyboardIndex === undefined || lines
     ? null
     : entries.slice(0, keyboardIndex).reduce(
       (total, entry, index) => total + entry.width + (index > 0 ? 1 : 0),
@@ -331,12 +401,82 @@ export function CompositeLegend({
     scrollBox.scrollLeft = nextLeft;
     scrollBox.scrollTo({ x: nextLeft, y: scrollBox.scrollTop });
   };
+  const renderEntry = (
+    { entry, cue, marker, text, statedUnit, valueTail, toggleable, tooltip, carried, width: entryWidth }: LegendEntry,
+    index: number,
+  ) => {
+    const entryVisible = visibleSeriesIds.has(entry.id);
+    const unitAt = statedUnit ? text.length - statedUnit.length - valueTail.length : -1;
+    return (
+      <Box
+        key={entry.id}
+        flexDirection="row"
+        alignItems="center"
+        width={entryWidth}
+        height={1}
+        flexShrink={0}
+        overflow="hidden"
+        backgroundColor={keyboardIndex === index ? themeColors.selected : undefined}
+        hoverBackgroundColor={toggleable ? hoverBg() : undefined}
+        onMouseDown={toggleable ? (event: ChartMouseEvent) => {
+          onActivate?.();
+          consumeChartMouseEvent(event);
+          onToggleSeries?.(entry.id);
+        } : undefined}
+        cursor={toggleable ? "pointer" : undefined}
+        data-gloom-interactive={toggleable ? "true" : undefined}
+        data-gloom-role="composite-chart-legend-series"
+        data-gloom-label={`${toggleable
+          ? `${entryVisible ? "Hide" : "Show"} `
+          : ""}${tooltip}`}
+        data-visible={entryVisible ? "true" : "false"}
+        data-carried={carried ? "true" : undefined}
+        title={isDesktopWeb ? tooltip : undefined}
+      >
+        {isDesktopWeb ? (
+          <CompositeSeriesSwatch series={entry} cue={cue} filled={entryVisible} />
+        ) : (
+          <Text fg={entryVisible ? entry.color : themeColors.textMuted}>{marker}</Text>
+        )}
+        {/* The filled/hollow marker already says whether a series is
+            shown; the word only repeated it in every legend slot. */}
+        <Text fg={entryVisible && !carried ? themeColors.text : themeColors.textDim}>
+          {unitAt >= 0 ? (
+            <>
+              {text.slice(0, unitAt)}
+              <Span fg={themeColors.textDim}>{statedUnit}</Span>
+              {valueTail}
+            </>
+          ) : text}
+        </Text>
+      </Box>
+    );
+  };
+  const scrollLine = (line: number[] | null, key: string | number, ref: typeof scrollRef | undefined) => (
+    <ScrollBox
+      key={key}
+      ref={ref}
+      width={seriesWidth}
+      height={1}
+      flexShrink={0}
+      scrollX
+      focusable={false}
+      horizontalScrollbarOptions={{ visible: false }}
+      onMouseScroll={ref ? handleMouseScroll : undefined}
+      data-gloom-role="composite-chart-legend-scroll"
+    >
+      <Box flexDirection="row" width={line ? lineWidth(line) : desiredSeriesWidth} height={1} gap={1}>
+        {line ? line.map((index) => renderEntry(entries[index]!, index)) : entries.map(renderEntry)}
+      </Box>
+    </ScrollBox>
+  );
+  const lineCount = lines?.length ?? 1;
   return (
     <Box
       flexDirection="row"
-      alignItems="flex-end"
+      alignItems={lines ? "flex-start" : "flex-end"}
       width={width}
-      height={1}
+      height={lineCount}
       paddingLeft={inset}
       overflow="visible"
       // Accessory dropdowns must escape above the sibling drawing toolbar.
@@ -348,61 +488,11 @@ export function CompositeLegend({
           <Text fg={themeColors.textMuted}>{valueDates.lead}</Text>
         </Box>
       ) : null}
-      {seriesWidth > 0 ? (
-        <ScrollBox
-          ref={scrollRef}
-          width={seriesWidth}
-          height={1}
-          flexShrink={0}
-          scrollX
-          focusable={false}
-          horizontalScrollbarOptions={{ visible: false }}
-          onMouseScroll={handleMouseScroll}
-          data-gloom-role="composite-chart-legend-scroll"
-        >
-          <Box flexDirection="row" width={desiredSeriesWidth} height={1} gap={1}>
-            {entries.map(({ entry, cue, marker, text, toggleable, tooltip, carried, width: entryWidth }, index) => {
-              const entryVisible = visibleSeriesIds.has(entry.id);
-              return (
-              <Box
-                key={entry.id}
-                flexDirection="row"
-                alignItems="center"
-                width={entryWidth}
-                height={1}
-                flexShrink={0}
-                overflow="hidden"
-                backgroundColor={keyboardIndex === index ? themeColors.selected : undefined}
-                hoverBackgroundColor={toggleable ? hoverBg() : undefined}
-                onMouseDown={toggleable ? (event: ChartMouseEvent) => {
-                  onActivate?.();
-                  consumeChartMouseEvent(event);
-                  onToggleSeries?.(entry.id);
-                } : undefined}
-                cursor={toggleable ? "pointer" : undefined}
-                data-gloom-interactive={toggleable ? "true" : undefined}
-                data-gloom-role="composite-chart-legend-series"
-                data-gloom-label={`${toggleable
-                  ? `${entryVisible ? "Hide" : "Show"} `
-                  : ""}${tooltip}`}
-                data-visible={entryVisible ? "true" : "false"}
-                data-carried={carried ? "true" : undefined}
-                title={isDesktopWeb ? tooltip : undefined}
-              >
-                {isDesktopWeb ? (
-                  <CompositeSeriesSwatch series={entry} cue={cue} filled={entryVisible} />
-                ) : (
-                  <Text fg={entryVisible ? entry.color : themeColors.textMuted}>{marker}</Text>
-                )}
-                {/* The filled/hollow marker already says whether a series is
-                    shown; the word only repeated it in every legend slot. */}
-                <Text fg={entryVisible && !carried ? themeColors.text : themeColors.textDim}>{text}</Text>
-              </Box>
-              );
-            })}
-          </Box>
-        </ScrollBox>
-      ) : null}
+      {seriesWidth > 0 && lines ? (
+        <Box flexDirection="column" width={seriesWidth} height={lineCount} flexShrink={0}>
+          {lines.map((line, index) => scrollLine(line, index, index === lines!.length - 1 ? scrollRef : undefined))}
+        </Box>
+      ) : seriesWidth > 0 ? scrollLine(null, "line", scrollRef) : null}
       {accessorySpacerWidth > 0 ? (
         <Box width={accessorySpacerWidth} flexShrink={0} />
       ) : null}

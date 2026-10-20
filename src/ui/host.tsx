@@ -139,9 +139,11 @@ export interface BoxRenderable {
   /**
    * Desktop only: calls `listener` with the box's size in cells each time the
    * browser lays it out at a new one (a ResizeObserver, after layout and
-   * before paint). Returns the unsubscribe.
+   * before paint). A box that is not displayed (a hidden tab) reports
+   * nothing; the first size once it shows again comes with `revealed`.
+   * Returns the unsubscribe.
    */
-  observeSize?: (listener: (size: { width: number; height: number }) => void) => () => void;
+  observeSize?: (listener: (size: { width: number; height: number }, change: { revealed: boolean }) => void) => () => void;
   /**
    * Desktop only, for a surface root (a chart, a heat map): fills the box the
    * surface sits in where its cells leave a fraction of a cell, refits when
@@ -187,6 +189,9 @@ export interface ScrollBoxRenderable {
   verticalScrollBar?: ScrollBarRenderable;
   scrollTo(target: number | { x?: number; y?: number }, y?: number): void;
   scrollToPixels?(target: number | { x?: number; y?: number }, y?: number): void;
+  /** A windowed list mounts and measures the target before finishing the scroll. */
+  scrollToItem?(key: string, options?: { align?: "auto" | "start" | "center" | "end"; offset?: number }): boolean;
+  scrollToEnd?(): void;
   /** Terminal only: the scrolled content, whose descendants carry their screen rows as laid out last. */
   content?: { findDescendantById?(id: string): { y: number; height: number } | undefined };
 }
@@ -385,6 +390,39 @@ export interface MediaSurfaceHandle {
   pause(): void;
   toggle(): Promise<void>;
   toggleMuted(): boolean;
+}
+export type AudioPlaybackState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
+/** What a pane does to its audio player: the keys and lines that drive it. */
+export interface AudioPlayerHandle {
+  play(): Promise<void>;
+  pause(): void;
+  toggle(): Promise<void>;
+  /** Moves to `seconds`; `play` also starts it from there. */
+  seek(seconds: number, options?: { play?: boolean }): void;
+  seekBy(deltaSeconds: number): void;
+  currentTime(): number;
+}
+/**
+ * A transport bar over one audio source (play, the elapsed and total time, a
+ * seek track, the speed), drawn by hosts that can play media. The pane owns
+ * the source and the speed and hears where playback is.
+ */
+export interface HostAudioPlayerProps {
+  src: string;
+  /** Says which recording `src` is: a new address for the same one keeps the position and whether it plays. */
+  sourceKey: string;
+  /** Accessible name of the player. */
+  label: string;
+  /** Length known before the media loads, in seconds. */
+  durationSeconds?: number | null;
+  rates: readonly number[];
+  rate: number;
+  onRateChange(rate: number): void;
+  handleRef?: Ref<AudioPlayerHandle | null>;
+  /** Called as playback moves, a few times a second, and on every seek. */
+  onTimeUpdate?(seconds: number): void;
+  onStateChange?(state: AudioPlaybackState): void;
+  onError?(message: string): void;
 }
 interface SpinnerMarkProps extends BoxProps {
   name?: string;
@@ -625,6 +663,8 @@ export interface UiHost {
   Surface3D?: ComponentType<Surface3DHostProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   MediaSurface: ComponentType<MediaSurfaceProps>;
+  /** Hosts that play audio draw it; the terminal has none and draws nothing. */
+  AudioPlayer?: ComponentType<HostAudioPlayerProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
   AsciiText: ComponentType<AsciiTextProps>;
   Button?: ComponentType<any>;
@@ -633,9 +673,8 @@ export interface UiHost {
   ListView?: ComponentType<any>;
   SegmentedControl?: ComponentType<any>;
   DialogFrame?: ComponentType<any>;
-  /** Props are `DialogActionsProps` / `DialogHintsProps` from components/ui/dialog-actions. */
+  /** Props are `DialogActionsProps` from components/ui/dialog-actions. */
   DialogActions?: ComponentType<any>;
-  DialogHints?: ComponentType<any>;
   PageStackView?: ComponentType<any>;
   Tabs?: ComponentType<HostTabsProps>;
   Checkbox?: ComponentType<HostCheckboxProps>;
@@ -648,6 +687,8 @@ export interface UiHost {
   SelectField?: ComponentType<any>;
   QueryBar?: ComponentType<HostQueryBarProps>;
   DataTable?: ComponentType<any>;
+  /** Props are WindowedListProps from components/ui/windowed-list. */
+  WindowedList?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;
   colorFromHex?(hex: string): unknown;
 }

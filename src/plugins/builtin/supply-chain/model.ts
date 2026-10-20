@@ -2,6 +2,7 @@ import type { SupplyChainPayload, SupplyOptions, SupplyRole, SupplyRow } from ".
 import { SERIES_COLORS } from "../../../theme/series-colors";
 import { revenueAmount } from "../revenue-breakdown/model";
 import { countOf, freePreviewNote } from "../shared/free-preview";
+import { entityTicker } from "./graph-model";
 import { activeRelationship, corroborationLabel, evidenceDate, evidenceLabel, isUnconfirmed, matchesSupplyOptions, trustTier } from "./trust";
 
 /** One colour per role from the shared series palette, the same in the table, the flow and the evidence. */
@@ -43,7 +44,7 @@ export function scopeWords(scope: string): string {
  */
 export function shareParts(row: SupplyRow, focusId?: string | null, { includeReporter = false }: { includeReporter?: boolean } = {}): { value: string; basis: string } | null {
   if (row.pctOfRevenue === null || row.pctBasis === null || trustTier(row) !== 1 || isUnconfirmed(row) || !activeRelationship(row)) return null;
-  const reporter = includeReporter || (focusId && row.reportingEntity.id !== focusId) ? `${row.reportingEntity.ticker ?? row.reportingEntity.name} ` : "";
+  const reporter = includeReporter || (focusId && row.reportingEntity.id !== focusId) ? `${entityTicker(row.reportingEntity) ?? row.reportingEntity.name} ` : "";
   const scope = row.pctScope ? scopeWords(row.pctScope) : "";
   const basis = row.pctBasis === "cost" ? "cost of sales" : row.pctBasis;
   // XBRL dimensions can qualify the numerator, denominator, or both. NVDA's
@@ -55,6 +56,25 @@ export function shareParts(row: SupplyRow, focusId?: string | null, { includeRep
   // Form alone does not identify a metric's duration: a 10-Q includes YTD facts.
   return { value: `${Number(row.pctOfRevenue.toFixed(1))}%`, basis: `of ${reporter}${scoped}` };
 }
+/** An XBRL fact's tagged dimensions, as the filing reader stores them in place of a sentence: "ConcentrationRiskByType=CustomerConcentrationRisk;MajorCustomers=StandardChartered;". */
+const TAGGED_DIMENSIONS = /^\s*[A-Za-z][\w.:-]*=[^;=]*(?:;\s*[A-Za-z][\w.:-]*=[^;=]*)*;?\s*$/;
+export const isTaggedFact = (row: Pick<SupplyRow, "sourceKind" | "quote">) => row.sourceKind === "xbrl" && TAGGED_DIMENSIONS.test(row.quote);
+
+/**
+ * What a disclosure says, in words. A sentence from the filing reads as it is;
+ * a tagged XBRL fact reads as the kind of concentration it tags, its tagged
+ * context and what the share is of: "Customer, Gold, revenue", never the
+ * dimension names.
+ */
+export function disclosureText(row: Pick<SupplyRow, "sourceKind" | "quote" | "pctScope" | "pctBasis">): string {
+  if (!isTaggedFact(row)) return row.quote;
+  const type = /(?:^|;)\s*ConcentrationRiskByType=([^;]*)/.exec(row.quote)?.[1]?.replace(/^.*:/, "").replace(/ConcentrationRisk(Member)?$/, "") ?? "";
+  const kind = type.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  const basis = row.pctBasis === "cost" ? "cost of sales" : row.pctBasis;
+  return [kind ? kind[0]!.toUpperCase() + kind.slice(1).toLowerCase() : null, row.pctScope ? scopeWords(row.pctScope) : null, basis]
+    .filter((part): part is string => !!part).join(", ") || "Tagged in the filing";
+}
+
 export function counterpartyName(row: SupplyRow): string {
   if (row.counterparty.aggregate) return `Group: ${row.counterparty.name.replace(/^Undisclosed customer \((.+)\)$/i, "$1")}`;
   if (!row.counterparty.anonymous) return row.counterparty.name;
@@ -78,22 +98,32 @@ export interface SupplyRoleCount { role: SupplyRole; counterparties: number; loc
  * a free preview withholds is reported apart as locked disclosures rather
  * than added to the companies.
  */
-export function supplyRoleCounts(data: Pick<SupplyChainPayload, "says" | "names" | "counts">, views: readonly ("says" | "names")[], options: Required<SupplyOptions>): SupplyRoleCount[] {
+export function supplyRoleCounts(data: Pick<SupplyChainPayload, "says" | "names" | "counts" | "earlier" | "earlierCounts">, views: readonly ("says" | "names")[], options: Required<SupplyOptions>): SupplyRoleCount[] {
   return SUPPLY_ROLE_ORDER.map((role) => {
     const companies = new Set<string>();
     let locked = 0;
     for (const view of views) {
       const rows = data[view].filter((row) => row.role === role);
       for (const row of rows) if (!row.counterparty.aggregate && !isUnconfirmed(row) && matchesSupplyOptions(row, options)) companies.add(row.counterparty.id);
-      locked += Math.max(0, data.counts[view][role] - rows.length);
+      locked += Math.max(0, data.counts[view][role] - rows.length)
+        + Math.max(0, (data.earlierCounts?.[view][role] ?? 0) - earlierRows(data, view).filter((row) => row.role === role).length);
     }
     return { role, counterparties: companies.size, locked };
   }).filter((entry) => entry.counterparties > 0 || entry.locked > 0);
 }
 
+/**
+ * A view's shares from before the latest period their reporter disclosed on
+ * the same basis: dated, listed apart from the current rows and never counted
+ * as current counterparties. Empty from servers that do not split them.
+ */
+export const earlierRows = (data: Pick<SupplyChainPayload, "earlier">, view: "says" | "names"): SupplyRow[] => data.earlier?.[view] ?? [];
+
 /** Disclosures a free preview withholds from these views: the server's counts less the rows it sent. */
-export function lockedDisclosures(data: Pick<SupplyChainPayload, "says" | "names" | "counts">, views: readonly ("says" | "names")[]): number {
-  return views.reduce((sum, view) => sum + Math.max(0, Object.values(data.counts[view]).reduce((a, b) => a + b, 0) - data[view].length), 0);
+export function lockedDisclosures(data: Pick<SupplyChainPayload, "says" | "names" | "counts" | "earlier" | "earlierCounts">, views: readonly ("says" | "names")[]): number {
+  const total = (counts: Record<SupplyRole, number> | undefined) => Object.values(counts ?? {}).reduce((a, b) => a + b, 0);
+  return views.reduce((sum, view) => sum + Math.max(0, total(data.counts[view]) - data[view].length)
+    + Math.max(0, total(data.earlierCounts?.[view]) - earlierRows(data, view).length), 0);
 }
 
 /** The lock line of a free preview, in the same words in the pane and `fn SPLC`. */
@@ -111,16 +141,32 @@ export const nativeValue = (row: SupplyRow) => row.nativeAmount == null || !row.
 export const disclosedValue = (row: SupplyRow) => nativeValue(row) ?? dollars(row);
 const QUOTE_LANGUAGES: Record<string, string> = { ko: "Korean", ja: "Japanese", zh: "Chinese", "zh-TW": "Chinese", "zh-Hant": "Chinese", "zh-Hans": "Chinese", en: "English" };
 export const quoteLanguageLabel = (row: Pick<SupplyRow, "quoteLanguage">) => QUOTE_LANGUAGES[row.quoteLanguage ?? ""] ?? row.quoteLanguage ?? "original language";
+/**
+ * How long a period is, in the words the KPI pane uses for a period's kind:
+ * a share of receivables is a balance at the period end, an instant. Null
+ * when the source does not say; a form or a period label never does.
+ */
+function periodLength(months: number | null | undefined): string | null {
+  if (months == null) return null;
+  return months === 0 ? "instant" : months === 3 ? "quarter" : months === 6 ? "half" : months === 12 ? "year" : `${months} month${months === 1 ? "" : "s"}`;
+}
+/** The period end with its length when the source states it: 2026-07-31 half. */
+export const periodText = (row: Pick<SupplyRow, "period" | "periodMonths">) => {
+  const length = periodLength(row.periodMonths);
+  return length ? `${row.period} ${length}` : row.period;
+};
 export const sourceLabel = (row: SupplyRow) => row.sourceKind === "xbrl" ? "XBRL" : row.sourceKind === "filing_text" ? row.form ?? "Filing" : row.sourceKind === "call" ? "Call" : row.sourceKind === "news" ? "News" : row.sourceKind === "press_release" ? "Release" : row.sourceKind === "web" ? "Web" : "Disclosure";
 export function cellText(row: SupplyRow, column: string): string {
-  return column === "name" ? counterpartyName(row) : column === "ticker" ? row.counterparty.ticker ?? "--"
+  return column === "name" ? counterpartyName(row) : column === "ticker" ? entityTicker(row.counterparty) ?? "--"
     : column === "role" ? roleLabel(row.role) : column === "direction" ? row.direction === "in" ? "In" : row.direction === "out" ? "Out" : "Both"
-    : column === "pct" ? percentage(row) : column === "usd" ? disclosedValue(row) : column === "fy" ? row.period
+    : column === "pct" ? percentage(row) : column === "usd" ? disclosedValue(row) : column === "fy" ? periodText(row)
     : column === "publisher" ? row.evidence?.find((item) => item.status === "active")?.publisher ?? row.reportingEntity.name
     : column === "corroboration" ? corroborationLabel(row)
     : column === "evidence" ? evidenceLabel(row) : column === "source" ? sourceLabel(row) : column === "filed" ? evidenceDate(row) : `${Math.round(row.confidence * 100)}%`;
 }
 export type SupplySort = { column: string; direction: "asc" | "desc" };
+/** Shares of different bases never rank against each other: revenue first, receivables last. */
+const SHARE_BASIS_ORDER: readonly SupplyRow["pctBasis"][] = ["revenue", "cost", "purchases", "receivables"];
 export function sortRows(rows: SupplyRow[], sort: SupplySort): SupplyRow[] {
   const value = (row: SupplyRow): string | number | null => sort.column === "pct" ? row.pctOfRevenue : sort.column === "usd" ? row.nativeAmount != null ? row.nativeAmount * (row.nativeScale ?? 1) : row.usd
     : sort.column === "confidence" ? row.confidence : sort.column === "evidence" ? trustTier(row) : cellText(row, sort.column).toLowerCase();
@@ -129,6 +175,11 @@ export function sortRows(rows: SupplyRow[], sort: SupplySort): SupplyRow[] {
     if (sort.column === "usd" && x !== null && y !== null) {
       const currency = (row: SupplyRow) => row.nativeAmount != null ? row.nativeCurrency! : "USD";
       const difference = currency(a).localeCompare(currency(b));
+      if (difference) return difference;
+    }
+    // Group bases before comparing shares: 30% of receivables is not more than 21% of revenue.
+    if (sort.column === "pct" && x !== null && y !== null) {
+      const difference = SHARE_BASIS_ORDER.indexOf(a.pctBasis) - SHARE_BASIS_ORDER.indexOf(b.pctBasis);
       if (difference) return difference;
     }
     return x === null || y === null ? x === y ? 0 : x === null ? 1 : -1
@@ -158,17 +209,27 @@ export function flowBands(rows: SupplyRow[], limit: number, pages: Partial<Recor
   }
   return Object.fromEntries((Object.keys(grouped) as FlowBand[]).map((band) => {
     const values = sortRows(grouped[band], { column: "pct", direction: "desc" });
-    // One reporter, period and revenue scope form a compatible percentage scale.
+    // One reporter, period and revenue scope form a compatible percentage scale,
+    // and a quarter and a half ending on that date do not: each stated length
+    // is its own scale, which a share whose length is not stated can join.
     // Prefer the largest compatible group, then whole-company revenue on a tie.
-    const revenueGroups = new Map<string, SupplyRow[]>();
+    const revenueGroups = new Map<string, { length: number | null; rows: SupplyRow[] }>();
+    const unstated = new Map<string, SupplyRow[]>();
     for (const row of values) if (trustTier(row) === 1 && band === "customers" && row.pctBasis === "revenue" && !(row.sourceKind === "xbrl" && row.pctScope) && (row.pctOfRevenue ?? 0) > 0 && (!focusId || row.reportingEntity.id === focusId)) {
-      const key = revenueKey(row);
-      revenueGroups.set(key, [...(revenueGroups.get(key) ?? []), row]);
+      const key = revenueKey(row), length = row.periodMonths ?? null;
+      if (length === null) unstated.set(key, [...(unstated.get(key) ?? []), row]);
+      else revenueGroups.set(`${key}:${length}`, { length, rows: [...(revenueGroups.get(`${key}:${length}`)?.rows ?? []), row] });
     }
-    const revenueGroup = [...revenueGroups.values()].sort((a, b) => b.length - a.length || Number(a[0]!.pctScope !== null) - Number(b[0]!.pctScope !== null))[0];
-    const scaleKey = revenueGroup ? revenueKey(revenueGroup[0]!) : null;
+    for (const [key, rows] of unstated) {
+      const stated = [...revenueGroups.values()].filter((group) => revenueKey(group.rows[0]!) === key);
+      for (const group of stated) group.rows.push(...rows);
+      if (!stated.length) revenueGroups.set(key, { length: null, rows });
+    }
+    const revenueGroup = [...revenueGroups.values()].sort((a, b) => b.rows.length - a.rows.length || Number(a.rows[0]!.pctScope !== null) - Number(b.rows[0]!.pctScope !== null))[0];
+    const scaleKey = revenueGroup ? revenueKey(revenueGroup.rows[0]!) : null;
     const value = (row: SupplyRow) => trustTier(row) !== 1 ? 0 : scaleKey === null ? row.usd ?? 0
-      : row.pctBasis === "revenue" && !(row.sourceKind === "xbrl" && row.pctScope) && revenueKey(row) === scaleKey ? row.pctOfRevenue ?? 0 : 0;
+      : row.pctBasis === "revenue" && !(row.sourceKind === "xbrl" && row.pctScope) && revenueKey(row) === scaleKey
+        && (row.periodMonths == null || revenueGroup!.length === null || row.periodMonths === revenueGroup!.length) ? row.pctOfRevenue ?? 0 : 0;
     // Use the entire band: paging must not change an existing ribbon's width.
     const max = Math.max(0, ...values.map(value));
     const ordered = [...values].sort((a, b) => value(b) - value(a));
@@ -176,7 +237,7 @@ export function flowBands(rows: SupplyRow[], limit: number, pages: Partial<Recor
     const start = paged ? ((pages[band] ?? 0) % Math.ceil(values.length / pageSize)) * pageSize : 0;
     const visible = ordered.slice(start, start + (paged ? pageSize : limit));
     const nodes: FlowNode[] = visible.map((row) => ({ id: row.id, label: counterpartyName(row), row, band, more: 0,
-      weight: value(row) > 0 ? value(row) / max : null, weightScope: revenueGroup?.[0]?.pctScope ?? null, weightBasis: scaleKey ? "revenue" : max > 0 ? "usd" : null }));
+      weight: value(row) > 0 ? value(row) / max : null, weightScope: revenueGroup?.rows[0]?.pctScope ?? null, weightBasis: scaleKey ? "revenue" : max > 0 ? "usd" : null }));
     if (paged) nodes.push({ id: `more:${band}`, label: `+${values.length - visible.length} more`, row: null, band, more: values.length - visible.length, weight: null, weightScope: null, weightBasis: null });
     return [band, nodes];
   })) as Record<FlowBand, FlowNode[]>;

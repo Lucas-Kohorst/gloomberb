@@ -65,4 +65,37 @@ describe("market valuation headless model", () => {
     expect(shillerCalls).toBe(1);
     expect(result.metadata).toMatchObject({ range: "10Y", selected: "shiller-cape" });
   });
+
+  test("full-history figures say since when, whatever the range, and a range longer than the history says where it starts", async () => {
+    // Yearly CAPE readings from 1990: 10Y fits inside them, ALL reaches past their start.
+    const observations = Array.from({ length: 37 }, (_, index) => ({ date: `${1990 + index}-01-01`, price: 1000, dividend: 20,
+      earnings: 50, cpi: 200, longRate: 4, cape: 20 + index / 2, excessCapeYield: 0.02 }));
+    const apiClient = {
+      getCloudShiller: async () => ({ observations, sourceUrl: "https://example.test/shiller.xls", fetchedAt: "2026-01-02T00:00:00Z" }),
+    } as unknown as HeadlessPaneContext["apiClient"];
+    const context = createTestHeadlessContext({ apiClient });
+    const report = async (range: string) => {
+      const args = { ...loadArgs(), options: { range } };
+      const result = await marketValuationHeadless.load(args, context);
+      const describe = marketValuationHeadless.describe as (args: HeadlessPaneLoadArgs, result: unknown) => string;
+      const [table, detail] = result.sections as Array<{ columns?: Array<{ header: string }>; rows?: Array<Record<string, unknown>>; entries?: Array<{ label: string }> }>;
+      return {
+        title: describe(args, result),
+        notices: (result.metadata as { notices?: string[] }).notices ?? [],
+        headers: table!.columns!.map((column) => column.header),
+        since: table!.rows!.find((row) => row.id === "shiller-cape")?.historyStart,
+        labels: detail!.entries!.map((entry) => entry.label),
+      };
+    };
+    const tenYears = await report("10Y");
+    // The heading is the range asked for: the table's indicators each have a history of their own.
+    expect(tenYears.title).toBe("Market Valuation | 10Y");
+    expect(tenYears.notices).toEqual([]);
+    expect(tenYears.headers).toEqual(["Indicator", "Value", "Zone", "Rich %ile", "Since", "Trend", "As of"]);
+    expect(tenYears.since).toBe("1990-01-01");
+    expect(tenYears.labels).toEqual(expect.arrayContaining(["Mean (since 1990)", "Rich percentile (since 1990)", "High (since 1990)", "Low (since 1990)"]));
+    const all = await report("ALL");
+    expect(all.title).toBe("Market Valuation | ALL");
+    expect(all.notices).toEqual(["Shiller CAPE history starts 1990-01-01."]);
+  });
 });

@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import { formatShortDate, parseDisplayDate } from "../../utils/datetime-format";
 import { formatReportedMoney } from "../../utils/reported-money";
 import { convertedPriceEarningsNote, enterpriseValueLabel, enterpriseValueReconciliationNote, epsConversionNote, fundamentalsCurrency, reportedEnterpriseValue, ttmConversionNote } from "../../utils/fundamentals";
@@ -27,7 +28,8 @@ import {
   getExtendedSessionDisplay,
   getQuoteSessionFields,
   getRegularSessionDisplay,
-  marketStateLabel,
+  quoteHeadlineTime,
+  quoteMarketStateLabel,
 } from "../../market-data/market/status";
 import type { FuturesContractTermsPayload } from "../../api-client/futures-curve";
 import { futuresContractLines, futuresSettleText, isFuturesInstrument, loadFuturesContractTerms } from "../../market-data/futures-contract";
@@ -36,12 +38,14 @@ import type { DeclaredDividendAction, FinancialStatement, Quote, TickerFinancial
 import { quoteTradingDay } from "../../market-data/quotes/day-range";
 import { atRegularSessionPrice, regularSessionValuationPrice } from "../../market-data/quotes/regular-session-valuation";
 import { computeTickerPriceReturns } from "../../market-data/ticker-price-returns";
-import { instrumentTypeLabel, isCryptoVenuePerpetual, resolveTickerInstrumentKind } from "../../tickers/instrument-kind";
+import { instrumentTypeLabel, resolveTickerInstrumentKind } from "../../tickers/instrument-kind";
+import { INDEX_POINTS_LABEL, isIndexLevel, reportedQuoteVolume } from "../../market-data/market/index-level";
 import type { SecFilingItem } from "../../types/data-provider";
 import type { NewsArticle } from "../../news/types";
 import type { TickerRecord } from "../../types/ticker";
 import type { CliCommandContext } from "../../types/plugin";
-import { getPortfolioPositionMetrics, getPortfolioQuoteDisplay, resolvePortfolioMarketValue, resolvePortfolioPositionPnl } from "../../portfolio/position-metrics";
+import { getPortfolioPositionMetrics, getPortfolioQuoteDisplay, lotCostFxRate, resolvePortfolioMarketValue, resolvePortfolioPositionPnl } from "../../portfolio/position-metrics";
+import { isFuturesTicker } from "../../portfolio/futures-positions";
 import { createBaseConverter } from "../base-converter";
 import { initMarketData, withMarketData } from "../context";
 import { fail } from "../errors";
@@ -56,11 +60,14 @@ import {
   formatWatchlistNames,
 } from "../helpers";
 import { NotesFiles } from "../../plugins/builtin/notes/files";
-import { isKnownNonUsListing } from "../../utils/sec";
+import { isKnownNonUsListing, secFilingItemCodes } from "../../utils/sec";
+import { currentReportItemsLabel, hiddenFilingsNote, loadLatestFilings, type HiddenFilings } from "../../utils/sec-filings";
 import { canonicalExchange, exchangeLabel, isKnownExchangeCode, isUsListingExchange } from "../../utils/exchanges";
 import {
-  failIfNotTraded, ListingArgError, listingChoiceNotes, listingIdentity, loadBareVenues, resolveCliListing, type CliListing,
+  failIfNotTraded, failMovedSymbol, ListingArgError, listingChoiceNotes, listingFateLoader, listingIdentity, loadBareVenues,
+  resolveCliListing, type CliListing, type ListingDataRequest,
 } from "../listing-arg";
+import { movedAwayChange } from "../../tickers/ticker-changes";
 import { isNotATickerMessage } from "../not-a-ticker";
 import { sharesOutstandingInReceipts } from "../../utils/depositary-receipt";
 import { cliFreshnessFooter } from "../result";
@@ -68,12 +75,34 @@ import { providerMissReason } from "../../sources/provider-errors";
 import { exportEntriesTable, reportFooterLines, type CliReportTables } from "../report-tables";
 import type { ReportFreshness } from "../pane-functions/freshness";
 import { fundamentalsFreshness, quotesFreshness } from "../freshness";
-import { forwardDividendBasis } from "../../utils/forward-dividend";
+import { distributionHistory, forwardDividendBasis, forwardDividendMayHaveLapsed, lapsedDividend, noCurrentDividend, TRAILING_DIVIDEND_BASIS, type DistributionHistory, type DividendLapse } from "../../utils/forward-dividend";
 import { declaredDividends } from "../../utils/declared-dividends";
+import { historyTrailingDividendYield, measuresTrailingYield } from "../../market-data/quotes/live-valuation";
 import { notTheCoinNote } from "./crypto-hints";
+import { loadStatementFilings, resultsReleaseText, statementPeriodText, type StatementFilingsReport } from "../statement-filings";
+import type { BankFiguresPayload } from "../../api-client/bank-figures";
+import { bankSection } from "../bank-section";
+import type { FundBondFacts } from "../../api-client/fund-facts";
+import { bondFigures, fetchFundBondFacts, NOT_SEC_YIELD } from "../../market-data/bond-funds";
+import { taxEquivalentLines, type TaxEquivalentAnalysis } from "../../market-data/tax-equivalent";
 
 const NEWS_ITEM_LIMIT = 5;
 const SEC_FILING_LIMIT = 5;
+
+const NOTHING_HIDDEN: HiddenFilings = { pricingSupplements: 0, ownershipReportsAboutOthers: 0 };
+
+/**
+ * The company's latest filings, as the report lists them: without a bank's
+ * pricing supplements or the 13D/13G it filed as a holder of other
+ * companies, unless `all`.
+ */
+async function loadRecentSecFilings(
+  load: (count: number) => Promise<SecFilingItem[]>,
+  all: boolean,
+): Promise<{ filings: SecFilingItem[]; hidden: HiddenFilings }> {
+  return all ? { filings: (await load(SEC_FILING_LIMIT)).slice(0, SEC_FILING_LIMIT), hidden: NOTHING_HIDDEN }
+    : loadLatestFilings(load, SEC_FILING_LIMIT, { schedulesAboutOthers: true });
+}
 // Prose such as a company description stays readable on wide terminals.
 const MAX_PROSE_WIDTH = 100;
 const METADATA_SEPARATOR = "  ·  ";
@@ -88,6 +117,8 @@ interface TickerCommandDependencies {
   initMarketData?: () => Promise<MarketContext>;
   fail?: (message: string, details?: string) => never;
   printResult?: CliCommandContext["printResult"];
+  /** `--all`: the recent SEC filings keep a bank's pricing supplements and its 13D/13G about other companies. */
+  allFilings?: boolean;
   /** A futures symbol's contract terms and settlement; a failure leaves them out of the report. */
   futuresContract?: (symbol: string) => Promise<FuturesContractTermsPayload | null>;
 }
@@ -101,7 +132,7 @@ export async function cliFuturesContract(
   instrumentType: string | undefined,
   load: (symbol: string) => Promise<FuturesContractTermsPayload | null> = loadFuturesContractTerms,
 ): Promise<FuturesContractTermsPayload | null> {
-  return isFuturesInstrument(symbol, instrumentType) ? load(symbol).catch(() => null) : null;
+  return isFuturesInstrument(symbol, instrumentType) ? load(symbol).catch(logFailure("cli.commands-ticker", "Read futures contract details failed", null)) : null;
 }
 
 /** The Contract block as `ticker` and `quote` print it; a contract past first notice is in the warning colour. */
@@ -191,9 +222,14 @@ function appendFeedSection(
     body?: string;
     link?: string;
   }>,
+  /** What the list leaves out, after its entries. */
+  note?: string | null,
 ) {
   const populated = entries.filter((entry) => entry.title.trim().length > 0);
-  if (populated.length === 0) return;
+  if (populated.length === 0) {
+    if (note) lines.push("", renderSection(title), cliStyles.muted(note));
+    return;
+  }
 
   lines.push("");
   lines.push(renderSection(title));
@@ -214,6 +250,12 @@ function appendFeedSection(
       lines.push("");
     }
   }
+  if (note) lines.push("", cliStyles.muted(note));
+}
+
+function filingItemsMeta(filing: SecFilingItem): string {
+  const items = currentReportItemsLabel(filing.items);
+  return items ? `Items ${items}` : "";
 }
 
 function normalizeComparable(value: string): string {
@@ -270,15 +312,19 @@ async function appendTickerPositions(lines: string[], tickerFile: TickerRecord |
 
     for (const [index, position] of positions.entries()) {
       const portfolioName = config.portfolios.find((portfolio) => portfolio.id === position.portfolio)?.name ?? position.portfolio;
-      const multiplier = position.multiplier ?? 1;
+      // A future counts contracts whether or not its lot states their size.
+      const contracts = isFuturesTicker(tickerFile) || (position.multiplier ?? 1) > 1;
       const metrics = getPortfolioPositionMetrics({ ...tickerFile, metadata: { ...tickerFile.metadata, positions: [position] } }, undefined, quoteCurrency, undefined, quote);
       const positionCurrency = metrics.positionCurrency;
       const currentPrice = getPortfolioQuoteDisplay(metrics, quote)?.price ?? null;
       const currentPriceBase = currentPrice != null && quoteCurrency ? await toBase(currentPrice, quoteCurrency) : null;
-      const costBasisBase = positionCurrency ? await toBase(metrics.signedCost, positionCurrency) : Number.NaN;
       const positionRate = positionCurrency ? await toBase(1, positionCurrency) : Number.NaN;
       const baseMetrics = getPortfolioPositionMetrics({ ...tickerFile, metadata: { ...tickerFile.metadata, positions: [position] } }, undefined, quoteCurrency,
         { currency: config.baseCurrency, convert: value => value * positionRate }, quote);
+      // A cost bought at an entered rate into the base currency converts at it, as its P&L does; any other at today's.
+      const costBasisBase = !positionCurrency ? Number.NaN
+        : lotCostFxRate(position, positionCurrency, config.baseCurrency) !== null ? baseMetrics.signedCost
+        : await toBase(metrics.signedCost, positionCurrency);
       const marketValueBase = resolvePortfolioMarketValue(baseMetrics, currentPriceBase)?.net ?? Number.NaN;
       const selectedPnl = resolvePortfolioPositionPnl(baseMetrics, currentPriceBase);
       const pnl = selectedPnl.value;
@@ -288,7 +334,7 @@ async function appendTickerPositions(lines: string[], tickerFile: TickerRecord |
       const stats: CliStatEntry[] = [
         [
           "Position",
-          `${formatMarketQuantity(metrics.totalShares, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier, priceBasis: metrics.priceBasis, quantityCurrency: positionCurrency })} ${metrics.priceBasis === "percent-of-par" ? "@" : `${tickerFile.metadata.assetCategory === "BOND" ? "units" : multiplier > 1 ? "contracts" : "shares"} @`} ${positionCurrency ? formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier, priceBasis: metrics.priceBasis }) : "—"}`,
+          `${formatMarketQuantity(metrics.totalShares, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier, priceBasis: metrics.priceBasis, quantityCurrency: positionCurrency })} ${metrics.priceBasis === "percent-of-par" ? "@" : `${tickerFile.metadata.assetCategory === "BOND" ? "units" : contracts ? "contracts" : "shares"} @`} ${positionCurrency ? formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier, priceBasis: metrics.priceBasis }) : "—"}`,
         ],
         ["Cost Basis", formatCurrency(costBasisBase, config.baseCurrency)],
         ["Market Value", formatCurrency(marketValueBase, config.baseCurrency)],
@@ -348,39 +394,165 @@ function percentFigure(fraction: number | null | undefined, format: (value: numb
   return fraction != null ? { text: format(fraction), value: fraction * 100, unit: "%" } : { text: "—" };
 }
 
-/** The declared, unpaid distributions a forward yield dated ahead is named from, in their own currency. */
-export interface ForwardYieldDeclarations {
+/**
+ * The listing's distributions a dividend yield is read with: the declared,
+ * unpaid ones a forward yield dated ahead is named from, in their own
+ * currency, the history that says whether the dividend is still paid, and the
+ * trailing yield DVD reads from that history.
+ */
+export interface DividendDistributions {
   rows: DeclaredDividendAction[];
   currency?: string;
+  history: DistributionHistory | null;
+  /**
+   * A trailing yield as DVD measures it (historyTrailingDividendYield): the history's
+   * trailing twelve-month cash over the quote's regular session price. Null
+   * when the history is not whole or the price is in another currency, which
+   * leaves the yield Gloom Cloud serves; absent for a forward yield.
+   */
+  trailingYield?: number | null;
 }
 
 /**
- * The listing's declared distributions, read only for a forward yield whose
- * ex-date is still ahead (the one case its basis names one); null otherwise,
- * and when they cannot be read, which leaves the basis to its dates.
+ * The listing's distributions, read for a trailing yield, which is measured
+ * from them as DVD measures it, and for a forward yield whose ex-date is still
+ * ahead (the one case its basis names a declared one, which JSON does not
+ * print, so `declared: false` skips it) or long enough past for its dividend
+ * to have stopped; null otherwise, and when they cannot be read, which leaves
+ * the trailing yield Gloom Cloud serves, the forward basis to its dates and
+ * the lapse to Gloom Cloud's fifteen months.
  */
-export async function loadForwardYieldDeclarations(
+export async function loadDividendDistributions(
   dataProvider: Pick<MarketContext["dataProvider"], "getCorporateActions">,
   listing: { symbol: string; exchange: string },
-  fundamentals: TickerFinancials["fundamentals"],
-  now = new Date(),
-): Promise<ForwardYieldDeclarations | null> {
-  const exDate = fundamentals?.dividendYieldBasis === "forward" ? fundamentals.exDividendDate ?? "" : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(exDate) || exDate <= now.toISOString().slice(0, 10) || !dataProvider.getCorporateActions) return null;
+  { quote, fundamentals }: Pick<TickerFinancials, "quote" | "fundamentals">,
+  { declared = true, now = new Date() }: { declared?: boolean; now?: Date } = {},
+): Promise<DividendDistributions | null> {
+  if (fundamentals?.dividendYield == null || !dataProvider.getCorporateActions) return null;
+  const trailing = measuresTrailingYield(fundamentals);
+  if (!trailing) {
+    if (fundamentals.dividendYieldBasis !== "forward") return null;
+    const exDate = fundamentals.exDividendDate ?? "";
+    const declaredAhead = declared && /^\d{4}-\d{2}-\d{2}$/.test(exDate) && exDate > now.toISOString().slice(0, 10);
+    if (!declaredAhead && !forwardDividendMayHaveLapsed(exDate, now)) return null;
+  }
   try {
     const actions = await dataProvider.getCorporateActions(listing.symbol, listing.exchange);
-    return { rows: declaredDividends(actions, now), ...(actions.currency ? { currency: actions.currency } : {}) };
-  } catch {
+    return { rows: declaredDividends(actions, now), ...(actions.currency ? { currency: actions.currency } : {}),
+      history: distributionHistory(actions, now), ...(trailing ? { trailingYield: historyTrailingDividendYield(actions, quote, now) } : {}) };
+  } catch (error) {
+    logFailure("cli.commands-ticker", "Read dividend distributions failed")(error);
     return null;
   }
 }
 
-/** A forward yield says what it annualizes and when, as DVD does (a declared distribution by its ex-date and stated amount); any other yield is the figure alone. */
-function forwardYieldFigure(fundamentals: TickerFinancials["fundamentals"], declared: ForwardYieldDeclarations | null): MetricFigure {
-  const figure = percentFigure(fundamentals?.dividendYield, formatFractionPercentCell);
+/** The stopped dividend behind a forward yield, if it has stopped (lapsedDividend); null for any other yield. */
+function forwardYieldLapse(
+  fundamentals: TickerFinancials["fundamentals"],
+  distributions: DividendDistributions | null,
+  now = new Date(),
+): DividendLapse | null {
   return fundamentals?.dividendYieldBasis === "forward" && fundamentals.dividendYield != null
-    ? { ...figure, text: `${figure.text} (${forwardDividendBasis(fundamentals.exDividendDate, { declared: declared?.rows, currency: declared?.currency })})` }
-    : figure;
+    ? lapsedDividend(fundamentals.exDividendDate, distributions?.history, now) : null;
+}
+
+/**
+ * The dividend yield a report shows: a trailing one as DVD measures it from
+ * the cash history (DividendDistributions.trailingYield), so `fundamentals`,
+ * `ticker` and DVD print one figure; Gloom Cloud's when that cannot be read,
+ * and a forward one as served.
+ */
+function reportedDividendYield(
+  fundamentals: Pick<NonNullable<TickerFinancials["fundamentals"]>, "dividendYield" | "dividendYieldBasis"> | undefined,
+  distributions: DividendDistributions | null,
+): number | undefined {
+  const measured = fundamentals?.dividendYieldBasis === "trailing" ? distributions?.trailingYield : null;
+  return measured ?? fundamentals?.dividendYield;
+}
+
+/**
+ * A dividend yield says its basis in the words DVD uses: a forward yield what
+ * it annualizes and when (a declared distribution by its ex-date and stated
+ * amount), and once its dividend has stopped, that there is none and when it
+ * was last paid; a trailing one the twelve months it covers. A yield of no
+ * stated basis is the figure alone.
+ */
+function forwardYieldFigure(fundamentals: TickerFinancials["fundamentals"], distributions: DividendDistributions | null): MetricFigure {
+  const lapse = forwardYieldLapse(fundamentals, distributions);
+  if (lapse) return { text: noCurrentDividend(lapse), value: null };
+  const figure = percentFigure(reportedDividendYield(fundamentals, distributions), formatFractionPercentCell);
+  if (fundamentals?.dividendYield == null) return figure;
+  const basis = fundamentals.dividendYieldBasis === "forward"
+    ? forwardDividendBasis(fundamentals.exDividendDate, { declared: distributions?.rows, currency: distributions?.currency })
+    : fundamentals.dividendYieldBasis === "trailing" ? TRAILING_DIVIDEND_BASIS : null;
+  return basis ? { ...figure, text: `${figure.text} (${basis})` } : figure;
+}
+
+/**
+ * Fundamentals as JSON exports them: a trailing yield as the text reads it
+ * (reportedDividendYield), and a forward yield whose dividend has stopped
+ * null, as is its rate, with the last ex-date under `dividendLapse`.
+ */
+export function exportedDividendFundamentals<T extends object & Pick<NonNullable<TickerFinancials["fundamentals"]>, "dividendYield" | "dividendYieldBasis" | "exDividendDate">>(
+  fundamentals: T,
+  distributions: DividendDistributions | null,
+): T | (Omit<T, "dividendYield" | "dividendRate"> & { dividendYield: null; dividendRate: null; dividendLapse: DividendLapse }) {
+  const lapse = forwardYieldLapse(fundamentals, distributions);
+  if (lapse) return { ...fundamentals, dividendYield: null, dividendRate: null, dividendLapse: lapse };
+  const dividendYield = reportedDividendYield(fundamentals, distributions);
+  return dividendYield === fundamentals.dividendYield ? fundamentals : { ...fundamentals, dividendYield };
+}
+
+/**
+ * `Dividend Yield (forward)`, or for a bond fund `Distribution Yield (forward,
+ * not SEC yield)`: the cash it paid, annualized, which its SEC yield (the line
+ * after it) is not.
+ */
+function dividendYieldLabel(basis: string | undefined, bond: FundBondFacts | null): string {
+  if (bond) return `Distribution Yield (${basis ? `${basis}, ` : ""}${NOT_SEC_YIELD})`;
+  return `Dividend Yield${basis ? ` (${basis})` : ""}`;
+}
+
+/** The labels a bond fund's sponsor figures print under, after its distribution yield. */
+const BOND_METRIC_LABELS = { secYield: "30-Day SEC Yield", yieldToWorst: "Yield to Worst" } as const;
+
+/**
+ * A bond fund's 30-day SEC yield, yield to worst and duration as its sponsor
+ * publishes them, each dated: `4.04% (as of 2026-10-15)`.
+ */
+function bondFundMetrics(bond: FundBondFacts | null): FundamentalsMetric[] {
+  if (!bond) return [];
+  return bondFigures(bond).map((figure) => ({
+    label: figure.key === "duration" ? (bond.duration?.measure === "average" ? "Average Duration" : "Effective Duration") : BOND_METRIC_LABELS[figure.key],
+    text: `${figure.text}${figure.date ? ` (as of ${figure.date})` : ""}`,
+    value: figure.value,
+    unit: figure.key === "duration" ? "years" : "%",
+  }));
+}
+
+/** Whether a metric is a yield line, which `valuation` keeps beside the multiples. */
+function isYieldMetric(label: string): boolean {
+  return label.startsWith("Dividend Yield") || label.startsWith("Distribution Yield") || label === BOND_METRIC_LABELS.secYield;
+}
+
+/**
+ * A US-listed fund's bond facts for the yield lines; null for any other
+ * listing, and when they cannot be read, which leaves the yield as it was.
+ */
+export async function loadReportBondFacts(
+  symbol: string,
+  exchange: string | undefined,
+  financials: Pick<TickerFinancials, "quote" | "quoteMetadata">,
+  tickerFile: TickerRecord | null = null,
+  load: (symbol: string) => Promise<FundBondFacts | null> = fetchFundBondFacts,
+): Promise<FundBondFacts | null> {
+  if (resolveTickerInstrumentKind(tickerFile, financials) !== "fund" || (exchange && !isUsListingExchange(exchange))) return null;
+  try {
+    return await load(symbol);
+  } catch (error) {
+    logFailure("cli.commands-ticker", "Read bond fund facts failed")(error);
+    return null;
+  }
 }
 
 function multipleFigure(value: ReturnType<typeof priceEarningsOnEarnings> | number | undefined): MetricFigure {
@@ -396,7 +568,8 @@ function fundamentalsMetrics(
   priceReturns: { return1Y?: number | null; return3Y?: number | null },
   reportingCurrency: string | undefined,
   enterpriseValue = reportedMoney(reportedEnterpriseValue(fundamentals), enterpriseValueCurrency(quote, fundamentals)),
-  declared: ForwardYieldDeclarations | null = null,
+  distributions: DividendDistributions | null = null,
+  bond: FundBondFacts | null = null,
 ): FundamentalsMetric[] {
   const signed = (value: number) => colorBySign(formatPercent(value), value);
   const receipt = fundamentals?.sharesOutstanding != null && sharesOutstandingInReceipts(quote, fundamentals, profile?.description);
@@ -410,9 +583,10 @@ function fundamentalsMetrics(
     // The flows and EPS are one trailing-twelve-month block, the same twelve months for each line.
     { label: "EPS (TTM)", ...reportedMoney(fundamentals?.eps, fundamentals?.epsCurrency?.trim() || reportingCurrency, true) },
     {
-      label: `Dividend Yield${fundamentals?.dividendYieldBasis ? ` (${fundamentals.dividendYieldBasis})` : ""}`,
-      ...forwardYieldFigure(fundamentals, declared),
+      label: dividendYieldLabel(fundamentals?.dividendYieldBasis, bond),
+      ...forwardYieldFigure(fundamentals, distributions),
     },
+    ...bondFundMetrics(bond),
     { label: "Revenue (TTM)", ...reportedMoney(fundamentals?.revenue, reportingCurrency) },
     { label: "Net Income (TTM)", ...reportedMoney(fundamentals?.netIncome, reportingCurrency) },
     { label: "Operating Cash Flow (TTM)", ...reportedMoney(fundamentals?.operatingCashFlow, reportingCurrency) },
@@ -496,11 +670,36 @@ function fundamentalsNotes(
 // The share count is the market cap's basis: the cap is the count times the price, or a note says why not.
 const VALUATION_METRICS = new Set(["Market Cap", "Shares Outstanding", "Enterprise Value", "P/E (TTM)", "Forward P/E", "PEG", "EPS (TTM)"]);
 
-type FundamentalsReportData = TickerFinancials & { symbol: string; exchange?: string; declaredDividends?: ForwardYieldDeclarations | null };
+type FundamentalsReportData = TickerFinancials & {
+  symbol: string;
+  exchange?: string;
+  distributions?: DividendDistributions | null;
+  /** A bond fund's SEC yield, yield to worst and duration (loadReportBondFacts). */
+  bondFund?: FundBondFacts | null;
+  /** `fundamentals --tax-rate`: the tax-equivalent yield and muni/Treasury ratio. */
+  taxEquivalent?: TaxEquivalentAnalysis | null;
+  /** The filings behind the latest statements, and a newer quarter's results release. */
+  statementFilings?: StatementFilingsReport | null;
+  /** A bank holding company's deposits, uninsured share and CRE (`fundamentals` only). */
+  bank?: BankFiguresPayload | null;
+  /** In place of `bank`, for a bank whose figures could not be read. */
+  bankNote?: string | null;
+};
+
+/** "Latest quarter 2026-06-30, 10-Q filed 2026-08-06." and the newer quarter's results release, for the lines under a report's figures. */
+function statementFilingsNotes(report: StatementFilingsReport | null | undefined): string[] {
+  if (!report) return [];
+  const latest = report.latestQuarter ?? report.latestAnnual;
+  return [
+    ...latest ? [`Latest ${report.latestQuarter ? "quarter" : "annual period"} ${statementPeriodText(latest.date, latest)}.`] : [],
+    ...report.resultsRelease ? [resultsReleaseText(report.resultsRelease)] : [],
+  ];
+}
 
 /**
- * What a fund's report cannot show yet, and for a US listing where its SEC
- * filings are. Only for a fund: a stock's report says nothing of it.
+ * Where a fund's facts are: for a US listing, the ETF function (fee, NAV,
+ * premium, net assets); a fund listed elsewhere has none yet. Only for a
+ * fund: a stock's report says nothing of it.
  */
 function fundFactsNote(
   symbol: string,
@@ -509,8 +708,9 @@ function fundFactsNote(
   tickerFile: TickerRecord | null = null,
 ): string | null {
   if (resolveTickerInstrumentKind(tickerFile, financials) !== "fund") return null;
-  const note = "Fund facts (fee, NAV, premium) are not available yet";
-  return !exchange || isUsListingExchange(exchange) ? `${note}; try fn SEC ${symbol}.` : `${note}.`;
+  return !exchange || isUsListingExchange(exchange)
+    ? `Fund facts (fee, NAV, premium, net assets): fn ETF ${symbol}.`
+    : "Fund facts (fee, NAV, premium) cover US-listed funds only.";
 }
 
 /**
@@ -567,12 +767,12 @@ function fundamentalsReportMetrics(snapshot: FundamentalsReportData, view: "fund
     ? { text: `${formatCompact(capitalization.value)} ${capitalization.currency}`, value: capitalization.value, unit: capitalization.currency }
     : { text: "—" };
   const metrics = fundamentalsMetrics(quote, fundamentals, financials.profile, marketCap, computeTickerPriceReturns(financials), fundamentalsCurrency(financials),
-    undefined, snapshot.declaredDividends ?? null);
+    undefined, snapshot.distributions ?? null, snapshot.bondFund ?? null);
   if (view === "fundamentals") {
     return [...metrics, ...floatAndShortInterestMetrics(quote, fundamentals, financials.profile)]
       .filter((metric) => metric.text !== "—");
   }
-  const valued = metrics.filter(({ label, text }) => (VALUATION_METRICS.has(label) || label.startsWith("Dividend Yield")) && text !== "—");
+  const valued = metrics.filter(({ label, text }) => (VALUATION_METRICS.has(label) || isYieldMetric(label)) && text !== "—");
   // The share count follows the market cap it is the basis of.
   const shares = valued.filter((metric) => metric.label === "Shares Outstanding");
   const valuation = valued.flatMap((metric) => metric.label === "Shares Outstanding" ? [] : metric.label === "Market Cap" ? [metric, ...shares] : [metric]);
@@ -604,8 +804,29 @@ export function renderFundamentalsReport(
   if (lines.length === before) lines.push("", cliStyles.muted([`No ${view} reported for ${financials.symbol}.`, fund].filter(Boolean).join(" ")));
   else if (fund) lines.push(cliStyles.muted(fund));
   for (const note of fundamentalsNotes(atRegularSessionPrice(financials), metrics, quote?.currency)) lines.push(cliStyles.muted(note));
-  if (view === "fundamentals") appendTextSection(lines, "Description", profile?.description);
+  if (view === "fundamentals") {
+    if (financials.taxEquivalent) {
+      appendMetricSection(lines, "Tax-Equivalent Yield", taxEquivalentLines(financials.taxEquivalent).map((line) => [line.label, line.text]));
+    }
+    for (const note of statementFilingsNotes(financials.statementFilings)) lines.push(cliStyles.muted(note));
+    const bank = financials.bank ? bankSection(financials.bank, symbol, bankSectionContext(financials)) : null;
+    if (bank) {
+      appendMetricSection(lines, "Bank", bank.lines);
+      for (const note of bank.notes) lines.push(cliStyles.muted(note));
+    } else if (financials.bankNote) {
+      lines.push("", renderSection("Bank"), cliStyles.muted(financials.bankNote));
+    }
+    appendTextSection(lines, "Description", profile?.description);
+  }
   return lines.join("\n");
+}
+
+/** What the Bank section reads from the rest of the report: the newest statement period, and the annual report form. */
+function bankSectionContext(financials: FundamentalsReportData) {
+  return {
+    latestStatementDate: [...financials.quarterlyStatements, ...financials.annualStatements].map((row) => row.date).sort().at(-1) ?? null,
+    annualReportForm: financials.statementFilings?.annualReportForm ?? null,
+  };
 }
 
 /**
@@ -624,6 +845,14 @@ export function fundamentalsReportTables(
     view === "valuation" ? "Valuation" : "Fundamentals",
     metrics.map((metric) => ({ label: metric.label, value: metric.value, formatted: metric.text, unit: metric.unit })),
   )];
+  const bank = view === "fundamentals" && financials.bank
+    ? bankSection(financials.bank, financials.quote?.symbol ?? financials.symbol, bankSectionContext(financials))
+    : null;
+  if (view === "fundamentals" && financials.taxEquivalent) {
+    tables.push(exportEntriesTable("Tax-Equivalent Yield", taxEquivalentLines(financials.taxEquivalent)
+      .map((line) => ({ label: line.label, value: line.value, formatted: line.text, unit: line.unit }))));
+  }
+  if (bank) tables.push(exportEntriesTable("Bank", bank.entries));
   if (view === "fundamentals") {
     const quote = financials.quote;
     const profile = financials.profile;
@@ -645,6 +874,9 @@ export function fundamentalsReportTables(
           ? [`No ${view} reported for ${financials.symbol}.`]
           : fundamentalsNotes(atRegularSessionPrice(financials), metrics, financials.quote?.currency),
         ...fund ? [fund] : [],
+        ...view === "fundamentals" ? statementFilingsNotes(financials.statementFilings) : [],
+        ...bank?.notes ?? [],
+        ...!bank && view === "fundamentals" && financials.bankNote ? [financials.bankNote] : [],
       ],
     }),
   };
@@ -675,12 +907,19 @@ export async function buildTickerReport({
   listingNote,
   recentNews = [],
   recentSecFilings = [],
+  hiddenSecFilings = NOTHING_HIDDEN,
   futuresContract = null,
-  declaredDividends: declared = null,
+  distributions = null,
+  statementFilings = null,
+  bondFund = null,
 }: {
   symbol: string;
-  /** The declared distributions a forward yield dated ahead is named from (loadForwardYieldDeclarations). */
-  declaredDividends?: ForwardYieldDeclarations | null;
+  /** The filings behind the latest statements, and a newer quarter's results release. */
+  statementFilings?: StatementFilingsReport | null;
+  /** A bond fund's SEC yield, yield to worst and duration (loadReportBondFacts). */
+  bondFund?: FundBondFacts | null;
+  /** The distributions a dividend yield is read with (loadDividendDistributions). */
+  distributions?: DividendDistributions | null;
   /** The exchange the command named, as a canonical code. */
   listingExchange?: string;
   /** A futures symbol's contract terms and latest confirmed settlement. */
@@ -696,6 +935,8 @@ export async function buildTickerReport({
   listingNote?: string;
   recentNews?: NewsArticle[];
   recentSecFilings?: SecFilingItem[];
+  /** What `recentSecFilings` left out. */
+  hiddenSecFilings?: HiddenFilings;
 }): Promise<string> {
   const quote = financials.quote;
   const fundamentals = financials.fundamentals;
@@ -710,11 +951,13 @@ export async function buildTickerReport({
   lines.push(`${cliStyles.accent(quote?.symbol ?? symbol)} ${cliStyles.bold(name)}`);
   if (!quote) lines.push(cliStyles.muted(quoteNote ?? QUOTE_UNAVAILABLE));
 
+  const quoteCurrency = quote?.currency || financials.quoteMetadata?.currency || tickerFile?.metadata.currency;
+  // An index's level is in points, as `history` heads its bars, not in the currency its members trade in.
+  const indexLevel = isIndexLevel(quote?.instrumentType?.trim() || financials.quoteMetadata?.instrumentType?.trim() || tickerFile?.metadata.assetCategory);
   const summaryParts = [
     listingVenueLabel(listingExchange, quote, financials, tickerFile) || undefined,
-    (quote?.currency || financials.quoteMetadata?.currency || tickerFile?.metadata.currency)
-      ? `Currency ${quote?.currency || financials.quoteMetadata?.currency || tickerFile?.metadata.currency}` : undefined,
-    quote?.marketState ? marketStateLabel(quote.marketState) : undefined,
+    indexLevel ? INDEX_POINTS_LABEL : quoteCurrency ? `Currency ${quoteCurrency}` : undefined,
+    quoteMarketStateLabel(quote) ?? undefined,
     quote?.dataSource ? `Source ${quote.dataSource.toUpperCase()}` : undefined,
   ].filter((part): part is string => !!part);
   if (summaryParts.length > 0) {
@@ -777,6 +1020,7 @@ export async function buildTickerReport({
         extended.change,
       )
       : "—";
+    const volume = reportedQuoteVolume(quote);
     // A futures price is its latest trade; the exchange settlement is its own row, dated by its session.
     appendMetricSection(lines, "Quote", [
       ["Last", colorBySign(formatMarketPriceWithCurrency(session.price, quote.currency, quoteOptions), session.change)],
@@ -792,10 +1036,9 @@ export async function buildTickerReport({
         ? formatPriceRange(quote.low52w, quote.high52w, quote.currency, quoteOptions)
         : "—"],
       ["Bid / Ask", bidAskText(quote, quoteOptions)],
-      // A perpetual's price comes with no volume; its 0 means not reported, not no trades.
-      ["Volume", quote.volume != null && !(quote.volume === 0 && isCryptoVenuePerpetual(quote.instrumentType, quote.name))
-        ? formatNumber(quote.volume, 0) : "—"],
-      ["Updated", formatTimestamp(quote.lastUpdated)],
+      // An index's and a perpetual's 0 means none is counted, not no trades: no Volume row.
+      ["Volume", volume != null ? formatNumber(volume, 0) : "—"],
+      ["Updated", formatTimestamp(quoteHeadlineTime(quote))],
     ]);
 
     if (futuresContract) appendMetricSection(lines, "Contract", futuresContractMetrics(futuresContract, quote.symbol ?? symbol));
@@ -807,7 +1050,7 @@ export async function buildTickerReport({
   }
 
   const metrics = fundamentalsMetrics(quote, priced.fundamentals, profile, { text: marketCapText }, priceReturns, fundamentalsCurrency(financials),
-    { text: enterpriseValueText }, declared);
+    { text: enterpriseValueText }, distributions, bondFund);
   const beforeFundamentals = lines.length;
   appendMetricSection(lines, "Fundamentals", metricLines(metrics));
   for (const note of fundamentalsNotes(priced, metrics, quote?.currency)) lines.push(cliStyles.muted(note));
@@ -827,13 +1070,17 @@ export async function buildTickerReport({
   const statementCurrency = (row: FinancialStatement) => row.currency?.trim() || fallbackCurrency;
   const latestAnnual = latestFinancialPeriod(financials.annualStatements, row => row.date);
   if (latestAnnual) {
-    appendMetricSection(lines, `Latest Annual (${latestAnnual.date})`, buildStatementMetrics(latestAnnual, statementCurrency(latestAnnual)));
+    appendMetricSection(lines, `Latest Annual (${statementPeriodText(latestAnnual.date, statementFilings?.latestAnnual ?? null)})`,
+      buildStatementMetrics(latestAnnual, statementCurrency(latestAnnual)));
   }
 
   const latestQuarter = latestFinancialPeriod(financials.quarterlyStatements, row => row.date);
   if (latestQuarter) {
-    appendMetricSection(lines, `Latest Quarter (${latestQuarter.date})`, buildStatementMetrics(latestQuarter, statementCurrency(latestQuarter)));
+    appendMetricSection(lines, `Latest Quarter (${statementPeriodText(latestQuarter.date, statementFilings?.latestQuarter ?? null)})`,
+      buildStatementMetrics(latestQuarter, statementCurrency(latestQuarter)));
   }
+  // The statements stop a quarter short of the results the company has released.
+  if (statementFilings?.resultsRelease && (latestAnnual || latestQuarter)) lines.push(cliStyles.muted(resultsReleaseText(statementFilings.resultsRelease)));
 
   appendTextSection(lines, "Description", profile?.description);
 
@@ -858,12 +1105,13 @@ export async function buildTickerReport({
       return filingDate ? `Form ${filing.form}${METADATA_SEPARATOR}${filingDate}` : `Form ${filing.form}`;
     })(),
     meta: [
-      filing.items ? `Items ${filing.items}` : "",
+      // The items by number and name, so a results 8-K reads apart from another 8-K filed the same day.
+      filingItemsMeta(filing),
       getFilingDescription(filing) ?? "",
       filing.primaryDocument ? `Primary Document ${filing.primaryDocument}` : "",
     ],
     link: filing.filingUrl,
-  })));
+  })), hiddenFilingsNote(hiddenSecFilings));
 
   await appendTickerPositions(lines, tickerFile, quote, config, toBase);
 
@@ -879,17 +1127,25 @@ function buildTickerStructuredData({
   notes,
   recentNews,
   recentSecFilings,
+  hiddenSecFilings,
   futuresContract,
+  distributions,
+  statementFilings,
+  bondFund = null,
 }: {
   symbol: string;
   listing: CliListing;
+  statementFilings: StatementFilingsReport | null;
+  bondFund?: FundBondFacts | null;
   futuresContract: FuturesContractTermsPayload | null;
+  distributions: DividendDistributions | null;
   tickerFile: TickerRecord | null;
   financials: TickerFinancials;
   config: AppConfig;
   notes: string;
   recentNews: NewsArticle[];
   recentSecFilings: SecFilingItem[];
+  hiddenSecFilings: HiddenFilings;
 }) {
   const quote = financials.quote;
   const priceReturns = computeTickerPriceReturns(financials, tickerFile?.metadata.assetCategory);
@@ -930,16 +1186,21 @@ function buildTickerStructuredData({
       watchlists: formatWatchlistNames(config, tickerFile.metadata.watchlists),
       positions: tickerFile.metadata.positions,
     } : null,
-    fundamentals: financials.fundamentals || priceReturns.return1Y != null || priceReturns.return3Y != null ? exportedFundamentals({
+    fundamentals: financials.fundamentals || priceReturns.return1Y != null || priceReturns.return3Y != null ? exportedDividendFundamentals(exportedFundamentals({
       ...priced.fundamentals,
       ...priceReturns,
-    }) : undefined,
+    })!, distributions) : undefined,
+    // A bond fund's SEC yield, yield to worst and duration as its sponsor publishes them, each dated;
+    // fundamentals.dividendYield is then its distribution yield, not its SEC yield.
+    ...bondFund ? { bondFund } : {},
     profile: financials.profile,
     financialCurrency: financials.financialCurrency ?? null,
     latestAnnual: latestFinancialPeriod(financials.annualStatements, row => row.date) ?? null,
     latestQuarter: latestFinancialPeriod(financials.quarterlyStatements, row => row.date) ?? null,
     annualStatementCount: financials.annualStatements.length,
     quarterlyStatementCount: financials.quarterlyStatements.length,
+    // The form and filed date of the latest periods' filings, and a newer quarter's results released before its statements.
+    statementFilings,
     notes,
     recentNews: recentNews.map((item) => ({
       title: item.title,
@@ -955,7 +1216,13 @@ function buildTickerStructuredData({
       filingUrl: filing.filingUrl,
       primaryDocumentUrl: filing.primaryDocumentUrl ?? "",
       description: getFilingDescription(filing) ?? "",
+      items: secFilingItemCodes(filing.items) ?? "",
+      // The items by number and name, as the text report shows them.
+      itemsLabel: currentReportItemsLabel(filing.items) ?? "",
     })),
+    // Left out of recentSecFilings unless --all: the pricing supplements a bank files for its notes,
+    // and the 13D/13G the company filed as a holder of other companies.
+    recentSecFilingsHidden: hiddenSecFilings,
   };
 }
 
@@ -974,7 +1241,7 @@ async function quoteUnavailableNote(dataProvider: MarketContext["dataProvider"],
 export async function ticker(symbol: string, dependencies: TickerCommandDependencies = {}) {
   const initMarketDataFn = dependencies.initMarketData ?? initMarketData;
   const failCommand = dependencies.fail ?? fail;
-  await withMarketData(initMarketDataFn, async ({ config, store, dataProvider, dataDir }) => {
+  await withMarketData(initMarketDataFn, async ({ config, store, dataProvider, dataDir, statementSources }) => {
     let listing: CliListing;
     try {
       listing = await resolveCliListing(symbol, dependencies.exchange, { store, dataProvider });
@@ -989,6 +1256,17 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
     const toBase = createBaseConverter(dataProvider, config.baseCurrency);
     // A bare symbol's venues load beside its research, to name the company it was read as when several list it.
     const venues = loadBareVenues(listing, { store, dataProvider });
+    // So does what became of the symbol, read from the research's quote as `history` reads it: a
+    // company that moved (HFC became DINO), with nothing new listed there, has no profile of its own.
+    const researchQuote = Promise.withResolvers<Quote | null>();
+    const fate = listingFateLoader(listing, { dataProvider }, researchQuote.promise);
+    const request: ListingDataRequest = { command: "ticker", noun: "research", fate };
+    /** Nothing to show: a company that moved is under its new symbol. */
+    const failIfMovedAway = async () => {
+      researchQuote.resolve(null);
+      const moved = movedAwayChange((await fate()).change);
+      if (moved) failMovedSymbol(moved, request);
+    };
 
     let financials: TickerFinancials | null = null;
     try {
@@ -996,6 +1274,7 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
     } catch (error) {
       // A known exchange the symbol is not listed on: say where it is.
       await failIfNotTraded(listing, { store, dataProvider }, { fail: failCommand });
+      await failIfMovedAway();
       const reason = error instanceof Error ? error.message : String(error);
       // A symbol no listing carries is not a failed fetch, and the message already names it.
       if (isNotATickerMessage(reason)) failCommand(reason);
@@ -1016,16 +1295,29 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
     );
     if (!financials || (!hasResearchData && !tickerFile?.metadata.positions.some((position) => position.shares !== 0))) {
       await failIfNotTraded(listing, { store, dataProvider }, { fail: failCommand });
+      await failIfMovedAway();
       failCommand(`No research data available for ${normalized}.`);
     }
     const resolvedFinancials = financials as TickerFinancials;
     const quote = resolvedFinancials.quote;
+    // The quote is the old line's (stopped, or named for the company that left): the profile and figures are another security's.
+    researchQuote.resolve(quote ?? null);
+    const { moved } = await fate();
+    if (moved) failMovedSymbol(moved, request);
 
     const notesFiles = new NotesFiles(dataDir);
     const listingName = listingIdentity(listing, quote).name;
-    // The text report's yield basis, read beside the rest for a forward yield dated ahead only; it never fails the report.
-    const declarations = dependencies.printResult ? null
-      : loadForwardYieldDeclarations(dataProvider, { symbol: requestSymbol, exchange }, resolvedFinancials.fundamentals);
+    // The yield's distributions, read beside the rest when a trailing yield, a forward basis or its lapse needs them; they never fail the report.
+    const distributions = loadDividendDistributions(dataProvider, { symbol: requestSymbol, exchange }, resolvedFinancials,
+      { declared: !dependencies.printResult });
+    // A bond fund's SEC yield, yield to worst and duration, beside its distribution yield.
+    const bondFund = loadReportBondFacts(requestSymbol,
+      quote?.tradingExchangeName || exchange || quote?.listingExchangeName || quote?.exchangeName || tickerFile?.metadata.exchange,
+      resolvedFinancials, tickerFile);
+    const statementFilings = loadStatementFilings(statementSources, { symbol: requestSymbol, exchange }, {
+      quarter: latestFinancialPeriod(resolvedFinancials.quarterlyStatements, (row) => row.date),
+      annual: latestFinancialPeriod(resolvedFinancials.annualStatements, (row) => row.date),
+    });
     const [notesResult, newsResult, secFilingsResult] = await Promise.allSettled([
       notesFiles.load(tickerFile?.metadata.ticker ?? normalized),
       dataProvider.getNews({
@@ -1040,15 +1332,16 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
       // Outside the US the lookup checks the SEC registrant against the listing's company,
       // and refuses another company's filings.
       shouldFetchSecFilings(requestSymbol, exchange, tickerFile, resolvedFinancials) && dataProvider.getSecFilings
-        ? dataProvider.getSecFilings(requestSymbol, SEC_FILING_LIMIT, exchange || quote?.exchangeName || "",
-          listingName ? { listingName } : undefined)
-        : Promise.resolve([]),
+        ? loadRecentSecFilings((count) => dataProvider.getSecFilings!(requestSymbol, count, exchange || quote?.exchangeName || "",
+          listingName ? { listingName } : undefined), dependencies.allFilings === true)
+        : Promise.resolve({ filings: [], hidden: NOTHING_HIDDEN }),
     ]);
 
     const futuresContract = await cliFuturesContract(quote?.symbol ?? requestSymbol, quote?.instrumentType, dependencies.futuresContract);
     const notes = notesResult.status === "fulfilled" ? notesResult.value : "";
     const recentNews = newsResult.status === "fulfilled" ? newsResult.value : [];
-    const recentSecFilings = secFilingsResult.status === "fulfilled" ? secFilingsResult.value : [];
+    const { filings: recentSecFilings, hidden: hiddenSecFilings } = secFilingsResult.status === "fulfilled"
+      ? secFilingsResult.value : { filings: [], hidden: NOTHING_HIDDEN };
 
     // The quote is the feed in this report; without one, the fundamentals date it.
     const freshness = quote ? quotesFreshness([quote]) : fundamentalsFreshness(resolvedFinancials);
@@ -1072,7 +1365,11 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
           notes,
           recentNews,
           recentSecFilings,
+          hiddenSecFilings,
           futuresContract,
+          distributions: await distributions,
+          statementFilings: await statementFilings,
+          bondFund: await bondFund,
         }),
       });
       return;
@@ -1090,8 +1387,11 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
         listingNote,
         recentNews,
         recentSecFilings,
+        hiddenSecFilings,
         futuresContract,
-        declaredDividends: await declarations,
+        distributions: await distributions,
+        statementFilings: await statementFilings,
+        bondFund: await bondFund,
     }));
     if (freshness) console.log(`\n${cliFreshnessFooter(freshness)}`);
   });

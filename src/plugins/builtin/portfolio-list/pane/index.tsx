@@ -13,7 +13,7 @@ import {
 import { useTickerSourceActivate } from "../../../../react/ticker-source";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { buildPortfolioFinancialsMap } from "../../../../market-data/portfolio-financials";
-import { useAppVisible } from "../../../../state/app/activity";
+import { useAppActive, useAppVisible, usePaneVisible } from "../../../../state/app/activity";
 import { tf } from "../../../../i18n";
 import { useDialog } from "../../../../ui/dialog";
 import {
@@ -36,6 +36,7 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { InstrumentRef } from "../../../../market-data/request-types";
 import {
   calculatePortfolioSummaryTotals,
+  getSortValue,
   resolveCollectionSortPreference,
   resolvePortfolioTotalsCurrency,
   type ColumnContext,
@@ -52,6 +53,7 @@ import {
   renderSummarySegments,
 } from "../summary";
 import { usePortfolioAccountState } from "../summary/live-accounts";
+import { useOfflineBrokerFooter } from "../../shared/broker-reconnect";
 import {
   getCollectionEntries,
   getPortfolioPaneSettings,
@@ -61,13 +63,14 @@ import {
   type PortfolioViewMode,
 } from "../settings";
 import { useQuoteFlashMap } from "../../../../components/quote-flash";
+import { sinceLastSeenAfterMs, useSinceLastSeen } from "../since-last-seen";
 import { PortfolioTickerTable } from "../table";
 import { PortfolioGrid } from "../grid";
 import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
 import { useCursorNeighborPrefetch } from "../use-cursor-neighbor-prefetch";
 import { getSharedRegistry } from "../../../registry";
 import { usePluginAppActions } from "../../../runtime";
-import { isManualPortfolio } from "../mutations";
+import { isManualPortfolio } from "../../../../portfolio/mutations";
 import {
   cursorAfterRemoval,
   removableCollection,
@@ -92,15 +95,17 @@ import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 import { useThrottledMemo } from "../use-throttled-memo";
 import { perpetualDisplaySymbol, perpetualListing, perpetualVenueName } from "../../../../tickers/perpetual-listing";
 import { useColumnClock } from "../use-column-clock";
-import { liveMarketCapitalization } from "../live-valuation";
+import { liveMarketCapitalization } from "../../../../market-data/quotes/live-valuation";
 import { hasUnknownOptionMultiplier } from "../../../../portfolio/position-metrics";
+import { withFuturesContractSizes } from "../../../../portfolio/futures-positions";
+import { usePortfolioFuturesTerms } from "./futures-terms";
 import {
-  allocationTotal,
+  allocationWeightBase,
   buildPortfolioAllocation,
   CASH_SYMBOL,
   hasTargetWeights,
   resolvePortfolioCash,
-} from "../allocation";
+} from "../../../../portfolio/allocation";
 
 /** Columns that need the portfolio's total. */
 const ALLOCATION_COLUMN_IDS = new Set(["weight", "drift", "trade", "trade_value"]);
@@ -164,9 +169,15 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const viewMode: PortfolioViewMode = isPortfolioTab ? paneSettings.viewMode : "table";
   const valuationBasis = paneSettings.valueAtClose ? "regular-close" as const : "latest-print" as const;
 
-  const tickers = useMemo(
+  const collectionTickers = useMemo(
     () => getCollectionTickersFromConfig(config, tickersBySymbol, activeCollectionId),
     [activeCollectionId, config, tickersBySymbol],
+  );
+  // A future counts contracts of the size its terms give, and at the close is valued at its settlement.
+  const futuresTerms = usePortfolioFuturesTerms(collectionTickers, { enabled: isPortfolioTab, settlement: valuationBasis === "regular-close" });
+  const tickers = useMemo(
+    () => withFuturesContractSizes(collectionTickers, futuresTerms.terms),
+    [collectionTickers, futuresTerms.terms],
   );
   const financialsInstrumentOptions = useMemo(() => ({
     portfolioId: isPortfolioTab ? activeCollectionId : undefined,
@@ -180,14 +191,16 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const flashSymbols = useQuoteFlashMap(financialsMap, valueFlashingEnabled);
 
   const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
-  const { accountState, accountsError, brokerError } = usePortfolioAccountState(currentPortfolio, accountStateInput);
+  const { accountState, accountsError, offline } = usePortfolioAccountState(currentPortfolio, accountStateInput);
   const brokerPortfolio = isPortfolioTab && !!currentPortfolio?.brokerInstanceId;
+  // The positions stay as last synced while the broker is away, dated, with one key to bring it back.
+  const offlineBrokerFooter = useOfflineBrokerFooter(brokerPortfolio ? offline : null);
   const portfolioTargets = currentPortfolio?.targetWeights;
   const columns = useMemo(
     () => resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab, { targetWeights: hasTargetWeights(currentPortfolio) }),
     [currentPortfolio, isPortfolioTab, paneSettings.columnIds],
   );
-  const supplementalData = usePortfolioSupplementalData(tickers, columns, appActive);
+  const supplementalData = usePortfolioSupplementalData(tickers, columns, appActive, financialsMap);
   // One lookup for the whole list, only while a perpetual column is on screen.
   const showsPerpetuals = viewMode === "table" && columns.some((column) => PERPETUAL_COLUMN_IDS.has(column.id));
   const perpetuals = useListPerpetuals(tickers, showsPerpetuals);
@@ -236,13 +249,16 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       isPortfolioTab,
       activeCollectionId,
       valuationBasis,
+      futuresTerms.terms,
     ).allocationHoldings : undefined,
     [financialsMap],
-    [activeCollectionId, exchangeRates, isPortfolioTab, needsWeightTotal, tickers, totalsCurrency, valuationBasis],
+    [activeCollectionId, exchangeRates, futuresTerms.terms, isPortfolioTab, needsWeightTotal, tickers, totalsCurrency, valuationBasis],
     WEIGHT_TOTAL_THROTTLE_MS,
   );
-  // Priced holdings plus cash, as `portfolio show` totals them.
-  const portfolioTotalMarketValue = weightHoldings ? allocationTotal(weightHoldings, cashValue) ?? undefined : undefined;
+  // Priced holdings plus cash, or a hedged book's gross exposure, as `portfolio show` weighs them.
+  const weightBase = weightHoldings ? allocationWeightBase(weightHoldings, cashValue) : null;
+  const portfolioWeightBase = weightBase?.value ?? undefined;
+  const portfolioWeightBasis = weightBase?.basis;
 
   // The header, footer and notices move with live quotes a few times a second,
   // not on every tick.
@@ -255,9 +271,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       isPortfolioTab,
       activeCollectionId,
       valuationBasis,
+      futuresTerms.terms,
     ),
     [financialsMap],
-    [activeCollectionId, exchangeRates, isPortfolioTab, tickers, totalsCurrency, valuationBasis],
+    [activeCollectionId, exchangeRates, futuresTerms.terms, isPortfolioTab, tickers, totalsCurrency, valuationBasis],
     FOOTER_TOTALS_THROTTLE_MS,
   );
 
@@ -267,7 +284,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     baseCurrency: totalsCurrency,
     exchangeRates,
     valuationBasis,
-    portfolioTotalMarketValue,
+    portfolioWeightBase,
+    portfolioWeightBasis,
     portfolioTargets,
     supplementalVersion: supplementalData.version,
     analystResearch: supplementalData.analystResearch,
@@ -275,13 +293,17 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     earningsEvents: supplementalData.earningsEvents,
     perpetuals: perpetuals.markets,
     perpetualsVersion: perpetuals.version,
+    futuresTerms: futuresTerms.terms,
+    futuresTermsVersion: futuresTerms.version,
   }), [
     activeCollectionId,
     exchangeRates,
+    futuresTerms,
     isPortfolioTab,
     perpetuals,
     portfolioTargets,
-    portfolioTotalMarketValue,
+    portfolioWeightBase,
+    portfolioWeightBasis,
     supplementalData,
     totalsCurrency,
     valuationBasis,
@@ -315,6 +337,32 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }),
     [orderedSymbols, tickerBySymbol],
   );
+
+  // What LAST shows for each row, snapshotted when the table goes out of sight.
+  const priceColumn = viewMode === "table" ? columns.find((column) => column.id === "price") : undefined;
+  const lastSeenInputsRef = useRef({ tickers, financialsMap, columnContext });
+  lastSeenInputsRef.current = { tickers, financialsMap, columnContext };
+  const readLastPrices = useCallback(() => {
+    const prices = new Map<string, number>();
+    const inputs = lastSeenInputsRef.current;
+    if (!priceColumn) return prices;
+    for (const ticker of inputs.tickers) {
+      const price = getSortValue(priceColumn, ticker, inputs.financialsMap.get(ticker.metadata.ticker), inputs.columnContext);
+      if (typeof price === "number") prices.set(ticker.metadata.ticker, price);
+    }
+    return prices;
+  }, [priceColumn]);
+  const appFocused = useAppActive();
+  const paneVisible = usePaneVisible();
+  // Away is out of sight, not out of focus: a PF beside the focused pane is still watched.
+  const { recap: sinceLastSeen, dismiss: dismissSinceLastSeen } = useSinceLastSeen({
+    paneKey: paneInstance?.instanceId,
+    present: appFocused && paneVisible,
+    afterMs: priceColumn ? sinceLastSeenAfterMs(paneSettings.sinceLastSeen) : null,
+    readPrices: readLastPrices,
+    pricesVersion: financialsMap,
+    resetKey: `${activeCollectionId}|${viewMode}`,
+  });
 
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
@@ -441,6 +489,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   // bind their own keys in both views; the table only adds Shift+Enter.
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
+    // The next key clears the moves since last seen, as a click in the table does.
+    dismissSinceLastSeen();
 
     const key = event.name;
     const isEnter = key === "enter" || key === "return";
@@ -454,7 +504,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
 
     return false;
-  }, [focused, openTickerInNewPane, safeSelectedIdx, sortedTickers]);
+  }, [dismissSinceLastSeen, focused, openTickerInNewPane, safeSelectedIdx, sortedTickers]);
 
   useEffect(() => {
     if (activeCollectionId !== currentCollectionId) {
@@ -501,7 +551,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     accountState: summaryAccountState,
     accountStatusText: accountsError
       ? `Accounts unavailable: ${accountsError}`
-      : brokerPortfolio ? brokerError ?? (accountState ? undefined : "Acct missing") : undefined,
+      : brokerPortfolio && !accountState ? "Acct missing" : undefined,
+    brokerOffline: brokerPortfolio && offline ? { dated: offline.syncedAt != null } : undefined,
     financialsMap,
     isPortfolioTab,
     refreshingSize,
@@ -510,9 +561,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }), [financialsMap, sortedTickers], [
     accountState,
     accountsError,
-    brokerError,
     brokerPortfolio,
     isPortfolioTab,
+    offline,
     portfolioSummaryTotals,
     refreshingSize,
     summaryAccountState,
@@ -590,11 +641,14 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("portfolio-list", () => ({
     info: [
+      ...offlineBrokerFooter.asOf,
       ...summaryFooterInfo,
+      ...offlineBrokerFooter.status,
       ...(fxStatusText && !fxWarning ? [{ id: "fx", parts: [{ text: `FX ${fxStatusText}`, tone: "muted" as const }] }] : []),
       ...(showsPerpetuals && perpetuals.stale ? [{ id: "perpetuals", parts: [{ text: "perpetuals stale", tone: "warning" as const }] }] : []),
     ],
     hints: [
+      ...offlineBrokerFooter.hints,
       ...(removalCollection
         ? [{
             id: "delete",
@@ -629,6 +683,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     fxStatusText,
     fxWarning,
     isPortfolioTab,
+    offlineBrokerFooter,
     perpetuals.stale,
     removalCollection,
     removeSelectedTicker,
@@ -710,7 +765,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           financialsMap={financialsMap}
           columnContext={columnContext}
           flashSymbols={flashSymbols}
+          sinceLastSeen={sinceLastSeen}
           onRootKeyDown={handleTableKeyDown}
+          onTableMouseDown={dismissSinceLastSeen}
           onVisibleRangeChange={handleVisibleRangeChange}
           visibleRangeBuffer={3}
           resetScrollKey={activeCollectionId}

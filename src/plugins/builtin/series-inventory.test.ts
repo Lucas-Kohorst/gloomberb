@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getLoadablePlugins } from "../catalog";
 import { SeriesRegistry, seriesExpression } from "../../series/registry";
 import { parseSeriesExpression } from "./chart-composer/series-expression";
+import { parseFormulaExpression } from "./chart-composer/formula";
 import { SERIES_INVENTORY } from "./series-inventory";
 
 const BUILTIN_DIR = import.meta.dir;
@@ -15,8 +16,10 @@ const NOT_MODULES = new Set(["shared"]);
 // Ember publishes open energy data under CC-BY-4.0, whose attribution the day-ahead series carry; EEX is
 // the EU ETS common auction platform, which publishes the auction results; the BIS publishes the central
 // bank policy rates the policy-rate series chart outside the US and the euro area; GIE AGSI+ is the
-// storage operators' transparency platform, which asks to be named as the source of its data.
-const PUBLISHERS = new Set(["FRED", "BIS", "EIA", "CFTC", "FINRA", "Bundesbank", "Bank of England", "Japan Ministry of Finance", "Bank of Canada", "ECB", "U.S. Treasury", "SEC", "Ember", "EEX", "GIE AGSI+"]);
+// storage operators' transparency platform, which asks to be named as the source of its data; IMF
+// PortWatch publishes the chokepoint transits, and the IMF's terms ask for attribution; TurkStat, Türkiye's
+// statistics institute, compiles the Turkish CPI the central bank republishes.
+const PUBLISHERS = new Set(["FRED", "BIS", "EIA", "CFTC", "FINRA", "Bundesbank", "Bank of England", "Japan Ministry of Finance", "Bank of Canada", "ECB", "U.S. Treasury", "SEC", "Ember", "EEX", "GIE AGSI+", "IMF PortWatch", "TurkStat"]);
 const SAMPLE_INPUTS = { ticker: "AAPL", option: "AAPL260618C00200000", crypto: "BTC-USD" } as const;
 
 function sourceFiles(dir: string): string[] {
@@ -83,7 +86,8 @@ describe("built-in series inventory", () => {
       if (seen.has(key)) problems.push(`${definition.id} charts the same as ${seen.get(key)}`);
       seen.set(key, definition.id);
       const sample = definition.input ? template.replaceAll("{ticker}", SAMPLE_INPUTS[definition.input]) : template;
-      if (!parseSeriesExpression(sample)) problems.push(`${definition.id}: ${sample} does not parse`);
+      // A formula of series (a crack spread) charts as one line.
+      if (!parseSeriesExpression(sample) && !parseFormulaExpression(sample)) problems.push(`${definition.id}: ${sample} does not parse`);
       if (definition.publisher && !PUBLISHERS.has(definition.publisher)) problems.push(`${definition.id}: publisher ${definition.publisher}`);
       if (!definition.group) problems.push(`${definition.id} has no group`);
     }

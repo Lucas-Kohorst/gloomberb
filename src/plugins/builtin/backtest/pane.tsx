@@ -16,6 +16,7 @@ import {
   type SelectControl,
 } from "../../../components";
 import { scalarPoint, staticSeries } from "../../../components/chart/static/series";
+import { barsPerYearLabel } from "../../../market-data/bars-per-year";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useAsyncResource } from "../../../react/async-resource";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
@@ -26,10 +27,13 @@ import { Box, useUiCapabilities } from "../../../ui";
 import { FILL_REST } from "../../../components/ui/fill";
 import { useAutoRefresh } from "../../../react/auto-refresh";
 import { loadBacktestHistory } from "./client";
-import { runBacktest, type BacktestResult, type BacktestTrade } from "./engine";
-import { formatStat, SUMMARY_ROWS, type SummaryRow } from "./format";
+import type { BacktestTrade } from "./engine";
+import { backtestEquityCsv } from "./export";
+import { formatStat, PRICE_RETURN_NOTE, SUMMARY_ROWS, type SummaryRow } from "./format";
 import { BACKTEST_PRESETS, DEFAULT_PRESET, lookbackYears, resolveRules } from "./presets";
+import { backtestPriceUnit, backtestReport } from "./report";
 import { parseRule } from "./rules";
+import { continuationNote, runHistoryBacktest, type HistoryBacktestResult } from "./window";
 
 const TABS = [{ value: "summary", label: "Summary" }, { value: "trades", label: "Trades" }];
 // Growth multiples on a log axis keep a 140x run and a flat decade readable together.
@@ -77,12 +81,15 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
   const colors = useThemeColors();
   const paneId = usePaneInstanceId();
   const { openPaneSettings } = usePluginAppActions();
-  const { symbol, ticker, error: identityError } = usePaneTicker();
+  const { symbol, ticker, financials, error: identityError } = usePaneTicker();
   const [preset, setPreset] = usePaneSettingValue("preset", DEFAULT_PRESET.id);
   const [entryText] = usePaneSettingValue("entry", DEFAULT_PRESET.entry);
   const [exitText] = usePaneSettingValue("exit", DEFAULT_PRESET.exit);
   const [lookback, setLookback] = usePaneSettingValue("lookback", "10");
   const [costText] = usePaneSettingValue<string | number>("cost", "5");
+  // Set by `shot BT --end` and `--include-partial`; the pane has no control for them.
+  const [endText] = usePaneSettingValue<string>("end", "");
+  const [includePartial] = usePaneSettingValue<boolean>("includePartial", false);
   const [view, setView] = usePluginPaneState("backtest:view", "summary");
   const [selectedTrade, setSelectedTrade] = usePluginPaneState("backtest:trade", 0);
   const strategyControl = useRef<SelectControl>(null);
@@ -95,19 +102,32 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
   const rules = useMemo(() => readRules(preset, entryText, exitText), [preset, entryText, exitText]);
   const ruleStrings = resolveRules(preset, entryText, exitText);
   const costBps = Math.min(100, Math.max(0, Number(costText) || 0));
-  const run = useMemo((): { result: BacktestResult | null; error: string | null } => {
+  const runWindow = useMemo(() => ({ end: typeof endText === "string" ? endText.trim() || null : null, includePartial: includePartial === true }),
+    [endText, includePartial]);
+  const run = useMemo((): { result: HistoryBacktestResult | null; error: string | null } => {
     if (!history.data || !rules.entry || !rules.exit) return { result: null, error: null };
     try {
-      return { result: runBacktest(history.data.bars, rules.entry, rules.exit, { lookbackYears: lookbackYears(lookback), costBps }), error: null };
+      const options = { lookbackYears: lookbackYears(lookback), costBps, ...runWindow };
+      return { result: runHistoryBacktest(history.data, rules.entry, rules.exit, options), error: null };
     } catch (error) {
       return { result: null, error: error instanceof Error ? error.message : "Backtest failed" };
     }
-  }, [history.data, rules, lookback, costBps]);
+  }, [history.data, rules, lookback, costBps, runWindow]);
   const result = run.result;
+  const continuation = instrument ? continuationNote(instrument.symbol, instrument.exchange) : null;
+  // Export CSV writes the daily curve `fn BT --csv --equity` prints for this run, whichever table is in view;
+  // the table reads it when the export runs. Without a run the table's own rows export.
+  const exportCsv = result && symbol ? () => {
+    const quote = financials?.quote ?? (ticker?.metadata.currency ? { currency: ticker.metadata.currency } : null);
+    return backtestEquityCsv(backtestReport({
+      symbol, exchange: instrument?.exchange ?? null, rules: ruleStrings, costBps, window: runWindow,
+      unit: backtestPriceUnit(symbol, quote), result, equity: true,
+    }), symbol);
+  } : undefined;
 
   const series = useMemo(() => {
     if (!result) return [];
-    const points = (pick: (row: BacktestResult["equity"][number]) => number) =>
+    const points = (pick: (row: HistoryBacktestResult["equity"][number]) => number) =>
       result.equity.map((row) => scalarPoint(new Date(row.date), pick(row)));
     // Buy-and-hold first so the strategy line draws on top where they coincide.
     return [
@@ -131,13 +151,20 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
   // the reload is the pane's own key.
   usePaneRefreshKey(() => void history.reload(), { focused });
 
-  const notices = [identityError, history.error, rules.error, run.error, ...(result?.warnings ?? [])]
+  const notices = [identityError, history.error, rules.error, run.error, ...(result?.warnings ?? []), ...(result && continuation ? [continuation] : [])]
     .filter((value): value is string => !!value);
   usePaneNoticeFooter({ registrationId: "backtest-notices", notices: [...new Set(notices)], focused });
   usePaneFooter("backtest", () => ({
     info: [
       ...(history.loading ? [{ id: "loading", parts: [{ text: "loading history", tone: "muted" as const }] }] : []),
-      ...(result ? [{ id: "window", parts: [{ text: `${result.start} to ${result.end} · ${result.sessions} sessions`, tone: "muted" as const }] }] : []),
+      // The metric column reads "Price return"; what that leaves out is said here, once,
+      // and kept as the row narrows: the session count and bar rate give way first.
+      ...(result ? [{ id: "window", parts: [{
+        text: `${result.start} to ${result.end} · ${result.sessions} sessions · ${barsPerYearLabel(result.barsPerYear)} · ${PRICE_RETURN_NOTE}`, tone: "muted" as const,
+      }], variants: [
+        [{ text: `${result.start} to ${result.end} · ${PRICE_RETURN_NOTE}`, tone: "muted" as const }],
+        [{ text: PRICE_RETURN_NOTE, tone: "muted" as const }],
+      ] }] : []),
     ],
     hints: [
       { id: "edit", key: "e", label: "dit rules", onPress: edit },
@@ -163,9 +190,10 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
       selection={{ kind: "none" }}
       sortColumnId={null}
       sortDirection="asc"
+      exportCsv={exportCsv}
       emptyStateTitle="No statistics"
       renderCell={(row, column) => {
-        if (column.id === "metric") return { text: row.label };
+        if (column.id === "metric") return { text: row.paneLabel ?? row.label };
         const value = column.id === "strategy" ? row.strategy(result!) : row.benchmark?.(result!) ?? null;
         const text = formatStat(value);
         const signed = value?.kind === "signed" && value.value != null && value.value !== 0;
@@ -233,6 +261,7 @@ export function BacktestPane({ width, height, focused }: PaneProps) {
             selection={{ kind: "index", selectedIndex: selectedTrade, onChange: setSelectedTrade }}
             sortColumnId={null}
             sortDirection="desc"
+            exportCsv={exportCsv}
             renderCell={(trade, column) => ({
               text: column.id === "entryDate" ? trade.entryDate
                 : column.id === "entryPrice" ? trade.entryPrice.toFixed(2)

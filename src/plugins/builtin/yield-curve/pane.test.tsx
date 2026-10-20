@@ -85,15 +85,31 @@ test("the chart names the curve and its look-backs, and the tenors show how far 
   // The tab strip, then the query bar, then the figures.
   expect(lines()[0]).toMatch(/Curve +World/);
   expect(lines()[2]).toMatch(/2s10s \+40bp +\+7bp 1D +3m10y \+70bp +\+12bp 1D +5s30s \+40bp +\+7bp 1D/);
-  expect(lines()[3]).toMatch(/Yield % by maturity {3}● Yield {3}● 1W ago {3}● 1M ago/);
+  expect(lines()[3]).toMatch(/Par yield % by maturity {3}● Par yield {3}● 1W ago {3}● 1M ago/);
   // A log axis gives the short end room to label its tenors.
   expect(frameText).toMatch(/\n1M +3M +6M +1Y .*10Y +30Y +\n/);
-  expect(frameText).toMatch(/TENOR +YIELD +1D CHG +1W CHG +1M CHG/);
+  expect(frameText).toMatch(/TENOR +PAR YIELD +1D CHG +1W CHG +1M CHG/);
   // 1M is 4.00% against 3.95% the day before, 3.90% a week back and 4.20% a month back.
   expect(frameText).toMatch(/1M +4\.00% +\+5bp +\+10bp +-20bp/);
   expect(readout().trim()).toBe("1M 4.00%  1W ago +10bp  1M ago -20bp");
   // Every look-back came from one request per tenor.
   expect(historySpy).toHaveBeenCalledTimes(TREASURY_MATURITIES.length);
+});
+
+test("a stored curve from a server that does not rank moves shows its spreads and no move figures", async () => {
+  const points = (offset: number) => TREASURY_MATURITIES.map(({ maturity, years }, index) => ({ tenor: maturity, years, yield: 4 + offset + index / 10 }));
+  // No `moves`: the response of a server from before move ranks.
+  storedSpy?.mockResolvedValue({
+    curve: { id: "us", label: "US Treasury", country: "US", basis: "par", couponsPerYear: 2 },
+    requestedDate: null, asOf: "2026-09-24", points: points(0),
+    lookbacks: [{ id: "1D", requestedDate: "2026-09-23", asOf: "2026-09-23", points: points(-0.05) }],
+    spreads: [{ id: "2s10s", short: "2Y", long: "10Y", value: 0.6, change1d: 0, percentile1y: 50, observations1y: 250 }],
+    checkedAt: null,
+  });
+  await renderLatest(90, 28);
+  expect(lines()[2]).toMatch(/2s10s \+60bp +0bp 1D · 50 pctl 1Y/);
+  expect(tui.frame()).not.toMatch(/pctl since|1M 1D|1M 1W/);
+  expect(tui.frame()).toMatch(/1M +4\.00% +\+5bp/);
 });
 
 test("the selected tenor is the curve's point, from the table and from the chart", async () => {
@@ -123,7 +139,7 @@ test("a short pane keeps the tenors and turns the chart into a strip, then drops
   let rows = lines();
   // The first spread keeps its row above the strip.
   expect(rows[2]).toMatch(/^ 2s10s \+40bp/);
-  expect(rows[3]).toMatch(/^ ● Yield % .*1M 4\.00%/);
+  expect(rows[3]).toMatch(/^ ● Par yield % .*1M 4\.00%/);
   expect(rows[4]).toMatch(/TENOR/);
   expect(rows.filter((line) => /^ \d+[MY] +\d\.\d\d%/.test(line)).length).toBeGreaterThanOrEqual(4);
   await tui.destroy();

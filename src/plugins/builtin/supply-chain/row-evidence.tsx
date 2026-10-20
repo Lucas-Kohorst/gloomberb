@@ -6,7 +6,7 @@ import { scrollByLines } from "../../../state/pane-scroll-registry";
 import { useThemeColors } from "../../../theme/theme-context";
 import { Box, Text, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
-import { counterpartyKind, counterpartyKindLabel, disclosedValue, dollars, nativeValue, ROLE_COLORS, roleLabel, shareParts, sourceLabel } from "./model";
+import { counterpartyKind, counterpartyKindLabel, disclosedValue, disclosureText, dollars, isTaggedFact, nativeValue, periodText, ROLE_COLORS, roleLabel, shareParts, sourceLabel } from "./model";
 import { canShowQuote, corroborationLabel, evidenceDate, evidenceLabel, isUnconfirmed, tierLabel } from "./trust";
 import { DisclosureQuote } from "./disclosure-quote";
 
@@ -49,7 +49,7 @@ export function SupplySources({ row, width, onOpenSource }: { row: SupplyRow; wi
       </Section>) : <>
       <KeyValueRow label="Disclosure" value={`${sourceLabel(row)} · filed ${row.filedDate ?? "--"}`} labelWidth={20} />
       {row.quoteMatchMode ? <KeyValueRow label="Evidence match" value={row.quoteMatchMode === "exact" ? "Exact text" : row.quoteMatchMode === "whitespace" ? "Whitespace normalized" : "Unicode and whitespace normalized"} labelWidth={20} /> : null}
-      <DisclosureQuote role={row.role} quote={row.quote} quoteLanguage={row.quoteLanguage} width={width} />
+      <DisclosureQuote role={row.role} quote={disclosureText(row)} quoteLanguage={row.quoteLanguage} width={width} label={isTaggedFact(row) ? "Tagged in the filing" : undefined} />
       {row.quoteGloss ? <SourceGloss text={row.quoteGloss} width={width} /> : null}
       {sourceLink(row.filingUrl, `Open ${row.form ?? "filing"}${row.filedDate ? ` filed ${row.filedDate}` : ""}`, `Open ${row.form ?? "source"} filing`)}
     </>}
@@ -72,7 +72,7 @@ export function RowEvidence({ row, focusId, width, height, focused }: { row: Sup
   const figures: StatItem[] = [
     ...(share ? [{ id: "share", label: "Share", value: share.value, detail: share.basis }] : []),
     ...(native || row.usd !== null ? [{ id: "value", label: "Value", value: disclosedValue(row) }] : []),
-    { id: "period", label: "Period", value: row.period, detail: row.fiscalYear ? `Fiscal year ${row.fiscalYear}` : undefined },
+    { id: "period", label: "Period", value: periodText(row), detail: row.fiscalYear ? `Fiscal year ${row.fiscalYear}` : undefined },
     { id: "published", label: "Published", value: evidenceDate(row), detail: evidenceLabel(row) },
     { id: "confidence", label: "Confidence", value: `${Math.round(row.confidence * 100)}%` },
   ];
@@ -80,7 +80,8 @@ export function RowEvidence({ row, focusId, width, height, focused }: { row: Sup
   return <Box width={width} height={desktop ? undefined : height} flexGrow={1} flexBasis={0} minHeight={0}>
     <DetailScrollBody ref={scrollRef} resetScrollKey={row.id}>
       <StatGrid items={figures} width={width} />
-      <Box flexDirection="column" paddingX={1} paddingTop={1}>
+      {/* The desktop's detail body already holds the pane's inset. */}
+      <Box flexDirection="column" paddingX={desktop ? 0 : 1} paddingTop={1}>
         <Box flexDirection="row" gap={1}><Badge tone={isUnconfirmed(row) ? "neutral" : "accent"} label={evidenceLabel(row)} />
           {row.leadStatus === "verified" ? <Badge tone="positive" label="Verified" /> : null}</Box>
         <KeyValueRow label="Reporting company" value={row.reportingEntity.name} labelWidth={20} />

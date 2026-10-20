@@ -1,4 +1,8 @@
 import { TrendingSummary } from "../attention/trending";
+import { fundFactOverviewFields } from "../sec/fund-facts";
+import { useFundFacts } from "../sec/fund-facts-view";
+import { resolveTickerInstrumentKind } from "../../../tickers/instrument-kind";
+import { mayBeUsEquityOrFundTicker } from "../../../utils/sec";
 import type { ReactNode } from "react";
 import { EmptyState, PaneLinkMenu, SectionHeading, usePaneNoticeFooter } from "../../../components";
 import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
@@ -8,6 +12,7 @@ import { PriceReturnStrip } from "../../../components/price-performance";
 import { t } from "../../../i18n";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice, liveQuoteFormatOptions } from "../../../market-data/market/format";
+import { priceSeriesUnit } from "../../../market-data/market/index-level";
 import {
   exchangeShortName,
   extendedSessionLineLabel,
@@ -41,10 +46,11 @@ import {
   textGridColumns,
 } from "./overview/components";
 import { useFuturesContractTerms } from "./overview/futures-contract";
+import type { OverviewDividendState } from "./overview/dividend";
 import { buildOverviewStats, buildPositionRows, buildProfileFields } from "./overview/model";
 import type { OverviewFunctionLink, StatField } from "./overview/types";
 import { describeFundamentalMarketCap } from "../../../utils/market-capitalization";
-import { liveFiftyTwoWeekRange, liveMarketCapitalization } from "../portfolio-list/live-valuation";
+import { liveFiftyTwoWeekRange, liveMarketCapitalization } from "../../../market-data/quotes/live-valuation";
 import { instrumentTypeLabel } from "../../../tickers/instrument-kind";
 import { ClippedText } from "../../../components/ui/display";
 
@@ -80,6 +86,8 @@ interface OverviewTabProps {
   onOpenChart?: () => void;
   /** A click on a figure opens its research function (beta to GR, holders to HDS). */
   onOpenFunction?: (link: OverviewFunctionLink) => void;
+  /** The history the dividend yield reads (useOverviewDividend): a trailing one's cash, a forward one's lapse; without it the yield stands. */
+  dividend?: OverviewDividendState;
 }
 
 export function OverviewTab(props: OverviewTabProps) {
@@ -87,7 +95,10 @@ export function OverviewTab(props: OverviewTabProps) {
   return <ResolvedOverviewTab {...props} ticker={props.ticker} />;
 }
 
-function ResolvedOverviewTab({ width, height, focused = false, ticker, financials, onOpenChart, onOpenFunction, perpetuals }: OverviewTabProps & { ticker: TickerRecord }) {
+/** Where a fund's facts open: the ETF function, its facts over its filings. */
+const FUND_FACTS_LINK: OverviewFunctionLink = { name: "Fund Facts", templateId: "sec-etf-pane" };
+
+function ResolvedOverviewTab({ width, height, focused = false, ticker, financials, onOpenChart, onOpenFunction, perpetuals, dividend }: OverviewTabProps & { ticker: TickerRecord }) {
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const { width: termWidth } = useViewport();
   const { fractionalViewport = false, nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
@@ -125,6 +136,14 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
     routingVenue && routingVenue !== listingVenue ? `route ${routingVenue}` : "",
   ].filter((part) => part.length > 0);
 
+  // A US-listed fund's facts (fee, NAV, premium, net assets) stand where a company's fundamentals would; each opens ETF.
+  const fundFactsSymbol = resolveTickerInstrumentKind(ticker, financials) === "fund" && mayBeUsEquityOrFundTicker(ticker) ? ticker.metadata.ticker : null;
+  const fundFacts = useFundFacts(fundFactsSymbol).data?.payload;
+  // Each figure dated; one older than it looks takes the warning colour, as in ETF.
+  const fundFactFields: StatField[] = fundFacts?.covered
+    ? fundFactOverviewFields(fundFacts).map(({ warn, ...field }) => ({ ...field, ...(warn ? { valueColor: colors.warning } : {}), link: FUND_FACTS_LINK }))
+    : [];
+
   const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - (fractionalViewport ? 2 : 4), 20);
   const chartWidth = contentWidth;
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
@@ -139,7 +158,8 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
     id: `${ticker.metadata.ticker}:price`,
     label: `${ticker.metadata.ticker} Price`,
     color: priceColor(chartDelta),
-    unit: unknownHistoryBasis ? "unknown" : quoteCurrency,
+    // An index's axis reads in points: ^VIX at 20, never $20.
+    unit: unknownHistoryBasis ? "unknown" : priceSeriesUnit(quoteCurrency, instrumentType),
     style: "area",
     axis: "right",
     panelId: "price",
@@ -236,6 +256,8 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
     depositaryReceipt: sharesOutstandingInReceipts(quote, fundamentals, description),
     // Report and ex-dividend dates are the listing's calendar days.
     today: zonedDateKey(Date.now(), chartTimeZone ?? "America/New_York"),
+    dividend,
+    bond: fundFacts?.bond ?? null,
   });
   const profileFields = buildProfileFields({
     instrumentType: instrumentTypeLabel(instrumentType, quote?.name || ticker.metadata.name),
@@ -355,7 +377,7 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
         {perpetuals && <PaneLinkMenu>{perpetuals}</PaneLinkMenu>}
 
         {(hasDayRange || yearRange) && quote && (
-          <Box flexDirection={rangeInline ? "row" : "column"} gap={rangeInline ? RANGE_PAIR_GAP : 0} width={contentWidth}>
+          <Box flexDirection={rangeInline ? "row" : "column"} gap={rangeInline ? RANGE_PAIR_GAP : 0} width={nativePaneChrome ? undefined : contentWidth}>
             {hasDayRange && (
               <CompactRangeBar
                 current={sessionQuote?.price ?? quote.price}
@@ -366,6 +388,7 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
                 labelWidth={rangeLabelWidth}
                 endpointWidth={rangeEndpointCells}
                 width={rangeWidth}
+                grow={rangeInline}
                 currency={quoteCurrency}
                 priceOptions={moneyOptions}
               />
@@ -380,6 +403,7 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
                 labelWidth={rangeLabelWidth}
                 endpointWidth={rangeEndpointCells}
                 width={rangeWidth}
+                grow={rangeInline}
                 currency={quoteCurrency}
                 priceOptions={moneyOptions}
               />
@@ -423,6 +447,15 @@ function ResolvedOverviewTab({ width, height, focused = false, ticker, financial
           <Box flexDirection="column">
             <SectionHeading title={t("Price Return")} />
             <PriceReturnStrip fields={performanceFields} width={contentWidth} />
+          </Box>
+        )}
+
+        {fundFactFields.length > 0 && (
+          <Box flexDirection="column">
+            <SectionHeading title={t("Fund Facts")} />
+            <PaneLinkMenu>
+              <FundamentalsGrid fields={fundFactFields} width={contentWidth} onOpenLink={onOpenFunction} />
+            </PaneLinkMenu>
           </Box>
         )}
 

@@ -12,10 +12,11 @@ import { setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "./content";
 import { MESSAGE_HIGHLIGHT_MS } from "./content/row-activity";
 import { SLOW_SEND_THRESHOLD_MS } from "./message/pending-send";
-import { chatHighlightBg } from "./message/render-state";
+import { chatAnnouncementBg, chatHighlightBg } from "./message/render-state";
 import { chatBotNameColor } from "./people";
 import { ICON_GLYPHS } from "../../../components/ui/icon";
 import { ChatStatusWidget } from "./status-widget";
+import { estimateMessageHeight } from "./layout";
 import {
   createChatTestHarness,
   createController,
@@ -219,6 +220,34 @@ describe("ChatContent", () => {
     frame = tui.frame();
     expect(frame).toContain("> @bravo");
     expect(frame).not.toContain("@charlie");
+  });
+
+  test("fills a cold mention menu with silent members without another keystroke or read", async () => {
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof apiClient.getChatMentionCandidates>>>();
+    let reads = 0;
+    apiClient.getChatMentionCandidates = () => { reads++; return pending.promise; };
+    const controller = createController({ messages: [makeNamedMessage(1, "alpha")] });
+    await renderFocusedComposerWithDraft(controller, "@");
+    expect(tui.frame()).toContain("@alpha");
+    expect(tui.frame()).not.toContain("@quiet");
+    await act(async () => {
+      pending.resolve([
+        { id: "u-alpha", username: "alpha", displayName: "Alpha", channelActivityAt: null, conversationActivityAt: null },
+        { id: "u-quiet", username: "quiet", displayName: "Silent Member", channelActivityAt: null, conversationActivityAt: null },
+      ]);
+      await pending.promise;
+    });
+    await flushFrame();
+    expect(tui.frame()).toContain("@quiet");
+    await act(async () => { await tui.setup().mockInput.typeText("Sil"); });
+    await flushFrame();
+    expect(tui.frame()).toContain("@quiet");
+    expect(tui.frame()).not.toContain("@alpha");
+    expect(reads).toBe(1);
+    const event = await emitKeypress({ name: "tab", sequence: "\t" });
+    await flushFrame();
+    expect(tui.frame()).toContain("> @quiet");
+    expect(event.defaultPrevented).toBe(true);
   });
 
   test("tab accepts the current mention suggestion without pane cycling", async () => {
@@ -1284,6 +1313,49 @@ describe("ChatContent", () => {
     expect(frame).not.toContain("therquery=parametersfgot");
   });
 
+  test("draws markdown in the rows the list measures: marks gone, a list item hung, a quote barred on each row, a reply quoting it plainly", async () => {
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: [
+        "**No price yet:** it hasn't traded, `search CLAU`",
+        "- a list item long enough to wrap onto a second row",
+        "> a quote long enough to wrap onto a second row too",
+      ].join("\n"),
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "ada", displayName: "Ada" },
+    };
+    const controller = createController({
+      messages: [message, {
+        id: "m2",
+        channelId: "everyone",
+        content: "thanks",
+        replyToId: "m1",
+        replyTo: { content: message.content, user: { id: "u1", username: "ada" } },
+        createdAt: "2026-03-28T00:10:00.000Z",
+        user: { id: "u2", username: "quill", displayName: "Quill" },
+      }],
+    });
+
+    await mountChat(controller, { width: 40, height: 14 });
+
+    const lines = tui.frame().split("\n").map((line) => line.trimEnd());
+    const header = lines.findIndex((line) => line.startsWith(" ada "));
+    const reply = lines.findIndex((line) => line.includes("reply ada:"));
+    expect(lines.slice(header + 1, reply)).toEqual([
+      "   No price yet: it hasn't traded,",
+      "   search CLAU",
+      "   \u2022 a list item long enough to wrap",
+      "     onto a second row",
+      "   \u2502 a quote long enough to wrap",
+      "   \u2502 onto a second row too",
+    ]);
+    expect(lines[reply]).toBe("  reply ada: No price yet: it has...");
+    // The list is scrolled by these heights, so they must be the rows drawn.
+    expect(estimateMessageHeight(message, 38)).toBe(reply - header);
+  });
+
   test("draws a row per image in the terminal, with no blank text row for an image-only message", async () => {
     const image = (id: string, width: number, height: number, size: number) => ({
       id, mime: "image/png", width, height, size, url: `https://api.example/chat/attachments/${id}`,
@@ -1433,6 +1505,45 @@ describe("ChatContent", () => {
     const botCard = await tui.waitForFrameToContain(`@gloombot ${bot}`, POINTER_ATTEMPTS);
     expect(botCard).toContain("Bot run by Gloom");
     expect(botCard).not.toContain("Local time");
+  });
+
+  test("draws an announcement as a band with a rule and its mark in place of the bot icon, apart from its neighbours", async () => {
+    const at = (second: number) => `2026-03-28T00:00:${String(second).padStart(2, "0")}.000Z`;
+    const gloomhq = { id: "g1", username: "gloomhq", displayName: "Gloom", accountType: "managed_llm" as const };
+    const controller = createController({
+      messages: [
+        { id: "m1", channelId: "everyone", content: "ask me anything", replyToId: null, createdAt: at(0), user: { id: "b1", username: "gloombot", displayName: "Gloombot", accountType: "managed_llm" } },
+        { id: "a1", channelId: "everyone", content: "Gloom is on Discord\nsame channels, both ways", replyToId: null, createdAt: at(10), user: gloomhq, announcement: true },
+        // Seconds later from the same account: still its own card, not a follow-on.
+        { id: "a2", channelId: "everyone", content: "and on the web", replyToId: null, createdAt: at(20), user: gloomhq, announcement: true },
+        { id: "m2", channelId: "everyone", content: "nice", replyToId: "a2", replyTo: { content: "and on the web", user: { id: "g1", username: "gloomhq" } }, createdAt: at(30), user: { id: "u1", username: "bob", displayName: "Bob", accountType: "human" } },
+      ],
+    });
+
+    await mountChat(controller, { width: 60, height: 16 });
+
+    const { bot } = ICON_GLYPHS;
+    const rows = tui.frame().split("\n").map((row) => row.trimEnd());
+    expect(rows.find((row) => row.startsWith(" gloombot "))).toContain(bot);
+    const marked = rows.filter((row) => row.includes("gloomhq") && !row.includes("reply"));
+    expect(marked).toHaveLength(2);
+    for (const header of marked) {
+      expect(header).toMatch(/^┃gloomhq  Announcement  \S/);
+      expect(header).not.toContain(bot);
+    }
+    // The rule runs down every row of each card and stops there.
+    const first = rows.indexOf(marked[0]!);
+    expect(rows.slice(first, first + 6).map((row) => row[0])).toEqual(["┃", "┃", "┃", "┃", "┃", " "]);
+    expect(rows[first + 1]).toBe("┃  Gloom is on Discord");
+    // A reply quotes it without calling it a bot.
+    expect(rows.find((row) => row.includes("reply gloomhq"))).not.toContain(bot);
+
+    // The band is the accent's faint tint, under the selection and the highlight.
+    const spanBg = (text: string) => tui.setup().captureSpans().lines
+      .flatMap((line) => line.spans)
+      .find((span) => span.text.includes(text))?.bg.toInts().join(",");
+    expect(spanBg("Gloom is on Discord")).toBe(hexToRgbaInts(chatAnnouncementBg("terminal")));
+    expect(spanBg("nice")).not.toBe(hexToRgbaInts(chatAnnouncementBg("terminal")));
   });
 
   test("at 70 columns the bot's icon fits beside its name, a quote and the reply being written, and a long staff row keeps its actions", async () => {

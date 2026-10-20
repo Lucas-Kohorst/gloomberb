@@ -191,8 +191,15 @@ export interface BadgeProps {
   variant?: "subtle" | "solid";
 }
 
-/** A chip as tall as its row runs into the one below in a column of chips; the desktop leaves a hairline above and below, as ticker chips do. */
-const NATIVE_BADGE_STYLE = { height: "calc(100% - 4px)", borderRadius: 3 };
+/**
+ * The one chip on the desktop: 16px in its 18px row (a chip as tall as its
+ * row runs into the one below in a column of chips), the small-mark radius,
+ * regular weight. Ticker chips keep bold (ticker/badge).
+ */
+export const NATIVE_BADGE_STYLE = { height: "calc(100% - 2px)", borderRadius: "var(--gloom-radius-sm)" };
+/** How far a subtle chip's fill is tinted toward its tone. */
+export const BADGE_TINT = 0.28;
+const NATIVE_BADGE_TEXT_STYLE = { fontWeight: "var(--gloom-weight-regular)" };
 
 export function Badge({ label, tone = "neutral", color, variant = "subtle" }: BadgeProps) {
   const colors = useThemeColors();
@@ -201,9 +208,9 @@ export function Badge({ label, tone = "neutral", color, variant = "subtle" }: Ba
   const solid = variant === "solid";
   const neutral = solid && tone === "neutral" && !color;
   const chip = (
-    <Box height={nativePaneChrome ? undefined : 1} paddingX={1} backgroundColor={neutral ? colors.selected : solid ? accent : blendHex(colors.bg, accent, 0.28)}
+    <Box height={nativePaneChrome ? undefined : 1} paddingX={1} backgroundColor={neutral ? colors.selected : solid ? accent : blendHex(colors.bg, accent, BADGE_TINT)}
       data-gloom-ui="badge" justifyContent={nativePaneChrome ? "center" : undefined} style={nativePaneChrome ? NATIVE_BADGE_STYLE : undefined}>
-      <Text fg={neutral ? colors.selectedText : solid ? colors.bg : accent} attributes={TextAttributes.BOLD}>{t(label)}</Text>
+      <Text fg={neutral ? colors.selectedText : solid ? colors.bg : accent} attributes={TextAttributes.BOLD} style={nativePaneChrome ? NATIVE_BADGE_TEXT_STYLE : undefined}>{t(label)}</Text>
     </Box>
   );
   return nativePaneChrome ? <Box height={1} flexShrink={0} justifyContent="center">{chip}</Box> : chip;
@@ -226,7 +233,13 @@ export function Divider({ width, height, orientation = "horizontal" }: DividerPr
       flexShrink={0}
       border={vertical ? ["left"] : ["top"]}
       borderColor={colors.border}
-      style={{ border: 0, [vertical ? "borderLeft" : "borderTop"]: `1px solid ${colors.border}` }}
+      style={{
+        border: 0,
+        // The one hairline on the desktop; the terminal draws borderColor.
+        [vertical ? "borderLeft" : "borderTop"]: "1px solid var(--gloom-hairline)",
+        // A vertical rule given no height runs the height of the row it stands in.
+        ...(vertical && height === undefined ? { height: "auto", alignSelf: "stretch" } : {}),
+      }}
       role="separator"
       data-gloom-ui="divider"
     />

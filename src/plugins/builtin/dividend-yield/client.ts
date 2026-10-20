@@ -4,11 +4,13 @@ import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import type { DividendMetrics, DividendPayment } from "./types";
 import { resolveCurrencyUnit } from "../../../utils/currency-units";
 import { calendarMonthsBefore } from "../../../utils/calendar-date";
-import { inferCadence, trailingCashAt } from "./trailing-cash";
+import { cashDistribution, dividendReferencePrice, dividendYieldAt, inferCadence, trailingCashAt, trailingDividendRate } from "../../../utils/trailing-dividend";
 import { dividendQuotePriceMetadata } from "./reference-price";
 import { mapQuote } from "../../../sources/gloomberb-cloud/normalizers";
 import { regularSessionValuationPrice } from "../../../market-data/quotes/regular-session-valuation";
 import { declaredDividends } from "../../../utils/declared-dividends";
+import { cashInMajorUnits } from "../../../utils/dividend-cash";
+import { lapsedDividend } from "../../../utils/forward-dividend";
 import type { DeclaredDividendAction } from "../../../types/financials";
 
 export const DIVIDENDS_CONNECTION_ID = "gloom-dividends";
@@ -35,22 +37,20 @@ function trackRequest<T>(operation: string, request: () => Promise<T>): Promise<
 
 type QuoteSummaryDividendFields = DividendSummary;
 
+/** A paid row of a history already in the major unit (cashInMajorUnits); null when its date or amount is not one. */
 export function toDividendPayment(
   exDate: string,
   amount: number,
   currency: string,
 ): DividendPayment | null {
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  const unit = resolveCurrencyUnit(currency);
-  const parsed = new Date(`${exDate}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== exDate) return null;
+  const paid = cashDistribution(exDate, amount);
+  if (!paid) return null;
   return {
-    exDate: parsed,
+    ...paid,
     recordDate: null,
     paymentDate: null,
     declarationDate: null,
-    amount: amount / unit.divisor,
-    currency: unit.currency,
+    currency,
     type: "cash",
   };
 }
@@ -84,22 +84,24 @@ export async function fetchDividendData(
 ): Promise<DividendData> {
   const response = await trackRequest("dividends", () => apiClient.getMarketDividends(symbol, exchange));
   if (!response.data) throw new Error(`No dividend data found for ${symbol}`);
-  const { actions, quote: rawQuote, summary: quoteFields } = response.data;
+  const { actions: sourceActions, quote: rawQuote, summary: quoteFields } = response.data;
+  // In the major unit as the history arrives, as every other reader of it gets it.
+  const actions = sourceActions ? cashInMajorUnits(sourceActions) : null;
   const quote = rawQuote ? mapQuote(rawQuote) : null;
   const summaryError = response.data.summaryError ?? (!quoteFields ? UNAVAILABLE_DIVIDEND_SUMMARY
     : [quoteFields.exDividendDate, quoteFields.dividendDate]
       .some((timestamp) => timestamp != null && reportedDividendDate(timestamp) === null)
       ? INVALID_DIVIDEND_SUMMARY_DATE : undefined);
-  const cashUnit = resolveCurrencyUnit(actions?.currency);
+  const cashCurrency = resolveCurrencyUnit(actions?.currency).currency;
   const summaryUnit = resolveCurrencyUnit(quoteFields?.currency);
-  const currency = cashUnit.currency || summaryUnit.currency;
+  const currency = cashCurrency || summaryUnit.currency;
   let historyError = response.data.historyError;
-  if (actions && !cashUnit.currency) historyError = MISSING_DIVIDEND_CURRENCY;
+  if (actions && !cashCurrency) historyError = MISSING_DIVIDEND_CURRENCY;
   if (!currency && (quoteFields?.trailingAnnualDividendRate != null || quoteFields?.forwardAnnualDividendRate != null)) {
     historyError = MISSING_DIVIDEND_CURRENCY;
   }
-  const payments = actions && cashUnit.currency ? actions.dividends.flatMap(action => {
-    const payment = toDividendPayment(action.exDate, action.amount, actions.currency!);
+  const payments = actions && cashCurrency ? actions.dividends.flatMap(action => {
+    const payment = toDividendPayment(action.exDate, action.amount, cashCurrency);
     return payment ? [payment] : [];
   }).sort((a, b) => b.exDate.getTime() - a.exDate.getTime()) : [];
   if (!historyError && actions && (actions.coverage?.dividends === "unavailable" || payments.length !== actions.dividends.length)) {
@@ -109,17 +111,15 @@ export async function fetchDividendData(
   // The regular session's price, as the quote headlines it: after the close, the close rather than an after-hours print.
   const price = suppliedPrice ?? dividendReferencePrice(regularSessionValuationPrice(quote), quote?.currency, currency);
   const historyAvailable = actions !== null && !historyError;
-  // Minor-unit cash histories do not establish the denomination of annual-rate fields.
-  const summaryRatesComparable = cashUnit.divisor === 1
-    && !!summaryUnit.currency && summaryUnit.currency === currency && summaryUnit.divisor === 1;
+  // The annual rates are in the summary's currency, the major unit Gloom Cloud states it in. One stated in a
+  // sub-unit, as an older server's is, has them in an unstated unit (SBK's 17.8 "ZAc" is rand), so none is read.
+  const summaryRatesComparable = !!summaryUnit.currency && summaryUnit.divisor === 1 && summaryUnit.currency === currency;
   const metricFields = actions && historyError && quoteFields ? { ...quoteFields, trailingAnnualDividendRate: null } : quoteFields;
-  const metrics = buildDividendMetrics(payments, metricFields, price, { historyAvailable, summaryRatesComparable });
+  const declared = actions && cashCurrency ? declaredDividends(actions) : [];
+  const metrics = buildDividendMetrics(payments, metricFields, price, { historyAvailable, summaryRatesComparable, declared });
   if (!historyAvailable && !historyError && metrics.trailingRate == null && metrics.forwardRate == null) {
     throw new Error(`No dividend data found for ${symbol}`);
   }
-  // Stated in the cash history's units, read as its payments are.
-  const declared = actions && cashUnit.currency
-    ? declaredDividends(actions).map((row) => ({ ...row, amount: row.amount / cashUnit.divisor })) : [];
   return {
     payments, ...(declared.length > 0 ? { declared } : {}), metrics, price, currency: currency || undefined, historyAvailable,
     ...(suppliedPrice == null && price != null && quote ? dividendQuotePriceMetadata(quote) : {}),
@@ -128,14 +128,6 @@ export async function fetchDividendData(
     stale: response.stale === true || response.data.stale === true || actions?.stale === true,
     notes: ["Cash yield excludes taxes and reinvestment. SEC yield, tax components and future payments are not modeled."],
   };
-}
-
-/** A quote from another listing/currency cannot price this cash distribution series. */
-export function dividendReferencePrice(price: number | null, priceCurrency: string | undefined, cashCurrency: string): number | null {
-  if (price == null || !Number.isFinite(price) || price <= 0) return null;
-  const unit = resolveCurrencyUnit(priceCurrency);
-  if (!unit.currency || unit.currency !== resolveCurrencyUnit(cashCurrency).currency) return null;
-  return price / unit.divisor;
 }
 
 function reportedDividendDate(timestamp: number | null): Date | null {
@@ -150,15 +142,18 @@ export function buildDividendMetrics(
   payments: DividendPayment[],
   quoteFields: QuoteSummaryDividendFields | null,
   currentPrice: number | null,
-  options: { historyAvailable?: boolean; summaryRatesComparable?: boolean; now?: Date } = {},
+  options: { historyAvailable?: boolean; summaryRatesComparable?: boolean; now?: Date;
+    /** Declared, still owed distributions (declaredDividends): one keeps the dividend current. */
+    declared?: readonly DeclaredDividendAction[] } = {},
 ): DividendMetrics {
   const now = options.now ?? new Date();
   const eligible = payments.filter((payment) => payment.exDate <= now && Number.isFinite(payment.amount) && payment.amount > 0);
+  // The trailing rate every trailing yield reads (trailingDividendRate), fundamentals' for a fund included.
   const trailingRate = options.historyAvailable !== false
-    ? trailingCashAt(eligible, now)
+    ? trailingDividendRate(payments, now)
     : options.summaryRatesComparable !== false ? quoteFields?.trailingAnnualDividendRate ?? null : null;
-  const forwardRate = options.summaryRatesComparable !== false ? quoteFields?.forwardAnnualDividendRate ?? null : null;
-  const forwardRateAsOf = forwardRate != null && /^\d{4}-\d{2}-\d{2}$/.test(quoteFields?.forwardRateAsOf ?? "")
+  const statedRate = options.summaryRatesComparable !== false ? quoteFields?.forwardAnnualDividendRate ?? null : null;
+  const statedAsOf = statedRate != null && /^\d{4}-\d{2}-\d{2}$/.test(quoteFields?.forwardRateAsOf ?? "")
     ? quoteFields!.forwardRateAsOf! : null;
   const growth1Y = options.historyAvailable !== false ? computeGrowth(eligible, 1, now) : null;
   const growth3Y = options.historyAvailable !== false ? computeGrowth(eligible, 3, now) : null;
@@ -176,12 +171,24 @@ export function buildDividendMetrics(
   const today = new Date(now.toISOString().slice(0, 10));
   const nextPayDate = reportedPayDate && reportedPayDate >= today ? reportedPayDate : null;
 
+  // A dividend that has stopped has no forward rate, whatever is still stated for it.
+  // Without a usable history only the latest date known says it, on the annual window.
+  const declared = options.declared ?? [];
+  const lapse = options.historyAvailable !== false
+    ? lapsedDividend(statedAsOf, {
+      exDates: [...payments.map((payment) => payment.exDate), ...lastExDividendDate ? [lastExDividendDate] : []], declared }, now)
+    : lapsedDividend([statedAsOf, lastExDividendDate?.toISOString().slice(0, 10)]
+      .filter((day): day is string => !!day).sort().at(-1), { exDates: null, declared }, now);
+  const forwardRate = lapse ? null : statedRate;
+  const forwardRateAsOf = lapse ? null : statedAsOf;
+
   return repriceDividendMetrics({
     trailingYield: null,
     forwardYield: null,
     trailingRate,
     forwardRate,
     forwardRateAsOf,
+    lapse,
     payoutRatio: quoteFields?.payoutRatio ?? null,
     growth1Y,
     growth3Y,
@@ -193,11 +200,10 @@ export function buildDividendMetrics(
 }
 
 export function repriceDividendMetrics(metrics: DividendMetrics, price: number | null): DividendMetrics {
-  const validPrice = price != null && Number.isFinite(price) && price > 0;
   return {
     ...metrics,
-    trailingYield: validPrice && metrics.trailingRate != null ? metrics.trailingRate / price : null,
-    forwardYield: validPrice && metrics.forwardRate != null ? metrics.forwardRate / price : null,
+    trailingYield: dividendYieldAt(metrics.trailingRate, price),
+    forwardYield: dividendYieldAt(metrics.forwardRate, price),
   };
 }
 

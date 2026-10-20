@@ -28,8 +28,9 @@ their existing positive-price validation. See [CME Clearing Advisory 20-160](htt
 for CME's support of zero and negative energy futures prices.
 
 The futures board uses Gloom Cloud's continuous aliases, which quote each root's
-most active month and name the nearer month while it still trades (see the
-`Front month` glossary entry). Each row's unit comes from the contract terms
+front month until a stated roll date and name the nearer month while it still
+trades after the roll, and the day's most active month by volume when it is
+another one (see the `Front month` glossary entry). Each row's unit comes from the contract terms
 `quote` shows. The aliases do not establish an explicit expiry curve, contract
 quantity, physical-unit conversion, or roll-adjusted investment return. Quote
 validation does not add those capabilities.
@@ -80,16 +81,19 @@ opened source supplies its own security type.
 ### Pre-market, after hours and gaps
 
 These three lists cover every listed US common stock, ADR and ETF (warrants,
-rights, units, preferreds and listed notes are left out) and need Gloom Cloud
-Pro. They are built from consolidated-tape half-hour bars, 04:00 to 20:00 New
-York, and rebuilt once a minute; while a list's session is trading its rows
-update with live quotes. With Pro, MOST opens on the session that is trading:
-Pre-market before 09:30, the day's lists during the regular session, After
-hours from the close; without it MOST stays on the day's lists. A list picked
-by hand stays until that session ends, and one asked for with `--list` stays
-until another is picked. Before 04:00, on weekends and holidays, and for After
-hours during the day, a list shows the previous session and the footer names
-its date.
+rights, units, preferreds and listed notes are left out). They are built from
+consolidated-tape half-hour bars, 04:00 to 20:00 New York, and rebuilt once a
+minute. Pre-market and After hours are on every plan; Gaps need Gloom Cloud
+Pro. With Pro, while a list's session is trading its rows update with live
+quotes. Without Pro, Pre-market and After hours are the list as it was built
+15 minutes earlier, the age of the account's quotes, with no live updates;
+while the session trades the footer gives the time it was built (`as of 07:45
+ET`). MOST opens on the
+session that is trading: Pre-market before 09:30, the day's lists during the
+regular session, After hours from the close. A list picked by hand stays until
+that session ends, and one asked for with `--list` stays until another is
+picked. Before 04:00, on weekends and holidays, and for After hours during the
+day, a list shows the previous session and the footer names its date.
 
 - Floors. Pre-market and After hours need a last price and reference close of
   at least $1 and 20,000 shares traded in the session. Gaps need a prior close

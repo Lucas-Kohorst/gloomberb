@@ -7,11 +7,13 @@ import type {
 } from "../../../types/plugin";
 import { fetchIpoCalendar } from "./client";
 import {
+  calendarDate,
   filterIpoDeals,
   formatIpoPrice,
   formatIpoReturn,
   formatIpoSize,
   IPO_STATUSES,
+  ipoBoardStatus,
   isIpoTab,
   marketsBehind,
   marketsBehindText,
@@ -19,12 +21,14 @@ import {
   DEFAULT_IPO_SORT,
   type IpoTab,
 } from "./model";
+import { REPORT_FILTER, REPORT_ROWS } from "../shared/headless-options";
 
 const COLUMNS: HeadlessPaneColumn[] = [
   { key: "ticker", header: "Ticker" },
   { key: "company", header: "Company" },
   { key: "venue", header: "Market" },
-  { key: "listingDate", header: "Date" },
+  // The pane's DATE: the listing date, else the book's while it has none.
+  { key: "date", header: "Date" },
   { key: "status", header: "Status" },
   { key: "price", header: "Price", align: "right" },
   { key: "offerSizeUsd", header: "Size", align: "right", format: (value) => formatIpoSize(value as number | null) },
@@ -43,7 +47,7 @@ function statusOption(args: HeadlessPaneLoadArgs): StatusOption {
   return (IPO_STATUSES as readonly string[]).includes(value) ? value as IpoStatus : "all";
 }
 
-function toRow(deal: IpoDeal) {
+function toRow(deal: IpoDeal, now: Date) {
   return {
     id: deal.id,
     ticker: deal.symbol,
@@ -55,11 +59,13 @@ function toRow(deal: IpoDeal) {
     segment: deal.segment,
     country: deal.country,
     region: deal.region,
+    date: calendarDate(deal),
     listingDate: deal.listingDate,
     dateKind: deal.dateKind,
     subscriptionOpen: deal.subscriptionOpen,
     subscriptionClose: deal.subscriptionClose,
-    status: deal.status,
+    // As the pane reads it: an upcoming deal may be offering or overdue.
+    status: ipoBoardStatus(deal, now),
     listingType: deal.listingType,
     currency: deal.currency,
     price: formatIpoPrice(deal),
@@ -80,11 +86,13 @@ function projectIpoCalendarHeadless(payload: IpoCalendarPayload, args: HeadlessP
   const region = regionOption(args);
   const status = statusOption(args);
   const limit = Number(args.options.limit ?? 50);
+  const now = new Date();
   const matching = sortIpoDeals(
-    filterIpoDeals(payload.deals, region, query).filter((deal) => status === "all" || deal.status === status),
+    filterIpoDeals(payload.deals, region, query, now).filter((deal) => status === "all" || deal.status === status),
     DEFAULT_IPO_SORT,
+    now,
   );
-  const rows = matching.slice(0, limit).map(toRow);
+  const rows = matching.slice(0, limit).map((deal) => toRow(deal, now));
   const behind = marketsBehindText(marketsBehind(payload.sources, region, payload.deals));
   return {
     columns: COLUMNS,
@@ -108,7 +116,7 @@ export const ipoCalendarHeadless: HeadlessPaneDefinition<"rows"> = {
   argument: {
     kind: "free-text",
     placeholder: "company or ticker",
-    description: "Optional company, ticker, market, country or status filter.",
+    description: "Optional company, ticker, market, country, region or status filter; pending lists the deals not priced yet.",
     optional: true,
   },
   discovery: {
@@ -127,7 +135,8 @@ export const ipoCalendarHeadless: HeadlessPaneDefinition<"rows"> = {
     },
     {
       key: "status",
-      description: "IPO stage to include.",
+      shot: REPORT_FILTER,
+      description: "IPO stage to include; upcoming takes in the deals listed as offering or overdue.",
       type: "enum",
       defaultValue: "all",
       // `trading` was the plugin's word for a deal that has listed.
@@ -135,6 +144,7 @@ export const ipoCalendarHeadless: HeadlessPaneDefinition<"rows"> = {
     },
     {
       key: "limit",
+      shot: REPORT_ROWS,
       description: "Maximum IPO rows to return.",
       type: "integer",
       defaultValue: 50,

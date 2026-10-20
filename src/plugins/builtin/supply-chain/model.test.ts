@@ -13,7 +13,7 @@ test("untrusted disclosure rows cannot fabricate units, clickable schemes or ano
   for (const row of [supplyRow("x", { pctBasis: null }), supplyRow("x", { usd: 1, usdBasis: null }),
     supplyRow("x", { quote: " " }), supplyRow("x", { pctOfRevenue: Number.NaN }), supplyRow("x", { pctOfRevenue: 101 }),
     supplyRow("x", { filedDate: "2026-02-30" }), supplyRow("x", { confidence: 2 }), supplyRow("x", { filingUrl: "javascript:alert(1)" }),
-    supplyRow("x", { counterparty: { ...entity("anonymous"), anonymous: true } })]) {
+    supplyRow("x", { counterparty: { ...entity("anonymous"), anonymous: true } }), supplyRow("x", { periodMonths: 1.5 }), supplyRow("x", { periodMonths: -3 })]) {
     expect(() => validateSupplyChain(supplyPayload({ says: [row] }))).toThrow("unreadable");
   }
   expect(validateSupplyChain(supplyPayload()).says[0]?.pctOfRevenue).toBe(22);
@@ -71,6 +71,18 @@ test("70 relationships remain bounded and every band page is reachable without i
   const mixed = flowBands([supplyRow("scoped", { pctOfRevenue: 99, pctScope: "Segment" }), supplyRow("revenue", { pctOfRevenue: 80 }), supplyRow("receivables", { pctOfRevenue: 99, pctBasis: "receivables" })], 6).customers;
   expect(mixed.find((node) => node.id === "receivables")?.weight).toBeNull();
   expect(mixed.find((node) => node.id === "scoped")?.weight).toBeNull();
+});
+
+test("shares rank by their basis, revenue before receivables, in the table and the flow", () => {
+  // NVIDIA's customer shares are scoped XBRL facts, so none sets a ribbon width and the order is the share sort's alone.
+  const rows = [
+    supplyRow("ar-a", { pctOfRevenue: 30, pctBasis: "receivables" }), supplyRow("rev-a", { pctOfRevenue: 21, pctScope: "Compute", sourceKind: "xbrl" }),
+    supplyRow("ar-b", { pctOfRevenue: 22, pctBasis: "receivables" }), supplyRow("rev-b", { pctOfRevenue: 16, pctScope: "Compute", sourceKind: "xbrl" }),
+    supplyRow("none", { pctOfRevenue: null, pctBasis: null }),
+  ];
+  expect(sortRows(rows, { column: "pct", direction: "desc" }).map((row) => row.id)).toEqual(["rev-a", "rev-b", "ar-a", "ar-b", "none"]);
+  expect(sortRows(rows, { column: "pct", direction: "asc" }).map((row) => row.id)).toEqual(["rev-b", "rev-a", "ar-b", "ar-a", "none"]);
+  expect(flowBands(rows, 12).customers.map((node) => node.id)).toEqual(["rev-a", "rev-b", "ar-a", "ar-b", "none"]);
 });
 
 test("role counts are companies the tab draws, with preview disclosures locked apart, the same for table and flow", () => {
@@ -134,6 +146,10 @@ test("revenue ribbons share exact scope and period while dollar scales remain st
   expect(nodes.find((node) => node.id === "two")?.weight).toBe(14 / 22);
   expect(nodes.find((node) => node.id === "other-scope")?.weight).toBeNull();
   expect(nodes.find((node) => node.id === "old-period")?.weight).toBeNull();
+  // A quarter and a half ending on one date are different periods; a share of unstated length joins either.
+  const lengths = flowBands([supplyRow("q-1", { periodMonths: 3, pctOfRevenue: 20 }), supplyRow("q-2", { periodMonths: 3, pctOfRevenue: 10 }),
+    supplyRow("half", { periodMonths: 6, pctOfRevenue: 30 }), supplyRow("unstated", { pctOfRevenue: 5 })], 6, {}, "FOCUS").customers;
+  expect(lengths.map((node) => [node.id, node.weight])).toEqual([["q-1", 1], ["q-2", 0.5], ["unstated", 0.25], ["half", null]]);
   const dollars = [149_000_000, 3_320_000, 1_000_000].map((usd, i) => supplyRow(`dollar-${i}`, { role: "supplier", usd, usdBasis: "disclosed", pctOfRevenue: null, pctBasis: null }));
   dollars.unshift(supplyRow("unknown-dollars", { role: "supplier", pctOfRevenue: 99 }));
   expect(flowBands(dollars, 2, { suppliers: 0 }).suppliers[0]?.id).toBe("dollar-0");

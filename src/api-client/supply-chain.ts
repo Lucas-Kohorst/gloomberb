@@ -55,6 +55,8 @@ export interface SupplyRow {
   jurisdiction?: string | null;
   entityScope?: "entity" | "group" | "anonymous" | "aggregate" | null;
   period: string;
+  /** Months every figure on the row covers: 0 a balance at the period end, 3 a quarter, 12 a year. Null or absent when the source does not say or the figures differ in length. */
+  periodMonths?: number | null;
   fiscalYear: string | null;
   sourceKind: "xbrl" | "filing_text" | "call" | "news" | "web" | "import" | "press_release";
   form: string | null;
@@ -88,6 +90,12 @@ export interface SupplyChainPayload {
   says: SupplyRow[];
   names: SupplyRow[];
   counts: { says: Record<SupplyRole, number>; names: Record<SupplyRole, number> };
+  /**
+   * Shares from a period before the latest one their reporter disclosed on the
+   * same basis: dated, never current rows. Absent from older servers.
+   */
+  earlier?: { says: SupplyRow[]; names: SupplyRow[] };
+  earlierCounts?: { says: Record<SupplyRole, number>; names: Record<SupplyRole, number> };
   access: "full" | "preview";
   lockedRows: number;
   totalRows: number;

@@ -98,18 +98,25 @@ function handleOpen(
   onOpen(url);
 }
 
+/** Desktop and web: a link inside a line of text runs and wraps with the line, rather than standing as a box of its own. */
+const INLINE_LINK_STYLE = { display: "inline", whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+
 export function ExternalLinkText(
-  { url, label, color, onOpen = openUrl }: {
+  { url, label, color, attributes = 0, inline = false, onOpen = openUrl }: {
     url: string;
     label?: string;
     color?: string;
+    /** Marks drawn with the underline, such as the bold of a bold link. */
+    attributes?: number;
+    /** Flows inside a line of text on the desktop and the web. */
+    inline?: boolean;
     onOpen?: (url: string) => void;
   },
 ) {
   const colors = useThemeColors();
   const rendererHost = useRendererHost();
   const { showContextMenu } = useContextMenu();
-  const { nativeContextMenu } = useUiCapabilities();
+  const { nativeContextMenu, nativePaneChrome } = useUiCapabilities();
   const resolvedOpen = onOpen === openUrl
     ? (nextUrl: string) => {
       void rendererHost.openExternal(nextUrl);
@@ -127,10 +134,13 @@ export function ExternalLinkText(
   usePaneLinkMenuEntry(`link:${url}`, tf("Open {label}", { label: menuLinkLabel(url, label) }), () => resolvedOpen(url));
   return (
     <Text
-      fg={color ?? colors.textBright}
-      attributes={TextAttributes.UNDERLINE}
+      // Desktop: a link is the text around it, underlined; the pointer brightens it (styles.css).
+      fg={color ?? (nativePaneChrome ? "inherit" : colors.textBright)}
+      attributes={TextAttributes.UNDERLINE | attributes}
       cursor="pointer"
+      style={inline ? INLINE_LINK_STYLE : undefined}
       role="link"
+      data-gloom-link="true"
       tabIndex={0}
       wrapText
       onKeyDown={(event: any) => {

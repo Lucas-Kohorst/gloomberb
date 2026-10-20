@@ -36,6 +36,8 @@ export interface CliReportTable {
   rows: CliReportValue[][];
   /** What this table's rows are of, where it differs from the report's: one series of a chart. */
   identity?: ExportIdentity;
+  /** What each row is of where it differs from the table's: a table of metrics whose rows have different units. */
+  rowIdentities?: readonly (ExportIdentity | undefined)[];
 }
 
 export interface CliReportTables {
@@ -140,13 +142,20 @@ function readDisplay(value: string): DisplayNumber | typeof BLANK_DISPLAY | null
   return parseDisplayNumber(trimmed);
 }
 
-/** The value in the units the text drew, so a fraction drawn as 6.15% exports 6.15, or null when it is not what was drawn. */
+/**
+ * The value in the units the text drew, so a fraction drawn as 6.15% exports
+ * 6.15, or null when it is not what was drawn. A column that draws the value
+ * with its sign turned (a short position as a negative amount) exports it as
+ * drawn, every digit, not the rounded figure read back.
+ */
 function valueAsDrawn(value: number, drawn: DisplayNumber): number | null {
   const target = Number(drawn.number);
   const tolerance = drawn.step * (1 + 1e-9) + Number.EPSILON;
-  for (const scale of DISPLAY_SCALES) {
-    const scaled = value * scale;
-    if (Math.abs(scaled - target) <= tolerance) return exportNumber(scaled);
+  for (const sign of [1, -1]) {
+    for (const scale of DISPLAY_SCALES) {
+      const scaled = sign * value * scale;
+      if (Math.abs(scaled - target) <= tolerance) return exportNumber(scaled);
+    }
   }
   return null;
 }
@@ -202,6 +211,7 @@ function flattenJsonText(value: string): string | null {
     const parsed: unknown = JSON.parse(value);
     return parsed != null && typeof parsed === "object" ? flattenValue(parsed) : null;
   } catch {
+    // Intentional ignore: Non-JSON display text keeps its original formatting.
     return null;
   }
 }
@@ -458,8 +468,13 @@ function csvLine(row: readonly unknown[]): string {
  */
 function identifiedTable(table: CliReportTable, report: CliReportTables, freshness: ReportFreshness | undefined): CliReportTable {
   if (!freshness || table.columns.length === 0) return table;
-  const cells = exportIdentityCells(freshness, { ...report.identity, ...table.identity });
-  return { ...table, columns: [...table.columns, ...EXPORT_IDENTITY_COLUMNS], rows: table.rows.map((row) => [...row, ...cells]) };
+  const identity = { ...report.identity, ...table.identity };
+  const cells = exportIdentityCells(freshness, identity);
+  const rowCells = (index: number) => {
+    const own = table.rowIdentities?.[index];
+    return own ? exportIdentityCells(freshness, { ...identity, ...own }) : cells;
+  };
+  return { ...table, columns: [...table.columns, ...EXPORT_IDENTITY_COLUMNS], rows: table.rows.map((row, index) => [...row, ...rowCells(index)]) };
 }
 
 /**

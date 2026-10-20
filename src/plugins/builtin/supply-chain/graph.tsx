@@ -10,9 +10,10 @@ import { useScrollBoxLayout } from "../../../components/use-scrollbox-layout";
 import { isPlainKey } from "../../../utils/keyboard";
 import { displayWidth } from "../../../utils/format";
 import { ClippedText } from "../../../components/ui/display";
+import { cardSurfaceStyle } from "../../../components/ui/card";
 import { useStaticChartBitmapSize } from "../../../components/chart/composite/bitmap";
 import { drawLine, fillOpaque, parseHex } from "../../../components/chart/native/raster/primitives";
-import { entityLabel, graphNodes } from "./graph-model";
+import { entityLabel, entityTicker, graphNodes } from "./graph-model";
 import { ROLE_COLORS } from "./model";
 import { blendHex } from "../../../theme/colors";
 
@@ -135,7 +136,8 @@ export function SupplyGraph({ data, width, height, focused, selectedId, selected
         const active = node.entity.id === selectedId, company = !node.entity.aggregate && !node.entity.anonymous;
         const kind = node.entity.aggregate ? "group" : node.entity.anonymous ? "undisclosed" : null;
         const inner = cellWidth - 5;
-        const tickerWidth = node.entity.ticker ? displayWidth(node.entity.ticker) + 3 : 0;
+        const ticker = entityTicker(node.entity);
+        const tickerWidth = ticker ? displayWidth(ticker) + 3 : 0;
         const showTicker = company && tickerWidth > 0 && inner >= tickerWidth + 5;
         const prefix = collapsed.includes(node.entity.id) ? "+ " : "";
         const name = prefix + (showTicker ? node.entity.name : entityLabel(node.entity));
@@ -144,16 +146,16 @@ export function SupplyGraph({ data, width, height, focused, selectedId, selected
         const confidence = `${Math.round((node.path?.confidence ?? 0) * 100)}%`;
         const detail = node.hops ? `${node.hops}H · ${relation}${inner >= displayWidth(relation ?? "") + 12 ? ` · ${confidence}` : ""}` : showTicker ? "Focus company" : node.entity.name;
         return <Box key={node.entity.id} position="absolute" left={node.x} top={node.y} width={cellWidth - 3} height={2} zIndex={10} flexDirection="column" overflow="hidden"
-          backgroundColor={active ? desktop ? blendHex(colors.bg, accent, 0.2) : colors.selected : node.hops ? blendHex(colors.bg, accent, desktop ? 0.09 : 0.12) : colors.panel}
-          style={desktop ? { borderLeft: role ? `3px solid ${accent}` : undefined, border: role ? undefined : `1px solid ${blendHex(colors.bg, colors.textBright, 0.35)}`,
-            borderRadius: role ? 3 : 6, paddingLeft: 6, cursor: "pointer", boxShadow: active ? `inset 0 0 0 1px ${blendHex(colors.bg, accent, 0.6)}` : undefined } : undefined}
+          backgroundColor={desktop ? undefined : active ? colors.selected : node.hops ? blendHex(colors.bg, accent, 0.12) : colors.panel}
+          // The flow's card (flow.tsx): in the relationship's colour, the focus company plain.
+          style={desktop ? { ...cardSurfaceStyle({ selected: active, accent: role ? accent : undefined, padding: "0 0 0 var(--gloom-space-sm)" }), cursor: "pointer" } : undefined}
           onMouseOver={() => onSelect(node.entity.id)} data-gloom-role="supply-graph-node">
           <Button label={`${prefix}${entityLabel(node.entity)}`} title={node.entity.name} variant="plain" compact flush stopPropagation height={2} width={cellWidth - (desktop ? 5 : 3)} onPress={() => onRecenter(node.entity)}>
             <Box flexDirection="column" width="100%">
               <Box flexDirection="row" height={1} gap={desktop ? 1 : 0} overflow="hidden">
                 {!desktop ? <Text fg={accent}>▍</Text> : null}
                 <ClippedText fg={active && !desktop ? colors.selectedText : company ? colors.textBright : colors.textDim} attributes={company ? TextAttributes.BOLD : 0} text={name} width={nameWidth} />
-                {showTicker ? desktop ? <Badge label={node.entity.ticker!} tone="accent" /> : <Text fg={active ? colors.selectedText : colors.textDim}>{` ${node.entity.ticker}`}</Text> : null}
+                {showTicker ? desktop ? <Badge label={ticker!} tone="accent" /> : <Text fg={active ? colors.selectedText : colors.textDim}>{` ${ticker}`}</Text> : null}
               </Box>
               <Box height={1} paddingLeft={desktop ? 0 : 1} overflow="hidden"><ClippedText fg={active && !desktop ? colors.selectedText : colors.textDim} text={detail} width={inner} /></Box>
             </Box>

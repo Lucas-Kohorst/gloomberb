@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import { creditBoardsModule } from "../../plugins/builtin/credit-boards";
 import { earningsCallsHeadless } from "../../plugins/builtin/earnings-calls/headless";
+import { ipoCalendarPlugin } from "../../plugins/builtin/ipo-calendar";
 import { paneSchemas } from "../../plugins/builtin/chart-composer/headless-schema";
 import { createDefaultConfig } from "../../types/config";
 import type { HeadlessPaneDefinition, PaneDef, PaneTemplateDef } from "../../types/plugin";
@@ -85,5 +87,62 @@ test("a name that opens nothing lists the closest functions and where to search,
   expect(close).toBeInstanceOf(UnknownPaneFunctionError);
   expect(close?.message).toBe('Unknown function or pane "volsurf".');
   expect(close?.details).toBe("Closest matches:\n  OVDV  Volatility Surface\nSearch the catalog: gloomberb catalog volsurf");
-  expect((await unknown("zzqxvb"))?.details).toBe("Search the catalog: gloomberb catalog zzqxvb");
+  // Near no code and found by no search: said plainly, with the whole catalog to look in.
+  expect((await unknown("zzqxvb"))?.details).toBe("No function code is close to zzqxvb. List every function: gloomberb catalog");
+});
+
+test("a code one slip from a function's (swapped, missing or extra letter) names it and the command that runs it", async () => {
+  const dcf: PaneTemplateDef = { ...template("RDCF", "reverse-dcf", indices), label: "Reverse DCF" };
+  const withDcf: PaneFunctionCatalog = {
+    ...registry,
+    panes: new Map([...registry.panes, ["reverse-dcf", pane("reverse-dcf")]]),
+    paneTemplates: new Map([...registry.paneTemplates, ["reverse-dcf-pane", dcf]]),
+  };
+  const unknown = (args: string[]) => resolvePaneFunction(withDcf, context, parsePaneFunctionArgs(args))
+    .then(() => null, (error: unknown) => error as UnknownPaneFunctionError);
+  for (const typed of ["RCDF", "rdc", "RDCFF"]) {
+    const error = await unknown([typed, "PLTR"]);
+    expect(error?.message).toBe(`Unknown function or pane "${typed}". Did you mean RDCF (Reverse DCF)?`);
+    expect(error?.details).toBe("Run: gloomberb fn RDCF PLTR");
+  }
+  // Two letters off, or a name too short to tell, is no suggestion.
+  expect((await unknown(["RDXX", "PLTR"]))?.message).toBe('Unknown function or pane "RDXX".');
+  expect((await unknown(["WE", "PLTR"]))?.message).toBe('Unknown function or pane "WE".');
+});
+
+test("a bank figure typed as a function (NIM, one slip from NI) is pointed at the Bank section and EQS, not at NI", async () => {
+  const news: PaneTemplateDef = { ...template("NI", "topic-news", indices), label: "Topic News" };
+  const withNews: PaneFunctionCatalog = {
+    ...registry,
+    panes: new Map([...registry.panes, ["topic-news", pane("topic-news")]]),
+    paneTemplates: new Map([...registry.paneTemplates, ["topic-news-pane", news]]),
+  };
+  for (const name of ["NIM", "deposits", "CRE"]) {
+    const error = await resolvePaneFunction(withNews, context, parsePaneFunctionArgs([name, "jpm"])).then(() => null, (failure: unknown) => failure as UnknownPaneFunctionError);
+    expect(error?.message, name).toBe(`${name} is not a function: a bank's figures are in the Bank section of fundamentals.`);
+    expect(error?.details.split("\n"), name).toEqual([
+      "Deposits, uninsured share, CRE / capital and the lead bank: gloomberb fundamentals JPM",
+      "Net interest margin (Pro): gloomberb fn EQS --metric kpiNimPercent --definition "
+        + `'{"version":1,"currency":null,"criteria":[{"field":"symbol","op":"in","value":["JPM"]}],"sort":{"field":"symbol","direction":"asc"}}'`,
+    ]);
+  }
+  expect((await resolvePaneFunction(withNews, context, parsePaneFunctionArgs(["NIX", "JPM"])).catch((failure: Error) => failure))?.message)
+    .toBe('Unknown function or pane "NIX". Did you mean NI (Topic News)?');
+});
+
+test("shot hands CDX, SOVR (or its alias WCDS) and IPO their argument as the params their pane opens on, never as a ticker", async () => {
+  const templates = [...creditBoardsModule.paneTemplates ?? [], ...ipoCalendarPlugin.paneTemplates ?? []];
+  const boards: PaneFunctionCatalog = {
+    panes: new Map(["fixed-income", "ipo-calendar"].map((id) => [id, pane(id)])),
+    paneTemplates: new Map(templates.map((entry) => [entry.id, entry])),
+    destroy: () => {},
+  };
+  const shot = async (target: string, arg: string) => {
+    const resolved = await resolvePaneFunction(boards, context, parsePaneFunctionArgs([target, arg]), { command: "shot" });
+    return { params: resolved.instance.params, binding: resolved.instance.binding };
+  };
+  expect(await shot("CDX", "HY")).toEqual({ params: expect.objectContaining({ tab: "credit", view: "index", index: "HY" }), binding: { kind: "none" } });
+  // WCDS is SOVR's alias, and the country keeps the spelling it was typed in.
+  expect(await shot("WCDS", "Ivory Coast")).toEqual({ params: expect.objectContaining({ tab: "credit", view: "sovereign", country: "Ivory Coast" }), binding: { kind: "none" } });
+  expect(await shot("IPO", "pending")).toEqual({ params: expect.objectContaining({ search: "pending" }), binding: { kind: "none" } });
 });

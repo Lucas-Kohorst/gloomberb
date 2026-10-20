@@ -22,7 +22,7 @@ export interface ChatMessagePaneLinks {
 }
 
 /** A message rarely carries more; past this the rest stay plain links. */
-const MAX_SHARE_CHIPS = 3;
+export const MAX_SHARE_CHIPS = 3;
 const NONE: ChatMessagePaneLinks = { links: [], content: "" };
 const memo = new WeakMap<object, ChatMessagePaneLinks>();
 

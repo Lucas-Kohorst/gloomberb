@@ -1,6 +1,6 @@
+import { barsPerYear, type BarsPerYear } from "../../../market-data/bars-per-year";
 import { evaluateRule, ruleWarmup, type BacktestBar, type Rule } from "./rules";
 
-const TRADING_DAYS = 252;
 const DAY_MS = 86_400_000;
 
 export interface BacktestOptions {
@@ -30,7 +30,13 @@ export interface BacktestResult {
   start: string;
   end: string;
   sessions: number;
-  equity: Array<{ date: string; strategy: number; benchmark: number; drawdownPct: number }>;
+  /** What volatility and Sharpe are annualised at, and how long a one-year window is: 365 for a 24/7 series, 252 for exchange sessions. */
+  barsPerYear: BarsPerYear;
+  /**
+   * One row per session tested: its close, the position held over its close
+   * (1 long, 0 flat), each line's growth of 1 and the strategy's drawdown in percent.
+   */
+  equity: Array<{ date: string; close: number; position: 0 | 1; strategy: number; benchmark: number; drawdownPct: number }>;
   trades: BacktestTrade[];
   strategy: PerformanceStats & {
     exposurePct: number;
@@ -42,12 +48,12 @@ export interface BacktestResult {
     avgSessions: number | null;
   };
   benchmark: PerformanceStats;
-  /** Share of rolling 252-session windows in which the rule beat buy-and-hold. */
+  /** Share of rolling one-year (`barsPerYear` bars) windows in which the rule beat buy-and-hold. */
   rollingWin: { sharePct: number | null; windows: number };
   warnings: string[];
 }
 
-function stats(curve: readonly number[], start: string, end: string): PerformanceStats {
+function stats(curve: readonly number[], start: string, end: string, barsInYear: number): PerformanceStats {
   const returns = curve.slice(1).map((value, index) => value / curve[index]! - 1);
   const mean = returns.reduce((sum, value) => sum + value, 0) / Math.max(1, returns.length);
   const variance = returns.length > 1
@@ -64,8 +70,8 @@ function stats(curve: readonly number[], start: string, end: string): Performanc
   return {
     totalReturnPct: total * 100,
     cagrPct: years >= 0.5 && total > -1 ? ((1 + total) ** (1 / years) - 1) * 100 : null,
-    volatilityPct: Number.isFinite(deviation) ? deviation * Math.sqrt(TRADING_DAYS) * 100 : null,
-    sharpe: Number.isFinite(deviation) && deviation > 0 ? (mean / deviation) * Math.sqrt(TRADING_DAYS) : null,
+    volatilityPct: Number.isFinite(deviation) ? deviation * Math.sqrt(barsInYear) * 100 : null,
+    sharpe: Number.isFinite(deviation) && deviation > 0 ? (mean / deviation) * Math.sqrt(barsInYear) : null,
     maxDrawdownPct: drawdown * 100,
   };
 }
@@ -102,7 +108,7 @@ export function runBacktest(
 
   let cash = 1, shares = 0, entryIndex = -1, entryPrice = 0, inMarket = 0;
   const trades: BacktestTrade[] = [];
-  const strategy: number[] = [], benchmark: number[] = [], dates: string[] = [];
+  const strategy: number[] = [], benchmark: number[] = [], dates: string[] = [], positions: Array<0 | 1> = [];
   const benchmarkShares = 1 / (fill(Math.min(start + 1, clean.length - 1)) * (1 + cost));
   for (let index = start; index < clean.length; index += 1) {
     const bar = clean[index]!;
@@ -124,6 +130,7 @@ export function runBacktest(
       }
     }
     if (shares > 0) inMarket += 1;
+    positions.push(shares > 0 ? 1 : 0);
     strategy.push(cash + shares * bar.close);
     benchmark.push(index === start ? 1 : benchmarkShares * bar.close);
     dates.push(bar.date);
@@ -146,18 +153,23 @@ export function runBacktest(
   let peak = strategy[0]!;
   const equity = dates.map((date, index) => {
     peak = Math.max(peak, strategy[index]!);
-    return { date, strategy: strategy[index]!, benchmark: benchmark[index]!, drawdownPct: (strategy[index]! / peak - 1) * 100 };
+    return {
+      date, close: clean[start + index]!.close, position: positions[index]!,
+      strategy: strategy[index]!, benchmark: benchmark[index]!, drawdownPct: (strategy[index]! / peak - 1) * 100,
+    };
   });
+  // A one-year window is as many bars as the series has in a year, so it spans a calendar year for 24/7 assets too.
+  const yearBars = barsPerYear(dates);
   let beat = 0, windows = 0;
-  for (let index = TRADING_DAYS; index < strategy.length; index += 1) {
+  for (let index = yearBars; index < strategy.length; index += 1) {
     windows += 1;
-    if (strategy[index]! / strategy[index - TRADING_DAYS]! > benchmark[index]! / benchmark[index - TRADING_DAYS]!) beat += 1;
+    if (strategy[index]! / strategy[index - yearBars]! > benchmark[index]! / benchmark[index - yearBars]!) beat += 1;
   }
   const warnings = clean.length < bars.length ? [`${bars.length - clean.length} sessions without a positive close were skipped.`] : [];
   return {
-    start: startDate, end: endDate, sessions: dates.length, equity, trades,
+    start: startDate, end: endDate, sessions: dates.length, barsPerYear: yearBars, equity, trades,
     strategy: {
-      ...stats(strategy, startDate, endDate),
+      ...stats(strategy, startDate, endDate, yearBars),
       exposurePct: (inMarket / dates.length) * 100,
       closedTrades: closed.length,
       hitRatePct: closed.length ? (wins.length / closed.length) * 100 : null,
@@ -166,7 +178,7 @@ export function runBacktest(
       profitFactor: grossLoss > 0 ? grossWin / grossLoss : null,
       avgSessions: mean(closed.map((trade) => trade.sessions)),
     },
-    benchmark: stats(benchmark, startDate, endDate),
+    benchmark: stats(benchmark, startDate, endDate, yearBars),
     rollingWin: { sharePct: windows >= 20 ? (beat / windows) * 100 : null, windows },
     warnings,
   };

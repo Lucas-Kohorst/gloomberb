@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { paneSchemas as chartSchemas } from "../../plugins/builtin/chart-composer/headless-schema";
+import { buildFundamentalChartPreset, buildValuationChartPreset } from "../../plugins/builtin/chart-composer/presets";
 import { paneSchemas as correlationSchemas } from "../../plugins/builtin/correlation/headless-schema";
 import { paneSchemas as researchSchemas } from "../../plugins/builtin/research/headless-schema";
 import { optionsPositioningHeadless } from "../../plugins/builtin/options-positioning/headless";
@@ -12,10 +13,19 @@ import { getLoadablePlugins } from "../../plugins/catalog";
 import { createDefaultConfig } from "../../types/config";
 import type { MarketContext } from "../types";
 import { parseCliGlobalArgs } from "../options";
+import { COMMODITIES_VIEW_STATE } from "../../plugins/builtin/commodities-energy/view-state";
+import { cotHeadless } from "../../plugins/builtin/cot/headless";
+import { FIXED_INCOME_VIEW_STATE } from "../../plugins/builtin/fixed-income/model";
+import { futuresCurveHeadless } from "../../plugins/builtin/futures-curve/headless";
+import { jodiHeadless } from "../../plugins/builtin/jodi/headless";
+import { treasuryAuctionsHeadless } from "../../plugins/builtin/treasury-auctions/headless";
+import { yieldCurveHeadless } from "../../plugins/builtin/yield-curve/headless";
 import {
+  capabilityPaneSettings,
   capabilityPluginState,
   getPaneFunctionCapability,
   isDataPaneForDomFallback,
+  noArgumentMessage,
   normalizeCapabilityOptions,
 } from "./capabilities";
 import {
@@ -26,6 +36,7 @@ import {
   type PaneCatalogEntry,
 } from "./catalog";
 import { createPaneCatalog } from "./discovery";
+import { findCatalogSeries } from "../series-search";
 import { parsePaneFunctionArgs } from "./options";
 
 const dummyPane = {
@@ -77,6 +88,21 @@ describe("pane function capabilities", () => {
     expect(capabilityPluginState(capability, options)).toEqual({});
   });
 
+  // A read applies its period over the template, so a default that differs changes what it shows.
+  test("GF and GE read the period their app templates open on, with the other one option away", () => {
+    for (const [id, build, period, other] of [
+      ["fundamental-graph-pane", buildFundamentalChartPreset, "quarterly", "annual"],
+      ["valuation-graph-pane", buildValuationChartPreset, "annual", "quarterly"],
+    ] as const) {
+      const capability = capabilityFor(id);
+      for (const symbols of [["AAPL"], ["AAPL", "MSFT"]]) {
+        expect(build(symbols).series.map((series) => series.source)).toEqual(symbols.map(() => expect.objectContaining({ period })));
+      }
+      expect(normalizeCapabilityOptions(capability, {}).period).toBe(period);
+      expect(normalizeCapabilityOptions(capability, { period: other }).period).toBe(other);
+    }
+  });
+
   test("exposes custom G as a bot-safe mixed-series capability", () => {
     const capability = capabilityFor("chart-composer-pane");
 
@@ -125,10 +151,28 @@ describe("pane function capabilities", () => {
       const capability = getPaneFunctionCapability({ id, paneId: dummyPane.id, label: id, description: id, headless }, dummyPane);
       expect(normalizeCapabilityOptions(capability, { [key]: "2027-01-15" })[key]).toBe(read);
       expect(normalizeCapabilityOptions(capability, { [key]: "1799971200" })[key]).toBe(read);
+      // A date reads as a date option reads it.
+      for (const date of ["15.01.2027", "Jan 15 2027", "15 January 2027"]) expect(normalizeCapabilityOptions(capability, { [key]: date })[key]).toBe(read);
       for (const bad of ["2027-02-30", "15/01/2027", "1799971200000"]) {
         expect(() => normalizeCapabilityOptions(capability, { [key]: bad }))
-          .toThrow(`Invalid --${key} "${bad}". Use YYYY-MM-DD (2028-01-21) or Unix seconds (1832025600).`);
+          .toThrow(`Invalid --${key} "${bad}". Use YYYY-MM-DD (2028-01-21), DD.MM.YYYY, Jan 21 2028, 21 January 2028 or Unix seconds (1832025600).`);
       }
+    }
+  });
+
+  test("COT, CTM, AUCT, JODI and GC options reach their view's own state, under the namespace its workspace wraps it with", () => {
+    const cases: Array<[HeadlessPaneDefinition, Record<string, string>, Record<string, Record<string, unknown>>, Record<string, unknown>]> = [
+      [cotHeadless, { traderClass: "commercial", scope: "all" }, { [COMMODITIES_VIEW_STATE.cot]: { class: "commercial", scope: "all" } }, {}],
+      [futuresCurveHeadless, { tab: "table", date: "2026-10-09" }, { [COMMODITIES_VIEW_STATE.curve]: { tab: "contracts" } }, { asOfDate: "2026-10-09" }],
+      [treasuryAuctionsHeadless, { filter: "bill" }, { [FIXED_INCOME_VIEW_STATE.treasuryAuctions]: { activeTab: "bill" } }, {}],
+      [jodiHeadless, { commodity: "gas" }, { [COMMODITIES_VIEW_STATE.balances]: { commodity: "gas" } }, {}],
+      [yieldCurveHeadless, { date: "2026-10-09" }, {}, { asOfDate: "2026-10-09" }],
+    ];
+    for (const [headless, raw, pluginState, settings] of cases) {
+      const capability = getPaneFunctionCapability({ id: "view", paneId: dummyPane.id, label: "View", description: "View", headless }, dummyPane);
+      const options = normalizeCapabilityOptions(capability, raw);
+      expect(capabilityPluginState(capability, options)).toMatchObject(pluginState);
+      expect(capabilityPaneSettings(capability, options)).toMatchObject(settings);
     }
   });
 
@@ -151,6 +195,15 @@ describe("pane function capabilities", () => {
     // A function with no options says so.
     expect(() => normalizeCapabilityOptions({ ...intraday, options: [] }, { range: "1Y" }, { code: "CDX" }))
       .toThrow("CDX does not support --range. It has no options.");
+  });
+
+  test("a word after a function that takes none is answered with its options, and runs as the option whose value it is", () => {
+    expect(noArgumentMessage(jodiHeadless.options, "JODI", "Gas"))
+      .toBe("JODI does not accept an argument. Options: --commodity <oil|gas>. Run: gloomberb fn JODI --commodity gas");
+    // Anything else gets an example: a choice that is not the default, in the command that was run.
+    expect(noArgumentMessage(jodiHeadless.options, "JODI", "europe", "shot"))
+      .toBe("JODI does not accept an argument. Options: --commodity <oil|gas>. Example: gloomberb shot JODI --commodity gas");
+    expect(noArgumentMessage([], "CDX", "IG")).toBe("CDX does not accept an argument. Run: gloomberb fn CDX");
   });
 });
 
@@ -278,6 +331,57 @@ describe("pane catalog search", () => {
     }
   });
 
+  test("Buffett, overlap, copying a basket and active share searches list 13F first, one word or several", async () => {
+    const context = { config: createDefaultConfig("/tmp/capabilities-test") } as MarketContext;
+    const registry = await createPaneCatalog(context, getLoadablePlugins());
+    try {
+      const entries = await buildPaneCatalogEntries(registry, context);
+      for (const query of ["buffett", "berkshire", "overlap", "copy", "active share", "portfolio import"]) {
+        const ranked = filterPaneCatalogEntries(entries, query);
+        expect(selectPaneCatalogMatches(ranked, query, 10).shown[0]?.token, query).toBe("13F");
+      }
+      // The Buffett indicator is still VAL's.
+      expect(filterPaneCatalogEntries(entries, "buffett").map(({ token }) => token)).toContain("VAL");
+    } finally {
+      registry.destroy();
+    }
+  });
+
+  test("a function's code page names the other functions that list the same word, and AIS finds the map in any case", async () => {
+    const context = { config: createDefaultConfig("/tmp/capabilities-test") } as MarketContext;
+    const registry = await createPaneCatalog(context, getLoadablePlugins());
+    try {
+      const entries = await buildPaneCatalogEntries(registry, context);
+      // `catalog port` is PORT's page; MAP lists ports and vessels, so it is named under it.
+      const page = renderPaneCatalogReport(filterPaneCatalogEntries(entries, "port"), { query: "port", limit: 10, botSafeOnly: false });
+      expect(page).toContain("gloomberb fn PORT <portfolio-id>");
+      expect(page).toMatch(/Also matches "port"[\s\S]*\nMAP\s/);
+      for (const query of ["ais", "AIS", "shipping"]) expect(filterPaneCatalogEntries(entries, query).map(({ token }) => token), query).toContain("MAP");
+    } finally {
+      registry.destroy();
+    }
+  });
+
+  test("crack spread and refining margin searches find G alone, with the per-barrel crack presets it charts", async () => {
+    const context = { config: createDefaultConfig("/tmp/capabilities-test") } as MarketContext;
+    const plugins = getLoadablePlugins();
+    const registry = await createPaneCatalog(context, plugins);
+    try {
+      const entries = await buildPaneCatalogEntries(registry, context);
+      for (const query of ["crack", "crack spread", "refining margin"]) {
+        const ranked = filterPaneCatalogEntries(entries, query);
+        expect(selectPaneCatalogMatches(ranked, query, 10).shown.map(({ token }) => token), query).toEqual(["G"]);
+        expect(findCatalogSeries(plugins, query).map(({ unit, expression }) => `${unit} ${expression}`).sort(), query).toEqual([
+          "USD/barrel (2*42*RB=F + 42*HO=F - 3*CL=F)/3",
+          "USD/barrel 42*HO=F - BZ=F",
+          "USD/barrel 42*HO=F - CL=F",
+        ]);
+      }
+    } finally {
+      registry.destroy();
+    }
+  });
+
   test("a word found only in a flag's description is no match; a flag's own name, or every word together, is", () => {
     const entry = (token: string, description: string, keys: Array<[string, string]>) => ({
       token,
@@ -344,9 +448,13 @@ describe("pane catalog search", () => {
       entry("AAA", "Implied volatility surface and smiles."),
       entry("BBB", "Volatility index closes."),
       entry("CCC", "Surface temperature by ocean basin."),
+      entry("DDD", "Balance sheet and income statement for a ticker."),
     ];
     // BBB has "vol" and CCC "surf", but only AAA has both; a query that matches on its own is not cut.
     expect(filterPaneCatalogEntries(entries, "volsurf").map(({ token }) => token)).toEqual(["AAA"]);
+    // The two words are written in a row: "baltic" starts DDD's "balance" and "ticker" without being either word.
+    expect(filterPaneCatalogEntries(entries, "baltic")).toEqual([]);
+    expect(filterPaneCatalogEntries(entries, "balancesheet").map(({ token }) => token)).toEqual(["DDD"]);
     expect(filterPaneCatalogEntries(entries, "volatility").map(({ token }) => token)).toEqual(["AAA", "BBB"]);
     expect(filterPaneCatalogEntries(entries, "zzqxvb")).toEqual([]);
   });

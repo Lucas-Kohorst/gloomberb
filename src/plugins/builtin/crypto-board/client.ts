@@ -1,6 +1,11 @@
 import { apiClient } from "../../../api-client";
 import { ApiRequestError } from "../../../api-client/errors";
-import type { CryptoMarketAsset, CryptoMarketsPayload } from "../../../api-client/crypto-markets";
+import type {
+  CryptoMarketAsset,
+  CryptoMarketsPayload,
+  StablecoinSupplyHistoryPayload,
+  StablecoinSupplyPayload,
+} from "../../../api-client/crypto-markets";
 import { createPluginCache } from "../../../data/plugin-cache";
 import { cachedCloudResource, loadCloudResource, unavailableOnServer } from "../shared/cloud-resource";
 import { isFiniteNumber } from "../../../utils/guards";
@@ -58,6 +63,27 @@ function validAsset(asset: CryptoMarketAsset): boolean {
   );
 }
 
+const validPeg = (peg: CryptoMarketAsset["peg"]) =>
+  !!peg
+  && typeof peg.currency === "string"
+  && /^[A-Z]{3}$/.test(peg.currency)
+  && typeof peg.accrues === "boolean"
+  && (peg.price === null || (isFiniteNumber(peg.price) && peg.price > 0))
+  && nullableInstant(peg.asOf);
+
+const validRange = (range: CryptoMarketAsset["range24h"]) =>
+  !!range
+  && [range.low, range.high].every((value) => isFiniteNumber(value) && value > 0)
+  && [range.lowAt, range.highAt, range.start, range.end].every(instant);
+
+/** A malformed peg or 24h range is dropped from its coin alone; the coin and the rest of the board stay. */
+function withValidStablecoinFields(asset: CryptoMarketAsset): CryptoMarketAsset {
+  const peg = asset.peg != null && !validPeg(asset.peg);
+  const range = asset.range24h != null && !validRange(asset.range24h);
+  if (!peg && !range) return asset;
+  return { ...asset, ...(peg ? { peg: null } : {}), ...(range ? { range24h: null } : {}) };
+}
+
 export function validateCryptoMarkets(data: CryptoMarketsPayload): CryptoMarketsPayload {
   if (
     !data
@@ -77,7 +103,8 @@ export function validateCryptoMarkets(data: CryptoMarketsPayload): CryptoMarkets
   ) {
     throw new Error("The server returned an invalid crypto board");
   }
-  return data;
+  const assets = data.assets.map(withValidStablecoinFields);
+  return assets.every((asset, index) => asset === data.assets[index]) ? data : { ...data, assets };
 }
 
 export async function fetchCryptoMarkets(
@@ -99,4 +126,127 @@ export function cachedCryptoMarkets() {
 
 export function loadCryptoMarkets(force = false) {
   return loadCloudResource(cryptoMarketsCache, "usd", () => fetchCryptoMarkets(), { force, validate: validateCryptoMarkets });
+}
+
+// Stablecoin supply ------------------------------------------------------------
+
+const stablecoinSupplyCache = createPluginCache<StablecoinSupplyPayload>({
+  kind: "stablecoin-supply",
+  source: "gloom-cloud",
+  schemaVersion: 1,
+  // The server reads the source once a UTC day; a month-old copy still dates itself.
+  policy: { staleMs: 30 * 60_000, expireMs: 30 * 86_400_000 },
+});
+
+const stablecoinSupplyHistoryCache = createPluginCache<StablecoinSupplyHistoryPayload>({
+  kind: "stablecoin-supply-history",
+  source: "gloom-cloud",
+  schemaVersion: 1,
+  policy: { staleMs: 30 * 60_000, expireMs: 30 * 86_400_000 },
+});
+
+export const STABLECOIN_SUPPLY_CACHES = [stablecoinSupplyCache, stablecoinSupplyHistoryCache] as const;
+
+const MAX_SUPPLY_DAYS = 20_000;
+const supplyValues = (values: unknown) =>
+  Array.isArray(values) && values.length <= MAX_SUPPLY_DAYS && values.every((value) => value === null || (isFiniteNumber(value) && value >= 0));
+const nullableString = (value: unknown) => value === null || typeof value === "string";
+const supplyStatus = (value: unknown) => value === "available" || value === "stale" || value === "unavailable";
+
+export function validateStablecoinSupply(data: StablecoinSupplyPayload): StablecoinSupplyPayload {
+  const history = data?.history;
+  if (
+    !data
+    || data.version !== 1
+    || !instant(data.generatedAt)
+    || !nullableInstant(data.fetchedAt)
+    || !(data.asOf === null || date(data.asOf))
+    || !supplyStatus(data.status)
+    || (data.total !== null && (
+      !data.total
+      || !isFiniteNumber(data.total.supply)
+      || ![data.total.change7d, data.total.change7dPercent, data.total.change30d, data.total.change30dPercent].every(nullableNumber)
+    ))
+    || !Array.isArray(data.coins)
+    || data.coins.length > 500
+    || !data.coins.every((coin) => !!coin
+      && typeof coin.symbol === "string"
+      && coin.symbol.length > 0
+      && typeof coin.name === "string"
+      && typeof coin.pegType === "string"
+      && nullableString(coin.pegMechanism)
+      && isFiniteNumber(coin.supply)
+      && coin.supply >= 0
+      && [coin.price, coin.change7d, coin.change7dPercent, coin.change30d, coin.change30dPercent, coin.share].every(nullableNumber))
+    || (history !== null && (
+      !history
+      || !date(history.start)
+      || !supplyValues(history.total)
+      || !Array.isArray(history.coins)
+      || history.coins.length > 20
+      || !history.coins.every((coin) => !!coin
+        && typeof coin.symbol === "string"
+        && typeof coin.name === "string"
+        && supplyValues(coin.values)
+        && coin.values.length === history.total.length)
+    ))
+    || !Array.isArray(data.warnings)
+    || data.warnings.some((warning) => typeof warning !== "string")
+  ) {
+    throw new Error("The server returned invalid stablecoin supply");
+  }
+  return data;
+}
+
+function validateStablecoinSupplyHistory(data: StablecoinSupplyHistoryPayload): StablecoinSupplyHistoryPayload {
+  if (
+    !data
+    || data.version !== 1
+    || !instant(data.generatedAt)
+    || !(data.asOf === null || date(data.asOf))
+    || !supplyStatus(data.status)
+    || typeof data.symbol !== "string"
+    || typeof data.name !== "string"
+    || (data.history !== null && (!data.history || !date(data.history.start) || !supplyValues(data.history.values)))
+    || !Array.isArray(data.warnings)
+  ) {
+    throw new Error("The server returned invalid stablecoin supply history");
+  }
+  return data;
+}
+
+function supplyError(error: unknown, what: string): unknown {
+  if (error instanceof ApiRequestError && error.status === 503) return new Error(`${what} is temporarily unavailable`);
+  return unavailableOnServer(error, `${what} is not available yet.`);
+}
+
+export async function fetchStablecoinSupply(
+  client: Pick<typeof apiClient, "getCloudStablecoinSupply"> = apiClient,
+): Promise<StablecoinSupplyPayload> {
+  try {
+    return validateStablecoinSupply(await client.getCloudStablecoinSupply());
+  } catch (error) {
+    throw supplyError(error, "Stablecoin supply");
+  }
+}
+
+export function cachedStablecoinSupply() {
+  return cachedCloudResource(stablecoinSupplyCache, "all", validateStablecoinSupply);
+}
+
+export function loadStablecoinSupply(force = false) {
+  return loadCloudResource(stablecoinSupplyCache, "all", () => fetchStablecoinSupply(), { force, validate: validateStablecoinSupply });
+}
+
+/** One listed stablecoin's daily supply, by its symbol (USDT). */
+export function loadStablecoinSupplyHistory(symbol: string) {
+  const key = symbol.trim().toUpperCase();
+  return loadCloudResource(stablecoinSupplyHistoryCache, key, async () => {
+    try {
+      return validateStablecoinSupplyHistory(await apiClient.getCloudStablecoinSupplyHistory(key));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) throw new Error(`No stablecoin supply series for ${key}: it is not among the stablecoins CRYP lists.`);
+      throw supplyError(error, `${key} supply history`);
+    }
+  }, { validate: validateStablecoinSupplyHistory });
 }

@@ -8,8 +8,9 @@ import { serveFixturePage, type FixturePage } from "./page";
  * Frame budget of pane drags and resizes, against a base checkout. Each run
  * drags with real pointer input at 60 moves a second for 1.5 s: a docked and a
  * floating pane across a dense layout (fixture.tsx, `perf`), and, over the
- * `resize` layout, the corner of a floating news table, chart, heat map and
- * Fear & Greed pane and of the charts that sit inside a pane's own layout (G
+ * `resize` layout, the corner of a floating news table, chart, heat map (an
+ * invented one, and the market board of 500 names with ticks) and Fear &
+ * Greed pane and of the charts that sit inside a pane's own layout (G
  * layout, chart over a table, chart beside a table, chart under a toolbar), a
  * dock divider between a news table and a chart and one between the G layout
  * and the chart beside a table (`nested`, each measured on both sides), the
@@ -17,7 +18,8 @@ import { serveFixturePage, type FixturePage } from "./page";
  * back and forth (`cmp`), the divider beside a chat whose messages wrap
  * to its width, with the first page of messages and with 500 loaded, and the
  * divider beside DES's overview, with three accounts and with nine and a
- * description three times as long (`des`). It
+ * description three times as long (`des`), with the range bars and the footer's
+ * hint tracked. It
  * reads what the page's main thread spent (Performance.getMetrics, in thread
  * time), the React commits and the animation frames the page ran, and for a
  * resize how far the frame's edge and the content's edge fell behind the
@@ -147,19 +149,6 @@ const dividerRightOf = (paneId: string) => `(() => {
 const TOP_DIVIDER = dividerRightOf("news:dock");
 const CHAT_DIVIDER = dividerRightOf("chat:a");
 const CHAT_ROWS = "document.querySelectorAll('[data-gloom-role=chat-message]').length";
-const CHAT_LIST = "document.querySelector('[data-gloom-role=chat-message]').parentElement";
-
-/** Scrolls the chat to its top until the channel has nothing older, as a reader who paged far back did, then to its newest message. */
-async function loadWholeChat(cdp: Cdp): Promise<void> {
-  for (let page = 0; page < 30; page += 1) {
-    const rows = await evaluate<number>(cdp, CHAT_ROWS);
-    await evaluate(cdp, `${CHAT_LIST}.scrollTop = 0`);
-    if (!await waitFor(cdp, `${CHAT_ROWS} > ${rows}`, 3_000)) break;
-    await frames(cdp, 2);
-  }
-  await evaluate(cdp, `(() => { const list = ${CHAT_LIST}; list.scrollTop = list.scrollHeight; })()`);
-  await frames(cdp, 10);
-}
 
 /** The chat beside a plain pane: its messages wrap their text to the width the divider gives it. */
 const chatDividerDrag = (name: string, fixture: string, prepare?: (cdp: Cdp) => Promise<void>): Scenario => ({
@@ -183,6 +172,18 @@ const desDividerDrag = (name: string, fixture: string): Scenario => ({
   grab: (cdp) => evaluate(cdp, dividerRightOf("des:a")),
   path: (start, t) => ({ x: start.x - Math.sin(t * Math.PI * 2) * 200, y: start.y }),
   track: { frame: rightOf(pane("des:a")), content: DES_LAST_COLUMN },
+});
+
+/** The last range bar's right edge, found by its track so a branch that draws the row another way finds it too. */
+const DES_RANGE_END = `(() => { const tracks = document.querySelectorAll("[data-gloom-pane-id='des:a'] [data-gloom-role=range-track]"); return tracks[tracks.length - 1].parentElement.parentElement.getBoundingClientRect().right; })()`;
+/** DES with its footer's hint and the long names a docked pane cuts: the range bars and the hint keep to the pane's edge. */
+const desLinesDrag = (name: string, track: string): Scenario => ({
+  name,
+  fixture: "des&long=1&footer=1",
+  ready: `!!document.querySelector("[data-gloom-pane-id='des:a'] [data-gloom-role=pane-hint]")`,
+  grab: (cdp) => evaluate(cdp, dividerRightOf("des:a")),
+  path: (start, t) => ({ x: start.x - Math.sin(t * Math.PI * 2) * 200, y: start.y }),
+  track: { frame: rightOf(pane("des:a")), content: track },
 });
 
 /** A floating pane's corner, dragged out, in past where it started and out again, as the chart and table resizes do. */
@@ -228,6 +229,8 @@ const SCENARIOS: Scenario[] = [
   cornerResize("chart resize", "chart", "chart:float", "canvas", `${pane("chart:float")} canvas`),
   // Tiles placed in percentages of a map laid out on the cell grid.
   cornerResize("heat map resize", "heat", "heat:float", "[data-gloom-role=heat-treemap]"),
+  // The market heat map's board: 500 names in sectors and industries, recoloured by ticks as the drag goes.
+  cornerResize("market heat map resize", "heat&heat=market&ticks=1", "heat:float", "[data-gloom-role=heat-treemap]"),
   // A chart of a fixed height in a column of text: it follows the width only.
   cornerResize("fear and greed resize", "fear", "fear-greed:float", "[data-gloom-role=composite-chart]", `${pane("fear-greed:float")} [data-gloom-role=composite-chart] canvas`),
   {
@@ -298,10 +301,12 @@ const SCENARIOS: Scenario[] = [
   },
   chatDividerDrag("chat divider drag", "chat"),
   // A reader who paged far back: every page stays in the list.
-  chatDividerDrag("chat divider drag, 500 messages", "chat&count=500&latency=0", loadWholeChat),
+  chatDividerDrag("chat divider drag, 500 messages", "chat&count=500&loaded=500&latency=0"),
   desDividerDrag("DES divider drag", "des"),
   // Three times the accounts and the description.
   desDividerDrag("DES divider drag, 3x", "des&positions=9&scale=3"),
+  desLinesDrag("DES divider drag, range bars", DES_RANGE_END),
+  desLinesDrag("DES divider drag, footer hint", rightOf(`${pane("des:a")} [data-gloom-role=pane-hint]`)),
   {
     name: "table column drag",
     fixture: "resize",

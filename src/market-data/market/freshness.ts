@@ -359,6 +359,33 @@ export function latestRegularSessionClose(
 }
 
 /**
+ * When the venue's regular session on `date` (its local `YYYY-MM-DD`) closed,
+ * a published early close included. Null when the venue had no session that
+ * day or its hours are unknown.
+ */
+export function regularSessionCloseOn(exchange: string | undefined, date: string): number | null {
+  const timeZone = sessionCalendarTimeZone(exchange);
+  if (!timeZone || isoLocalDateToUtcDay(date) == null) return null;
+  const endOfDay = zonedWallClockToUtcMs(timeZone, Number(date.slice(0, 4)), Number(date.slice(5, 7)), Number(date.slice(8, 10)), 23, 59, 59);
+  const close = latestRegularSessionClose(exchange, endOfDay);
+  return close?.date === date ? close.close : null;
+}
+
+/** The US pre-market opens at 04:00 New York. */
+const US_PRE_MARKET_OPEN_MINUTES = 4 * 60;
+
+/**
+ * When a US listing's pre-market opened on `date` (its New York
+ * `YYYY-MM-DD`): 04:00 there. Null for any other venue, whose pre-market
+ * hours are not known, and for a date that does not parse.
+ */
+export function preMarketOpenOn(exchange: string | undefined, date: string): number | null {
+  if (!isUsListingExchange(canonicalExchange(exchange)) || isoLocalDateToUtcDay(date) == null) return null;
+  return zonedWallClockToUtcMs("America/New_York", Number(date.slice(0, 4)), Number(date.slice(5, 7)), Number(date.slice(8, 10)),
+    Math.floor(US_PRE_MARKET_OPEN_MINUTES / 60), US_PRE_MARKET_OPEN_MINUTES % 60, 0);
+}
+
+/**
  * The UTC minute of the day the venue's regular session closed, for the latest
  * session at or before `time` (20:00 UTC is 1200 while New York is on daylight
  * time). Null for round-the-clock venues and for venues whose close hour is
@@ -518,7 +545,7 @@ function formatUsSessionState(timestampMs: number): UsSessionState {
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
   const totalMinutes = hour * 60 + minute;
 
-  if (totalMinutes < 4 * 60) return "PREPRE";
+  if (totalMinutes < US_PRE_MARKET_OPEN_MINUTES) return "PREPRE";
   if (totalMinutes < 9 * 60 + 30) return "PRE";
   if (totalMinutes < 16 * 60) return "REGULAR";
   if (totalMinutes < 20 * 60) return "POST";
@@ -633,9 +660,7 @@ export function isTimestampStaleForExchangeSession(
 ): boolean {
   try {
     return isTimestampStaleForExchangeSessionUnsafe(timestampMs, exchange, now, marketState, weekendDays);
-  } catch {
-    return true;
-  }
+  } catch { /* Intentional ignore: Invalid session dates are conservatively stale, never fresh. */ return true; }
 }
 
 function isTimestampStaleForExchangeSessionUnsafe(

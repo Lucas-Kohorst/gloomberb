@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import {
   isMarketplaceLayoutId,
   parseMarketplaceLayoutEntry,
@@ -12,7 +13,7 @@ import {
   parseCloudLayoutEntry,
   parseCloudLayoutList,
 } from "../layout-marketplace/cloud";
-import type { SyncSnapshot } from "../sync/types";
+import { SyncRevisionConflictError, type SyncSnapshot } from "../sync/types";
 import { withDeadline } from "../utils/async-deadline";
 import { CloudASKGApi } from "./askg";
 import { CloudAuthApi } from "./auth";
@@ -60,7 +61,8 @@ export type {
 /** Server-side caps for `/assist/command`; enforced here so a 422 is never sent. */
 const ASSIST_QUERY_MAX_LENGTH = 200;
 const ASSIST_COMMAND_LIMIT = 150;
-const ASSIST_ARG_OPTION_LIMIT = 64;
+/** The futures curve's root list is the longest a command sends: 76 since GLO-783. */
+export const ASSIST_ARG_OPTION_LIMIT = 128;
 const ASSIST_ARG_OPTION_VALUE_MAX_LENGTH = 40;
 const ASSIST_ARG_OPTION_LABEL_MAX_LENGTH = 60;
 const ASSIST_REQUEST_TIMEOUT_MS = 6_000;
@@ -420,6 +422,19 @@ class GloomApiClient {
   }
 
   /**
+   * Ends the Pro trial and Pro now, unbilled. Call it only once the person
+   * confirmed a warning that says so. `endedNow` is false when the server
+   * scheduled the cancel at the period end instead: the subscription was no
+   * longer in its trial, or the server predates ending a trial early.
+   */
+  async endCloudTrial(): Promise<{ canceled: boolean; endedNow?: boolean }> {
+    return this.request<{ canceled: boolean; endedNow?: boolean }>("/stripe/subscription/cancel", {
+      method: "POST",
+      body: JSON.stringify({ endTrialNow: true }),
+    });
+  }
+
+  /**
    * Asks which arm of an app experiment this account or web visitor is in, at the
    * moment it would show. The API counts the answer as the exposure.
    */
@@ -450,14 +465,24 @@ class GloomApiClient {
     return this.request<CloudSyncSnapshotResponse>("/sync/snapshot", { method: "GET" });
   }
 
+  /**
+   * `baseRevision` goes out as If-Match: the server ignores the body field and
+   * would replace a snapshot another device wrote since this one pulled. With
+   * the header it refuses that write (409), raised as SyncRevisionConflictError
+   * so the controller pulls again instead.
+   */
   async putSyncSnapshot(snapshot: SyncSnapshot, options?: { baseRevision?: number | null }): Promise<CloudSyncPushResponse> {
-    return this.request<CloudSyncPushResponse>("/sync/snapshot", {
-      method: "PUT",
-      body: JSON.stringify({
-        snapshot,
-        baseRevision: options?.baseRevision ?? null,
-      }),
-    });
+    const baseRevision = options?.baseRevision ?? null;
+    try {
+      return await this.request<CloudSyncPushResponse>("/sync/snapshot", {
+        method: "PUT",
+        ...(baseRevision !== null ? { headers: { "If-Match": String(baseRevision) } } : {}),
+        body: JSON.stringify({ snapshot, baseRevision }),
+      });
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) throw new SyncRevisionConflictError(error.message);
+      throw error;
+    }
   }
 
   async getMarketplaceLayout(
@@ -625,8 +650,9 @@ class GloomApiClient {
   reportCommandSearch(report: CommandSearchReport): void {
     try {
       if (!this.isSignedIn()) return;
-      void this.telemetry.reportCommandSearch(report).catch(() => {});
-    } catch {
+      void this.telemetry.reportCommandSearch(report).catch(logFailure("cloud-telemetry", "Command search report failed"));
+    } catch (error) {
+      logFailure("cloud-telemetry", "Command search reporting failed")(error);
       /* A report must never get in the way of the command bar. */
     }
   }
@@ -634,8 +660,11 @@ class GloomApiClient {
   getChannels = this.chat.getChannels.bind(this.chat);
   getChatPresence = this.chat.getPresence.bind(this.chat);
   getChatState = this.chat.getState.bind(this.chat);
+  getChatMentionCandidates = this.chat.getMentionCandidates.bind(this.chat);
+  subscribeChatMentionCandidatesChanged = this.chat.subscribeMentionCandidatesChanged.bind(this.chat);
   updateChatChannelState = this.chat.updateChannelState.bind(this.chat);
   markChatNotificationsDelivered = this.chat.markNotificationsDelivered.bind(this.chat);
+  getUnseenChatNotificationIds = this.chat.getUnseenNotificationIds.bind(this.chat);
   openDirectChannel = this.chat.openDirectChannel.bind(this.chat);
   openGroupChannel = this.chat.openGroupChannel.bind(this.chat);
   getMessages = this.chat.getMessages.bind(this.chat);
@@ -648,6 +677,7 @@ class GloomApiClient {
   subscribeChatReactions = this.chat.subscribeReactions.bind(this.chat);
   connectChannel = this.chat.connectChannel.bind(this.chat);
   subscribeChatNotifications = this.chat.subscribeNotifications.bind(this.chat);
+  subscribeChatChannelState = this.chat.subscribeChannelState.bind(this.chat);
   subscribeChatPresence = this.chat.subscribePresence.bind(this.chat);
   getChatDiscordLink = this.chat.getDiscordLink.bind(this.chat);
   unlinkChatDiscord = this.chat.unlinkDiscord.bind(this.chat);
@@ -743,9 +773,12 @@ class GloomApiClient {
   getCloudCorporateActions = this.data.getCloudCorporateActions.bind(this.data);
   getCloudTickerChanges = this.data.getCloudTickerChanges.bind(this.data);
   getCloudOrganizationTickers = this.data.getCloudOrganizationTickers.bind(this.data);
+  getCloudTickerChangesBatch = this.data.getCloudTickerChangesBatch.bind(this.data);
+  searchInstrumentsBatch = this.data.searchInstrumentsBatch.bind(this.data);
   getCloudHistory = this.data.getCloudHistory.bind(this.data);
   getCloudExchangeRate = this.data.getCloudExchangeRate.bind(this.data);
   getCloudEconomicCalendar = this.data.getCloudEconomicCalendar.bind(this.data);
+  getCloudEconomicCalendarFrom = this.data.getCloudEconomicCalendarFrom.bind(this.data);
   getCloudMacroReleaseDays = this.data.getCloudMacroReleaseDays.bind(this.data);
   getCloudEquityDiagnostic = this.data.getCloudEquityDiagnostic.bind(this.data);
   getCloudEarningsCalendar = this.data.getCloudEarningsCalendar.bind(this.data);
@@ -753,6 +786,8 @@ class GloomApiClient {
   getCloudFredSeries = this.data.getCloudFredSeries.bind(this.data);
   getCloudFredSeriesCatalog = this.data.getCloudFredSeriesCatalog.bind(this.data);
   getCloudCryptoMarkets = this.data.getCloudCryptoMarkets.bind(this.data);
+  getCloudStablecoinSupply = this.data.getCloudStablecoinSupply.bind(this.data);
+  getCloudStablecoinSupplyHistory = this.data.getCloudStablecoinSupplyHistory.bind(this.data);
   getCloudCentralBankRates = this.data.getCloudCentralBankRates.bind(this.data);
   getMobileAlertHistory = this.data.getMobileAlertHistory.bind(this.data);
   getScannerFlowHistory = this.data.getScannerFlowHistory.bind(this.data);
@@ -762,10 +797,12 @@ class GloomApiClient {
   getMemberFunds = this.data.getMemberFunds.bind(this.data);
   getFundMembers = this.data.getFundMembers.bind(this.data);
   getFundChanges = this.data.getFundChanges.bind(this.data);
+  getFundFacts = this.data.getFundFacts.bind(this.data);
   getCloudThemes = this.data.getCloudThemes.bind(this.data);
   getCloudThemeMembers = this.data.getCloudThemeMembers.bind(this.data);
   impliedVolatility = this.data.impliedVolatility.bind(this.data);
   optionsPositioning = this.data.optionsPositioning.bind(this.data);
+  getCloudBankFigures = this.data.getCloudBankFigures.bind(this.data);
   getCloudDebtMaturities = this.data.getCloudDebtMaturities.bind(this.data);
   getCloudRevenueBreakdown = this.data.getCloudRevenueBreakdown.bind(this.data);
   getCloudMnaDeals = this.data.getCloudMnaDeals.bind(this.data);
@@ -813,6 +850,8 @@ class GloomApiClient {
   getCloudAward = this.data.getCloudAward.bind(this.data);
   getCloudDoeBoard = this.data.getCloudDoeBoard.bind(this.data);
   getCloudDoePrices = this.data.getCloudDoePrices.bind(this.data);
+  getCloudJodiBoard = this.data.getCloudJodiBoard.bind(this.data);
+  getCloudPsdBoard = this.data.getCloudPsdBoard.bind(this.data);
   getCloudAttention = this.data.getCloudAttention.bind(this.data);
   getCloudPowerBoard = this.data.getCloudPowerBoard.bind(this.data);
   getCloudPowerHistory = this.data.getCloudPowerHistory.bind(this.data);
@@ -844,6 +883,7 @@ class GloomApiClient {
   getCloudJobsMovers = this.data.getCloudJobsMovers.bind(this.data);
   getCloudEarningsCalls = this.data.getCloudEarningsCalls.bind(this.data);
   getCloudEarningsTranscript = this.data.getCloudEarningsTranscript.bind(this.data);
+  getCloudEarningsCallAudio = this.data.getCloudEarningsCallAudio.bind(this.data);
   getProxyStatements = this.data.getProxyStatements.bind(this.data);
   getProxyStatement = this.data.getProxyStatement.bind(this.data);
   getFilingEvents = this.data.getFilingEvents.bind(this.data);
@@ -851,6 +891,7 @@ class GloomApiClient {
   getRiskReport = this.data.getRiskReport.bind(this.data);
   getCloudSecFilings = this.data.getCloudSecFilings.bind(this.data);
   getCloudSecBeneficialOwners = this.data.getCloudSecBeneficialOwners.bind(this.data);
+  getCloudSecInsiderSignals = this.data.getCloudSecInsiderSignals.bind(this.data);
   getCloudSecFilingDocuments = this.data.getCloudSecFilingDocuments.bind(this.data);
   getCloudSecFilingContent = this.data.getCloudSecFilingContent.bind(this.data);
   getCloudSec13F = this.data.getCloudSec13F.bind(this.data);

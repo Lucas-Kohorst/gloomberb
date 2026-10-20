@@ -9,6 +9,7 @@ import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "../../../public/react";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
+import { quoteBlockStyle } from "../../../components/ui/quote";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, useRendererHost, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { SignInWall } from "../cloud/auth-actions";
@@ -31,8 +32,10 @@ const getId = (item: Item) => item.id;
 const isNote = (item: Item) => "note" in item && !!item.note;
 function DisclosureEvidence({ row, sourceId, onSource, width }: { row: CompanyRow; sourceId: string | null; onSource: (id: string) => void; width: number }) {
   const colors = useThemeColors();
+  const desktop = useUiCapabilities().nativePaneChrome === true;
   const evidence = row.evidence.find((entry) => entry.id === sourceId) ?? row.evidence[0]!;
-  return <Box flexDirection="column" paddingX={1}>
+  // The desktop's detail body already holds the pane's inset.
+  return <Box flexDirection="column" paddingX={desktop ? 0 : 1}>
     {row.evidence.length > 1 ? <QueryBar width={Math.max(1, width - 4)} filters={[{ id: "source", label: "Document", value: evidence.id,
       options: row.evidence.map((entry) => ({ value: entry.id, label: `${entry.publishedAt.slice(0, 10)} · ${entry.title}` })), onChange: onSource }]} /> : null}
     <KeyValueRow label="Value" value={isGuidance(row) ? rangeText(row) : observationValue(row)} detail={row.currency || row.unit === "volume" || row.unit === "count" ? unitLabel(row) : undefined} labelWidth={18} />
@@ -53,7 +56,10 @@ function DisclosureEvidence({ row, sourceId, onSource, width }: { row: CompanyRo
       <KeyValueRow label="Document" value={evidence.title} labelWidth={18} />
       <KeyValueRow label="Published" value={evidence.publishedAt.slice(0, 10)} detail={`${evidence.country} · ${evidence.language}`} labelWidth={18} />
       <KeyValueRow label="Confidence" value={`${Math.round(evidence.confidence * 100)}%`} detail={evidence.quoteMatchMode === "exact" ? "Exact text match" : "Normalized text match"} labelWidth={18} />
-      <Box paddingY={1}><Text fg={colors.textBright}>{evidence.quote}</Text></Box>
+      {/* The filing's own words: on the desktop, the quote block. */}
+      {desktop
+        ? <Box marginY={1} style={quoteBlockStyle()}><Text fg={colors.textBright} wrapText>{evidence.quote}</Text></Box>
+        : <Box paddingY={1}><Text fg={colors.textBright}>{evidence.quote}</Text></Box>}
       <Text fg={colors.textDim}>{evidence.url}</Text>
     </Box>
   </Box>;
@@ -179,7 +185,7 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
     data?.truncated && data.access === "full" ? "The response reached its stored-record limit. Narrow the metric or date range in a CLI or REST query." : null,
     data?.coverage.conflicts ? "Conflicting disclosures are retained in Evidence and excluded from comparable trends." : null].filter((value): value is string => !!value) });
   if (!symbol) return <EmptyState title="Select a ticker." />;
-  if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="company-kpis-signin" action="view company KPIs and guidance" needsVerification={session.needsVerification} />;
+  if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="company-kpis-signin" action={mode === "guidance" ? "view company guidance" : "view company KPIs"} needsVerification={session.needsVerification} />;
   const bodyHeight = Math.max(3, height - tabRows);
   const query = <QueryBar width={width} filters={[{ id: "metric", label: "Metric", value: metric, defaultValue: "all", options: metricOptions,
     onChange: (value: string) => { setMetric(value); setSelected(null); setOpen(null); } }, ...(tab === "chart" && plotOptions.length ? [{ id: "series", label: "Series", value: activePlot,

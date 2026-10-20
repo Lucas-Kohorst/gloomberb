@@ -14,6 +14,11 @@ export type DataTableColumn = Pick<
    * automation and screen readers read only `label`.
    */
   headerLeading?: ReactNode;
+  /**
+   * The plain words behind a short label ("Impact" for IMP), shown on hover on
+   * the desktop and the web. The terminal has no hover and shows `label` only.
+   */
+  title?: string;
   flexGrow?: number;
 };
 
@@ -166,6 +171,12 @@ export interface DataTableProps<
   freezeFirstColumn?: boolean;
   /** Append export-only source records after the displayed table. */
   getExportMetadata?: () => readonly (readonly unknown[])[];
+  /**
+   * What Export CSV writes in place of the rows drawn, for a pane whose
+   * export is the data behind its view rather than one table: the backtest
+   * writes its daily curve, as `fn BT --csv --equity` prints it.
+   */
+  exportCsv?: () => string;
   /**
    * A rendered-view report (`gloomberb fn`) reads every row, not only those
    * the viewport shows. For a bounded table a reader needs whole, such as an

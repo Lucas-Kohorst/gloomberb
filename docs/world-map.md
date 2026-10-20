@@ -21,11 +21,13 @@ Dense layers show counts until you zoom in. On the desktop and the web the map z
 
 ## Series in G
 
-`GEO:<name>` charts a map series beside anything else, for example `G XOM, GEO:HORMUZ`. `CHOKE` opens the main chokepoints' daily transits, `CHOKE SUEZ` one of them. Transits are published some days after the ships pass, so a chart of map series alone ends at its newest observation rather than today, and the legend leads with that date (`Oct 4`); a series whose last value is older carries its own date. The chart editor's series search finds map series by name. `CORR FRO, STNG, GEO:HORMUZ` correlates a map series with tickers; see [research data](research-data.md#charts-comparisons-and-correlations) for how a count is paired with returns.
+`GEO:<name>` charts a map series beside anything else, for example `G XOM, GEO:HORMUZ`. `CHOKE` opens the main chokepoints' daily transits, `CHOKE SUEZ` one of them. Transits are published some days after the ships pass, so a chart of map series alone ends at its newest observation rather than today, and the legend leads with that date (`Oct 4`); a series whose last value is older carries its own date. Panned or zoomed back, the chart says how far its data goes in the footer (`newest Oct 11`). The chart editor's series search finds map series by name. `CORR FRO, STNG, GEO:HORMUZ` correlates a map series with tickers; see [research data](research-data.md#charts-comparisons-and-correlations) for how a count is paired with returns.
 
 ## From the shell
 
 `gloomberb fn MAP --layer vessels --json` returns a layer's table with its linked tickers; `gloomberb shot MAP ships` saves a picture of the map.
+
+The chokepoints' transits and the ports' calls and trade are published by IMF PortWatch, from ships' position reports (AIS). `fn CHOKE`, `fn MAP ports`, their screenshots and their exports cite it as the source and publisher (`Source: IMF PortWatch · observed Sun 11 Oct · lag 6d` under `shot CHOKE`, `# Publisher: IMF PortWatch` in CSV), and `gloomberb catalog transits` lists it in the Publisher column. Layers that do not name a publisher cite Gloom Cloud.
 
 ## Map data
 

@@ -1,11 +1,13 @@
-import type { MutableRefObject } from "react";
+import { useState, type MutableRefObject } from "react";
 import { useShortcut } from "../../../../react/input";
 import type { ScrollBoxRenderable } from "../../../../ui";
 import type { ChatMessage } from "../../../../api-client";
 import { countEscapeTowardClose } from "../../../../utils/double-escape-close";
 import { isPlainKey } from "../../../../utils/keyboard";
+import { createOneShot } from "../../../../utils/one-shot";
 import { scrollToBottom } from "../layout";
 import type { ChatSidebarRow } from "../sidebar-rows";
+import type { ComposerShareLink } from "../pane-links/composer";
 
 export function useChatContentShortcuts({
   beginEditLatestMessage,
@@ -42,6 +44,8 @@ export function useChatContentShortcuts({
   returnToComposer,
   retryMessage,
   removeLastDraftAttachment,
+  draftLinksRef,
+  removeLastDraftLink,
   scrollRef,
   selectedIdx,
   setFollowMessages,
@@ -88,6 +92,10 @@ export function useChatContentShortcuts({
   retryMessage: (index: number) => void;
   /** Drops the last image waiting in the composer; false when there is none. */
   removeLastDraftAttachment: () => boolean;
+  /** The share links waiting as chips above the field: with any, the composer is not empty. */
+  draftLinksRef: MutableRefObject<ComposerShareLink[]>;
+  /** Drops the last of them; false when there is none. */
+  removeLastDraftLink: () => boolean;
   scrollRef: MutableRefObject<ScrollBoxRenderable | null>;
   selectedIdx: number;
   setFollowMessages: (followMessages: boolean) => void;
@@ -99,6 +107,10 @@ export function useChatContentShortcuts({
   sidebarCursorRow: ChatSidebarRow | null;
   sidebarFocusedRef: MutableRefObject<boolean>;
 }) {
+  // A terminal says a key is held only where its keyboard protocol can;
+  // elsewhere a held Backspace is a stream of presses, told apart by the gaps.
+  const [backspaceShot] = useState(createOneShot);
+
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
     if (
@@ -200,23 +212,29 @@ export function useChatContentShortcuts({
         } else {
           // Leaving an empty composer is the first half of a double-Esc close;
           // leaving a draft is not, so a quick Esc Esc never closes over it.
-          if (inputValueRef.current.trim().length === 0) countEscapeTowardClose(event);
+          if (inputValueRef.current.trim().length === 0 && draftLinksRef.current.length === 0) countEscapeTowardClose(event);
           blurInput();
         }
         return;
       }
 
-      // The terminal's image rows have no focus of their own: Backspace in an
-      // empty composer takes the last one back out.
-      if (
-        !nativePaneChrome
-        && isPlainKey(event, "backspace")
-        && inputValueRef.current.length === 0
-        && removeLastDraftAttachment()
-      ) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        return;
+      // A pasted link is one chip, and the terminal's image rows have no
+      // focus of their own: Backspace in an empty composer takes the nearest
+      // one back out, the links right above the field first. One for each
+      // new press: a Backspace held to clear the text, or held on after one
+      // went, takes out nothing more. Every press counts toward the gap.
+      if (isPlainKey(event, "backspace")) {
+        const freshPress = nativePaneChrome ? event.repeat !== true : !backspaceShot.refuses({ repeat: event.repeat });
+        if (freshPress && !nativePaneChrome) backspaceShot.end();
+        if (
+          freshPress
+          && inputValueRef.current.length === 0
+          && (removeLastDraftLink() || (!nativePaneChrome && removeLastDraftAttachment()))
+        ) {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          return;
+        }
       }
 
       const verticalDirection = event.name === "up" || event.name === "down" ? event.name : null;
@@ -225,6 +243,7 @@ export function useChatContentShortcuts({
         && canSend
         && isPlainKey(event, "up")
         && inputValueRef.current.trim().length === 0
+        && draftLinksRef.current.length === 0
         && beginEditLatestMessage({ deferFocus: true })
       ) {
         event.preventDefault?.();

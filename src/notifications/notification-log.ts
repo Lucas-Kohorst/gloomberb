@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import type { AppPluginStateStorePort } from "../core/app-service-ports";
 import type { AppNotificationRequest } from "../types/plugin";
 
@@ -73,8 +74,8 @@ function commit(next: NotificationLogEntry[]): void {
   entries = next;
   try {
     store?.set(entries);
-  } catch {
-    // The rows stay in memory; the next change tries the write again.
+  } catch (error) {
+    logFailure("notifications.notification-log", "Saving notification history failed")(error);
   }
   for (const listener of listeners) listener();
 }
@@ -88,7 +89,8 @@ function configureNotificationLog(nextStore: NotificationLogStore | null): void 
   let saved: readonly unknown[] = [];
   try {
     saved = nextStore?.get() ?? [];
-  } catch {
+  } catch (error) {
+    logFailure("notifications.notification-log", "Loading notification history failed")(error);
     saved = [];
   }
   const loaded = saved.map(normalizeEntry).filter((entry): entry is NotificationLogEntry => !!entry);

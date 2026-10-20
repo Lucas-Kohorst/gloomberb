@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useCompositeChartKeyboard } from "./use-composite-chart-keyboard";
 import { useCompositeViewport } from "./use-composite-viewport";
 import { CompositePanelSurface } from "./panel-surface";
@@ -11,6 +11,7 @@ import { ChartToolbar, CHART_TOOLBAR_WIDTH } from "./toolbar";
 import { AsciiText, Box, ChartSurface, Text, useUiCapabilities, type BoxRenderable } from "../../../ui";
 import { useLiveStretch } from "../../../ui/live-stretch";
 import { useOptionalPaneInstanceId } from "../../../state/app/context";
+import { useTabCursorLink } from "../../../state/app/tab-cursor";
 import { useThemeColors, useThemeId } from "../../../theme/theme-context";
 import { themedSeriesColor, themeSeriesColors } from "../../../theme/series-colors";
 import { assignSeriesLineCues } from "./series-cues";
@@ -21,6 +22,7 @@ import { isIntradayResolution } from "../../../time-series/resolution";
 import { downsampleCompositeChartScene } from "./downsample";
 import { reuseResolvedSeriesList } from "./panel-series";
 import { consumeChartMouseEvent, type ChartMouseEvent } from "../core/pointer";
+import { useChartViewResetListener } from "../core/view-reset";
 import { useShowChartTextFallback } from "../native/use-chart-text-fallback";
 import { StaticXAxisLabels, StaticXMarkerLabels, StaticXMarkerOverlay } from "./axis-overlays";
 import { formatCompositeCursorAxisDate } from "./format";
@@ -30,7 +32,10 @@ import {
   allocateCompositePanelHeights,
   applyCompositeChartCursor,
   buildCompositeChartScene,
+  compositeCursorAsOf,
+  compositeLinkedCursorTime,
   resizeCompositePanel,
+  resolveAdjacentCompositeCursorDate,
 } from "./scene";
 import { buildCompositeTimeAxisLayout, buildCompositeViewportTimeAxisLayout } from "./time-axis";
 import type {
@@ -44,6 +49,10 @@ import type {
 // Wordmark cell grid at scale 1 (27 columns of 8px, 4 rows of 12px).
 const WATERMARK_BASE_WIDTH_PX = 216;
 const WATERMARK_BASE_HEIGHT_PX = 48;
+
+/** The most lines a legend wraps to, and the plot rows each panel keeps when it does. */
+const MAX_LEGEND_ROWS = 3;
+const MIN_PANEL_ROWS_BESIDE_WRAPPED_LEGEND = 4;
 
 /**
  * Size the screenshot wordmark to roughly half the plot width, capped so it
@@ -60,6 +69,8 @@ function chartWatermarkScale(plotWidthPx: number, plotHeightPx: number): number 
 }
 
 const NO_X_MARKERS: readonly CompositeChartXMarker[] = [];
+const subscribeToNothing = () => () => {};
+const holdsNothing = () => false;
 
 /**
  * Desktop: the rows below the plot span the chart's box and their labels the
@@ -83,6 +94,17 @@ function useThemedSeriesList(list: ResolvedSeries[] | undefined, themeId: string
   }, [list, themeId]);
 }
 
+/** A line broken between its " · " parts to fit `width` cells, each part kept whole. */
+function centeredLines(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const part of text.split(" · ")) {
+    const last = lines.at(-1);
+    if (last !== undefined && last.length + 3 + part.length <= width) lines[lines.length - 1] = `${last} · ${part}`;
+    else lines.push(part);
+  }
+  return lines;
+}
+
 export function CompositeChart(props: CompositeChartProps) {
   const themeId = useThemeId();
   const series = useThemedSeriesList(props.series, themeId);
@@ -99,6 +121,7 @@ function ThemedCompositeChart({
   height,
   focused = false,
   cursorDate,
+  cursorLink,
   viewport,
   clipToViewport = false,
   viewportResetKey,
@@ -116,6 +139,7 @@ function ThemedCompositeChart({
   legendAccessoryWidth,
   showTimeAxis = true,
   emptyMessage = "No chart data",
+  emptyDetail,
   formatValue,
   onCursorDateChange,
   onViewportChange,
@@ -162,7 +186,13 @@ function ThemedCompositeChart({
       (drawing) => drawing.id === selectedDrawingId ? { ...drawing, color } : drawing,
     ));
   }, [selectedDrawingId]);
-  const resolvedCursorDate = cursorDate === undefined ? internalCursorDate : cursorDate;
+  // A cursor the owner rests on without following its moves (a seasonal
+  // chart's latest week) is where the chart's own cursor goes back to: the
+  // pointer moves it as on any chart, and the pointer leaving returns it.
+  const restingCursor = cursorDate !== undefined && !onCursorDateChange;
+  const ownsCursor = cursorDate === undefined || restingCursor;
+  const resolvedCursorDate = cursorDate === undefined ? internalCursorDate
+    : restingCursor ? internalCursorDate ?? cursorDate : cursorDate;
   const totalWidth = Math.max(1, Math.floor(width));
   const totalHeight = Math.max(1, Math.floor(height));
   const seriesIdentityRef = useRef<ResolvedSeries[]>([]);
@@ -207,13 +237,20 @@ function ThemedCompositeChart({
     viewport, viewportResetKey, visibleSeries, marketTimelineSeries,
     allowHistoricalBackfill, onViewportChange,
   });
-  const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
-    ? 1
-    : 0;
+  // The pane's range control asks for this when its selected range is chosen again.
+  useChartViewResetListener(resetViewport, interactive && navigable);
   const timeAxisRows = showTimeAxis ? 1 : 0;
   const xMarkers = xAxis?.markers ?? NO_X_MARKERS;
   const xMarkerRows = xMarkers.some((marker) => marker.label) ? 1 : 0;
   const panelCount = new Set(panelSeries.map((entry) => entry.panelId)).size;
+  // One legend line, or up to a few when its entries cannot share one and each
+  // panel keeps a readable plot: the legend says how many it needs while no
+  // cursor moves its values.
+  const [legendWantedRows, setLegendWantedRows] = useState(1);
+  const legendRoom = totalHeight - timeAxisRows - xMarkerRows - MIN_PANEL_ROWS_BESIDE_WRAPPED_LEGEND * Math.max(1, panelCount);
+  const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
+    ? Math.max(1, Math.min(legendWantedRows, MAX_LEGEND_ROWS, legendRoom))
+    : 0;
   // A forming bar can change its extremes or volume without moving its close.
   const lastTickKey = visibleSeries.map((entry) => {
     const last = entry.points.at(-1);
@@ -291,16 +328,22 @@ function ThemedCompositeChart({
   }, [fractionalViewport, lineCues, panels, plotHeight, projectedScene]);
   // Static overview charts also pin the latest price with cursor precision.
   const includeCursorLabels = interactive || cursorDate !== undefined || !!scenePanels?.some((panel) => panel.lastPrice);
+  const includeSeriesTags = isDesktopWeb && (interactive || cursorDate !== undefined);
   const resolvedAxisWidth = useMemo(() => maximumAxisWidth === 0 ? 0 : Math.min(
     availableAxisWidth,
     Math.max(
       Math.min(MINIMUM_AXIS_LABEL_WIDTH, maximumAxisWidth),
-      ...(layoutPanels ?? []).flatMap((panel) => [
-        compositeAxisLabelWidth(panel.axes.left, formatAxisValue, includeCursorLabels),
-        compositeAxisLabelWidth(panel.axes.right, formatAxisValue, includeCursorLabels),
-      ]).map((width) => includeCursorLabels ? width : Math.min(width, maximumAxisWidth)),
+      ...(layoutPanels ?? []).flatMap((panel) => (["left", "right"] as const).map((side) => {
+        const width = compositeAxisLabelWidth(panel.axes[side], formatAxisValue, includeCursorLabels);
+        if (!includeSeriesTags || !width) return includeCursorLabels ? width : Math.min(width, maximumAxisWidth);
+        const count = panel.series.filter(({ source }) => source.axis === side && !source.hidden).length;
+        const lanes = Math.max(1, Math.ceil(count / Math.max(1, Math.floor(panel.height))));
+        // Reserve the observation leaders and dense-panel lanes before hover,
+        // so moving the crosshair never moves the plot or its time axis.
+        return (width + 1) * lanes;
+      })),
     ),
-  ), [availableAxisWidth, formatAxisValue, includeCursorLabels, layoutPanels, maximumAxisWidth]);
+  ), [availableAxisWidth, formatAxisValue, includeCursorLabels, includeSeriesTags, layoutPanels, maximumAxisWidth]);
   const leftAxisWidth = hasLeftAxis ? resolvedAxisWidth : 0;
   const rightAxisWidth = hasRightAxis ? resolvedAxisWidth : 0;
   const axisGap = resolvedAxisWidth > 0 ? 1 : 0;
@@ -328,14 +371,46 @@ function ThemedCompositeChart({
   const normalizedCursorTimestamp = resolvedCursorTimestamp !== null && Number.isFinite(resolvedCursorTimestamp)
     ? resolvedCursorTimestamp
     : null;
-  const scene = useMemo(() => (
-    baseScene
-      ? applyCompositeChartCursor(
-        baseScene,
-        normalizedCursorTimestamp === null ? null : new Date(normalizedCursorTimestamp),
-      )
-      : null
-  ), [baseScene, normalizedCursorTimestamp]);
+  // A custom x axis is not time, so there is no time to share. Otherwise an
+  // interactive chart in a pane shares its crosshair with every chart in the
+  // pane's layout tab, its siblings in the pane included: each chart is its
+  // own source, so they never take turns. A chart that stops taking the
+  // pointer for a while (under a dialog) keeps its place, so a cursor it
+  // holds stays shared. Only an interactive chart shows the tab's pin and
+  // lifts it, so only one counts toward keeping it.
+  const chartId = useId();
+  const tabLink = useTabCursorLink(
+    cursorLink === undefined && !xAxis && paneInstanceId !== null ? `${paneInstanceId}${chartId}` : null,
+    { viewer: interactive },
+  );
+  const link = xAxis ? undefined
+    : cursorLink === undefined ? interactive ? tabLink : undefined
+      : cursorLink ?? undefined;
+  const subscribeToLink = link?.subscribe ?? subscribeToNothing;
+  const sharedTime = link?.time;
+  // Charts sharing a cursor show one: another chart's while it holds it, in
+  // place of this one's own. An owner's resting cursor, such as a table's
+  // selected row, comes back when it clears. A chart renders again when the
+  // bar the shared cursor lands on here changes, not on every move: a daily
+  // chart under a 30-minute one's cursor moves once a session.
+  const showsSharedCursor = useSyncExternalStore(subscribeToLink, useCallback(() => sharedTime?.() != null, [sharedTime]));
+  const sharedCursorBar = useSyncExternalStore(subscribeToLink, useCallback(() => {
+    const time = sharedTime?.() ?? null;
+    return time === null || !baseScene ? null : compositeLinkedCursorTime(baseScene, time);
+  }, [baseScene, sharedTime]));
+  const holdsSharedCursor = useSyncExternalStore(subscribeToLink, link?.held ?? holdsNothing);
+  const pinnedCursor = useSyncExternalStore(subscribeToLink, link?.pinned ?? holdsNothing);
+  const publishCursor = link?.publish;
+  const scene = useMemo(() => {
+    if (!baseScene) return null;
+    if (showsSharedCursor) {
+      return applyCompositeChartCursor(baseScene, sharedCursorBar === null ? null : new Date(sharedCursorBar), "linked");
+    }
+    return applyCompositeChartCursor(
+      baseScene,
+      normalizedCursorTimestamp === null ? null : new Date(normalizedCursorTimestamp),
+    );
+  }, [baseScene, normalizedCursorTimestamp, sharedCursorBar, showsSharedCursor]);
   const lastCursorTimestampRef = useRef<number | null>(normalizedCursorTimestamp);
   const renderedCursorTimestampRef = useRef<number | null>(normalizedCursorTimestamp);
   if (renderedCursorTimestampRef.current !== normalizedCursorTimestamp) {
@@ -348,9 +423,64 @@ function ThemedCompositeChart({
     const nextTimestamp = timestamp !== null && Number.isFinite(timestamp) ? timestamp : null;
     if (lastCursorTimestampRef.current === nextTimestamp) return;
     lastCursorTimestampRef.current = nextTimestamp;
-    if (cursorDate === undefined) setInternalCursorDate(date);
+    if (ownsCursor) setInternalCursorDate(date);
     onCursorDateChange?.(date);
-  }, [cursorDate, onCursorDateChange]);
+    publishCursor?.(date && baseScene && nextTimestamp !== null ? compositeCursorAsOf(baseScene, date) : null);
+  }, [baseScene, onCursorDateChange, ownsCursor, publishCursor]);
+  // Another chart taking the cursor, or clearing it, takes it from this one,
+  // so it does not come back here later. Read live: a move since the render
+  // makes this chart's cursor the shared one again.
+  useEffect(() => {
+    void holdsSharedCursor;
+    if (!link || !ownsCursor || lastCursorTimestampRef.current === null || link.held()) return;
+    updateCursor(null);
+  }, [holdsSharedCursor, link, ownsCursor, updateCursor]);
+  // Esc on a chart showing another chart's cursor clears it, as on that chart.
+  // While the tab's cursor is pinned the arrows move the pin and Esc unpins it.
+  const updateKeyboardCursor = useCallback((date: Date | null) => {
+    if (link?.pinned?.()) {
+      link.pin?.(date && baseScene ? compositeCursorAsOf(baseScene, date) : null);
+      return;
+    }
+    if (date === null && showsSharedCursor) link?.clear();
+    updateCursor(date);
+  }, [baseScene, link, showsSharedCursor, updateCursor]);
+  // `p` pins the crosshair where it is, this chart's own or another's, so
+  // every chart in the tab holds that moment after the pointer leaves.
+  // Another chart's is pinned at its own moment, not at the bar it lands on
+  // here, so a daily chart pins an intraday chart's minute. With no crosshair
+  // it pins the last one shown (the pointer leaves the plot on its way to the
+  // footer's pin), and before any, the latest bar, where the arrows start.
+  // The last time sits in a ref, so a moving crosshair costs no extra render,
+  // and the footer's pin is there from the start: a hint appearing mid-hover
+  // would move the plot under the pointer.
+  const cursorAt = scene?.cursorDate?.getTime() ?? null;
+  const lastCursorAtRef = useRef<{ time: number; shared: boolean } | null>(null);
+  if (cursorAt !== null) {
+    const shared = showsSharedCursor ? sharedTime?.() ?? null : null;
+    lastCursorAtRef.current = shared !== null ? { time: shared, shared: true } : { time: cursorAt, shared: false };
+  }
+  const pinnable = !!link?.pin;
+  const togglePin = useCallback(() => {
+    if (!link?.pin) return;
+    if (link.pinned?.()) {
+      link.pin(null);
+      return;
+    }
+    const live = link.time();
+    if (live !== null) {
+      link.pin(live);
+      return;
+    }
+    if (!baseScene) return;
+    const last = lastCursorAtRef.current;
+    if (last?.shared) {
+      link.pin(last.time);
+      return;
+    }
+    const date = last ? new Date(last.time) : resolveAdjacentCompositeCursorDate(baseScene, null, -1);
+    if (date) link.pin(compositeCursorAsOf(baseScene, date));
+  }, [baseScene, link]);
 
   const {
     armedTool,
@@ -370,7 +500,8 @@ function ThemedCompositeChart({
     showLegend,
     scene,
     cursorDate,
-    updateCursor,
+    updateCursor: updateKeyboardCursor,
+    pin: pinnable ? { pinned: pinnedCursor, toggle: togglePin } : null,
     onActivate,
     timePick,
     levels,
@@ -420,9 +551,11 @@ function ThemedCompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis
-    ? buildCompositeTimeAxisLayout(scene, plotWidth)
-    : null;
+  // The axis's ticks do not move with the cursor, so they are laid out once per chart, not per move.
+  const timeAxisLayout = useMemo(
+    () => baseScene && showTimeAxis ? buildCompositeTimeAxisLayout(baseScene, plotWidth) : null,
+    [baseScene, plotWidth, showTimeAxis],
+  );
   const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
@@ -486,7 +619,17 @@ function ThemedCompositeChart({
               data-gloom-role="composite-chart-empty"
               data-gloom-label={emptyMessage}
             >
-              <Text fg={resolvedColors.textDim}>{emptyMessage}</Text>
+              {emptyDetail ? (
+                // The kit's empty state: the message dim, what to do about it muted under it.
+                <Box flexDirection="column" alignItems="center">
+                  <Text fg={resolvedColors.textDim}>{emptyMessage}</Text>
+                  {centeredLines(emptyDetail, plotWidth - 2).map((line, index) => (
+                    <Text key={index} fg={activeThemeColors.textMuted}>{line}</Text>
+                  ))}
+                </Box>
+              ) : (
+                <Text fg={resolvedColors.textDim}>{emptyMessage}</Text>
+              )}
             </ChartSurface>
             {rightPadding > 0 ? <Box width={rightPadding} /> : null}
           </Box>
@@ -569,6 +712,8 @@ function ThemedCompositeChart({
           onToggleSeries={onToggleSeries}
           isSeriesToggleable={isSeriesToggleable}
           keyboardIndex={legendKeyboardIndex}
+          rows={legendRows}
+          onWantedRowsChange={setLegendWantedRows}
         />
       ) : null}
       {showToolbar ? (
@@ -622,6 +767,7 @@ function ThemedCompositeChart({
           onSelectDrawing={setSelectedDrawingId}
           onActivate={activateFromPointer}
           onCursorDateChange={updateCursor}
+          sharedCursor={showsSharedCursor}
           onPanViewport={panViewport}
           onZoomViewport={zoomViewport}
           onSetViewport={setViewportRange}

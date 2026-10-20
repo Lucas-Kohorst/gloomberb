@@ -257,6 +257,10 @@ function LegacyPortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     ...(sectorAllocation.unvaluedSymbols.length > 0 ? [{
       text: `Weights unavailable: missing prices or FX for ${sectorAllocation.unvaluedSymbols.join(", ")}.`, tone: "warning" as const,
     }] : []),
+    // Named once in the pane's notices: its totals and its sectors leave the same futures out.
+    ...(sectorAllocation.unsizedSymbols.length > 0 ? [{
+      text: `No contract size, so not valued: ${sectorAllocation.unsizedSymbols.join(", ")}.`, tone: "warning" as const,
+    }] : []),
   ];
   const sectorRows = sectorAllocation.rows;
   const sortedSectorRows = useMemo(
@@ -453,9 +457,10 @@ export const portfolioAnalyticsModule: PluginModule = {
       headless: portfolioRiskHeadless,
       tableExport: true,
       // The risk window reads as trailing until it is set.
-      settings: (context) => ({ values: { riskSince: context.settings.riskSince ?? "trailing" }, fields: [
+      settings: (context) => ({ values: { riskSince: context.settings.riskSince ?? "trailing", riskWeights: context.settings.riskWeights ?? "13f" }, fields: [
         { key: "analyticsView", label: "View", type: "select", options: [{ value: "overview", label: "Overview" }, { value: "risk", label: "Risk depth" }] },
         { key: "riskSince", label: "Risk window", type: "select", options: [{ value: "trailing", label: "Trailing 60 sessions" }, { value: "filed", label: "Since 13F filing" }] },
+        { key: "riskWeights", label: "Since-filing weights", type: "select", options: [{ value: "13f", label: "13F weights, bought and held" }, { value: "current", label: "Current weights, held fixed" }] },
         { key: "riskEvidence", label: "Local evidence JSON", type: "text" },
         { key: "equityShift", label: "Index shift (%)", type: "text" },
         { key: "rateShift", label: "10Y shift (bp)", type: "text" },
@@ -477,7 +482,7 @@ export const portfolioAnalyticsModule: PluginModule = {
       paneId: "analytics",
       label: prefix === "PORT" ? "Portfolio Analytics" : "Portfolio Market Risk",
       description: "Benchmark-relative risk, factor betas, stress shifts and local account evidence.",
-      keywords: ["risk", "analytics", "sharpe", "beta", "sector", "allocation", "portfolio"],
+      keywords: ["risk", "analytics", "sharpe", "beta", "sector", "allocation", "portfolio", "style", "quality", "factor tilt"],
       shortcut: { prefix, argKind: "text", argOptional: true, argPlaceholder: "portfolio-id" },
       headless: portfolioRiskHeadless,
       canCreate: (context) => context.config.portfolios.length > 0,

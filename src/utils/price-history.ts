@@ -436,6 +436,17 @@ export function calendarHistoryFetchState(
 }
 
 /**
+ * The venue date of the latest regular session whose bar is final at `now`:
+ * closed for the settle allowance, on the calendar calendarHistoryFetchState
+ * reads. Null for a listing without a venue and for venues whose sessions are
+ * unknown, round-the-clock ones included.
+ */
+export function latestSettledSessionDate(exchange: string | undefined, now = Date.now()): string | null {
+  const venue = canonicalExchange(exchange);
+  return venue ? latestRegularSessionClose(venue, now - SESSION_BAR_SETTLE_MS)?.date ?? null : null;
+}
+
+/**
  * True when the latest bar is from the venue's latest settled session or a
  * later one, read on the calendar calendarHistoryFetchState uses. A venue
  * whose sessions are unknown, round-the-clock ones included, proves nothing.
@@ -457,8 +468,9 @@ export function reachesLatestSettledSession(
   return !isBarBeforeSession(latestTime, session.date, Math.max(intervalMs, DAY_MS), session.timeZone);
 }
 
+/** One price and no volume: 0, or missing where a coin's feed sends 0 for no data. */
 function isPlaceholderBar(point: PricePoint): boolean {
-  return point.volume === 0 && Number.isFinite(point.close)
+  return !point.volume && Number.isFinite(point.close)
     && point.open === point.close && point.high === point.close && point.low === point.close;
 }
 

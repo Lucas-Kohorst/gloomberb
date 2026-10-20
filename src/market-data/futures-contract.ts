@@ -3,6 +3,8 @@ import type { FuturesContractSpec, FuturesContractTermsPayload } from "../api-cl
 import { classifyInstrumentType } from "../tickers/instrument-kind";
 import type { Quote } from "../types/financials";
 import { parsePublicTickerKey } from "../utils/exchanges";
+import { logFailure } from "../utils/log-failure";
+import { futuresBoardContract, type FuturesContract } from "./futures-board";
 import { formatMarketPrice, formatMarketPriceWithCurrency, quoteFormatOptions, withCurrencyMinorDigits } from "./market/format";
 
 /**
@@ -15,7 +17,8 @@ import { formatMarketPrice, formatMarketPriceWithCurrency, quoteFormatOptions, w
 /** A settlement the exchange has not confirmed reads as CTM writes a missing price. */
 const FUTURES_MISSING = "--";
 
-type FuturesContractLineKey = "contract" | "unit" | "size" | "tick" | "pointValue" | "settlement" | "firstNotice" | "lastTrade";
+type FuturesContractLineKey = "contract" | "unit" | "size" | "tick" | "pointValue" | "settlement" | "firstNotice" | "lastTrade"
+  | "roll" | "front" | "nearest" | "mostActive";
 
 export interface FuturesContractLine {
   key: FuturesContractLineKey;
@@ -32,6 +35,7 @@ export interface FuturesContractLine {
  */
 const LINE_RANK: Readonly<Record<FuturesContractLineKey, number>> = {
   contract: 0, size: 1, tick: 2, firstNotice: 3, unit: 4, lastTrade: 5, settlement: 6, pointValue: 7,
+  front: 8, roll: 9, nearest: 10, mostActive: 11,
 };
 
 const SETTLEMENT_TYPE: Readonly<Record<FuturesContractSpec["settlement"], string>> = {
@@ -114,6 +118,51 @@ export function futuresSettleText(
   return `${price} (${terms.settlement.date})`;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A listed contract as code and month: "NGX26 (Nov 26)". */
+function contractWithMonth(contract: { contract: string; deliveryMonth: string }): string {
+  const [year, month] = contract.deliveryMonth.split("-");
+  const name = MONTHS[Number(month) - 1];
+  return name && year ? `${contract.contract} (${name} ${year.slice(2)})` : contract.contract;
+}
+
+/**
+ * What `quote` adds to a futures row's Contract block: when a continuous
+ * symbol or a generic leaves its contract, the root's front contract with its
+ * own price when the symbol prices another one (NGF27, NG2), the nearer month
+ * a rolled symbol has left, and the contract the day's volume made the most
+ * active. A line with nothing to say is left out.
+ */
+export function futuresRollLines(
+  terms: Pick<FuturesContractTermsPayload, "roll" | "front" | "nearest" | "mostActive">,
+  frontQuote?: Pick<Quote, "price" | "lastUpdated" | "currency" | "instrumentType" | "priceBasis" | "providerPriceDivisor"> | null,
+): FuturesContractLine[] {
+  const lines: FuturesContractLine[] = [];
+  if (terms.roll) lines.push({ key: "roll", label: "Rolls", value: terms.roll.date ? `${terms.roll.date}, ${terms.roll.label}` : terms.roll.label });
+  if (terms.front) {
+    const price = frontQuote && Number.isFinite(frontQuote.price) ? frontQuote.price : null;
+    const options = withCurrencyMinorDigits(quoteFormatOptions(frontQuote, "FUTURE"), frontQuote?.currency);
+    const priced = price == null ? null
+      : frontQuote?.currency ? formatMarketPriceWithCurrency(price, frontQuote.currency, options) : formatMarketPrice(price, options);
+    const at = frontQuote?.lastUpdated && Number.isFinite(frontQuote.lastUpdated)
+      ? `${new Date(frontQuote.lastUpdated).toISOString().slice(0, 16).replace("T", " ")} UTC` : null;
+    const value = priced ? `${contractWithMonth(terms.front)} ${priced}${at ? `, ${at}` : ""}`
+      : `${contractWithMonth(terms.front)}${terms.front.lastTrade ? `, last trade ${terms.front.lastTrade}` : ""}`;
+    lines.push({ key: "front", label: "Front", value });
+  }
+  if (terms.nearest) {
+    lines.push({ key: "nearest", label: "Nearest", value: `${contractWithMonth(terms.nearest)}${terms.nearest.lastTrade
+      ? `, last trade ${terms.nearest.lastTrade}` : ""}` });
+  }
+  if (terms.mostActive) {
+    const { volume, date } = terms.mostActive;
+    lines.push({ key: "mostActive", label: "Most Active",
+      value: `${contractWithMonth(terms.mostActive)}, ${volume.toLocaleString("en-US")} contracts on ${date}` });
+  }
+  return lines;
+}
+
 const isDate = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const optionalDate = (value: unknown) => value === null || isDate(value);
@@ -135,6 +184,18 @@ function isNearestContract(value: unknown): boolean {
     && typeof row.deliveryMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(row.deliveryMonth) && optionalDate(row.lastTrade);
 }
 
+function isRoll(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.label === "string" && row.label.trim() !== "" && optionalDate(row.date);
+}
+
+function isMostActive(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return isNearestContract({ ...row, lastTrade: null }) && positive(row.volume) && Number.isInteger(row.volume) && isDate(row.date);
+}
+
 export function validateFuturesContractTerms(data: FuturesContractTermsPayload): FuturesContractTermsPayload {
   const settlement = data?.settlement as unknown;
   if (!data || typeof data !== "object" || typeof data.root !== "string"
@@ -145,10 +206,10 @@ export function validateFuturesContractTerms(data: FuturesContractTermsPayload):
       && isDate((settlement as { date?: unknown }).date))) {
     throw new Error("The server returned invalid futures contract terms");
   }
-  // A nearest contract the server worded some other way is left out; the terms still stand.
-  const nearest = data.nearest as unknown;
-  if (nearest != null && !isNearestContract(nearest)) return { ...data, nearest: null };
-  return data;
+  // A nearest, front, roll or most active contract the server worded some other way is left out; the terms still stand.
+  const checks = [["nearest", isNearestContract], ["front", isNearestContract], ["roll", isRoll], ["mostActive", isMostActive]] as const;
+  const invalid = checks.filter(([key, valid]) => data[key] != null && !valid(data[key]));
+  return invalid.length ? { ...data, ...Object.fromEntries(invalid.map(([key]) => [key, null])) } : data;
 }
 
 /** A futures symbol's contract, terms and latest confirmed settlement; throws when the server has none for it. */
@@ -158,4 +219,93 @@ export async function loadFuturesContractTerms(
 ): Promise<FuturesContractTermsPayload> {
   // The terms are the contract's wherever it is listed: GC=F:CMX asks for GC=F.
   return validateFuturesContractTerms(await client.getCloudFuturesContract(parsePublicTickerKey(symbol).symbol));
+}
+
+/**
+ * What a futures price counts: the exchange's unit from the contract terms
+ * ("USD / gallon"), the catalog's where the server has none ("EUR / MWh"),
+ * else null. FUT's Unit column and the chart composer read it the same way.
+ */
+export function futuresPriceUnit(
+  contract: Pick<FuturesContract, "unit"> | null | undefined,
+  terms?: Pick<FuturesContractTermsPayload, "spec"> | null,
+): string | null {
+  return terms?.spec?.unit ?? contract?.unit ?? null;
+}
+
+/** The terms change with a roll, and a roll is decided once a day. */
+const PRICE_UNIT_TTL_MS = 30 * 60_000;
+/** A failed request is asked again sooner than a settled answer. */
+const PRICE_UNIT_RETRY_MS = 60_000;
+const priceUnits = new Map<string, { at: number; ttl: number; unit: string | null }>();
+const priceUnitsInFlight = new Map<string, Promise<string | null>>();
+
+/**
+ * A futures symbol's price unit (`futuresPriceUnit`), asked once per symbol
+ * and kept for the rest of the session's roll window. A symbol whose terms
+ * cannot be had falls back to the catalog's unit, or null.
+ */
+export function loadFuturesPriceUnit(
+  symbol: string,
+  load: (symbol: string) => Promise<FuturesContractTermsPayload> = loadFuturesContractTerms,
+): Promise<string | null> {
+  const key = parsePublicTickerKey(symbol).symbol.trim().toUpperCase();
+  const cached = priceUnits.get(key);
+  if (cached && Date.now() - cached.at < cached.ttl) return Promise.resolve(cached.unit);
+  const pending = priceUnitsInFlight.get(key);
+  if (pending) return pending;
+  const contract = futuresBoardContract(key);
+  const request = load(key)
+    .then((terms) => ({ unit: futuresPriceUnit(contract, terms), ttl: PRICE_UNIT_TTL_MS }))
+    .catch(() => ({ unit: futuresPriceUnit(contract, null), ttl: PRICE_UNIT_RETRY_MS }))
+    .then(({ unit, ttl }) => {
+      priceUnits.set(key, { at: Date.now(), ttl, unit });
+      return unit;
+    })
+    .finally(() => { priceUnitsInFlight.delete(key); });
+  priceUnitsInFlight.set(key, request);
+  return request;
+}
+
+/** Forgets every remembered price unit (tests). */
+export function resetFuturesPriceUnits(): void {
+  priceUnits.clear();
+  priceUnitsInFlight.clear();
+}
+
+/** A day's settlement lands the morning after its session; the terms change only with a roll. */
+const TERMS_TTL_MS = 30 * 60_000;
+const termsCache = new Map<string, { at: number; ttl: number; terms: FuturesContractTermsPayload | null }>();
+const termsInFlight = new Map<string, Promise<FuturesContractTermsPayload | null>>();
+
+function termsKey(symbol: string): string {
+  return parsePublicTickerKey(symbol).symbol.trim().toUpperCase();
+}
+
+/**
+ * A futures symbol's terms and settlement as portfolios read them: asked once
+ * per symbol for the roll window, a failure again a minute later. Null when
+ * the server has none for it or could not answer.
+ */
+export function loadFuturesContractTermsCached(
+  symbol: string,
+  load: (symbol: string) => Promise<FuturesContractTermsPayload> = loadFuturesContractTerms,
+): Promise<FuturesContractTermsPayload | null> {
+  const key = termsKey(symbol);
+  const cached = termsCache.get(key);
+  if (cached && Date.now() - cached.at < cached.ttl) return Promise.resolve(cached.terms);
+  const pending = termsInFlight.get(key);
+  if (pending) return pending;
+  const request = load(key)
+    .then((terms) => ({ terms, ttl: TERMS_TTL_MS }), (error: unknown) => {
+      logFailure("futures-contract", "Read futures contract terms failed", null)(error);
+      return { terms: null, ttl: PRICE_UNIT_RETRY_MS };
+    })
+    .then(({ terms, ttl }) => {
+      termsCache.set(key, { at: Date.now(), ttl, terms });
+      return terms;
+    })
+    .finally(() => { termsInFlight.delete(key); });
+  termsInFlight.set(key, request);
+  return request;
 }

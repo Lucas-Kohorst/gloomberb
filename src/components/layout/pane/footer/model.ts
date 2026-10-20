@@ -29,6 +29,8 @@ export interface PaneFooterSegment {
    * The segment only dates the pane's data (`as of 2026-10-05`). A `gloomberb
    * shot` whose status line already dates that data leaves it out, so the
    * date is not said twice, and gives it up before its status line is cut.
+   * A segment that reads `as of <date>` is one without saying so; set it for
+   * a segment worded another way (`holdings 2026-06-30`).
    */
   asOf?: boolean;
   /**
@@ -48,6 +50,11 @@ export interface PaneFooterSegment {
   shortcut?: string;
   onPress?: () => void;
   disabled?: boolean;
+}
+
+/** Whether the segment only dates the pane's data: marked `asOf`, or reading `as of <date>`. */
+export function datesPaneData(segment: Pick<PaneFooterSegment, "asOf" | "parts">): boolean {
+  return segment.asOf ?? /^as of\b/i.test(segment.parts[0]?.text ?? "");
 }
 
 export interface PaneFooterPressEvent {
@@ -75,6 +82,13 @@ export interface PaneHint {
   title?: string;
   onPress?: (event?: PaneFooterPressEvent) => void;
   disabled?: boolean;
+  /**
+   * For a hint a shared component adds to whatever pane hosts it, such as a
+   * chart's `p` pin: the pane's own hints and keys come first. While another
+   * one in the pane takes the same key, this one leaves the footer and is
+   * listed in the pane menu without a key.
+   */
+  yieldsKey?: boolean;
 }
 
 export interface CombinedPaneFooter {
@@ -227,8 +241,20 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
     }
   }
 
-  if (info.length === 0 && hints.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
-  return { info, hints, menu, keys };
+  // A key a pane holds but has turned off does nothing, so it takes nothing.
+  const taken = new Set([...hints, ...keys].flatMap((hint) => hint.yieldsKey || hint.disabled ? [] : [hint.key]));
+  const yielded = hints.filter((hint) => hint.yieldsKey && taken.has(hint.key));
+  if (yielded.length > 0) {
+    if (menu.length > 0) menu.push({ type: "divider", id: "yielded-hints:divider" });
+    for (const hint of yielded) {
+      const onPress = hint.onPress;
+      if (!hint.disabled && onPress) menu.push({ id: `pane-hint:${hint.id}`, label: paneHintTitle(hint), onSelect: () => onPress() });
+    }
+  }
+  const shown = yielded.length > 0 ? hints.filter((hint) => !yielded.includes(hint)) : hints;
+
+  if (info.length === 0 && shown.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
+  return { info, hints: shown, menu, keys };
 }
 
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {

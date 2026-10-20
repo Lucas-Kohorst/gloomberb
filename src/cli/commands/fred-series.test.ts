@@ -2,17 +2,52 @@ import { expect, test } from "bun:test";
 import {
   basisPointsCell,
   filterFredSeries,
+  fredChangeFetchStart,
+  fredChangeMismatch,
+  fredChanges,
   fredEmptyAdvice,
   fredEmptyMessage,
+  fredDecimals,
   fredExportValue,
   fredHistoryNotes,
   fredInterval,
   fredObservationsFromStart,
   fredPublicationTime,
   fredUnit,
+  fredValueCell,
   isSpreadSeries,
   laggingSeriesNote,
+  parseFredChange,
 } from "./fred-series";
+
+test("a table prints every observation at the series' precision, which FRED's dropped zeros and float noise do not lower or raise", () => {
+  // FRED serves 5.10 and 5.00 as 5.1 and 5; beside 5.09 they print as 5.10 and 5.00.
+  const cell = fredValueCell(fredDecimals([5.09, 5.1, 5, null]));
+  expect([5.09, 5.1, 5, null].map(cell)).toEqual(["5.09", "5.10", "5.00", ""]);
+  expect(fredDecimals([0.9499999999999886, 16.532])).toBe(3);
+  expect(fredDecimals([32563.03, 31906.274])).toBe(3);
+  expect(fredDecimals([null])).toBe(0);
+});
+
+test("--change takes 1D or 1W in any case, and a daily or weekly series", () => {
+  expect(["1D", "1w", " 1W ", "2D", "1M", "", undefined].map(parseFredChange)).toEqual(["1D", "1W", "1W", null, null, null, null]);
+  expect(fredChangeMismatch("WALCL", "weekly", "1W")).toBeNull();
+  expect(fredChangeMismatch("WALCL", "weekly", "1D")).toBe("WALCL is weekly, so its changes are 1W.");
+  expect(fredChangeMismatch("UNRATE", "monthly", "1W")).toMatch(/^UNRATE is monthly/);
+  // A week and the ten-day window before the start, across a month end.
+  expect(fredChangeFetchStart("2026-10-01")).toBe("2026-09-14");
+});
+
+test("a spread's changes come in basis points and a holiday keeps no change", () => {
+  const spread = fredChanges("T10Y2Y", [
+    { date: "2026-10-13", value: 0.42 },
+    { date: "2026-10-12", value: null },
+    { date: "2026-10-09", value: 0.44 },
+  ], "1D");
+  expect([...spread]).toEqual([["2026-10-13", { change: -2, changeFrom: "2026-10-09" }]]);
+  expect(fredChanges("DGS10", [{ date: "2026-10-15", value: 5.1 }, { date: "2026-10-16", value: 5.09 }], "1D").get("2026-10-16"))
+    .toEqual({ change: -0.01, changeFrom: "2026-10-15" });
+});
 
 test("spreads export in basis points, FRED's other series as they come", () => {
   expect(["t10y2y", "T10Y3M", "BAMLH0A0HYM2", "DGS10", "T10YIE"].map(isSpreadSeries)).toEqual([true, true, true, false, false]);
@@ -93,12 +128,16 @@ test("fred --list ranks the group and title words a filter names above an id tha
     { id: "CPIAUCSL", title: "Consumer Price Index", group: "Prices" },
     { id: "CORESTICKM159SFRBATL", title: "Sticky Price CPI", group: "Prices" },
     { id: "EXFX", title: "Cross rates of the Swiss franc", group: "Rates" },
+    { id: "TURCPIYOY", title: "Consumer Price Index for Türkiye, Percent Change from Year Ago", group: "Inflation" },
   ];
   const ids = (filter: string) => filterFredSeries(rows, filter).map((row) => row.id);
   // The FX group, in catalog order, then the ids that spell fx.
   expect(ids("fx")).toEqual(["DEXBZUS", "DEXJPUS", "FDEFX", "EXFX"]);
   // A word of the title beats an id with the letters inside, and an exact id is found whole.
-  expect(ids("cpi")).toEqual(["CORESTICKM159SFRBATL", "CPIAUCSL"]);
+  expect(ids("cpi")).toEqual(["CORESTICKM159SFRBATL", "CPIAUCSL", "TURCPIYOY"]);
+  // Accents are not needed: turk finds Türkiye as a word of its title.
+  expect(ids("turk")).toEqual(["TURCPIYOY"]);
+  expect(ids("türkiye")).toEqual(["TURCPIYOY"]);
   expect(ids("cpiaucsl")).toEqual(["CPIAUCSL"]);
   expect(ids("def")).toEqual(["FDEFX"]);
   // Every word must match somewhere; the best match of each word ranks the row.

@@ -19,7 +19,7 @@ import {
 import type { CommandBarFieldValue, CommandBarWorkflowField } from "../command-bar/workflow/types";
 import { TERMINAL_MESSAGE_KEYS } from "../textarea-keys";
 import { Checkbox } from "../ui/checkbox";
-import { FieldLabel, FRAMED_TEXTAREA_DESKTOP_STYLE, NumberField, TextField } from "../ui/fields";
+import { FieldLabel, FRAMED_TEXTAREA_DESKTOP_STYLE, NumberField, TextField, fieldFrameStyle } from "../ui/fields";
 import { SelectField, type SelectFieldHandle } from "../ui/select-field";
 import { FORM_TEXTAREA_ROWS } from "./model";
 
@@ -112,11 +112,8 @@ function FormTextarea({
       borderColor={focused ? colors.borderFocused : colors.border}
       backgroundColor={colors.panel}
       {...(desktop ? {
-        style: {
-          border: `1px solid ${focused ? colors.borderFocused : colors.border}`,
-          borderRadius: 6,
-          overflow: "hidden",
-        },
+        // The field look (docs/pane-conventions.md, "Design system").
+        style: { ...fieldFrameStyle(focused), overflow: "hidden" },
       } : {})}
     >
       {/* The row's form-field node sets this value, and starts the textarea over from it. */}
@@ -128,7 +125,8 @@ function FormTextarea({
         focused={focused}
         textColor={colors.text}
         placeholderColor={colors.textDim}
-        backgroundColor={colors.panel}
+        // On the desktop the frame's sunken fill shows through.
+        backgroundColor={desktop ? "transparent" : colors.panel}
         flexGrow={1}
         wrapText
         {...(desktop
@@ -289,7 +287,7 @@ export function FormFieldRow({
           onFocus();
           if (!pending) onOpen();
         }}
-        {...(desktop ? { style: { border: `1px solid ${active ? colors.borderFocused : colors.border}`, borderRadius: 6, padding: "0 7px" } } : {})}
+        {...(desktop ? { style: { ...fieldFrameStyle(active), padding: "0 var(--gloom-space-sm)" } } : {})}
       >
         <Text fg={active ? colors.text : colors.textDim}>{t(summarizeWorkflowFieldValue(field, value))}</Text>
       </Box>

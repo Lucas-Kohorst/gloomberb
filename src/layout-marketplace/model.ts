@@ -20,10 +20,14 @@ type PanePlacement = "docked" | "floating" | "detached";
 export interface GalleryPaneSummary {
   instanceId: string;
   paneId: string;
-  /** Registered pane name, or the raw pane id when the type is not installed. */
+  /**
+   * The pane's own window title ("Curve \u00b7 BZ"), as its type names the
+   * window or as it was saved, so two panes of one type are told apart; else
+   * the registered pane name, or the raw pane id when the type is not installed.
+   */
   name: string;
   icon: string;
-  /** Public fixed ticker shown in the preview; follow bindings remain structural. */
+  /** Public fixed ticker shown in the preview, unless the title already names it; follow bindings remain structural. */
   symbol: string | null;
   linked: boolean;
   placement: PanePlacement;
@@ -70,18 +74,49 @@ function placedInstances(layout: LayoutConfig): Array<{ instance: PaneInstanceCo
   return result;
 }
 
+/**
+ * The title a pane keeps for its window, as its header shows it. A private
+ * conversation's id (`dm:...`, `group:...`) is not a title to list.
+ */
+function savedPaneTitle(instance: PaneInstanceConfig): string | null {
+  const title = typeof instance.title === "string" ? instance.title.trim() : "";
+  return title && !/^(?:dm|group):/.test(title) ? title : null;
+}
+
+/**
+ * What a pane that names its windows by what they show calls this one, or
+ * null when it does not say. A plugin's answer is not trusted to be a string,
+ * or to return at all.
+ */
+function derivedPaneTitle(def: PaneDef | undefined, instance: PaneInstanceConfig): string | null {
+  if (!def?.instanceTitle) return null;
+  try {
+    const title: unknown = def.instanceTitle(instance);
+    return typeof title === "string" && title.trim() ? title.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Each window as the browser lists it, by its own title: the one its pane
+ * derives from what it shows, else the title it saved, else the pane's name.
+ */
 export function summarizeLayoutPanes(
   layout: LayoutConfig,
   panes: ReadonlyMap<string, PaneDef>,
 ): GalleryPaneSummary[] {
   return placedInstances(layout).map(({ instance, placement }) => {
     const def = panes.get(instance.paneId);
+    // A pane that names its windows by what they show is asked first: a saved title can predate it.
+    const title = derivedPaneTitle(def, instance) ?? savedPaneTitle(instance);
+    const symbol = instance.binding?.kind === "fixed" ? instance.binding.symbol : null;
     return {
       instanceId: instance.instanceId,
       paneId: instance.paneId,
-      name: def?.name ?? instance.paneId,
+      name: title ?? def?.name ?? instance.paneId,
       icon: (def?.icon ?? instance.paneId.charAt(0) ?? "?").toUpperCase().slice(0, 2),
-      symbol: instance.binding?.kind === "fixed" ? instance.binding.symbol : null,
+      symbol: symbol && !title?.split(/\s+/).includes(symbol) ? symbol : null,
       linked: instance.binding?.kind === "follow",
       placement,
       missing: !def,

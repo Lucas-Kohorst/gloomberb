@@ -38,12 +38,16 @@ export interface PluginHostActions {
   switchPanel(panel: "left" | "right"): void;
   switchTab(tabId: string, paneId?: string): void;
   openCommandBar(query?: string): void;
+  /** Submits `query` in the command bar as if typed and entered, as a key bound to it does. Not on the plugin API. */
+  runCommandBarQuery(query: string): void;
   openPluginCommandWorkflow(commandId: string): void;
   /** Opens one of the app's own forms, such as `new-portfolio`, or Add Broker in the Brokers pane. Not on the plugin API. */
   openBuiltInWorkflow(actionId: string): void;
   /** `options.fieldKey` starts the cursor on that setting, as a setting picked in the command bar does. */
   openPaneSettings(paneId?: string, options?: { fieldKey?: string }): void;
   sharePane(paneId?: string): void;
+  /** Report a Bug for a pane (the focused one when omitted): its picture and a line, posted to #bugs. Not on the plugin API. */
+  reportPaneBug(paneId?: string): void;
   /**
    * A picture of a pane (the focused one when omitted) as it looks now, its
    * footer reading as a dated status line. Not on the plugin API.
@@ -110,10 +114,12 @@ export function createDefaultHostActions(current?: () => Pick<PluginHostActions,
     switchPanel: () => {},
     switchTab: () => {},
     openCommandBar: () => {},
+    runCommandBarQuery: () => {},
     openPluginCommandWorkflow: () => {},
     openBuiltInWorkflow: () => {},
     openPaneSettings: () => {},
     sharePane: () => {},
+    reportPaneBug: () => {},
     capturePaneImage: async () => { throw new Error("Pictures of panes are not available here."); },
     promptDialog: async () => undefined,
     openWindowMode: () => {},

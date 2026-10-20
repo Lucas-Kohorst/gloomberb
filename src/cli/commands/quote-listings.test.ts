@@ -113,6 +113,22 @@ test("a code several companies list is never quoted on one of them: it asks for 
   expect((await runQuote(["2222:TADAWUL"], source)).rows.map((row) => [row.target.symbol, row.quote == null])).toEqual([["2222:TADAWUL", false]]);
 });
 
+test("BDI asks for an exchange and says the Baltic Dry Index is not covered; on an exchange it is Black Diamond Group's quote", async () => {
+  const quote = createTestQuote({ symbol: "BDI:TSX", currency: "CAD" });
+  const names = { TSX: "Black Diamond Group Limited", BSE: "B. D. Industries (Pune) Limited" };
+  const source = venueSource("BDI", ["TSX", "BSE"], { "BDI:TSX": quote }, names);
+
+  const bare = await runQuote(["BDI"], source);
+  expect(bare.failure?.message).toBe("Choose an exchange for BDI.");
+  expect(bare.failure?.details).toContain("BDI:TSX Black Diamond Group Limited (try: gloomberb quote BDI:TSX)");
+  expect(bare.failure?.details).toContain("Baltic indices (BDI, Capesize, Panamax, Supramax) and freight forwards (FFA) are not covered.");
+
+  const named = await runQuote(["BDI:TSX"], source);
+  expect(named.failure).toBeNull();
+  expect(named.rows.map((row) => [row.target.symbol, row.quote == null])).toEqual([["BDI:TSX", false]]);
+  expect(named.warnings.join("\n")).not.toContain("Baltic");
+});
+
 test("a bare symbol the service read on its home listing abroad names the venue", async () => {
   const listed = (symbol: string, exchangeName: string, currency = "USD") => createTestQuote({ symbol, exchangeName, listingExchangeName: exchangeName, currency });
   const source = venueSource("SXR8", ["XETRA", "BUD"], {
@@ -259,6 +275,51 @@ test("a symbol whose company moved says so in one line and in its JSON row; the 
   expect(offline.rows[0]).not.toHaveProperty("tickerChange");
 });
 
+test("a symbol whose company merged into another names it in one line and its JSON row; the old name searches as the company it merged into", async () => {
+  // Golden Ocean merged into CMB.Tech (CMBT) in 2025 and Eagle Bulk into Star Bulk (SBLK) in 2024; funds list there now.
+  const formerIssuer = (symbol: string, name: string, until: string, successor: { symbol: string; name: string }) => ({
+    symbol, moved: null, formerly: null, listedName: null, changes: [], formerIssuer: { symbol, name, until, successor, source: `https://www.sec.gov/${symbol}` },
+  });
+  const changes: Record<string, TickerChanges> = {
+    GOGL: formerIssuer("GOGL", "Golden Ocean Group Ltd", "2025-08-20", { symbol: "CMBT", name: "Cmb.Tech NV" }),
+    EGLE: formerIssuer("EGLE", "Eagle Bulk Shipping Inc.", "2024-04-09", { symbol: "SBLK", name: "Star Bulk Carriers Corp." }),
+  };
+  const fund = (symbol: string, name: string) => createTestQuote({ symbol, name, listingExchangeName: "BATS", exchangeName: "BATS" });
+  const source = venueSource("GOGL", [], { GOGL: fund("GOGL", "Corgi GOOGL 2x Daily ETF"), EGLE: fund("EGLE", "Global X S&P 500 U.S. Revenue Leaders ETF") });
+  const quoted = await runQuote(["GOGL", "EGLE"], { ...source, dataProvider: { ...source.dataProvider, getTickerChanges: async (symbol) => changes[symbol] ?? null } });
+  expect(quoted.warnings).toEqual([
+    "GOGL was Golden Ocean Group until 2025, now Cmb.Tech: CMBT",
+    "EGLE was Eagle Bulk Shipping until 2024, now Star Bulk Carriers: SBLK",
+  ]);
+  expect((quoted.rows[0] as { formerIssuer?: unknown }).formerIssuer).toEqual({
+    ...changes.GOGL!.formerIssuer, note: "GOGL was Golden Ocean Group until 2025, now Cmb.Tech: CMBT",
+  });
+
+  // Search sends the company it merged into for the old name, naming it; the line is quote's. It is the
+  // primary listing though the old company's leftover line matches the name better, and that line,
+  // linked by its name, says what it became; a namesake search cannot link stays below.
+  const former = { symbol: "GOGL", name: "Golden Ocean Group Ltd", until: "2025-08-20", successor: { symbol: "CMBT", name: "Cmb.Tech NV" } };
+  const dataProvider = createTestDataProvider({
+    search: async () => [
+      { providerId: "test", symbol: "GOGLC", name: "GOLDEN OCEAN GROUP", exchange: "BYMA", type: "Common Stock", currency: "ARS" },
+      { providerId: "test", symbol: "GOMH", name: "Golden Ocean Mining Holdings", exchange: "TSXV", type: "Common Stock", currency: "CAD" },
+      {
+        providerId: "test", symbol: "CMBT", name: "Cmb.Tech NV", exchange: "NYSE", type: "Common Stock", currency: "USD",
+        searchAliases: ["Golden Ocean Group Ltd"], formerIssuer: former,
+      },
+    ],
+  });
+  const printed: PrintedCliResult["result"][] = [];
+  const initMarketData = async () => ({ store: { loadAllTickers: async () => [] }, dataProvider, persistence: { close() {} } }) as never;
+  await search("Golden Ocean", { initMarketData, printResult: (result) => { printed.push(result); } });
+  expect(printed[0]!.warnings).toEqual(["GOGL was Golden Ocean Group until 2025, now Cmb.Tech: CMBT"]);
+  expect((printed[0]!.data as Array<Record<string, unknown>>).map(({ category, symbol, formerIssuer }) => ({ category, symbol, formerIssuer }))).toEqual([
+    { category: "Primary Listing", symbol: "CMBT", formerIssuer: former },
+    { category: "Other Listings", symbol: "GOGLC", formerIssuer: former },
+    { category: "Other Listings", symbol: "GOMH", formerIssuer: undefined },
+  ]);
+});
+
 test("search lists a symbol it no longer finds as no longer trading with its last date, and says when a company left a symbol it finds", async () => {
   const lastTrade = Date.parse("2022-10-27T23:59:59.953Z");
   const twitter = createTestQuote({ symbol: "TWTR", price: 53.86, lastUpdated: lastTrade, lastTradeTime: lastTrade, stale: true });
@@ -327,6 +388,23 @@ test("a pasted list is one row per symbol, in order, however it is separated, fo
       expect(asked).toEqual([["JNK", "EMB", "BRK.B", "BF-B"]]);
     }
   }
+});
+
+test("a company's name in a pasted list is quoted as its listing, never as its words", async () => {
+  const asked: string[][] = [];
+  const dataProvider = createTestDataProvider({
+    search: async (query) => /whirlpool/i.test(query)
+      ? [{ providerId: "test", symbol: "WHR", name: "Whirlpool Corp", exchange: "NYSE", type: "Common Stock", currency: "USD" }]
+      : [],
+    getQuotesBatch: async (targets: QuoteSubscriptionTarget[]): Promise<QuoteBatchResult[]> => {
+      asked.push(targets.map((target) => target.symbol));
+      return targets.map((target) => ({ target, quote: createTestQuote({ symbol: target.symbol }) }));
+    },
+  });
+  const cli = createTestCliContext({ dataProvider });
+  await quoteCommand.execute(["WHR, Whirlpool Corporation, BRK.B"], cli.context);
+  expect(asked).toEqual([["WHR", "WHR:NYSE", "BRK.B"]]);
+  expect((cli.printed[0] as PrintedCliResult).result.warnings).toContain('Read "Whirlpool Corporation" as WHR:NYSE (Whirlpool Corp).');
 });
 
 test("quote and compare exit 1 when none of the symbols has a quote, 0 when some do, and print the same table either way", async () => {

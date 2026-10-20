@@ -10,8 +10,13 @@ import {
   getSessionMoveDisplay,
   getTradedSessionMoveDisplay,
   marketStateCountdown,
+  quoteDotMarketState,
+  quoteHeadlineTime,
+  quoteMarketStateLabel,
+  quoteSessionColor,
   quoteSessionLabel,
 } from "./status";
+import { colors } from "../../theme/colors";
 
 describe("marketStateCountdown", () => {
   test("adds precision as the US session boundary approaches", () => {
@@ -177,8 +182,10 @@ describe("the overnight session", () => {
     // A position is worth the overnight price, from the daily reference.
     expect(getActiveQuoteDisplay(overnight)).toEqual({ price: 198.95, change: 1.17, changePercent: 0.5916 });
     expect(getSessionMoveDisplay(overnight)?.session).toBe("OVERNIGHT");
-    expect(quoteSessionLabel(overnight)).toBe("OVERNIGHT");
-    expect(quoteSessionLabel(weekend)).toBe("CLOSED");
+    // Sunday evening in New York, as the overnight quote is.
+    const sunday = Date.parse("2026-10-12T00:35:00Z");
+    expect(quoteSessionLabel(overnight, sunday)).toBe("OVERNIGHT");
+    expect(quoteSessionLabel(weekend, sunday)).toBe("CLOSED");
   });
 
   test("says a bid and ask midpoint is one, and a board of moves leaves it out", () => {
@@ -195,5 +202,134 @@ describe("the overnight session", () => {
       expect(getExtendedSessionDisplay(quote)?.session).not.toBe("OVERNIGHT");
       expect(quoteSessionLabel(quote)).not.toBe("OVERNIGHT");
     }
+  });
+});
+
+describe("a quote older than its venue's latest completed session", () => {
+  // Thursday 15 Oct 2026: 08:00 New York time is the pre-market, 10:00 the regular session.
+  const preMarket = Date.parse("2026-10-15T12:00:00Z");
+  const regular = Date.parse("2026-10-15T14:00:00Z");
+  const nyse = (marketState: Quote["marketState"], lastUpdated: string): Quote => ({
+    symbol: "XYZ", price: 10, change: 0, changePercent: 0, currency: "USD", listingExchangeName: "NYSE",
+    marketState, lastUpdated: Date.parse(lastUpdated),
+  });
+
+  test("reads STALE, never the session its source states, once a whole session traded after its print", () => {
+    // Last printed Tuesday; Wednesday's session has completed since.
+    const behind = nyse("REGULAR", "2026-10-13T20:00:00Z");
+    expect(quoteSessionLabel(behind, regular)).toBe("STALE");
+    expect(quoteMarketStateLabel(behind, regular)).toBe("STALE");
+    expect(quoteSessionColor(behind, colors, regular)).toBe(colors.warning);
+    expect(quoteDotMarketState(behind, regular)).toBeUndefined();
+    // A delisted line years old, with no venue named, is stale whatever its source says.
+    const delisted = { ...behind, listingExchangeName: undefined, lastUpdated: Date.parse("2022-03-14T23:00:00Z"), stale: true };
+    expect(quoteSessionLabel({ ...delisted, marketState: "POST" }, regular)).toBe("STALE");
+  });
+
+  test("the last session's close or after-hours print keeps its state before the open and through the next session", () => {
+    const close = nyse("PRE", "2026-10-14T20:00:00Z");
+    expect(quoteSessionLabel(close, preMarket)).toBe("PRE-MKT");
+    expect(quoteSessionLabel(nyse("PRE", "2026-10-14T23:30:00Z"), preMarket)).toBe("PRE-MKT");
+    // No trade yet in Thursday's session: Wednesday's close is the latest completed one.
+    expect(quoteSessionLabel({ ...close, marketState: "REGULAR" }, regular)).toBe("OPEN");
+    expect(quoteDotMarketState({ ...close, marketState: "REGULAR" }, regular)).toBe("REGULAR");
+  });
+
+  test("an FX pair or a coin keeps its state: neither has a session to fall behind", () => {
+    const fx: Quote = { ...nyse("REGULAR", "2026-10-12T14:00:00Z"), symbol: "EURUSD=X", listingExchangeName: "CCY", stale: true };
+    expect(quoteSessionLabel(fx, regular)).toBe("OPEN");
+    expect(quoteSessionLabel({ ...fx, symbol: "BTC-USD", listingExchangeName: "CCC" }, regular)).toBe("OPEN");
+  });
+});
+
+describe("a pre-market nothing has traded in yet", () => {
+  // PLTR at Fri 16 Oct 2026 08:14 UTC: the US pre-market opened at 08:00, nothing has printed in it. The price is
+  // Thursday's last after-hours print at 23:59 UTC; the quote carries Thursday's 20:00 UTC close and its move.
+  const thursdayClose = Date.parse("2026-10-15T20:00:00Z");
+  const waiting: Quote = {
+    symbol: "PLTR", currency: "USD", price: 200.66, change: 0.16, changePercent: 0.0798, previousClose: 200.5,
+    regularClose: 200.5, regularCloseSessionDate: "2026-10-15", regularChange: -0.47, regularChangePercent: -0.2339,
+    changeSessionDate: "2026-10-16", marketState: "PRE", extendedSessionPrint: false, listingExchangeName: "NASDAQ",
+    lastUpdated: Date.parse("2026-10-15T23:59:00Z"),
+  };
+  const now = Date.parse("2026-10-16T08:14:00Z");
+
+  test("reads as the regular close it stands at, by that close's weekday and time, not the pre-market or the after-hours print", () => {
+    expect(getRegularSessionDisplay(waiting)).toEqual({ price: 200.5, change: -0.47, changePercent: -0.2339 });
+    expect(quoteSessionLabel(waiting, now)).toBe("Thu close");
+    expect(quoteMarketStateLabel(waiting, now)).toBe("Thu close");
+    expect(quoteSessionColor(waiting, colors, now)).toBe(colors.textDim);
+    expect(quoteHeadlineTime(waiting)).toBe(thursdayClose);
+    // A source that projects the carried price into the pre-market fields, saying nothing traded, shows no pre-market print.
+    const projected = { ...waiting, preMarketPrice: 200.66, preMarketChange: 0.16, preMarketChangePercent: 0.0798 };
+    expect(getExtendedSessionDisplay(projected)).toBeNull();
+    expect(quoteSessionLabel(projected, now)).toBe("Thu close");
+    expect(getSessionMoveDisplay(projected)).toEqual(getRegularSessionDisplay(waiting));
+    // So does one that sends no pre-market price, or 0, or the close, and does not say, its last update from before 08:00 UTC.
+    for (const preMarketPrice of [undefined, 0, 200.5]) {
+      const silent = { ...waiting, extendedSessionPrint: undefined, preMarketPrice };
+      expect(quoteSessionLabel(silent, now)).toBe("Thu close");
+      expect(getExtendedSessionDisplay(silent)).toBeNull();
+    }
+  });
+
+  test("a quote that may hold a pre-market trade is never read as the close", () => {
+    const sinceOpen = Date.parse("2026-10-16T08:03:45Z");
+    const cases: Array<[string, Quote]> = [
+      // The source says a trade printed, though it sent no pre-market price.
+      ["print flagged, no price", { ...waiting, extendedSessionPrint: true }],
+      // The source does not say, and the quote was updated after the pre-market opened at 08:00 UTC.
+      ["unflagged, updated since the open", { ...waiting, extendedSessionPrint: undefined, lastUpdated: sinceOpen }],
+      // The source does not say, and sends a pre-market price that is not the close.
+      ["unflagged, a pre-market price", { ...waiting, extendedSessionPrint: undefined, preMarketPrice: 200.66 }],
+      // Fields from two sources: one says nothing traded, the other carries a pre-market trade.
+      ["mixed sources", { ...waiting, preMarketPrice: 201.29, preMarketChange: 0.79, preMarketChangePercent: 0.394 }],
+      ["mixed sources, its price", { ...waiting, price: 201.29, preMarketPrice: 201.29, lastUpdated: sinceOpen }],
+    ];
+    for (const [name, quote] of cases) {
+      expect(quoteSessionLabel(quote, now), name).toBe("PRE-MKT");
+      expect(quoteHeadlineTime(quote), name).toBe(quote.lastUpdated);
+    }
+    expect(getExtendedSessionDisplay(cases.find(([name]) => name === "mixed sources")![1])).toMatchObject({ session: "PRE", price: 201.29 });
+    // A pre-market price of 0 is no print: no $0 pre-market figure, and no $0 position.
+    const zero = { ...waiting, extendedSessionPrint: undefined, preMarketPrice: 0, preMarketChange: -200.66, lastUpdated: sinceOpen };
+    expect(quoteSessionLabel(zero, now)).toBe("PRE-MKT");
+    expect(getExtendedSessionDisplay(zero)).toBeNull();
+    expect(getActiveQuoteDisplay(zero)?.price).toBe(200.66);
+    // Another venue's pre-market hours are not known: a quote that does not say stays the pre-market's.
+    expect(quoteSessionLabel({ ...waiting, extendedSessionPrint: undefined, listingExchangeName: "LSE" }, now)).toBe("PRE-MKT");
+  });
+
+  test("a pre-market trade is the pre-market again, at that trade's time", () => {
+    const printed = { ...waiting, price: 201.29, preMarketPrice: 201.29, preMarketChange: 0.79, preMarketChangePercent: 0.394,
+      extendedSessionPrint: true, lastUpdated: Date.parse("2026-10-16T08:03:45Z") };
+    expect(quoteSessionLabel(printed, now)).toBe("PRE-MKT");
+    expect(quoteHeadlineTime(printed)).toBe(printed.lastUpdated);
+    expect(getExtendedSessionDisplay(printed)).toMatchObject({ session: "PRE", price: 201.29 });
+    // Without the close and its move the quote cannot say which close it is: it stays the pre-market's.
+    const unanchored = { ...waiting, regularClose: undefined, regularCloseSessionDate: undefined };
+    expect(quoteSessionLabel(unanchored, now)).toBe("PRE-MKT");
+    expect(quoteHeadlineTime(unanchored)).toBe(waiting.lastUpdated);
+  });
+
+  test("the regular session and after hours keep their own labels and times", () => {
+    const { regular, afterHours } = sessionQuotes();
+    expect(quoteSessionLabel(regular, regular.lastUpdated)).toBe("OPEN");
+    expect(quoteHeadlineTime(regular)).toBe(regular.lastUpdated);
+    expect(quoteSessionLabel(afterHours, afterHours.lastUpdated)).toBe("AFTER-HRS");
+    expect(quoteHeadlineTime(afterHours)).toBe(afterHours.lastUpdated);
+  });
+
+  test("after a weekend or a holiday the close is the last session's: Friday's, and its early close", () => {
+    // Monday 12 Oct 05:00 New York: Friday 9 Oct closed at 20:00 UTC.
+    const { weekend } = sessionQuotes();
+    const monday = { ...weekend, marketState: "PRE" as const, changeSessionDate: "2026-10-12", extendedSessionPrint: false };
+    expect(quoteSessionLabel(monday, Date.parse("2026-10-12T09:00:00Z"))).toBe("Fri close");
+    expect(quoteHeadlineTime(monday)).toBe(Date.parse("2026-10-09T20:00:00Z"));
+    // Monday 30 Nov: the day after Thanksgiving closed early, at 13:00 New York.
+    const afterThanksgiving = { ...monday, regularCloseSessionDate: "2026-11-27", changeSessionDate: "2026-11-30",
+      lastUpdated: Date.parse("2026-11-28T00:59:00Z") };
+    expect(quoteSessionLabel(afterThanksgiving, Date.parse("2026-11-30T10:00:00Z"))).toBe("Fri close");
+    expect(quoteHeadlineTime(afterThanksgiving)).toBe(Date.parse("2026-11-27T18:00:00Z"));
   });
 });

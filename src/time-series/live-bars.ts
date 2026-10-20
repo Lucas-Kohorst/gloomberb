@@ -8,6 +8,7 @@ import {
   liveQuoteObservation,
   MIN_LIVE_QUOTE_TAIL_GAP_MS,
   quoteBelongsToLatestBar,
+  quoteSessionRange,
 } from "./chart-data";
 import { CHART_RESOLUTION_STEP_MS, type ManualChartResolution } from "./resolution";
 import { isFiniteNumber } from "../utils/guards";
@@ -148,6 +149,7 @@ export class LiveBarAccumulator {
   private version = 0;
   private gapPending = false;
   private folded: { source: PricePoint[]; key: string; value: PricePoint[] } | null = null;
+  private reported: { source: PricePoint[]; value: boolean } | null = null;
 
   apply(history: PricePoint[], quote: Quote | null | undefined, options: LiveBarOptions): PricePoint[] {
     const bars = this.onGrid(history, options);
@@ -252,7 +254,9 @@ export class LiveBarAccumulator {
   private observe(latest: PricePoint, quote: Quote, options: LiveBarOptions, exchange?: string): void {
     if (quote === this.lastQuote) return;
     this.lastQuote = quote;
-    const observation = liveQuoteObservation(quote, options.now, options.assetCategory);
+    // A daily or longer bar is the regular session's: after the close it holds at the close.
+    const observation = liveQuoteObservation(quote, options.now, options.assetCategory,
+      isCalendarResolution(options.resolution) ? "regular" : "latest");
     if (!observation) return;
     const { time, price } = observation;
     const volume = isFiniteNumber(quote.volume) && quote.volume >= 0 ? quote.volume : null;
@@ -269,6 +273,8 @@ export class LiveBarAccumulator {
 
     const { resolution } = options;
     const calendar = isCalendarResolution(resolution);
+    // A daily or longer bar also takes the session's own range from the quote: what traded before this watch began.
+    const range = calendar ? quoteSessionRange(quote, observation, resolution, exchange) : null;
     const preMarket = !!quote.marketState && PRE_MARKET_STATES.has(quote.marketState);
     const previousTime = this.lastTime;
     let previous = this.cumulative;
@@ -303,15 +309,15 @@ export class LiveBarAccumulator {
       return;
     }
     if (forming && this.inBar(time, forming.time, options, exchange)) {
-      forming.high = Math.max(forming.high, price);
-      forming.low = Math.min(forming.low, price);
+      forming.high = Math.max(forming.high, price, range?.high ?? price);
+      forming.low = Math.min(forming.low, price, range?.low ?? price);
       forming.close = price;
       forming.point = null;
       return;
     }
     if (!forming && this.inBar(time, anchor.time, options, exchange)) {
-      anchor.high = Math.max(anchor.high ?? price, price);
-      anchor.low = Math.min(anchor.low ?? price, price);
+      anchor.high = Math.max(anchor.high ?? price, price, range?.high ?? price);
+      anchor.low = Math.min(anchor.low ?? price, price, range?.low ?? price);
       anchor.close = price;
       return;
     }
@@ -344,9 +350,9 @@ export class LiveBarAccumulator {
     const sessionCount = calendar && previous === null && !preMarket;
     this.bars.push({
       time: barTime,
-      open: price,
-      high: price,
-      low: price,
+      open: range?.open ?? price,
+      high: range?.high ?? price,
+      low: range?.low ?? price,
       close: price,
       volumeStart: sessionCount ? 0 : previous ?? volume,
       volumeEnd: null,
@@ -406,8 +412,17 @@ export class LiveBarAccumulator {
     if (merged === latest && this.bars.length === 0) return history;
     const projected = history.slice();
     projected[projected.length - 1] = merged;
-    const volumeKnown = isFiniteNumber(latest.volume);
+    const volumeKnown = isFiniteNumber(latest.volume) || this.reportsVolume(history);
     for (const bar of this.bars) projected.push(this.barPoint(bar, volumeKnown));
     return projected;
+  }
+
+  /**
+   * Whether the history reports volume at all, read once per loaded history. A coin's feed leaves some bars without
+   * volume, so the latest bar alone cannot say whether the live bars after it should carry the quote's.
+   */
+  private reportsVolume(history: PricePoint[]): boolean {
+    if (this.reported?.source !== history) this.reported = { source: history, value: history.some((point) => isFiniteNumber(point.volume)) };
+    return this.reported.value;
   }
 }

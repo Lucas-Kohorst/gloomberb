@@ -4,7 +4,7 @@ import type { HostQueryBarItem, HostQueryBarProps } from "../../../ui/host";
 import { WebPopover } from "./popover";
 import { WebMenu } from "./menu";
 import { useHorizontalOverflow } from "../host/overflow-fade";
-import { StackHeaderContext } from "./stack-header";
+import { STACK_DETAIL_ROLE, StackHeaderContext } from "./stack-header";
 import { CheckboxBox } from "./controls";
 import { WebIcon } from "./icons";
 
@@ -22,7 +22,7 @@ function isStrip(item: HostQueryBarItem): boolean {
  * strip that scrolls on its own, so the label and the controls beside it stay
  * in view while it brings the chosen one into view.
  */
-function InlineChoices({ item }: { item: HostQueryBarItem }) {
+export function InlineChoices({ item }: { item: HostQueryBarItem }) {
   const stripRef = useRef<HTMLDivElement | null>(null);
   const strip = isStrip(item);
   const overflow = useHorizontalOverflow(stripRef, [item.options.length, strip]);
@@ -202,7 +202,10 @@ export function WebQueryBar({ search, items, view, onClearAll, meta, leading, op
   const [stackAttached, setStackAttached] = useState(false);
   useLayoutEffect(() => {
     const bar = rootRef.current;
-    const container = stack?.containerRef.current;
+    // A bar that mounts with its detail runs this before React attaches the
+    // detail's ref, so it finds the detail it sits in by itself.
+    const container = stack?.containerRef.current
+      ?? bar?.closest<HTMLElement>(`[data-gloom-role='${STACK_DETAIL_ROLE}']`);
     if (!stack || !bar || !container || !container.contains(bar)) return;
     if (Math.abs(bar.getBoundingClientRect().top - container.getBoundingClientRect().top) > 1.5) return;
     const release = stack.attach();
@@ -287,7 +290,6 @@ export function WebQueryBar({ search, items, view, onClearAll, meta, leading, op
       ref={rootRef}
       className="gloom-qb"
       data-gloom-role="query-bar"
-      data-gloom-top-surface=""
       // A search with nothing beside it may take the room the filters would.
       data-search-only={search && items.length === 0 && !view ? "true" : undefined}
     >
@@ -333,7 +335,7 @@ export function WebQueryBar({ search, items, view, onClearAll, meta, leading, op
               disabled={option.disabled}
               data-active={option.value === view.value ? "true" : undefined}
               onMouseDown={(event) => event.stopPropagation()}
-              onClick={() => { if (option.value !== view.value) view.onChange(option.value); }}
+              onClick={() => view.onChange(option.value)}
             >
               <span className="gloom-qb-text">{option.label}</span>
             </button>

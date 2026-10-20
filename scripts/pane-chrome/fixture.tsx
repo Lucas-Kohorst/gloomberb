@@ -14,7 +14,9 @@
  * (chart panes for the copy screenshot check) or `resize` (a news table, a
  * chart, and a table in a sidebar beside a second table, docked, with a news
  * table floating over them; `&float=chart`, `&float=heat` or `&float=fear`
- * floats a chart, a heat map or the Fear & Greed pane instead, and `&float=g`,
+ * floats a chart, a heat map or the Fear & Greed pane instead (`&heat=market`
+ * makes the heat map the market board of 500 names, `&ticks=1` recolours it
+ * four times a second, and `&dock=heat` docks one in the chart's place), and `&float=g`,
  * `&float=board`, `&float=beside`, `&float=overlay` or `&float=under` one of
  * the charts that sit inside a pane's own layout), `nested` (the first four
  * docked), `stacked` (the chart under a table docked beside a chart),
@@ -23,12 +25,20 @@
  * `cmp` (one chart composer pane on invented 30-minute bars, see
  * createInventedChartSource: `&chart=readout` three listings on two venues,
  * volume and two studies, `pan` one listing with years of bars, `edge` one
- * whose bars start 150 sessions back, `percent` three listings rebased),
+ * whose bars start 150 sessions back, `percent` three listings rebased;
+ * `&linked=1` adds a daily chart composer under it, `&linked=mixed` IV
+ * history, a monthly macro series and Fear & Greed beside it, all dated up
+ * to the invented bars' last close),
  * `layout` (one pane that sets text or scrolls content, docked or floating,
- * for the layout checks; see layout-fixture.tsx), or `des` (DES's overview
- * over an invented company, see DesPane).
+ * for the layout checks; see layout-fixture.tsx), `des` (DES's overview
+ * over an invented company, see DesPane), `header` (the app's top bar in
+ * each update state, see header-fixture.tsx; `&host=browser` draws it as the
+ * web app does), `tab-sweep` (what the layout sweep's tab visits are checked
+ * against, tab-sweep-fixture.tsx), or `kit` (the kit page: every design-system family in every
+ * state, see kit-fixture.tsx; `&family=<id>` shows one, `&theme=paper` and
+ * `&font=` as everywhere).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ThemePicker, type ThemePickerHandle } from "../../src/components/command-bar/theme-picker";
 import { useCommandBarThemePreview } from "../../src/components/command-bar/theme-preview";
 import { OverviewTab } from "../../src/plugins/builtin/ticker-detail/overview-tab";
@@ -46,11 +56,14 @@ import { StaticChartSurface } from "../../src/components/chart/static/chart-surf
 import { DataTableView } from "../../src/components/data-table/view";
 import { ChartTableHeader } from "../../src/components/chart-table/header";
 import { QueryBar } from "../../src/components/ui/query-bar";
-import { buildHeatTreemapScene, heatTreemapCanvas, HeatTreemapSurface } from "../../src/components/metric-treemap/heat-surface";
+// A namespace import: the frame budget builds this file against the base
+// branch's sources too, which may not have useHeatTreemapScene.
+import * as heatSurface from "../../src/components/metric-treemap/heat-surface";
 import type { MetricTreemapItem } from "../../src/components/metric-treemap/layout";
 import { PaneSidebar } from "../../src/components/layout/pane/sidebar";
 import { DetachedPaneShell } from "../../src/components/layout/detached-pane-shell";
 import { usePaneTabs } from "../../src/components/layout/pane/pane-tabs";
+import { usePaneFooter } from "../../src/components/layout/pane/footer/registration";
 import { Shell } from "../../src/components/layout/shell";
 import { Header } from "../../src/components/layout/header";
 import { StatusBar } from "../../src/components/layout/status-bar";
@@ -74,11 +87,20 @@ import { PriceSparkline } from "../../src/components/price-sparkline/view";
 import { registerAskGloomPaneHandler } from "../../src/ask-gloom/pane-request";
 import { PANE_HEADER_ASK_MIN_WIDTH } from "../../src/components/layout/pane/header";
 import { ChatFixturePane, chatLayout } from "./chat-fixture";
+import { AxisFixturePane } from "./axis-fixture";
+import { chatLatencyLayouts, ChatLatencySync } from "./chat-latency-fixture";
+import { HeaderFixture, installHeaderClock, installHeaderMarketData, installHeaderPlatform, type HeaderFixtureHandle } from "./header-fixture";
+import { browserUiHost } from "../../src/renderers/browser/ui-host";
 import { LAYOUT_PANES, installLayoutFetches, layoutLayout } from "./layout-fixture";
+import { KitPage } from "./kit-fixture";
+import { TabSweepFixture } from "./tab-sweep-fixture";
 // A namespace import: the frame budget builds this file against the base branch's
 // sources too, which may not have every capture yet.
 import * as domScreenshot from "../../src/utils/dom-screenshot";
 import { ChartComposerPane } from "../../src/plugins/builtin/chart-composer/pane";
+import { IvHistoryChart } from "../../src/plugins/builtin/iv-history/charts";
+import type { IvHistoryModel } from "../../src/plugins/builtin/iv-history/model";
+import { scalarLine, SeriesDetailChart } from "../../src/plugins/builtin/shared/series-detail-chart";
 import { buildComparisonChartPreset, buildPriceChartPreset } from "../../src/plugins/builtin/chart-composer/presets";
 import { appendChartSeries } from "../../src/plugins/builtin/chart-composer/chart-spec-edit";
 import { setBuiltinStudies } from "../../src/plugins/builtin/chart-composer/studies";
@@ -113,6 +135,7 @@ declare global {
       >;
       /** Panes whose `?` asked for their docs, in order. */
       docs: string[];
+      /** Toasts, each the end of a Share: the link copied, or what stopped it. */
       shares: number;
       /** Panes handed to Ask Gloom (its button, menu entry or key), in order. */
       asks: string[];
@@ -126,6 +149,8 @@ declare global {
       detachedCloses: number;
       /** `paint`: floats another chart composer pane in, as adding a chart pane does; returns its id. */
       addChartPane?: () => string;
+      /** `header`: sets the top bar's update state and window mode, and counts Help and Restart presses. */
+      header: HeaderFixtureHandle;
     };
   }
 }
@@ -133,7 +158,7 @@ declare global {
 const params = new URLSearchParams(window.location.search);
 const scenario = params.get("scenario") ?? "docked";
 const platform = params.get("platform") ?? "darwin";
-const detached = scenario === "detached" || scenario === "theme-detached";
+const detached = scenario === "detached" || scenario === "theme-detached" || (scenario === "chat" && params.get("detached") === "1");
 
 function PlainPane({ paneId }: PaneProps) {
   return <Text>{`Body of ${paneId}`}</Text>;
@@ -403,6 +428,8 @@ function ChartRowsPane({ focused, width, height }: PaneProps) {
 
 const BOARD_TABS = [{ value: "one", label: "Stocks" }, { value: "two", label: "Rates" }];
 const BOARD_ROWS = TABLE_ROWS.slice(0, 12);
+/** The band's cursor rests on the latest close, as the inventories board's rests on the latest week. */
+const BOARD_CURSOR = CHART_SERIES[0]!.points.at(-1)!.date;
 
 /**
  * A board as the chart-table kit lays it out (inventories, money markets):
@@ -427,7 +454,7 @@ function ChartBoardPane({ paneId, focused, width, height }: PaneProps) {
             tableRows={BOARD_ROWS.length}
             tableColumns={TABLE_COLUMNS}
             query={<QueryBar width={width} meta="Invented closes" />}
-            chart={{ series: CHART_SERIES, minRows: 8 }}
+            chart={{ series: CHART_SERIES, minRows: 8, cursorDate: BOARD_CURSOR }}
           />
         )}
         selection={{ kind: "id", selectedId, getId: String, onChange: setSelectedId }}
@@ -563,14 +590,107 @@ const HEAT_ITEMS: MetricTreemapItem<null>[] = Array.from({ length: 60 }, (_, ind
 });
 const ignoreTile = () => {};
 
-/** A heat map over invented tiles, laid out the way the market heat map lays out its board. */
-function HeatPane({ width, height }: PaneProps) {
+const { HeatTreemapSurface } = heatSurface;
+interface FixtureHeatLayout<T> { scene: ReturnType<typeof heatSurface.buildHeatTreemapScene<T>>; resizing: boolean }
+
+declare global {
+  interface Window {
+    /** Scenes the heat maps committed, and a board refresh with new sizes (`heat=market`), as a snapshot reload brings. */
+    __heat: { builds: number; refresh(): void };
+  }
+}
+const heatRefreshes = new Set<() => void>();
+window.__heat = { builds: 0, refresh: () => heatRefreshes.forEach((refresh) => refresh()) };
+
+/**
+ * The scene as the market heat map's pane lays it out, seeded with the one on
+ * screen. A base branch from before `useHeatTreemapScene` lays it out at
+ * every size it renders at, as its pane did.
+ */
+const useFixtureHeatScene = heatSurface.useHeatTreemapScene ?? function useEveryHeatScene<T>(
+  items: readonly MetricTreemapItem<T>[],
+  width: number,
+  height: number,
+): FixtureHeatLayout<T> {
   const capabilities = useUiCapabilities();
+  const shown = useRef<FixtureHeatLayout<T>["scene"] | null>(null);
   const scene = useMemo(
-    () => buildHeatTreemapScene(HEAT_ITEMS, heatTreemapCanvas(width, height, capabilities)),
-    [capabilities, height, width],
+    () => (shown.current = heatSurface.buildHeatTreemapScene(items, heatSurface.heatTreemapCanvas(width, height, capabilities), shown.current)),
+    [capabilities, height, items, width],
   );
-  return <HeatTreemapSurface scene={scene} items={HEAT_ITEMS} width={width} height={height} selectedId={null} onSelect={ignoreTile} />;
+  return { scene, resizing: false };
+};
+
+/** Counts the scenes a heat map commits: each new one restyles every tile. */
+function useCountedScene<T>(layout: FixtureHeatLayout<T>): FixtureHeatLayout<T> {
+  useLayoutEffect(() => {
+    window.__heat.builds += 1;
+  }, [layout.scene]);
+  return layout;
+}
+
+/** A heat map over invented tiles, laid out the way the market heat map lays out its board. */
+function InventedHeatPane({ width, height }: PaneProps) {
+  const { scene, resizing } = useCountedScene(useFixtureHeatScene(HEAT_ITEMS, width, height));
+  return <HeatTreemapSurface scene={scene} resizing={resizing} items={HEAT_ITEMS} width={width} height={height} selectedId={null} onSelect={ignoreTile} />;
+}
+
+/** Eleven invented sectors of five invented industries each. */
+const MARKET_SECTORS = Array.from({ length: 11 }, (_, sector) => `Sector ${String.fromCharCode(65 + sector)}`);
+/** A deterministic stand-in for Math.random, so both checkouts draw the same board. */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+/** 500 invented names in sectors and industries, sized like market caps: a few giants and a long tail. */
+function marketHeatItems(generation: number, moves: readonly number[]): MetricTreemapItem<null>[] {
+  const random = seeded(7 + generation);
+  return moves.map((move, index) => {
+    const sector = MARKET_SECTORS[index % MARKET_SECTORS.length]!;
+    const weight = 4_000 / (index + 8) ** 1.1 * (0.85 + random() * 0.3);
+    return {
+      id: `name-${index}`,
+      label: `N${index}`,
+      weight,
+      colorValue: move,
+      primaryText: `${move >= 0 ? "+" : ""}${move.toFixed(1)}%`,
+      group: sector,
+      subgroup: `${sector} ${Math.floor(index / MARKET_SECTORS.length) % 5}`,
+      data: null,
+    };
+  });
+}
+
+/**
+ * `heat=market`: the market heat map's board as its pane lays it out: 500
+ * names in sectors and industries, and with `ticks=1` a few moves changing
+ * four times a second, as quotes stream in. Tiles are sized by the board a
+ * refresh brings (`window.__heat.refresh()`), coloured by every tick.
+ */
+function MarketHeatPane({ width, height }: PaneProps) {
+  const [moves, setMoves] = useState(() => Array.from({ length: 500 }, (_, index) => Math.sin(index * 1.3) * 3.2));
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    const refresh = () => setGeneration((value) => value + 1);
+    heatRefreshes.add(refresh);
+    if (params.get("ticks") !== "1") return () => { heatRefreshes.delete(refresh); };
+    const random = seeded(11);
+    const timer = setInterval(() => {
+      setMoves((current) => current.map((move) => (random() < 0.04 ? move + (random() - 0.5) * 1.2 : move)));
+    }, 250);
+    return () => {
+      heatRefreshes.delete(refresh);
+      clearInterval(timer);
+    };
+  }, []);
+  const layoutItems = useMemo(() => marketHeatItems(generation, moves), [generation]); // eslint-disable-line react-hooks/exhaustive-deps
+  const paintItems = useMemo(() => marketHeatItems(generation, moves), [generation, moves]);
+  const { scene, resizing } = useCountedScene(useFixtureHeatScene(layoutItems, width, height));
+  return <HeatTreemapSurface scene={scene} resizing={resizing} items={paintItems} width={width} height={height} selectedId={null} onSelect={ignoreTile} />;
 }
 
 const OVERVIEW_TICKER = createTestTicker("EXMPL", "Example Industries", { exchange: "", assetCategory: "STK" });
@@ -589,6 +709,9 @@ function OverviewPane({ width, height, focused }: PaneProps) {
  * repeats the description, `long=1` gives it long account names, long
  * classification and site names, dated figures with their muted detail and a
  * book with large sizes, and `float=1` floats the pane over a plain one.
+ * `footer=1` gives it the status and hint of a delayed quote,
+ * `ratio=<0 to 1>` is how much of the width the docked pane starts with, and
+ * `fw=<cells>` how wide the floating one is.
  */
 const DES_LONG = params.get("long") === "1";
 /** Account names from 4 to 44 characters, several near the length a column at rest holds, so a name ends close to its track whatever the width. */
@@ -600,7 +723,8 @@ const DES_ACCOUNTS = DES_LONG
 const desDay = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const desPositions = Number(params.get("positions") ?? 3);
 const DES_DESCRIPTION = Array.from({ length: Number(params.get("scale") ?? 1) }, () => "Example Industries builds small instruments for imaginary observatories. The team assembles each device in a bright studio beside the river, checks the lenses twice, and sends a hand written guide with every order. Longer runs use the same tools, but the instruments travel to classrooms, research stations and libraries across several regions.").join(" ");
-const DES_TICKER = createTestTicker("EXMPL", "Example Industries", {
+const DES_NAME = DES_LONG ? "Example Industries of the Invented Archipelago and Associated Holdings Limited" : "Example Industries";
+const DES_TICKER = createTestTicker("EXMPL", DES_NAME, {
   exchange: "NASDAQ",
   assetCategory: "STK",
   portfolios: DES_ACCOUNTS.slice(0, desPositions),
@@ -611,7 +735,8 @@ const DES_TICKER = createTestTicker("EXMPL", "Example Industries", {
 const DES_FINANCIALS = createTestFinancials({
   financialCurrency: "USD",
   quote: createTestQuote({
-    symbol: "EXMPL", name: "Example Industries", price: 105.25, change: 1.25, changePercent: 1.2, previousClose: 104, lastUpdated: Date.UTC(2026, 0, 2),
+    symbol: "EXMPL", name: DES_NAME, price: 105.25, change: 1.25, changePercent: 1.2, previousClose: 104, lastUpdated: Date.UTC(2026, 0, 2),
+    ...(DES_LONG ? { exchangeName: "NASDAQ" } : {}),
     bid: 105.2, ask: 105.3, bidSize: DES_LONG ? 12_345_678 : 300, askSize: DES_LONG ? 98_765_432 : 500, high: 106, low: 103, high52w: 140, low52w: 80, volume: 1_200_000, marketCap: 5e9, marketState: "CLOSED",
   }),
   priceHistory: inventedSeries(120, 100, 18),
@@ -637,7 +762,13 @@ const DES_FINANCIALS = createTestFinancials({
     }
     : { description: DES_DESCRIPTION, sector: "Industrials", industry: "Instruments", employees: 12_345, website: "https://example.invalid", fiscalYearEnd: "12-31" },
 });
+const DES_FOOTER = params.get("footer") === "1";
 function DesPane({ width, height, focused }: PaneProps) {
+  // The status and the one hint the pane's real footer carries for a delayed quote.
+  usePaneFooter("des-fixture", () => DES_FOOTER ? {
+    info: [{ id: "quote", parts: [{ text: "Stale quote 2026-01-02", tone: "muted" }, { text: "15m delayed", tone: "warning" }] }],
+    hints: [{ id: "upgrade", key: "$", label: "upgrade", onPress: () => {} }],
+  } : null, []);
   return <OverviewTab ticker={DES_TICKER} financials={DES_FINANCIALS} width={width} height={height} focused={focused} />;
 }
 
@@ -647,12 +778,12 @@ function desLayout(): LayoutConfig {
     return {
       dockRoot: leaf("plain:a"),
       instances: [instance("des:a"), instance("plain:a")],
-      floating: [{ instanceId: "des:a", x: 10, y: 2, width: 112, height: 44, zIndex: 50 }],
+      floating: [{ instanceId: "des:a", x: 10, y: 2, width: Number(params.get("fw") ?? 112), height: 44, zIndex: 50 }],
       detached: [],
     };
   }
   return {
-    dockRoot: { kind: "split", axis: "horizontal", ratio: 0.66, first: leaf("des:a"), second: leaf("plain:a") },
+    dockRoot: { kind: "split", axis: "horizontal", ratio: Number(params.get("ratio") ?? 0.66), first: leaf("des:a"), second: leaf("plain:a") },
     instances: [instance("des:a"), instance("plain:a")],
     floating: [],
     detached: [],
@@ -666,17 +797,28 @@ function desLayout(): LayoutConfig {
  */
 function PaintPane(props: PaneProps) {
   const [active, setActive] = useState("empty");
+  // Like the research pane: a tab opened once stays mounted, hidden while
+  // another one shows, so going back to it reveals the chart it drew.
+  const [mounted, setMounted] = useState<readonly string[]>(["empty"]);
+  const select = useCallback((tab: string) => {
+    setActive(tab);
+    setMounted((current) => (current.includes(tab) ? current : [...current, tab]));
+  }, []);
   const { strip, rows } = usePaneTabs({
     tabs: ["empty", "chart", "overview", "composer"].map((value) => ({ value, label: value })),
-    activeValue: active, onSelect: setActive,
+    activeValue: active, onSelect: select,
   });
   const body = { ...props, height: Math.max(4, props.height - rows) };
   return <Box flexDirection="column" flexGrow={1}>
     {strip}
-    {active === "chart" ? <ChartPane {...props} />
-      : active === "overview" ? <OverviewPane {...props} />
-      : active === "composer" ? <ChartComposerFixturePane {...body} />
-      : null}
+    {mounted.map((tab) => (
+      <Box key={tab} visible={tab === active} flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
+        {tab === "chart" ? <ChartPane {...body} />
+          : tab === "overview" ? <OverviewPane {...body} />
+          : tab === "composer" ? <ChartComposerFixturePane {...body} />
+          : null}
+      </Box>
+    ))}
   </Box>;
 }
 
@@ -935,6 +1077,57 @@ function ChartComposerFixturePane(props: PaneProps) {
   );
 }
 
+/** A made-up series ending on the invented bars' last close, one point every `stepDays`, so it shares their dates. */
+function recentSeries(count: number, base: number, swing: number, stepDays = 1) {
+  const end = Math.floor(sourceNow() / DAY_MS) * DAY_MS;
+  return Array.from({ length: count }, (_, index) => {
+    const close = base + swing * Math.sin(index / 9) + (swing / 4) * Math.sin(index * 1.7);
+    return { date: new Date(end - (count - 1 - index) * stepDays * DAY_MS), open: close, high: close + 1, low: close - 1, close, volume: 0 };
+  });
+}
+
+function recentFearGreed(): FearGreedData {
+  const updatedAt = new Date(sourceNow());
+  return {
+    ...INVENTED_FEAR_GREED,
+    overall: { ...INVENTED_FEAR_GREED.overall, updatedAt, history: recentSeries(250, 50, 22) },
+    indicators: INVENTED_FEAR_GREED.indicators.map((indicator, index) => ({
+      ...indicator, updatedAt, points: recentSeries(180, 45 + index * 3, 12 + index),
+    })),
+  };
+}
+
+/** IV history's chart on invented daily vols: IV 30d, 90d and HV over their spread. */
+function IvHistoryFixturePane({ width, height, focused }: PaneProps) {
+  const model = useMemo(() => {
+    const vols = (base: number, swing: number) => recentSeries(250, base, swing).map(({ date, close }) => ({ date, value: close / 100 }));
+    const iv30 = vols(28, 6), hv = vols(24, 5);
+    return {
+      iv30, iv90: vols(30, 3), iv365: [], quoteIv30: [], hv,
+      spread: iv30.map((entry, index) => ({ date: entry.date, value: entry.value! - hv[index]!.value! })),
+    } as unknown as IvHistoryModel;
+  }, []);
+  return <IvHistoryChart model={model} width={width} height={height} hvLabel="HV 30d" focused={focused} />;
+}
+
+/** A macro series' detail chart on an invented monthly rate, five years to the invented bars' month. */
+function MacroSeriesFixturePane({ width, height, focused }: PaneProps) {
+  const { points, lines } = useMemo(() => {
+    const end = new Date(sourceNow());
+    const points = Array.from({ length: 60 }, (_, index) => {
+      const month = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 59 + index, 1));
+      return { date: month.toISOString().slice(0, 10), value: 3 + 1.5 * Math.sin(index / 7) };
+    });
+    const axis = { unit: "%", unitGroup: "percent", nativeFrequency: "monthly" as const };
+    return { points, lines: [scalarLine(axis, "rate", "Invented rate", "#4c9aff", points)] };
+  }, []);
+  return (
+    <SeriesDetailChart stats={[]} width={width} height={height} focused={focused} points={points} lines={lines}
+      axis={{ unit: "%", unitGroup: "percent", nativeFrequency: "monthly" }} mean={3} resetKey="rate"
+      formatValue={(value) => `${value.toFixed(2)}%`} />
+  );
+}
+
 function chartComposerSpec(kind: string): ChartSpec {
   if (kind === "percent") return { ...buildComparisonChartPreset(["ALFA:NASDAQ", "BRVO:NASDAQ", "CHRL:XETR"]), viewport: { range: "3M", resolution: "30m" } };
   let spec = buildPriceChartPreset(kind === "edge" ? "EDGE:NASDAQ" : "ALFA:NASDAQ");
@@ -947,6 +1140,7 @@ function chartComposerSpec(kind: string): ChartSpec {
 }
 
 const PANES = {
+  axis: { name: "Composite chart", component: AxisFixturePane },
   palette: { name: "Surface", component: PalettePane },
   overview: { name: "Overview", component: OverviewPane },
   des: { name: "DES", component: DesPane },
@@ -966,9 +1160,11 @@ const PANES = {
   overlay: { name: "Chart under a toolbar", component: ChartOverlayPane },
   under: { name: "Chart under a table", component: ChartUnderTablePane },
   sidebar: { name: "Sidebar", component: SidebarPane },
-  heat: { name: "Heat map", component: HeatPane },
+  heat: { name: "Heat map", component: params.get("heat") === "market" ? MarketHeatPane : InventedHeatPane },
   chat: { name: "Chat", component: ChatFixturePane },
   "chart-composer": { name: "Chart", component: ChartComposerFixturePane },
+  "iv-history": { name: "IV history", component: IvHistoryFixturePane },
+  macro: { name: "Macro series", component: MacroSeriesFixturePane },
   ...LAYOUT_PANES,
 };
 
@@ -988,7 +1184,9 @@ function registry(): PluginRegistry {
     getContextMenuItems: () => [],
     resolvePaneQuickSettings: () => [],
     hasPaneSettings: () => false,
-    notify: () => {},
+    // Share ends in one toast, the link copied or why not (here it cannot reach
+    // the service); nothing else on these pages toasts, so the page counts them all.
+    notify: () => { window.__paneChrome.shares++; },
     openPaneSettings: () => {},
     openCommandBar: () => {},
     showPane: () => {},
@@ -1002,13 +1200,6 @@ function registry(): PluginRegistry {
     // The shell binds its actions here as it mounts (togglePaneFullscreen among them).
     bindHost(actions: object) {
       Object.assign(this, actions);
-      if ("promptDialog" in actions) {
-        const prompt = actions.promptDialog as PluginRegistry["promptDialog"];
-        Object.assign(this, { promptDialog: (options: Parameters<typeof prompt>[0]) => {
-          window.__paneChrome.shares++;
-          return prompt(options);
-        } });
-      }
       return () => {};
     },
   } as unknown as PluginRegistry;
@@ -1069,13 +1260,15 @@ const FLOATING_RESIZE: Record<string, string> = {
  */
 function resizeLayout(): LayoutConfig {
   const floating = `${FLOATING_RESIZE[params.get("float") ?? ""] ?? "news"}:float`;
+  // `dock=heat`: the heat map docked where the chart is, so a window resize resizes it.
+  const docked = params.get("dock") === "heat" ? "heat:dock" : "chart:dock";
   return {
     dockRoot: {
       kind: "split", axis: "vertical", ratio: 0.55,
-      first: row(["news:dock", "chart:dock"]),
+      first: row(["news:dock", docked]),
       second: row(["sidebar:dock", "table:dock"]),
     },
-    instances: ["news:dock", "chart:dock", "sidebar:dock", "table:dock", floating].map(instance),
+    instances: ["news:dock", docked, "sidebar:dock", "table:dock", floating].map(instance),
     floating: [{ instanceId: floating, x: 50, y: 8, width: 72, height: 22, zIndex: 60 }],
     detached: [],
   };
@@ -1135,13 +1328,51 @@ function themeLayout(): LayoutConfig {
   };
 }
 
-/** One chart composer pane across the window. */
+/**
+ * One chart composer pane across the window; with `linked=1`, a daily one
+ * under it that shares its crosshair, and with `linked=mixed`, IV history, a
+ * macro series and Fear & Greed's charts around it that share it.
+ */
 function chartComposerLayout(): LayoutConfig {
   const instanceId = "chart-composer:a";
+  const spec = chartComposerSpec(params.get("chart") ?? "pan");
+  if (params.get("linked") === "mixed") {
+    return {
+      dockRoot: {
+        kind: "split", axis: "vertical", ratio: 0.5,
+        first: row([instanceId, "iv-history:a"]), second: row(["macro:a", "fear-greed:a"]),
+      },
+      instances: [{ ...instance(instanceId), settings: { chartSpec: spec } }, instance("iv-history:a"), instance("macro:a"), instance("fear-greed:a")],
+      floating: [],
+      detached: [],
+    };
+  }
+  if (params.get("linked") === "1") {
+    const daily = buildPriceChartPreset("BRVO:NASDAQ");
+    return {
+      dockRoot: { kind: "split", axis: "vertical", ratio: 0.5, first: leaf(instanceId), second: leaf("chart-composer:b") },
+      instances: [
+        { ...instance(instanceId), settings: { chartSpec: spec } },
+        { ...instance("chart-composer:b"), settings: { chartSpec: { ...daily, viewport: { ...daily.viewport, range: "6M", resolution: "1d" } } } },
+      ],
+      floating: [],
+      detached: [],
+    };
+  }
   return {
     dockRoot: leaf(instanceId),
-    instances: [{ ...instance(instanceId), settings: { chartSpec: chartComposerSpec(params.get("chart") ?? "pan") } }],
+    instances: [{ ...instance(instanceId), settings: { chartSpec: spec } }],
     floating: [],
+    detached: [],
+  };
+}
+
+function axisLayout(): LayoutConfig {
+  const floating = params.get("float") === "1";
+  return {
+    dockRoot: floating ? leaf("plain:back") : leaf("axis:a"),
+    instances: [instance("axis:a"), ...(floating ? [instance("plain:back")] : [])],
+    floating: floating ? [{ instanceId: "axis:a", x: 2, y: params.get("short") === "1" ? 0 : 2, width: Math.max(30, window.innerWidth / WEB_CELL_WIDTH - 4), height: params.get("short") === "1" ? 6 : 34, zIndex: 60 }] : [],
     detached: [],
   };
 }
@@ -1162,19 +1393,21 @@ function config() {
     : scenario === "des" ? desLayout()
     : scenario === "nested" ? nestedLayout()
     : scenario === "stacked" ? stackedLayout()
+    : scenario === "axis" ? axisLayout()
     : scenario === "cmp" ? chartComposerLayout()
     : scenario === "layout" ? layoutLayout(params)
     : chromeLayout();
   if (scenario === "theme-detached") layout.detached.push({ instanceId: "chart:theme", x: 0, y: 0, width: 80, height: 24 });
-  const layouts = [{ name: "Fixture", layout: cloneLayout(layout) }];
+  const layouts = scenario === "chat" ? chatLatencyLayouts(layout) : [{ name: "Fixture", layout: cloneLayout(layout) }];
   if (scenario === "theme") layouts.push({ name: "Alternate", layout: cloneLayout(layout) });
-  return { ...base, theme: params.get("theme") ?? base.theme, layout, layouts, activeLayoutIndex: 0 };
+  const fontSize = Number(params.get("font")) || base.fontSize;
+  return { ...base, theme: params.get("theme") ?? base.theme, fontSize, layout, layouts, activeLayoutIndex: 0 };
 }
 
 const paneRegistry = registry();
 const detachedBridge: DesktopWindowBridge & { kind: "detached"; paneId: string } = {
   kind: "detached",
-  paneId: scenario === "theme-detached" ? "chart:theme" : "tabs:a",
+  paneId: scenario === "theme-detached" ? "chart:theme" : scenario === "chat" ? "chat:a" : "tabs:a",
   subscribeState: () => () => {},
   closeDetachedPane: async () => { window.__paneChrome.detachedCloses += 1; },
 };
@@ -1202,6 +1435,7 @@ window.__paneChrome = {
   clipboardImages: [],
   externalOpens: [],
   detachedCloses: 0,
+  header: { show: ignore, fullscreen: ignore, commandBar: ignore, helpOpens: 0, restarts: 0 },
   capturePane: async (paneId) => `data:image/png;base64,${(await domScreenshot.capturePaneScreenshotPngBase64(paneId)).pngBase64}`,
   captureForAssistant: async (paneId, scale, maxBytes, minWidth) => {
     try {
@@ -1224,7 +1458,13 @@ registerAskGloomPaneHandler(({ paneId, visibleText, args }) => {
 });
 // The pane reads its data from the cache on mount, so it renders with the invented data at once.
 if (scenario === "screenshot" || params.get("float") === "fear") await loadFearGreed(true, async () => INVENTED_FEAR_GREED);
-if (scenario === "layout") installLayoutFetches();
+if (scenario === "cmp" && params.get("linked") === "mixed") await loadFearGreed(true, async () => recentFearGreed());
+if (scenario === "layout") installLayoutFetches(params);
+if (scenario === "header") {
+  installHeaderPlatform(platform);
+  installHeaderClock();
+  installHeaderMarketData();
+}
 const rendererHost: RendererHost = {
   ...webRendererHost,
   controlWindow: (action) => { window.__paneChrome.windowControls.push(action); },
@@ -1237,10 +1477,13 @@ const rendererHost: RendererHost = {
 const root = document.getElementById("root")!;
 root.tabIndex = -1;
 createRoot(root).render(
-  <DomHostProviders ui={createWebUiHost(platform)} renderer={rendererHost}>
+  <DomHostProviders ui={params.get("host") === "browser" ? browserUiHost : createWebUiHost(platform)} renderer={rendererHost}>
     <AppProvider config={config()} desktopBridge={detached ? detachedBridge : undefined}>
       {detached
         ? <DetachedPaneShell pluginRegistry={paneRegistry} desktopWindowBridge={detachedBridge} />
+        : scenario === "header" ? <HeaderFixture handle={window.__paneChrome.header} />
+        : scenario === "kit" ? <KitPage family={params.get("family")} />
+        : scenario === "tab-sweep" ? <TabSweepFixture />
         : scenario === "theme" ? <Box flexDirection="column" width="100%" height="100%">
           <Box data-theme-chrome="header"><Header /></Box>
           <Shell pluginRegistry={paneRegistry} />
@@ -1248,6 +1491,7 @@ createRoot(root).render(
         </Box> : <Shell pluginRegistry={paneRegistry} />}
       {(scenario.startsWith("theme") || scenario === "paint") && <ThemeControls />}
       {scenario === "paint" && <PaneAdder />}
+      {scenario === "chat" && params.get("latencyCheck") === "1" && <ChatLatencySync />}
       <Ready />
     </AppProvider>
   </DomHostProviders>,

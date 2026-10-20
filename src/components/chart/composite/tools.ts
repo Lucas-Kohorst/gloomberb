@@ -153,7 +153,7 @@ export function resolveDrawingFromDrag(
 }
 
 function projectDrawing(
-  scene: CompositeChartScene,
+  scene: Pick<CompositeChartScene, "timeScale">,
   panel: CompositePanelScene,
   drawing: ChartDrawing,
 ): Array<{ xRatio: number; yRatio: number }> | null {
@@ -516,7 +516,7 @@ export function drawChartToolOverlay(
   colors: ChartToolColors,
   direction: "up" | "down" = "up",
   drawings?: {
-    scene: CompositeChartScene;
+    scene: Pick<CompositeChartScene, "timeScale">;
     panel: CompositePanelScene;
     items: readonly ChartDrawing[];
     selectedId?: string | null;
