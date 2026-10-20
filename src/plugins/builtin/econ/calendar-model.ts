@@ -191,25 +191,34 @@ export function matchesCountry(event: EconEvent, filter: CountryFilter): boolean
   return event.country === filter;
 }
 
+/**
+ * How long after its release time a high-impact print is still news: the
+ * calendar is asked for it this long, and a print that turns up later is
+ * recorded without a toast.
+ */
 export const PRINT_PENDING_MS = 20 * 60 * 1000;
-export const PRINT_POLL_MS = 15_000;
-export const PRINT_IDLE_MS = 60_000;
 
-export function hasPendingHighImpactPrint(events: readonly EconEvent[], now: number): boolean {
-  return events.some((event) => {
+/** High-impact releases whose time has come in the last {@link PRINT_PENDING_MS} and that have no actual yet. */
+export function pendingHighImpactPrints(events: readonly EconEvent[], now: number): EconEvent[] {
+  return events.filter((event) => {
     if (event.impact !== "high" || event.actual) return false;
     const releasedFor = now - event.date.getTime();
     return releasedFor >= 0 && releasedFor <= PRINT_PENDING_MS;
   });
 }
 
+export function hasPendingHighImpactPrint(events: readonly EconEvent[], now: number): boolean {
+  return pendingHighImpactPrints(events, now).length > 0;
+}
+
+/** High-impact rows that were blank in `previous` and have an actual in `next`. */
 export function landedHighImpactPrints(
   previous: ReadonlyMap<string, string | null>,
   next: readonly EconEvent[],
 ): EconEvent[] {
   return next.filter((event) => {
-    if (event.impact !== "high" || event.actual == null || !previous.has(event.id)) return false;
-    return previous.get(event.id) == null;
+    if (event.impact !== "high" || !event.actual || !previous.has(event.id)) return false;
+    return !previous.get(event.id);
   });
 }
 
