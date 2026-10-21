@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { unavailableText } from "../../../components/ui/status";
 import { MarketDataCoordinator } from "../../../market-data/coordinator";
 import type { QueryEntry } from "../../../market-data/result-types";
 import type { OptionsChain, OptionContract, Quote } from "../../../types/financials";
@@ -154,9 +153,7 @@ describe("calculator surface source", () => {
     const missing = await loadCalculatorSurfaceVol(request, dependencies({ loadYieldCurve: async () => { throw new Error("Treasury offline"); } }));
     expect(missing.volatility).toBeNull();
     expect(missing.rate).toBeNull();
-    expect(missing.error).toBe(unavailableText("Surface IV"));
-    expect(missing.warnings.some((warning) => warning.includes("Treasury offline"))).toBe(false);
-    expect(missing.warnings.some((warning) => warning.includes("Treasury rate unavailable"))).toBe(true);
+    expect(missing.warnings.some((warning) => warning.includes("Treasury offline"))).toBe(true);
     const controller = new AbortController();
     let resolve!: (value: QueryEntry<Quote>) => void;
     const pending = new Promise<QueryEntry<Quote>>((done) => { resolve = done; });

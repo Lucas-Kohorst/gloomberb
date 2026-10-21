@@ -1,10 +1,11 @@
+import { unavailableText } from "../../../components/ui/status";
 import { getSharedMarketDataCoordinator, MarketDataCoordinator, resolveEntryValue } from "../../../market-data/coordinator";
 import type { InstrumentRef } from "../../../market-data/request-types";
 import type { ManualChartResolution } from "../../../time-series/resolution";
 import type { DataProvider } from "../../../types/data-provider";
 import type { PricePoint } from "../../../types/financials";
-import { unavailableText } from "../../../components/ui/status";
 import { abortable, abortError } from "../../../utils/async-deadline";
+import { errorMessage } from "../../../utils/errors";
 
 export interface SeasonalityHistory {
   history: PricePoint[];
@@ -40,7 +41,7 @@ export function cachedSeasonalityHistory(
   return {
     history,
     stale: !!entry.error || (entry.staleAt != null && entry.staleAt <= now),
-    error: null,
+    error: entry.error?.message ?? null,
     fetchedAt: entry.fetchedAt ?? now,
   };
 }
@@ -59,7 +60,6 @@ export async function loadSeasonalityHistory(
   if (request.signal?.aborted) throw abortError(CANCELLED);
   const cadence = request.cadence ?? "monthly";
   const now = Date.now();
-  const failure = unavailableText(cadence === "daily" ? "Daily price history" : "Monthly price history");
   const coordinator = marketData ? new MarketDataCoordinator(marketData) : getSharedMarketDataCoordinator();
   try {
     if (!coordinator) throw new Error("Market data coordinator unavailable");
@@ -67,10 +67,10 @@ export async function loadSeasonalityHistory(
       granularity: "resolution", resolution: SEASONALITY_HISTORY_RESOLUTION[cadence] }, { forceRefresh: request.forceRefresh }), request.signal, CANCELLED);
     const history = resolveEntryValue(entry) ?? [];
     return { history, stale: !!entry.error || (entry.staleAt != null && entry.staleAt <= now),
-      error: history.length ? null : failure,
+      error: entry.error?.message ?? (history.length ? null : unavailableText(cadence === "daily" ? "Daily price history" : "Monthly price history")),
       fetchedAt: entry.fetchedAt ?? now };
   } catch (error) {
     if (request.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw abortError(CANCELLED);
-    return { history: [], stale: false, error: failure, fetchedAt: now };
+    return { history: [], stale: false, error: errorMessage(error), fetchedAt: now };
   }
 }

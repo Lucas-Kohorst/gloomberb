@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { unavailableText } from "../../../components/ui/status";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import type { EconEvent } from "./types";
 import {
@@ -64,8 +63,7 @@ describe("econ calendar cache", () => {
 
     expect(result.data.map((event) => event.id)).toEqual(["pce"]);
     expect(result.stale).toBe(true);
-    expect(result.refreshError).toBe(unavailableText("Economic calendar"));
-    expect(result.refreshError).not.toContain("calendar endpoint down");
+    expect(result.refreshError).toContain("calendar endpoint down");
   });
 });
 

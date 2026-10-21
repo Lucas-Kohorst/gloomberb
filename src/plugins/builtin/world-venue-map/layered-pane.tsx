@@ -20,7 +20,6 @@ import {
   usePagedRows,
   usePaneFooter,
   usePaneMenuItems,
-  unavailableText,
   usePaneNoticeFooter,
   useQueryBarSearch,
   useTableLoadMore,
@@ -128,11 +127,13 @@ function layerFreshness(state: GeoLayerState, now: number): { text: string; tone
 function layerNotices(states: readonly GeoLayerState[]): string[] {
   return states.flatMap((state) => {
     const { layer } = state;
+    if (state.phase === "unavailable") return [`${layer.name}: ${state.note ?? layer.statusNote ?? "unavailable"}.`];
     if (state.phase === "locked") return [`${layer.name} needs Pro.`];
-    if (state.phase === "unavailable" || state.phase === "error" || state.error) return [unavailableText(layer.name)];
     const notes: string[] = [];
     const partialNote = state.note ?? layer.statusNote;
     if (layer.status === "partial" || state.note) notes.push(`${layer.name}: partial${partialNote ? `, ${partialNote}` : ""}.`);
+    if (state.phase === "error" && state.error) notes.push(`${layer.name} could not load: ${state.error}`);
+    else if (state.error) notes.push(`${layer.name} could not refresh: ${state.error}`);
     if (state.truncated && !state.clusters.length) notes.push(`${layer.name}: zoom in to see every feature.`);
     return notes;
   });
@@ -360,14 +361,12 @@ export function LayeredMapView({ focused, width, height, layers, tokens, plain =
       ...(pages.loadingMore ? [{ id: "more", parts: [{ text: "loading more", tone: "muted" as const }] }] : []),
       ...(freshness ? [{ id: "fresh", parts: [{ text: freshness.text, tone: freshness.tone }] }] : []),
       ...(zoomLayers.length ? [{ id: "zoom", parts: [{ text: `zoom in for ${zoomLayers.map((state) => state.layer.name).join(", ")}`, tone: "muted" as const }] }] : []),
+      ...(pages.error && rows.length ? [{ id: "error", parts: [{ text: pages.error.message, tone: "warning" as const }] }] : []),
     ],
     hints,
-  }), [detail.data, detail.loading, detailOpen, freshness?.text, freshness?.tone, hints.map((hint) => hint.id).join(","), loadingLayers.length, pages.loading, pages.loadingMore, rows.length, zoomLayers.map((state) => state.layer.id).join(",")]);
+  }), [detail.data, detail.loading, detailOpen, freshness?.text, freshness?.tone, hints.map((hint) => hint.id).join(","), loadingLayers.length, pages.error, pages.loading, pages.loadingMore, rows.length, zoomLayers.map((state) => state.layer.id).join(",")]);
   // The table's own layer says it cannot serve in the body; the footer warns about the others.
-  const notices = [
-    ...layerNotices(states.filter((state) => state.layer.id !== tableLayer.id || (state.phase !== "unavailable" && state.phase !== "locked"))),
-    ...(pages.error && rows.length ? [unavailableText(tableLayer.name)] : []),
-  ];
+  const notices = layerNotices(states.filter((state) => state.layer.id !== tableLayer.id || (state.phase !== "unavailable" && state.phase !== "locked")));
   usePaneNoticeFooter({ registrationId: `${WORLD_VENUE_MAP_PANE_ID}:notices`, focused, notices, enabled: !detailOpen });
   usePaneMenuItems(`${WORLD_VENUE_MAP_PANE_ID}:links`, () => [
     ...activeLinks.slice(1).map((link) => ({ id: `des:${tickerLinkKey(link)}`, label: `Open ${tickerLinkKey(link)}`, onSelect: () => openTicker(link) })),
@@ -441,15 +440,16 @@ export function LayeredMapView({ focused, width, height, layers, tokens, plain =
   // An entities answer can also say the layer cannot serve right now.
   const pageStatus = pages.pages[0]?.status;
   const unavailableNote = pages.pages[0]?.statusNote ?? tableState?.note ?? tableLayer.statusNote;
-  const loadFailed = !!pages.error && rows.length === 0;
   const emptyTitle = tableLocked ? `${tableLayer.name} needs Pro.`
-    : !tableReadable || pageStatus === "unavailable" || loadFailed ? unavailableText(tableLayer.name)
-      : query.trim() ? "No matches." : `No ${tableLayer.name.toLowerCase()} in view.`;
+    : !tableReadable || pageStatus === "unavailable" ? `${tableLayer.name} unavailable.`
+      : pages.error && !rows.length ? `${tableLayer.name} could not load.`
+        : query.trim() ? "No matches." : `No ${tableLayer.name.toLowerCase()} in view.`;
   // A one-country layer searched or panned outside its country is empty for that reason.
   const coverage = layerCoverageNote(tableLayer);
-  const emptyHint = tableLocked || loadFailed ? undefined
+  const emptyHint = tableLocked ? undefined
     : !tableReadable || pageStatus === "unavailable" ? unavailableNote
-      : coverage ?? (query.trim() ? "Clear search." : undefined);
+      : pages.error && !rows.length ? pages.error.message
+        : coverage ?? (query.trim() ? "Clear search." : undefined);
 
   const table = (
     <DataTableStackView<GeoEntityRow, EntityColumn>

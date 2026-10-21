@@ -10,15 +10,14 @@ import {
   QueryBar,
   readStoredPaneSidebarWidth,
   shouldShowPaneSidebar,
-  unavailableText,
   usePaneFooter,
-  usePaneNoticeFooter,
   useQueryBarSearch,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
-import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
-import { useAsyncResource, usePaneSettingValue, usePluginPaneState, useUpdatedAgo } from "../../../public/react";
+import { handleRefreshKey } from "../../../components/data-table/table-pane";
+import { useShortcut } from "../../../react/input";
+import { useAsyncResource, usePaneSettingValue, usePluginPaneState } from "../../../public/react";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
@@ -104,25 +103,23 @@ function VenueMapView({ focused, width, height }: PaneProps) {
   // nothing to focus and must not leave the pane waiting on a missing field.
   const searchable = !!data;
   const searchOpen = searchable && searchFocused;
-  const updatedAgo = useUpdatedAgo(data?.checkedAt ?? null);
 
-  usePaneRefreshKey(refresh, { focused: focused && !searchOpen });
-  usePaneNoticeFooter({
-    registrationId: `${WORLD_VENUE_MAP_PANE_ID}:venues`,
-    focused,
-    notices: data && error ? [unavailableText("World venues")] : [],
-  });
+  useShortcut((event) => {
+    if (searchOpen || event.targetEditable) return;
+    handleRefreshKey(event, refresh, { stopPropagation: true });
+  }, { allowEditable: true, enabled: focused });
 
   usePaneFooter(WORLD_VENUE_MAP_PANE_ID, () => ({
     info: [
       ...(loading && !data ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : []),
+      ...(data && !data.stale ? [{ id: "live", parts: [{ text: "live", tone: "positive" as const }] }] : []),
       ...(data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
       ...(searchable ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : []),
     ],
-  }), [data, focusSearch, loading, searchable, updatedAgo]);
+  }), [data, error, focusSearch, loading, searchable]);
 
   const { nativePaneChrome } = useUiCapabilities();
   const [storedSidebarWidth, setStoredSidebarWidth] = usePluginPaneState<number | null>("sidebarWidth", null);
@@ -213,9 +210,7 @@ function VenueMapView({ focused, width, height }: PaneProps) {
     return <PaneStatusBody loading align="center" width={width} height={height} loadingLabel="Loading world venues..." />;
   }
   if (!data) {
-    return error
-      ? <PaneStatusBody subject="World venues" error={unavailableText("World venues")} align="center" width={width} height={height} />
-      : <EmptyState status="empty" title="World venues unavailable." hint="Try again." />;
+    return <EmptyState status={error ? "error" : "empty"} title="World venues unavailable." hint={error ?? "Try again."} />;
   }
 
   const map = (

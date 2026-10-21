@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { ApiRequestError } from "../../../api-client/errors";
 import type { SocialMentionPost, SocialMentionsPayload } from "../../../api-client/social-mentions";
-import { unavailableText } from "../../../components/ui/status";
 import { fetchSocialMentions, validateSocialMentions } from "./client";
 import { socialDayRows, socialRatio, socialStance, socialSummary, sortedSocialRows, stanceWord, topPostCell } from "./model";
 
@@ -60,11 +59,15 @@ test("the Cloud boundary rejects unordered days, bad stances and non-X links", (
 });
 
 test("a server without the endpoint reads as unavailable while sign-in errors pass through", async () => {
-  const sentence = unavailableText("Social mentions");
   await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw new ApiRequestError("missing", 404); } }))
-    .rejects.toThrow(sentence);
-  await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw new ApiRequestError("Gloom Cloud did not accept the request.", 400); } }))
-    .rejects.toThrow(sentence);
+    .rejects.toThrow("Social mentions unavailable.");
   const denied = new ApiRequestError("Unauthorized", 401);
   await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw denied; } })).rejects.toBe(denied);
+});
+
+
+test("social server failures keep the original error instead of becoming unavailable", async () => {
+  for (const failure of [new ApiRequestError("Upstream timed out", 503), new ApiRequestError("Invalid range", 400), new Error("Network connection lost")]) {
+    await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw failure; } })).rejects.toBe(failure);
+  }
 });

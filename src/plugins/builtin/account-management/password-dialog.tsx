@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Button, TextField, unavailableText } from "../../../components";
+import { Button, TextField } from "../../../components";
 import { DialogFrame } from "../../../components/ui/frame";
 import { Box } from "../../../ui";
 import { useDialogKeyboard, type AlertContext } from "../../../ui/dialog";
@@ -46,8 +46,8 @@ export function PasswordChangeDialog({
     try {
       await onChangePassword(currentPassword, newPassword);
       dismiss();
-    } catch {
-      setError(unavailableText("Password"));
+    } catch (errorValue) {
+      setError(errorValue instanceof Error ? errorValue.message : t("Failed to change password."));
     } finally {
       setSubmitting(false);
     }

@@ -4,13 +4,10 @@ import {
   confirmDialog,
   EmptyState,
   Notice,
-  PaneStatusBody,
   Spinner,
   StatGrid,
   loadingText,
-  unavailableText,
   usePaneFooter,
-  usePaneNoticeFooter,
   type PaneHint,
   type StatItem,
 } from "../../../components";
@@ -24,10 +21,10 @@ import { formatTimeAgo } from "../../../utils/datetime-format";
 
 type Message = { tone: "info" | "success" | "error"; text: string };
 
-function errorText(error: unknown): string {
+function errorText(error: unknown, fallback: string): string {
   // A server without the endpoint yet answers 404 for the route itself.
   if (error instanceof ApiRequestError && error.status === 404) return t("Calendar links are not available yet.");
-  return unavailableText("Calendar link");
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 /**
@@ -35,7 +32,7 @@ function errorText(error: unknown): string {
  * Google, Apple or Outlook Calendar. `c` copies it (creating it the first
  * time), `n` replaces it after a confirm. The link is never created on load.
  */
-export function CalendarAccountTab({ width, sessionMarker, focused }: { width: number; sessionMarker: string; focused: boolean }) {
+export function CalendarAccountTab({ width, sessionMarker }: { width: number; sessionMarker: string }) {
   const language = useAppLanguage();
   const renderer = useRendererHost();
   const dialog = useDialog();
@@ -45,27 +42,16 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [shownUrl, setShownUrl] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
-  const feedRef = useRef(feed);
-  feedRef.current = feed;
 
   const load = useCallback(async (isCurrent: () => boolean = () => true) => {
     setLoading(true);
     setLoadError(null);
     try {
       const next = await apiClient.getCalendarFeed();
-      if (isCurrent()) {
-        setFeed(next);
-        setNotice(null);
-      }
+      if (isCurrent()) setFeed(next);
     } catch (error) {
-      if (!isCurrent()) return;
-      const text = errorText(error);
-      if (feedRef.current) {
-        setLoadError(null);
-        setNotice(text);
-      } else setLoadError(text);
+      if (isCurrent()) setLoadError(errorText(error, t("Failed to load the calendar link.")));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -96,17 +82,14 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
     }
   }, [renderer]);
 
-  const run = useCallback(async (task: () => Promise<void>) => {
+  const run = useCallback(async (task: () => Promise<void>, failure: string) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     try {
       await task();
     } catch (error) {
-      const text = errorText(error);
-      setMessage(null);
-      if (feedRef.current) setNotice(text);
-      else setLoadError(text);
+      setMessage({ tone: "error", text: errorText(error, failure) });
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -119,7 +102,7 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
     setFeed(current);
     setLoadError(null);
     await copy(current.url, t("Link copied."));
-  }), [copy, feed, run]);
+  }, t("Failed to create the calendar link.")), [copy, feed, run]);
 
   const regenerateLink = useCallback(async () => {
     if (!feed || busyRef.current) return;
@@ -137,7 +120,7 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
       const next = await apiClient.rotateCalendarFeed();
       setFeed(next);
       await copy(next.url, t("New link copied. The old one no longer works."));
-    });
+    }, t("Failed to regenerate the calendar link."));
   }, [copy, dialog, feed, run]);
 
   const hints = useMemo<PaneHint[]>(() => {
@@ -153,21 +136,16 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
   usePaneFooter("account-management:calendar", () => ({
     info: [
       ...(busy ? [{ id: "busy", parts: [{ text: t("working"), tone: "muted" as const }] }] : []),
-      ...(message && message.tone !== "error" && !busy ? [{
+      ...(message && !busy ? [{
         id: "status",
         parts: [{
           text: message.text,
-          tone: message.tone === "success" ? "positive" as const : "muted" as const,
+          tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const,
         }],
       }] : []),
     ],
     hints,
   }), [busy, hints, language, message]);
-  usePaneNoticeFooter({
-    registrationId: "account-management:calendar-notices",
-    focused,
-    notices: notice ? [notice] : [],
-  });
 
   const stats = useMemo<StatItem[]>(() => feed ? [
     { id: "link", label: "Link", value: t("Active"), tone: "positive", detail: t("updates on its own") },
@@ -184,9 +162,9 @@ export function CalendarAccountTab({ width, sessionMarker, focused }: { width: n
 
   if (loadError && !feed) {
     return (
-      <PaneStatusBody
-        error={loadError}
-        errorTitle={loadError}
+      <EmptyState
+        status="error"
+        title={loadError}
         retry={{ onRetry: () => load(), pending: loading }}
       />
     );

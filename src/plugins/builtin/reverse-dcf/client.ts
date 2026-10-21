@@ -1,9 +1,10 @@
+import { unavailableText } from "../../../components/ui/status";
 import { getSharedMarketDataCoordinator, MarketDataCoordinator, resolveEntryValue } from "../../../market-data/coordinator";
 import type { InstrumentRef } from "../../../market-data/request-types";
 import type { DataProvider } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
-import { unavailableText } from "../../../components/ui/status";
 import { abortable, abortError } from "../../../utils/async-deadline";
+import { errorMessage } from "../../../utils/errors";
 
 export interface ReverseDcfSnapshot {
   financials: TickerFinancials | null;
@@ -21,16 +22,15 @@ export async function loadReverseDcfInputs(
 ): Promise<ReverseDcfSnapshot> {
   if (request.signal?.aborted) throw abortError(CANCELLED);
   const now = Date.now();
-  const failure = unavailableText("Reverse DCF");
   const coordinator = marketData ? new MarketDataCoordinator(marketData) : getSharedMarketDataCoordinator();
   try {
     if (!coordinator) throw new Error("Market data coordinator unavailable");
     const entry = await abortable(coordinator.loadSnapshot(request.instrument, { forceRefresh: request.forceRefresh }), request.signal, CANCELLED);
     const financials = resolveEntryValue(entry);
     return { financials, stale: !!entry.error || !!financials?.fundamentals?.stale || (entry.staleAt != null && entry.staleAt <= now),
-      error: financials ? null : failure, fetchedAt: entry.fetchedAt ?? now };
+      error: entry.error?.message ?? (financials ? null : unavailableText("Fundamentals")), fetchedAt: entry.fetchedAt ?? now };
   } catch (error) {
     if (request.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw abortError(CANCELLED);
-    return { financials: null, stale: false, error: failure, fetchedAt: now };
+    return { financials: null, stale: false, error: errorMessage(error), fetchedAt: now };
   }
 }

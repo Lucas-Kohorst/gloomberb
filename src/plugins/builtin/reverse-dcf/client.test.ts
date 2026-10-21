@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
-import { unavailableText } from "../../../components/ui/status";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { loadReverseDcfInputs } from "./client";
 
-test("a failed fundamentals load uses the shared unavailable sentence", async () => {
+test("a failed fundamentals load keeps the server failure", async () => {
   const snapshot = await loadReverseDcfInputs(
     { instrument: { symbol: "AAPL", exchange: "NASDAQ" } },
     createTestDataProvider({
@@ -11,6 +10,5 @@ test("a failed fundamentals load uses the shared unavailable sentence", async ()
     }),
   );
   expect(snapshot.financials).toBeNull();
-  expect(snapshot.error).toBe(unavailableText("Reverse DCF"));
-  expect(snapshot.error).not.toContain("exploded");
+  expect(snapshot.error).toBe("Fundamentals exploded");
 });
