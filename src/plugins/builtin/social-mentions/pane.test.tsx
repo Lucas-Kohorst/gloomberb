@@ -104,7 +104,8 @@ test("signed out, the route's 401 shows the sign-in wall, not a red failure; a s
 
   request.mockImplementation(async () => { throw new ApiRequestError("Upstream timed out", 502); });
   const failed = await render(96, 30, undefined, "AMD");
-  expect(failed).toContain("social mentions unavailable.");
+  expect(failed).toContain("Social mentions unavailable.");
+  expect(failed.match(/Upstream timed out/g)).toHaveLength(1);
   expect(failed).toContain("Upstream timed out");
   expect(failed).not.toContain("Sign in");
 });
