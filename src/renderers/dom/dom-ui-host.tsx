@@ -4,6 +4,7 @@ import type { UiHost } from "../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../theme/font-scale";
 import { detectPlatform } from "../../utils/platform";
 import { WebDataTable } from "./data-table";
+import { WebWindowedList } from "./windowed-list";
 import {
   WebButton,
   WebCheckbox,
@@ -14,7 +15,8 @@ import {
   WebSegmentedControl,
   WebTextField,
 } from "./desktop/controls";
-import { WebDialogActions, WebDialogHints } from "./desktop/dialog-actions";
+import { WebAudioPlayer } from "./desktop/audio-player";
+import { WebDialogActions } from "./desktop/dialog-actions";
 import { WebPopover } from "./desktop/popover";
 import { WebQueryBar } from "./desktop/query-bar";
 import { WebMenu } from "./desktop/menu";
@@ -89,9 +91,9 @@ export function createDomUiHost(
     SegmentedControl: WebSegmentedControl,
     DialogFrame: WebDialogFrame,
     DialogActions: WebDialogActions,
-    DialogHints: WebDialogHints,
     PageStackView: WebPageStackView,
     DataTable: WebDataTable,
+    WindowedList: WebWindowedList,
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
     Surface3D: WebSurface3D,
@@ -123,6 +125,7 @@ export function createDomUiHost(
       );
     },
     MediaSurface: WebMediaSurface,
+    AudioPlayer: WebAudioPlayer,
     SpinnerMark: ({ color, ...props }) => (
       <span
         {...cleanDomProps(props)}

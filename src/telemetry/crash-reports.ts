@@ -1,9 +1,11 @@
+import { logFailure } from "../utils/log-failure";
 import {
   apiClient,
   type CrashReportError,
   type CrashReportKind,
   type CrashReportSurface,
   type CrashReportsPayload,
+  type UpdateFailureReport,
 } from "../api-client";
 import type { TelemetryConfig } from "../types/config";
 import { isSleepRpcTimeout } from "../utils/rpc-timeout-error";
@@ -67,6 +69,8 @@ export interface CrashReportContext {
   pane?: string;
   /** React's component stack for a render crash; appended to the stack. */
   componentStack?: string | null;
+  /** A failed update step (update-failures.ts), sent as it is: it holds no free text. */
+  update?: UpdateFailureReport;
 }
 
 interface PendingError {
@@ -166,6 +170,7 @@ function toReportError(error: unknown, context: CrashReportContext): PendingErro
       ...(stack ? { stack } : {}),
       ...(context.plugin ? { plugin: clip(context.plugin, MAX_LABEL_LENGTH) } : {}),
       ...(context.pane ? { pane: clip(context.pane, MAX_LABEL_LENGTH) } : {}),
+      ...(context.update ? { update: context.update } : {}),
     },
   };
 }
@@ -187,8 +192,8 @@ export function reportCrash(error: unknown, context: CrashReportContext): void {
     accepted += 1;
     pending.push(entry);
     scheduleFlush(pending.length >= MAX_ERRORS_PER_REQUEST ? 0 : FLUSH_DELAY_MS);
-  } catch {
-    /* A reporter that throws inside a crash handler would hide the crash. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not queue crash report")(error);
   }
 }
 
@@ -223,8 +228,8 @@ export async function flushCrashReports(options: { timeoutMs?: number } = {}): P
   });
   try {
     await Promise.race([flushNow(), deadline]);
-  } catch {
-    /* Failures are swallowed; the caller is on its way out. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not flush crash reports")(error);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -241,8 +246,8 @@ export function spoolPendingCrashReports(): void {
     const batch = takeBatch(pending, host).map((entry) => entry.error);
     host.spool({ surface: host.surface, appVersion: VERSION, ...(host.os ? { os: host.os } : {}), errors: batch });
     spooledKeys = pending.slice(0, batch.length).map((entry) => entry.key);
-  } catch {
-    /* Best effort. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not save pending crash reports")(error);
   }
 }
 
@@ -289,9 +294,8 @@ async function flushNow(): Promise<void> {
           spooledKeys = [];
           current.clearSpool?.();
         }
-      } catch {
-        // One request that could not be sent is not retried; the spool, when
-        // the host has one, still carries it into the next session.
+      } catch (error) {
+        logFailure("telemetry-crash-reports", "Could not complete crash report delivery")(error);
       }
     }
   })().finally(() => {
@@ -336,8 +340,8 @@ async function sendSpooled(current: CrashReporterHost): Promise<void> {
       if (!Array.isArray(report.errors) || report.errors.length === 0) continue;
       await send(current, { installId, ...report, errors: report.errors.map((error) => scrub(error, current.homeDir)) });
     }
-  } catch {
-    /* A report from last time is not worth a failure this time. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not send pending crash reports")(error);
   }
 }
 

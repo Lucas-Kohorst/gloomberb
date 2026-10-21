@@ -15,6 +15,7 @@ interface ChatControllerViewOptions {
   ensureChannelState: (channelId: string) => ChannelRuntimeState;
   getChannels: () => ChatChannel[];
   getChannelStateSnapshots: () => ChatChannelState[];
+  getConversationActivity: () => ChatControllerSnapshot["conversationActivity"];
   isChannelsLoading: () => boolean;
   isSessionChecked: () => boolean;
   hasSession: () => boolean;
@@ -23,6 +24,7 @@ interface ChatControllerViewOptions {
   getListenerSnapshot: (channelId: string) => ChatControllerSnapshot;
   getVisibleMessages: (channelId: string) => ChatMessage[];
   getUnreadMentionCount: (channelId: string) => number;
+  getUnreadPeople: () => ChatControllerSnapshot["unreadPeople"];
 }
 
 interface ChannelListenerEntry {
@@ -65,6 +67,7 @@ export class ChatControllerView {
       channelId: normalizedChannelId,
       channels: this.options.getChannels(),
       channelStates: this.options.getChannelStateSnapshots(),
+      conversationActivity: this.options.getConversationActivity(),
       channelsLoading: this.options.isChannelsLoading(),
       loading: !this.options.isSessionChecked() || channel.messagesLoading,
       messagesError: channel.messagesError,
@@ -78,6 +81,7 @@ export class ChatControllerView {
       draftAttachments: channel.draftAttachments.map(publicDraftAttachment),
       replyToId: channel.replyToId,
       unreadMentionCount: this.options.getUnreadMentionCount(normalizedChannelId),
+      unreadPeople: this.options.getUnreadPeople(),
     };
   }
 

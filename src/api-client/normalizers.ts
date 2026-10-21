@@ -134,6 +134,7 @@ export function normalizeChatMessage(message: ChatMessage): ChatMessage {
     if (paneLink) normalized.paneLink = paneLink;
     else delete normalized.paneLink;
   }
+  if ((message.announcement as unknown) !== true) delete normalized.announcement;
   return normalized;
 }
 
@@ -220,6 +221,7 @@ export function normalizeChatChannel(
     ...channel,
     kind: channel.kind ?? fallbackKind,
     created_at: normalizeTimestamp(channel.created_at),
+    ...(typeof channel.lastMessageAt === "string" ? { lastMessageAt: normalizeTimestamp(channel.lastMessageAt) } : {}),
     ...(channel.dmUser ? { dmUser: normalizeChatUser(channel.dmUser) } : {}),
     ...(Array.isArray(channel.members) ? { members: channel.members.map(normalizeChatUser) } : {}),
   };

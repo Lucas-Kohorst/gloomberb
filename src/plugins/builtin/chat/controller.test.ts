@@ -42,6 +42,7 @@ const originalGetSession = apiClient.getSession.bind(apiClient);
 const originalGetMessages = apiClient.getMessages.bind(apiClient);
 const originalGetChannels = apiClient.getChannels.bind(apiClient);
 const originalGetChatPresence = apiClient.getChatPresence.bind(apiClient);
+const originalGetChatMentionCandidates = apiClient.getChatMentionCandidates;
 const originalGetChatState = apiClient.getChatState.bind(apiClient);
 const originalGetAccountProfile = apiClient.getAccountProfile.bind(apiClient);
 const originalUpdateChatChannelState = apiClient.updateChatChannelState.bind(apiClient);
@@ -117,6 +118,7 @@ class TrackingPersistence extends MemoryPersistence {
 
 beforeEach(() => {
   apiClient.getChatPresence = async () => ({ onlineCount: 0 });
+  apiClient.getChatMentionCandidates = async () => { throw new Error("Fixture has no member endpoint"); };
   apiClient.getChatState = async () => ({
     channels: SERVER_CHAT_CHANNELS,
     onlineCount: 0,
@@ -153,6 +155,7 @@ afterEach(() => {
   apiClient.getMessages = originalGetMessages;
   apiClient.getChannels = originalGetChannels;
   apiClient.getChatPresence = originalGetChatPresence;
+  apiClient.getChatMentionCandidates = originalGetChatMentionCandidates;
   apiClient.getChatState = originalGetChatState;
   apiClient.getAccountProfile = originalGetAccountProfile;
   apiClient.updateChatChannelState = originalUpdateChatChannelState;
@@ -2383,5 +2386,49 @@ describe("ChatController", () => {
     expect(persistence.getState<{ lastCursor: string }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastCursor: "m4",
     });
+  });
+
+  test("dates DMs from the server's last message and moves one in every open view when a message arrives", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = createController();
+    const dms: ChatChannel[] = [
+      { id: "dm:alice", name: "alice", kind: "direct", created_at: "2026-03-01T00:00:00.000Z", lastMessageAt: "2026-04-01T10:00:00.000Z" },
+      { id: "dm:bob", name: "bob", kind: "direct", created_at: "2026-03-02T00:00:00.000Z", lastMessageAt: "2026-04-02T10:00:00.000Z" },
+      { id: "dm:carol", name: "carol", kind: "direct", created_at: "2026-03-03T00:00:00.000Z", lastMessageAt: null },
+    ];
+    apiClient.getChatState = async () => ({
+      channels: [...SERVER_CHAT_CHANNELS, ...dms],
+      onlineCount: 0,
+      channelStates: [],
+      notifications: [],
+    });
+    persistSession(persistence, { emailVerified: true });
+    controller.attachPersistence(persistence);
+    await controller.refreshChatState();
+
+    const before = controller.getSnapshot("options").conversationActivity;
+    // An empty DM counts from when it was started.
+    expect(before).toEqual({
+      "dm:alice": Date.parse("2026-04-01T10:00:00.000Z"),
+      "dm:bob": Date.parse("2026-04-02T10:00:00.000Z"),
+      "dm:carol": Date.parse("2026-03-03T00:00:00.000Z"),
+    });
+    expect(controller.getSnapshot("options").conversationActivity).toBe(before);
+
+    // A pane reading #options, not the DM, still hears that the DM moved.
+    const seen: Array<Record<string, number>> = [];
+    const unsubscribe = controller.subscribe("options", (snapshot) => { seen.push(snapshot.conversationActivity); });
+    seen.length = 0;
+    (controller as any).mergeMessages("dm:carol", [chatMessage({
+      id: "m1",
+      channelId: "dm:carol",
+      content: "hi",
+      createdAt: "2026-04-05T09:00:00.000Z",
+      user: { id: "u3", username: "carol", displayName: "Carol" },
+    })]);
+    unsubscribe();
+
+    expect(seen.at(-1)).toEqual({ ...before, "dm:carol": Date.parse("2026-04-05T09:00:00.000Z") });
+    expect(controller.getSnapshot("options").conversationActivity).toBe(seen.at(-1)!);
   });
 });

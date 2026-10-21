@@ -1,8 +1,9 @@
+import { logFailure } from "../../utils/log-failure";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { canonicalExchange, isSharedExchangeCode, isUsListingExchange, parsePublicTickerKey, publicTickerKey, typedExchangeCode } from "../../utils/exchanges";
-import { getListingSymbol, tickerHasListingSuffix } from "../../sources/listing-symbols";
+import { getListingSymbol, listingSuffixConflictsWithExchange, tickerHasListingSuffix } from "../../sources/listing-symbols";
 import { parseOptionSymbol } from "../../utils/options";
 import { resolveCurrencyUnit } from "../../utils/currency-units";
 import { currencyPairSpelling } from "../../utils/currency-pair";
@@ -33,6 +34,11 @@ import {
 } from "./result";
 
 import { typedPerpetualListing } from "../perpetual-listing";
+import { readTerminalListingCode } from "../terminal-codes";
+import { isProviderBusy, ProviderBusyError, SEARCH_BUSY_MESSAGE } from "../../sources/provider-errors";
+import { settleWithin } from "../../utils/async-deadline";
+import { companyNameExtraWords } from "../company-name";
+import { delistingLabel } from "../../market-data/quotes/delisting";
 export type {
   ResolvedTickerSearch,
   TickerSearchCandidate,
@@ -52,6 +58,17 @@ const MAX_NAMED_LISTINGS = 6;
  * symbol several companies use: CAR's ASX line is its eleventh.
  */
 export const LISTING_SEARCH_LIMIT = 30;
+
+/**
+ * A listing's name as a choice between listings gives it: a listing that no
+ * longer trades says so and when ("First Republic Bank · Last traded Apr 28,
+ * 2023"), and drops a name that only repeats its symbol.
+ */
+function listingChoiceName(result: InstrumentSearchResult): string {
+  if (!result.delisting) return result.name;
+  const name = result.name && normalizeTickerSymbol(result.name) !== normalizeTickerSymbol(result.symbol) ? result.name : "";
+  return [name, delistingLabel(result.delisting)].filter(Boolean).join(" · ");
+}
 
 export class AmbiguousTickerError extends Error {
   constructor(readonly query: string, readonly listings: readonly string[], readonly listingNames: Readonly<Record<string, string>> = {}) {
@@ -101,9 +118,12 @@ interface TickerSearchCandidateOptions {
   providerPopularity?: ReadonlyMap<string, number>;
 }
 
-/** The ticker typed, upper case; a perpetual's market id (`binance:BZUSDT`) as its listing (`BZUSDT:BINANCE`). */
+/**
+ * The ticker typed, upper case; a perpetual's market id (`binance:BZUSDT`) as its listing (`BZUSDT:BINANCE`),
+ * and a terminal's code for a US listing (`WFC.N`, `JPM US Equity`) as that listing (`WFC:NYSE`, `JPM`).
+ */
 export function normalizeTickerInput(activeTicker: string | null, arg?: string): string | null {
-  const explicitTicker = arg ? (typedPerpetualListing(arg)?.key ?? arg).trim().toUpperCase() : "";
+  const explicitTicker = arg ? (typedPerpetualListing(arg)?.key ?? readTerminalListingCode(arg)?.key ?? arg).trim().toUpperCase() : "";
   if (explicitTicker) return explicitTicker;
   return activeTicker;
 }
@@ -232,13 +252,17 @@ export async function searchTickerCandidates({
     // A search that hides contracts still shows them when asked: "AAPL OPT".
     includeOptionContracts: includeOptionContracts || parseAssetClassQuery(query)?.code === "OPT",
   });
-  return assemble(await searchProviderResults(
+  const { results, busy } = await searchProviderResults(
     dataProvider,
     query,
     searchContext,
-    onPartial ? (results) => onPartial(assemble(results)) : undefined,
+    onPartial ? (found) => onPartial(assemble(found)) : undefined,
     true,
-  ));
+  );
+  const candidates = assemble(results);
+  // Saved tickers or another source's rows still answer. Nothing at all, because a source was busy, is no answer.
+  if (busy && candidates.length === 0) throw new ProviderBusyError(SEARCH_BUSY_MESSAGE);
+  return candidates;
 }
 
 export function buildTickerSearchCandidates({
@@ -270,8 +294,42 @@ export function buildTickerSearchCandidates({
     query,
   );
   const providerItems = createProviderTickerSearchCandidates(filteredProviderResults, tickers, candidateOptions);
-  const ranked = rankTickerSearchItems([...localItems, ...providerItems], query);
+  const ranked = withSuccessorFirst(rankTickerSearchItems([...localItems, ...providerItems], query), query);
   return limitTickerSearchCandidates(assignTickerSearchCategories(ranked, query), totalLimit, localLimit);
+}
+
+/** Whether a query is the start of a merged company's name, as the service matched it ("Golden Ocean"). */
+function namesFormerIssuer(query: string, former: InstrumentSearchResult["formerIssuer"]): boolean {
+  const asked = normalizeSearchText(query);
+  return !!former?.name && asked.length > 0 && normalizeSearchText(former.name).startsWith(asked);
+}
+
+/**
+ * A query naming a company that merged away ("Golden Ocean") lists the
+ * company it merged into first (CMB.Tech's CMBT, the row the service added
+ * for the old name), so it is the primary listing, though a leftover line of
+ * the old company (GOLDEN OCEAN GROUP, GOGLC on BYMA) matches the name
+ * better. The old company's lines follow it, each linked to it when its name
+ * is the merged company's, so they say what it became; a line search cannot
+ * link keeps its place below. Saved tickers keep theirs.
+ */
+function withSuccessorFirst<T extends TickerSearchCandidate>(items: T[], query: string): T[] {
+  const successor = items.find((item) => item.kind === "search" && !item.saved && item.instrumentClass === "equity"
+    && namesFormerIssuer(query, item.result?.formerIssuer));
+  const former = successor?.result?.formerIssuer;
+  if (!successor || !former) return items;
+  // The successor as the service names it beside a quote too, so both print the same line.
+  const linked = { ...former, successor: former.successor ?? { symbol: successor.symbol, name: successor.result?.name ?? null } };
+  const leftovers = items.filter((item) => item !== successor && item.kind === "search" && !item.saved
+    && !item.result?.formerIssuer && companyNameExtraWords(former.name, item.result?.name) === 0);
+  const at = items.findIndex((item) => item.kind === "search" && !item.saved);
+  const rest = items.filter((item) => item !== successor && !leftovers.includes(item));
+  return [
+    ...rest.slice(0, at),
+    successor,
+    ...leftovers.map((item) => ({ ...item, result: { ...item.result!, formerIssuer: linked } })),
+    ...rest.slice(at),
+  ];
 }
 
 interface ResolveTickerSearchOptions {
@@ -319,16 +377,67 @@ export function resolveTickerSearch(options: ResolveTickerSearchOptions): Promis
   const symbol = future?.symbol ?? (pair && !pair.ambiguous ? pair.symbol : typed);
   const literal = resolveTickerSymbol(symbol, options, pickListing ? requested : null);
   const alternatives = pickListing ? [] : [...dottedVenueQueries(symbol), ...pair?.ambiguous ? [pair.symbol] : []];
+  // A listing suffix search does not carry (CEZ.PR) is read from its own quote, as `quote` reads it.
+  const quoted = !pickListing && tickerHasListingSuffix(symbol) && !parsePublicTickerKey(symbol).exchange;
   // Most input has no venue code to retry: hand back the literal lookup
   // itself, so it settles no later than it did before the retry existed.
-  if (alternatives.length === 0) return literal;
-  return literal.then(async (resolved) => {
+  if (alternatives.length === 0 && !quoted) return literal;
+  // A spelling search was too busy to answer is no miss: the others still get
+  // their turn, and only when none resolves does the lookup say search was busy.
+  let busy: ProviderBusyError | null = null;
+  const unlessBusy = (lookup: Promise<ResolvedTickerSearch | null>) => lookup.catch((error: unknown) => {
+    if (!isProviderBusy(error)) throw error;
+    busy ??= error;
+    return null;
+  });
+  return unlessBusy(literal).then(async (resolved) => {
     for (const alternative of resolved ? [] : alternatives) {
-      const match = await resolveTickerSymbol(alternative, options, null);
+      const match = await unlessBusy(resolveTickerSymbol(alternative, options, null));
       if (match) return match;
     }
-    return resolved;
+    const found = resolved ?? (quoted ? await quotedSuffixListing(symbol, options) : null);
+    if (!found && busy) throw busy;
+    return found;
   });
+}
+
+/** As long as a search source gets: past it, the key reads as unmatched. */
+const SUFFIX_QUOTE_TIMEOUT_MS = 5_000;
+
+/**
+ * A suffixed listing (CEZ.PR, PETR4.SA, VOLV-B.ST) that search does not list,
+ * vouched for by its own quote: the quote answers for that key, prices it, and
+ * names a venue the suffix belongs to. This is how `quote` and opening the
+ * key from the command bar read it, so adding it to a watchlist, a portfolio
+ * or the first-run positions takes the same listing.
+ */
+async function quotedSuffixListing(
+  symbol: string,
+  { dataProvider, searchContext }: ResolveTickerSearchOptions,
+): Promise<ResolvedTickerSearch | null> {
+  // No source prices the key, or none answers in time: it stays unmatched.
+  const quote = await settleWithin(dataProvider.getQuote(symbol, "", {
+    brokerId: searchContext?.brokerId,
+    brokerInstanceId: searchContext?.brokerInstanceId,
+  }), SUFFIX_QUOTE_TIMEOUT_MS);
+  if (!quote) return null;
+  const exchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
+  if (!exchange || normalizeTickerSymbol(quote.symbol || "") !== symbol
+    || !Number.isFinite(quote.price) || quote.price === 0
+    || listingSuffixConflictsWithExchange(symbol, exchange)) return null;
+  return {
+    kind: "provider",
+    symbol,
+    result: {
+      providerId: dataProvider.id,
+      symbol,
+      name: quote.name?.trim() || symbol,
+      exchange,
+      currency: quote.currency || undefined,
+      type: quote.instrumentType || "",
+    },
+    quote,
+  };
 }
 
 async function resolveTickerSymbol(
@@ -352,15 +461,17 @@ async function resolveTickerSymbol(
   const saved: ResolvedTickerSearch | null = local ? { kind: "local", symbol: local.metadata.ticker, ticker: local } : null;
   if (saved && !pickerQuery) return saved;
 
-  const providerItems = createProviderTickerSearchCandidates(
-    await searchProviderResults(dataProvider, symbol, searchContext),
-    tickers,
-  );
+  const { results, busy } = await searchProviderResults(dataProvider, symbol, searchContext);
+  const providerItems = createProviderTickerSearchCandidates(results, tickers);
   const literalMatches = providerItems.filter((item) => normalizeTickerSymbol(item.symbol) === symbol);
   const matches = literalMatches.length ? literalMatches
     : providerItems.filter((item) => findExactTickerSearchMatch([item], symbol));
   let exactMatch = matches[0];
-  if (!exactMatch?.result) return saved;
+  if (!exactMatch?.result) {
+    // Nothing matched while a source was too busy to answer: that is no answer, not a miss.
+    if (busy && !saved) throw new ProviderBusyError(SEARCH_BUSY_MESSAGE);
+    return saved;
+  }
 
   const contracts = new Set(matches.map((item) => item.contractKey).filter(Boolean));
   if (contracts.size > 1 || (contracts.size && matches.some((item) => !item.contractKey))) {
@@ -368,7 +479,7 @@ async function resolveTickerSymbol(
   }
   const listings = new Set(matches.map((item) => publicTickerKey(item.symbol, listingExchange(item.result!))));
   const ambiguity = (query: string) => new AmbiguousTickerError(query, [...listings], Object.fromEntries(matches.map((item) => [
-    publicTickerKey(item.symbol, listingExchange(item.result!)), item.result!.name,
+    publicTickerKey(item.symbol, listingExchange(item.result!)), listingChoiceName(item.result!),
   ])));
   if (pickerQuery && listings.size > 1) throw ambiguity(pickerQuery);
   // A code that names several venues (TSE) the symbol trades on more than one of is a choice.
@@ -386,7 +497,12 @@ async function resolveTickerSymbol(
       });
       const exchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
       const currency = resolveCurrencyUnit(quote.currency).currency;
-      if (exchange && currency && Number.isFinite(quote.price) && quote.price !== 0
+      const ended = quote.delisting;
+      if (ended) {
+        // The symbol's own quote is a US listing that no longer trades (a bare FRC, whose
+        // venue is not on record): it is the run search offers with the same last session.
+        verified = matches.filter((item) => item.result?.delisting?.lastTradeDate === ended.lastTradeDate);
+      } else if (exchange && currency && Number.isFinite(quote.price) && quote.price !== 0
         && Number.isFinite(quote.lastUpdated) && quote.lastUpdated > 0) {
         const sameSecurity = matches.filter((item) => {
           const result = item.result!;
@@ -397,8 +513,8 @@ async function resolveTickerSymbol(
         });
         verified = quotedListings(sameSecurity, exchange).map((item) => ({ ...item, result: { ...item.result!, currency } }));
       }
-    } catch {
-      // An unavailable quote cannot establish the default listing.
+    } catch (error) {
+      logFailure("tickers-search", "Could not verify default listing")(error);
     }
     if (new Set(verified.map((item) => publicTickerKey(item.symbol, listingExchange(item.result!)))).size !== 1) {
       throw ambiguity(symbol);
@@ -428,7 +544,8 @@ function quotedListings(items: TickerSearchCandidate[], exchange: string): Ticke
   return items.filter((item) => isUsListingExchange(venue(item)));
 }
 
-function listingExchange(result: InstrumentSearchResult): string {
+/** The venue a search row is a listing on: the primary exchange when a broker routes through SMART. */
+export function listingExchange(result: InstrumentSearchResult): string {
   return result.exchange === "SMART" ? result.primaryExchange || result.exchange
     : result.exchange || result.primaryExchange || "";
 }
@@ -470,6 +587,12 @@ function searchResultPopularity(result: InstrumentSearchResult): number | undefi
   return typeof result.popularity === "number" && Number.isFinite(result.popularity) ? result.popularity : undefined;
 }
 
+interface ProviderSearch {
+  results: InstrumentSearchResult[];
+  /** A spelling went unanswered because a source was busy, so an empty list may not mean nothing matches. */
+  busy: boolean;
+}
+
 async function searchProviderResults(
   dataProvider: DataProvider,
   rawQuery: string,
@@ -477,12 +600,9 @@ async function searchProviderResults(
   onPartial?: (results: InstrumentSearchResult[]) => void,
   /** Also look for the funds of a sector word, for a list of matches rather than one resolved symbol. */
   withThemeFunds = false,
-): Promise<InstrumentSearchResult[]> {
-  // "ES FUT" looks up ES, and ES=F as well: the catalogue answers a bare root
-  // with stocks only. The ranking keeps the futures.
+): Promise<ProviderSearch> {
   const assetClass = parseAssetClassQuery(rawQuery);
   const query = assetClass?.symbolQuery ?? rawQuery;
-  const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
   // A Map rather than a list plus a seen set, because a later source can send
   // back a richer version of a symbol already recorded. Overwriting a key keeps
   // its original position, so an upgrade does not reorder the list.
@@ -498,13 +618,8 @@ async function searchProviderResults(
   // The variants are independent lookups of the same words, so they run
   // together. Awaited in turn they multiplied every per-source timeout by the
   // number of spellings tried.
-  const searchQueries = buildProviderSearchQueries(query);
-  if (marketSymbol && !searchQueries.includes(marketSymbol)) searchQueries.push(marketSymbol);
-  // A futures board code also finds its future, which the catalogue files under
-  // the continuous symbol only: NG finds NovaGold and NG=F.
-  const boardFuture = assetClass ? null : futuresContractByCode(query)?.symbol;
-  if (boardFuture && !searchQueries.includes(boardFuture)) searchQueries.push(boardFuture);
-  await Promise.all(searchQueries.map(async (searchQuery) => {
+  let busy = false;
+  await Promise.all(providerSearchQueries(rawQuery).map(async (searchQuery) => {
     try {
       const results = await dataProvider.search(searchQuery, {
         ...searchContext,
@@ -518,8 +633,9 @@ async function searchProviderResults(
           : {}),
       });
       add(results);
-    } catch {
-      // One spelling failing must not lose the others.
+    } catch (error) {
+      if (isProviderBusy(error)) busy = true;
+      else logFailure("tickers-search", "Could not search ticker spelling")(error);
     }
   }));
 
@@ -556,15 +672,19 @@ async function searchProviderResults(
             type,
           }]);
         }
-      } catch {
-        // An unverified symbol stays unresolved; never substitute a fuzzy equity.
+      } catch (error) {
+        logFailure("tickers-search", "Could not verify market symbol")(error);
       }
     }
   }
 
   // A sector word ("defense", which the server answers with rows tagged with it) lists its small companies by
   // name; the server orders "defense ETF" by size, which a name search does not. Those funds lead the list.
-  const theme = withThemeFunds && !assetClass ? themeQueryWord([...byKey.values()], query) : null;
+  // So do they when the funds are asked for by name: "defense etf" searches "defense", whose answer holds
+  // only the few funds tagged with it (not ITA), and "gold miners etf" a phrase no symbol is.
+  const fundsAsked = assetClass?.code === "ETF" || assetClass?.code === "FUND";
+  const theme = withThemeFunds && (!assetClass || fundsAsked)
+    && (themeQueryWord([...byKey.values()], query) || (fundsAsked && /\s/.test(query.trim())));
   if (theme) {
     try {
       const { onPartial: _ignored, ...context } = searchContext ?? {};
@@ -574,12 +694,32 @@ async function searchProviderResults(
       add(funds);
       // A row both found keeps the funds' place and the name search's richer version of it (its theme).
       for (const [key, result] of named) byKey.set(key, result);
-    } catch {
-      // The funds are an addition: the name results stand without them.
+    } catch (error) {
+      logFailure("tickers-search", "Could not search theme funds")(error);
     }
   }
 
-  return [...byKey.values()];
+  return { results: [...byKey.values()], busy };
+}
+
+/**
+ * The searches a lookup of `rawQuery` asks the sources for: its spellings (BRK.B,
+ * BRK-B), and the future a board code or an asset class names. A list of symbols
+ * asks for all of them at once beforehand (`batchedListLookups`).
+ */
+export function providerSearchQueries(rawQuery: string): string[] {
+  // "ES FUT" looks up ES, and ES=F as well: the catalogue answers a bare root
+  // with stocks only. The ranking keeps the futures.
+  const assetClass = parseAssetClassQuery(rawQuery);
+  const query = assetClass?.symbolQuery ?? rawQuery;
+  const marketSymbol = assetClass ? assetClassMarketSymbol(assetClass) : null;
+  const searchQueries = buildProviderSearchQueries(query);
+  if (marketSymbol && !searchQueries.includes(marketSymbol)) searchQueries.push(marketSymbol);
+  // A futures board code also finds its future, which the catalogue files under
+  // the continuous symbol only: NG finds NovaGold and NG=F.
+  const boardFuture = assetClass ? null : futuresContractByCode(query)?.symbol;
+  if (boardFuture && !searchQueries.includes(boardFuture)) searchQueries.push(boardFuture);
+  return searchQueries;
 }
 
 function buildProviderSearchQueries(query: string): string[] {

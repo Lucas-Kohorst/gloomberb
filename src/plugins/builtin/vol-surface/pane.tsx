@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneMenuItems,
+import { splitDelayedStatus, DataTableView, EmptyState, PaneStatusBody, QueryBar, StatGrid, statGridRows, usePaneFooter, usePaneMenuItems,
   usePaneNoticeFooter, usePaneTabs, usePaneTicker, type DataTableColumn, type DataTableKeyEvent, type StatItem } from "../../../components";
 import { useTableLoadMore } from "../../../components/table-view-shared";
 import { useStaticChartBitmapSize } from "../../../components/chart/composite/bitmap";
@@ -14,6 +14,7 @@ import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { FILL_REST } from "../../../components/ui/fill";
+import { chromeBarRows } from "../../../components/layout/pane/sizing";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { nextHeaderSort, type SortDirection } from "../../../utils/sort-values";
 import { buildOptionCalcParams, OPTIONS_CALCULATOR_TEMPLATE_ID } from "../options-calculator/model";
@@ -191,7 +192,7 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
     { id: "ivr", label: "IV rank", value: wholeNumber(ivRank.rank) },
     { id: "ivp", label: "IV pctl", value: wholeNumber(ivRank.percentile) },
   ] : [];
-  const tableHeight = Math.max(3, height - 1 - tabRows - statGridRows(ivStats, width));
+  const tableHeight = Math.max(3, height - chromeBarRows(nativePaneChrome) - tabRows - statGridRows(ivStats, width));
   const bitmapAvailable = !!useStaticChartBitmapSize(width, tableHeight);
   // A typed date (`--expiration 2027-01-15`) is that day's UTC midnight; the
   // catalogue may stamp the same expiry later in the day.
@@ -228,6 +229,11 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
   const nearestRow = (years: number | undefined) => years == null || !denseGrid?.tenors.length ? -1
     : denseGrid.tenors.reduce((best, value, index) => Math.abs(value - years) < Math.abs(denseGrid.tenors[best]! - years) ? index : best, 0);
   const selectedExpiry = snapshot ? selectSurfaceExpiry(snapshot, expiration) : null;
+  // Another date loads under the query bar, which keeps the last surface's expiries until it answers.
+  const lastShown = useRef<{ underlying: string; snapshot: DatedSurfaceSnapshot } | null>(null);
+  if (snapshot) lastShown.current = { underlying, snapshot };
+  const barSnapshot = snapshot ?? (lastShown.current?.underlying === underlying ? lastShown.current.snapshot : null);
+  const barExpiry = barSnapshot ? selectSurfaceExpiry(barSnapshot, expiration) : null;
   const openChain = useCallback(() => {
     if (!snapshot) return;
     const selected = pinned ?? selectedExpiry?.expiration;
@@ -359,7 +365,7 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
     info: [
       ...(active.loading ? [{ id: "loading", parts: [{ text: snapshot && snapshot.loaded < snapshot.requested
         ? `loading ${snapshot.loaded}/${snapshot.requested} expiries` : "loading", tone: "muted" as const }] }] : []),
-      ...(freshness ? [{ id: "source", parts: [{ text: freshness, tone: "muted" as const }] }] : []),
+      ...(freshness ? splitDelayedStatus({ id: "source", parts: [{ text: freshness, tone: "muted" }] }) : []),
       ...(snapshot?.expiries.some((entry) => entry.stale) ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
       ...(selectedExpiry?.fit && activeTab === "smile" ? [{ id: "fit", parts: [{ text: `${selectedExpiry.fit.method} · RMSE ${(selectedExpiry.fit.residual * 100).toFixed(3)} vol pts`, tone: "muted" as const }] }] : []),
       ...(selectionStatus ? [{ id: "selection", parts: [{ text: selectionStatus, tone: "muted" as const }] }] : []),
@@ -446,24 +452,25 @@ export function VolSurfacePane({ focused, width, height }: PaneProps) {
   useEffect(() => setTableOnScreen(tableShown), [tableShown]);
   return <Box flexDirection="column" width={width} overflow="hidden" {...(nativePaneChrome ? FILL_REST : { height })}>
     {tabStrip}
-    {!symbol ? <EmptyState title="Choose an underlying ticker." /> : <PaneStatusBody loading={active.loading && !snapshot}
-      error={!snapshot ? active.error : null} empty={!snapshot && !active.loading} subject="volatility surface">
-      <QueryBar width={width}
+    {!symbol ? <EmptyState title="Choose an underlying ticker." /> : <>
+      {barSnapshot ? <QueryBar width={width}
         filters={[
-          { id: "expiry", label: "Expiry", value: String(pinned ?? selectedExpiry?.expiration ?? ""),
-            options: snapshot?.catalogue.map((value) => ({ value: String(value), label: expiryLabel(value) })) ?? [],
+          { id: "expiry", label: "Expiry", value: String(pinned ?? barExpiry?.expiration ?? ""),
+            options: barSnapshot.catalogue.map((value) => ({ value: String(value), label: expiryLabel(value) })),
             onChange: (value: string) => setExpiration(Number(value)) },
           ...(storedDates.length ? [{ id: "date", label: "Date", value: shownDate ?? "", defaultValue: "",
             options: [{ value: "", label: "Live" }, ...storedDates.map((date) => ({ value: date, label: date }))],
             onChange: (value: string) => setHistoryDate(value || null) }] : []),
         ]}
-        meta={snapshot?.stored
+        meta={!snapshot ? undefined : snapshot.stored
           ? `Stored close · spot ${formatPrice(snapshot.spot)} · captured ${formatCaptureTime(snapshot.stored.capturedAt)} New York`
-          : [`Spot ${formatPrice(snapshot?.spot)}${quote?.currency ? ` ${quote.currency}` : ""}`, selectedExpiry?.asOf?.slice(0, 10)].filter(Boolean).join(" · ")} />
+          : [`Spot ${formatPrice(snapshot.spot)}${quote?.currency ? ` ${quote.currency}` : ""}`, selectedExpiry?.asOf?.slice(0, 10)].filter(Boolean).join(" · ")} /> : null}
+      <PaneStatusBody loading={active.loading && !snapshot}
+      error={!snapshot ? active.error : null} empty={!snapshot && !active.loading} subject="volatility surface">
       <StatGrid items={ivStats} width={width} />
       {/* The terminal sizes the view in the rows under the bar and figures; the desktop fills what is left. */}
       {nativePaneChrome ? <Box flexDirection="column" overflow="hidden" {...FILL_REST}>{content}</Box> : content}
-    </PaneStatusBody>}
+    </PaneStatusBody></>}
   </Box>;
 }
 

@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import {
   cliStyles,
   cliTerminalWidth,
@@ -16,14 +17,16 @@ import {
   type TickerSearchCandidate,
 } from "../../tickers/search";
 import { initMarketData, withMarketData } from "../context";
-import { loadListingFate } from "../listing-arg";
+import { listingChangeLine, loadListingFate } from "../../tickers/listing-fate";
 import { formatMarketPriceWithCurrency, quoteFormatOptions } from "../../market-data/market/format";
-import { startTickerChangeLookup, tickerChangeLine, type TickerChangeLookup } from "../../tickers/ticker-changes";
-import { fail } from "../errors";
+import { formerIssuerLine, startTickerChangeLookup, type TickerChangeLookup } from "../../tickers/ticker-changes";
+import { fail, failRetryable } from "../errors";
+import { isProviderBusy, SEARCH_BUSY_CODE, SEARCH_BUSY_MESSAGE } from "../../sources/provider-errors";
 import type { MarketContext } from "../types";
 import type { CliCommandContext, GloomPlugin } from "../../types/plugin";
 import { indexRootFor, indexRootTryLine } from "../index-roots";
-import { knownGapMessage, settingsPointer } from "../known-gaps";
+import { readBrokerIndexCode } from "../listing-arg";
+import { knownGapMessage, commandPointer } from "../known-gaps";
 import { instrumentTypeLabel } from "../../tickers/instrument-kind";
 import { canonicalExchange, isUsListingExchange } from "../../utils/exchanges";
 import { groupByCompany, sameCompany } from "../../tickers/company-name";
@@ -68,7 +71,8 @@ export async function searchFunctionsForCli(query: string, plugins: GloomPlugin[
     const entries = await buildPaneCatalogEntries(registry, context);
     const { shown, loose } = selectPaneCatalogMatches(filterPaneCatalogEntries(entries, query), query, SEARCH_FUNCTION_LIMIT);
     return loose ? [] : shown.map(({ token, label, description }) => ({ token, label, description }));
-  } catch {
+  } catch (error) {
+    logFailure("cli.commands-search", "Discover plugin functions for search failed")(error);
     // A plugin that cannot set up for discovery leaves the search as it was.
     return [];
   } finally {
@@ -78,7 +82,7 @@ export async function searchFunctionsForCli(query: string, plugins: GloomPlugin[
 
 /** A bare symbol's quote, asked as `quote SYM` asks it: on the venue a saved row of the symbol is on, else the bare symbol. */
 function loadSearchedQuote(symbol: string, savedExchange: string, dataProvider: DataProvider): Promise<Quote | null> {
-  return Promise.resolve().then(() => dataProvider.getQuote(symbol, savedExchange)).catch(() => null);
+  return Promise.resolve().then(() => dataProvider.getQuote(symbol, savedExchange)).catch(logFailure("cli.commands-search", "Read searched symbol quote failed", null));
 }
 
 export async function searchCandidatesForCli({
@@ -121,7 +125,10 @@ export async function searchCandidatesForCli({
       ? await (quoted ?? loadSearchedQuote(symbol, savedExchange, dataProvider))
       : null;
     return withQuotedNames(symbol, withHomeListingPrimary(symbol, withPrimaryListingFirst(symbol, candidates, quote)), quote).slice(0, totalLimit);
-  } catch {
+  } catch (error) {
+    // Not "No matches found": a script or a reader would take that for a name nothing lists.
+    if (isProviderBusy(error)) failRetryable(SEARCH_BUSY_MESSAGE, SEARCH_BUSY_CODE);
+    logFailure("cli.commands-search", "Search ticker candidates failed")(error);
     return [];
   }
 }
@@ -172,9 +179,26 @@ async function searchFate(
       note: fate.note,
     }
     : null;
-  // The row says when a listing stopped; a company that left the symbol is a line of its own.
-  const changed = tickerChangeLine(fate.change);
+  // The row says when a listing stopped; a company that left the symbol, or merged away from it (GOGL), is a line of its own.
+  const changed = listingChangeLine(fate);
   return { stopped, notes: changed ? [changed] : fate.note && !stopped ? [fate.note] : [] };
+}
+
+/**
+ * A row search found by the old name of a company that merged into it
+ * ("Golden Ocean" finds CMB.Tech's CMBT): the line `quote GOGL` prints.
+ */
+function formerIssuerNote(candidate: TickerSearchCandidate): string | null {
+  const former = candidate.result?.formerIssuer;
+  if (!former?.symbol || !former.name || !former.until || former.symbol.toUpperCase() === candidate.symbol.toUpperCase()) return null;
+  // A leftover line of the merged company names the listing it became; the successor's own row is that listing.
+  return formerIssuerLine(former.symbol, former, former.successor ?? { symbol: candidate.label, name: resolveSearchName(candidate) });
+}
+
+/** The merged companies' lines, once each, unless the symbol's own line already says it. */
+function formerIssuerNotes(candidates: readonly TickerSearchCandidate[], fate: SearchFate): string[] {
+  const notes = new Set(candidates.flatMap((candidate) => formerIssuerNote(candidate) ?? []));
+  return [...notes].filter((note) => !fate.notes.some((line) => line.split(" ")[0] === note.split(" ")[0]));
 }
 
 /** A query that is a bare symbol (CAR, BRK.B), not a name or a phrase. */
@@ -336,6 +360,8 @@ function searchCandidateRows(candidates: TickerSearchCandidate[]) {
     source: searchSourceLabel(candidate),
     providerId: candidate.result?.providerId ?? "",
     saved: candidate.kind === "ticker",
+    // The company that merged into this one, whose old name the query is.
+    ...candidate.result?.formerIssuer ? { formerIssuer: candidate.result.formerIssuer } : {},
   }));
 }
 
@@ -378,9 +404,10 @@ function searchNotes(
 ): string[] {
   const gap = knownGapMessage(query);
   const bank = searchedCentralBank(query);
-  const setting = settingsPointer(query);
+  const setting = commandPointer(query);
   const empty = candidates.length === 0 && !fate.stopped;
-  return [...fate.notes, indexRootNote(query, candidates), gap, bank ? centralBankLine(bank) : null, setting,
+  // A gap line that names the index (TNX's yield line names ^TNX) says it once.
+  return [...fate.notes, ...formerIssuerNotes(candidates, fate), gap ? null : indexRootNote(query, candidates), gap, bank ? centralBankLine(bank) : null, setting,
     empty && !gap && !bank && !setting && functions.length === 0 ? catalogHint(query) : null]
     .filter((note): note is string => !!note);
 }
@@ -403,6 +430,8 @@ export function buildSearchReport({
   series = [],
   functions = [],
   fate = NO_SEARCH_FATE,
+  pointToCatalog = false,
+  readAs,
 }: {
   query: string;
   candidates: TickerSearchCandidate[];
@@ -412,16 +441,22 @@ export function buildSearchReport({
   functions?: readonly SearchFunctionMatch[];
   /** What became of the symbol searched for: a listing that stopped trading, a company that left it. */
   fate?: SearchFate;
+  /** End with the catalog hint whatever search found: `quote` searched a phrase the user did not ask to search. */
+  pointToCatalog?: boolean;
+  /** What the query was searched as: "Read VIX.X as ^VIX (Cboe Volatility Index)." */
+  readAs?: string;
 }): string {
   const lines = [renderSection(`Search: ${query}`)];
-  if (fate.notes.length > 0) lines.push("", ...fate.notes);
-  const indexNote = indexRootNote(query, candidates);
-  if (indexNote) lines.push("", indexNote);
+  if (readAs) lines.push("", readAs);
+  const notes = [...fate.notes, ...formerIssuerNotes(candidates, fate)];
+  if (notes.length > 0) lines.push("", ...notes);
   const gap = knownGapMessage(query);
+  const indexNote = gap ? null : indexRootNote(query, candidates);
+  if (indexNote) lines.push("", indexNote);
   if (gap) lines.push("", gap);
   const bank = searchedCentralBank(query);
   if (bank) lines.push("", centralBankLine(bank));
-  const setting = settingsPointer(query);
+  const setting = commandPointer(query);
   if (setting) lines.push("", setting);
   const charted = renderSeriesMatches(query, series, SEARCH_SERIES_LIMIT, cliTerminalWidth() ?? 100, "catalog");
   // A query that names the data ("carbon", "day-ahead") lists its series first; words that happen to
@@ -434,7 +469,8 @@ export function buildSearchReport({
   if (candidates.length === 0) {
     if (fate.stopped) return lines.join("\n");
     if (functions.length > 0) lines.push("", renderFunctionMatches(functions));
-    else if (!gap && !bank && !setting && !charted) lines.push(cliStyles.muted("No matches found."), cliStyles.muted(catalogHint(query)));
+    else if (!gap && !bank && !setting && !charted) return [...lines, cliStyles.muted("No matches found."), cliStyles.muted(catalogHint(query))].join("\n");
+    if (pointToCatalog) lines.push("", cliStyles.muted(catalogHint(query)));
     return lines.join("\n");
   }
 
@@ -467,8 +503,34 @@ export function buildSearchReport({
     ));
   }
   if (charted && !seriesFirst) lines.push("", charted);
+  if (pointToCatalog) lines.push("", cliStyles.muted(catalogHint(query)));
 
   return lines.join("\n");
+}
+
+/** The functions a search lists when it found no ticker, unless a known gap or a central bank already says where to look. */
+function searchedFunctions(
+  query: string,
+  candidates: readonly TickerSearchCandidate[],
+  fate: SearchFate,
+  plugins: GloomPlugin[] | undefined,
+  context: MarketContext,
+): Promise<SearchFunctionMatch[]> {
+  return candidates.length === 0 && !fate.stopped && !knownGapMessage(query) && !searchedCentralBank(query) && plugins
+    ? searchFunctionsForCli(query, plugins, context)
+    : Promise.resolve([]);
+}
+
+/**
+ * What `quote "10 year yield"` prints for a phrase that is no ticker and no
+ * company's name: what `search` finds for it, then the catalog, where the
+ * functions and data series are found by what they do.
+ */
+export async function phraseSearchReport(phrase: string, context: MarketContext, plugins?: GloomPlugin[]): Promise<string> {
+  const candidates = await searchCandidatesForCli({ query: phrase, tickers: await context.store.loadAllTickers(), dataProvider: context.dataProvider });
+  const series = findCatalogSeries(plugins ?? [], phrase, "names");
+  const functions = await searchedFunctions(phrase, candidates, NO_SEARCH_FATE, plugins, context);
+  return buildSearchReport({ query: phrase, candidates, series, functions, pointToCatalog: true });
 }
 
 export async function search(query: string, dependencies: SearchCommandDependencies = {}) {
@@ -482,14 +544,16 @@ export async function search(query: string, dependencies: SearchCommandDependenc
   await withMarketData(initMarketDataFn, async (context) => {
     const { store, dataProvider } = context;
     const tickers = await store.loadAllTickers();
-    const symbol = trimmedQuery.toUpperCase();
+    // A broker's code for an index (VIX.X, $VIX) searches for the index, as `quote` reads it.
+    const index = await readBrokerIndexCode(trimmedQuery, context);
+    const symbol = (index?.symbol ?? trimmedQuery).toUpperCase();
     // A bare symbol's quote and whether it changed (FB is now META) are asked beside the search, so they cost no wait.
     const bare = BARE_SYMBOL.test(symbol);
     const savedExchange = tickers.find((ticker) => ticker.metadata.ticker.toUpperCase() === symbol)?.metadata.exchange ?? "";
     const quote = bare ? loadSearchedQuote(symbol, savedExchange, dataProvider) : null;
     const changes = bare ? startTickerChangeLookup(dataProvider, symbol) : null;
     const candidates = await searchCandidatesForCli({
-      query: trimmedQuery,
+      query: index?.symbol ?? trimmedQuery,
       tickers,
       dataProvider,
       ...quote ? { quote } : {},
@@ -498,17 +562,15 @@ export async function search(query: string, dependencies: SearchCommandDependenc
 
     const series = findCatalogSeries(dependencies.plugins ?? [], trimmedQuery, "names");
     const bank = searchedCentralBank(trimmedQuery);
-    // A query that names no ticker may name what a function does; a known gap or a central bank already says where to look.
-    const functions = candidates.length === 0 && !fate.stopped && !knownGapMessage(trimmedQuery) && !bank && dependencies.plugins
-      ? await searchFunctionsForCli(trimmedQuery, dependencies.plugins, context)
-      : [];
+    // A query that names no ticker may name what a function does.
+    const functions = await searchedFunctions(trimmedQuery, candidates, fate, dependencies.plugins, context);
     if (dependencies.printResult) {
       const warnings = searchNotes(trimmedQuery, candidates, functions, fate);
       dependencies.printResult({
         data: [...fate.stopped ? [stoppedListingRow(fate.stopped)] : [], ...searchCandidateRows(candidates)],
-        metadata: { query: trimmedQuery, ...(series.length ? { series } : {}), ...(functions.length ? { functions } : {}),
+        metadata: { query: trimmedQuery, ...(index ? { searched: index.symbol } : {}), ...(series.length ? { series } : {}), ...(functions.length ? { functions } : {}),
           ...(bank ? { centralBank: { id: bank.id, name: bank.name, place: bank.place, function: "CBR" } } : {}) },
-        warnings: warnings.length ? warnings : undefined,
+        warnings: index?.readAs || warnings.length ? [...index?.readAs ? [index.readAs] : [], ...warnings] : undefined,
       }, {
         columns: [
           { key: "category", header: "Category" },
@@ -529,6 +591,7 @@ export async function search(query: string, dependencies: SearchCommandDependenc
       series,
       functions,
       fate,
+      readAs: index?.readAs,
     }));
   });
 }

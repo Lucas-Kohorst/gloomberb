@@ -2,7 +2,7 @@ import type { AppState } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
 import {
   buildSetPortfolioPositionWorkflow,
-} from "../../../plugins/builtin/portfolio-list/command-bar";
+} from "./portfolio-position";
 import type { CommandBarFieldOption, CommandBarWorkflowField, CommandBarWorkflowRoute } from "./types";
 import { buildCommandBarWorkflowRoute } from "./route-builder";
 import { teamPrefix } from "../../../team/model";
@@ -81,6 +81,8 @@ export function buildBuiltInWorkflowRoute(options: {
   actionId: string;
   activeCollectionId: string | null;
   activeTicker: TickerRecord | null;
+  /** The active ticker's quote currency, when its quote is loaded. */
+  activeQuoteCurrency?: string | null;
   buildBrokerWorkflow: BrokerWorkflowBuilder;
   config: AppState["config"];
 }): BuiltInWorkflowRouteResult {
@@ -88,6 +90,7 @@ export function buildBuiltInWorkflowRoute(options: {
     actionId,
     activeCollectionId,
     activeTicker,
+    activeQuoteCurrency,
     buildBrokerWorkflow,
     config,
   } = options;
@@ -146,6 +149,7 @@ export function buildBuiltInWorkflowRoute(options: {
       const workflow = buildSetPortfolioPositionWorkflow(config, {
         activeCollectionId,
         activeTicker,
+        activeQuoteCurrency,
       });
       if (!workflow) {
         return { kind: "notice", message: "Create a manual portfolio first." };

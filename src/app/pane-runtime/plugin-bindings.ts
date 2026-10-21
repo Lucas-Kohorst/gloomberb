@@ -177,6 +177,10 @@ export function bindAppPanePluginRegistry({
       if (isDetachedWindow || isDialogOpen()) return;
       dispatch({ type: "SET_COMMAND_BAR", open: true, query });
     },
+    runCommandBarQuery: (query) => {
+      if (isDetachedWindow || isDialogOpen()) return;
+      dispatch({ type: "SET_COMMAND_BAR", open: true, query, launch: { kind: "run-query", query } });
+    },
     // Forms submit through the main window's state, so a detached window says where to go.
     openPluginCommandWorkflow: (commandId) => {
       if (isDetachedWindow) {
@@ -475,9 +479,11 @@ export function bindAppPanePluginRegistry({
           throw error;
         }
       }
+      // Recorded before it registers: what redraws as its contributions land
+      // (a broker list and its logo) reads the entry this checkout now is.
+      upsertExternalPlugin(entry);
       try {
         await pluginRegistry.register(entry.plugin);
-        upsertExternalPlugin(entry);
       } catch (error) {
         upsertExternalPlugin({ ...entry, error: error instanceof Error ? error.message : String(error) });
         reportCrash(error, { kind: "plugin", plugin: pluginId });

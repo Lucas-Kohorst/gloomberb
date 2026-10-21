@@ -68,11 +68,19 @@ import {
 } from "../edit-window";
 import { ChatControllerRealtime } from "./realtime";
 import { ChatControllerChannels } from "./channels";
+import { ChatControllerUnreadPeople } from "./unread-people";
 import { ChatControllerView } from "./view";
 import { ChatControllerMessageLoading } from "./message-loading";
+import { ChatMentionCandidates } from "./mention-candidates";
 import { ChatControllerStorage } from "./storage";
 import { listUnreadInboxItems } from "../unread-inbox";
 import type { ChatConversationList } from "../conversations";
+import {
+  conversationActivityAt,
+  isPeopleConversation,
+  NO_ACTIVITY,
+  type ConversationActivity,
+} from "../conversation-recency";
 import {
   applySignedOutChatControllerSession,
   createChatControllerSessionState,
@@ -83,30 +91,24 @@ import {
 const chatLog = debugLog.createLogger("chat-controller");
 const IMAGE_LINK_REFRESH_INTERVAL_MS = 60_000;
 
-function timeOf(value: string | undefined): number {
-  const time = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
-}
-
 /**
- * The newest message held for a conversation, sent or received. A DM or group
- * with nothing on this device yet counts from when it was started.
+ * When a conversation last had a message: the newest one held on this device,
+ * sent or received, or what the server reports for it.
  */
 function lastConversationActivity(channel: ChatChannel, state: ChannelRuntimeState | undefined): number {
-  const started = channel.kind === "direct" || channel.kind === "group"
-    ? timeOf(channel.created_at)
-    : Number.NEGATIVE_INFINITY;
-  return Math.max(
-    started,
-    timeOf(state?.messages.at(-1)?.createdAt),
-    timeOf(state?.pendingMessages.at(-1)?.createdAt),
-  );
+  return conversationActivityAt(channel, {
+    messageAt: state?.messages.at(-1)?.createdAt,
+    pendingAt: state?.pendingMessages.at(-1)?.createdAt,
+  });
 }
 
 export type { ChatControllerSnapshot } from "./state";
 
 export class ChatController {
   private appActive = true;
+  private activityOfConversations: ConversationActivity = {};
+  /** The activity every open view was last told about, to tell when a conversation moved. */
+  private announcedActivity: ConversationActivity = this.activityOfConversations;
   private readonly session = createChatControllerSessionState();
   private pendingMessageSeq = 0;
   private draftAttachmentSeq = 0;
@@ -129,6 +131,14 @@ export class ChatController {
     emit: (channelId) => this.emit(channelId),
     getUser: () => this.session.user,
   });
+  private readonly mentionCandidates = new ChatMentionCandidates({
+    userId: () => this.session.user?.emailVerified ? this.session.user.id : null,
+    activeChannels: () => [...this.storage.channelStates]
+      .filter(([, state]) => state.openViewCount > 0)
+      .map(([id]) => id),
+    fetch: (id) => apiClient.getChatMentionCandidates(id),
+    emit: (id) => this.emit(id),
+  });
   private readonly channelCatalog = new ChatControllerChannels({
     canLoadPrivateState: () => !!this.session.user?.emailVerified,
     ensureChannelState: (channelId) => this.ensureChannelState(channelId),
@@ -141,6 +151,7 @@ export class ChatController {
     ensureChannelState: (channelId) => this.ensureChannelState(channelId),
     getChannels: () => this.channelCatalog.getChannels(),
     getChannelStateSnapshots: () => this.channelCatalog.getChannelStateSnapshots(),
+    getConversationActivity: () => this.conversationActivity(),
     isChannelsLoading: () => this.channelCatalog.isLoading(),
     isSessionChecked: () => this.session.sessionChecked,
     hasSession: () => !!this.session.sessionToken || !!this.session.user,
@@ -149,6 +160,13 @@ export class ChatController {
     getListenerSnapshot: (channelId) => this.getSnapshot(channelId),
     getVisibleMessages: (channelId) => this.getVisibleMessages(channelId),
     getUnreadMentionCount: (channelId) => this.getUnreadMentionCount(channelId),
+    getUnreadPeople: () => this.unreadPeople.snapshot(),
+  });
+  private readonly unreadPeople = new ChatControllerUnreadPeople({
+    getChannels: () => this.channelCatalog.getChannels(),
+    getChannelStates: () => this.storage.channelStates.entries(),
+    getUser: () => this.session.user,
+    onChange: () => this.emit(),
   });
   private readonly messageLoading = new ChatControllerMessageLoading({
     ensureChannelState: (channelId) => this.ensureChannelState(channelId),
@@ -176,6 +194,7 @@ export class ChatController {
     getSafetyRefreshChannelIds: () => getChannelIdsForSafetyRefresh(this.storage.channelStates),
     runSafetyRefresh: (channelId) => this.messageLoading.runMessagesRefresh(channelId, { showLoading: false }),
     resyncChannels: () => this.resyncConnectedChannels(),
+    invalidateMentionCandidates: () => this.mentionCandidates.invalidate(),
   });
 
   attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
@@ -244,7 +263,18 @@ export class ChatController {
   }
 
   getSnapshot(channelId = DEFAULT_CHAT_CHANNEL_ID): ChatControllerSnapshot {
-    return this.view.getSnapshot(channelId);
+    const snapshot = this.view.getSnapshot(channelId);
+    return { ...snapshot, mentionCandidates: this.mentionCandidates.get(snapshot.channelId) };
+  }
+
+  /**
+   * Keeps who sent each channel's unread messages (`unreadPeople` in the
+   * snapshot) current until the returned stop is called, reading what the
+   * device does not hold. Nothing is read, and the snapshot leaves it empty,
+   * unless something tracks it: only the app badge needs it.
+   */
+  trackUnreadPeople(): () => void {
+    return this.unreadPeople.track();
   }
 
   /** Channels with unread messages, from the counts and messages already held; no request. */
@@ -340,6 +370,7 @@ export class ChatController {
   private sessionRefreshGeneration = 0;
 
   private invalidateSessionRefresh(): void {
+    this.mentionCandidates.clear();
     this.sessionRefreshGeneration += 1;
     this.sessionRefreshPromise = null;
   }
@@ -445,6 +476,7 @@ export class ChatController {
   attachChannelView(channelId: string, focused = true): () => void {
     const normalizedChannelId = normalizeChannelId(channelId);
     const channel = this.ensureChannelState(normalizedChannelId);
+    void this.mentionCandidates.load(normalizedChannelId);
     return attachChatChannelView({
       channel,
       channelId: normalizedChannelId,
@@ -785,7 +817,32 @@ export class ChatController {
   }
 
   private emit(channelId?: string): void {
-    this.view.emit(channelId);
+    // A message moves its conversation in every sidebar, not only in the panes
+    // reading that channel, so a change of order reaches them all.
+    const activity = this.conversationActivity();
+    const moved = activity !== this.announcedActivity;
+    this.announcedActivity = activity;
+    this.view.emit(moved ? undefined : channelId);
+    this.unreadPeople.sync();
+  }
+
+  /**
+   * When each direct and group conversation last had a message, from the
+   * messages this device holds and what the server reports. The same object
+   * until one of them changes, so a view can tell without comparing.
+   */
+  private conversationActivity(): ConversationActivity {
+    const next: Record<string, number> = {};
+    for (const channel of this.channelCatalog.getChannels()) {
+      if (!isPeopleConversation(channel)) continue;
+      const at = lastConversationActivity(channel, this.storage.channelStates.get(channel.id));
+      if (at !== NO_ACTIVITY) next[channel.id] = at;
+    }
+    const previous = this.activityOfConversations;
+    const ids = Object.keys(next);
+    if (ids.length === Object.keys(previous).length && ids.every((id) => previous[id] === next[id])) return previous;
+    this.activityOfConversations = next;
+    return next;
   }
 
   private applyChannelState(state: ChatChannelState): void {
@@ -803,6 +860,7 @@ export class ChatController {
   private stopRealtime(): void {
     this.realtime.stopAll();
     this.alerts.clear();
+    this.unreadPeople.clear();
   }
 
   private applySignedOutSession(): void {
@@ -818,6 +876,7 @@ export class ChatController {
 
   /** Each channel read live reads its latest page in full, after any read already out. */
   private resyncConnectedChannels(): void {
+    this.mentionCandidates.invalidate();
     for (const channelId of markConnectedChannelsForBackfill(this.storage.channelStates)) {
       const inFlight = this.ensureChannelState(channelId).refreshMessagesPromise ?? Promise.resolve();
       void inFlight
@@ -828,6 +887,9 @@ export class ChatController {
   }
 
   private ensureOpenChannelConnections(): void {
+    for (const [id, state] of this.storage.channelStates) {
+      if (state.openViewCount > 0) void this.mentionCandidates.load(id);
+    }
     const channelIds = getOpenConnectionChannelIds(this.storage.channelStates);
     closeInactiveChannelConnections(this.storage.channelStates, channelIds);
     for (const channelId of channelIds) {
@@ -857,6 +919,15 @@ export class ChatController {
       markViewed: (persist) => this.markViewedThroughLatestMessage(channelId, persist),
     });
     this.storage.persistTranscript(channelId);
+    const conversation = this.channelCatalog.getChannels().find((entry) => entry.id === channelId);
+    if (conversation?.kind === "direct") {
+      const latest = channel.messages.at(-1)?.createdAt;
+      if (latest) this.mentionCandidates.recordConversation(
+        [conversation.dmUser?.id, ...(conversation.members ?? []).map((member) => member.id)]
+          .filter((id): id is string => !!id && id !== this.session.user?.id),
+        latest,
+      );
+    }
     this.emit(channelId);
   }
 

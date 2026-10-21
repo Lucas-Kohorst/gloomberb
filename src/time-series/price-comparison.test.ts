@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { createTestDataProvider } from "../test-support/data-provider";
 import type { PricePoint, Quote } from "../types/financials";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
@@ -56,6 +56,41 @@ describe("normalized market price comparison", () => {
       expect(seeded?.priceComparison?.start).toBe(result.priceComparison?.start);
     });
   }
+
+  test("a panned comparison keeps loaded bars past both edges of the view to pan into, and only shared dates inside it", async () => {
+    const days = (from: string, count: number, skip: string[] = []) => Array.from({ length: count }, (_, index) => (
+      new Date(Date.parse(from) + index * 86_400_000).toISOString().slice(0, 10)
+    )).filter((day) => !skip.includes(day));
+    // The second listing has no bar on the view's last day.
+    const data = {
+      OLDER: rows(days("2026-07-01", 70).map((day, index) => [day, 100 + index])),
+      NEWER: rows(days("2026-07-01", 70, ["2026-08-28"]).map((day, index) => [day, 50 + index])),
+    };
+    const view = { start: date("2026-08-17"), end: date("2026-08-28T23:59:59.999Z") };
+    const result = await resolveChartSpecData(spec(), sources(data), new ChartResolveCache(), { requestViewport: view });
+    const span = (points: { date: Date }[]) => [points[0]?.date.toISOString().slice(0, 10), points.at(-1)?.date.toISOString().slice(0, 10)];
+    expect(result.series.map((entry) => span(entry.points))).toEqual([["2026-08-17", "2026-08-27"], ["2026-08-17", "2026-08-27"]]);
+    for (const [index, buffered] of result.bufferedSeries!.entries()) {
+      expect(buffered.points[0]!.date.getTime()).toBeLessThan(view.start.getTime());
+      expect(buffered.points.at(-1)!.date.getTime()).toBeGreaterThan(view.end.getTime());
+      const inView = buffered.points.filter((point) => point.date >= view.start && point.date <= view.end);
+      expect(inView).toEqual(result.series[index]!.points);
+    }
+  });
+
+  test("a weekly comparison's notice dates its shared bars by their last sessions, a daily one by their dates", async () => {
+    // Thu 10 Sep 2026 18:00 UTC, as the sources read it: New York is trading, so the week of Mon 7 Sep runs through today.
+    setSystemTime(date("2026-09-10T18:00:00Z"));
+    try {
+      expect((await resolveChartSpecData(spec("1d"), sources())).priceComparison?.notice)
+        .toContain("Shared calendar dates: 2022-05-02 to 2026-09-07;");
+      // The week of Mon 2 May 2022 closed on Fri 6 May.
+      expect((await resolveChartSpecData(spec("1wk"), sources())).priceComparison?.notice)
+        .toContain("Shared calendar dates: 2022-05-06 to 2026-09-10;");
+    } finally {
+      setSystemTime();
+    }
+  });
 
   test("missing holiday dates use an exact overlap without carrying or rounding observations", async () => {
     const result = await resolveChartSpecData(spec(), sources({

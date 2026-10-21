@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  usePaneNoticeFooter,
   usePaneStatusFooter,
   usePaneTabs,
   type DataTableCell,
@@ -38,7 +39,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
   const balances = resource.data;
   const gas = balances?.gas ?? null;
   const [storedTab, setTab] = usePluginPaneState<string>("commodity", "oil");
-  const tab: BalanceCommodity = gas && storedTab === "gas" ? "gas" : "oil";
+  const tab: BalanceCommodity = storedTab === "gas" ? "gas" : "oil";
   const board = tab === "gas" ? gas : balances?.oil ?? null;
   const rows = board?.rows ?? EMPTY_ROWS;
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
@@ -53,7 +54,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
   const selectTab = useCallback((value: string) => {
     setTab(value === "gas" ? "gas" : "oil");
   }, [setTab]);
-  const { strip: tabs, rows: tabRows } = usePaneTabs(gas ? {
+  const { strip: tabs, rows: tabRows } = usePaneTabs({
     tabs: TABS,
     activeValue: tab,
     onSelect: selectTab,
@@ -61,7 +62,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
     compact: true,
     variant: "underline",
     queryBarWidth: width,
-  } : null);
+  });
   const info = useMemo(
     () => (resource.error || !board ? [] : [{ id: "month", parts: [{ text: formatBalanceMonth(board.month) }] }]),
     [board, resource.error],
@@ -70,8 +71,10 @@ export function JodiPane({ focused, width, height }: PaneProps) {
     registrationId: JODI_PANE_ID,
     loading: resource.loading,
     error: resource.error,
+    stale: !!balances?.stale,
     info,
   });
+  usePaneNoticeFooter({ registrationId: `${JODI_PANE_ID}:notices`, focused, notices: balances?.gaps ?? [] });
 
   const renderCell = useCallback((row: BalanceRow, column: { id: string }): DataTableCell => {
     const number = (value: number | null): DataTableCell => ({
@@ -82,6 +85,8 @@ export function JodiPane({ focused, width, height }: PaneProps) {
     switch (column.id) {
       case "country":
         return { text: row.country, color: colors.textBright, attributes: TextAttributes.BOLD };
+      case "month":
+        return { text: row.month ? formatBalanceMonth(row.month) : "—", value: row.month, color: colors.textMuted };
       case "production":
         return number(row.production);
       case "demand":
@@ -134,7 +139,7 @@ export function JodiPane({ focused, width, height }: PaneProps) {
         onRootKeyDown={onRootKeyDown}
         renderCell={renderCell}
         selectedTextOverridesCellColor
-        emptyStateTitle="No balances for this month."
+        emptyStateTitle={board ? "No balances for this month." : tab === "gas" ? "Gas balances unavailable." : "Oil balances unavailable."}
       />
     </Box>
   );

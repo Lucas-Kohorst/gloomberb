@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import type { DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
@@ -16,8 +16,9 @@ import {
   upsertTickerFromSearchResult,
 } from "./index";
 import { createTestTicker } from "../../test-support/ticker";
-import { resolveManualPositionCurrency } from "../../plugins/builtin/portfolio-list/mutations";
+import { resolveManualPositionCurrency } from "../../portfolio/mutations";
 import { parsePublicTickerKey } from "../../utils/exchanges";
+import { ProviderBusyError } from "../../sources/provider-errors";
 
 function makeSearchResult(
   symbol: string,
@@ -228,6 +229,123 @@ describe("ticker-search utilities", () => {
     expect(findExactTickerSearchMatch([{ label: "JPY/USD" }], "JPY=X")).toBeNull();
   });
 
+  describe("a commodity typed by its name", () => {
+    // /market/search, captured 2026-10-17: the server leads with the benchmark future and tags it with the names it answers to.
+    const future = (symbol: string, name: string, exchange: string, searchAliases: string[]) =>
+      makeSearchResult(symbol, name, { exchange, type: "FUTURE", currency: "USD", searchAliases });
+    const stock = (symbol: string, name: string, exchange: string, type = "Common Stock") => makeSearchResult(symbol, name, { exchange, type });
+    const gold = future("GC=F", "Gold", "CMX", ["Gold"]);
+    const wti = future("CL=F", "WTI Crude Oil", "NYM", ["WTI Crude Oil", "WTI", "WTI Crude", "Crude Oil", "Crude", "Oil"]);
+    const brent = future("BZ=F", "Brent Crude Oil", "NYM", ["Brent Crude Oil", "Brent", "Brent Crude", "Crude Oil", "Crude", "Oil"]);
+    const build = (query: string, providerResults: InstrumentSearchResult[], totalLimit = 30) =>
+      buildTickerSearchCandidates({ query, tickers: new Map(), providerResults, totalLimit });
+    const order = (query: string, providerResults: InstrumentSearchResult[]) =>
+      build(query, providerResults).map((candidate) => `${candidate.label}:${candidate.exchangeLabel}`);
+
+    test("the benchmark future is the first result, ahead of the ETCs, warrants and companies sharing the word", () => {
+      const bz = future("BZ=F", "Brent Crude Oil", "NYM", ["Brent Crude Oil", "Brent", "Brent Crude", "Crude Oil", "Crude", "Oil"]);
+      const brentRows = [bz,
+        stock("BRENT", "CoreShares Brent Oil ETC", "BIT", "ETF"), stock("BRENT", "Leonteq Brent Crude Oil ETP", "SWX", "ETF"),
+        stock("F96878", "Brent Crude Oil Future", "BIT", "Warrant"), stock("F96879", "Brent Crude Oil Future Call Warrant", "BIT", "Warrant")];
+      expect(order("brent", brentRows)[0]).toBe("BZ=F:NYM");
+      // Wherever the server put it.
+      expect(order("brent", [...brentRows.slice(1), bz])[0]).toBe("BZ=F:NYM");
+
+      const wtiRows = [wti, stock("WTI", "WTI Oil Exchange Traded Commodity", "LSE", "ETF"), stock("WTI", "W&T Offshore Inc", "NYSE"),
+        stock("WTII", "Water Technologies International,Inc.", "OTC")];
+      // The exact tickers follow in the order the server gave them.
+      expect(order("wti", wtiRows).slice(0, 3)).toEqual(["CL=F:NYM", "WTI:LSE", "WTI:NYSE"]);
+
+      const goldRows = [gold, stock("GOLD", "Gold.com, Inc.", "NYSE"), stock("GOLD", "GoldMining Inc.", "TSX"),
+        stock("GOLD", "Amundi Physical Gold ETC", "AMS", "ETF")];
+      expect(order("gold", goldRows).slice(0, 2)).toEqual(["GC=F:CMX", "GOLD:NYSE"]);
+      // The category says what it is: a derivative, listed first, and the company stays its listing.
+      expect(build("gold", goldRows).map((candidate) => [candidate.label, candidate.category]).slice(0, 2))
+        .toEqual([["GC=F", "Funds & Derivatives"], ["GOLD", "Primary Listing"]]);
+
+      const silverRows = [future("SI=F", "Silver", "CMX", ["Silver"]), stock("SILVER", "Aditya Birla Sun Life Silver ETF", "NSE", "ETF"),
+        stock("SLV", "iShares Silver Trust", "ARCA", "ETF")];
+      expect(order("silver", silverRows)[0]).toBe("SI=F:CMX");
+
+      const gasRows = [future("NG=F", "Natural Gas", "NYM", ["Natural Gas", "NatGas", "Nat Gas"]),
+        stock("NGS", "Natural Gas Services Group, Inc.", "NYSE"), stock("BNQ9", "Natural Gas ETC BNP Paribas", "XETRA", "ETF")];
+      for (const query of ["natural gas", "Natural Gas", "natgas", "nat gas"]) expect(order(query, gasRows)[0], query).toBe("NG=F:NYM");
+    });
+
+    test("oil and crude lead with WTI, then Brent, in the order the server sent them", () => {
+      const rows = [wti, brent, stock("OIL", "Oil India Limited", "BSE"), stock("OIL", "Onyx Spot Return Crude Oil", "LSE", "ETF")];
+      for (const query of ["oil", "OIL", "crude", "Crude Oil", "crude oil futures"]) {
+        expect(order(query, rows).slice(0, 2), query).toEqual(["CL=F:NYM", "BZ=F:NYM"]);
+        expect(order(query, [brent, wti, ...rows.slice(2)]).slice(0, 2), query).toEqual(["BZ=F:NYM", "CL=F:NYM"]);
+      }
+      expect(order("oil", rows).slice(2)).toEqual(expect.arrayContaining(["OIL:BSE"]));
+    });
+
+    test("an exact ticker keeps its company: AAPL is not a commodity, and GOLD still lists Gold.com right behind the metal", () => {
+      const apple = [stock("AAPL", "Apple Inc.", "NASDAQ"), stock("APLE", "Apple Hospitality REIT, Inc.", "NYSE")];
+      expect(order("AAPL", apple)).toEqual(["AAPL:NASDAQ"]);
+      expect(order("apple", [...apple, gold])).toEqual(["AAPL:NASDAQ", "APLE:NYSE"]);
+      const goldRows = [gold, stock("GOLD", "Gold.com, Inc.", "NYSE"), stock("GOLD", "GoldMining Inc.", "TSX")];
+      const candidates = build("GOLD", goldRows);
+      expect(candidates.map((candidate) => candidate.label).slice(0, 2)).toEqual(["GC=F", "GOLD"]);
+      expect(candidates.find((candidate) => candidate.label === "GOLD")).toMatchObject({ detail: expect.stringContaining("Gold.com"), category: "Primary Listing" });
+    });
+
+    test("only the name itself asks for the future: not another word, another kind of row, or a future typed by its symbol", () => {
+      const rows = [stock("GDX", "VanEck Gold Miners ETF", "ARCA", "ETF"), stock("GOLD", "Gold.com, Inc.", "NYSE"), gold];
+      for (const query of ["gold miners", "gold etf", "gold stock", "gol"]) {
+        expect(order(query, rows)[0], query).not.toBe("GC=F:CMX");
+      }
+      expect(order("GC=F", rows)).toEqual(["GC=F:CMX"]);
+      expect(order("gold futures", rows)[0]).toBe("GC=F:CMX");
+      expect(order("gold FUT", rows)).toEqual(["GC=F:CMX"]);
+      // A fund sent with the same name is not a future, and a server that sends no names changes nothing.
+      const mislabeled = makeSearchResult("GLD", "SPDR Gold Shares", { exchange: "ARCA", type: "ETF", searchAliases: ["Gold"] });
+      expect(order("gold", [mislabeled, stock("GOLD", "Gold.com, Inc.", "NYSE")])[0]).toBe("GOLD:NYSE");
+      const older = makeSearchResult("GC=F", "Gold", { exchange: "CMX", type: "FUTURE" });
+      expect(order("gold", [stock("GOLD", "Gold.com, Inc.", "NYSE"), older])).toEqual(["GOLD:NYSE", "GC=F:CMX"]);
+    });
+  });
+
+  describe("an index, rate, volatility or crypto market typed with futures", () => {
+    // /market/search with the server change (GLO-953): the full-size future leads and carries the names it answers to.
+    const future = (symbol: string, name: string, exchange: string, searchAliases?: string[]) =>
+      makeSearchResult(symbol, name, { exchange, type: "FUTURE", currency: "USD", searchAliases });
+    const row = (symbol: string, name: string, exchange: string, type: string) => makeSearchResult(symbol, name, { exchange, type });
+    const order = (query: string, providerResults: InstrumentSearchResult[]) =>
+      buildTickerSearchCandidates({ query, tickers: new Map(), providerResults, totalLimit: 30 }).map((candidate) => `${candidate.label}:${candidate.exchangeLabel}`);
+    const es = future("ES=F", "E-Mini S&P 500", "CME", ["E-Mini S&P 500", "S&P 500", "S&P", "SPX", "SP500"]);
+    const nq = future("NQ=F", "Nasdaq 100 Dec 26", "CME", ["E-Mini Nasdaq 100", "Nasdaq 100", "Nasdaq", "NDX"]);
+    const vx = future("VX1", "VIX Futures 1st generic", "CFE", ["VIX Futures", "VIX"]);
+
+    test("the full-size future is the first result, ahead of the index, the funds and the mini and micro contracts", () => {
+      const spRows = [es, row("^SPXFPE", "S&P 500 Futures Index (0930-160", "SNP", "INDEX"), row("^SP500FER", "S&P 500 Futures Index ER", "SNP", "INDEX"),
+        future("NES=F", "E-nano S&P 500 Futures,Dec-2026", "CME"), future("MES=F", "Micro E-Mini S&P 500", "CME")];
+      for (const query of ["s&p 500 futures", "S&P Futures", "spx futures"]) expect(order(query, spRows)[0], query).toBe("ES=F:CME");
+      // "nasdaq" is a venue and "futures" a type to the ranking: no text is left for the future's name to match.
+      const nasdaqRows = [nq, row("304940", "Samsung Kodex Us Nasdaq 100 Futures Etf(H)", "KRX", "ETF"), future("MNQ=F", "Micro E-Mini Nasdaq 100", "CME")];
+      expect(order("nasdaq futures", nasdaqRows)[0]).toBe("NQ=F:CME");
+      expect(order("nasdaq futures", [...nasdaqRows.slice(1), nq])[0]).toBe("NQ=F:CME");
+      // VIX has no continuous symbol: the front generic leads, and the volatility index and its ETFs follow.
+      const vixRows = [vx, row("^LONGVOL", "Long VIX Futures Index", "WCB", "INDEX"), row("UVIX", "2x Long VIX Futures ETF", "BTS", "ETF")];
+      expect(order("vix futures", vixRows)).toEqual(["VX1:CFE", "^LONGVOL:WCB", "UVIX:BTS"]);
+      const ten = future("ZN=F", "10-Year T-Note", "CBT", ["10-Year T-Note", "10 Year Note", "10 Year Treasury Note", "10 Year Treasury", "Treasury Note", "T-Note", "Treasury", "Treasuries"]);
+      expect(order("10 year note futures", [row("304660", "Samsung Kodex Ultra Treasury Bond Futures(H) ETF", "KRX", "ETF"), ten])[0]).toBe("ZN=F:CBT");
+    });
+
+    test("a bare name, a fund and a stock sent with the same word keep the rank they had", () => {
+      const index = row("^GSPC", "S&P 500", "SNP", "INDEX");
+      const fund = row("SPY", "SPDR S&P 500 ETF Trust", "ARCA", "ETF");
+      expect(order("s&p 500", [index, fund, future("ES=F", "E-Mini S&P 500", "CME")]).slice(0, 3)).toEqual(["^GSPC:SNP", "SPY:ARCA", "ES=F:CME"]);
+      // The server names no future for a bare "vix", whose alias list is the index's own.
+      const vixIndex = makeSearchResult("^VIX", "CBOE Volatility Index", { exchange: "WCB", type: "INDEX", searchAliases: ["VIX", "VIX Index"] });
+      expect(order("vix", [vixIndex, row("VIXY", "ProShares VIX Short-Term Futures ETF", "BATS", "ETF")])[0]).toBe("^VIX:WCB");
+      // A stock coded like a generic is no future: it does not share the lead, wherever the server put it.
+      const stock = makeSearchResult("ABC1", "ABC One Inc.", { exchange: "NYSE", type: "Common Stock", searchAliases: ["VIX"] });
+      expect(order("vix futures", [stock, vx])[0]).toBe("VX1:CFE");
+    });
+  });
+
   describe("an index typed by its code", () => {
     // /market/search?q=IBOV, captured 2026-10-12: the server leads with the index and tags it with the codes it answers to.
     const ibovespa = makeSearchResult("^BVSP", "Ibovespa", { exchange: "B3", type: "INDEX", searchAliases: ["IBOV", "IBOV Index"] });
@@ -436,6 +554,57 @@ describe("ticker-search utilities", () => {
           getQuote: async () => ({ ...invalidQuote, currency: "USD", lastUpdated: Date.now(), change: 0, changePercent: 0 }),
         }),
       })).toBeNull();
+    }
+  });
+
+  test("a suffixed listing search does not carry resolves through its own quote, as quote reads it", async () => {
+    const quote = (symbol: string, overrides: Record<string, unknown> = {}) => ({
+      symbol, name: "CEZ, a. s.", listingExchangeName: "PSE", currency: "CZK", price: 1365, instrumentType: "EQUITY",
+      lastUpdated: 1, change: 0, changePercent: 0, ...overrides,
+    });
+    const resolve = (query: string, answer: ReturnType<typeof quote>) => resolveTickerSearch({ query, activeTicker: null, tickers: new Map(),
+      dataProvider: createTestDataProvider({ search: async () => [], getQuote: async () => answer }) });
+    // The quote comes with it, so the add row does not ask for it again.
+    expect(await resolve("CEZ.PR", quote("CEZ.PR"))).toMatchObject({
+      kind: "provider", symbol: "CEZ.PR", result: { symbol: "CEZ.PR", exchange: "PSE", currency: "CZK", name: "CEZ, a. s.", type: "EQUITY" },
+      quote: { symbol: "CEZ.PR", price: 1365 },
+    });
+    // The quote has to answer for that key, price it, and sit on a venue the suffix belongs to.
+    expect(await resolve("CEZ.PR", quote("CEZ"))).toBeNull();
+    expect(await resolve("CEZ.PR", quote("CEZ.PR", { price: 0 }))).toBeNull();
+    expect(await resolve("OMV.VI", quote("OMV.VI", { listingExchangeName: "LSE" }))).toBeNull();
+    // A bare symbol is search's to resolve; its quote is never read as a listing.
+    expect(await resolve("CEZ", quote("CEZ"))).toBeNull();
+  });
+
+  test("a lookup search was too busy to answer is no miss: it says so, unless a saved ticker or the listing's own quote settles it", async () => {
+    const busy = async (): Promise<InstrumentSearchResult[]> => { throw new ProviderBusyError(); };
+    const resolve = (query: string, search: () => Promise<InstrumentSearchResult[]>, tickers = new Map<string, TickerRecord>()) => resolveTickerSearch({
+      query, activeTicker: null, tickers,
+      dataProvider: createTestDataProvider({ search, getQuote: async () => ({ symbol: "CEZ.PR", name: "CEZ, a. s.", listingExchangeName: "PSE",
+        currency: "CZK", price: 1365, instrumentType: "EQUITY", lastUpdated: 1, change: 0, changePercent: 0 }) }),
+    });
+    await expect(resolve("SBLK", busy)).rejects.toBeInstanceOf(ProviderBusyError);
+    // Only a search that answered with nothing is a miss.
+    expect(await resolve("SBLK", async () => [])).toBeNull();
+    const saved = createTestTicker("SBLK", "Star Bulk Carriers", { exchange: "NASDAQ" });
+    expect(await resolve("SBLK", busy, new Map([["SBLK", saved]]))).toMatchObject({ kind: "local", ticker: saved });
+    // The busy literal lookup does not cut the fallbacks short.
+    expect(await resolve("CEZ.PR", busy)).toMatchObject({ kind: "provider", symbol: "CEZ.PR", result: { exchange: "PSE" } });
+  });
+
+  test("a suffixed listing whose quote never answers reads as unmatched, without waiting on it", async () => {
+    jest.useFakeTimers();
+    try {
+      let asked!: () => void;
+      const quoteAsked = new Promise<void>((resolve) => { asked = resolve; });
+      const resolved = resolveTickerSearch({ query: "CEZ.PR", activeTicker: null, tickers: new Map(),
+        dataProvider: createTestDataProvider({ search: async () => [], getQuote: () => { asked(); return new Promise(() => {}); } }) });
+      await quoteAsked;
+      jest.advanceTimersByTime(5_000);
+      expect(await resolved).toBeNull();
+    } finally {
+      jest.useRealTimers();
     }
   });
 
@@ -841,9 +1010,9 @@ describe("ticker-search utilities", () => {
       makeSearchResult("COPX", "Global X Copper Miners ETF", { exchange: "ARCA", type: "ETF" }),
     ];
 
-    test("a company sent with a theme answers to it after the names, as related; older servers' rows are dropped", () => {
+    test("the companies sent with a theme follow its funds, as related, before the names; older servers' rows are dropped", () => {
       expect(build("lithium", rows)).toEqual([
-        "LIT:Funds & Derivatives", "LAC:Primary Listing", "ALB:Related", "SQM:Related",
+        "LIT:Funds & Derivatives", "ALB:Related", "SQM:Related", "LAC:Primary Listing",
       ]);
       expect(build("lithium etf", rows)).toEqual(["LIT:Funds & Derivatives"]);
       expect(build("lithium", rows.map(({ searchKeywords: _keywords, ...row }) => row))).toEqual([
@@ -873,15 +1042,43 @@ describe("ticker-search utilities", () => {
         search: async (query) => { calls.push(query); return query === "defense" ? names : query === "defense ETF" ? funds : []; },
       });
       const listed = await searchTickerCandidates({ query: "defense", tickers: new Map(), dataProvider, totalLimit: 10 });
-      // Five US-listed funds in the server's order lead; the sixth and other venues' lines follow the names.
-      expect(listed.slice(0, 7).map((item) => `${item.symbol}:${item.exchangeLabel}`)).toEqual([
-        "ITA:ARCA", "XAR:ARCA", "PPA:ARCA", "EUAD:ARCA", "MISL:ARCA", "DEFN:TSXV", "DTII:OTC",
+      // Five US-listed funds in the server's order lead, then the companies sent with the word; the sixth fund and other
+      // venues' lines follow the names.
+      expect(listed.slice(0, 8).map((item) => `${item.symbol}:${item.exchangeLabel}`)).toEqual([
+        "ITA:ARCA", "XAR:ARCA", "PPA:ARCA", "EUAD:ARCA", "MISL:ARCA", "LMT:NYSE", "DEFN:TSXV", "DTII:OTC",
       ]);
       expect(calls.filter((call) => call.endsWith(" ETF"))).toEqual(["defense ETF"]);
-      // A word no row is tagged with is a name: no second search.
+      // "defense etf" asks for the funds by name: the name search alone holds only the tagged PPA, so the ETF search's
+      // funds lead in its order, ITA first.
+      calls.length = 0;
+      const etfs = await searchTickerCandidates({ query: "defense etf", tickers: new Map(), dataProvider, totalLimit: 10 });
+      expect(etfs.slice(0, 5).map((item) => `${item.symbol}:${item.exchangeLabel}`)).toEqual(["ITA:ARCA", "XAR:ARCA", "PPA:ARCA", "EUAD:ARCA", "MISL:ARCA"]);
+      expect(calls.filter((call) => call.endsWith(" ETF"))).toEqual(["defense ETF"]);
+      // So does a phrase no symbol is; a word no row is tagged with is a name or a symbol: no second search.
+      calls.length = 0;
+      await searchTickerCandidates({ query: "aerospace defense etf", tickers: new Map(), dataProvider, totalLimit: 10 });
+      expect(calls.filter((call) => call.endsWith(" ETF"))).toEqual(["aerospace defense ETF"]);
       calls.length = 0;
       await searchTickerCandidates({ query: "kratos", tickers: new Map(), dataProvider, totalLimit: 10 });
+      await searchTickerCandidates({ query: "kratos etf", tickers: new Map(), dataProvider, totalLimit: 10 });
       expect(calls.some((call) => call.endsWith(" ETF"))).toBe(false);
+    });
+
+    test("a sector's leaders the server tags make the first ten past the juniors named for it", async () => {
+      // /market/search?q=lithium and q=lithium ETF, recorded 2026-10-16: the names first, the tagged rows last.
+      const named = [["LAC", "Lithium Americas Corp.", "NYSE"], ["LAR", "Lithium Argentina AG", "NYSE"], ["LAC", "Lithium Americas Corp.", "TSX"],
+        ["SLI", "Standard Lithium Ltd.", "AMEX"], ["ATLX", "Atlas Lithium Corporation", "NASDAQ"], ["SGML", "Sigma Lithium Corporation", "NASDAQ"]]
+        .map(([symbol, name, exchange]) => makeSearchResult(symbol!, name!, { exchange, type: "EQUITY" }));
+      const tagged = [["LIT", "Global X Lithium & Battery Tech ETF", "ARCA", "ETF"], ["BATT", "Amplify Lithium & Battery Technology ETF", "ARCA", "ETF"],
+        ["ALB", "Albemarle Corporation", "NYSE", "EQUITY"], ["SQM", "Sociedad Química y Minera de Chile S.A.", "NYSE", "EQUITY"],
+        ["PLS", "PLS Group Limited", "ASX", "EQUITY"], ["LTR", "Liontown Limited", "ASX", "EQUITY"]]
+        .map(([symbol, name, exchange, type]) => makeSearchResult(symbol!, name!, { exchange, type, searchKeywords: ["lithium"] }));
+      const future = makeSearchResult("LTH=F", "Lithium Hydroxide CIF CJK (Fast", { exchange: "CMX", type: "FUTURE" });
+      const funds = ["ASX", "CXA"].map((exchange) => makeSearchResult("ACDC", "Global X Battery Tech & Lithium ETF", { exchange, type: "ETF" }));
+      const dataProvider = createTestDataProvider({ id: "test", search: async (query) =>
+        query === "lithium" ? [...named.slice(0, 3), future, ...named.slice(3), ...tagged] : query === "lithium ETF" ? [...funds, ...tagged.slice(0, 2)] : [] });
+      const listed = await searchTickerCandidates({ query: "lithium", tickers: new Map(), dataProvider, totalLimit: 10 });
+      expect(listed.slice(0, 6).map((item) => item.symbol)).toEqual(["LIT", "BATT", "ALB", "SQM", "PLS", "LTR"]);
     });
 
     test("an exact name or symbol still leads a sector word's funds", () => {

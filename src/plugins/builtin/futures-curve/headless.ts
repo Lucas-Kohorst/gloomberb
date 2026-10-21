@@ -1,9 +1,12 @@
 import type { FuturesContract, FuturesCurvePayload } from "../../../api-client/futures-curve";
 import { futuresSpecLines } from "../../../market-data/futures-contract";
 import type { HeadlessPaneColumn, HeadlessPaneDefinition, HeadlessPaneEntry, HeadlessPaneFreshness } from "../../../types/plugin";
+import { formatPercentRaw } from "../../../utils/format";
+import { DATE_OPTION_EXAMPLES } from "../../../utils/calendar-date";
 import { newestReportTime, oldestReportTime } from "../../../utils/utc-time";
 import { fetchFuturesCurve, loadCurveSpot, loadFuturesCurveAsOf } from "./client";
 import { basisSpotSymbol, BASIS_CONVENTION, blankBasisNote, catalogueCurveUnit, curveAsOfDate, curveBasisPercent, curveBasisRows, curveChangeText, curveContractCode, curvePrice, curveRoundedPrice, curveSpotLabel, curveSpotSource, curveSpreadLabel, curveTimestamp, curveUnitLabel, normalizeCurveRoot, shortDatedBasisNote, thinContractCount, unsupportedCurveRootMessage, type ContractBasis } from "./model";
+import { COMMODITIES_VIEW_STATE } from "../commodities-energy/view-state";
 
 /** The root a report shows when none is given. */
 const DEFAULT_ROOT = "ES";
@@ -57,6 +60,22 @@ function contractColumns(root: string, settlementDate: string | null, options: {
   ];
 }
 
+/**
+ * A section's fields in one order, each under its own name as a report
+ * titles it, then any field the server added since. Read from the rows, the
+ * order would follow the server's JSON, which a cached response reorders.
+ */
+function fieldColumns(order: readonly string[], fields: object, formats: Record<string, HeadlessPaneColumn["textFormat"]> = {}): HeadlessPaneColumn[] {
+  return [...order, ...Object.keys(fields).filter((key) => !order.includes(key))]
+    .map((key) => ({ key, header: key, ...formats[key] ? { textFormat: formats[key] } : {} }));
+}
+
+const FRONT_SPREAD_FIELDS = ["label", "frontSymbol", "nextSymbol", "value", "annualizedRollYield", "percentile", "rollPercentile",
+  "samples", "historyStart", "historyEnd", "asOf", "state"];
+const GHOST_FIELDS = ["symbol", "expiration", "price", "asOf"];
+/** The annualized roll yield reads as the percent it is (+32.36%); an export keeps the number. */
+const ROLL_YIELD_FORMAT = { annualizedRollYield: (value: unknown) => typeof value === "number" ? formatPercentRaw(value) : "--" };
+
 /** What one contract is: the terms a hedge is sized on, once rather than on every row, worded as `ticker` words them. */
 function specEntries(data: FuturesCurvePayload): HeadlessPaneEntry[] {
   const spec = data.spec;
@@ -80,8 +99,8 @@ export const futuresCurveHeadless: HeadlessPaneDefinition<"bundle"> = {
   // Only the pane reads the tab; the report always carries both.
   options: [{ key: "tab", description: "Curve or the full contract table.", type: "enum",
     values: [{ value: "curve" }, { value: "contracts", aliases: ["contract", "table"] }], defaultValue: "curve",
-    pluginState: { pluginId: "market-overview", key: "tab" } },
-  { key: "date", type: "string", settingKey: "asOfDate", description: "Past date (YYYY-MM-DD): the curve as the daily settlement archive held it, with the curves a week and a month before." }],
+    pluginState: { pluginId: COMMODITIES_VIEW_STATE.curve, key: "tab" } },
+  { key: "date", type: "string", settingKey: "asOfDate", placeholder: "date", description: `Past date, as ${DATE_OPTION_EXAMPLES}: the curve as the daily settlement archive held it, with the curves a week and a month before.` }],
   describe: (args) => `Futures curve ${args.argument || DEFAULT_ROOT}`,
   async load(args, ctx) {
     const input = args.argument || DEFAULT_ROOT;
@@ -116,11 +135,12 @@ export const futuresCurveHeadless: HeadlessPaneDefinition<"bundle"> = {
         { title: "Contracts", columns: contractColumns(root, data.settlementDate ?? null,
           { basis: !!spot, last: data.source !== "cboe", notice: data.contracts.some((row) => row.firstNotice) }),
           rows: data.contracts.map((row) => contractRow(row, data, root, !!date, bases?.get(row.symbol))) },
-        { title: "Front spread", rows: [{ label: curveSpreadLabel(data.slope), ...data.slope, value: curveRoundedPrice(data.slope.value, root),
+        { title: "Front spread", columns: fieldColumns(FRONT_SPREAD_FIELDS, data.slope, ROLL_YIELD_FORMAT), rows: [{ label: curveSpreadLabel(data.slope), ...data.slope, value: curveRoundedPrice(data.slope.value, root),
           annualizedRollYield: data.slope.annualizedRollYield == null ? null : Number(data.slope.annualizedRollYield.toFixed(2)),
           percentile: rank(data.slope.percentile), rollPercentile: rank(data.slope.rollPercentile) }] },
         ...terms.length ? [{ title: "Contract terms", entries: terms }] : [],
-        ...data.ghosts.map((ghost) => ({ title: `${ghost.label} same-contract history`, rows: ghost.points.map((point) => ({ ...point })) })),
+        ...data.ghosts.map((ghost) => ({ title: `${ghost.label} same-contract history`, columns: fieldColumns(GHOST_FIELDS, ghost.points[0] ?? {}),
+          rows: ghost.points.map((point) => ({ ...point })) })),
       ],
       errors: data.gaps,
       ...(notes.length ? { notes } : {}),

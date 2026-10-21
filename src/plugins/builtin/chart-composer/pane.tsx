@@ -1,6 +1,7 @@
 import { FINANCIAL_VINTAGE_NOTICE, SEC_EPS_BASIS_NOTICE } from "../../../utils/financial-statements";
 import { usePaneSharePreparation } from "../../../shares/prepare";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTabCursorLink } from "../../../state/app/tab-cursor";
 import { Box, useUiCapabilities } from "../../../ui";
 import {
   ChoiceDialog,
@@ -18,6 +19,8 @@ import {
   type MultiSelectRowAction,
 } from "../../../components/ui";
 import { CompositeChart } from "../../../components/chart/composite";
+import { useChartViewReset, useChartViewResetListener } from "../../../components/chart/core/view-reset";
+import { formatCompositeDatasetDate } from "../../../components/chart/composite/format";
 import type { CompositeChartLevels, CompositeLevelEdit } from "../../../components/chart/composite/levels";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
@@ -28,6 +31,8 @@ import {
   type ManualChartResolution,
 } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
+import { shortCompanyName } from "../../../tickers/company-name";
+import { useSeriesListings } from "./series-listings";
 import { LIVE_CHART_TERMINAL_FRAME_MS } from "../../../time-series/live-quotes";
 import { FORWARD_VALUATION_BASIS_NOTICES } from "../../../time-series/forward-valuation";
 import { chartSeriesSourceKey } from "../../../capabilities";
@@ -46,6 +51,7 @@ import {
 import { colors } from "../../../theme/colors";
 import { isUsListingExchange, parsePublicTickerKey, publicTickerKey } from "../../../utils/exchanges";
 import { isMarketFieldId } from "../../../time-series/field-catalog";
+import { isDatasetChart } from "../../../time-series/spec";
 import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { SeriesEditorDialog } from "./editor";
@@ -53,8 +59,10 @@ import { chartComposerSemanticMetadata } from "./semantic";
 import {
   canToggleChartSeries,
   CHART_INTERACTION_VIEWPORT_SETTING_KEY,
+  CHART_PINNED_MOMENT_SETTING_KEY,
   CHART_SPEC_SETTING_KEY,
   parseChartInteractionViewport,
+  parseSharedPinnedMoment,
   parseChartSpecOr,
   projectVisibleChartSeries,
   toggleChartSeries,
@@ -64,6 +72,7 @@ import {
   futuresGenericRollFromValue,
   futuresGenericRollLabel,
   futuresGenericRollValue,
+  standardFuturesGenericRoll,
   type FuturesGenericAdjust,
 } from "../../../utils/futures-generic";
 import { chartSeriesLabel } from "./series-expression";
@@ -107,6 +116,7 @@ import { resolveChartComposerShortcut } from "./shortcuts";
 import { describeChartResolution, formatChartDateWindow, formatChartResolution } from "./viewport-labels";
 import { intradaySessionTimeZone } from "./session-history";
 import { ChartSeriesQuickAdd } from "./quick-add";
+import { ResearchTradeActions, researchTradeMatches, useResearchTrading } from "../shared/research-trading";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
 import { usePluginAppActions, usePluginConfigState } from "../../runtime";
 import { usePluginRenderContext } from "../../runtime/context";
@@ -114,6 +124,7 @@ import { activePriceAlertsFor, addLevelAlert, PRICE_ALERTS_STORE, type AlertTarg
 import { formatAlertDescription } from "../alerts/alert-engine";
 import { alertInstrument, syncAlertQuoteStream } from "../alerts/live";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { useOptionChartRange } from "./option-range";
 import { getActiveQuoteDisplay } from "../../../market-data/market/status";
 import { resolveEntryData } from "../../../market-data/selectors";
 import { editPriceLevels, parsePriceLevels, PRICE_LEVELS_KEY, priceLevelTickerKey } from "./price-levels";
@@ -187,11 +198,14 @@ interface ChartComposerSurfaceProps {
   height: number;
   footerId: string;
   onCapture?: (capturing: boolean) => void;
+  /** The legend names each series' company; a ticker's own research tab already does. */
+  nameSeries?: boolean;
 }
 
 const QUICK_ADD_CAPTURE = "quick-add";
 
 const GENERIC_ROLL_OPTIONS = [
+  { value: "standard", label: "Standard" },
   { value: "oi", label: "OI switch" },
   { value: "f5", label: "5d before notice" },
   { value: "d15", label: "Day 15" },
@@ -274,7 +288,9 @@ function ChartComposerSurface({
   height,
   footerId,
   onCapture,
+  nameSeries = true,
 }: ChartComposerSurfaceProps) {
+  const trade = useResearchTrading();
   const dialog = useDialog();
   const dispatch = useAppDispatch();
   const { cellWidthPx = 8 } = useUiCapabilities();
@@ -307,6 +323,19 @@ function ChartComposerSurface({
     CHART_INTERACTION_VIEWPORT_SETTING_KEY,
     null,
   );
+  // A link shared while its sender's crosshair was pinned opens on that
+  // moment: the chart pins its tab there once, then forgets it, so a restart
+  // does not pin it again. The value came from a link: anything but a
+  // plausible time is dropped without pinning. This handle only sets the
+  // pin; the chart it opens on is what shows and keeps it.
+  const [pinnedMoment, setPinnedMoment] = usePaneSettingValue<unknown>(CHART_PINNED_MOMENT_SETTING_KEY, null);
+  const momentLink = useTabCursorLink(paneId ? `${paneId}:moment` : null, { viewer: false });
+  useEffect(() => {
+    if (pinnedMoment == null || !momentLink?.pin) return;
+    const moment = parseSharedPinnedMoment(pinnedMoment);
+    if (moment !== null) momentLink.pin(moment);
+    setPinnedMoment(undefined);
+  }, [momentLink, pinnedMoment, setPinnedMoment]);
   const persistedInteractionViewport = useMemo(
     () => parseChartInteractionViewport(storedInteractionViewport),
     [storedInteractionViewport],
@@ -329,7 +358,9 @@ function ChartComposerSurface({
   // small zoom keeps the bars it already has. Read from the previous render:
   // the resolver only consults it when the viewport moves.
   const currentResolutionRef = useRef<ManualChartResolution | null>(null);
-  const resolution = useResolvedChartSpec(spec, {
+  // Bare series are read as `quote` reads them before anything is loaded for them.
+  const listings = useSeriesListings(spec);
+  const resolution = useResolvedChartSpec(listings.spec, {
     autoViewport: spec.viewport.resolution === "auto"
       ? activeRuntimeViewport?.adaptiveViewport
       : null,
@@ -388,10 +419,18 @@ function ChartComposerSurface({
   // them. Without a placeholder they vanish from the legend entirely and the
   // only way back is the series dialog.
   const legendSeries = useMemo(() => {
-    const resolved = resolution.legendSeries ?? [];
+    // Each security series names its company once, beside its label: "AAPL Price · Apple".
+    const named = new Set<string>();
+    const resolved = (resolution.legendSeries ?? []).map((entry) => {
+      const name = nameSeries ? listings.names.get(entry.id) : undefined;
+      const company = name ? shortCompanyName(name) : "";
+      if (!company || named.has(company)) return entry;
+      named.add(company);
+      return { ...entry, label: `${entry.label} · ${company}` };
+    });
     const resolvedIds = new Set(resolved.map((entry) => entry.id));
     const missing = spec.series.filter((entry) => !resolvedIds.has(entry.id));
-    if (missing.length === 0) return resolution.legendSeries;
+    if (missing.length === 0) return named.size > 0 ? resolved : resolution.legendSeries;
     const bySpecOrder = new Map(spec.series.map((entry, index) => [entry.id, index] as const));
     return [
       ...resolved,
@@ -412,7 +451,7 @@ function ChartComposerSurface({
         points: [],
       })),
     ].sort((a, b) => (bySpecOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (bySpecOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER));
-  }, [resolution.legendSeries, spec.series]);
+  }, [listings.names, nameSeries, resolution.legendSeries, spec.series]);
   const plottedSeries = useMemo(
     () => projectVisibleChartSeries(
       spec,
@@ -478,6 +517,7 @@ function ChartComposerSurface({
     return {
       seriesId: listing.seriesId,
       items: [
+        ...(trade && researchTradeMatches(trade, { ...listing.instrument, exchange: listing.target.exchange }) ? trade.levels : []),
         ...stored.map((level) => ({
           id: level.id,
           value: level.price,
@@ -496,7 +536,7 @@ function ChartComposerSurface({
       onEdit: editLevels,
       ...(alertsOn ? { action: { label: "alert", title: "Alert at Level", run: (level) => { void alertAtLevel(level.value); } } } : {}),
     };
-  }, [alertAtLevel, alertsJson, alertsOn, editLevels, levelStore, listing]);
+  }, [alertAtLevel, alertsJson, alertsOn, editLevels, levelStore, listing, trade?.levels, trade?.contract]);
   const [interactionCaptured, setInteractionCapturedState] = useState(false);
   // Typing in quick-add must not freeze the plot: it only takes the keyboard.
   const [modalCaptured, setModalCaptured] = useState(false);
@@ -756,6 +796,12 @@ function ChartComposerSurface({
       commitRuntimeViewport();
     }, AUTO_VIEWPORT_DEBOUNCE_MS);
   }, [authoredViewportKey, commitRuntimeViewport, setStoredInteractionViewport, spec.viewport.resolution]);
+  // The view the pane keeps (the window a pan asked for, the one saved with the
+  // pane and restored when it reopens) is the pane's to clear with the chart's
+  // own, whether or not the chart holds a moved view of its own.
+  useChartViewResetListener(() => {
+    if (activeRuntimeViewport || requestViewportRef.current) handleChartViewportChange(null, "reset");
+  });
   usePaneSharePreparation(paneId, async () => {
     if (runtimeViewportTimerRef.current !== null) {
       clearTimeout(runtimeViewportTimerRef.current);
@@ -791,12 +837,20 @@ function ChartComposerSurface({
     }
   }, [dialog, setInteractionCaptured, setSpec, spec]);
 
+  const resetChartView = useChartViewReset();
+  /** The range the bar shows as selected; a fixed window or a period count leaves a range to pick. */
+  const rangeReselects = !spec.viewport.dateWindow && spec.viewport.maxPoints === undefined;
   const setRange = useCallback((range: TimeRange) => {
+    // The range already showing: a view moved off it goes back to it, as `0` does.
+    if (rangeReselects && range === spec.viewport.range) {
+      resetChartView();
+      return;
+    }
     setSpec({
       ...spec,
       viewport: { ...spec.viewport, range, dateWindow: undefined, maxPoints: undefined },
     });
-  }, [setSpec, spec]);
+  }, [rangeReselects, resetChartView, setSpec, spec]);
   const setResolution = useCallback((next: ChartResolution) => {
     setSpec({ ...spec, viewport: { ...spec.viewport, resolution: next } });
   }, [setSpec, spec]);
@@ -879,17 +933,19 @@ function ChartComposerSurface({
   const comparisonUnavailable = comparisonHasNoWindow && !resolution.loading
     ? "Comparison unavailable: need two shared dates and a nonzero baseline."
     : null;
-  const statusError = resolution.errors[0];
-  const spreadUnitError = spec.studies.some((study) => study.kind === "spread"
-    && statusError?.startsWith(`${study.id}: spread cannot subtract `)
-    && statusError.endsWith("; inputs require matching known units, currencies and scales."));
-  const statusErrorNotice = spreadUnitError
-    ? "Spread unavailable: incompatible or unknown units."
-    : statusError;
+  const loading = resolution.loading || listings.pending;
+  // A bare code several companies list asks which, as `quote` does, before anything else is said.
+  const statusError = listings.errors[0] ?? resolution.errors[0];
+  // A spread or formula error names its legs and their units; the study's id adds nothing to it.
+  const formulaStudy = spec.studies.find((study) => (study.kind === "spread" || study.kind === "formula")
+    && statusError?.startsWith(`${study.id}: `));
+  const statusErrorNotice = formulaStudy ? statusError?.slice(`${formulaStudy.id}: `.length) : statusError;
   // Failed series use their authored id in errors and their display label in warnings.
   const errorSeries = spec.series.find((entry) => statusError?.startsWith(`${entry.label ?? entry.id}: `));
   const errorMessage = errorSeries ? statusError?.slice(`${errorSeries.label ?? errorSeries.id}: `.length) : undefined;
-  const errorSeriesLabel = legendSeries?.find((entry) => entry.id === errorSeries?.id)?.label;
+  // The label the resolver wrote its warnings with, before the legend named the company.
+  const errorSeriesLabel = (resolution.legendSeries?.find((entry) => entry.id === errorSeries?.id)
+    ?? legendSeries?.find((entry) => entry.id === errorSeries?.id))?.label;
   const duplicateErrorNotices = new Set([statusError, errorMessage,
     errorSeriesLabel && errorMessage ? `${errorSeriesLabel}: ${errorMessage}` : undefined]);
   // A failed shared window empties every compared leg; one comparison message explains it.
@@ -897,8 +953,15 @@ function ChartComposerSurface({
     ? resolution.legendSeries?.filter((entry) => resolution.priceComparison?.seriesIds.includes(entry.id))
       .map((entry) => `${entry.label}: no observations in the selected date range.`)
     : []);
+  // A charted listing that no longer trades is said in the footer itself: "Delisted Oct 27, 2022" when it
+  // is the chart's one listing, which the title names, else "TWTR: Delisted Oct 27, 2022" for each.
+  const delistings = resolution.delistings;
+  const chartedListings = new Set(spec.series.flatMap((entry) => entry.source.kind === "security" ? [entry.source.instrument.symbol] : []));
+  const delistingKey = delistings?.length === 1 && chartedListings.size === 1 ? delistings[0]!.label
+    : delistings?.map((delisting) => delisting.notice).join(" · ") ?? "";
   const statusWarnings = resolution.warnings.filter((warning) => (
     warning !== FINANCIAL_VINTAGE_NOTICE && warning !== SEC_EPS_BASIS_NOTICE && warning !== comparisonNotice
+    && !delistings?.some((delisting) => delisting.notice === warning)
     && !FORWARD_VALUATION_BASIS_NOTICES.has(warning)
     && !duplicateErrorNotices.has(warning) && !comparisonEmptyNotices.has(warning)
     && !spec.studies.some((study) => (
@@ -908,7 +971,8 @@ function ChartComposerSurface({
         && warning.endsWith("; only matching observation times contribute."))
     ))
   ));
-  const statusNotices = [...new Set([...(statusErrorNotice ? [statusErrorNotice] : []), ...(comparisonUnavailable ? [comparisonUnavailable] : []), ...statusWarnings])];
+  const statusNotices = [...new Set([...(statusErrorNotice ? [statusErrorNotice] : []), ...listings.errors, ...listings.notices,
+    ...(comparisonUnavailable ? [comparisonUnavailable] : []), ...statusWarnings])];
   usePaneNoticeFooter({
     registrationId: `${footerId}:notices`,
     notices: statusNotices,
@@ -934,20 +998,41 @@ function ChartComposerSurface({
   }, [anchoredVwapOn]);
   const anchorable = anchoredVwapOn && !pickingAnchor;
   const footerAnchor = useCallback(() => setPickingAnchor(true), []);
+  // A dataset (CHOKE's transits) panned or zoomed back from its newest
+  // observation says how far its data goes, as its legend dates a value.
+  const newestBeyondView = useMemo(() => {
+    const end = viewport?.end.getTime();
+    if (!activeRuntimeViewport || !isDatasetChart(spec) || end === undefined || !Number.isFinite(end)) return null;
+    let newest = Number.NEGATIVE_INFINITY;
+    for (const entry of plottedSeries) {
+      for (const point of entry.points) {
+        const time = point.date.getTime();
+        if (point.value != null && Number.isFinite(time) && time > newest) newest = time;
+      }
+    }
+    return newest > end ? formatCompositeDatasetDate(new Date(newest), end) : null;
+  }, [activeRuntimeViewport, plottedSeries, spec, viewport]);
   usePaneFooter(footerId, () => ({
-    info: resolution.loading
-      ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
-      : pickingAnchor
-        ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
-        : [],
+    info: [
+      ...(delistingKey ? [{ id: "delisted", parts: [{ text: delistingKey, tone: "warning" as const }] }] : []),
+      ...(loading
+        ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
+        : pickingAnchor
+          ? [{ id: "anchor", parts: [{ text: "pick a bar to anchor VWAP", tone: "muted" as const }] }]
+          : newestBeyondView
+            ? [{ id: "newest", asOf: true, parts: [{ text: `newest ${newestBeyondView}`, tone: "muted" as const }] }]
+            : []),
+    ],
     hints: [
+      // One key opens the ticket, which chooses Buy or Sell; [s]eries keeps its key with trading on.
+      ...(trade?.available ? [{ id: "trade", key: "t", label: "rade", title: "Open the trade panel", onPress: () => trade.open(), disabled: trade.busy }] : []),
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
-      { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
+      { id: "resolution", key: "b", label: "ars", title: "Bar Size", onPress: footerResolution },
       ...(anchorable ? [{ id: "vwap-anchor", key: "v", label: "wap anchor", title: "Anchor VWAP", onPress: footerAnchor }] : []),
     ],
-  }), [resolution.loading, pickingAnchor, footerSeries, openIndicators, indicatorsDisabled, openFormulas, formulasDisabled, footerResolution, anchorable, footerAnchor]);
+  }), [delistingKey, loading, pickingAnchor, newestBeyondView, footerSeries, openIndicators, indicatorsDisabled, openFormulas, formulasDisabled, footerResolution, anchorable, footerAnchor, trade]);
 
   // A fixed window (a GIP session) highlights no range, so the bar names it.
   const dateWindowLabel = useMemo(() => {
@@ -965,9 +1050,12 @@ function ChartComposerSurface({
   const genericFilters = useMemo(() => {
     if (!generic) return [];
     const roll = futuresGenericRollValue(generic.roll);
-    const rollOptions = GENERIC_ROLL_OPTIONS.map((option) => option.value === "f5"
-      ? { ...option, label: futuresGenericNotice(generic.root) === "first notice" ? "5d before notice" : "5d before last trade" }
-      : option);
+    const notice = futuresGenericNotice(generic.root) === "first notice" ? "notice" : "last trade";
+    const standard = standardFuturesGenericRoll(generic.root);
+    const rollOptions = GENERIC_ROLL_OPTIONS.map((option) => option.value === "f5" ? { ...option, label: `5d before ${notice}` }
+      : option.value === "standard" && standard.rule === "first-notice"
+        ? { ...option, label: standard.days === 0 ? `Standard, after ${notice}` : `Standard, ${standard.days}d before ${notice}` }
+        : option);
     if (!rollOptions.some((option) => option.value === roll)) rollOptions.push({ value: roll, label: futuresGenericRollLabel(generic) });
     const update = (change: Parameters<typeof setChartFuturesGeneric>[1]) => {
       const next = setChartFuturesGeneric(specRef.current, change);
@@ -977,7 +1065,7 @@ function ChartComposerSurface({
     return [
       { id: "roll", label: "Roll", value: roll, options: rollOptions, title: "Roll rule",
         onChange: (value: string) => {
-          const next = futuresGenericRollFromValue(value);
+          const next = futuresGenericRollFromValue(value, generic.root);
           if (next) update({ roll: next });
         } },
       { id: "adjust", label: "Adjust", value: generic.adjust, options: GENERIC_ADJUST_OPTIONS, title: "Adjustment",
@@ -1010,18 +1098,27 @@ function ChartComposerSurface({
     }]
     : [];
 
+  // A company that reports no quarterly figures says so, and where its annual ones are.
+  const unreported = resolution.legendSeries?.find((entry) => entry.unreportedPeriod && entry.points.length === 0);
   const emptyMessage = spec.series.length === 0
     ? "Add a series to start the chart"
-    : resolution.loading
+    : loading
       ? "Loading chart data"
-      : statusErrorNotice ?? comparisonUnavailable ?? "No observations in this range";
+      : statusErrorNotice ?? comparisonUnavailable
+        ?? (unreported ? `${unreported.label} has no ${unreported.unreportedPeriod} figures. Set Period to Annual in Series.` : "No observations in this range");
+  // Under "Choose an exchange for BDI.", the listings it asks between.
+  const emptyDetail = !loading && spec.series.length > 0 && emptyMessage === statusErrorNotice && statusError
+    ? listings.choices.get(statusError)
+    : undefined;
 
   return (
     <Box flexDirection="column" width={width} height={height}>
+      {/* Renders nothing: b and s open the trade panel. The query bar keeps the full row. */}
+      <ResearchTradeActions focused={shortcutActive} />
       <QueryBar
         width={width}
         filters={[
-          { id: "range", label: "Range", inline: true,
+          { id: "range", label: "Range", inline: true, chartRange: rangeReselects,
             value: spec.viewport.dateWindow ? "" : spec.viewport.range,
             options: RANGE_OPTIONS,
             onChange: (value: string) => setRange(value as TimeRange) },
@@ -1096,6 +1193,7 @@ function ChartComposerSurface({
           timePick={timePick}
           levels={chartLevels}
           emptyMessage={emptyMessage}
+          emptyDetail={emptyDetail}
           legendAccessory={(
             <ChartSeriesQuickAdd
               spec={spec}
@@ -1206,7 +1304,9 @@ export function ChartComposerPane({ paneId, focused, width, height }: PaneProps)
 export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
   const { symbol: paneSymbol, ticker } = usePaneTicker();
   const symbol = paneSymbol ? publicTickerKey(paneSymbol, ticker?.metadata.exchange) : null;
-  const fallback = useMemo(() => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(), [symbol]);
+  // An option contract opens on the range its own history fills; a chart the researcher set keeps its range.
+  const optionRange = useOptionChartRange(ticker);
+  const fallback = useMemo(() => symbol ? buildPriceChartPreset(symbol, optionRange ?? undefined) : buildEmptyChartPreset(), [optionRange, symbol]);
   const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
   const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
   const previousSymbolRef = useRef(symbol);
@@ -1227,6 +1327,7 @@ export function ChartComposerResearchTab({ focused, width, height, onCapture }: 
       height={height}
       footerId="chart-composer:research"
       onCapture={onCapture}
+      nameSeries={false}
     />
   );
 }

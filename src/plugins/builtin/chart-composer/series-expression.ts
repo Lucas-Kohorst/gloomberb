@@ -162,10 +162,14 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   return { kind: "security", ...instrument, fieldId };
 }
 
+const SERIES_FORMS = "Use SYMBOL, SYMBOL:field, FUT:code, UST:maturity, FRED:series, GEO:series, or CAP:capability-id:series-id.";
+
 export function parseChartExpression(value: string): ParsedSeriesExpression[] {
   if (!value.trim()) return [];
-
-  const legs = value.split(/[;,\n]/);
+  // A list pasted with a stray separator (`BRK.B,SPY,`, `,SPY`, `A,,B`) has no series between them.
+  const legs = value.split(/[;,\n]/).filter((leg) => leg.trim());
+  // Separators alone name no series at all.
+  if (legs.length === 0) throw new Error(`Invalid chart series "${value.trim()}": no series between its separators. ${SERIES_FORMS}`);
   if (legs.length > MAX_CHART_COMPOSER_SERIES) {
     throw new Error(`Charts support up to ${MAX_CHART_COMPOSER_SERIES} base series.`);
   }
@@ -173,10 +177,7 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
   return legs.map((leg) => {
     const parsed = parseSeriesExpression(leg);
     if (parsed) return parsed;
-    const display = leg.trim() || "empty series";
-    throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL, SYMBOL:field, FUT:code, UST:maturity, FRED:series, GEO:series, or CAP:capability-id:series-id.`,
-    );
+    throw new Error(`Invalid chart series "${leg.trim()}". ${SERIES_FORMS}`);
   });
 }
 
@@ -194,7 +195,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
 export function registeredSeriesName(source: { capabilityId: string; seriesId: string }): string | null {
   const found = getSharedRegistry()?.series?.findLoaded(source.capabilityId, source.seriesId);
   if (!found) return null;
-  return found.ticker ? `${found.ticker} ${found.series.definition.name}` : found.series.definition.name;
+  const name = found.line ? `${found.series.definition.name} · ${found.line.name}` : found.series.definition.name;
+  return found.ticker ? `${found.ticker} ${name}` : name;
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
@@ -209,5 +211,5 @@ export function chartSeriesLabel(series: ChartSeriesSpec): string {
     series.source.instrument.exchange,
   );
   const field = getTimeSeriesField(series.source.fieldId);
-  return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
+  return `${instrument} ${field?.seriesLabel ?? field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
 }

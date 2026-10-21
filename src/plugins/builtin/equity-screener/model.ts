@@ -1,5 +1,6 @@
 import {
   ATTENTION_FIELDS,
+  DIVIDEND_FIELDS,
   HIRING_APP_FIELDS,
   CATEGORY_FIELDS,
   NUMERIC_FIELDS,
@@ -16,8 +17,11 @@ import {
   type ScreenPayload,
   type ScreenRow,
 } from "../../../api-client/equity-screener";
+import { yearToDateBaseLabel } from "../../../market-data/market/year-to-date";
 import { canonicalExchange } from "../../../utils/exchanges";
+import { LATEST_DISTRIBUTION, TRAILING_DIVIDEND_BASIS } from "../../../utils/forward-dividend";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import { kpiFreeLimitNote } from "../company-kpis/model";
 
 /**
  * Column headers. Currency sits in the footer; percentage fields carry %.
@@ -58,6 +62,9 @@ export const SHORT_LABELS: Record<NumericField, string> = {
   revenueGrowthPercent: "FY REV GR%",
   earningsGrowthPercent: "FY EARN GR%",
   grossMarginPercent: "FY GROSS MGN%",
+  payoutRatioPercent: "FY PAYOUT%",
+  dividendGrowth1YPercent: "DIV GR 1Y%",
+  dividendGrowth3YPercent: "DIV CAGR 3Y%",
   operatingMarginPercent: "FY OP MGN%",
   netMarginPercent: "FY NET MGN%",
   shortInterestShares: "SHORT INT",
@@ -106,6 +113,7 @@ const RETURNS: NumericField[] = ["return1WPercent", "return1MPercent", "return3M
 const SIGNED = new Set<NumericField>(["hiringNetAddsWeek", "hiringZScore", "appRankVelocity7d", "appRatingDrift7d", "appRatingCountGrowth7d",
   "guideRevenueChangePercent", "guideEpsChangePercent", "kpiSameStoreSalesPercent",
   "changePercent", "revenueGrowthPercent", "earningsGrowthPercent", "shortInterestChangePercent",
+  "dividendGrowth1YPercent", "dividendGrowth3YPercent",
   ...RETURNS, "fromHigh52WPercent", "epsRevision30dPercent", "analystUpsidePercent",
 ]);
 /** Moves whose sign is the news: they take the sign colour. */
@@ -127,6 +135,19 @@ export function formatScreenValue(field: NumericField, value: number | null): st
   return SIGNED.has(field) && value > 0 && fixed !== "0.0" ? `+${fixed}` : fixed;
 }
 
+/**
+ * A row's dividend yield basis, in the words `ticker` and `DVD` use. Gloom
+ * Cloud serves each row's statistics yield as it is stated, forward for most
+ * companies and trailing where only that is stated, and names it in the
+ * metric's reason; a row whose basis is not stated gets none.
+ */
+export function dividendYieldBasis(metric: ScreenMetric): string | null {
+  if (metric.value == null) return null;
+  if (/^forward yield\b/i.test(metric.reason ?? "")) return LATEST_DISTRIBUTION;
+  if (/^trailing yield\b/i.test(metric.reason ?? "")) return TRAILING_DIVIDEND_BASIS;
+  return null;
+}
+
 /** Source observation date, or the collection date when the provider gives none. */
 export function metricDate(metric: ScreenMetric): { text: string; collected: boolean } {
   if (metric.asOf) return { text: metric.asOf.slice(0, 10), collected: false };
@@ -141,8 +162,29 @@ export function resultFields(definition: ScreenDefinition, metric: NumericField)
   return [...new Set(fields)].filter((field) => definition.currency || !MONETARY.has(field) || field === metric);
 }
 
+/**
+ * The close the screen's YTD returns are measured from, `31 Dec`: NYSE's last
+ * session of the year before the newest session a row's YTD ends on, the
+ * snapshot's day without one.
+ */
+export function screenYtdBase(rows: readonly ScreenRow[], assembledAt?: string | null, now = Date.now()): string | null {
+  const day = rows.map((row) => row.metrics.returnYtdPercent?.asOf?.slice(0, 10) ?? "").filter(Boolean).sort().at(-1)
+    ?? assembledAt?.slice(0, 10);
+  return day ? yearToDateBaseLabel(day, "NYSE", now) : null;
+}
+
+/**
+ * A column's header. YTD names the close it is measured from: `YTD% vs 31 Dec
+ * close` in a report, `YTD% vs 31 Dec` in the pane and `YTD% 31 Dec` where
+ * the pane is short of room.
+ */
+export function screenColumnLabel(field: NumericField, ytdBase: string | null, form: "report" | "pane" | "compact" = "pane"): string {
+  if (field !== "returnYtdPercent" || !ytdBase) return SHORT_LABELS[field];
+  return form === "compact" ? `YTD% ${ytdBase}` : `YTD% vs ${ytdBase}${form === "report" ? " close" : ""}`;
+}
+
 /** Prices get room for a separated six-figure quote (757,398.00). */
-export const columnWidth = (field: NumericField) => Math.max(field === "price" ? 10 : 8, SHORT_LABELS[field].length);
+export const columnWidth = (field: NumericField, label = SHORT_LABELS[field]) => Math.max(field === "price" ? 10 : 8, label.length);
 
 export const DEFAULT_SCREEN: ScreenDefinition = {
   version: 1,
@@ -197,6 +239,9 @@ export const screenLabel = (field: string) =>
     dividendYieldPercent: "Dividend yield %",
     xPostsPerDay: "X posts per day",
     xPostsVsMedian: "X posts vs median",
+    payoutRatioPercent: "Annual payout ratio %",
+    dividendGrowth1YPercent: "Dividend growth 1Y %",
+    dividendGrowth3YPercent: "Dividend growth 3Y CAGR %",
     wikiViewsPerDay: "Wikipedia views per day",
     wikiViewsVsMedian: "Wikipedia views vs median",
     attentionResearchUnits: "Research attention hours (Pro)",
@@ -313,6 +358,26 @@ const NUMERIC_OPERATORS: ScreenOperator[] = ["gte", "lte", "gt", "lt", "eq", "be
 const OBSERVED_SUBSET_OPERATORS: ScreenOperator[] = ["gte", "gt", "present", "missing"];
 const CATEGORY_OPERATORS: ScreenOperator[] = ["in", "present", "missing"];
 
+/**
+ * The screen fields a name that is not one most likely means: the same name
+ * in another case or without its unit (`payoutRatio` is payoutRatioPercent),
+ * or the start of one (`dividendGrowth` is the 1Y and 3Y fields).
+ */
+function nearScreenFields(field: string): string[] {
+  const wanted = field.toLowerCase();
+  if (wanted.length < 4) return [];
+  const fields = [...NUMERIC_FIELDS, ...CATEGORY_FIELDS] as readonly string[];
+  const same = fields.filter((known) => [known.toLowerCase(), known.toLowerCase().replace(/percent$/, "")].includes(wanted)
+    || known.toLowerCase() === `${wanted}percent`);
+  return (same.length > 0 ? same : fields.filter((known) => known.toLowerCase().startsWith(wanted))).slice(0, 3);
+}
+
+/** `"x" is not a screen field`, with the field it most likely means. */
+function unknownFieldText(field: unknown): string {
+  const near = typeof field === "string" ? nearScreenFields(field) : [];
+  return `${JSON.stringify(field)} is not a screen field${near.length > 0 ? ` (did you mean ${near.join(" or ")}?)` : ""}`;
+}
+
 /** The operators a definition may use on a field, or null for a field screens do not have. */
 function screenFieldOperators(field: string): ScreenOperator[] | null {
   if (OBSERVED_SUBSET_FIELDS.includes(field)) return [...OBSERVED_SUBSET_OPERATORS];
@@ -368,7 +433,7 @@ function checkCriterion(criterion: unknown, index: number): ScreenCriterion {
   if (!operators)
     throw definitionError(`${part}.field`, item.field === undefined
       ? "is missing."
-      : `${JSON.stringify(item.field)} is not a screen field: use a numeric field such as marketCap, or one of ${CATEGORY_FIELDS.join(", ")}.`);
+      : `${unknownFieldText(item.field)}: use a numeric field such as marketCap, or one of ${CATEGORY_FIELDS.join(", ")}.`);
   const named = `${part} (${item.field}):`;
   if (typeof item.op !== "string" || !operators.includes(item.op as ScreenOperator))
     throw definitionError(named, `${item.op === undefined ? "has no op" : `op ${JSON.stringify(item.op)} is not supported`}: ${item.field} takes ${operators.join(", ")}.`);
@@ -414,7 +479,7 @@ export function parseScreenDefinition(value: unknown): ScreenDefinition {
     problems.push(`sort ${"sort" in item ? "must be" : "is missing:"} {field, direction} with direction asc or desc`);
   else {
     if (typeof sort.field !== "string" || !fields.includes(sort.field))
-      problems.push(`sort.field ${sort.field === undefined ? "is missing" : `${JSON.stringify(sort.field)} is not a screen field`}`);
+      problems.push(`sort.field ${sort.field === undefined ? "is missing" : unknownFieldText(sort.field)}`);
     if (sort.direction !== "asc" && sort.direction !== "desc")
       problems.push("sort.direction must be asc or desc");
   }
@@ -439,6 +504,20 @@ const unavailableMetric = (): ScreenMetric => ({
   state: "unavailable", scope: "reported", reason: "Not provided by this server", sourceUrl: null,
   percentile: { value: null, sampleCount: 0, scope: "covered-universe" },
 });
+/** Company KPIs, guidance, hiring and app attention: the server leaves them out of a screen for a caller without Gloom Pro. */
+const PRO_FIELDS: ReadonlySet<string> = new Set([...KPI_FIELDS, ...HIRING_APP_FIELDS]);
+const withheldMetric = (): ScreenMetric => ({ ...unavailableMetric(), reason: "Needs Gloom Pro", access: "pro" });
+
+/**
+ * What a screen says once of a metric the server held back from Free, a
+ * KPI's in the words `fn KPIS` uses ("The free screener shows no KPI values;
+ * Gloom Pro shows each company's Backlog.").
+ */
+export function withheldMetricNote(field: NumericField): string {
+  return (KPI_FIELDS as readonly string[]).includes(field)
+    ? kpiFreeLimitNote({ metric: screenLabel(field), shown: 0, total: null, guidance: field.startsWith("guide"), where: "The free screener" })
+    : `${screenLabel(field)} needs Gloom Pro.`;
+}
 export function validateScreenPayload(value: unknown): ScreenPayload {
   const data = value as ScreenPayload;
   if (
@@ -480,9 +559,10 @@ export function validateScreenPayload(value: unknown): ScreenPayload {
       throw new Error("Invalid screener listing identity.");
     ids.add(screenRowId(row));
     for (const field of NUMERIC_FIELDS) {
-      // A server from before social, research or volatility fields omits them; they read as unavailable.
-      if (!row.metrics[field] && ([...SOCIAL_FIELDS, ...RESEARCH_FIELDS, ...VOLATILITY_FIELDS, ...ATTENTION_FIELDS, ...HIRING_APP_FIELDS, ...KPI_FIELDS] as readonly string[]).includes(field))
-        row.metrics[field] = unavailableMetric();
+      // A server from before social, research, volatility or dividend fields omits them; they read as unavailable.
+      // A Pro field it left out was held back from this caller.
+      if (!row.metrics[field] && ([...SOCIAL_FIELDS, ...RESEARCH_FIELDS, ...VOLATILITY_FIELDS, ...ATTENTION_FIELDS, ...HIRING_APP_FIELDS, ...KPI_FIELDS, ...DIVIDEND_FIELDS] as readonly string[]).includes(field))
+        row.metrics[field] = PRO_FIELDS.has(field) ? withheldMetric() : unavailableMetric();
       const metric = row.metrics[field];
       if (
         !metric ||

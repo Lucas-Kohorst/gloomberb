@@ -67,6 +67,7 @@ export function canonicalTimeZone(value: string): string | null {
   try {
     return new Intl.DateTimeFormat("en-US", { timeZone: name }).resolvedOptions().timeZone;
   } catch {
+    // Intentional ignore: Unknown timezone names are represented by null.
     return null;
   }
 }
@@ -127,6 +128,16 @@ export function formatUtcDayTime(value: ReportTime, now = Date.now()): string {
   const year = date.getUTCFullYear() === new Date(now).getUTCFullYear() ? "" : ` ${date.getUTCFullYear()}`;
   const day = `${WEEKDAYS[date.getUTCDay()]} ${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}${year}`;
   return value.dateOnly ? day : `${day} ${date.toISOString().slice(11, 16)}`;
+}
+
+/**
+ * `Sat 11:30` in UTC, for a cell inside a window shorter than a week (a
+ * 24-hour low) whose header names the zone: the weekday tells the day.
+ */
+export function formatUtcWeekdayTime(time: number): string {
+  if (!Number.isFinite(time)) return "";
+  const date = new Date(time);
+  return `${WEEKDAYS[date.getUTCDay()]} ${date.toISOString().slice(11, 16)}`;
 }
 
 /** The newest of some report times, as given, so a loader can declare its as-of from the rows it means. */

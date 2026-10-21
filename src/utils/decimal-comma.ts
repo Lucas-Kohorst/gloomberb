@@ -1,3 +1,5 @@
+import { currencyMinorDigits } from "../market-data/market/format";
+
 const DECIMAL_COMMA = /^([+-]?\d+),(\d+)$/;
 /** `1,234` and `95,000` are far likelier a thousands comma than a decimal one. */
 const THOUSANDS_COMMA = /^[+-]?\d{1,3},\d{3}$/;
@@ -88,9 +90,87 @@ export function parsePastedNumber(value: unknown): PastedNumber {
   return Number.isFinite(number) ? { kind: "number", value: sign * number } : INVALID;
 }
 
-/** What to tell someone whose number could be read two ways: both readings, and what to type for each. */
-export function ambiguousNumberMessage(text: string, reading: { thousands: number; decimal: number }): string {
-  return `${text.trim()} could be ${reading.thousands} (thousands) or ${reading.decimal} (decimal comma); type ${reading.thousands} or ${reading.decimal}`;
+/**
+ * What to tell someone whose number could be read two ways: both readings, and
+ * what to type for each. `because` says why nothing around it tells them apart
+ * ("KWD has 3 decimals"); `decimalAs` is how to type the decimal reading
+ * where its plain dotted form would read two ways as well.
+ */
+export function ambiguousNumberMessage(
+  text: string,
+  reading: { thousands: number; decimal: number },
+  options: { because?: string; decimalAs?: string } = {},
+): string {
+  const mark = text.includes(",") ? "decimal comma" : "decimal point";
+  const because = options.because ? `, and ${options.because}` : "";
+  return `${text.trim()} could be ${reading.thousands} (thousands) or ${reading.decimal} (${mark})${because}; type ${reading.thousands} or ${options.decimalAs ?? reading.decimal}`;
+}
+
+/** `_` between digits groups them too: 500_000. */
+function withoutUnderscores(value: unknown): unknown {
+  return typeof value === "string" ? value.trim().replace(/(?<=\d)_(?=\d)/g, "") : value;
+}
+
+/**
+ * Reads a price per share or a count of shares as an alert reads a price with
+ * nothing to compare it with: `parsePastedNumber`, so a lone dot is a decimal
+ * point (a cost of `123.456`, `1.234` shares), `18,50`, `1.234,5` and
+ * `1,234.5` read as written, and a lone comma before three digits (`1,234`) is
+ * `ambiguous`. `_` between digits groups (1_000).
+ */
+export function parseTypedNumber(value: unknown): PastedNumber {
+  return parsePastedNumber(withoutUnderscores(value));
+}
+
+/**
+ * Reads an amount of a currency (cash, a sum to convert, a notional) by its
+ * units. A comma or a dot before exactly three digits (`1,234`, `1.234`,
+ * `500,000`) groups thousands when the currency has two minor digits or fewer
+ * (USD, EUR, JPY): a third decimal would be below its smallest unit. In a
+ * currency with three (KWD, BHD, OMR, JOD, TND) both readings are amounts, so
+ * it is `ambiguous`. Anything else reads as `parseTypedNumber` reads it.
+ */
+export function parseCurrencyAmount(value: unknown, currency: string): PastedNumber {
+  const text = withoutUnderscores(value);
+  const read = parsePastedNumber(text);
+  const reading = read.kind === "ambiguous" ? read : read.kind === "number" ? thousandsDotReadings(text) : null;
+  if (!reading) return read;
+  return currencyMinorDigits(currency) <= 2
+    ? { kind: "number", value: reading.thousands }
+    : { kind: "ambiguous", thousands: reading.thousands, decimal: reading.decimal };
+}
+
+/** How an amount may be written, for the error a malformed one gets. */
+export const TYPED_AMOUNT_FORMAT = "1234.5, 1,234.5 or 1.234,5";
+
+/**
+ * A labelled price or share count as `parseTypedNumber` reads it: the number,
+ * or NaN when it is none. `1,234` throws naming both readings ("Shares 1,234
+ * could be 1234 (thousands) or 1.234 (decimal comma); type 1234 or 1.234."),
+ * so neither is stored by guess.
+ */
+export function readTypedNumber(value: unknown, label: string): number {
+  const read = parseTypedNumber(value);
+  if (read.kind === "ambiguous") throw new Error(`${label} ${ambiguousNumberMessage(String(value), read)}.`);
+  return read.kind === "number" ? read.value : Number.NaN;
+}
+
+/**
+ * A labelled amount of `currency` as `parseCurrencyAmount` reads it: the
+ * number, or NaN when it is none. In a three-decimal currency `1,234` throws
+ * naming both readings, the decimal one typed as 1.2340, since 1.234 reads two
+ * ways there too.
+ */
+export function readCurrencyAmount(value: unknown, label: string, currency: string): number {
+  const code = currency.trim().toUpperCase();
+  const read = parseCurrencyAmount(value, code);
+  if (read.kind === "ambiguous") {
+    const decimal = String(read.decimal);
+    const decimalAs = thousandsDotReadings(decimal) ? `${decimal}0` : decimal;
+    const because = `${code} has ${currencyMinorDigits(code)} decimals`;
+    throw new Error(`${label} ${ambiguousNumberMessage(String(value), read, { because, decimalAs })}.`);
+  }
+  return read.kind === "number" ? read.value : Number.NaN;
 }
 
 /** What a dot and exactly three digits after one to three (`81.000`, `81.250`) could mean. */

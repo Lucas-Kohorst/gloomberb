@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import { apiClient } from "../api-client";
 import type { AttentionAction, AttentionCountsPayload } from "../api-client/telemetry";
 import { CHART_COMPOSER_PANE_ID, TICKER_RESEARCH_PANE_ID, type TelemetryConfig } from "../types/config";
@@ -52,6 +53,7 @@ export class AttentionCounter {
       }
       return session !== null;
     } catch {
+      // Intentional ignore: Unreadable consent or session state disables attention collection.
       this.clear();
       this.session = null;
       return false;
@@ -93,7 +95,9 @@ export class AttentionCounter {
         this.collectedAt ??= now;
         this.pending.set(`${symbol}\0${action}`, { symbol, action });
         this.schedule();
-      } catch { /* A count must never interrupt a user action. */ }
+      } catch (error) {
+        logFailure("telemetry-attention-counts", "Could not record attention event")(error);
+      }
     };
   }
 
@@ -121,7 +125,9 @@ export class AttentionCounter {
       if (this.refresh() && !controller.signal.aborted) {
         await this.host.send({ consent: true, events }, controller.signal);
       }
-    } catch { /* Failed batches are dropped, never retried. */ }
+    } catch (error) {
+      logFailure("telemetry-attention-counts", "Could not send attention counts")(error);
+    }
     finally {
       if (this.inFlight === controller) this.inFlight = null;
       this.schedule();

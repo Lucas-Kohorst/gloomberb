@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "fs";
 import { join, resolve } from "path";
 
@@ -67,6 +68,8 @@ export interface PluginManifest {
   id: string | null;
   /** The oldest Gloomberb the checkout says it runs on. */
   minGloomberb: string | null;
+  /** gloom.json `icon`: the plugin's logo, a path inside the checkout such as `icon.webp`. */
+  icon: string | null;
 }
 
 function readJson(path: string): Record<string, unknown> | null {
@@ -74,7 +77,8 @@ function readJson(path: string): Record<string, unknown> | null {
   try {
     const value = JSON.parse(readFileSync(path, "utf-8"));
     return value && typeof value === "object" ? value as Record<string, unknown> : null;
-  } catch {
+  } catch (error) {
+    logFailure("plugin-compat", "Plugin manifest read failed")(error);
     return null;
   }
 }
@@ -104,6 +108,7 @@ export function readPluginManifest(pluginDir: string): PluginManifest {
     minGloomberb: versionField(gloom?.minGloom)
       ?? versionField(gloom?.minGloomberb)
       ?? peerRangeMinimum(peers?.gloomberb),
+    icon: typeof gloom?.icon === "string" && gloom.icon.trim() ? gloom.icon.trim() : null,
   };
 }
 

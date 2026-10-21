@@ -24,6 +24,7 @@ import {
   sortCallsNewest,
   type TranscriptSection,
 } from "./model";
+import { REPORT_FILTER, REPORT_PAGE, REPORT_ROWS } from "../shared/headless-options";
 
 const CALL_COLUMNS = [
   { key: "ticker", header: "Ticker" },
@@ -69,8 +70,8 @@ const defaultDependencies: EarningsCallsHeadlessDependencies = {
 };
 
 /** A refused read says what the lock note says (CALLS is Pro whole), so a free account meets the same words as a signed-out one. */
-function explainDenied(ticker: string | null) {
-  return (error: unknown): never => { throw explainRefusal(error, callsLockNote, { symbol: ticker }); };
+function explainDenied(ticker: string | null, context: HeadlessPaneContext) {
+  return async (error: unknown): Promise<never> => { throw await explainRefusal(error, callsLockNote, { symbol: ticker, context }); };
 }
 
 function callRow(call: CloudEarningsCallPayload) {
@@ -204,6 +205,7 @@ export function createEarningsCallsHeadless(
     options: [
       {
         key: "availability",
+        shot: REPORT_FILTER,
         description: "Transcript availability to include when listing calls.",
         type: "enum",
         values: [
@@ -221,6 +223,7 @@ export function createEarningsCallsHeadless(
       },
       {
         key: "section",
+        shot: { reportOnly: "picks a transcript section for the text report" },
         description: "Transcript section to return; implies --quarter latest.",
         type: "enum",
         values: [
@@ -238,18 +241,21 @@ export function createEarningsCallsHeadless(
       },
       {
         key: "speaker",
+        shot: { reportOnly: "picks a speaker's turns for the text report" },
         description: "Speaker name, role, or role acronym such as CFO, when reading a transcript.",
         type: "string",
         defaultValue: "",
       },
       {
         key: "search",
+        shot: { reportOnly: "finds text in the transcript for the text report" },
         description: "Text to find in transcript turns, when reading a transcript.",
         type: "string",
         defaultValue: "",
       },
       {
         key: "offset",
+        shot: REPORT_PAGE,
         description: "Transcript segment offset for paging.",
         type: "integer",
         defaultValue: 0,
@@ -258,6 +264,7 @@ export function createEarningsCallsHeadless(
       },
       {
         key: "limit",
+        shot: REPORT_ROWS,
         description: "Maximum calls, or transcript segments, to return (50 calls, 20 segments by default).",
         type: "integer",
         minimum: 1,
@@ -278,7 +285,7 @@ export function createEarningsCallsHeadless(
     },
     async load(args, context) {
       const ticker = typeof args.argument === "string" ? args.argument : null;
-      const calls = await dependencies.loadCalls(ticker, 200, context).catch(explainDenied(ticker));
+      const calls = await dependencies.loadCalls(ticker, 200, context).catch(explainDenied(ticker, context));
       if (!ticker || !readsTranscript(args)) {
         return projectEarningsCallsHeadless(calls, { ...args, options: { ...args.options, limit: args.options.limit ?? 50 } });
       }
@@ -292,7 +299,7 @@ export function createEarningsCallsHeadless(
         }
         throw new Error(`No ${quarter} earnings call found for ${ticker}.`);
       }
-      const transcript = await dependencies.loadTranscript(selected.id, context).catch(explainDenied(ticker));
+      const transcript = await dependencies.loadTranscript(selected.id, context).catch(explainDenied(ticker, context));
       if (isPendingTranscript(transcript)) {
         throw new Error(`Transcript for ${ticker} ${quarter} is still being produced.`);
       }

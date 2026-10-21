@@ -14,20 +14,17 @@ import type { TextFieldProps } from "../../../components/ui/fields";
 import type { DialogFrameProps } from "../../../components/ui/frame";
 import type { MessageComposerProps } from "../../../components/ui/message-composer";
 import type { PageStackViewProps } from "../../../components/ui/page-stack-view";
-import { StackHeaderContext, type StackHeaderSlot } from "./stack-header";
+import { STACK_DETAIL_ROLE, StackHeaderContext, type StackHeaderSlot } from "./stack-header";
 import { releasePointerFocus } from "../host/focus-scope";
 import { selectionStyle } from "../host/style";
 import { WebIcon, WebIconButton } from "./icons";
-import { WebKeyHints, WebKeycap, ariaKeyShortcut, dialogSurface } from "./dialog-actions";
+import { WebKeyHints, WebKeycap, ariaKeyShortcut } from "./dialog-actions";
 import { NestedPaneTabs } from "../../../components/layout/pane/header-tabs";
 import type { SegmentedControlProps } from "../../../components/ui/toggle";
 import {
   CONTROL_RADIUS,
   buttonPalette,
-  buttonRelief,
   controlBorderColor,
-  controlShadow,
-  panelBorder,
   panelFill,
 } from "./control-styles";
 
@@ -40,6 +37,7 @@ export function WebButton({
   expanded,
   onPress,
   variant = "secondary",
+  tone,
   disabled = false,
   pending = false,
   active = false,
@@ -52,8 +50,8 @@ export function WebButton({
   title,
 }: ButtonProps) {
   const colors = useThemeColors();
-  const palette = buttonPalette({ variant, active, disabled }, colors);
-  const relief = buttonRelief({ variant, active, disabled }, colors);
+  const palette = buttonPalette({ variant, active, disabled, tone }, colors);
+  const filled = active || variant === "primary" || variant === "danger";
 
   return (
     <button
@@ -84,7 +82,6 @@ export function WebButton({
       data-gloom-role="desktop-button"
       data-gloom-variant={variant}
       data-gloom-interactive={disabled ? undefined : "true"}
-      data-gloom-raised={relief.backgroundImage ? "true" : undefined}
       style={{
         display: "inline-flex",
         flexShrink: 0,
@@ -94,18 +91,14 @@ export function WebButton({
         height: typeof height === "string" ? height : (height ?? 1) * WEB_CELL_HEIGHT,
         minWidth: 0,
         boxSizing: "border-box",
-        backgroundColor: palette.bg,
-        backgroundImage: relief.backgroundImage,
-        backgroundOrigin: "border-box",
+        // A clear button leaves its fill to styles.css, so the pointer can give it the hover fill.
+        backgroundColor: palette.bg === "transparent" ? undefined : palette.bg,
         color: palette.fg,
         font: "inherit",
-        fontWeight: active || variant === "primary" ? 700 : 600,
-        border: flush ? "none" : `1px solid ${relief.borderColor ?? palette.border}`,
-        borderRadius: CONTROL_RADIUS,
-        padding: flush ? 0 : compact ? "0 2px" : "0 8px",
-        boxShadow: relief.boxShadow,
-        "--gloom-pressed-image": relief.pressedImage,
-        "--gloom-pressed-shadow": relief.pressedShadow,
+        fontWeight: filled ? "var(--gloom-weight-bold)" : "var(--gloom-weight-regular)",
+        border: flush ? "none" : `1px solid ${palette.border}`,
+        borderRadius: "var(--gloom-radius-md)",
+        padding: flush ? 0 : compact ? "0 var(--gloom-space-xs)" : "0 var(--gloom-space-sm)",
         cursor: disabled ? "default" : "pointer",
       } as CSSProperties}
     >
@@ -113,9 +106,7 @@ export function WebButton({
       {shortcut && (
         <WebKeycap
           keyName={shortcut}
-          fg={palette.fg}
-          surface={palette.bg === "transparent" ? dialogSurface(colors) : palette.bg}
-          style={{ marginLeft: 7, marginRight: flush || compact ? 0 : -3 }}
+          style={{ marginLeft: "var(--gloom-space-sm)", marginRight: flush || compact ? 0 : "calc(-1 * var(--gloom-space-xs))" }}
         />
       )}
     </button>
@@ -159,16 +150,13 @@ function checkboxBoxStyle(
     width: size,
     height: size,
     margin: 0,
-    backgroundColor: checked ? accentColor : panelFill(colors),
+    backgroundColor: checked ? accentColor : "var(--gloom-surface-sunken)",
     backgroundImage: checked ? checkboxCheckImage() : undefined,
     backgroundPosition: "center",
     backgroundRepeat: "no-repeat",
     backgroundSize: `${size - 2}px ${size - 2}px`,
     border: `1px solid ${checked ? accentColor : controlBorderColor(active, false, colors)}`,
-    borderRadius: size >= 14 ? 4 : 3,
-    boxShadow: active
-      ? `0 0 0 2px ${blendHex(colors.bg, colors.borderFocused, 0.28)}, inset 0 1px 0 rgba(255,255,255,0.16)`
-      : "inset 0 1px 0 rgba(255,255,255,0.10)",
+    borderRadius: "var(--gloom-radius-sm)",
     boxSizing: "border-box",
     flexShrink: 0,
     verticalAlign: "middle",
@@ -216,12 +204,12 @@ export function WebCheckbox({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: "var(--gloom-space-sm)",
           width: "100%",
           minWidth: 0,
           cursor: disabled ? "default" : "pointer",
           color: textColor,
-          fontWeight: active ? 700 : 500,
+          fontWeight: active ? "var(--gloom-weight-bold)" : "var(--gloom-weight-regular)",
           lineHeight: "20px",
           ...selectionStyle(false),
           position: "relative",
@@ -274,9 +262,12 @@ const COMFORTABLE_FIELD_HEIGHT = 26;
 
 export function WebTextField({
   label,
+  accessibleLabel,
   value,
   placeholder,
+  maxLength,
   focused,
+  disabled = false,
   width,
   inputRef,
   onChange,
@@ -294,7 +285,7 @@ export function WebTextField({
   onKeyDown,
 }: TextFieldProps) {
   const colors = useThemeColors();
-  const resolvedBackgroundColor = backgroundColor ?? colors.bg;
+  const resolvedBackgroundColor = backgroundColor ?? "var(--gloom-surface-sunken)";
   const resolvedTextColor = textColor ?? colors.text;
   const resolvedPlaceholderColor = placeholderColor ?? colors.textDim;
   const localInputRef = useRef<InputRenderable>(null);
@@ -302,6 +293,7 @@ export function WebTextField({
   const renderer = useRendererHost();
   const { nativeContextMenu } = useUiCapabilities();
   const plain = variant === "plain";
+  const well = variant === "well";
   const comfortable = size === "comfortable";
 
   return (
@@ -310,7 +302,7 @@ export function WebTextField({
         <Box height={comfortable ? undefined : 1} style={comfortable ? { height: 16 } : undefined}>
           <Text
             fg={focused ? colors.textBright : resolvedPlaceholderColor}
-            style={{ fontWeight: 600, ...(comfortable ? { fontSize: 11.5, lineHeight: "16px", letterSpacing: 0.2 } : {}) }}
+            style={{ fontWeight: "var(--gloom-weight-bold)", ...(comfortable ? { lineHeight: "16px" } : {}) }}
           >
             {label}
           </Text>
@@ -323,6 +315,7 @@ export function WebTextField({
         alignItems="center"
         backgroundColor={plain ? "transparent" : resolvedBackgroundColor}
         onMouseDown={() => {
+          if (disabled) return;
           onMouseDown?.();
           resolvedInputRef.current?.focus?.();
         }}
@@ -336,19 +329,23 @@ export function WebTextField({
         data-gloom-role="desktop-text-field"
         style={{
           height: comfortable ? COMFORTABLE_FIELD_HEIGHT : undefined,
-          border: plain ? "none" : `1px solid ${controlBorderColor(focused, false, colors)}`,
-          borderRadius: plain ? 0 : CONTROL_RADIUS,
-          boxShadow: plain ? undefined : controlShadow(focused, colors),
+          border: plain || well ? "none" : `1px solid ${controlBorderColor(focused, false, colors)}`,
+          borderRadius: plain ? 0 : well ? "var(--gloom-radius-sm)" : CONTROL_RADIUS,
+          // A well has no border: focus is the accent along its foot.
+          boxShadow: well && focused ? "inset 0 -2px var(--gloom-accent)" : undefined,
           overflow: "hidden",
         }}
       >
         <Input
+          aria-label={accessibleLabel ?? label}
+          disabled={disabled}
           ref={resolvedInputRef as RefObject<InputRenderable | null>}
           width="100%"
           value={value}
           type={type}
           autoComplete={autoComplete}
           placeholder={placeholder}
+          {...(maxLength === undefined ? {} : { maxLength })}
           focused={focused}
           textColor={resolvedTextColor}
           focusedTextColor={resolvedTextColor}
@@ -379,7 +376,7 @@ export function WebTextField({
       </Box>
       {hint && (
         <Box height={1}>
-          <Text fg={colors.textMuted} style={{ fontSize: "0.94em" }}>
+          <Text fg={colors.textMuted}>
             {hint}
           </Text>
         </Box>
@@ -471,48 +468,57 @@ export function WebMessageComposer({
 }
 
 export function WebSegmentedControl({
+  accessibleLabel,
   options,
   value,
   onChange,
   focused,
   width,
   wrap = false,
+  size = "default",
 }: SegmentedControlProps) {
   const colors = useThemeColors();
   const enabled = options.filter((option) => !option.disabled);
+  const large = size === "large";
   const selectAdjacent = (direction: -1 | 1) => {
     const index = enabled.findIndex((option) => option.value === value);
     const next = enabled[index < 0 ? 0 : (index + direction + enabled.length) % enabled.length];
     if (next) onChange?.(next.value);
   };
 
-  // Callers place the control on a single grid row, so its border and padding
-  // have to live inside one cell: sized any taller it bled over the pane title
-  // and the table header below it.
+  // A segmented choice is a tab strip (the tab rule in styles.css): text, the
+  // chosen one bright and bold on the accent underline. One row tall, so it
+  // never bleeds over the pane title or the table header around it. A large
+  // one, such as an order's side, is two rows of blocks that share the width,
+  // the chosen one filled in its tone.
   return (
     <Box
       flexDirection="row"
       flexWrap={wrap ? "wrap" : "nowrap"}
       width={width}
-      height={wrap ? undefined : 1}
-      alignItems="center"
-      backgroundColor={panelFill(colors)}
+      height={wrap ? undefined : large ? 2 : 1}
+      alignItems="stretch"
       role="radiogroup"
-      style={{
-        border: `1px solid ${focused ? colors.borderFocused : panelBorder(colors)}`,
-        borderRadius: CONTROL_RADIUS,
-        padding: 1,
-      }}
+      aria-label={accessibleLabel}
+      data-gloom-role="segmented-control"
+      data-size={large ? "large" : undefined}
+      data-focused={focused ? "true" : undefined}
+      style={large ? {
+        borderRadius: "var(--gloom-radius-md)",
+        overflow: "hidden",
+        boxShadow: focused ? "0 0 0 2px var(--gloom-accent)" : undefined,
+      } : undefined}
     >
       {options.map((option) => {
         const active = option.value === value;
+        const tone = option.tone ? colors[option.tone] : undefined;
         return (
           <Box
             key={option.value}
             flexDirection="row"
             alignItems="center"
             justifyContent="center"
-            backgroundColor={active ? colors.selected : "transparent"}
+            flexGrow={large ? 1 : undefined}
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}
@@ -520,6 +526,8 @@ export function WebSegmentedControl({
             // after the keyboard has moved on to another pane.
             onClick={(event: { currentTarget: unknown; detail: number }) => releasePointerFocus(event.currentTarget, event.detail)}
             data-gloom-interactive={option.disabled ? undefined : "true"}
+            data-gloom-role={large ? "segment-block" : "tab-button"}
+            data-active={active ? "true" : undefined}
             role="radio"
             aria-checked={active}
             aria-disabled={option.disabled || undefined}
@@ -536,20 +544,22 @@ export function WebSegmentedControl({
                 onChange?.(option.value);
               }
             }}
-            style={{
-              alignSelf: wrap ? undefined : "stretch",
-              borderRadius: CONTROL_RADIUS - 2,
-              paddingInline: 8,
+            style={large ? {
+              height: "100%",
               cursor: option.disabled ? "default" : "pointer",
+              outline: "none",
+              fontSize: "var(--gloom-type-heading)",
+              fontWeight: "var(--gloom-weight-bold)",
+              background: option.disabled ? "var(--gloom-panel)" : active ? tone ?? colors.selected : "var(--gloom-panel)",
+              color: option.disabled ? colors.textMuted : active ? tone ? colors.bg : colors.selectedText : tone ?? colors.textDim,
+            } : {
+              height: wrap ? undefined : "100%",
+              cursor: option.disabled ? "default" : "pointer",
+              ...(tone ? { "--tab-fg": tone, "--tab-active-fg": tone } as CSSProperties : {}),
+              ...(option.disabled ? { color: colors.textMuted } : {}),
             }}
           >
-            <Text
-              fg={option.disabled ? colors.textMuted : active ? colors.selectedText : colors.textDim}
-              attributes={active ? TextAttributes.BOLD : 0}
-              style={{ lineHeight: "normal" }}
-            >
-              {option.label}
-            </Text>
+            {option.label}
           </Box>
         );
       })}
@@ -569,15 +579,15 @@ export function WebDialogFrame({
 }: DialogFrameProps) {
   const colors = useThemeColors();
   return (
-    <Box flexDirection="column" minHeight={shrinkable ? 0 : undefined} style={{ padding: 14 }}>
+    <Box flexDirection="column" minHeight={shrinkable ? 0 : undefined} style={{ padding: "var(--gloom-space-lg)" }}>
       <Box
         flexDirection="row"
         alignItems="flex-start"
         style={{
-          borderBottom: showTitleDivider ? `1px solid ${panelBorder(colors)}` : "none",
-          paddingBottom: showTitleDivider ? 8 : 0,
-          marginBottom: showTitleDivider ? 10 : 14,
-          gap: 16,
+          borderBottom: showTitleDivider ? "1px solid var(--gloom-hairline)" : "none",
+          paddingBottom: showTitleDivider ? "var(--gloom-space-sm)" : 0,
+          marginBottom: showTitleDivider ? "var(--gloom-space-md)" : "var(--gloom-space-lg)",
+          gap: "var(--gloom-space-lg)",
         }}
       >
         <Box flexDirection="column" flexGrow={1} minWidth={0}>
@@ -585,7 +595,7 @@ export function WebDialogFrame({
             {title}
           </Text>
           {subtitle ? (
-            <Text fg={colors.textMuted} wrapText style={{ marginTop: 3 }}>
+            <Text fg={colors.textMuted} wrapText style={{ marginTop: "var(--gloom-space-xs)" }}>
               {subtitle}
             </Text>
           ) : null}
@@ -599,11 +609,11 @@ export function WebDialogFrame({
           left is a few quiet keycaps or a note at the end of the content. */}
       {desktopFooter !== undefined ? (
         desktopFooter ? (
-          <WebKeyHints keys={desktopFooter.keys} note={desktopFooter.note} style={{ flexShrink: 0, marginTop: 10, justifyContent: "flex-end" }} />
+          <WebKeyHints keys={desktopFooter.keys} note={desktopFooter.note} style={{ flexShrink: 0, marginTop: "var(--gloom-space-md)", justifyContent: "flex-end" }} />
         ) : null
       ) : footer ? (
-        <Box flexShrink={0} style={{ marginTop: 10 }}>
-          <Text fg={colors.textMuted} wrapText style={{ fontSize: 11, lineHeight: "16px" }}>
+        <Box flexShrink={0} style={{ marginTop: "var(--gloom-space-md)" }}>
+          <Text fg={colors.textMuted} wrapText>
             {footer}
           </Text>
         </Box>
@@ -684,7 +694,7 @@ export function WebPageStackView({
       <div
         ref={containerRef}
         className="gloom-stack-detail"
-        data-gloom-role="page-stack-detail"
+        data-gloom-role={STACK_DETAIL_ROLE}
         style={{ display: "flex", flexDirection: "column", flex: "1 1 0", minWidth: 0, minHeight: 0, overflow: "hidden" }}
       >
         <StackHeaderContext.Provider value={slot}>

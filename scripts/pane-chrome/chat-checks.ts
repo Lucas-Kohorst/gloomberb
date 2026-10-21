@@ -26,7 +26,7 @@ const CHAT_HELPERS = `
 window.__chat = {
   scroller() {
     const row = document.querySelector('[data-gloom-role=chat-message]');
-    return row ? row.parentElement : null;
+    return row?.closest('[data-gloom-role=chat-transcript]') ?? null;
   },
   rows() { return [...(this.scroller()?.querySelectorAll('[data-gloom-role=chat-message]') ?? [])]; },
   state() {
@@ -161,7 +161,45 @@ window.__chat = {
     const rows = this.rows();
     const inView = rows.filter((r) => { const b = r.getBoundingClientRect(); return b.bottom > view.top && b.top < view.bottom; });
     const gap = (el) => pane.right - el.getBoundingClientRect().right;
+    // Measure text fragments, not just their containers. Ellipsized quotes may
+    // extend in layout, but no part that survives ancestor clipping may escape.
+    const glyphOverflow = [];
+    for (const row of inView) {
+      for (const root of row.querySelectorAll('[data-gloom-role=chat-message-body], [style*="text-overflow: ellipsis"]')) {
+        const track = root.getBoundingClientRect();
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent.trim()) continue;
+          let clipLeft = -Infinity, clipRight = Infinity;
+          for (let el = node.parentElement; el; el = el.parentElement) {
+            if (getComputedStyle(el).overflowX !== 'visible') {
+              const clip = el.getBoundingClientRect();
+              clipLeft = Math.max(clipLeft, clip.left);
+              clipRight = Math.min(clipRight, clip.right);
+            }
+          }
+          const outside = (rect) => {
+            if (rect.bottom <= view.top || rect.top >= view.bottom) return 0;
+            const left = Math.max(rect.left, clipLeft), right = Math.min(rect.right, clipRight);
+            return right > left ? Math.max(track.left - left, right - Math.min(track.right, pane.right)) : 0;
+          };
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (![...range.getClientRects()].some((rect) => outside(rect) > 0.5)) continue;
+          // A wrapped line's trailing space has a range but paints no glyph.
+          for (let i = 0; i < node.textContent.length; i++) {
+            if (!node.textContent[i].trim()) continue;
+            range.setStart(node, i);
+            range.setEnd(node, i + 1);
+            const px = outside(range.getBoundingClientRect());
+            if (px > 0.5) glyphOverflow.push({ id: row.getAttribute('data-gloom-chat-message-id'), text: node.textContent.slice(0, 40), px });
+          }
+        }
+      }
+    }
     return {
+      glyphOverflow,
       rows: inView.map(gap),
       bodies: inView.flatMap((r) => [...r.querySelectorAll('[data-gloom-role=chat-message-body]')].map(gap)),
       quotes: inView.flatMap((r) => [...r.querySelectorAll('[data-gloom-role=chat-message-row] [style*="text-overflow: ellipsis"]')].map(gap)),
@@ -270,7 +308,7 @@ async function backspace(cdp: Cdp, times: number): Promise<void> {
   await frames(cdp, 3);
 }
 
-interface Edges { rows: number[]; bodies: number[]; quotes: number[]; widths: number[]; fromBottom: number }
+interface Edges { rows: number[]; bodies: number[]; quotes: number[]; widths: number[]; fromBottom: number; glyphOverflow: Array<{ id: string; text: string; px: number }> }
 
 /** Each kind's single distance from the pane's right edge, or a failure when its rows do not share one. */
 function restGaps(edges: Edges, what: string): Record<"rows" | "bodies" | "quotes", number> {
@@ -319,6 +357,9 @@ async function resizeChat(cdp: Cdp, from: Point, path: (t: number) => Point, mov
 /** Every row in view, its text and its quote end where they did at rest, on every frame of the drag and after the release. */
 function expectFollowed(rest: Edges, result: { during: Edges[]; held: Edges; released: Edges }, what: string): void {
   const expected = restGaps(rest, `${what} at rest`);
+  [rest, ...result.during, result.held, result.released].forEach((edges, frame) => {
+    if (edges.glyphOverflow.length) fail(`${what}: text escaped its track on frame ${frame}`, edges.glyphOverflow.slice(0, 4));
+  });
   let worst = { px: 0, kind: "", frame: -1 };
   result.during.forEach((edges, frame) => {
     for (const kind of ["rows", "bodies", "quotes"] as const) {
@@ -408,7 +449,259 @@ async function oneChip(cdp: Cdp, id: string): Promise<Chip> {
   return found[0]!;
 }
 
+const pointFor = (cdp: Cdp, selector: string) => evaluate<Point>(cdp, `(() => {
+  const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw Error('Missing pointer target');
+  const r = el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2};
+})()`);
+
 export const chatSteps: ChatStep[] = [
+  ...(["keyboard", "click"] as const).map((input): ChatStep => ({
+    name: `chat window review: ${input} reply at the bottom stays pinned as the composer grows`,
+    scenario: "chat&count=500&loaded=500",
+    async run(cdp) {
+      await ready(cdp);
+      // Observe every DOM change too: a transient jump control is a failure.
+      await evaluate(cdp, `(() => {
+        window.__jumpFlashed = false;
+        new MutationObserver(() => { if (__chat.jump()) window.__jumpFlashed = true; })
+          .observe(document.body, { childList: true, subtree: true });
+      })()`);
+      if (input === "keyboard") {
+        await click(cdp, await evaluate<Point>(cdp, "__chat.composer()"));
+        await pressKey(cdp, "ArrowUp", "ArrowUp");
+        expectMarked(await selected(cdp), ["m499"], "latest selected by keyboard");
+        await pressKey(cdp, "Enter", "Enter");
+      } else {
+        await hoverRow(cdp, "m499");
+        await click(cdp, await pointFor(cdp, '[data-gloom-chat-message-id="m499"] [data-gloom-role=chat-message-reply-action] button'));
+      }
+      if (!await evaluate(cdp, "document.body.textContent.includes('replying to')")) fail("no reply banner");
+      await cdp.send("Input.insertText", { text: "one\ntwo\nthree\nfour\nfive" });
+      await frames(cdp, 8);
+      const after = await state(cdp);
+      const visible = await evaluate(cdp, "(()=>{const r=__chat.rowRect('m499'),s=__chat.scroller().getBoundingClientRect();return r&&r.y>=s.top&&r.y+r.height<=s.bottom+1})()");
+      if (after.fromBottom > 1 || !visible || await evaluate(cdp, "window.__jumpFlashed")) {
+        fail("reply or composer growth lost the pinned latest message", { after, visible, flashed: await evaluate(cdp, "window.__jumpFlashed") });
+      }
+    },
+  })),
+  {
+    name: "chat window review: copy with an unmounted selection edge uses the browser selection",
+    scenario: "chat&count=500&loaded=500",
+    async run(cdp) {
+      await ready(cdp);
+      await wheel(cdp, await listCentre(cdp), -10000);
+      await frames(cdp, 8);
+      const startId = await visibleRow(cdp, 0);
+      const at = await evaluate<Point>(cdp, `(() => {const r=document.querySelector('[data-gloom-chat-message-id="${startId}"] [data-gloom-role=chat-message-body]').getBoundingClientRect();return {x:r.left+0.25,y:r.top+4};})()`);
+      // Drag from one message, wheel it out while holding the pointer, then
+      // extend into another window. No Range is synthesized.
+      await mouse(cdp, "mouseMoved", at.x, at.y, false);
+      await mouse(cdp, "mousePressed", at.x, at.y, true);
+      await mouse(cdp, "mouseMoved", at.x + 50, at.y, true);
+      if (!await evaluate(cdp, "!!getSelection()?.toString().trim()")) fail("pointer did not select text");
+      await turnWheel(cdp, at, 3000);
+      await frames(cdp, 8);
+      if (await evaluate(cdp, `!!__chat.rowRect('${startId}')`)) fail("selection anchor row did not unmount");
+      const endId = await visibleRow(cdp, 100);
+      const to = await evaluate<Point>(cdp, `(() => { const body=document.querySelector('[data-gloom-chat-message-id="${endId}"] [data-gloom-role=chat-message-body]'); const w=document.createTreeWalker(body,4);let last,n;while(n=w.nextNode())if(n.textContent.trim())last=n;const range=document.createRange();range.setStart(last,last.textContent.trimEnd().length-1);range.setEnd(last,last.textContent.trimEnd().length);const r=range.getBoundingClientRect();return {x:r.right-0.25,y:r.top+r.height/2}; })()`);
+      await mouse(cdp, "mouseMoved", to.x, to.y, true);
+      await mouse(cdp, "mouseReleased", to.x, to.y, false);
+      await evaluate(cdp, `document.addEventListener('copy', e => {
+        window.__copyResult = { prevented: e.defaultPrevented, text: e.clipboardData.getData('text/plain'), browser: getSelection().toString() };
+      }, {once:true})`);
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "c", code: "KeyC", modifiers: 2, windowsVirtualKeyCode: 67 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
+      const result = await evaluate<{ prevented: boolean; text: string; browser: string }>(cdp, "window.__copyResult");
+      if (!result?.browser.trim()) fail("no extended browser selection to copy", result);
+      if (result.prevented) fail("copy replaced a range with an unmounted edge", result);
+      if (await evaluate<number>(cdp, "__chat.rows().length") > 80) fail("selection retained the history");
+      // Starting a fresh selection restores whole-message copy, including marks
+      // that are not visible in the rendered text, rather than disabling it.
+      const freshId = await visibleRow(cdp);
+      await evaluate(cdp, `__chatFake.update('${freshId}', m => ({...m,content:'**Complete message**'}))`);
+      await frames(cdp, 4);
+      const fresh = await pointFor(cdp, `[data-gloom-chat-message-id="${freshId}"] [data-gloom-role=chat-message-body]`);
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...fresh, button: "left", clickCount: 3 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...fresh, button: "left", clickCount: 3 });
+      await evaluate(cdp, "document.addEventListener('copy',e=>{window.__freshCopy=e.clipboardData.getData('text/plain')},{once:true})");
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "c", code: "KeyC", modifiers: 2, windowsVirtualKeyCode: 67 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
+      if (!await waitFor(cdp, "window.__freshCopy === '**Complete message**'")) fail("a fresh whole-message selection did not copy its original marks");
+    },
+  },
+  {
+    name: "chat window review: profile shortcut works after the selected row unmounts",
+    scenario: "chat&count=500&loaded=500",
+    async run(cdp) {
+      await ready(cdp);
+      await click(cdp, await evaluate<Point>(cdp, "__chat.composer()"));
+      await pressKey(cdp, "ArrowUp", "ArrowUp");
+      expectMarked(await selected(cdp), ["m499"], "latest selected");
+      await wheel(cdp, await listCentre(cdp), -3000);
+      await parkPointer(cdp);
+      if (await evaluate(cdp, "!!__chat.rowRect('m499')")) fail("selected row did not unmount");
+      await pressKey(cdp, "p", "KeyP");
+      if (!await waitFor(cdp, "(__chat.card() ?? '').includes('marlow')")) fail("profile shortcut did not open the unmounted row's author");
+      const inside = await evaluate(cdp, `(() => {
+        const c=__chat.cardElement().getBoundingClientRect(), p=document.querySelector('[data-gloom-pane-id="chat:a"]').getBoundingClientRect();
+        return c.width>0 && c.height>0 && c.left>=p.left && c.right<=p.right && c.top>=p.top && c.bottom<=p.bottom;
+      })()`);
+      if (!inside) fail("profile card is not visibly anchored inside its pane");
+    },
+  },
+  {
+    name: "chat window review: a hidden tab preserves the scrolled-back reader and visible rows",
+    scenario: "chat&count=500&loaded=500&lifecycle=1",
+    async run(cdp) {
+      await ready(cdp);
+      await wheel(cdp, await listCentre(cdp), -3000);
+      await frames(cdp, 8);
+      const before = await anchor(cdp);
+      const tab = async (label: string) => {
+        const at = await evaluate<Point>(cdp, `(() => { const el=[...document.querySelectorAll('[data-gloom-pane-id="chat:a"] [data-gloom-role=tab-button]')].find(el=>el.textContent==='${label}');const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+        await click(cdp, at);
+        await frames(cdp, 8);
+      };
+      await tab("inactive");
+      await tab("chat");
+      expectPlace(before, await anchor(cdp), "revealing a hidden history reader without a new message");
+      await tab("inactive");
+      if (await evaluate(cdp, "__chat.scroller().clientHeight > 0")) fail("tab did not hide the transcript");
+      await evaluate(cdp, "void __chatFake.deliver('Arrived while the history reader was hidden.')");
+      await frames(cdp, 6);
+      await tab("chat");
+      const after = await anchor(cdp);
+      if (!after) fail("returning to the tab left a blank viewport");
+      expectPlace(before, after, "revealing a hidden history reader");
+      const visible = await evaluate(cdp, `(() => {const r=__chat.rowRect('${before.id}'),s=__chat.scroller().getBoundingClientRect();return r&&r.y+r.height>s.top&&r.y<s.bottom;})()`);
+      if (!visible) fail("restored history row is not actually visible");
+    },
+  },
+  {
+    name: "chat window review: a quote click focuses a detached pane and keeps the jump highlight",
+    scenario: "chat&count=500&loaded=500&detached=1",
+    async run(cdp) {
+      await ready(cdp);
+      await evaluate(cdp, "void __chatFake.deliver('Quoted history.',{replyToId:'m120'})");
+      await frames(cdp, 6);
+      // The shell's host focus notification, followed by real pointer/keyboard input.
+      await evaluate(cdp, "window.dispatchEvent(new Event('blur'))");
+      await frames(cdp, 3);
+      await click(cdp, await pointFor(cdp, '[data-gloom-chat-message-id="m500"] [data-gloom-role=chat-message-row]'));
+      expectMarked(await marked(cdp), ["m120"], "quoted target");
+      await pressKey(cdp, "ArrowUp", "ArrowUp");
+      expectMarked(await selected(cdp), ["m500"], "keyboard after quote focus");
+    },
+  },
+  {
+    name: "chat window: an offscreen notification target mounts, highlights and copies, and keyboard navigation crosses windows",
+    scenario: "chat&count=500&loaded=500&target=m120",
+    async run(cdp) {
+      await ready(cdp);
+      expectMarked(await marked(cdp), ["m120"], "notification target");
+      if (await evaluate<number>(cdp, "__chat.rows().length") > 80) fail("opening mounted the history");
+      const body = '[data-gloom-chat-message-id="m120"] [data-gloom-role=chat-message-body]';
+      const at = await pointFor(cdp, body);
+      await evaluate(cdp, "document.addEventListener('copy',e=>{window.__copied=e.clipboardData.getData('text/plain')||getSelection().toString()},{once:true})");
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 3 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 3 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "c", code: "KeyC", modifiers: 2, windowsVirtualKeyCode: 67 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
+      if (!await waitFor(cdp, "window.__copied?.trim()==='Morning all.'")) fail("visible message copy did not retain its text");
+      await click(cdp, await listCentre(cdp));
+      await pressKey(cdp, "ArrowUp", "ArrowUp");
+      for (let i = 0; i < 35; i++) await pressKey(cdp, "ArrowUp", "ArrowUp");
+      const chosen = await selected(cdp);
+      if (chosen[0] !== "m464") fail("keyboard did not cross the mounted window", chosen);
+      const view = await evaluate(cdp, "(()=>{const r=__chat.rowRect('m464'),s=__chat.scroller().getBoundingClientRect();return r&&r.y>=s.top&&r.y+r.height<=s.bottom})()");
+      if (!view) fail("keyboard target was not brought into view");
+      await pressKey(cdp, "Home", "Home");
+      if (!await waitFor(cdp, "__chat.scroller().scrollTop < 1 && __chat.rowRect('m0')")) fail("Home did not mount the start of the history");
+      await pressKey(cdp, "PageDown", "PageDown");
+      if (!await waitFor(cdp, "__chat.scroller().scrollTop > 100")) fail("PageDown did not move the transcript");
+      await pressKey(cdp, "End", "End");
+      if (!await waitFor(cdp, "__chat.scroller().scrollHeight - __chat.scroller().clientHeight - __chat.scroller().scrollTop < 2 && __chat.rowRect('m499')")) fail("End did not mount the latest message");
+      await pressKey(cdp, "PageUp", "PageUp");
+      if (!await waitFor(cdp, "__chat.scroller().scrollHeight - __chat.scroller().clientHeight - __chat.scroller().scrollTop > 100")) fail("PageUp did not move the transcript");
+      for (const delta of [-50000, 700, 1400, 50000]) {
+        await wheel(cdp, await listCentre(cdp), delta);
+        await frames(cdp, 6);
+        if (await evaluate<number>(cdp, "__chat.rows().length") > 80 || !await anchor(cdp)) fail("scrolling lost the bounded visible window");
+      }
+    },
+  },
+  {
+    name: "chat window: a pending send, failed-send retry, reply and reaction survive window changes",
+    scenario: "chat&count=500&loaded=500&reactions=1&latency=0",
+    async run(cdp) {
+      await ready(cdp);
+      await wheel(cdp, await listCentre(cdp), -1800);
+      await evaluate(cdp, "__chatFake.holdSends()");
+      await click(cdp, await evaluate<Point>(cdp, "__chat.composer()"));
+      await cdp.send("Input.insertText", { text: "Windowed send check" });
+      await pressKey(cdp, "Enter", "Enter");
+      if (!await waitFor(cdp, "__chatFake.sent.length===1 && __chat.rows().some(r=>r.textContent.includes('Windowed send check'))")) fail("pending send is not mounted");
+      if ((await state(cdp)).fromBottom > 4) fail("pending send did not go to the bottom");
+      await evaluate(cdp, "__chatFake.finishSend(true)");
+      const retry = '[data-gloom-role=chat-message-retry-action] button';
+      if (!await waitFor(cdp, `!!document.querySelector('${retry}')`)) fail("failed send has no retry");
+      await click(cdp, await pointFor(cdp, retry));
+      if (!await waitFor(cdp, "__chatFake.sent.length===2 && __chat.rowRect('m500') && !document.querySelector('[data-gloom-role=chat-message-retry-action]')")) fail("retry did not replace the pending message");
+      await click(cdp, await listCentre(cdp));
+      await pressKey(cdp, "ArrowUp", "ArrowUp");
+      await pressKey(cdp, "ArrowUp", "ArrowUp");
+      await pressKey(cdp, "Enter", "Enter");
+      await cdp.send("Input.insertText", { text: "Reply across windows" });
+      await pressKey(cdp, "Enter", "Enter");
+      if (!await waitFor(cdp, "__chatFake.messages.at(-1).replyToId==='m499'")) fail("keyboard reply lost its target");
+      const reaction = '[data-gloom-chat-message-id="m499"] [data-gloom-role=chat-message-reactions] button';
+      await click(cdp, await pointFor(cdp, reaction));
+      if (!await waitFor(cdp, "__chatFake.messages.find(m=>m.id==='m499').reactions[0].me")) fail("reaction did not toggle");
+      await wheel(cdp, await listCentre(cdp), -50000);
+      await wheel(cdp, await listCentre(cdp), 50000);
+      if (!await waitFor(cdp, "__chat.rowText('m499').includes('2') && __chat.rowText('m501').includes('Reply across windows')")) fail("reply or reaction disappeared after remount");
+      await evaluate(cdp, "void __chatFake.deliver('A reference to an older message.',{replyToId:'m120'})");
+      await frames(cdp, 6);
+      await click(cdp, await pointFor(cdp, '[data-gloom-chat-message-id="m502"] [data-gloom-role=chat-message-row]'));
+      expectMarked(await marked(cdp), ["m120"], "quoted offscreen target");
+    },
+  },
+  {
+    name: "chat window: clicking a quote loads older pages and mounts its highlighted target",
+    scenario: "chat&count=500&latency=0",
+    async run(cdp) {
+      await ready(cdp);
+      await evaluate(cdp, "void __chatFake.deliver('A quote outside the loaded history.',{replyToId:'m10'})");
+      await frames(cdp, 6);
+      await click(cdp, await pointFor(cdp, '[data-gloom-chat-message-id="m500"] [data-gloom-role=chat-message-row]'));
+      if (!await waitFor(cdp, "__chat.marked().includes('m10') && __chat.rowRect('m10')", 10000)) fail("the older quote target did not mount and highlight");
+      if (await evaluate<number>(cdp, "__chat.rows().length") > 80) fail("history pagination mounted every row");
+    },
+  },
+  {
+    name: "chat window: an image reserves its measured space before decoding",
+    scenario: "chat&count=500&loaded=500",
+    async run(cdp) {
+      await ready(cdp);
+      await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*held-chat-image*" }] });
+      try {
+        const paused = cdp.once<{ requestId: string }>("Fetch.requestPaused");
+        await evaluate(cdp, `void __chatFake.deliver('Image that arrives later.',{attachment:true,imageUrl:location.origin+'/held-chat-image.svg'})`);
+        const request = await Promise.race([paused, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("Held image request did not start")), 8_000))]);
+        await frames(cdp, 8);
+        const before = await anchor(cdp);
+        const rect = await evaluate(cdp, "__chat.rowRect('m500')");
+        if (rect.height < 180) fail("image did not reserve its height", rect);
+        await cdp.send("Fetch.fulfillRequest", { requestId: request.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "image/svg+xml" }], body: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#456"/></svg>').toString("base64") });
+        if (!await waitFor(cdp, "document.querySelector('[data-gloom-chat-message-id=m500] img')?.complete")) fail("image never decoded");
+        await frames(cdp, 8);
+        const after = await evaluate(cdp, "__chat.rowRect('m500')");
+        if (Math.abs(rect.height - after.height) > 1) fail("decoding changed the image row's height", { rect, after });
+        expectPlace(before, await anchor(cdp), "image decoding");
+      } finally { await cdp.send("Fetch.disable"); }
+    },
+  },
   {
     name: "chat people: a bot's name has its own colour and its icon always, a person's icons wait for the pointer",
     scenario: "chat",
@@ -723,6 +1016,39 @@ export const chatSteps: ChatStep[] = [
     },
   },
   {
+    // Rows report their new heights before the view reports its own in the same
+    // frame. Reading the bottom between the two used to let go of it for good.
+    name: "chat list: a reader at the bottom keeps following when rows above grow and when they re-wrap as the view gets shorter",
+    scenario: "chat&count=500&loaded=500",
+    async run(cdp) {
+      await ready(cdp);
+      const following = async (what: string) => {
+        await evaluate(cdp, `void window.__chatFake.deliver('After ${what}.')`);
+        await frames(cdp, 6);
+        const after = await state(cdp);
+        const latest = await evaluate<string>(cdp, "__chatFake.messages.at(-1).id");
+        const visible = await evaluate(cdp, `(() => { const r = __chat.rowRect('${latest}'), s = __chat.scroller().getBoundingClientRect(); return !!r && r.y + r.height <= s.bottom + 1; })()`);
+        if (after.fromBottom > 4 || !visible) fail(`the list stopped following new messages after ${what}`, after);
+        if (await evaluate(cdp, "__chat.jump()")) fail(`a new messages control was offered after ${what}`);
+      };
+      const above = await evaluate<string>(cdp, `(() => { const top = __chat.scroller().getBoundingClientRect().top; return __chat.rows().filter((r) => r.getBoundingClientRect().bottom < top).at(-1)?.getAttribute('data-gloom-chat-message-id'); })()`);
+      if (!above) fail("no message is mounted above the view");
+      await evaluate(cdp, `window.__chatFake.update('${above}', (m) => ({ ...m, content: m.content + '\\n' + 'a late addition '.repeat(40) }))`);
+      await frames(cdp, 4);
+      await following("a message above the view grew");
+      try {
+        // One resize: narrower re-wraps the rows, shorter shrinks the view, in the same layout.
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 760, deviceScaleFactor: 1, mobile: false });
+        await frames(cdp, 8);
+        const resized = await state(cdp);
+        if (resized.fromBottom > 4) fail("the list left the bottom when the window got narrower and shorter", resized);
+        await following("the window got narrower and shorter");
+      } finally {
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+      }
+    },
+  },
+  {
     name: "chat list: a message changing above the view does not move the reader, with no help from the browser",
     scenario: "chat&anchoring=off",
     async run(cdp) {
@@ -745,9 +1071,9 @@ export const chatSteps: ChatStep[] = [
       // Reading on while the page is on its way.
       await wheel(cdp, await listCentre(cdp), 130);
       const before = await anchor(cdp);
-      const rowsBefore = await evaluate<number>(cdp, "__chat.rows().length");
+      const heightBefore = (await state(cdp)).height;
       await evaluate(cdp, "window.__chatFake.release()");
-      if (!await waitFor(cdp, `__chat.rows().length > ${rowsBefore}`, 3_000)) fail("the older messages never arrived");
+      if (!await waitFor(cdp, `__chat.state().height > ${heightBefore}`, 3_000)) fail("the older messages never arrived");
       await frames(cdp, 6);
       expectPlace(before, await anchor(cdp), "older messages arriving");
     },
@@ -761,7 +1087,7 @@ export const chatSteps: ChatStep[] = [
       await ready(cdp);
       await wheel(cdp, await listCentre(cdp), -5_000);
       if (!await waitFor(cdp, "window.__chatFake.historyRequests >= 1", 2_000)) fail("reaching the top did not ask for older messages", await state(cdp));
-      if (!await waitFor(cdp, "__chat.rows().length > 50", 3_000)) fail("the older messages never arrived");
+      if (!await waitFor(cdp, "__chat.state().top > 500", 3_000)) fail("the older messages never arrived above the reader");
       await pause(cdp, 300);
       const chosen = await selected(cdp);
       if (chosen.length > 0) fail("older messages arriving selected a message nobody selected", chosen);
@@ -890,7 +1216,8 @@ export const chatSteps: ChatStep[] = [
     async run(cdp) {
       await ready(cdp);
       const rest = await evaluate<Edges>(cdp, "__chat.edges()");
-      if (await evaluate<number>(cdp, "__chat.rows().length") < 500) fail("the list did not load 500 messages");
+      if (await evaluate<number>(cdp, "__chatFake.messages.length") !== 500) fail("the fixture did not load 500 messages");
+      if (!await evaluate(cdp, "__chat.rowRect('m499')")) fail("the latest message is not mounted");
       const divider = await dividerPoint(cdp) ?? fail("no divider");
       const result = await resizeChat(cdp, divider, (t) => ({ x: divider.x - Math.sin(t * Math.PI * 0.8) * 230, y: divider.y }));
       expectFollowed(rest, result, "a divider drag over 500 messages");

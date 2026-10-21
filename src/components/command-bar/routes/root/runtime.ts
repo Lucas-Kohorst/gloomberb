@@ -146,6 +146,7 @@ export function useCommandBarRootRuntime({
   orderedRootResults: ResultItem[];
   rootGhostSuffix: string | null;
   rootResultModel: RootResultModel;
+  rootResultsCurrent: boolean;
   rootSearching: boolean;
   rootSectionOrder: ReturnType<typeof useRootProviderSearch>["rootSectionOrder"];
   rootShortcutFeedback: string | null;
@@ -282,6 +283,7 @@ export function useCommandBarRootRuntime({
   const {
     activeRootProviderResultsKey,
     orderedRootResults,
+    rootResultsCurrent,
     rootSearching: tickerSearching,
     rootSectionOrder,
   } = useRootProviderSearch({
@@ -371,6 +373,7 @@ export function useCommandBarRootRuntime({
     orderedRootResults,
     rootGhostSuffix,
     rootResultModel,
+    rootResultsCurrent,
     rootSearching,
     rootSectionOrder,
     rootShortcutFeedback,

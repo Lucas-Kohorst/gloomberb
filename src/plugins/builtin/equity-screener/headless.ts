@@ -1,10 +1,12 @@
 import type { HeadlessPaneDefinition } from "../../../types/plugin";
 import type { HeadlessPaneColumn, HeadlessPaneContext } from "../../../types/headless";
 import {
+  KPI_FIELDS,
   NUMERIC_FIELDS,
   type NumericField,
   type ScreenRow,
 } from "../../../api-client/equity-screener";
+import { KPI_COVERAGE_NOTE } from "../company-kpis/model";
 import { EXTENDED_SESSION_LABELS, type ExtendedSession } from "../../../market-data/market/status";
 import { buildQuoteKey } from "../../../market-data/selectors";
 import type { Quote } from "../../../types/financials";
@@ -17,8 +19,11 @@ import {
   formatScreenValue,
   metricDate,
   parseScreenDefinition,
+  screenColumnLabel,
   screenDefinitionSyntax,
-  SHORT_LABELS,
+  screenLabel,
+  screenYtdBase,
+  withheldMetricNote,
 } from "./model";
 import type { ScreenDefinition } from "../../../api-client/equity-screener";
 
@@ -128,12 +133,21 @@ export const equityScreenerHeadless: HeadlessPaneDefinition<"bundle"> = {
     // A sort on one of them is redone on those figures.
     const rows = sortLiveScreenRows(overlayScreenQuotes(data.rows, await loadRowQuotes(data.rows, ctx)), data.definition.sort);
     const extendedSessions = screenExtendedSessions(rows);
+    // A Pro metric the server held back from Free says so once, as KPIS says it; a KPI
+    // with gaps says what a gap is, as KPIS does.
+    const withheld = rows.some((row) => row.metrics[metric].access === "pro");
+    const errors = withheld ? [...data.warnings, withheldMetricNote(metric)] : data.warnings;
+    const missing = rows.filter((row) => row.metrics[metric].value === null).length;
+    const kpiGaps = !withheld && missing > 0 && (KPI_FIELDS as readonly string[]).includes(metric)
+      ? [`${missing} of ${rows.length} ${rows.length === 1 ? "row has" : "rows have"} no ${screenLabel(metric)}. ${KPI_COVERAGE_NOTE}`]
+      : [];
     // Payload status also counts ordinary per-field sparsity; only generation
     // warnings are failures, and more pages are not an error.
     return {
       freshness: { asOf: data.snapshot?.sourceNewestAt ?? null },
-      complete: !data.nextCursor && data.warnings.length === 0,
-      errors: data.warnings,
+      complete: !data.nextCursor && errors.length === 0,
+      errors,
+      ...(kpiGaps.length ? { notes: kpiGaps } : {}),
       sections: [
         {
           title: "Matching equities",
@@ -145,7 +159,8 @@ export const equityScreenerHeadless: HeadlessPaneDefinition<"bundle"> = {
             ...(metric === "price" ? [] : [{ key: "price", header: "Last", align: "right" as const, format: price }]),
             ...(metric === "changePercent" ? [] : [{ key: "changePercent", header: "Chg%", align: "right" as const, format: percent }]),
             ...extendedSessions.map(extendedColumn),
-            { key: "value", header: SHORT_LABELS[metric], align: "right" },
+            // YTD names the close it is measured from: `YTD% vs 31 Dec close`.
+            { key: "value", header: screenColumnLabel(metric, screenYtdBase(data.rows, data.snapshot?.assembledAt), "report"), align: "right" },
             { key: "unit", header: "Unit" },
             { key: "percentile", header: "Covered pctl", align: "right" },
             { key: "asOf", header: "As of" },
@@ -172,7 +187,7 @@ export const equityScreenerHeadless: HeadlessPaneDefinition<"bundle"> = {
                   ? null
                   : Math.round(observation.percentile.value),
               asOf: stamp.collected ? `${stamp.text} (collected)` : stamp.text,
-              state: observation.state,
+              state: observation.access === "pro" ? "locked" : observation.state,
             };
           }),
         },

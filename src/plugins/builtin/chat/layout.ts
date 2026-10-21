@@ -4,6 +4,7 @@ import { splitLongTextSegmentByDisplayWidth, truncateWithEllipsis } from "../../
 import { parseMarkdownLines } from "../../../utils/markdown";
 import { displayWidth } from "../../../utils/format";
 import {
+  formatTickerBadgePrice,
   getTickerBadgeText,
   TICKER_BADGE_CHROME_WIDTH,
   type TickerBadgeStatus,
@@ -26,6 +27,8 @@ export function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   const prev = messages[index - 1]!;
   const curr = messages[index]!;
   if (prev.user.id !== curr.user.id) return false;
+  // An announcement is a card of its own, with its own header.
+  if (prev.announcement || curr.announcement) return false;
   // The Discord tag sits on a header, so a linked person's Discord and app messages do not share one.
   if ((prev.origin === "discord") !== (curr.origin === "discord")) return false;
   return new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime() < MESSAGE_GROUP_THRESHOLD_MS;
@@ -72,10 +75,12 @@ const RESERVED_BADGE_CHANGE_PERCENT = -999.9;
 
 /**
  * Text width of a chat chip. Chips follow their own quote while the transcript
- * is wrapped from the first one, so the width covers the widest day change and
- * a hovered price with one more integer digit. Terminal lines render the chip
- * with this as its `maxTextWidth`, so a move past either drops detail instead
- * of spilling into the next token.
+ * is wrapped from the first one, so the width covers the widest day change.
+ * Terminal lines render the chip with this as its `maxTextWidth`, so a move
+ * past it drops detail instead of spilling into the next token. It also still
+ * covers the symbol and price with one more integer digit, which chips once
+ * grew to under the pointer, so transcripts keep wrapping where they did; a
+ * hovered chip now keeps its resting width.
  */
 export function chatBadgeTextWidth(symbol: string, entry: InlineTickerCatalogEntry): number {
   const status: TickerBadgeStatus = entry.status === "loading" || entry.status === "ambiguous" ? entry.status : "ready";
@@ -90,7 +95,7 @@ export function chatBadgeTextWidth(symbol: string, entry: InlineTickerCatalogEnt
       })));
     }
     for (const price of [quote.price, quote.price * 10]) {
-      widths.push(displayWidth(getTickerBadgeText({ symbol, status, quote: { ...quote, price }, hovered: true })));
+      widths.push(displayWidth(`${symbol} ${formatTickerBadgePrice({ ...quote, price })}`));
     }
   }
   return Math.max(...widths);
@@ -378,6 +383,10 @@ export function scrollToPosition(scrollBox: ScrollBoxRenderable, target: number,
 
 export function scrollToBottom(scrollBox: ScrollBoxRenderable | null, preferPixels = false) {
   if (!scrollBox) return;
+  if (preferPixels && scrollBox.scrollToEnd) {
+    scrollBox.scrollToEnd();
+    return;
+  }
   const exactPixels = preferPixels && hasPixelScrollMetrics(scrollBox);
   scrollToPosition(
     scrollBox,
@@ -494,6 +503,16 @@ export function readScrollPlace(
   const view = scrollBox?.getBoundingClientRect?.();
   if (!scrollBox || !view || !hasPixelScrollMetrics(scrollBox)) return null;
   if (isScrolledToBottom(scrollBox, true)) return { atBottom: true, anchorId: null, anchorOffsetPx: 0 };
+  // Only mounted rows have geometry in a windowed list. Their insertion order
+  // can differ after scrolling, so pick the highest row that intersects the view.
+  if (scrollBox.scrollToItem) {
+    let found: { id: string; y: number } | null = null;
+    for (const [id, node] of elements) {
+      const rect = messageRect(node);
+      if (rect && rect.y + rect.height > view.y + 1 && (!found || rect.y < found.y)) found = { id, y: rect.y };
+    }
+    return found ? { atBottom: false, anchorId: found.id, anchorOffsetPx: found.y - view.y } : null;
+  }
   // Rows run down the page in order, so the first with any part in view is found by halving.
   let low = 0;
   let high = messages.length - 1;
@@ -518,6 +537,7 @@ export function restoreScrollPlace(
   place: ScrollPlace,
   elements: Map<string, unknown>,
 ) {
+  if (!place.atBottom && place.anchorId && scrollBox?.scrollToItem?.(place.anchorId, { align: "start", offset: place.anchorOffsetPx })) return;
   const view = scrollBox?.getBoundingClientRect?.();
   const rect = place.anchorId ? messageRect(elements.get(place.anchorId)) : null;
   if (!scrollBox || !view || place.atBottom || !rect || typeof scrollBox.scrollTopPx !== "number") {

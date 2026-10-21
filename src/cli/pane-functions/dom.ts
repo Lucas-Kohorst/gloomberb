@@ -6,11 +6,13 @@ import type { PaneFunctionReport } from "./report";
 import type { ResolvedPaneFunction } from "./resolver";
 import { collectShotSymbols } from "./data";
 import { lockNoteLines } from "./lock-note";
+import { createHeadlessPaneContext } from "./headless";
+import type { HeadlessPaneContext } from "../../types/headless";
 import { lockNoteReason } from "../../plugins/builtin/shared/pro-lock-note";
 import { renderDesktopShot, type PaneScreenshotResult } from "./screenshot";
 import { deriveRenderedFreshness, formatFreshnessLine, type ReportFreshness } from "./freshness";
 import { exportTextTable, reportFooterLines, type CliReportTables } from "../report-tables";
-import { renderedReportFailure, renderedReportFreshness, renderedReportNotices, renderedReportObservations } from "./report-notices";
+import { declaredReportFreshness, renderedReportFailure, renderedReportFreshness, renderedReportNotices, renderedReportObservations } from "./report-notices";
 
 const DOM_REPORT_WIDTH = 1280;
 const DOM_REPORT_HEIGHT = 720;
@@ -204,10 +206,12 @@ function reportRows(result: PaneScreenshotResult): DesktopPaneShotRenderedRow[] 
   }];
 }
 
-export function buildDomPaneReportFromRender(
+export async function buildDomPaneReportFromRender(
   resolved: ResolvedPaneFunction,
   result: PaneScreenshotResult,
-): PaneFunctionReport {
+  /** Reads data for the lock note, which names a free route only when it has data for the symbol. */
+  context?: HeadlessPaneContext,
+): Promise<PaneFunctionReport> {
   const rows = reportRows(result);
   const hasStructuredRows = (result.render.reportRows ?? result.render.rows).length > 0;
   // A table that reported every row is whole, whatever the viewport cut from the capture.
@@ -218,7 +222,8 @@ export function buildDomPaneReportFromRender(
   const truncated = truncationReasons.length > 0
     || (result.render.reportTruncationReasons ? false : result.render.truncated);
   const failureReason = renderedFailureReason(result, rows);
-  const unavailableSymbols = failureReason && result.symbols.length > 0 ? result.symbols : [];
+  // A pane that drew rows beside an error or empty marker ("Quote unavailable.") has data: only one with none has no data for its symbols.
+  const unavailableSymbols = failureReason && rows.length === 0 && result.symbols.length > 0 ? result.symbols : [];
   // What the view leaves out and how to see more, such as OMON's strikes outside its window.
   const rendered = renderedReportNotices(result.render.semanticUi ?? []);
   const notices = [...(resolved.pane.reportNotices?.(resolved.instance.settings ?? {}) ?? []), ...rendered.notices];
@@ -227,11 +232,12 @@ export function buildDomPaneReportFromRender(
   // what is locked and how to reach it, and cites no source.
   const gate = !hasStructuredRows ? result.render.accessGate ?? null : null;
   const lockNote = gate
-    ? resolved.pane.reportLockNote?.({
+    ? await resolved.pane.reportLockNote?.({
       gate,
       symbol: result.symbols[0] ?? null,
       token: resolved.token,
       ...gate === "sign-in" && asksToVerifyEmail(result.render.visibleText ?? "") ? { verifyEmail: true } : {},
+      ...context ? { context } : {},
     }) ?? null
     : null;
   const locked = gate === "sign-in" || lockNote ? gate : null;
@@ -247,7 +253,7 @@ export function buildDomPaneReportFromRender(
   }
   if (failureReason && rows.length > 0) textLines.push("", failureReason);
   // A pane that knows its feed dates the report; the footer and cell times fill in the rest.
-  const declared = { ...resolved.pane.reportFreshness, ...renderedReportFreshness(result.render.semanticUi ?? []) };
+  const declared = { ...declaredReportFreshness(resolved), ...renderedReportFreshness(result.render.semanticUi ?? []) };
   const freshness = deriveRenderedFreshness(declared, {
     footerText: result.render.footerText ?? "",
     cellTimes: rows.flatMap((row) => row.cells.flatMap((cell) => cell.instant ?? [])),
@@ -338,7 +344,7 @@ function failedDomReport(
     .trim();
   const reason = `The rendered view could not be read: ${message || "unknown renderer error"}`;
   const symbols = collectShotSymbols(resolved, rawArg);
-  const freshness = deriveRenderedFreshness(resolved.pane.reportFreshness, { footerText: "", cellTimes: [] });
+  const freshness = deriveRenderedFreshness(declaredReportFreshness(resolved), { footerText: "", cellTimes: [] });
   return {
     data: {
       kind: "rendered-view",
@@ -399,7 +405,7 @@ export async function buildDomFunctionReport(
   const failure = renderedReportFailure(result.render.semanticUi ?? []);
   if (failure) throw new RenderedReportFailure(failure.message, failure.details);
   try {
-    return buildDomPaneReportFromRender(resolved, result);
+    return await buildDomPaneReportFromRender(resolved, result, createHeadlessPaneContext(resolved, context, new AbortController().signal));
   } catch (error) {
     return failedDomReport(resolved, rawArg, error);
   }

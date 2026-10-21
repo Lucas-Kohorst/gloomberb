@@ -1,10 +1,11 @@
-import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { Box, Text, useUiCapabilities } from "../../ui";
 import { formatRelativeAge } from "../../utils/datetime-format";
 import { Spinner } from "./loading";
 import { ButtonActionScope } from "./action-scope";
+import { blendForContrast, higherContrast } from "../../theme/color-utils";
 import { Button } from "./button";
 
 /**
@@ -132,12 +133,69 @@ function retryNote(retry: StatusRetry, status: "empty" | "error", checkedAt: num
   return retry.unchanged ? `${checked} ${t(retry.unchanged)}` : checked;
 }
 
-export function EmptyState(props: EmptyStateProps) {
-  const feedback = useRetryFeedback(props.retry, props.retry ? props.status ?? "empty" : null);
-  return <EmptyStateBody {...props} feedback={feedback} />;
+/**
+ * Desktop and web: whether a state sits flush against its pane's left edge,
+ * read from the laid-out page. A pane often returns a bare EmptyState as its
+ * whole body ("Select a ticker."); the state then takes the pane's inset
+ * itself. One a container already placed (a table's empty slot, a sign-in
+ * wall, a padded box) is left where it is, so the inset is never doubled.
+ */
+function useFlushInPane(enabled: boolean) {
+  // A Box ref is cell geometry, not the element: the state finds itself by its DOM id.
+  const id = `gloom-state-${useId()}`;
+  const [flush, setFlush] = useState(false);
+  // Read on every render (two rects; a state seldom renders) and whenever the state or its
+  // pane changes size: a tab mounted hidden, a container whose padding moved the state's edge.
+  // The inset is padding, so it never moves the edge this reads and the answer settles.
+  useLayoutEffect(() => {
+    if (enabled) measureFlush(id, setFlush);
+  });
+  useLayoutEffect(() => {
+    if (!enabled || typeof ResizeObserver !== "function" || typeof document === "undefined") return;
+    const element = document.getElementById(id);
+    const pane = element?.closest(PANE_WINDOW_SELECTOR);
+    if (!element || !pane) return;
+    const observer = new ResizeObserver(() => measureFlush(id, setFlush));
+    observer.observe(element);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [enabled, id]);
+  return { id: enabled ? id : undefined, flush };
 }
 
-function EmptyStateBody({ title, message, hint, actions, retry, status = "empty", feedback }: EmptyStateProps & { feedback: RetryFeedback }) {
+const PANE_WINDOW_SELECTOR = "[data-gloom-role=pane-window], [data-gloom-role=detached-pane-window]";
+
+function measureFlush(id: string, setFlush: (flush: boolean) => void) {
+  if (typeof document === "undefined") return;
+  const element = document.getElementById(id);
+  const pane = element?.closest(PANE_WINDOW_SELECTOR);
+  if (!element || !pane) return;
+  const box = element.getBoundingClientRect();
+  // Not laid out yet (a tab mounted hidden): the resize that shows it reads it again.
+  if (box.width === 0 && box.height === 0) return;
+  setFlush(box.left - pane.getBoundingClientRect().left < STATE_FLUSH_PX);
+}
+
+/**
+ * Closer to the pane's edge than this, a state has not been placed by anything.
+ * Below the smallest padding a container gives it (`--gloom-space-xs`, 4px), so
+ * a state 4px in, or 3.99 after rounding, is never inset a second time.
+ */
+const STATE_FLUSH_PX = 2;
+
+export function EmptyState(props: EmptyStateProps) {
+  const feedback = useRetryFeedback(props.retry, props.retry ? props.status ?? "empty" : null);
+  const { nativePaneChrome } = useUiCapabilities();
+  const { id, flush } = useFlushInPane(nativePaneChrome === true);
+  return <EmptyStateBody {...props} feedback={feedback} domId={id} inset={flush} />;
+}
+
+function EmptyStateBody({ title, message, hint, actions, retry, status = "empty", feedback, domId, inset = false }: EmptyStateProps & {
+  feedback: RetryFeedback;
+  domId?: string;
+  /** Desktop: take the pane's state inset (see useFlushInPane). */
+  inset?: boolean;
+}) {
   const colors = useThemeColors();
   const { nativePaneChrome } = useUiCapabilities();
   const retryButton = retry ? (
@@ -150,7 +208,13 @@ function EmptyStateBody({ title, message, hint, actions, retry, status = "empty"
   ) : null;
   // Provider messages must wrap at narrow pane widths rather than lose their tail.
   return (
-    <Box flexDirection="column" data-gloom-status={status} data-gloom-ui="empty-state">
+    <Box
+      id={domId}
+      flexDirection="column"
+      data-gloom-status={status}
+      data-gloom-ui="empty-state"
+      style={inset ? NATIVE_STATE_INSET : undefined}
+    >
       <Box><Text fg={status === "error" ? colors.negative : colors.textDim} wrapText>{t(title)}</Text></Box>
       {message && <Box><Text fg={colors.textMuted} wrapText>{t(message)}</Text></Box>}
       {hint && <Box><Text fg={colors.textMuted} wrapText>{t(hint)}</Text></Box>}
@@ -170,14 +234,27 @@ function EmptyStateBody({ title, message, hint, actions, retry, status = "empty"
 export interface NoticeProps {
   children: ReactNode;
   tone?: "muted" | "positive" | "warning" | "negative";
+  variant?: "inline" | "callout";
 }
 
 /** Inline feedback leaves existing content visible, including stale data after a refresh failure. */
-export function Notice({ children, tone = "warning" }: NoticeProps) {
+export function Notice({ children, tone = "warning", variant = "inline" }: NoticeProps) {
   const colors = useThemeColors();
+  const native = useUiCapabilities().nativePaneChrome;
+  const color = tone === "muted" ? colors.textDim : colors[tone];
+  const status = tone === "negative" ? "error" : "notice";
+  // Inline feedback keeps its original single-text shape: a flex row here collapses inside content-sized parents.
+  if (variant !== "callout") {
+    return (
+      <Box data-gloom-status={status} data-gloom-ui="notice">
+        <Text fg={color} wrapText>{children}</Text>
+      </Box>
+    );
+  }
+  const foreground = blendForContrast(color, colors.panel, higherContrast("#000000", "#ffffff", colors.panel), 4.5);
   return (
-    <Box data-gloom-status={tone === "negative" ? "error" : "notice"} data-gloom-ui="notice">
-      <Text fg={tone === "muted" ? colors.textDim : colors[tone]} wrapText>{children}</Text>
+    <Box flexDirection="row" gap={1} paddingX={1} paddingY={native ? 0.35 : 0} backgroundColor={colors.panel} border={["left"]} borderColor={color} data-gloom-status={status} data-gloom-ui="notice" role={native ? tone === "negative" ? "alert" : "status" : undefined} aria-atomic={native ? true : undefined}>
+      <Text fg={foreground}>!</Text><Box flexGrow={1} minWidth={0}><Text fg={foreground} wrapText>{children}</Text></Box>
     </Box>
   );
 }
@@ -211,6 +288,9 @@ export interface PaneStatusBodyProps {
   children?: ReactNode;
 }
 
+/** Desktop: where every empty, error, loading and locked state starts, the pane's 8px in from each edge. */
+export const NATIVE_STATE_INSET = { padding: "var(--gloom-space-sm) var(--gloom-inset)" } as const;
+
 /** State precedence remains explicit at the caller: pass loading/error only when replacing the body. */
 export function PaneStatusBody({
   loading = false,
@@ -228,6 +308,7 @@ export function PaneStatusBody({
   height,
   children,
 }: PaneStatusBodyProps) {
+  const { nativePaneChrome } = useUiCapabilities();
   const status = error ? "error" : loading ? "loading" : empty ? "empty" : null;
   // Here rather than in the state, so a retry that shows the spinner while it
   // runs still says it tried once the same failure is back.
@@ -246,6 +327,8 @@ export function PaneStatusBody({
       justifyContent={align === "center" ? "center" : undefined}
       data-gloom-status={status}
       data-gloom-ui="pane-status"
+      // The desktop's state inset: the pane's 8px on every side, not a terminal row above and below.
+      style={nativePaneChrome ? NATIVE_STATE_INSET : undefined}
     >
       {status === "loading" ? <Spinner label={loadingLabel ?? loadingText(subject)} /> : (
         <EmptyStateBody

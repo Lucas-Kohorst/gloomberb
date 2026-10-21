@@ -8,7 +8,10 @@ import {
   DEFAULT_CRYPTO_SORT,
   formatCryptoPercent,
   formatCryptoPrice,
+  formatOffPeg,
+  formatPegTarget,
   nextCryptoSort,
+  offPegBasisPoints,
   sortCryptoRows,
 } from "./model";
 import { CRYPTO_FIXTURE_NOW, cryptoFixture } from "./test-fixture";
@@ -52,6 +55,22 @@ test("a live quote without a change percent is restated from the previous close"
   expect(row!.changePercent).toBeCloseTo(10, 6);
 });
 
+// Linear: GLO-1089. The column is since 00:00 UTC, as `quote` gives a coin;
+// a coin measured over 24 hours (a close weeks old) is blank, never mixed in.
+test("a coin whose quote or board moves over 24 hours has no since-00:00 change", () => {
+  const data = cryptoFixture();
+  const btc = data.assets[0]!;
+  const day = entry({ price: 101, changePercent: 24, changeBasis: "24h", lastUpdated: CRYPTO_FIXTURE_NOW });
+  // The board still has a dated close: the live price moves from it.
+  const [fromBoard] = buildCryptoRows(data.assets, "coin", new Map([[cryptoQuoteKey(btc), day]]), CRYPTO_FIXTURE_NOW);
+  expect(fromBoard!.changePercent).toBeCloseTo((101 / 98 - 1) * 100, 6);
+  data.assets[0] = { ...btc, previousClose: null, change: 0.5, changePercent: 0.5, changeBasis: "24h" };
+  const [none] = buildCryptoRows(data.assets, "coin", new Map([[cryptoQuoteKey(btc), day]]), CRYPTO_FIXTURE_NOW);
+  expect(none!.changePercent).toBeNull();
+  const [boardOnly] = buildCryptoRows(data.assets, "coin", new Map(), CRYPTO_FIXTURE_NOW);
+  expect(boardOnly!.changePercent).toBeNull();
+});
+
 test("a live price crossing a power of ten keeps the decimals of its previous close", () => {
   const coin = { ...cryptoFixture().assets[0]!, price: 9.95, previousClose: 9.9 };
   const rowAt = (price: number) => buildCryptoRows(
@@ -91,6 +110,19 @@ test("narrow panes drop 1Y, the sparkline, 30D, volume and name in that order", 
   expect(ids(60)).toEqual(["rank", "code", "price", "changePercent", "return7d", "marketCap"]);
   const wide = buildCryptoColumns(200).find((column) => column.id === "name")!;
   expect(wide.width).toBe(24);
+  // Stablecoins keep the peg and the low. Supply adds its columns after the
+  // market cap, and they all leave before the name, which drops where it does without them.
+  const stable = (width: number, withSupply: boolean) => buildCryptoColumns(width, "stablecoin", withSupply).map((column) => column.id);
+  expect(stable(177, true)).toEqual([
+    "rank", "code", "name", "price", "pegText", "offPegBp", "low24h", "low24hAt", "high24h", "high24hAt",
+    "volume24h", "marketCap", "supply", "supply7dPercent", "supply7d", "supply30dPercent", "supply30d", "supplyShare",
+  ]);
+  expect(stable(119, true)).toEqual([
+    "rank", "code", "name", "price", "pegText", "offPegBp", "low24h", "low24hAt", "high24h", "high24hAt", "marketCap", "supply",
+  ]);
+  for (const width of [109, 110]) expect(stable(width, true)).toEqual(stable(width, false));
+  expect(stable(110, false)).toContain("name");
+  expect(stable(109, false)).not.toContain("name");
 });
 
 test("a move that rounds to zero is unsigned", () => {
@@ -108,4 +140,39 @@ test("prices show four significant digits and at least two decimals", () => {
   expect(formatCryptoPrice(0.00000566)).toBe("0.000005660");
   expect(formatCryptoPrice(1.0001, 4)).toBe("1.0001");
   expect(formatCryptoPrice(null)).toBe("—");
+});
+
+test("a stablecoin is off its own target: a dollar, a euro at EUR/USD, and never a coin that accrues yield", () => {
+  const usd = { currency: "USD", accrues: false, price: 1, asOf: null };
+  expect(offPegBasisPoints(0.99871, usd)).toBe(-12.9);
+  expect(formatOffPeg(offPegBasisPoints(1.0003, usd))).toBe("+3.0bp");
+  expect(formatOffPeg(offPegBasisPoints(1, usd))).toBe("0.0bp");
+  // EURC at 1.1234 is not a 12% premium: it is 7bp under EUR/USD.
+  const eur = { currency: "EUR", accrues: false, price: 1.124227, asOf: "2026-10-17T12:20:52.000Z" };
+  expect(offPegBasisPoints(1.1233596, eur)).toBe(-7.7);
+  expect(formatPegTarget(eur)).toBe("EUR 1.1242");
+  // USDY's price carries its yield: no par to be off, so no basis points at all.
+  const yieldCoin = { currency: "USD", accrues: true, price: null, asOf: null };
+  expect(offPegBasisPoints(1.1497, yieldCoin)).toBeNull();
+  expect(formatOffPeg(null)).toBe("");
+  expect(formatPegTarget(yieldCoin)).toBe("USD yield");
+  // A euro coin whose rate could not be read keeps its currency and reads no deviation.
+  expect(offPegBasisPoints(1.12, { ...eur, price: null })).toBeNull();
+  expect(formatPegTarget({ ...eur, price: null })).toBe("EUR");
+});
+
+test("the 24h low and high take a newer live price, and off peg sorts by size either side", () => {
+  const data = cryptoFixture();
+  const usdt = data.assets.find((asset) => asset.code === "USDT")!;
+  const [board] = buildCryptoRows(data.assets, "stablecoin", new Map(), CRYPTO_FIXTURE_NOW);
+  expect(board).toMatchObject({ low24h: 0.9983, high24h: 1.0004, low24hText: "0.9983", offPegBp: -2, pegText: "USD" });
+  expect(board!.low24hAt).toBe(Date.parse("2026-09-22T23:30:00.000Z"));
+  const tick = CRYPTO_FIXTURE_NOW + 1;
+  const quote = entry({ symbol: "USDT-USD", price: 0.9971, lastUpdated: tick });
+  const [live] = buildCryptoRows(data.assets, "stablecoin", new Map([[cryptoQuoteKey(usdt), quote]]), CRYPTO_FIXTURE_NOW);
+  expect(live).toMatchObject({ low24h: 0.9971, low24hAt: tick, high24h: 1.0004, offPegBp: -29 });
+  // Coins carry no peg columns.
+  expect(buildCryptoRows(data.assets, "coin", new Map(), CRYPTO_FIXTURE_NOW)[0]).toMatchObject({ peg: null, offPegBp: null, low24h: null });
+  const rows = [{ ...board!, code: "UP", offPegBp: 12 }, { ...board!, code: "DOWN", offPegBp: -30 }, { ...board!, code: "YIELD", offPegBp: null }];
+  expect(sortCryptoRows(rows, { columnId: "offPegBp", direction: "desc" }).map((row) => row.code)).toEqual(["DOWN", "UP", "YIELD"]);
 });

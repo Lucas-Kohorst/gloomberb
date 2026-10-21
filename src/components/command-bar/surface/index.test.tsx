@@ -7,6 +7,7 @@ import type { CommandDef, PaneTemplateCreateOptions, WizardStep } from "../../..
 import { CommandBarHarness, createCommandBarTestControls, expectSingleBackControl, makeDataProvider } from "./test-harness";
 import { createTestTicker } from "../../../test-support/ticker";
 import { cpiModule } from "../../../plugins/builtin/cpi";
+import { insiderModule } from "../../../plugins/builtin/insider";
 import type { AppContextStoreValue } from "../../../state/app/context";
 
 const tui = createOpenTuiTestHarness();
@@ -84,6 +85,49 @@ describe("CommandBar", () => {
     const row = tui.frame().split("\n").slice(1).find((line) => line.includes("Update ready, restart to apply"));
     expect(row).toBeDefined();
     expect(tui.frame()).not.toContain("Check for Updates");
+
+    await act(async () => {
+      tui.setup().mockInput.pressEnter();
+      await tui.setup().renderOnce();
+    });
+    expect(checks).toBe(1);
+  });
+
+  test("a failed update's row still answers to its name, says why in a few words, and retries when chosen", async () => {
+    let checks = 0;
+    await tui.render(<CommandBarHarness
+      query="check for updates"
+      onCheckForUpdates={() => { checks += 1; }}
+      configureState={(state) => ({
+        ...state,
+        updateProgress: {
+          phase: "error",
+          error: "Socket closed.",
+          failure: { phase: "download", code: "interrupted" },
+        },
+      })}
+    />, { width: 140, height: 24 });
+
+    // The reason on the row, the whole error under it.
+    await tui.waitForFrameToContain("Socket closed.");
+    const rows = tui.frame().split("\n").slice(1);
+    expect(rows.some((line) => line.includes("Update failed: download interrupted"))).toBe(true);
+
+    await act(async () => {
+      tui.setup().mockInput.pressEnter();
+      await tui.setup().renderOnce();
+    });
+    expect(checks).toBe(1);
+  });
+
+  // "Release Channel" also matches "update": Enter on a half-typed word must
+  // check for updates, not open the channel switch.
+  test.each(["update", "upd"])("%s lands on Check for Updates before Release Channel", async (query) => {
+    let checks = 0;
+    await tui.render(<CommandBarHarness query={query} onCheckForUpdates={() => { checks += 1; }} />, { width: 100, height: 24 });
+    await tui.waitForFrameToContain("Release Channel");
+    const rows = tui.frame().split("\n");
+    expect(rows.findIndex((line) => line.includes("Check for Updates"))).toBeLessThan(rows.findIndex((line) => line.includes("Release Channel")));
 
     await act(async () => {
       tui.setup().mockInput.pressEnter();
@@ -699,6 +743,37 @@ describe("CommandBar", () => {
 
     expect(created).toEqual([{ templateId: "cpi-pane", options: undefined }]);
     expect(searchQueries).toEqual([]);
+  });
+
+  // INS works on the loaded security: alone it takes the active ticker, and
+  // with none it opens the market's insider buying instead of ticker search.
+  test.each([["none", undefined], ["AAPL", "AAPL"]] as const)("INS alone with active ticker %s", async (_active, symbol) => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+    await tui.render(<CommandBarHarness
+      query="INS"
+      live
+      selectedTicker={symbol}
+      configurePluginRegistry={(pluginRegistry) => {
+        mutablePaneRegistryMap(pluginRegistry.paneTemplates).set("insider-pane", insiderModule.paneTemplates![0]!);
+        pluginRegistry.createPaneFromTemplateAsync = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await tui.setup().renderOnce();
+    expect(tui.frame()).toContain(symbol ? "Shortcut: Insider for AAPL" : "Shortcut: Insider");
+    expect(tui.frame()).not.toContain("Enter to choose ticker");
+    await act(async () => {
+      tui.setup().mockInput.pressEnter();
+      await Bun.sleep(0);
+      await tui.setup().renderOnce();
+    });
+
+    expect(created.map(({ templateId, options }) => [templateId, options?.symbol])).toEqual([["insider-pane", symbol]]);
   });
 
   test("consumes enter before focused pane shortcuts when executing a pane shortcut", async () => {

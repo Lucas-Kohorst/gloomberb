@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamCollection, TeamCollectionItem } from "../api-client";
 import { createDefaultConfig } from "../types/config";
-import type { TickerRecord } from "../types/ticker";
+import type { TickerPosition, TickerRecord } from "../types/ticker";
 import {
   applyMembership,
   blankTickerRecord,
@@ -122,5 +122,80 @@ describe("membership", () => {
     });
     const knownStale = new Map([["AAPL", item("AAPL", 8)]]);
     expect(diffMembership(local, knownStale).add.map((entry) => entry.symbol)).toEqual(["AAPL", "MSFT"]);
+  });
+});
+
+describe("membership of a ticker held in several lots", () => {
+  const localId = teamCollectionLocalId("org-1", "c1");
+  const lot = (shares: number, avgCost: number, extra: Partial<TickerPosition> = {}): TickerPosition =>
+    ({ portfolio: localId, shares, avgCost, currency: "USD", broker: "manual", ...extra });
+  const held = (...positions: TickerPosition[]): TickerRecord => ({
+    metadata: { ...blankTickerRecord("AAPL", "NASDAQ", "USD").metadata, portfolios: [localId], positions },
+  });
+  const twoLots = held(lot(10, 150, { dateAcquired: "2024-01-02" }), lot(5, 170, { dateAcquired: "2024-06-03" }));
+
+  test("sends the total of the lots, not the first lot's shares", () => {
+    const local = localMembership(new Map([["AAPL", twoLots]]), localId, "portfolio");
+    expect(local.get("AAPL")?.quantity).toBe(15);
+    expect(diffMembership(local, new Map([["AAPL", item("AAPL", 15)]]))).toEqual({ add: [], remove: [] });
+    expect(diffMembership(local, new Map([["AAPL", item("AAPL", 10)]])).add).toEqual([{ symbol: "AAPL", quantity: 15 }]);
+  });
+
+  test("an equal server quantity leaves the lots alone, and a different one collapses them to the weighted cost", () => {
+    expect(applyMembership(twoLots, localId, "portfolio", item("AAPL", 15), "USD")).toBeNull();
+
+    const collapsed = applyMembership(twoLots, localId, "portfolio", item("AAPL", 20), "USD")!;
+    expect(collapsed.metadata.positions).toHaveLength(1);
+    expect(collapsed.metadata.positions[0]).toEqual({
+      portfolio: localId, shares: 20, avgCost: 156.666666666667, currency: "USD", broker: "manual",
+    });
+  });
+
+  test("lots that cannot be totalled are never rewritten from a quantity, and send none", () => {
+    const mixed = held(lot(10, 150), lot(5, 140, { currency: "EUR" }));
+    const local = localMembership(new Map([["AAPL", mixed]]), localId, "portfolio");
+    expect(local.get("AAPL")).toMatchObject({ quantity: null, lotsNotTotalled: true });
+    // The server keeps what it has; a ticker it lacks goes up without a quantity.
+    expect(diffMembership(local, new Map([["AAPL", item("AAPL", 15)]]))).toEqual({ add: [], remove: [] });
+    expect(diffMembership(local, new Map()).add).toEqual([{ symbol: "AAPL", quantity: null }]);
+
+    for (const quantity of [20, null]) expect(applyMembership(mixed, localId, "portfolio", item("AAPL", quantity), "USD")).toBeNull();
+    const shorted = held(lot(10, 150), lot(5, 170, { side: "short" }));
+    expect(applyMembership(shorted, localId, "portfolio", item("AAPL", 20), "USD")).toBeNull();
+    // Removing the item from the collection still takes its lots with it.
+    expect(applyMembership(mixed, localId, "portfolio", null, "USD")?.metadata.positions).toEqual([]);
+  });
+
+  test("a short future goes up as a negative quantity and comes back a short of the same contract size", () => {
+    const gold = (shares: number, extra: Partial<TickerPosition> = {}): TickerRecord => ({
+      metadata: { ...blankTickerRecord("GC=F", "CMX", "USD").metadata, assetCategory: "FUTURE", portfolios: [localId],
+        positions: [lot(shares, 4216.3, { multiplier: 100, dateAcquired: "2026-10-01", ...extra })] },
+    });
+    const short = gold(-5);
+    const local = localMembership(new Map([["GC=F", short]]), localId, "portfolio");
+    expect(diffMembership(local, new Map()).add).toEqual([{ symbol: "GC=F", quantity: -5 }]);
+    // The server stores and returns the sign, so the pull that follows the push changes nothing.
+    expect(applyMembership(short, localId, "portfolio", item("GC=F", -5), "USD")).toBeNull();
+    // A teammate's new count keeps the cost, the date and the contract size.
+    expect(applyMembership(short, localId, "portfolio", item("GC=F", -7), "USD")?.metadata.positions).toEqual([
+      lot(-7, 4216.3, { multiplier: 100, dateAcquired: "2026-10-01" }),
+    ]);
+    // One that turns the short into a long is another position: the short's cost and date go, the size stays.
+    expect(applyMembership(short, localId, "portfolio", item("GC=F", 3), "USD")?.metadata.positions).toEqual([
+      { portfolio: localId, shares: 3, currency: "USD", broker: "manual", multiplier: 100 },
+    ]);
+    // A short entered as a positive count on a short side goes up, and comes back, negative.
+    const sided = gold(5, { side: "short" });
+    expect(localMembership(new Map([["GC=F", sided]]), localId, "portfolio").get("GC=F")?.quantity).toBe(-5);
+    expect(applyMembership(sided, localId, "portfolio", item("GC=F", -5), "USD")).toBeNull();
+  });
+
+  test("a single lot keeps its cost and date, and is rewritten only when the quantity changes", () => {
+    const single = held(lot(10, 150, { dateAcquired: "2024-01-02" }));
+    expect(localMembership(new Map([["AAPL", single]]), localId, "portfolio").get("AAPL")).toMatchObject({ quantity: 10 });
+    expect(applyMembership(single, localId, "portfolio", item("AAPL", 10), "USD")).toBeNull();
+    expect(applyMembership(single, localId, "portfolio", item("AAPL", 12), "USD")?.metadata.positions).toEqual([
+      lot(12, 150, { dateAcquired: "2024-01-02" }),
+    ]);
   });
 });

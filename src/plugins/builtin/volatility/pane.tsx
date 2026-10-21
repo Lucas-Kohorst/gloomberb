@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChartTableHeader, CurveSurface, curveGhostColors, DataTableView, formatPercentAxis, PaneStatusBody, useChartTableSelection,
   usePaneFooter, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type StatItem } from "../../../components";
 import { curveStrip, curveSurfaceMinRows } from "../../../components/chart/curve";
+import { dropColumnsToFit } from "../../../components/ui/table-layout";
 import { useAsyncResource } from "../../../react/async-resource";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { usePaneSettingValue, usePluginPaneState } from "../../../public/react";
@@ -17,9 +18,11 @@ import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import { useAutoRefresh } from "../../../react/auto-refresh";
 import { useLiveStreamingSetting } from "../../../state/hooks/live-streaming";
-import { useLiveSessionRefresh, useThrottledValue } from "../shared/volatility/live-session";
+import { useIndexCloseSettled, useLiveSessionRefresh, useThrottledValue } from "../shared/volatility/live-session";
+import { DAY_SO_FAR_TEXT } from "../../../time-series/session-bar";
 import { getCachedVolatilityData, loadVolatilityData, type VolatilityLoadResult } from "./client";
-import { boardOrder, buildVolatilityData, IMPLIED_CORRELATION_ROWS, VOLATILITY_CURVE_INDICES, VOLATILITY_INDICES, volatilityCurveLookbacks, withLiveVolatilityLevels, type VolatilityBoardRow, type VolatilityIndexId, type VolatilityLiveLevel } from "./model";
+import { VOLATILITY_CURVE_INDICES, VOLATILITY_INDICES } from "../shared/volatility-indices";
+import { boardOrder, buildVolatilityData, IMPLIED_CORRELATION_ROWS, termStateLabel, volatilityCurveLookbacks, withLiveVolatilityLevels, type VolatilityBoardRow, type VolatilityIndexId, type VolatilityLiveLevel } from "./model";
 import { VolatilityHistoryChart, VolatilityIndexHistoryChart } from "./charts";
 import { volatilityCurveRows, volatilityCurveSeries, type VolatilityCurveRow } from "./chart-model";
 import { useVolatilityEvidence } from "./evidence";
@@ -37,9 +40,16 @@ const BOARD_COLUMNS: DataTableColumn[] = [
   { id: "percentile1y", label: "1Y pctl", width: 9, align: "right" },
   { id: "date", label: "As of", width: 12, align: "left" },
 ];
+/**
+ * What a narrow board gives up before its dates: the name (the selected row's
+ * name is under the table, and VVIX, SKEW and MOVE repeat their index), then
+ * the change in points beside the change in percent, then the percentile.
+ */
+const BOARD_DROP_ORDER = ["label", "change1d", "percentile1y"];
+const TERM_HISTORY_TARGETS = VOLATILITY_INDICES.filter((definition) => definition.id === "vix" || definition.id === "vix3m");
 const CURVE_COLUMNS: DataTableColumn[] = [
   { id: "tenor", label: "Tenor", width: 7, align: "left" },
-  { id: "value", label: "IV", width: 8, align: "right" },
+  { id: "value", label: "IV", title: "Implied volatility", width: 8, align: "right" },
   { id: "change1w", label: "1W chg", width: 8, align: "right" },
   { id: "change1m", label: "1M chg", width: 8, align: "right" },
 ];
@@ -51,7 +61,6 @@ const formatIv = (value: number) => value.toFixed(2);
 const number = (value: number | null | undefined, signed = false) => value == null || !Number.isFinite(value)
   ? "--" : `${signed && value > 0 ? "+" : ""}${value.toFixed(2)}`;
 const percentile = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "--" : value.toFixed(0);
-const TERM_STATE_LABELS: Record<string, string> = { normal: "Contango", inverted: "Backwardation", flat: "Flat", partial: "Partial" };
 
 export function VolatilityPane({ focused, width, height }: PaneProps) {
   const colors = useThemeColors();
@@ -76,9 +85,9 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
   useAutoRefresh(resource.updatedAt, resource.load);
   const loaded = partial ?? resource.data;
   // Index levels stream through the shared quote layer for the tab on screen;
-  // the history tab is FRED daily closes and subscribes nothing.
+  // the history tab ends on the same VIX and VIX 3M levels as the curve.
   const liveTargets = useMemo<QuoteSubscriptionTarget[]>(() => (tab === "curve" ? VOLATILITY_CURVE_INDICES
-    : tab === "board" ? VOLATILITY_INDICES.filter((definition) => !(definition.id in IMPLIED_CORRELATION_ROWS)) : [])
+    : tab === "board" ? VOLATILITY_INDICES.filter((definition) => !(definition.id in IMPLIED_CORRELATION_ROWS)) : TERM_HISTORY_TARGETS)
     .map((definition) => ({ symbol: definition.symbol, exchange: "", surface: "monitor", visible: true,
       selected: definition.id === selectedId, weight: 40 })), [tab, selectedId]);
   const liveStreaming = useLiveStreamingSetting();
@@ -133,30 +142,38 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
   const notices = [resource.error, ...(result?.errors ?? []), ...(data?.warnings ?? []),
     ...(selected?.warnings ?? [])].filter((notice): notice is string => !!notice);
   usePaneNoticeFooter({ registrationId: "volatility-notices", notices, focused });
-  const cycleTab = () => setTab(TABS[(TABS.findIndex((entry) => entry.value === tab) + 1) % TABS.length]!.value);
+  // From the tab the press finds, so the footer's hint never holds an old one.
+  const cycleTab = useCallback(() => setTab((current) =>
+    TABS[(TABS.findIndex((entry) => entry.value === current) + 1) % TABS.length]!.value), [setTab]);
   // One binding for every tab and for the loading and failed bodies, where no
   // table is mounted; the footer binds the `v` hint.
   usePaneRefreshKey(() => {
     if (!resource.loading) void resource.reload();
   }, { focused });
-  const asOf = tab === "history" ? data?.fred.termDate : tab === "board" ? selected?.date : data?.curve.date;
-  // A level from the stream is labelled intraday with its time; closes keep their date.
-  const intraday = (id: VolatilityIndexId | undefined, date: string | null | undefined) => {
+  const asOf = tab === "history" ? data?.term.termDate : tab === "board" ? selected?.date : data?.curve.date;
+  // A day's level is its close once Cboe settles it (16:15 New York); before
+  // that a streamed level is intraday with its time, and a daily bar of the
+  // session still trading is the day so far.
+  const settled = useIndexCloseSettled(asOf);
+  const streamed = (id: VolatilityIndexId | undefined, date: string | null | undefined) => {
     const level = id ? liveLevels.get(id) : undefined;
     return level && date === new Date(level.observedAt).toISOString().slice(0, 10) ? level : null;
   };
-  const liveObservation = tab === "board" ? intraday(selected?.id, selected?.date)
-    : tab === "curve" && data?.curve.source === "market-history" ? intraday("vix", data.curve.date) : null;
-  const observationTime = liveObservation ? new Date(liveObservation.observedAt).toISOString()
-    : selected?.sampleSize === 1 ? selected.history.at(-1)?.observedAt : null;
-  const observationBasis = liveObservation ? "intraday" : tab === "history" ? "daily close"
-    : tab === "board" && selected?.sampleSize === 1 ? "observation" : "daily history";
+  const latestLevel = tab === "board" ? streamed(selected?.id, selected?.date)
+    : tab === "curve" && data?.curve.source === "market-history" ? streamed("vix", data.curve.date)
+      : tab === "history" && data?.term.publisher === "Cboe" ? streamed("vix", data.term.termDate) : null;
+  const intraday = latestLevel && !settled ? latestLevel : null;
+  // An isolated print is no close; it keeps its source time.
+  const sparse = tab === "board" && !latestLevel && selected?.sampleSize === 1;
+  const observationTime = intraday ? new Date(intraday.observedAt).toISOString()
+    : sparse ? selected.history.at(-1)?.observedAt : null;
+  const observationBasis = intraday ? "intraday" : sparse ? "observation" : settled ? "close" : DAY_SO_FAR_TEXT;
   usePaneFooter("volatility", () => ({ info: [
     ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading volatility", tone: "muted" as const }] }] : []),
     ...(result?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
     ...(data ? [{ id: "basis", parts: [{ text: observationBasis, tone: "muted" as const }] }] : []),
-    ...(asOf ? [{ id: "date", parts: [{ text: observationTime && (tab === "board" || liveObservation) ? `${observationTime.slice(0, 16).replace("T", " ")} UTC` : asOf, tone: "muted" as const }] }] : []),
-  ], hints: [{ id: "view", key: "v", label: "iew", onPress: cycleTab }] }), [resource.loading, result?.stale, data, asOf, observationTime, observationBasis, tab, liveObservation]);
+    ...(asOf ? [{ id: "date", parts: [{ text: observationTime ? `${observationTime.slice(0, 16).replace("T", " ")} UTC` : asOf, tone: "muted" as const }] }] : []),
+  ], hints: [{ id: "view", key: "v", label: "iew", onPress: cycleTab }] }), [resource.loading, result?.stale, data, asOf, observationTime, observationBasis, cycleTab]);
   const { strip: tabStrip, rows: tabRows } = usePaneTabs({ tabs: TABS, activeValue: tab, onSelect: setTab, focused, dense: true });
   const contentHeight = Math.max(5, height - tabRows);
   // The board needs only its rows; the selected index history takes the rest.
@@ -166,7 +183,7 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
   const lookbacks = useMemo(() => data ? volatilityCurveLookbacks(data) : [], [data]);
   const curveRows = useMemo(() => curve ? volatilityCurveRows(curve, lookbacks) : [], [curve, lookbacks]);
   const curveSeries = useMemo(() => curve ? volatilityCurveSeries(curve, lookbacks, {
-    current: curve.termState === "inverted" ? colors.negative : colors.positive, ghosts: curveGhostColors(colors),
+    current: curve.termState === "backwardation" ? colors.negative : colors.positive, ghosts: curveGhostColors(colors),
   }) : [], [colors, curve, lookbacks]);
   const curveSelectedId = curveRows.some((row) => row.id === selectedId) ? selectedId : curveRows[0]?.id ?? null;
   useChartTableSelection({ rows: curveRows, getId: curveRowKey, getDate: curveRowPosition, selectedId: curveSelectedId,
@@ -176,13 +193,14 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
   // curve with fewer than two closes has neither, so the tenors take the band.
   const curveBandStrip = curveStrip(curveSeries, formatIv, { caption: "IV %", selectedPointId: curveSelectedId });
   const curveStats: StatItem[] = curve ? [
-    { id: "structure", label: "Structure", value: TERM_STATE_LABELS[curve.termState] ?? curve.termState,
-      tone: curve.termState === "inverted" ? "warning" : curve.termState === "normal" ? "positive" : "neutral" },
+    { id: "structure", label: "Structure", value: termStateLabel(curve.termState) ?? "--",
+      tone: curve.termState === "backwardation" ? "warning" : curve.termState === "contango" ? "positive" : "neutral" },
     { id: "ratio", label: "3M/30D", value: number(curve.ratio),
       detail: curve.ratio == null ? undefined : formatPercentileRank(curve.ratioPercentile1y, "1Y") },
     { id: "spread", label: "Spread", value: `${number(curve.slope, true)} pts` },
   ] : [];
   const ready = !!data && (data.board.some((row) => row.value != null) || data.fred.metrics.some((metric) => metric.value != null));
+  const boardColumns = useMemo(() => dropColumnsToFit(BOARD_COLUMNS, width - 1, BOARD_DROP_ORDER), [width]);
   return <Box width={width} height={height} flexDirection="column" overflow="hidden">
     {tabStrip}
     <PaneStatusBody subject="volatility" loading={resource.loading && !ready} error={!ready ? resource.error ?? result?.errors[0] ?? null : null} empty={!resource.loading && !ready}>
@@ -192,7 +210,7 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
         selection={{ kind: "id", selectedId: curveSelectedId, getId: curveRowKey, onChange: setSelectedId }}
         onActivate={(row) => { setSelectedId(row.id); setTab("board"); }}
         sortColumnId={null} sortDirection="asc"
-        getExportMetadata={() => [["as of", data.curve.date], ["source", data.curve.source], ["units", "IV percent"], ["warnings", ...notices]]}
+        getExportMetadata={() => [["as of", data.curve.date], ["source", data.curve.source === "fred" ? "FRED" : "Cboe"], ["units", "IV percent"], ["warnings", ...notices]]}
         renderCell={(row, column) => {
           if (column.id === "tenor") return { text: row.tenor, color: row.value == null ? colors.textMuted : colors.text };
           if (column.id === "value") return { text: number(row.value), color: row.value == null ? colors.textMuted : colors.warning };
@@ -207,9 +225,9 @@ export function VolatilityPane({ focused, width, height }: PaneProps) {
           minRows: curveSurfaceMinRows({ series: curveSeries, width, caption: CURVE_CAPTION }),
           strip: curveBandStrip,
         } : null} />} />}
-      {data && tab === "history" && <VolatilityHistoryChart fred={data.fred} width={width} height={contentHeight} focused={focused} />}
+      {data && tab === "history" && <VolatilityHistoryChart term={data.term} width={width} height={contentHeight} focused={focused} />}
       {data && tab === "board" && <>
-        <DataTableView<VolatilityBoardRow> focused={focused} columns={BOARD_COLUMNS} items={rows} rootWidth={width} rootHeight={boardHeight}
+        <DataTableView<VolatilityBoardRow> focused={focused} columns={boardColumns} items={rows} rootWidth={width} rootHeight={boardHeight}
           emptyStateTitle="Volatility indices unavailable." getItemKey={(row) => row.id} selection={{ kind: "id", selectedId: selected?.id ?? null, getId: (row) => row.id, onChange: setSelectedId }}
           onActivate={(row) => setSelectedId(row.id)} sortable
           sortColumnId={sort.columnId} sortDirection={sort.direction}

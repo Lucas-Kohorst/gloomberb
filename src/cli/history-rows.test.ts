@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
-  cleanFloat32Price, historyFlagNote, historyGapNote, historyJumpNote, historyNotes, historyPriceDecimals, historyRows, historyUnbrokenFrom,
-  historyUnit,
+  cleanFloat32Price, closedPeriodBarDay, formingPeriodBar, historyBarStatusNote, historyFlagNote, historyGapNote, historyJumpNote, historyMissingVolumeNote,
+  historyNotes, historyPriceDecimals,
+  historyRows, historyUnbrokenFrom, historyUnit,
 } from "./history-rows";
-import { pricePointValues } from "../utils/price-history-integrity";
+import { mapPricePoint } from "../sources/gloomberb-cloud/normalizers";
+import { latestTradeIndex, missingVolumeCount, pricePointValues } from "../utils/price-history-integrity";
 import type { ManualChartResolution } from "../time-series/resolution";
+import { rowsFreshness } from "./freshness";
+import { formatFreshnessLine } from "./pane-functions/freshness";
+import { barHistoryFreshness } from "../plugins/builtin/shared/report-freshness";
 
 const daily = (bars: number[][]) => historyRows(bars.map(([open, high, low, close], index) => ({
   date: new Date(Date.UTC(2026, 0, index + 1)), open, high, low, close: close!,
@@ -70,6 +75,52 @@ describe("history rows", () => {
     expect(rows[2]).toMatchObject({ close: 254.02, currency: "ZAR", interval: "1d" });
     expect(historyFlagNote(rows)).toBe("2 of 3 bars have high below open or close, or low above open or close in the source data; their prices are left blank");
     expect(historyFlagNote([rows[2]!])).toBeNull();
+  });
+
+  test("a coin's 0 volume is missing, never 0, and counted once; a stock's 0 is a real 0", () => {
+    // A coin's hourly bars where a source sent 0 for hours it did not report: the 0 is no volume reported.
+    const served = [{ date: "2026-10-11T00:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 0 },
+      { date: "2026-10-11T01:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 10_060_800 },
+      { date: "2026-10-11T02:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 0 }];
+    const coin = historyRows(served.map((point) => mapPricePoint(point, 1, "CCC", true)), "1h");
+    expect(coin.map((row) => row.volume)).toEqual([null, 10_060_800, null]);
+    expect(historyMissingVolumeNote(coin)).toBe("2 of 3 bars have no reported volume (\u2014)");
+    // A thin stock can trade nothing in an hour: its 0 stays 0 and is not missing.
+    const stock = historyRows(served.map((point) => mapPricePoint(point, 1, "NASDAQ")), "1h");
+    expect(stock.map((row) => row.volume)).toEqual([0, 10_060_800, 0]);
+    expect(historyMissingVolumeNote(stock)).toBeNull();
+    // A history with no volume at all (an index, a currency pair) has nothing to mark, and a day still forming says so itself.
+    expect(historyMissingVolumeNote(historyRows(served.map(({ volume: _, ...point }) => mapPricePoint(point, 1, "CCC", true)), "1h"))).toBeNull();
+    expect(historyMissingVolumeNote([coin[1]!, { ...coin[0]!, partial: true }])).toBeNull();
+  });
+
+  test("the latest trade a coin's intraday history ends with is part of the bar before it, never a bar without volume", () => {
+    // Hourly bars as Gloom Cloud serves a coin signed in: each bar's volume, then the latest trade at its own time.
+    const bar = (date: string, volume?: number) => ({ date, open: 81_000, high: 81_100, low: 80_900, close: 81_050, volume });
+    const served = [bar("2026-10-18T13:00:00Z", 61_200_000), bar("2026-10-18T14:00:00Z", 73_800_000),
+      bar("2026-10-18T15:00:00Z", 24_100_000), bar("2026-10-18T15:57:53Z")];
+    const rows = historyRows(served.map((point) => mapPricePoint(point, 1, "CCC", true)), "1h", "USD", "USD", { unit: "USD" });
+    expect(rows.at(-1)).toMatchObject({ date: "2026-10-18T15:57:53Z", volume: null, volumeNote: "latest trade" });
+    // Before: "1 of 4 bars has no reported volume (\u2014)" on every signed-in coin history.
+    expect(historyMissingVolumeNote(rows)).toBeNull();
+    expect(historyBarStatusNote(rows)).toBe("2026-10-18T15:57:53Z is the latest trade, inside the bar before it, with no volume of its own");
+    // A bar without volume of its own is still counted, the latest trade beside it is not.
+    const hole = rows.map((row, index) => index === 1 ? { ...row, volume: null } : row);
+    expect(historyMissingVolumeNote(hole)).toBe("1 of 4 bars has no reported volume (\u2014)");
+    // fn HP (ISO dates, oldest first) and the HP pane (times, newest first) count the same.
+    expect(missingVolumeCount(hole)).toBe(1);
+    expect(missingVolumeCount([...hole].reverse().map((row) => ({ ...row, date: Date.parse(row.date) })))).toBe(1);
+    expect(missingVolumeCount(rows)).toBe(0);
+    // The newest bar on the grid is a bar, however little time it has run: 15:00 after 14:00 is counted.
+    const onGrid = historyRows(served.slice(0, 3).map((point, index) => mapPricePoint(index === 2 ? { ...point, volume: 0 } : point, 1, "CCC", true)), "1h");
+    expect(historyMissingVolumeNote(onGrid)).toBe("1 of 3 bars has no reported volume (\u2014)");
+    expect(historyBarStatusNote(onGrid)).toBeNull();
+    // Minute bars end with one too; daily bars stamped at a session open, or two points, have none.
+    const minutes = [Date.parse("2026-10-18T15:55:00Z"), Date.parse("2026-10-18T15:56:00Z"), Date.parse("2026-10-18T15:57:00Z"),
+      Date.parse("2026-10-18T15:57:53Z")];
+    expect(latestTradeIndex(minutes)).toBe(3);
+    expect(latestTradeIndex(["2026-10-14T13:30:00Z", "2026-10-15T13:30:00Z", "2026-10-16T13:30:00Z", "2026-10-16T20:00:00Z"].map(Date.parse))).toBe(-1);
+    expect(latestTradeIndex(minutes.slice(2))).toBe(-1);
   });
 
   test("notes bars coarser than the range is served in, or a first bar well after the start asked for", () => {
@@ -174,5 +225,72 @@ describe("history rows", () => {
     expect(historyPriceDecimals(daily(shib.map((bar) => bar.map(Math.fround))))).toBe(8);
     // A known kind applies the app's price rules: an equity shows cents even with sub-penny prints.
     expect(historyPriceDecimals(daily([[334.5795, 335.48, 333.1697, 334.225], [334.26, 334.1216, 332.8706, 333.8972]]), "STK")).toBe(2);
+  });
+});
+
+describe("a weekly or monthly bar whose period runs on", () => {
+  const bars = (dates: string[], resolution: ManualChartResolution) => historyRows(dates.map((date) => ({ date: new Date(`${date}T00:00:00Z`), close: 100 })), resolution);
+  // The status line `history` ends with, from the bars it prints.
+  const footer = (rows: ReturnType<typeof bars>, venue: string, now: number) => {
+    const forming = formingPeriodBar(rows, venue, now);
+    const closedDay = forming ? null : closedPeriodBarDay(rows, venue, now);
+    const shown = forming?.rows ?? rows;
+    return {
+      partial: shown.map((row) => row.partial === true),
+      line: formatFreshnessLine(rowsFreshness(shown, {
+        ...barHistoryFreshness(rows[0]!.interval), observedKey: "date", oldest: null, cadenceExchange: venue,
+        ...(forming ? { periodToDate: forming.periodToDate } : closedDay ? { asOf: closedDay } : {}),
+      }, undefined, now)!),
+    };
+  };
+  // Fri 16 Oct 2026 08:14 UTC: New York has not opened; Thursday's session is the latest close.
+  const friday = Date.parse("2026-10-16T08:14:00Z");
+  const monthly = bars(["2026-09-01", "2026-10-01"], "1mo");
+  const weekly = bars(["2026-10-05", "2026-10-12"], "1wk");
+
+  test("is marked partial and dated by the last session it covers, not the start of its period", () => {
+    expect(footer(monthly, "NASDAQ", friday)).toEqual({
+      partial: [false, true], line: "Source: Gloom Cloud · month to date, through Thu 15 Oct 2026 · not a live feed (monthly bars)",
+    });
+    expect(footer(weekly, "NASDAQ", friday)).toEqual({
+      partial: [false, true], line: "Source: Gloom Cloud · week to date, through Thu 15 Oct 2026 · not a live feed (weekly bars)",
+    });
+    // While a session trades, the bar runs through today; a coin's always does.
+    expect(footer(monthly, "NASDAQ", Date.parse("2026-10-16T15:00:00Z")).line).toContain("month to date, through Fri 16 Oct 2026");
+    expect(footer(weekly, "CCC", friday).line).toContain("week to date, through Fri 16 Oct 2026");
+    // A venue whose sessions are unknown is read by the calendar, with no day to name.
+    expect(footer(monthly, "", friday).line).toContain("· Oct 2026 to date ·");
+  });
+
+  test("is complete once the last session of its period has closed, though the month runs on, and dated by that session", () => {
+    // Sat 31 Oct: October's last session closed on Friday the 30th, the day its close is from, not the 1st it is dated by.
+    const saturday = Date.parse("2026-10-31T12:00:00Z");
+    expect(footer(monthly, "NASDAQ", saturday)).toEqual({
+      partial: [false, false], line: "Source: Gloom Cloud · Fri 30 Oct 2026 · not a live feed (monthly bars)",
+    });
+    // Sun 18 Oct: the week of Mon 12 Oct closed on Friday the 16th.
+    expect(footer(weekly, "NASDAQ", Date.parse("2026-10-18T05:00:00Z")).line).toBe("Source: Gloom Cloud · Fri 16 Oct 2026 · not a live feed (weekly bars)");
+    // A week whose Friday is a holiday ends on Thursday (Good Friday, 3 Apr 2026); a coin's week on Sunday; a venue
+    // whose sessions are unknown on the period's last weekday.
+    expect(closedPeriodBarDay(bars(["2026-03-30"], "1wk"), "NYSE", Date.parse("2026-04-05T12:00:00Z"))).toBe("2026-04-02");
+    expect(closedPeriodBarDay(weekly, "CCC", Date.parse("2026-10-19T05:00:00Z"))).toBe("2026-10-18");
+    expect(closedPeriodBarDay(bars(["2026-05-01"], "1mo"), "", Date.parse("2026-06-03T12:00:00Z"))).toBe("2026-05-29");
+    expect(closedPeriodBarDay(bars(["2026-10-15", "2026-10-16"], "1d"), "NASDAQ", saturday)).toBeNull();
+    // September's bar on 16 Oct, and last week's on Monday before the open, are complete.
+    expect(formingPeriodBar(bars(["2026-08-01", "2026-09-01"], "1mo"), "NASDAQ", friday)).toBeNull();
+    expect(formingPeriodBar(bars(["2026-10-05"], "1wk"), "NASDAQ", Date.parse("2026-10-12T08:00:00Z"))).toBeNull();
+    // Daily bars are left as their source marks them.
+    expect(formingPeriodBar(bars(["2026-10-15", "2026-10-16"], "1d"), "NASDAQ", Date.parse("2026-10-16T15:00:00Z"))).toBeNull();
+  });
+
+  test("a week that starts on a holiday ends with that calendar week, however its bar is dated", () => {
+    // Labor Day week: Monday 7 Sep closed, Friday the 11th its last session. On Saturday the 12th it is complete,
+    // dated by its Monday or by its first session, Tuesday the 8th; on Friday morning it still forms.
+    const saturday = Date.parse("2026-09-12T12:00:00Z");
+    for (const date of ["2026-09-07", "2026-09-08"]) {
+      expect(formingPeriodBar(bars(["2026-08-31", date], "1wk"), "NASDAQ", saturday), date).toBeNull();
+      expect(formingPeriodBar(bars(["2026-08-31", date], "1wk"), "NASDAQ", Date.parse("2026-09-11T12:00:00Z"))?.periodToDate, date)
+        .toEqual({ period: "week", through: "2026-09-10" });
+    }
   });
 });

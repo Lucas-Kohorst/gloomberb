@@ -50,6 +50,17 @@ export function isPermanentClientError(error: unknown): boolean {
   return status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
+/**
+ * A failure asking again shortly may get past: a timeout, a rate limit or an
+ * overloaded server (408, 429, 5xx), or a market answer the service marked
+ * `retryable_error` because its own upstream was rate limited or timed out.
+ */
+export function isRetryableApiError(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError)) return false;
+  const status = error.status;
+  return error.code === "retryable_error" || status === 408 || status === 429 || (status !== undefined && status >= 500);
+}
+
 /** Reads `Retry-After` as milliseconds, accepting seconds or an HTTP date. */
 export function parseRetryAfterMs(
   header: string | null,
@@ -97,6 +108,7 @@ export function parseApiErrorDetails(body: string): Readonly<Record<string, unkn
     const parsed = JSON.parse(body) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
   } catch {
+    // Intentional ignore: Non-JSON error responses retain their HTTP status and original body.
     return undefined;
   }
 }
@@ -107,6 +119,7 @@ export function parseApiErrorCode(body: string): string | undefined {
     const parsed = JSON.parse(body) as Record<string, unknown> | null;
     return typeof parsed?.error === "string" && parsed.error ? parsed.error : undefined;
   } catch {
+    // Intentional ignore: Non-JSON error responses retain their HTTP status and original body.
     return undefined;
   }
 }

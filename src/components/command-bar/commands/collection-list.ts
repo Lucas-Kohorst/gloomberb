@@ -1,11 +1,13 @@
 import type { AppState } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
-import { splitSymbolArgs, symbolInputKey, uniqueSymbols } from "../../../cli/symbol-args";
+import { splitSymbolArgs, splitSymbolWords, symbolInputKey, uniqueSymbols } from "../../../cli/symbol-args";
+import { readNameEntries } from "../../../cli/name-entries";
 import {
   addSymbols,
   NO_MATCH,
   reason,
   summarizeSymbolRows,
+  typedSymbolChoice,
   type SymbolRow,
 } from "../../../cli/symbol-rows";
 import type { DataProvider } from "../../../types/data-provider";
@@ -40,17 +42,17 @@ export interface PastedSymbolList {
 }
 
 /**
- * The symbols in text typed or pasted after `AW`, split as `gloomberb quote`
- * splits its arguments: commas, semicolons, spaces, tabs and lines. Null for
- * one symbol or none, which keep the single add. Spaces alone also separate a
- * company's name (`Palo Alto Networks`), which is why `separated` says when
- * the text left no doubt it is a list.
+ * The entries of text typed or pasted after `AW`, split as `gloomberb quote`
+ * splits its arguments (`splitSymbolArgs`): on commas, semicolons, tabs and
+ * lines when it has them, where an entry with spaces may be a company's name
+ * or several symbols, else on spaces. Null for one word or none, which keep
+ * the single add. Spaces alone also separate a company's name (`Palo Alto
+ * Networks`), which is why `separated` says when the text left no doubt it is
+ * a list.
  */
 export function pastedSymbolList(raw: string | undefined): PastedSymbolList | null {
-  if (!raw) return null;
-  const list = uniqueSymbols(splitSymbolArgs([raw]));
-  if (list.symbols.length < 2) return null;
-  return { ...list, separated: /[,;\t\r\n]/.test(raw) };
+  if (!raw || splitSymbolWords([raw]).length < 2) return null;
+  return { ...uniqueSymbols(splitSymbolArgs([raw])), separated: /[,;\t\r\n]/.test(raw) };
 }
 
 /**
@@ -82,6 +84,11 @@ function ambiguityFailure(error: Error): Error {
 function reasonLine(row: SymbolRow): string | null {
   const typed = symbolInputKey(row.input);
   if (row.hint && row.status === "added") return row.hint;
+  // Another company had the symbol: say which, beside the listing added.
+  if (row.changeNote && row.status === "added") return row.changeNote;
+  if (row.readAs && (row.status === "added" || row.status === "already_listed")) return row.readAs;
+  // Why the match was left out, and the symbol it trades as now when there is one.
+  if (row.status === "needs_choice") return row.message ?? typed;
   if (row.status !== "failed" && !(row.status === "not_found" && row.message && !NO_MATCH.test(row.message))) return null;
   const text = reason(row.message ?? "", typed);
   return text.includes(typed) ? text : `${typed}: ${text}`;
@@ -100,12 +107,31 @@ function describeListAdd(
   const summary = `Watchlist "${watchlistName}": ${summarizeSymbolRows(rows, "add", repeated)}`;
   const reasons = rows.map(reasonLine).filter((line): line is string => !!line);
   const added = rows.some((row) => row.status === "added");
-  const unresolved = rows.some((row) => row.status === "not_found" || row.status === "failed");
+  const unresolved = rows.some((row) => row.status === "not_found" || row.status === "needs_choice" || row.status === "failed");
   return {
     body: [summary, ...reasons].join("\n"),
     type: added && !unresolved ? "success" : unresolved && !added ? "error" : "info",
     duration: unresolved ? SKIPPED_REPORT_MS : undefined,
   };
+}
+
+/**
+ * A symbol typed to add on its own that a pasted list would leave for a
+ * choice (`typedSymbolChoice`: its company moved or merged away, the match is
+ * abroad or stopped trading) is not added either. The notice says why, and
+ * what to add instead or to keep the match. Resolves true when it said so.
+ */
+export async function refuseTypedChoice(rawInput: string, deps: SharedWorkflowDeps, notify: Notify): Promise<boolean> {
+  const row = await typedSymbolChoice(rawInput, deps.tickerRepository, deps.dataProvider);
+  if (!row) return false;
+  const message = row.message ?? symbolInputKey(row.input);
+  const offers = [
+    ...row.tradesAs ? [`${row.tradesAs} for what it trades as now`] : [],
+    ...row.listing ? [`${row.listing} to keep the match`] : [],
+  ];
+  notify([/[.!?]$/.test(message) ? message : `${message}.`, ...offers.length > 0 ? [`Add ${offers.join(", or ")}.`] : []].join("\n"),
+    { type: "error", duration: SKIPPED_REPORT_MS });
+  return true;
 }
 
 /**
@@ -133,6 +159,10 @@ export async function addPastedListToWatchlist(options: {
   const deps = options.buildWorkflowDeps();
   // Spaces alone also separate the words of a name, which belongs to search.
   if (!list.separated && await namesOneCompany(list.symbols, deps.dataProvider)) return false;
+  // An entry with spaces is a company's name search finds, or the symbols it holds.
+  const read = uniqueSymbols(await readNameEntries(list.symbols, deps.dataProvider));
+  const symbols = read.symbols;
+  const repeated = list.repeated + read.repeated;
   const state = options.getState();
   const known = options.explicitTargetId && state.config.watchlists.some((entry) => entry.id === options.explicitTargetId)
     ? options.explicitTargetId
@@ -149,7 +179,7 @@ export async function addPastedListToWatchlist(options: {
     options.pushRoute({
       kind: "picker",
       pickerId: "collection-target",
-      title: `Add ${list.symbols.length} tickers to Watchlist`,
+      title: `Add ${symbols.length} tickers to Watchlist`,
       query: "",
       selectedIdx: 0,
       hoveredIdx: null,
@@ -166,7 +196,7 @@ export async function addPastedListToWatchlist(options: {
   }
 
   const watchlistName = state.config.watchlists.find((entry) => entry.id === targetId)?.name ?? targetId;
-  if (list.symbols.length > SLOW_LIST) notify(`Adding ${list.symbols.length} tickers to "${watchlistName}"...`, { type: "info" });
+  if (symbols.length > SLOW_LIST) notify(`Adding ${symbols.length} tickers to "${watchlistName}"...`, { type: "info" });
 
   const recordAttention = captureAttentionAction();
   const before = new Map(deps.getState().tickers);
@@ -182,7 +212,7 @@ export async function addPastedListToWatchlist(options: {
     },
   };
   const rows = await addSymbols({
-    symbols: list.symbols,
+    symbols,
     exchange: undefined,
     store,
     dataProvider: deps.dataProvider,
@@ -203,7 +233,7 @@ export async function addPastedListToWatchlist(options: {
       recordAttention(publicTickerKey(ticker.metadata.ticker, ticker.metadata.exchange), "watchlist_add");
     }
   }
-  const report = describeListAdd(rows, watchlistName, list.repeated);
+  const report = describeListAdd(rows, watchlistName, repeated);
   notify(report.body, { type: report.type, duration: report.duration });
   options.closeAll({ revertThemePreview: false });
   return true;

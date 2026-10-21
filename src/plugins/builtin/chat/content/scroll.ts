@@ -212,6 +212,7 @@ export function useChatScrollRuntime({
     setFollowMessages(false);
     prependAnchorRef.current = null;
     runAfterLayout(() => {
+      if (nativePaneChrome && scrollRef.current?.scrollToItem?.(messageId, { align: "center" })) return;
       if (nativePaneChrome && scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(messageId), { center: true })) return;
       const scrollBox = scrollRef.current;
       if (!scrollBox) return;
@@ -237,10 +238,10 @@ export function useChatScrollRuntime({
     pendingJumpMessageIdRef.current = messageId;
     if (hasOlderMessages && !loadingOlderMessages) {
       requestOlderMessages();
-    } else {
+    } else if (!hasOlderMessages || !nativePaneChrome) {
       pendingJumpMessageIdRef.current = null;
     }
-  }, [hasOlderMessages, loadingOlderMessages, requestOlderMessages, scrollToLoadedMessage]);
+  }, [hasOlderMessages, loadingOlderMessages, nativePaneChrome, requestOlderMessages, scrollToLoadedMessage]);
   // Every message row takes this: one that changed with the width or the list
   // would draw every row again at each step of a resize and each new message.
   const jumpSourceRef = useRef(jumpToLoadedOrOlderMessage);
@@ -257,10 +258,12 @@ export function useChatScrollRuntime({
     }
     if (hasOlderMessages && !loadingOlderMessages) {
       requestOlderMessages();
-    } else {
+    } else if (!hasOlderMessages || !nativePaneChrome) {
+      // The windowed list waits for a page in flight, then continues paging or
+      // mounts its target. Leave the terminal's paging path unchanged.
       pendingJumpMessageIdRef.current = null;
     }
-  }, [hasOlderMessages, loadingOlderMessages, messages, prependAnchorRef, requestOlderMessages, scrollToLoadedMessage]);
+  }, [hasOlderMessages, loadingOlderMessages, messages, nativePaneChrome, prependAnchorRef, requestOlderMessages, scrollToLoadedMessage]);
 
   // The terminal's list follows the bottom itself while it is sticky; this
   // covers what its own layout changes do not (a taller composer, a resize).
@@ -276,6 +279,7 @@ export function useChatScrollRuntime({
   // update to a message does not.
   useLayoutEffect(() => {
     if (!nativePaneChrome) return;
+    pendingJumpMessageIdRef.current = null;
     scrollToBottom(scrollRef.current, true);
     setPinnedToBottom(true);
   }, [channelId, nativePaneChrome, scrollRef]);
@@ -337,7 +341,10 @@ export function useChatScrollRuntime({
   useEffect(() => {
     if (!nativePaneChrome || !selectedMessageId) return;
     if (prependAnchorRef.current) return;
-    runAfterLayout(() => scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(selectedMessageId)));
+    runAfterLayout(() => {
+      if (scrollRef.current?.scrollToItem?.(selectedMessageId)) return;
+      scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(selectedMessageId));
+    });
   }, [messageElementsRef, nativePaneChrome, prependAnchorRef, scrollRef, selectedMessageId]);
 
   useEffect(() => {

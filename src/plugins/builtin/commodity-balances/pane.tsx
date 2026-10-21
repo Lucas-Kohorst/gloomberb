@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DataTableView,
   PaneStatusBody,
+  usePaneNoticeFooter,
   usePaneStatusFooter,
   usePaneTabs,
   type DataTableCell,
@@ -11,6 +12,7 @@ import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import type { PaneFooterSegment } from "../../../components/layout/pane/footer";
 import { useAsyncResource } from "../../../react/async-resource";
 import { useAutoRefresh, useUpdatedAgo } from "../../../react/auto-refresh";
+import { usePaneInstance } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, TextAttributes } from "../../../ui";
@@ -68,14 +70,20 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
   const [balanceId, setBalanceId] = usePluginPaneState<string | null>("selectedBalance", null);
   const [priceId, setPriceId] = usePluginPaneState<string | null>("selectedPrice", null);
   const prices = data?.prices ?? EMPTY_PRICES;
-  const showPrices = prices.length > 0;
-  const activeTab = showPrices && tab === "prices" ? "prices" : "balances";
+  const activeTab = tab === "prices" ? "prices" : "balances";
   const balanceRows = useMemo(
     () => sortBalanceRows(data?.rows ?? EMPTY_ROWS, balanceSort),
     [balanceSort, data?.rows],
   );
   const priceRows = useMemo(() => sortPriceRows(prices, priceSort), [priceSort, prices]);
-  const { strip, rows: tabRows } = usePaneTabs(showPrices ? {
+  // PSD coffee opens the board at coffee's first row, once per command: a later move is the reader's.
+  const pane = usePaneInstance();
+  const requestedCrop = pane?.params?.crop ?? null;
+  const cropRequest = requestedCrop ? `${requestedCrop}|${pane?.params?.tabAt ?? ""}` : "";
+  const [shownRequest, setShownRequest] = usePluginPaneState("cropRequest", "");
+  // The row the request scrolls to the top, until the reader sorts or moves on.
+  const [cropAnchor, setCropAnchor] = useState<{ id: string; version: number } | null>(null);
+  const { strip, rows: tabRows } = usePaneTabs({
     tabs: TABS,
     activeValue: activeTab,
     onSelect: (value) => setTab(value),
@@ -83,7 +91,7 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
     compact: true,
     variant: "underline",
     queryBarWidth: width,
-  } : null);
+  });
   const updatedAgo = useUpdatedAgo(updatedAt);
   const info = useMemo<PaneFooterSegment[]>(() => {
     const year = data?.marketYear;
@@ -97,14 +105,29 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
     registrationId: PANE_ID,
     loading,
     error: data ? error : null,
+    stale: !!data?.stale,
     info,
   });
+  usePaneNoticeFooter({ registrationId: `${PANE_ID}:notices`, focused, notices: data?.gaps ?? [] });
+
+  const cropPending = !!cropRequest && cropRequest !== shownRequest;
+  useEffect(() => {
+    if (!cropPending || !data) return;
+    setShownRequest(cropRequest);
+    const first = balanceRows.find((row) => row.crop === requestedCrop);
+    if (!first) return;
+    setTab("balances");
+    setBalanceId(first.id);
+    setCropAnchor((current) => ({ id: first.id, version: (current?.version ?? 0) + 1 }));
+  }, [balanceRows, cropPending, cropRequest, data, requestedCrop, setBalanceId, setShownRequest, setTab]);
+  const anchorIndex = cropAnchor ? balanceRows.findIndex((row) => row.id === cropAnchor.id) : -1;
 
   useEffect(() => {
-    if (balanceRows.length === 0) return;
+    // The crop's row is chosen above; the first row would overwrite it in the same pass.
+    if (cropPending || balanceRows.length === 0) return;
     if (balanceId && balanceRows.some((row) => row.id === balanceId)) return;
     setBalanceId(balanceRows[0]!.id);
-  }, [balanceId, balanceRows, setBalanceId]);
+  }, [balanceId, balanceRows, cropPending, setBalanceId]);
 
   useEffect(() => {
     if (priceRows.length === 0) return;
@@ -113,6 +136,7 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
   }, [priceId, priceRows, setPriceId]);
 
   const onBalanceHeader = useCallback((columnId: string) => {
+    setCropAnchor(null);
     setBalanceSort((current) => nextHeaderSort(current, columnId as BalanceColumnId, {
       firstDirection: columnId === "value" ? "desc" : "asc",
       resetTo: BALANCE_SORT,
@@ -209,14 +233,23 @@ export function CommodityBalancesPane({ width, height, focused }: PaneProps) {
           sortColumnId={balanceSort.columnId}
           sortDirection={balanceSort.direction}
           onHeaderClick={onBalanceHeader}
-          onSortChange={(columnId, direction) => setBalanceSort({ columnId: columnId as BalanceColumnId, direction })}
+          onSortChange={(columnId, direction) => {
+            setCropAnchor(null);
+            setBalanceSort({ columnId: columnId as BalanceColumnId, direction });
+          }}
           selectedTextOverridesCellColor
           selection={{
             kind: "id",
             selectedId: balanceId,
             getId: (row) => row.id,
-            onChange: (id) => setBalanceId(id),
+            onChange: (id) => {
+              if (id !== cropAnchor?.id) setCropAnchor(null);
+              setBalanceId(id);
+            },
           }}
+          scrollToIndex={anchorIndex >= 0 ? anchorIndex : undefined}
+          scrollToIndexAlign={anchorIndex >= 0 ? "start" : "nearest"}
+          scrollToIndexVersion={cropAnchor?.version ?? 0}
           renderCell={renderBalanceCell}
           emptyStateTitle="No crop balances."
           resetScrollKey={activeTab}

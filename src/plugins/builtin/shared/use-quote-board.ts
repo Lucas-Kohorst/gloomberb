@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataTableCell, DataTableVisibleRange, PaneFooterSegment } from "../../../components";
 import { useQuoteEntries } from "../../../market-data/hooks";
-import { getRegularSessionDisplay, quoteSessionColor, quoteSessionLabel } from "../../../market-data/market/status";
+import { getRegularSessionDisplay, quoteDotMarketState, quoteHeadlineTime, quoteSessionColor, quoteSessionLabel } from "../../../market-data/market/status";
 import type { InstrumentRef } from "../../../market-data/request-types";
 import type { QueryEntry } from "../../../market-data/result-types";
 import { buildQuoteKey, resolveEntryData } from "../../../market-data/selectors";
@@ -528,6 +528,7 @@ export function quoteBoardFooterInfo(status: QuoteBoardStatus): PaneFooterSegmen
   if (status.latestTs > 0) {
     info.push({
       id: "fresh",
+      quoteStatus: true,
       parts: [{
         text: new Date(status.latestTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         tone: "muted",
@@ -618,15 +619,22 @@ const boardHeadlines = new WeakMap<Quote, Quote>();
 /**
  * The quote with its regular session's price and move (getRegularSessionDisplay),
  * as `ticker` reads it: after the close its close and move, never an extended
- * print, which a board of these columns has nowhere to show.
+ * print, which a board of these columns has nowhere to show. Its time is that
+ * price's (quoteHeadlineTime), as `quote` dates it.
  */
 export function boardHeadlineQuote(quote: Quote): Quote {
   const cached = boardHeadlines.get(quote);
   if (cached) return cached;
   const display = getRegularSessionDisplay(quote);
-  const headline = !display || (display.price === quote.price && display.change === quote.change && display.changePercent === quote.changePercent)
+  const lastUpdated = quoteHeadlineTime(quote);
+  const headline = (!display || (display.price === quote.price && display.change === quote.change && display.changePercent === quote.changePercent))
+    && lastUpdated === quote.lastUpdated
     ? quote
-    : { ...quote, price: display.price, change: display.change ?? Number.NaN, changePercent: display.changePercent ?? Number.NaN };
+    : {
+      ...quote,
+      ...display ? { price: display.price, change: display.change ?? Number.NaN, changePercent: display.changePercent ?? Number.NaN } : {},
+      lastUpdated,
+    };
   boardHeadlines.set(quote, headline);
   return headline;
 }
@@ -650,7 +658,7 @@ export function renderQuoteBoardCell(
       if (format.sessionText) {
         return { text: quoteSessionLabel(quote) ?? "—", color: quoteSessionColor(quote) };
       }
-      const dot = marketStatusDot(quote?.marketState);
+      const dot = marketStatusDot(quoteDotMarketState(quote));
       // The dot is a picture; the export says which session it means.
       return { text: dot.char, value: quoteSessionLabel(quote), color: dot.color };
     }

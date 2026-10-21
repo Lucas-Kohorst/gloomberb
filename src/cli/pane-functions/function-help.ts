@@ -68,10 +68,10 @@ const QUOTES: FunctionFreshness = { free: "15 minutes delayed, crypto real-time"
 /** US option chains and the quotes behind them. */
 const OPTIONS: FunctionFreshness = { free: DELAYED, pro: REAL_TIME };
 const FX: FunctionFreshness = { free: DELAYED, pro: REAL_TIME };
-/** Open interest settles once a session; spot and the quotes behind gamma follow the plan. */
+/** Open interest is counted once a session and reaches Gloom about two sessions late; spot and the quotes behind gamma follow the plan. */
 const OPX_DATA: FunctionFreshness = {
-  free: "Open interest as of the prior session; spot and gamma 15 minutes delayed",
-  pro: "Open interest as of the prior session; spot and gamma real-time",
+  free: "Open interest about two sessions old, its date in the footer; spot and gamma 15 minutes delayed",
+  pro: "Open interest about two sessions old, its date in the footer; spot and gamma real-time",
 };
 const NEWS: FunctionFreshness = { free: "12 hours delayed", pro: REAL_TIME };
 const US_SCANNER: FunctionFreshness = { free: DELAYED, pro: REAL_TIME };
@@ -93,7 +93,7 @@ const POP_OUT = key("p", "op out");
 const STEP = key("←/→", " step");
 /** THEM and MEMB members: open them in RRG, CORR, SIW or RIPL, or save them as a watchlist. */
 const MEMBERS_MENU = key(".", " open members in, save as watchlist");
-const CHART_KEYS = [key("s", "eries"), key("i", "ndicators"), key("t", "imeframe"), key("f", "ormulas")];
+const CHART_KEYS = [key("s", "eries"), key("i", "ndicators"), key("b", "ars"), key("f", "ormulas")];
 
 export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
   // Research companies
@@ -175,7 +175,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["DDIS"],
   },
   HP: {
-    summary: "Daily open, high, low, close and volume in a scrollable table.",
+    summary: "Open, high, low, close and volume in a scrollable table: daily bars over 3M to start, weekly for 5Y and monthly for ALL. The newest bar is marked to date while its day, week or month runs on.",
     usage: ["HP AAPL"],
     keys: [key("t", " range")],
     data: QUOTES,
@@ -241,14 +241,14 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["OMON"],
   },
   OPX: {
-    summary: "Open interest by strike for one expiry with max pain and spot marked, every expiry's open interest, put/call ratio and max pain, and dealer gamma (GEX) by strike with its flip level and a range for the dealer assumption. MAXPAIN opens it too.",
+    summary: "Open interest by strike for one expiry with max pain and spot marked, every expiry's open interest, put/call ratio, max pain and net dealer gamma, and dealer gamma (GEX) by strike with its flip level, call and put walls and a range for the dealer assumption. MAXPAIN opens it too.",
     usage: ["OPX", "OPX SPY", "OPX SPX"],
     keys: [TABS, OPEN],
     data: OPX_DATA,
     bloomberg: ["OPX"],
   },
   GEX: {
-    summary: "Net dealer gamma by strike across every expiry or one, with the total, the flip level and a range for the dealer assumption. The GEX tab of OPX.",
+    summary: "Net dealer gamma by strike across every expiry or one, with the total, the flip level, the call and put walls and a range for the dealer assumption. The GEX tab of OPX.",
     usage: ["GEX", "GEX SPY", "GEX SPX"],
     keys: [TABS],
     data: OPX_DATA,
@@ -288,7 +288,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["HIVG", "GV"],
   },
   HVG: {
-    summary: "Rolling realized volatility over windows from 10 to 260 sessions, with price and today's at-the-money IV for reference.",
+    summary: "Rolling realized volatility over windows from 10 to 260 bars, with price and today's at-the-money IV for reference.",
     usage: ["HVG MSFT"],
     keys: [key("v", "iew"), key("i", "v on"), key("s", "urface")],
     data: { free: `Daily closes; ATM IV ${DELAYED}`, pro: "Daily closes; ATM IV real-time" },
@@ -395,8 +395,11 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["ERN"],
   },
   DVD: {
-    summary: "Cash distributions, trailing yield, the forward yield fundamentals show (the latest distribution annualized, or the declared one once announced), and payout growth. Future payments are not forecast.",
-    usage: ["DVD KO"],
+    summary: "Cash distributions, trailing yield, the forward yield fundamentals show (the latest distribution annualized, or the declared one once announced), and payout growth. Future payments are not forecast. "
+      + "For a bond fund these are distribution yields, not its SEC yield, which follows them with its date, yield to worst and duration. "
+      + "--tax-rate 40.8 adds a muni fund's tax-equivalent yield, yield / (1 - (federal + state rate)) on the SEC yield (else the distribution yield), "
+      + "and its muni/Treasury ratio against the GC tenor nearest its duration; --state-rate 13.3 --state CA counts only for a CA fund.",
+    usage: ["DVD KO", "DVD MUB --tax-rate 40.8", "DVD CMF --tax-rate 40.8 --state-rate 13.3 --state CA"],
     keys: [STEP],
     data: same("Daily"),
     bloomberg: ["DVD"],
@@ -442,8 +445,8 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     summary: "Named executive officers and what they were paid, read from the proxy statement and checked against the filing.",
     usage: ["EXEC NVDA"],
     keys: [key("y", "ear"), key("o", "pen filing")],
-    data: pro(AS_FILED.pro),
-    access: "pro",
+    data: { free: "As filed; each executive's total pay from the latest proxy", pro: "As filed; the pay breakdown and every year" },
+    access: "preview",
     bloomberg: ["MGMT"],
   },
   EK: {
@@ -678,10 +681,10 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
 
   // Watch markets
   MOST: {
-    summary: "Today's top gainers, losers, most active and trending tickers with price, change, volume against average and market cap. On Pro, pre-market and after-hours movers and the gaps at the open.",
+    summary: "Today's top gainers, losers, most active and trending tickers with price, change, volume against average and market cap, and the pre-market and after-hours movers. On Pro, the gaps at the open.",
     usage: ["MOST"],
     keys: [TABS, OPEN],
-    data: { free: DELAYED, pro: "Real-time, pre-market and after-hours" },
+    data: { free: DELAYED, pro: REAL_TIME },
     bloomberg: ["MOST"],
   },
   WEI: {
@@ -749,7 +752,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: [],
   },
   FUT: {
-    summary: "Each root's most active futures contract across equity index, equity sectors, rates, energy, metals, agriculture, livestock and FX with last price, unit and session change, grouped by sector.",
+    summary: "Each root's front futures contract (until its stated roll date) and the day's most active month across equity index, equity sectors, rates, energy, metals, agriculture, livestock and FX with last price, unit and session change, grouped by sector.",
     usage: ["FUT"],
     keys: [SEARCH, OPEN],
     data: same(DELAYED),
@@ -968,7 +971,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: [],
   },
   PDLR: {
-    summary: "Weekly primary dealer net positions and settlement fails across Treasuries and mortgage-backed securities.",
+    summary: "Weekly primary dealer net positions with history, by sector and Treasury tenor (bills, coupons, TIPS, FRN), and settlement fails.",
     usage: ["PDLR"],
     keys: [TABS],
     data: same("Weekly, as published"),
@@ -982,22 +985,22 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["BTMM"],
   },
   CDS: {
-    summary: "Single-name corporate CDS from DTCC public dissemination. CDS alone lists the issuers traded in the last 5 days with trade count, last trade and 5Y spread, to rank them by; with a ticker or issuer, its 5Y spread (level, date, 1M change, range) and its trades.",
-    usage: ["CDS", "CDS F"],
+    summary: "Single-name corporate CDS from DTCC public dissemination. CDS alone lists the issuers traded in the last 5 days with trade count, last trade, 5Y spread and its 1W and 1M moves through the roll while the level is current, to rank them by (`fn CDS --sort 1m`); past 2,000bp a name is quoted in points upfront (`57.6 pts`), moves too, and ranks after the bp names; with a ticker or issuer, its 5Y spread (level, date, 1W and 1M change, range), its trades and, in `fn`, its daily levels (`fn CDS F --csv --section daily`).",
+    usage: ["CDS", "CDS F", "gloomberb fn CDS --sort 1m", "gloomberb fn CDS F --csv --section daily"],
     keys: [OPEN, STEP],
     data: same("Delayed, as trades are disseminated"),
     bloomberg: ["CDS"],
   },
   CDX: {
-    summary: "CDX IG, HY and EM with iTraxx Main and Crossover on the run: the 5Y level, 1D, 1W and 1M moves, 1Y percentile and the day's print count. IG and iTraxx in spread, HY and EM in price. Naming an index adds its daily history. Sovereign CDS is the other tab.",
+    summary: "CDX IG, HY and EM with iTraxx Main and Crossover on the run: the 5Y level, 1D, 1W and 1M moves, 1Y percentile and the day's print count. IG and iTraxx in spread, HY and EM in price. Naming an index opens the board on it, and `fn` adds its daily history. Sovereign CDS is the other tab.",
     usage: ["CDX", "CDX XOVER"],
     keys: [TABS, OPEN],
     data: same("Delayed, as trades are disseminated"),
     bloomberg: ["CDX"],
   },
   SOVR: {
-    summary: "The CDS pane on Sovereign: 5Y CDS ranked by the month's move, beside the local currency's move against the dollar, with each country's year of history.",
-    usage: ["SOVR"],
+    summary: "The CDS pane on Sovereign: 5Y CDS ranked by the month's move, beside the local currency's move against the dollar, with each country's year of history. Naming a country opens the board on it.",
+    usage: ["SOVR", "SOVR Brazil"],
     keys: [TABS, OPEN],
     data: same("Delayed, as trades are disseminated"),
     bloomberg: ["SOVR", "WCDS"],
@@ -1068,8 +1071,8 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     bloomberg: ["13F"],
   },
   INS: {
-    summary: "Insider buys, sells, awards and gifts from Form 4 filings, with insider name, size and price. US equities.",
-    usage: ["INS NVDA"],
+    summary: "Insider buys, sells, awards and gifts from Form 4 filings, with insider name, size and price. US equities. Alone it ranks the companies whose insiders are buying, or selling, in the open market, with why, filtered by role, size, cluster, new or exited positions and market cap.",
+    usage: ["INS NVDA", "INS"],
     keys: [OPEN, key("f", "ilter")],
     data: AS_FILED,
     bloomberg: ["INS"],
@@ -1107,7 +1110,7 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     docs: "PORT",
   },
   ALRT: {
-    summary: "Your price alerts with current price, distance to target and trigger state, plus alerts days before earnings, CPI or FOMC and market and filing event alerts.",
+    summary: "Your price alerts with current price, distance to target and trigger state, plus alerts on earnings, CPI and FOMC dates, filings and 13F, news keywords, analyst changes, 52-week highs and lows, unusual volume, short interest, insider and congress trades, catalysts, IV spikes, options flow and perps.",
     usage: ["ALRT"],
     keys: [key("a", "dd alert"), key("e", "dit"), key("d", "elete"), key("m", "re-arm")],
     data: QUOTES,
@@ -1234,6 +1237,30 @@ export const FUNCTION_HELP: Readonly<Record<string, FunctionHelp>> = {
     keys: [key("a", "dd"), key("c", "onnect"), key("s", "ync"), key("e", "dit")],
     data: null,
     bloomberg: [],
+  },
+  BUY: {
+    summary: "Open the shared Trade ticket with a buy quantity and optional limit price. Focus starts on Review; choose an account and review the broker preview before confirming.",
+    usage: ["BUY AAPL 10", "BUY AAPL 10 150.25"],
+    keys: [key("r", "eview"), key("o", "rders")],
+    data: same("Broker account and quote"),
+    bloomberg: [],
+    docs: "BR",
+  },
+  SELL: {
+    summary: "Open the shared Trade ticket with a sell quantity and optional limit price. Focus starts on Review; holdings and broker capabilities are checked before confirmation.",
+    usage: ["SELL AAPL 10", "SELL AAPL 10 350.25"],
+    keys: [key("r", "eview"), key("o", "rders")],
+    data: same("Broker account and quote"),
+    bloomberg: [],
+    docs: "BR",
+  },
+  ORD: {
+    summary: "Open orders and recent activity for a selected broker profile and account. Review a modification or confirm cancellation from an open order; uncertain outcomes require reconciliation before another action.",
+    usage: ["ORD"],
+    keys: [key("m", "odify"), key("c", "ancel")],
+    data: same("Broker account snapshot"),
+    bloomberg: [],
+    docs: "BR",
   },
 
   // Layouts and settings

@@ -19,7 +19,7 @@ export type {
   ChartBandMode, ChartStripSpec, ChartTableChart, ChartTableHeaderProps, ChartTableLayout,
   ChartTableSelection,
 } from "./chart-table";
-export { scalarPoint, staticSeries } from "./chart/static/series";
+export { scalarPoint, stackedSeries, staticSeries, type StackedLayer } from "./chart/static/series";
 export type {
   CompositeAxisDomain,
   CompositeAxisSide,
@@ -50,8 +50,8 @@ export type { TickerListVisibleRange } from "./ticker/list-table-view";
 // What `TickerListTableView` puts in each configured column, and the value it
 // sorts on. A pane that shows the user's own column set has to read them the
 // same way or its rows disagree with the portfolio's.
-export { getColumnValue, getSortValue } from "../plugins/builtin/portfolio-list/column-values";
-export type { ColumnContext } from "../plugins/builtin/portfolio-list/column-values";
+export { getColumnValue, getSortValue } from "../portfolio/column-values";
+export type { ColumnContext } from "../portfolio/column-values";
 export { TickerBadgeList } from "./ticker/badge/list";
 export { TickerBadgeText } from "./ticker/badge/text";
 // One `useInlineTickers` catalog entry in running text. With `badgeQuotes`
@@ -67,6 +67,7 @@ export { usePagedRows } from "./paged-rows";
 export type { PageLoader, PageRequest, PagedRows, PagedRowsOptions, RowPage } from "./paged-rows";
 export { DataTableView } from "./data-table/view";
 export type {
+  DataTableBodyStatus,
   DataTableKeyEvent,
   DataTableRootKeyContext,
   DataTableSelectionChangeReason,
@@ -101,6 +102,8 @@ export { usePaneStatusFooter, usePaneStatusLinkFooter } from "./layout/pane/stat
 export { usePaneNoticeFooter, type UsePaneNoticeFooterOptions } from "./use-pane-notice-footer";
 export { loadingErrorFooterInfo } from "./data-table/table-pane";
 export type { PaneFooterPressEvent, PaneFooterSegment, PaneHint } from "./layout/pane/footer";
+// Data a source delivers late: the footer's yellow clock, its detail on hover.
+export { DELAYED_SEGMENT, delayedFooterSegment, splitDelayedStatus } from "./layout/pane/footer";
 export {
   getPaneSidebarWidth,
   getPaneSidebarWidthRange,
@@ -125,9 +128,9 @@ export { MarkdownText } from "./markdown-text";
 // this file is the public `gloomberb/components` surface: a kit component
 // reaches plugins only once it is added here.
 export {
-  ActionRow, Badge, BulletList, Button, ButtonActionScope, Checkbox, ChoiceDialog, ColumnGrid, ColumnGridPair, ConfirmDialog, confirmDialog, DataTable,
+  ActionRow, Badge, BulletList, Button, ButtonActionScope, Card, Checkbox, ChoiceDialog, ColumnGrid, ColumnGridPair, ConfirmDialog, confirmDialog, DataTable,
   DetailScrollBody, DialogFrame, DisclosureMarker, Divider, EmptyState, ExternalLink, ExternalLinkText, FieldGrid, FieldLabel,
-  fieldGridColumns, fieldGridRows, FigureList, getMessageComposerBlockHeight, GridFieldView, Icon, ICON_GLYPHS,
+  fieldFrameStyle, fieldGridColumns, FRAMED_TEXTAREA_DESKTOP_STYLE, fieldGridRows, FigureList, getMessageComposerBlockHeight, GridFieldView, Icon, ICON_GLYPHS,
   IconButton, InlineQuickAddRow, KeyValueRow, ListView, loadingText, Menu, MenuPopover,
   MessageComposer, MultiSelectDialogButton, MultiSelectDialogContent, Notice, NumberField,
   NumberPromptDialog, openUrl, PageStackView, PaneLinkMenu, PaneStatusBody, Popover, Prose,
@@ -136,7 +139,7 @@ export {
   useFieldRing, usePaneLinkMenuEntry, useQueryBarSearch,
 } from "./ui";
 export type {
-  ActionRowProps, BadgeProps, BulletListProps, ButtonProps, ButtonVariant, CheckboxProps, ChoiceDialogChoice, ColumnGridCell,
+  ActionRowProps, BadgeProps, BulletListProps, ButtonProps, ButtonVariant, CardProps, CheckboxProps, ChoiceDialogChoice, ColumnGridCell,
   ColumnGridColumn, ColumnGridPairProps, ColumnGridProps, ConfirmDialogOptions,
   DataTableCell, DataTableColumn, DataTableProps, DataTableVisibleRange, DetailScrollBodyProps, DialogFrameProps,
   DisclosureMarkerProps, DividerProps, EmptyStateProps, FieldGridProps, FieldLabelProps, FieldRing, FieldRingOptions,

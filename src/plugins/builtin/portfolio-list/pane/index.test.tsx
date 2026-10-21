@@ -14,6 +14,7 @@ import {
   type AppConfig,
   type BrokerInstanceConfig,
 } from "../../../../types/config";
+import type { BrokerAdapter, BrokerConnectionStatus } from "../../../../types/broker";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { Quote, TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
@@ -531,7 +532,10 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const previewFrame = tui.frame();
     expect(previewFrame).toContain("420");
-    expect(previewFrame).not.toMatch(/MSFT\s+420/);
+    // The field shows the symbol whole and the preview does not repeat it.
+    const quickAddRow = previewFrame.split("\n").find((line) => line.includes("420")) ?? "";
+    expect(quickAddRow).toMatch(/\+ MSFT\s+420/);
+    expect(quickAddRow.match(/MSFT/g)).toHaveLength(1);
     expect(previewFrame).toContain("+1.25%");
 
     await act(async () => {
@@ -676,6 +680,62 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(ticker?.metadata.watchlists).toEqual(["watchlist"]);
   });
 
+  test("a disconnected broker keeps its positions, dated, and b reconnects and syncs it", async () => {
+    const portfolioId = "broker:ibkr-live:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("gateway", "ibkr-live")]);
+    const syncedAt = new Date(2025, 9, 17, 14, 2).getTime();
+    config.portfolios = config.portfolios.map((portfolio) => portfolio.id === portfolioId ? { ...portfolio, lastSyncedAt: syncedAt } : portfolio);
+    let status: BrokerConnectionStatus = { state: "disconnected", mode: "gateway", updatedAt: 0 };
+    const listeners = new Set<() => void>();
+    const setStatus = (next: BrokerConnectionStatus) => {
+      status = next;
+      for (const listener of listeners) listener();
+    };
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      validate: async () => true,
+      importPositions: async () => [],
+      getStatus: () => status,
+      subscribeStatus(_instance, listener) {
+        listeners.add(listener);
+        return () => { listeners.delete(listener); };
+      },
+    };
+    const calls: string[] = [];
+    const runtime = createTestPluginRuntime({
+      getBrokerAdapter: (brokerType) => brokerType === "ibkr" ? broker : null,
+      connectBrokerInstance: async (instanceId) => {
+        calls.push(`connect ${instanceId}`);
+        setStatus({ state: "connected", mode: "gateway", updatedAt: 1 });
+      },
+      syncBrokerInstance: async (instanceId) => { calls.push(`sync ${instanceId}`); },
+    });
+    await tui.render(<PaneFooterProvider>{(footer) => <Box flexDirection="column">
+      <PortfolioHarness config={config} collectionId={portfolioId} runtime={runtime} paneHeight={11} />
+      <PaneFooterBar footer={footer} focused width={100} />
+      <PaneFooterKeys paneId={TEST_PANE_ID} footer={footer} focused />
+    </Box>}</PaneFooterProvider>, { width: 100, height: 24 });
+    await flushFrame();
+
+    const frame = await tui.waitForFrameToContain("[b] reconnect");
+    expect(frame).toContain("AAPL");
+    expect(frame).toContain("as of Oct 17 14:02");
+    expect(frame).toContain("IBKR disconnected");
+    expect(frame).not.toContain("Acct missing");
+
+    await act(async () => {
+      tui.setup().mockInput.pressKey("b");
+      await Promise.resolve();
+    });
+    await flushFrame();
+    expect(calls).toEqual(["connect ibkr-live", "sync ibkr-live"]);
+    const connected = await tui.waitForFrameToExclude("[b] reconnect");
+    expect(connected).toContain("AAPL");
+    expect(connected).not.toContain("IBKR disconnected");
+  });
+
   const teamConfig = createManualCollectionConfig("team:t1:w1");
   teamConfig.watchlists = [{ id: "team:t1:w1", name: "Desk", teamId: "t1" }];
   for (const [name, collectionId, config] of [
@@ -741,6 +801,66 @@ describe("PortfolioListPane cash and margin UI", () => {
       type: "error",
       body: "No exact ticker match",
     });
+    // The failed symbol leaves the field, still named under it, so the next one replaces it instead of running on.
+    expect(tui.frame()).toContain("NOPE  No exact ticker match");
+    // Quotes keep arriving; the line stays until something is typed.
+    for (const price of [101, 102]) {
+      await act(async () => {
+        harnessDispatch!({ type: "SET_FINANCIALS", symbol: "AAPL", data: createTestFinancials({ quote: makeQuote({ symbol: "AAPL", price }) }) });
+        await new Promise((resolve) => setTimeout(resolve, 360));
+      });
+      await flushFrame();
+      expect(tui.frame()).toContain("NOPE  No exact ticker match");
+    }
+
+    await act(async () => {
+      await tui.setup().mockInput.typeText("MSF");
+      await tui.setup().renderOnce();
+    });
+    await flushFrame();
+    // The lookup runs on what was typed next alone.
+    expect(tui.frame()).toMatch(/\+ MSF\s+MSF checking/);
+    expect(tui.frame()).not.toContain("NOPE");
+  });
+
+  test("quick-add keeps what was typed when adding fails for a reason other than no listing", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const notifications: Array<{ type?: string; body: string }> = [];
+    const registry = installQuickAddRegistry(createQuickAddProvider(true));
+    registry.tickerRepository.loadTicker = async () => { throw new Error("offline"); };
+
+    await tui.render(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({ portfolios: [], watchlists: [], positions: [] })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => { notifications.push(notification); },
+        })}
+        paneHeight={12}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      tui.setup().mockInput.pressKey("a");
+      await tui.setup().renderOnce();
+    });
+    await act(async () => {
+      await tui.setup().mockInput.typeText("MSFT");
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+    await act(async () => {
+      tui.setup().mockInput.pressEnter();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await flushFrame();
+
+    expect(notifications.at(-1)).toMatchObject({ type: "error", body: "Failed to add MSFT." });
+    // Enter tries the same symbol again.
+    expect(tui.frame()).toMatch(/\+ MSFT\s+Ticker add failed/);
   });
 
   test("quick-add shows the saved listing's venue, and a colon opens that symbol's venues in the command bar", async () => {
@@ -887,7 +1007,9 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     // The EUR rate arrives from the market data coordinator a frame later.
     const frame = await tui.waitForFrameToContain("1.4k");
-    expect(frame).toMatch(/AAPL\s+125\.00\s+\+4\.17%/);
+    // GLO-1106: a row in another currency than the totals puts CCY after LAST, so 125.00 reads as euros.
+    expect(frame).toMatch(/LAST\s+CCY\s+CHG%/);
+    expect(frame).toMatch(/AAPL\s+125\.00\s+EUR\s+\+4\.17%/);
     expect(frame).toContain("100");
     expect(frame).toContain("+275");
     expect(frame).not.toContain("€100.00");
@@ -1009,6 +1131,33 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
 
     expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } }]);
+  });
+
+  test("names an option's grid tile as the table's Ticker column does, by its contract and not its OCC code", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const instance = config.layout.instances.find((entry) => entry.instanceId === TEST_PANE_ID);
+    if (instance) instance.settings = { ...(instance.settings ?? {}), viewMode: "grid" };
+    const occ = "AAPL261218C00300000";
+    const option = makeTicker({ ticker: occ, assetCategory: "OPT" });
+
+    await tui.render(
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        ticker={option}
+        stateMutator={(state) => {
+          state.tickers = new Map([[occ, option]]);
+          state.financials = new Map([[occ, createTestFinancials({ quote: makeQuote({ symbol: occ }) })]]);
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+    await flushFrame();
+
+    const frame = tui.frame();
+    expect(frame).toContain("AAPL C $300 Dec'26");
+    expect(frame).not.toContain(occ);
   });
 
   test("keeps the grid's arrows on its tiles and leaves h and l to the collection tabs", async () => {

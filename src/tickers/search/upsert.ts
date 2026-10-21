@@ -11,6 +11,25 @@ import {
 import { canonicalExchange, parsePublicTickerKey, publicTickerKey } from "../../utils/exchanges";
 import { scopedBrokerContractIdentityKey } from "../../utils/instrument-identity";
 
+/**
+ * The key a result is saved under when its symbol is already saved for
+ * another listing (`SAP:XETR` beside a saved SAP on NYSE), or null when the
+ * symbol's own key serves. Opening a second listing must never re-denominate
+ * existing positions.
+ */
+export function otherListingTickerKey(
+  result: InstrumentSearchResult,
+  symbol: string,
+  saved: TickerRecord | null | undefined,
+): string | null {
+  const selectedExchange = canonicalExchange(
+    result.exchange === "SMART" ? result.primaryExchange : result.exchange || result.primaryExchange,
+  );
+  const savedExchange = canonicalExchange(saved?.metadata.exchange);
+  if (!saved || !selectedExchange || !savedExchange || selectedExchange === savedExchange) return null;
+  return publicTickerKey(parsePublicTickerKey(symbol).symbol, selectedExchange);
+}
+
 export async function upsertTickerFromSearchResult(
   tickerRepository: AppTickerRepositoryPort,
   result: InstrumentSearchResult,
@@ -18,13 +37,9 @@ export async function upsertTickerFromSearchResult(
 ): Promise<{ ticker: TickerRecord; created: boolean }> {
   let symbol = options.tickerSymbol ?? getSearchResultSymbol(result);
   let ticker = await tickerRepository.loadTicker(symbol);
-  const selectedExchange = canonicalExchange(
-    result.exchange === "SMART" ? result.primaryExchange : result.exchange || result.primaryExchange,
-  );
-  const savedExchange = canonicalExchange(ticker?.metadata.exchange);
-  if (ticker && selectedExchange && savedExchange && selectedExchange !== savedExchange) {
-    // Opening a second listing must never re-denominate existing positions.
-    symbol = publicTickerKey(parsePublicTickerKey(symbol).symbol, selectedExchange);
+  const otherListingKey = otherListingTickerKey(result, symbol, ticker);
+  if (otherListingKey) {
+    symbol = otherListingKey;
     ticker = await tickerRepository.loadTicker(symbol);
   }
   const created = !ticker;

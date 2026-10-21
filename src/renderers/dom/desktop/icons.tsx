@@ -68,6 +68,14 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M19 5 5 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </g>
   ),
+  // A media player's play and pause, solid so they read at the size of text.
+  play: <path d="M3.6 2.2v7.6a.5.5 0 0 0 .76.43l6.1-3.8a.5.5 0 0 0 0-.86l-6.1-3.8a.5.5 0 0 0-.76.43Z" fill="currentColor" />,
+  pause: (
+    <>
+      <rect x="2.9" y="2.3" width="2.3" height="7.4" rx=".6" fill="currentColor" />
+      <rect x="6.8" y="2.3" width="2.3" height="7.4" rx=".6" fill="currentColor" />
+    </>
+  ),
   user: (
     <g transform="scale(0.5)">
       <circle cx="12" cy="8.5" r="3.4" stroke="currentColor" strokeWidth="1.8" />
@@ -141,6 +149,20 @@ const ICONS: Record<IconName, ReactNode> = {
     <>
       <path d="M3.6 2.4h4.8l2.3 2.9L6 10.4 1.3 5.3l2.3-2.9Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
       <path d="M1.5 5.3h9M4.8 2.5 4.3 5.3 6 10.1l1.7-4.8-.5-2.8" stroke="currentColor" strokeWidth=".9" strokeLinejoin="round" />
+    </>
+  ),
+  // A clock face at ten past: data that arrives late.
+  clock: (
+    <>
+      <circle cx="6" cy="6" r="4.4" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M6 3.4V6l1.9 1.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  // A pencil, for changing something in place.
+  edit: (
+    <>
+      <path d="M2.2 9.8l.5-2.3 5.4-5.4a1.1 1.1 0 0 1 1.6 0l.2.2a1.1 1.1 0 0 1 0 1.6L4.5 9.3l-2.3.5Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+      <path d="M7.3 2.9l1.8 1.8" stroke="currentColor" strokeWidth="1.1" />
     </>
   ),
   restore: (

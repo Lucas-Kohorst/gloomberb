@@ -34,6 +34,20 @@ export interface QuoteProvenance {
   rejectedPriceProviders?: string[];
 }
 
+/**
+ * A US listing that no longer trades, as Gloom Cloud states it: TWTR, last
+ * traded 2022-10-27 and removed from NYSE the next day. Its daily history is
+ * still served, ending on that session. Dates are New York trading dates.
+ */
+export interface ListingDelisting {
+  /** "delisted": the exchange's removal of the listing is on record; "inactive": only its last trade is known. */
+  status: "delisted" | "inactive";
+  /** The last session with a trade (YYYY-MM-DD). */
+  lastTradeDate: string;
+  /** The first session served (YYYY-MM-DD). */
+  historyStart: string;
+}
+
 /** Static listing facts from a quote observation, without an investable price. */
 export interface QuoteMetadataSource {
   providerId?: string;
@@ -81,6 +95,13 @@ export interface Quote extends DepositaryReceiptFacts {
   providerPriceDivisor?: number;
   change: number;
   changePercent: number;
+  /**
+   * What change and changePercent measure from when it is not previousClose,
+   * as Gloom Cloud says of a coin whose previous close it cannot date to the
+   * last two days: the last 24 hours ("24h", previousClose absent), or
+   * nothing ("none", no move). Absent on every other quote.
+   */
+  changeBasis?: "24h" | "none";
   previousClose?: number;
   /** Official close of a completed regular session, in this quote's currency. */
   regularClose?: number;
@@ -100,6 +121,8 @@ export interface Quote extends DepositaryReceiptFacts {
   receivedAt?: number; // local receipt timestamp ms for streamed/display freshness
   delivery?: QuoteDelivery;
   stale?: boolean;
+  /** The listing no longer trades: the price is its last trade (ListingDelisting). */
+  delisting?: ListingDelisting;
   exchangeName?: string;
   fullExchangeName?: string;
   listingExchangeName?: string;
@@ -435,6 +458,8 @@ export interface EarningsAction {
   /** Null when the basis cannot be determined; absent from sources that do not say. */
   epsBasis?: EarningsEpsBasis | null;
   dateStatus?: EarningsDateStatus;
+  /** `press-release` when `epsActual` is the company's release's, provisional until the calendar has the quarter. */
+  epsActualSource?: "press-release";
 }
 
 export interface CorporateActionsData {

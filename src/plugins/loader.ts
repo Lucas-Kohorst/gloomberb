@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import { readdir } from "fs/promises";
 import { basename, join } from "path";
 import { existsSync, lstatSync, readFileSync, statSync } from "fs";
@@ -32,6 +33,12 @@ export interface LoadedExternalPlugin {
   repo?: string;
   /** A symlink to a local checkout (`gloomberb plugin link`) rather than a clone. */
   linked?: boolean;
+  /**
+   * The plugin's logo as a `data:` URL (plugin-icon.ts), for the desktop and
+   * the web to draw beside what it contributes, such as its broker. The
+   * terminal draws no images and leaves it unread.
+   */
+  icon?: string;
   error?: string;
   /**
    * The Gloomberb the checkout declares it needs, when this one is older. The
@@ -78,7 +85,8 @@ async function readPluginPackageField(pluginDir: string, field: string): Promise
     if (typeof value !== "string" || !value) return null;
     const resolved = join(pluginDir, value);
     return existsSync(resolved) ? resolved : null;
-  } catch {
+  } catch (error) {
+    logFailure("plugin-loader", "Plugin entry metadata read failed")(error);
     // Malformed package.json falls through to the index candidates.
     return null;
   }
@@ -125,6 +133,7 @@ function readPluginOriginRepo(pluginDir: string): string | null {
     const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(url);
     return match ? `${match[1]}/${match[2]}` : null;
   } catch {
+    // Intentional ignore: Hand-copied plugins may have no git origin metadata.
     return null;
   }
 }
@@ -151,6 +160,7 @@ export function readPluginCommit(pluginDir: string): string | null {
     }
     return null;
   } catch {
+    // Intentional ignore: Hand-copied plugins and history-free links may have no commit metadata.
     return null;
   }
 }
@@ -227,7 +237,8 @@ function hasStaleModules(pluginDir: string, commit: string | null): boolean {
   if (!importedCommits.has(pluginDir) || importedCommits.get(pluginDir) === commit) return false;
   try {
     return pluginSourceFiles(pluginDir).length > 1;
-  } catch {
+  } catch (error) {
+    logFailure("plugin-loader", "Plugin source inspection failed")(error);
     return true;
   }
 }
@@ -383,6 +394,7 @@ function isSymlink(path: string): boolean {
   try {
     return lstatSync(path).isSymbolicLink();
   } catch {
+    // Intentional ignore: A removed path is not a linked checkout; the loader handles its missing entry.
     return false;
   }
 }
@@ -394,6 +406,7 @@ export function isDirectoryOrLink(entry: { isDirectory(): boolean; isSymbolicLin
   try {
     return statSync(path).isDirectory();
   } catch {
+    // Intentional ignore: Dangling plugin symlinks are excluded from the installed directory list.
     return false;
   }
 }

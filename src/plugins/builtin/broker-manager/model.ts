@@ -1,3 +1,4 @@
+import { brokerProfileLogo, type BrokerPluginLogo } from "../../../brokers/logos";
 import type { BrokerAdapter, BrokerConnectionStatus } from "../../../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 import type { BrokerAccount } from "../../../types/trading";
@@ -27,6 +28,8 @@ export interface BrokerProfileRow {
   accountIds: string[];
   /** When the broker ends this profile's sign-in, once Gloom says it is time to connect again. */
   signInEndsAt: number | null;
+  /** The broker's logo for the desktop and the web (brokers/logos.ts); null draws its initial. */
+  logo: string | null;
   instance: BrokerInstanceConfig;
   adapter: BrokerAdapter | null;
 }
@@ -46,10 +49,10 @@ function formatBrokerMode(value: unknown): string {
 
 function summarizeBrokerAccounts(accounts: BrokerAccount[]): string {
   if (accounts.length === 0) return "0 acct";
-  const currencies = new Set(accounts.map((account) => account.currency || "USD"));
+  const currencies = new Set(accounts.map((account) => account.currency || ""));
   const canSum = currencies.size === 1 && accounts.every((account) => typeof account.netLiquidation === "number");
   if (!canSum) return `${accounts.length} acct${accounts.length === 1 ? "" : "s"}`;
-  const currency = currencies.values().next().value ?? "USD";
+  const currency = currencies.values().next().value ?? "";
   const total = accounts.reduce((sum, account) => sum + (account.netLiquidation ?? 0), 0);
   return formatCurrency(total, currency);
 }
@@ -111,6 +114,7 @@ export function buildBrokerProfileRows(
   adapters: ReadonlyMap<string, BrokerAdapter | null>,
   brokerAccounts: Record<string, BrokerAccount[]>,
   signInEnds: SignInEnds = new Map(),
+  pluginLogo: BrokerPluginLogo = () => null,
 ): BrokerProfileRow[] {
   return config.brokerInstances.map((instance) => {
     const adapter = adapters.get(instance.brokerType) ?? null;
@@ -147,6 +151,7 @@ export function buildBrokerProfileRows(
       signInEndsAt: state.state === "error" || state.state === "disabled" || state.state === "unavailable"
         ? null
         : signInEnds.get(instance.id) ?? null,
+      logo: brokerProfileLogo(instance, adapter, pluginLogo),
       instance,
       adapter,
     };

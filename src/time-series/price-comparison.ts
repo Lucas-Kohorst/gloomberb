@@ -3,6 +3,7 @@ import { getTimeSeriesField } from "./field-catalog";
 import type { ChartSpec, ResolvedSeries, TimeSeriesPoint } from "./types";
 import type { ManualChartResolution } from "./resolution";
 import { zonedDateTimeParts } from "../utils/zoned-date-time";
+import { barLastSession } from "../market-data/market/bar-period";
 
 const PRICE_COMPARISON_BASIS = "Price returns in each listing's currency; cash distributions and FX conversion excluded.";
 
@@ -102,6 +103,10 @@ export function resolvePriceComparison(
     seriesIds, start: null, end: null,
     notice: `${PRICE_COMPARISON_BASIS} Comparison unavailable: need two shared dates and a nonzero baseline.`,
   };
+  // A weekly or monthly bar's close is from the last session of its period, which the notice dates it by.
+  const period = resolution === "1wk" ? "week" : resolution === "1mo" ? "month" : null;
+  const venue = byId.get(seriesIds[0]!)?.timeBasis?.exchange || byId.get(seriesIds[0]!)?.listing?.exchange || undefined;
+  const sessionDay = (key: string) => (period ? barLastSession(key, period, venue, Date.now()) : null) ?? key;
   const sourceBounds = Object.fromEntries(seriesIds.map((id, index) => [id, {
     start: observations[index]!.get(start)!.date.getTime(),
     end: observations[index]!.get(end)!.date.getTime(),
@@ -113,8 +118,43 @@ export function resolvePriceComparison(
     alignment: calendarBars ? "session-date" : "timestamp",
     sourceBounds,
     notice: calendarBars
-      ? `${PRICE_COMPARISON_BASIS} Shared calendar dates: ${start} to ${end}; market session times may differ.`
+      ? `${PRICE_COMPARISON_BASIS} Shared calendar dates: ${sessionDay(start)} to ${sessionDay(end)}; market session times may differ.`
       : `${PRICE_COMPARISON_BASIS} Shared observations: ${displayDate(Number(start))} to ${displayDate(Number(end))}.`,
+  };
+}
+
+/**
+ * The bars a compared leg pans and zooms over: inside the view only its shared
+ * dates, as the chart shows them, and every loaded bar past either edge of the
+ * view. Clipping the whole buffer to the view left a pan or a zoom out nothing
+ * to move into until the next fetch, and none at all toward newer bars.
+ */
+export function comparedBufferPoints(
+  points: readonly TimeSeriesPoint[],
+  shared: { start: number | null; end: number | null },
+  view: { start: number | null; end: number | null },
+): TimeSeriesPoint[] {
+  const { start, end } = shared;
+  if (start === null || end === null) return [];
+  const before = view.start === null ? Number.NEGATIVE_INFINITY : Math.min(start, view.start);
+  const after = view.end === null ? Number.POSITIVE_INFINITY : Math.max(end, view.end);
+  return points.filter((point) => {
+    const time = point.date.getTime();
+    return time < before || time > after || (time >= start && time <= end);
+  });
+}
+
+/** A compared leg's pan buffer around `view`; see comparedBufferPoints. */
+export function bufferPriceComparison(
+  series: ResolvedSeries,
+  comparison: PriceComparison | null,
+  view: { start: number | null; end: number | null },
+): ResolvedSeries {
+  if (!comparison?.seriesIds.includes(series.id)) return series;
+  return {
+    ...series,
+    latestChangePercent: undefined,
+    points: comparedBufferPoints(series.points, priceComparisonBoundsForSeries(series, comparison)!, view),
   };
 }
 

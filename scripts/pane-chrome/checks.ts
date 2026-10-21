@@ -4,11 +4,15 @@ import { positiveInteger, takeOption } from "../tui-benchmark-harness";
 import { cacheDir, click, drag, evaluate, frames, holdKey, launchBrowser, mouse, pressKey, sleep, waitFor, type Cdp, type Chord, type Point } from "./browser";
 import { serveFixturePage, type FixturePage } from "./page";
 import { chatSteps } from "./chat-checks";
+import { axisSteps } from "./axis-checks";
 import { desSteps } from "./des-checks";
 import { heatSteps } from "./heat-checks";
 import { headerSteps } from "./header-checks";
 import { layoutSteps } from "./layout-checks";
 import { selectionSteps } from "./selection-checks";
+import { tabSweepSteps } from "./tab-sweep-checks";
+import { titleTabSteps } from "./title-tab-checks";
+import { readerSteps } from "./reader-checks";
 import { checkFirstPaint, checkThemePreview } from "./paint";
 
 /**
@@ -343,6 +347,19 @@ async function panChartBack(cdp: Cdp, drags: number): Promise<ChartWindow[]> {
   return after;
 }
 
+/** Where a button of the chart composer's range strip sits, by its label. */
+async function rangeButton(cdp: Cdp, label: string): Promise<Point> {
+  const rect = await evaluate<Rect | null>(cdp, `__check.rect([...document.querySelectorAll(".gloom-qb-inline[data-item-id=range] button[role=radio]")]
+    .find((button) => button.textContent.trim() === ${JSON.stringify(label)}))`);
+  return center(rect ?? fail(`the range strip has no ${label}`));
+}
+
+/** The range the strip marks as selected. */
+const selectedRange = (cdp: Cdp) => evaluate<string | null>(cdp, `document.querySelector(".gloom-qb-inline[data-item-id=range] button[data-active=true]")?.textContent.trim() ?? null`);
+
+const sameWindow = (a: ChartWindow, b: ChartWindow, tolerance = 60_000) => Math.abs(a.viewStart - b.viewStart) <= tolerance
+  && Math.abs(a.viewEnd - b.viewEnd) <= tolerance && a.dataStart === b.dataStart && a.dataEnd === b.dataEnd;
+
 const PRESS_POINTS = [["grip", "grip"], ["title", "title"], ["empty bar", "empty"]] as const;
 const EDGES = [
   { edge: "left", by: { x: -64, y: 0 }, moves: { x: 1, y: 0 }, grows: { x: -1, y: 0 } },
@@ -363,21 +380,37 @@ const HELD_MS = 1_500;
 const KEY_UP_FOR_MS = 800;
 
 /**
- * Moves the pointer over a pane's chart plot and waits for the crosshair to
- * sit under it: the horizontal line at the pointer, the vertical one on the
- * nearest observation.
+ * Moves the pointer over a pane's chart plot, to the spot `spot` picks in the
+ * plot's box, and waits for the crosshair to sit under it: the vertical line
+ * on the nearest observation and the horizontal line at the pointer's height,
+ * as the chart reads the pointer back into its columns and rows, down to the
+ * plot's last row. Then the same with the ruler armed: arming a tool shows
+ * its key hint in the footer, which moves the plot, so the spot is picked
+ * again from the plot as it then is. A chart with no toolbar
+ * (`levelTool: false`) has the first check only.
  */
-async function crosshairUnder(cdp: Cdp, paneId: string, at: Point): Promise<void> {
-  await mouse(cdp, "mouseMoved", at.x, at.y, false);
+async function crosshairUnder(cdp: Cdp, paneId: string, spot: (plot: Rect) => Point, { levelTool = true } = {}): Promise<void> {
   const crosshair = `(() => {
     const pane = __check.pane(${JSON.stringify(paneId)});
     const x = pane?.querySelector("[data-gloom-role=chart-crosshair-x]")?.getBoundingClientRect();
     const y = pane?.querySelector("[data-gloom-role=chart-crosshair-y]")?.getBoundingClientRect();
-    return x && y ? { x: Math.round(x.x + x.width / 2), y: Math.round(y.y + y.height / 2) } : null;
+    return x ? { x: Math.round(x.x + x.width / 2), y: y ? Math.round(y.y + y.height / 2) : null } : null;
   })()`;
-  const under = `(() => { const lines = ${crosshair}; return lines && Math.abs(lines.x - ${at.x}) <= 4 && Math.abs(lines.y - ${at.y}) <= 2; })()`;
-  if (!await waitFor(cdp, under)) {
-    fail(`the crosshair in ${paneId} is not under the pointer`, { pointer: { x: Math.round(at.x), y: Math.round(at.y) }, crosshair: await evaluate(cdp, crosshair) });
+  const at = spot(await plotRect(cdp, paneId));
+  await mouse(cdp, "mouseMoved", at.x, at.y, false);
+  if (!await waitFor(cdp, `(() => { const lines = ${crosshair}; return lines && lines.y !== null && Math.abs(lines.x - ${at.x}) <= 4 && Math.abs(lines.y - ${at.y}) <= 2; })()`)) {
+    fail(`the crosshair in ${paneId} is not both lines under the pointer`, { pointer: { x: Math.round(at.x), y: Math.round(at.y) }, crosshair: await evaluate(cdp, crosshair) });
+  }
+  if (!levelTool) return;
+  await armTool(cdp, paneId, "Ruler");
+  try {
+    const level = spot(await plotRect(cdp, paneId));
+    await mouse(cdp, "mouseMoved", level.x, level.y, false);
+    if (!await waitFor(cdp, `(() => { const lines = ${crosshair}; return lines && lines.y !== null && Math.abs(lines.x - ${level.x}) <= 4 && Math.abs(lines.y - ${level.y}) <= 2; })()`)) {
+      fail(`the level line in ${paneId} is not under the pointer`, { pointer: { x: Math.round(level.x), y: Math.round(level.y) }, crosshair: await evaluate(cdp, crosshair) });
+    }
+  } finally {
+    await armTool(cdp, paneId, "Pan");
   }
 }
 
@@ -424,8 +457,13 @@ async function cursorDay(cdp: Cdp, paneId: string, at: Point): Promise<number> {
   return day ?? fail(`${paneId} reads out no observation under the pointer`, at);
 }
 
-/** Presses a tool in the chart's toolbar by the start of its label. */
+/** Presses a tool in the chart's toolbar by the start of its label, focusing the pane first: only the focused pane shows its tools. */
 async function armTool(cdp: Cdp, paneId: string, label: string): Promise<void> {
+  const toolbar = `!!__check.pane(${JSON.stringify(paneId)})?.querySelector("[data-gloom-role=composite-chart-toolbar]")`;
+  if (!await evaluate<boolean>(cdp, toolbar)) {
+    await click(cdp, await pointOf(cdp, paneId, "title"));
+    if (!await waitFor(cdp, toolbar)) fail(`${paneId} shows no chart tools once focused`);
+  }
   const at = await evaluate<Point | null>(cdp, `(() => {
     const tool = [...(__check.pane(${JSON.stringify(paneId)})?.querySelectorAll("[data-gloom-role=composite-chart-tool]") ?? [])]
       .find((element) => (element.getAttribute("data-gloom-label") ?? "").startsWith(${JSON.stringify(label)}));
@@ -483,10 +521,9 @@ const nestedChartSteps: Step[] = NESTED_CHARTS.flatMap((paneId) => [
     name: `${paneId} chart: the crosshair sits under the pointer across the plot`,
     scenario: "nested",
     async run(cdp: Cdp) {
-      const plot = await plotRect(cdp, paneId);
-      await crosshairUnder(cdp, paneId, { x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 });
+      await crosshairUnder(cdp, paneId, (plot) => ({ x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 }));
       // Clear of the chart's drawing toolbar at the plot's top left.
-      await crosshairUnder(cdp, paneId, { x: plot.x + plot.width * 0.5, y: plot.y + 3 });
+      await crosshairUnder(cdp, paneId, (plot) => ({ x: plot.x + plot.width * 0.5, y: plot.y + 3 }));
     },
   },
   {
@@ -519,8 +556,7 @@ const nestedChartSteps: Step[] = NESTED_CHARTS.flatMap((paneId) => [
       const latest = await evaluate<string>(cdp, legend);
       const seen = new Set<string>();
       for (const share of [0.12, 0.5, 0.92]) {
-        const at = { x: plot.x + plot.width * share, y: plot.y + plot.height * 0.6 };
-        await crosshairUnder(cdp, paneId, at);
+        await crosshairUnder(cdp, paneId, (rect) => ({ x: rect.x + rect.width * share, y: rect.y + rect.height * 0.6 }), { levelTool: false });
         const geometry = `(() => {
           const pane = ${pane};
           const rect = (selector) => pane?.querySelector(selector)?.getBoundingClientRect();
@@ -602,12 +638,40 @@ const nestedChartSteps: Step[] = NESTED_CHARTS.flatMap((paneId) => [
 ]);
 
 nestedChartSteps.push({
-  name: "board:dock chart: the crosshair sits under the pointer across the kit's chart band",
+  name: "board:dock chart: the band resting on its latest close follows the pointer across it and goes back when it leaves",
   scenario: "nested",
   async run(cdp: Cdp) {
+    const lines = `(() => {
+      const pane = __check.pane("board:dock");
+      const x = pane?.querySelector("[data-gloom-role=chart-crosshair-x]")?.getBoundingClientRect();
+      return x ? { x: Math.round(x.x + x.width / 2), level: !!pane.querySelector("[data-gloom-role=chart-crosshair-y]") } : null;
+    })()`;
     const plot = await plotRect(cdp, "board:dock");
-    await crosshairUnder(cdp, "board:dock", { x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 });
-    await crosshairUnder(cdp, "board:dock", { x: plot.x + plot.width * 0.5, y: plot.y + 3 });
+    // At rest the band reads its latest close: the time line near the right edge, no level.
+    const rest = await waitFor<{ x: number; level: boolean } | null>(cdp, `(() => { const l = ${lines}; return l && !l.level && l.x > ${plot.x + plot.width * 0.6} ? l : null; })()`)
+      ?? fail("the band does not rest on its latest close", await evaluate(cdp, lines));
+    // The kit's chart band has no toolbar to arm a level tool with.
+    await crosshairUnder(cdp, "board:dock", (plot) => ({ x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 }), { levelTool: false });
+    await crosshairUnder(cdp, "board:dock", (plot) => ({ x: plot.x + plot.width * 0.5, y: plot.y + 3 }), { levelTool: false });
+    await mouse(cdp, "mouseMoved", plot.x + plot.width * 0.5, plot.y - 40, false);
+    if (!await waitFor(cdp, `(() => { const l = ${lines}; return l && !l.level && Math.abs(l.x - ${rest.x}) <= 1; })()`)) {
+      fail("the band did not go back to its latest close when the pointer left", { rest, now: await evaluate(cdp, lines) });
+    }
+  },
+});
+
+nestedChartSteps.push({
+  name: "chart tools: only the focused pane shows them, and a press on another pane's plot moves them there",
+  scenario: "nested",
+  async run(cdp: Cdp) {
+    const tools = `Object.fromEntries(${JSON.stringify(NESTED_CHARTS)}.map((id) => [id, !!__check.pane(id)?.querySelector("[data-gloom-role=composite-chart-toolbar]")]))`;
+    const showing = (id: string) => `(() => { const t = ${tools}; return Object.entries(t).every(([pane, shown]) => shown === (pane === ${JSON.stringify(id)})) ? t : null; })()`;
+    await click(cdp, await pointOf(cdp, "chart-bar:dock", "title"));
+    if (!await waitFor(cdp, showing("chart-bar:dock"))) fail("the focused chart is not the only one showing its tools", await evaluate(cdp, tools));
+    // The press on a plot that focuses its pane brings the tools there.
+    const plot = await plotRect(cdp, "beside:dock");
+    await click(cdp, { x: plot.x + plot.width * 0.6, y: plot.y + plot.height * 0.6 });
+    if (!await waitFor(cdp, showing("beside:dock"))) fail("a press on another chart did not move the tools there", await evaluate(cdp, tools));
   },
 });
 
@@ -1044,25 +1108,12 @@ const steps: Step[] = [
     name: "chart: the crosshair sits under the pointer across the plot",
     scenario: "resize",
     async run(cdp) {
-      const plot = await evaluate<Rect | null>(cdp, `__check.rect(__check.pane("chart:dock")?.querySelector("[data-gloom-role=composite-chart-panel]"))`)
-        ?? fail("chart:dock has no plot");
       // Short of the empty offset after the last observation, where the line stays on it.
-      for (const at of [
-        { x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 },
-        { x: plot.x + plot.width * 0.5, y: plot.y + plot.height * 0.5 },
+      for (const spot of [
+        (plot: Rect) => ({ x: plot.x + plot.width * 0.85, y: plot.y + plot.height - 3 }),
+        (plot: Rect) => ({ x: plot.x + plot.width * 0.5, y: plot.y + plot.height * 0.5 }),
       ]) {
-        await mouse(cdp, "mouseMoved", at.x, at.y, false);
-        const crosshair = `(() => {
-          const pane = __check.pane("chart:dock");
-          const x = pane?.querySelector("[data-gloom-role=chart-crosshair-x]")?.getBoundingClientRect();
-          const y = pane?.querySelector("[data-gloom-role=chart-crosshair-y]")?.getBoundingClientRect();
-          return x && y ? { x: Math.round(x.x + x.width / 2), y: Math.round(y.y + y.height / 2) } : null;
-        })()`;
-        // The vertical line snaps to the nearest observation; the horizontal one is the pointer's.
-        const under = `(() => { const lines = ${crosshair}; return lines && Math.abs(lines.x - ${at.x}) <= 4 && Math.abs(lines.y - ${at.y}) <= 2; })()`;
-        if (!await waitFor(cdp, under)) {
-          fail("the crosshair is not under the pointer", { pointer: { x: Math.round(at.x), y: Math.round(at.y) }, crosshair: await evaluate(cdp, crosshair) });
-        }
+        await crosshairUnder(cdp, "chart:dock", spot);
       }
     },
   },
@@ -1095,6 +1146,55 @@ const steps: Step[] = [
     },
   },
   {
+    name: "chart composer: choosing the selected range again returns a panned or zoomed view to it, and leaves one that was not moved alone",
+    scenario: "cmp&chart=pan",
+    async run(cdp) {
+      const plot = await loadedChartPlot(cdp);
+      const opened = await chartWindow(cdp);
+      const selected = await selectedRange(cdp);
+      if (!selected) fail("the range strip marks no range");
+
+      // Not moved: nothing to go back to, so nothing reloads or redraws.
+      await click(cdp, await rangeButton(cdp, selected));
+      await evaluate(cdp, "new Promise((done) => setTimeout(done, 700))");
+      const still = await chartWindow(cdp);
+      if (!sameWindow(opened, still)) fail("the selected range moved a view that was never moved", { opened, still });
+
+      // Panned back: the same press returns the view, and the bars it loaded stay.
+      await drag(cdp, { x: plot.x + plot.width * 0.2, y: plot.y + plot.height * 0.5 }, [{ x: plot.x + plot.width * 0.8, y: plot.y + plot.height * 0.5 }], 16);
+      await evaluate(cdp, "new Promise((done) => setTimeout(done, 700))");
+      const panned = await chartWindow(cdp);
+      if (panned.viewStart >= opened.viewStart - 60_000) fail("the drag did not pan the view back", { opened, panned });
+      await click(cdp, await rangeButton(cdp, selected));
+      if (!await waitFor(cdp, `(() => { const view = document.querySelector("[data-gloom-role=composite-chart]")?.dataset.gloomView?.split(":").map(Number); return !!view && Math.abs(view[0] - ${opened.viewStart}) <= 60000 && Math.abs(view[1] - ${opened.viewEnd}) <= 60000; })()`, 5_000)) {
+        fail("the selected range did not return a panned view", { opened, now: await chartWindow(cdp) });
+      }
+
+      // Zoomed in with the wheel: the same.
+      await zoomIn(cdp, center(plot));
+      const zoomed = await chartWindow(cdp);
+      if (zoomed.viewEnd - zoomed.viewStart >= (opened.viewEnd - opened.viewStart) * 0.9) fail("the wheel did not zoom the view in", { opened, zoomed });
+      await click(cdp, await rangeButton(cdp, selected));
+      if (!await waitFor(cdp, `(() => { const view = document.querySelector("[data-gloom-role=composite-chart]")?.dataset.gloomView?.split(":").map(Number); return !!view && Math.abs(view[0] - ${opened.viewStart}) <= 60000 && Math.abs(view[1] - ${opened.viewEnd}) <= 60000; })()`, 5_000)) {
+        fail("the selected range did not return a zoomed view", { opened, now: await chartWindow(cdp) });
+      }
+
+      // A different range still changes the range, and its own press goes back to that one.
+      const other = selected === "1M" ? "1W" : "1M";
+      await click(cdp, await rangeButton(cdp, other));
+      if (!await waitFor(cdp, `document.querySelector(".gloom-qb-inline[data-item-id=range] button[data-active=true]")?.textContent.trim() === ${JSON.stringify(other)}`)) {
+        fail("a different range was not selected", { selected: await selectedRange(cdp) });
+      }
+      await evaluate(cdp, "new Promise((done) => setTimeout(done, 900))");
+      const shorter = await chartWindow(cdp);
+      await zoomIn(cdp, center(plot));
+      await click(cdp, await rangeButton(cdp, other));
+      if (!await waitFor(cdp, `(() => { const view = document.querySelector("[data-gloom-role=composite-chart]")?.dataset.gloomView?.split(":").map(Number); return !!view && Math.abs(view[0] - ${shorter.viewStart}) <= 60000 && Math.abs(view[1] - ${shorter.viewEnd}) <= 60000; })()`, 5_000)) {
+        fail("the newly selected range did not return a zoomed view", { shorter, now: await chartWindow(cdp) });
+      }
+    },
+  },
+  {
     name: "chart composer: the legend reads out every series at the crosshair, by key and by pointer, and nothing floats over the plot",
     scenario: "cmp&chart=readout",
     async run(cdp) {
@@ -1111,36 +1211,203 @@ const steps: Step[] = [
         const entries = [...document.querySelectorAll("[data-gloom-role=composite-chart-legend-series]")];
         return { entries: entries.length, carried: entries.filter((entry) => entry.dataset.carried === "true").length,
           text: ${legendText},
+          tags: document.querySelectorAll("[data-gloom-role=chart-series-axis-tag]").length,
+          pointerTags: document.querySelectorAll("[data-gloom-role=chart-price-axis-cursor]").length,
           markers: document.querySelectorAll("[data-gloom-role=chart-crosshair-marker]").length,
           hollow: document.querySelectorAll("[data-gloom-role=chart-crosshair-marker][data-hollow=true]").length,
           timeTag: document.querySelector("[data-gloom-role=chart-time-axis]")?.getAttribute("data-gloom-cursor") ?? null,
           floating: ${FLOATING_PLOT_TEXT("document")} };
       })()`;
-      type Readout = { entries: number; carried: number; text: string; markers: number; hollow: number; timeTag: string | null; floating: string[] };
+      type Readout = { entries: number; carried: number; text: string; tags: number; pointerTags: number; markers: number; hollow: number; timeTag: string | null; floating: string[] };
       const byKey = await waitFor<Readout | null>(cdp, `(() => { const r = ${readout}; return r.entries === 6 && r.carried >= 1 && r.text !== ${JSON.stringify(latest)} ? r : null; })()`);
       if (!byKey) fail("the arrow key's crosshair did not read out all six series in the legend with the German close carried", await evaluate(cdp, readout));
       // Price, two closes, the average and the RSI each get a marker; volume is read off its bars.
       if (byKey.markers !== 5 || byKey.hollow < 1) fail("the crosshair did not mark every line, the carried one hollow", byKey);
       if (byKey.floating.length) fail("text floats over the plot", byKey.floating);
       if (!byKey.timeTag) fail("the time axis has no tag under the crosshair", byKey);
-      // Pointer in the price panel, then in the RSI panel: each gets its own horizontal line and price tag.
+      if (byKey.tags !== 6 || byKey.pointerTags !== 0) fail("the keyboard cursor did not read every series on its axis", byKey);
+      // The panel under the pointer draws its level line too, with the value
+      // at that height on its axis; no other panel does. Every series,
+      // including volume, still reads its observation on its own axis.
       const panels = await evaluate<Rect[]>(cdp, `[...document.querySelectorAll("[data-gloom-role=composite-chart-panel]")].map(__check.rect)`);
       for (const [index, panel] of [[0, panels[0]!], [panels.length - 1, panels.at(-1)!]] as const) {
         const at = { x: panel.x + panel.width * 0.3, y: panel.y + panel.height * 0.4 };
         await mouse(cdp, "mouseMoved", at.x, at.y, false);
+        await frames(cdp, 4);
         const lines = `(() => {
           const ys = [...document.querySelectorAll("[data-gloom-role=composite-chart-panel]")].map((plot) => !!plot.querySelector("[data-gloom-role=chart-crosshair-y]"));
-          const tag = [...document.querySelectorAll("[data-gloom-role=chart-price-axis-cursor]")].some((tag) => { const r = tag.getBoundingClientRect(); return Math.abs(r.y + r.height / 2 - ${at.y}) <= 3; });
-          return { ys, tag, ...${readout} };
+          // Where each value sits against the pointer's height, kept inside the panel at its edges.
+          const levels = [...document.querySelectorAll("[data-gloom-role=chart-price-axis-cursor]")].map((tag) => {
+            const r = tag.getBoundingClientRect();
+            return Math.round(r.y + r.height / 2 - Math.min(Math.max(${at.y}, ${panel.y} + r.height / 2), ${panel.y + panel.height} - r.height / 2));
+          });
+          return { ys, levels, ...${readout} };
         })()`;
-        const state = await waitFor<(Readout & { ys: boolean[]; tag: boolean }) | null>(cdp, `(() => { const r = ${lines}; return r.entries === 6 && r.markers === 5 && r.ys.filter(Boolean).length === 1 && r.ys[${index}] && r.tag ? r : null; })()`);
-        if (!state) fail(`the pointer in panel ${index} did not draw one horizontal line there with its price tag on the axis, and read out every series`, await evaluate(cdp, lines));
+        const expected = JSON.stringify(panels.map((_, other) => other === index));
+        const state = await waitFor<(Readout & { ys: boolean[]; levels: number[] }) | null>(cdp, `(() => { const r = ${lines}; return r.entries === 6 && r.markers === 5 && r.tags === 6 && r.levels.length > 0 && r.levels.every((offset) => Math.abs(offset) <= 3) && JSON.stringify(r.ys) === ${JSON.stringify(expected)} ? r : null; })()`);
+        if (!state) fail(`the pointer in panel ${index} did not draw its level line with the value at its height, beside every series' value on its axis`, { at, state: await evaluate(cdp, lines) });
         if (state.floating.length) fail("text floats over the plot", state.floating);
         if (!state.timeTag) fail(`panel ${index}: the time axis has no tag under the crosshair`, state);
       }
       // The pointer leaves: the legend is back on the latest values.
       await mouse(cdp, "mouseMoved", plot.x + plot.width * 0.5, plot.y - 60, false);
       if (!await waitFor(cdp, `${legendText} === ${JSON.stringify(latest)}`)) fail("the legend kept the crosshair's values after the pointer left", await evaluate(cdp, legendText));
+    },
+  },
+  {
+    name: "chart composer: a daily and a 30-minute chart in one tab follow each other's crosshair to the same session, and clear with it",
+    scenario: "cmp&linked=1",
+    async run(cdp) {
+      const state = (paneId: string) => `(() => {
+        const pane = __check.pane(${JSON.stringify(paneId)});
+        const line = pane?.querySelector("[data-gloom-role=chart-crosshair-x]");
+        return { line: !!line, x: line ? Math.round(__check.rect(line).x) : null,
+          time: pane?.querySelector("[data-gloom-role=chart-time-axis]")?.getAttribute("data-gloom-cursor") ?? null,
+          legend: [...(pane?.querySelectorAll("[data-gloom-role=composite-chart-legend-series]") ?? [])].map((entry) => entry.textContent).join(" | ") };
+      })()`;
+      type State = { line: boolean; x: number | null; time: string | null; legend: string };
+      await loadedChartPlot(cdp);
+      if (!await waitFor(cdp, `document.querySelectorAll("[data-gloom-role=composite-chart-panel] canvas").length >= 2`, 10_000)) fail("the daily chart did not load its bars");
+      const intraday = await plotRect(cdp, "chart-composer:a");
+      const latest = await evaluate<State>(cdp, state("chart-composer:b"));
+      if (latest.line) fail("the daily chart drew a crosshair before any pointer was on a chart", latest);
+      const day = (label: string | null) => label?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+      const seen: State[] = [];
+      for (const share of [0.3, 0.7]) {
+        await mouse(cdp, "mouseMoved", intraday.x + intraday.width * share, intraday.y + intraday.height * 0.5, false);
+        const followed = await waitFor<State | null>(cdp, `(() => { const s = ${state("chart-composer:b")}; return s.line && s.time && s.legend !== ${JSON.stringify(latest.legend)} && !${JSON.stringify(seen.map((entry) => entry.x))}.includes(s.x) ? s : null; })()`);
+        if (!followed) fail(`the daily chart did not follow the crosshair at ${share * 100}% of the 30-minute chart`, { latest, now: await evaluate(cdp, state("chart-composer:b")), source: await evaluate(cdp, state("chart-composer:a")) });
+        // The daily bar the cursor lands on is the session the 30-minute bar is in.
+        const source = await evaluate<State>(cdp, state("chart-composer:a"));
+        if (!day(source.time) || day(source.time) !== day(followed.time)) fail("the daily chart's crosshair is not on the 30-minute bar's day", { source: source.time, daily: followed.time });
+        seen.push(followed);
+      }
+      if (seen[0]!.x! >= seen[1]!.x!) fail("the daily chart's crosshair did not move right with the pointer", seen);
+      // The other way, a day's bar lands the 30-minute chart on that session, not the one before it.
+      const daily = await plotRect(cdp, "chart-composer:b");
+      await mouse(cdp, "mouseMoved", daily.x + daily.width * 0.8, daily.y + daily.height * 0.5, false);
+      const reverse = await waitFor<{ daily: string | null; intraday: string | null } | null>(cdp, `(() => { const d = ${state("chart-composer:b")}, i = ${state("chart-composer:a")}; return d.time && i.line && i.time ? { daily: d.time, intraday: i.time } : null; })()`);
+      if (!reverse) fail("the 30-minute chart did not follow the daily chart's crosshair", await evaluate(cdp, state("chart-composer:a")));
+      if (day(reverse.daily) !== day(reverse.intraday)) fail("the 30-minute chart's crosshair is not on the daily bar's session", reverse);
+      // The pointer leaves the plots: both charts clear.
+      await mouse(cdp, "mouseMoved", intraday.x + intraday.width * 0.5, intraday.y - 60, false);
+      if (!await waitFor(cdp, `(() => { const a = ${state("chart-composer:a")}, b = ${state("chart-composer:b")}; return !a.line && !b.line && b.legend === ${JSON.stringify(latest.legend)}; })()`)) {
+        fail("a chart kept the crosshair after the pointer left the plots", { a: await evaluate(cdp, state("chart-composer:a")), b: await evaluate(cdp, state("chart-composer:b")) });
+      }
+    },
+  },
+  {
+    name: "chart composer: pin in the footer holds both charts at the crosshair's moment after the pointer leaves, the arrows move the pin and Esc lifts it",
+    scenario: "cmp&linked=1",
+    async run(cdp) {
+      const state = (paneId: string) => `(() => {
+        const pane = __check.pane(${JSON.stringify(paneId)});
+        return { line: !!pane?.querySelector("[data-gloom-role=chart-crosshair-x]"),
+          time: pane?.querySelector("[data-gloom-role=chart-time-axis]")?.getAttribute("data-gloom-cursor") ?? null };
+      })()`;
+      type State = { line: boolean; time: string | null };
+      const both = `({ a: ${state("chart-composer:a")}, b: ${state("chart-composer:b")} })`;
+      const pinHint = (label: string) => `(() => {
+        const footer = __check.pane("chart-composer:a")?.querySelector("[data-gloom-role=pane-footer]");
+        const hit = [...(footer?.querySelectorAll("*") ?? [])].filter((node) => node.textContent?.trim().endsWith(${JSON.stringify(label)}))
+          .sort((x, y) => x.textContent.length - y.textContent.length)[0];
+        return hit ? __check.rect(hit) : null;
+      })()`;
+      const press = async (key: string, code: string, keyCode: number) => {
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: keyCode });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: keyCode });
+      };
+      await loadedChartPlot(cdp);
+      if (!await waitFor(cdp, `document.querySelectorAll("[data-gloom-role=composite-chart-panel] canvas").length >= 2`, 10_000)) fail("the daily chart did not load its bars");
+      await click(cdp, await pointOf(cdp, "chart-composer:a", "title"));
+      const intraday = await plotRect(cdp, "chart-composer:a");
+      await mouse(cdp, "mouseMoved", intraday.x + intraday.width * 0.4, intraday.y + intraday.height * 0.5, false);
+      const hovered = await waitFor<{ a: State; b: State } | null>(cdp, `(() => { const s = ${both}; return s.a.line && s.b.line && s.b.time ? s : null; })()`)
+        ?? fail("the daily chart did not follow the hovered crosshair", await evaluate(cdp, both));
+      // The pointer leaves the plot for the footer's pin: the last crosshair is the one pinned.
+      const pin = await waitFor<Rect | null>(cdp, pinHint("[p]in")) ?? fail("the focused chart's footer has no pin", await evaluate(cdp, `__check.pane("chart-composer:a")?.querySelector("[data-gloom-role=pane-footer]")?.textContent`));
+      await click(cdp, { x: pin.x + pin.width / 2, y: pin.y + pin.height / 2 });
+      const pinned = await waitFor<{ a: State; b: State } | null>(cdp, `(() => { const s = ${both}; return s.a.line && s.b.line && s.b.time === ${JSON.stringify(hovered.b.time)} ? s : null; })()`)
+        ?? fail("the charts did not hold the crosshair's moment once pinned and the pointer left", { hovered, now: await evaluate(cdp, both) });
+      if (!await waitFor(cdp, `!!${pinHint("unpin")}`)) fail("the footer does not offer unpin while pinned");
+      await press("ArrowRight", "ArrowRight", 39);
+      const moved = await waitFor<{ a: State; b: State } | null>(cdp, `(() => { const s = ${both}; return s.a.line && s.b.line && s.a.time !== ${JSON.stringify(pinned.a.time)} ? s : null; })()`)
+        ?? fail("the arrow did not move the pin", { pinned, now: await evaluate(cdp, both) });
+      if ((moved.a.time ?? "") <= (pinned.a.time ?? "")) fail("the right arrow moved the pin back", { pinned, moved });
+      await press("Escape", "Escape", 27);
+      if (!await waitFor(cdp, `(() => { const s = ${both}; return !s.a.line && !s.b.line; })()`)) fail("Esc did not lift the pin from both charts", await evaluate(cdp, both));
+      // `p` under the pointer pins the same way, and the pointer leaving the plot keeps it.
+      await mouse(cdp, "mouseMoved", intraday.x + intraday.width * 0.6, intraday.y + intraday.height * 0.5, false);
+      const underPointer = await waitFor<{ a: State; b: State } | null>(cdp, `(() => { const s = ${both}; return s.a.line && s.b.line && s.b.time ? s : null; })()`)
+        ?? fail("the daily chart did not follow the hovered crosshair again", await evaluate(cdp, both));
+      await pressKey(cdp, "p");
+      await mouse(cdp, "mouseMoved", intraday.x + intraday.width * 0.5, intraday.y - 60, false);
+      if (!await waitFor(cdp, `(() => { const s = ${both}; return s.a.line && s.b.line && s.b.time === ${JSON.stringify(underPointer.b.time)}; })()`)) {
+        fail("p did not pin the crosshair under the pointer", { underPointer, now: await evaluate(cdp, both) });
+      }
+      await pressKey(cdp, "p");
+      if (!await waitFor(cdp, `(() => { const s = ${both}; return !s.a.line && !s.b.line; })()`)) fail("p again did not lift the pin", await evaluate(cdp, both));
+    },
+  },
+  {
+    name: "chart composer: IV history, a monthly macro series and Fear & Greed's charts in one tab follow its crosshair and each other's, each reading its own series, and clear with it",
+    scenario: "cmp&linked=mixed",
+    async run(cdp) {
+      const panes = ["chart-composer:a", "iv-history:a", "macro:a", "fear-greed:a"];
+      // Every chart in each pane: its crosshair, the time under it, its series' axis tags and any pointer-height tag, and its legend.
+      const charts = `Object.fromEntries(${JSON.stringify(panes)}.map((id) => [id,
+        [...(__check.pane(id)?.querySelectorAll("[data-gloom-role=composite-chart]") ?? [])].map((chart) => ({
+          line: !!chart.querySelector("[data-gloom-role=chart-crosshair-x]"),
+          level: !!chart.querySelector("[data-gloom-role=chart-crosshair-y]"),
+          time: chart.querySelector("[data-gloom-role=chart-time-axis]")?.getAttribute("data-gloom-cursor") ?? null,
+          tags: chart.querySelectorAll("[data-gloom-role=chart-series-axis-tag]").length,
+          pointerTags: chart.querySelectorAll("[data-gloom-role=chart-price-axis-cursor]").length,
+          legend: [...chart.querySelectorAll("[data-gloom-role=composite-chart-legend-series]")].map((entry) => entry.textContent).join(" | "),
+        }))]))`;
+      type Chart = { line: boolean; level: boolean; time: string | null; tags: number; pointerTags: number; legend: string };
+      type Charts = Record<string, Chart[]>;
+      await loadedChartPlot(cdp);
+      const rest = await waitFor<Charts | null>(cdp, `(() => { const c = ${charts}; return ${JSON.stringify(panes)}.every((id) => c[id].length > 0) && c["fear-greed:a"].length > 1 ? c : null; })()`, 10_000)
+        ?? fail("a pane did not draw its charts", await evaluate(cdp, charts));
+      if (Object.values(rest).flat().some((chart) => chart.line)) fail("a chart drew a crosshair before any pointer was on a chart", rest);
+      const day = (label: string | null) => label?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+      // Every chart shows the crosshair as the one under the pointer does: the line, its time and
+      // its series tagged on its axis, and in a legend of moving series (not the macro chart's flat
+      // mean) the values at that time. Only the chart under the pointer adds the level line and the
+      // value at the pointer's height; the others follow its time alone.
+      const followed = (hovered: string, hoveredIndex = 0) => `(() => {
+        const c = ${charts}, rest = ${JSON.stringify(rest)};
+        return Object.entries(c).every(([id, list]) => list.every((chart, index) => {
+          const under = id === ${JSON.stringify(hovered)} && index === ${hoveredIndex};
+          return chart.line && chart.time && chart.tags > 0 && chart.level === under && (chart.pointerTags > 0) === under
+            && (id !== "iv-history:a" || chart.legend !== rest[id][index].legend);
+        })) ? c : null;
+      })()`;
+      // The composer's crosshair: IV history and every Fear & Greed chart on its day, the macro series on its month.
+      const composer = await plotRect(cdp, "chart-composer:a");
+      await mouse(cdp, "mouseMoved", composer.x + composer.width * 0.6, composer.y + composer.height * 0.5, false);
+      const fromComposer = await waitFor<Charts | null>(cdp, followed("chart-composer:a"))
+        ?? fail("a chart did not follow the chart composer's crosshair with its own readout", await evaluate(cdp, charts));
+      const at = day(fromComposer["chart-composer:a"]![0]!.time);
+      const days = [...fromComposer["iv-history:a"]!, ...fromComposer["fear-greed:a"]!].map((chart) => day(chart.time));
+      if (!at || days.some((entry) => entry !== at)) fail("the daily charts are not on the composer's day", { at, days });
+      const month = day(fromComposer["macro:a"]![0]!.time);
+      if (!month || month.slice(0, 7) !== at.slice(0, 7)) fail("the monthly series is not on the composer's month", { at, month });
+      // Fear & Greed's index chart: its sibling indicators follow it, and so do the other panes.
+      const index = await evaluate<Rect | null>(cdp, `__check.rect(__check.pane("fear-greed:a")?.querySelector("[data-gloom-role=composite-chart-panel]"))`)
+        ?? fail("Fear & Greed has no chart plot");
+      // Late in its history, where the composer's three months of bars are.
+      await mouse(cdp, "mouseMoved", index.x + index.width * 0.85, index.y + index.height * 0.5, false);
+      const fromIndex = await waitFor<Charts | null>(cdp, `(() => { const c = ${followed("fear-greed:a")}; return c && c["fear-greed:a"][0].time !== ${JSON.stringify(fromComposer["fear-greed:a"]![0]!.time)} ? c : null; })()`)
+        ?? fail("a chart did not follow Fear & Greed's index chart", await evaluate(cdp, charts));
+      const indexDay = day(fromIndex["fear-greed:a"]![0]!.time);
+      const siblings = fromIndex["fear-greed:a"]!.slice(1).map((chart) => day(chart.time));
+      if (siblings.some((entry) => entry !== indexDay)) fail("Fear & Greed's indicators are not on the index chart's day", { indexDay, siblings });
+      if (day(fromIndex["iv-history:a"]![0]!.time) !== indexDay) fail("IV history is not on the index chart's day", { indexDay, iv: fromIndex["iv-history:a"]![0]!.time });
+      // The pointer leaves the charts: every one clears, its legend back on the latest values.
+      await mouse(cdp, "mouseMoved", composer.x + composer.width * 0.5, composer.y - 60, false);
+      const cleared = `(() => { const c = ${charts}, rest = ${JSON.stringify(rest)}; return Object.entries(c).every(([id, list]) => list.every((chart, i) => !chart.line && chart.legend === rest[id][i].legend)); })()`;
+      if (!await waitFor(cdp, cleared)) fail("a chart kept the crosshair after the pointer left the plots", await evaluate(cdp, charts));
     },
   },
   {
@@ -1219,7 +1486,7 @@ const steps: Step[] = [
     },
   },
   {
-    name: "popped-out window: one Share entry opens its picture by pointer and held key",
+    name: "popped-out window: one Share entry shares at once by pointer and held key, with no dialog",
     scenario: "detached",
     async run(cdp) {
       await click(cdp, await pointOf(cdp, "tabs:a", "action"));
@@ -1228,26 +1495,22 @@ const steps: Step[] = [
       if (shares !== 1) fail("expected one Share entry", shares);
       const target = await evaluate<Rect>(cdp, `__check.rect([...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.startsWith('Share')))`);
       await click(cdp, center(target));
-      if (!await waitFor(cdp, `!!document.querySelector('[role="dialog"]')`)) fail("Share did not open");
-      const press = async (key: string, code: string, modifiers: number, autoRepeat = false) => {
-        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, modifiers, autoRepeat });
-        if (!autoRepeat) await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers });
-      };
-      await press("Escape", "Escape", 0);
+      if (!await waitFor(cdp, "window.__paneChrome.shares === 1")) fail("Share did not finish");
+      if (await evaluate<boolean>(cdp, `!!document.querySelector('[role="dialog"]:not(.gloom-popover)')`)) fail("Share opened a dialog");
+      const repeatShareKey = () => cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "S", code: "KeyS", modifiers: 10, autoRepeat: true });
       await sleep(KEY_UP_FOR_MS);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "S", code: "KeyS", modifiers: 10 });
-      if (!await waitFor(cdp, "window.__paneChrome.shares === 2")) fail("Share key did not open");
-      await press("Escape", "Escape", 0);
-      for (let i = 0; i < 5; i++) await press("S", "KeyS", 10, true);
+      if (!await waitFor(cdp, "window.__paneChrome.shares === 2")) fail("Share key did not share");
+      for (let i = 0; i < 5; i++) await repeatShareKey();
       await sleep(200);
-      if (await evaluate<number>(cdp, "window.__paneChrome.shares") !== 2) fail("a held key opened Share twice");
+      if (await evaluate<number>(cdp, "window.__paneChrome.shares") !== 2) fail("a held key shared twice");
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "S", code: "KeyS", modifiers: 10 });
       // Native menu and older terminals can repeat without the platform flag.
       await holdKey(cdp, { key: "S", code: "KeyS", keyCode: 83, modifiers: 10 }, HELD_MS, { flagRepeats: false });
-      if (await evaluate<number>(cdp, "window.__paneChrome.shares") !== 2) fail("unflagged repeats reopened Share");
+      if (await evaluate<number>(cdp, "window.__paneChrome.shares") !== 2) fail("unflagged repeats shared again");
       await sleep(KEY_UP_FOR_MS);
       await holdKey(cdp, { key: "S", code: "KeyS", keyCode: 83, modifiers: 10 }, 0);
-      if (!await waitFor(cdp, "window.__paneChrome.shares === 3")) fail("a later Share press did not open");
+      if (!await waitFor(cdp, "window.__paneChrome.shares === 3")) fail("a later Share press did not share");
     },
   },
   {
@@ -1356,6 +1619,10 @@ const steps: Step[] = [
   ...headerSteps,
   ...layoutSteps,
   ...selectionSteps,
+  ...axisSteps,
+  ...tabSweepSteps,
+  ...titleTabSteps,
+  ...readerSteps,
 ];
 
 async function openScenario(cdp: Cdp, page: FixturePage, scenario: string): Promise<void> {

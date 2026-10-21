@@ -1,9 +1,11 @@
 import type { AppConfig } from "../../../../types/config";
 import type { CliCommandContext } from "../../../../types/plugin";
 import { parseListingArg } from "../../../../cli/listing-arg";
-import { findPortfolio, isManualPortfolio } from "../mutations";
-import { CASH_SYMBOL } from "../allocation";
+import { findPortfolio, isManualPortfolio } from "../../../../portfolio/mutations";
+import { CASH_SYMBOL } from "../../../../portfolio/allocation";
 import { findNamedCollection } from "../../../../portfolio/collection-name";
+import { readCurrencyAmount, readTypedNumber, TYPED_AMOUNT_FORMAT } from "../../../../utils/decimal-comma";
+import { isProviderBusy } from "../../../../sources/provider-errors";
 
 export { listingFields } from "../../../../cli/listing-arg";
 
@@ -15,8 +17,13 @@ export class PortfolioCliError extends Error {
   }
 }
 
-/** Fails the command with the error's message and hint, or the fallback for anything unexpected. */
+/**
+ * Fails the command with the error's message and hint, or the fallback for
+ * anything unexpected. A lookup search was too busy for goes on as it is, for
+ * the CLI to say so as a failure worth retrying.
+ */
 export function failPortfolioCommand(ctx: CliCommandContext, error: unknown, fallback: string): never {
+  if (isProviderBusy(error)) throw error;
   if (error instanceof Error) {
     const details = (error as { details?: unknown }).details;
     return ctx.fail(error.message, typeof details === "string" ? details : undefined);
@@ -91,12 +98,19 @@ export function misplacedSymbolList(
   };
 }
 
-export function parseFiniteNumber(rawValue: string | undefined, label: string): number {
-  const value = Number(rawValue);
-  if (!rawValue?.trim() || !Number.isFinite(value)) {
-    throw new Error(`${label} must be a valid number.`);
-  }
-  return value;
+/**
+ * A number argument: `1.234,5` and `1,234.5` are 1234.5, `18,50` is 18.5. With
+ * a currency it is an amount of it (cash), where `1,234` and `1.234` are
+ * thousands unless the currency has three decimals (`readCurrencyAmount`);
+ * without one it is a price per share or a share count, where a lone dot is a
+ * decimal point (`readTypedNumber`). One that reads two ways fails naming
+ * both, rather than storing either.
+ */
+export function parseAmountArg(rawValue: string | undefined, label: string, currency?: string): number {
+  const value = currency ? readCurrencyAmount(rawValue, label, currency) : readTypedNumber(rawValue, label);
+  if (Number.isFinite(value)) return value;
+  const typed = rawValue?.trim();
+  throw new Error(`${label} must be a number such as ${TYPED_AMOUNT_FORMAT}${typed ? `; got "${typed}"` : ""}.`);
 }
 
 export function requirePortfolio(config: AppConfig, rawName: string): NonNullable<ReturnType<typeof findPortfolio>> {

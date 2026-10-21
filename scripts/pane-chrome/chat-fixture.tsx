@@ -24,9 +24,14 @@
  * `loaded=<n>` opens with the latest n messages already in the list, as a
  * reader who paged far back has them; `replies=1` makes every fifth message a
  * reply that quotes the one before it; `float=1` floats the chat pane over
- * the plain one instead of docking it beside it.
+ * the plain one instead of docking it beside it. `announcement=1` ends the
+ * channel on an announcement Gloom posted between a member's message, a bot's
+ * and a reply to it, as the transcript draws them side by side.
  */
 import { useState } from "react";
+import { Box } from "../../src/ui";
+import { usePaneTabs } from "../../src/components/layout/pane/pane-tabs";
+import { ChatLatencyPane, installChatLatencyRuntime } from "./chat-latency-fixture";
 import { apiClient, type AccountProfile, type AuthUser, type ChatChannel, type ChatMessage, type ChatUserSummary } from "../../src/api-client";
 import { ApiRequestError } from "../../src/api-client/errors";
 import { ChatContent } from "../../src/plugins/builtin/chat/content";
@@ -46,10 +51,12 @@ export interface ChatFake {
   historyRequests: number;
   /** Messages the view sent. */
   sent: string[];
+  holdSends(): void;
+  finishSend(fail?: boolean): void;
   /** Whether the view has its live connection to the channel. */
   connected(): boolean;
   /** Another member writes: the message arrives over the socket. */
-  deliver(content: string, options?: { user?: string; attachment?: boolean }): ChatMessage;
+  deliver(content: string, options?: { user?: string; attachment?: boolean; imageUrl?: string; replyToId?: string }): ChatMessage;
   /** The server changes a message (an edit, a reaction count): a fresh copy arrives. */
   update(id: string, change: (message: ChatMessage) => ChatMessage): void;
   /** Holds history pages until `release()`, instead of `latency` ms. */
@@ -61,10 +68,15 @@ export interface ChatFake {
   shareReads: number;
   /** Lets the share service answer (`shares=held`). */
   releaseShares(): void;
+  /** Release or reject the initial answer for one lifecycle-check channel. */
+  finishInitial(channelId: string, fail?: boolean): void;
 }
 
 declare global {
-  interface Window { __chatFake: ChatFake }
+  interface Window {
+    __chatFake: ChatFake;
+    __chatMembers: { reads: string[]; release(): void };
+  }
 }
 
 const params = new URLSearchParams(window.location.search);
@@ -76,6 +88,7 @@ const MEMBERS: Record<string, ChatUserSummary> = {
   },
   deskbot: { id: "u3", username: "deskbot", displayName: "Deskbot", accountType: "managed_llm" },
   gloomwire: { id: "u9", username: "gloomwire", displayName: "Gloom Wire", accountType: "managed_llm" },
+  gloomhq: { id: "u10", username: "gloomhq", displayName: "Gloom", accountType: "managed_llm" },
 };
 const MEMBER_ORDER = ["quill", "marlow", "deskbot", "quill", "quill", "marlow"];
 const PHRASES = [
@@ -90,7 +103,9 @@ const PHRASES = [
   "ok",
   "Posting the notes from yesterday later today, nothing surprising in them but a couple of the charts are worth a look.",
 ];
-const BASE_TIME = Date.UTC(2026, 0, 5, 9, 0, 0);
+const BASE_TIME = params.get("recent") === "1"
+  ? Date.now() - (Number(params.get("count") ?? 90) + 1) * 120_000
+  : Date.UTC(2026, 0, 5, 9, 0, 0);
 const IMAGE = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#2a3f5f"/><circle cx="160" cy="90" r="50" fill="#9fb8d8"/></svg>')}`;
 
 function invented(index: number, extra: Partial<ChatMessage> = {}): ChatMessage {
@@ -104,8 +119,13 @@ function invented(index: number, extra: Partial<ChatMessage> = {}): ChatMessage 
     // Two minutes apart, so a run by one author groups and a change of author does not.
     createdAt: new Date(BASE_TIME + index * 120_000).toISOString(),
     user: MEMBERS[author]!,
+    ...(params.get("reactions") === "1" ? { reactions: [{ emoji: "👍", count: 1, me: false, users: [MEMBERS.quill!] }] } : {}),
     ...extra,
   };
+}
+
+function quoteOf(message: ChatMessage | undefined): ChatMessage["replyTo"] {
+  return message ? { content: message.content, user: { id: message.user.id, username: message.user.username ?? "" }, attachmentCount: message.attachments?.length } : null;
 }
 
 const count = Number(params.get("count") ?? 90);
@@ -142,6 +162,31 @@ function withChips(messages: ChatMessage[]): ChatMessage[] {
   return messages;
 }
 
+/** An invented announcement as Gloom would post it, with a member's message and a bot's before it and a reply after. */
+function withAnnouncement(messages: ChatMessage[]): ChatMessage[] {
+  const at = messages.length;
+  const next = (offset: number, change: Partial<ChatMessage>): ChatMessage => invented(at + offset, change);
+  const announcement = next(2, {
+    id: "announcement",
+    user: MEMBERS.gloomhq!,
+    announcement: true,
+    content: "**Gloom is on Discord**\nSame channels as here, mirrored both ways: what you write here shows up on Discord and back.\nhttps://discord.gg/example",
+    reactions: [{ emoji: "🚀", count: 3, me: false, users: [MEMBERS.quill!, MEMBERS.marlow!] }],
+  });
+  return [
+    ...messages,
+    next(0, { user: MEMBERS.quill!, content: "Anyone watching the open today? Volumes look thin so far." }),
+    next(1, { user: MEMBERS.deskbot!, content: "Volumes are 12% under the 20-day average at this hour." }),
+    announcement,
+    next(3, {
+      user: MEMBERS.marlow!,
+      content: "nice, joined",
+      replyToId: announcement.id,
+      replyTo: quoteOf(announcement),
+    }),
+  ];
+}
+
 const replies = params.get("replies") === "1";
 const initialMessages = Array.from({ length: count }, (_, index) => invented(index, index % 23 === 11 ? {
   attachments: [{ id: `img${index}`, mime: "image/svg+xml", width: 320, height: 180, size: 1000, url: IMAGE }],
@@ -153,34 +198,52 @@ if (replies) {
   }
 }
 const fake: ChatFake = {
-  messages: params.get("chips") === "1" ? withChips(initialMessages) : initialMessages,
+  messages: params.get("announcement") === "1"
+    ? withAnnouncement(params.get("chips") === "1" ? withChips(initialMessages) : initialMessages)
+    : params.get("chips") === "1" ? withChips(initialMessages) : initialMessages,
   historyRequests: 0,
   sent: [],
-  connected: () => socket.onMessage !== null,
+  connected: () => (sockets.get("everyone")?.size ?? 0) > 0,
   deliver(content, options = {}) {
     const index = fake.messages.length;
     const message: ChatMessage = {
       ...invented(index),
       content,
       user: MEMBERS[options.user ?? "quill"]!,
+      replyToId: options.replyToId ?? null,
+      replyTo: quoteOf(fake.messages.find((message) => message.id === options.replyToId)),
       createdAt: new Date(BASE_TIME + index * 120_000).toISOString(),
-      ...(options.attachment ? { attachments: [{ id: `img${index}`, mime: "image/svg+xml", width: 320, height: 180, size: 1000, url: IMAGE }] } : {}),
+      ...(options.attachment ? { attachments: [{ id: `img${index}`, mime: "image/svg+xml", width: 320, height: 180, size: 1000, url: options.imageUrl ?? IMAGE }] } : {}),
     };
     fake.messages.push(message);
-    socket.onMessage?.(message);
+    for (const onMessage of sockets.get(message.channelId) ?? []) onMessage(message);
     return message;
   },
   update(id, change) {
     const index = fake.messages.findIndex((message) => message.id === id);
     if (index < 0) return;
     fake.messages[index] = change(fake.messages[index]!);
-    socket.onMessage?.(fake.messages[index]!);
+    for (const onMessage of sockets.get("everyone") ?? []) onMessage(fake.messages[index]!);
+  },
+  holdSends() { heldSend = Promise.withResolvers<void>(); },
+  finishSend(fail = false) {
+    if (fail) heldSend?.reject(new Error("Fixture send failed."));
+    else heldSend?.resolve();
+    heldSend = null;
   },
   holdHistory() { held = Promise.withResolvers<void>(); },
   release() { held?.resolve(); held = null; },
   opened: [],
   shareReads: 0,
   releaseShares() { sharesHeld.resolve(); },
+  finishInitial(channelId, fail = false) {
+    const request = initialRequests.get(channelId);
+    if (fail) {
+      failedInitial.add(channelId);
+      request?.reject(new Error("Fixture messages unavailable."));
+    } else request?.resolve();
+    initialRequests.delete(channelId);
+  },
 };
 const sharesHeld = Promise.withResolvers<void>();
 if (params.get("shares") !== "held") sharesHeld.resolve();
@@ -229,23 +292,58 @@ attachChatPaneLinkPanes((paneId) => ({
   "news-story": { name: "Story", icon: "A" },
 })[paneId]);
 let held: PromiseWithResolvers<void> | null = null;
-const socket: { onMessage: ((message: ChatMessage) => void) | null } = { onMessage: null };
+let heldSend: PromiseWithResolvers<void> | null = null;
+const sockets = new Map<string, Set<(message: ChatMessage) => void>>();
 const latency = Number(params.get("latency") ?? 400);
 
+const initialRequests = new Map<string, PromiseWithResolvers<void>>();
+const failedInitial = new Set<string>();
+const lifecycle = params.get("lifecycle") === "1";
+if (lifecycle) for (const id of ["waiting", "failure", "late", "resize"]) initialRequests.set(id, Promise.withResolvers<void>());
 const CHANNELS: ChatChannel[] = [
   { id: "everyone", name: "everyone", created_at: "2026-01-01T00:00:00.000Z" },
   { id: "macro", name: "macro", created_at: "2026-01-01T00:00:00.000Z" },
+  ...(lifecycle ? ["empty", "waiting", "failure", "late", "resize"].map((id) => ({ id, name: id, created_at: "2026-01-01T00:00:00.000Z" })) : []),
 ];
 
 apiClient.getChannels = async () => CHANNELS;
 apiClient.getChatPresence = async () => ({ onlineCount: 3 });
+const memberResponse = Promise.withResolvers<void>();
+if (params.get("members") !== "held") memberResponse.resolve();
+window.__chatMembers = { reads: [], release: () => memberResponse.resolve() };
+apiClient.getChatMentionCandidates = async (channelId) => {
+  window.__chatMembers.reads.push(channelId);
+  if (channelId === "everyone") await memberResponse.promise;
+  const authors = Object.values(MEMBERS).map((user) => ({
+    id: user.id, username: user.username!, displayName: user.displayName,
+    channelActivityAt: null, conversationActivityAt: null,
+  }));
+  if (!params.has("members") && params.get("latencyCheck") !== "1") return authors;
+  return [...authors,
+    { id: `silent-${channelId}`, username: channelId === "everyone" ? "quiet" : "othermember", displayName: "Silent Reader", channelActivityAt: null, conversationActivityAt: null },
+    { id: "penpal", username: "penpal", displayName: "Recent Contact", channelActivityAt: null, conversationActivityAt: "2026-01-04T00:00:00Z" },
+    ...Array.from({ length: 5000 }, (_, index) => ({
+      id: `member-${index}`, username: `member${index}`, displayName: `Member ${index}`,
+      channelActivityAt: null, conversationActivityAt: null,
+    })),
+  ];
+};
 apiClient.updateChatChannelState = async (channelId, body) => ({
   channelId, notificationsEnabled: body.notificationsEnabled ?? false, lastReadMessageId: body.readThroughMessageId ?? null, unreadCount: 0,
 });
+let mountArrivalDelivered = false;
 apiClient.getMessages = async (channelId, options) => {
-  if (channelId !== "everyone") return [];
+  if (params.get("arrival") === "mount" && channelId === "everyone" && !options?.before && !options?.after && !mountArrivalDelivered) {
+    mountArrivalDelivered = true;
+    fake.deliver("Arrival during the initial request.");
+  }
+  if (channelId === "empty") return [];
+  if (failedInitial.has(channelId)) throw new Error("Fixture messages unavailable.");
+  const initial = !options?.before && !options?.after ? initialRequests.get(channelId) : null;
+  if (initial) await initial.promise;
+  if (channelId !== "everyone" && params.get("latencyCheck") !== "1") return [];
   const limit = options?.limit ?? 50;
-  const all = fake.messages;
+  const all = channelId === "everyone" ? fake.messages : fake.messages.map((message) => ({ ...message, id: `${channelId}:${message.id}`, channelId }));
   if (options?.before) {
     fake.historyRequests += 1;
     if (held) await held.promise; else await new Promise((done) => setTimeout(done, latency));
@@ -258,17 +356,25 @@ apiClient.getMessages = async (channelId, options) => {
   }
   return all.slice(-Math.max(limit, Number(params.get("loaded") ?? 0)));
 };
-apiClient.connectChannel = ((_channelId: string, onMessage: (message: ChatMessage) => void) => {
-  socket.onMessage = onMessage;
+apiClient.setChatReaction = async (channelId, messageId, emoji, reacted) => {
+  const reactions = [{ emoji, count: reacted ? 2 : 1, me: reacted, users: reacted ? [MEMBERS.quill!, MEMBERS.ada!] : [MEMBERS.quill!] }];
+  fake.update(messageId, (message) => ({ ...message, reactions }));
+  return { channelId, messageId, reactions };
+};
+apiClient.connectChannel = ((channelId: string, onMessage: (message: ChatMessage) => void) => {
+  const listeners = sockets.get(channelId) ?? new Set();
+  sockets.set(channelId, listeners);
+  listeners.add(onMessage);
   return {
     send: async (content: string, replyToId?: string) => {
       fake.sent.push(content);
+      if (heldSend) await heldSend.promise;
       const index = fake.messages.length;
-      const message: ChatMessage = { ...invented(index), content, replyToId: replyToId ?? null, user: MEMBERS.ada! };
+      const message: ChatMessage = { ...invented(index), content, replyToId: replyToId ?? null, replyTo: quoteOf(fake.messages.find((message) => message.id === replyToId)), user: MEMBERS.ada! };
       fake.messages.push(message);
       return message;
     },
-    close: () => { socket.onMessage = null; },
+    close: () => { listeners.delete(onMessage); },
   };
 }) as typeof apiClient.connectChannel;
 
@@ -302,6 +408,7 @@ function createController(): ChatController {
 }
 
 const controller = createController();
+if (params.get("latencyCheck") === "1") await installChatLatencyRuntime(controller);
 const runtime = createTestPluginRuntime({
   createPaneFromTemplate: (templateId, options) => {
     fake.opened.push(`template:${templateId}${options?.arg ? `:${options.arg}` : ""}`);
@@ -310,7 +417,33 @@ const runtime = createTestPluginRuntime({
 window.__chatFake = fake;
 
 /** What the Chat pane does with its channel and a message a notification pointed at. */
-export function ChatFixturePane({ focused, width, height }: PaneProps) {
+export function ChatFixturePane(props: PaneProps) {
+  return lifecycle ? <ChatMountFixture {...props} /> : renderChatFixtureContent(props);
+}
+
+/** Keep the real content mounted while its host is hidden or outside the viewport. */
+function ChatMountFixture(props: PaneProps) {
+  const [mode, setMode] = useState(props.paneId === "chat:a" ? params.get("mount") ?? "chat" : "chat");
+  const { strip } = usePaneTabs({
+    tabs: ["chat", "inactive", "offscreen", "unmounted"].map((value) => ({ value, label: value })),
+    activeValue: mode, onSelect: setMode, focused: props.focused,
+  });
+  return <Box flexGrow={1} style={{ minHeight: 0 }}>
+    {strip}
+    {mode !== "unmounted" && <Box visible={mode !== "inactive"} flexGrow={1}
+      style={{ minHeight: 0, ...(mode === "offscreen" ? { transform: "translateY(200vh)" } : {}) }}>
+      {renderChatFixtureContent({ ...props, focused: props.focused && mode === "chat" })}
+    </Box>}
+  </Box>;
+}
+
+function renderChatFixtureContent(props: PaneProps) {
+  return params.get("latencyCheck") === "1"
+    ? <ChatLatencyPane {...props} controller={controller} />
+    : <ChatListFixturePane {...props} />;
+}
+
+function ChatListFixturePane({ focused, width, height }: PaneProps) {
   const [channelId, setChannelId] = useState("everyone");
   const [target, setTarget] = useState(params.get("target") ?? undefined);
   return (
@@ -332,6 +465,14 @@ export function ChatFixturePane({ focused, width, height }: PaneProps) {
 /** The chat pane beside a plain one, which the pointer can leave to, or floating over it (`float=1`). */
 export function chatLayout(): LayoutConfig {
   const instance = (instanceId: string) => ({ instanceId, paneId: instanceId.split(":")[0]!, binding: { kind: "none" as const } });
+  if (params.get("multiple") === "1") {
+    return {
+      dockRoot: { kind: "split", axis: "vertical", ratio: 0.5,
+        first: { kind: "pane", instanceId: "chat:a" }, second: { kind: "pane", instanceId: "chat:b" } },
+      instances: [instance("chat:a"), instance("chat:b"), instance("chat:c")],
+      floating: [{ instanceId: "chat:c", x: 130, y: 2, width: 40, height: 30, zIndex: 1 }], detached: [],
+    };
+  }
   if (params.get("solo") === "1") {
     return { dockRoot: { kind: "pane", instanceId: "chat:a" }, instances: [instance("chat:a")], floating: [], detached: [] };
   }

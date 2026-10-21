@@ -5,6 +5,7 @@ import { ApiRequestError } from "../../../api-client/errors";
 import { CLOUD_QUOTE_DELAY_MINUTES } from "../../../api-client/plan-rules";
 import { evaluateSurfaceSmile, normalizeSurfaceSettings, type SurfaceExpiry, type SurfaceFilterCounts, type SurfaceSnapshot } from "./model";
 import { isFiniteNumber } from "../../../utils/guards";
+import { dateOptionError, readCalendarDate } from "../../../utils/calendar-date";
 
 /** The platform's compact expiry: fit, forward, rate and the quoted OTM points of one close capture. */
 interface StoredExpiry {
@@ -73,13 +74,9 @@ export function formatCaptureTime(iso: string): string {
 }
 
 /** A session date as `--date` takes it: YYYY-MM-DD, a day the calendar has. */
-export function storedSurfaceDate(value: string): string {
-  const date = value.trim();
-  const time = Date.parse(`${date}T00:00:00Z`);
-  // A month or day out of range parses to NaN or rolls over; both are refused.
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== date) {
-    throw new Error("Use a session date in YYYY-MM-DD format, such as --date 2026-10-09.");
-  }
+export function storedSurfaceDate(value: string, now = new Date()): string {
+  const date = readCalendarDate(value);
+  if (!date) throw new Error(dateOptionError(value, "--date", { now, subject: "a session date" }));
   return date;
 }
 
@@ -121,6 +118,30 @@ export async function loadDatedSurface(symbol: string, date: string, options: { 
   if (!(surface.reason instanceof ApiRequestError && surface.reason.status === 404)) throw surface.reason;
   if (dates.status === "rejected") throw dates.reason;
   throw new Error(storedSurfaceMiss(bare, date, dates.value.dates));
+}
+
+/** A figure to the decimals a stored close keeps it at. */
+const toDecimals = (value: number | null, digits: number) => value == null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
+
+/**
+ * A live surface at the precision a stored close keeps its figures (the
+ * platform's compact capture: years to 8 decimals, forwards and mids to 4,
+ * rates, yields, IVs and the term slope to 6), so a report of the live chain
+ * and one of a stored close (`--date`) export the same digits. The fit and
+ * the skew are kept whole, as a capture keeps them; residuals are measured
+ * again from the rounded IVs, as a stored close measures them.
+ */
+export function atCapturePrecision(snapshot: SurfaceSnapshot): SurfaceSnapshot {
+  return { ...snapshot, expiries: snapshot.expiries.map((expiry) => {
+    const rounded: SurfaceExpiry = { ...expiry, years: toDecimals(expiry.years, 8) ?? expiry.years, rate: toDecimals(expiry.rate, 6),
+      forward: toDecimals(expiry.forward, 4), dividendYield: toDecimals(expiry.dividendYield, 6), atmIV: toDecimals(expiry.atmIV, 6),
+      termSlope: toDecimals(expiry.termSlope, 6),
+      points: expiry.points.map((point) => ({ ...point, volatility: toDecimals(point.volatility, 6) ?? point.volatility, mid: toDecimals(point.mid, 4) ?? point.mid })) };
+    for (const point of rounded.points) {
+      if (point.fitResidual != null) point.fitResidual = point.volatility - (evaluateSurfaceSmile(rounded, point.strike) ?? point.volatility);
+    }
+    return rounded;
+  }) };
 }
 
 /** A stored close surface in the shape the live OVDV views render: mid quotes, recomputed IV. */

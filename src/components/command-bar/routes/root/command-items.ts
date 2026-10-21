@@ -1,9 +1,27 @@
 import type { AppState } from "../../../../state/app/context";
 import type { TickerRecord } from "../../../../types/ticker";
-import { isManualPortfolio } from "../../../../plugins/builtin/portfolio-list/mutations";
+import { isManualPortfolio } from "../../../../portfolio/mutations";
 import type { Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
-import { canRestartToApply } from "../../../../updater";
+import { canRestartToApply, type UpdateProgress } from "../../../../updater";
+import { NIGHTLY_CHANNEL_SUMMARY, resolveUpdateChannel } from "../../../../updater/channel";
+import { updateFailureReason } from "../../../../updater/failure";
+import { t, tf } from "../../../../i18n";
+import { isPrereleaseVersion } from "../../../../utils/semver";
+import { VERSION } from "../../../../version";
+
+/** "Update failed: download interrupted", as the header says it. */
+function failedUpdateLabel(progress: UpdateProgress): string {
+  const reason = progress.failure ? t(updateFailureReason(progress.failure)) : (progress.error ?? "").replace(/\s+/g, " ").trim();
+  return tf("Update failed: {error}", { error: reason });
+}
+
+/** The whole error under the failed update's row, unless the label already says all of it. */
+function failedUpdateLines(progress: UpdateProgress): ResultItem["lines"] {
+  const error = (progress.error ?? "").replace(/\s+/g, " ").trim();
+  if (!progress.failure || !error) return undefined;
+  return [{ segments: [{ text: error, emphasis: "muted" }] }];
+}
 
 interface RootCommandItemBuilderOptions {
   activeCollectionId: string | null;
@@ -85,9 +103,12 @@ export function createRootCommandItemBuilder({
         return activeTickerSymbol ? `Remove ${activeTickerSymbol} from Portfolio` : command.label;
       case "set-portfolio-position":
         return activeTickerSymbol ? `Set Position for ${activeTickerSymbol}` : command.label;
-      // The row only shows its label, so a downloaded update is announced there.
+      // The row only shows its label, so a downloaded update is announced there,
+      // and a failed one with its reason; Enter restarts into the one and retries the other.
       case "check-for-updates":
-        return state.updateProgress?.phase === "ready" ? "Update ready, restart to apply" : command.label;
+        if (state.updateProgress?.phase === "ready") return "Update ready, restart to apply";
+        if (state.updateProgress?.phase === "error") return failedUpdateLabel(state.updateProgress);
+        return command.label;
       default:
         return command.label;
     }
@@ -137,7 +158,7 @@ export function createRootCommandItemBuilder({
           return state.updateProgress.message ?? "Update ready, restart to apply";
         }
         if (state.updateProgress?.phase === "error") {
-          return `Update failed: ${state.updateProgress.error}`;
+          return `${failedUpdateLabel(state.updateProgress)}. ${state.updateProgress.error ?? ""}`.trim();
         }
         if (state.updateCheckInProgress) return "Checking releases now";
         if (state.updateAvailable) {
@@ -157,6 +178,11 @@ export function createRootCommandItemBuilder({
         return state.config.telemetry?.attention === true
           ? "Currently on: share ticker research counts"
           : "Currently off: opt in to sharing ticker research counts";
+      case "release-channel":
+        if (resolveUpdateChannel(state.config) === "nightly") return `Currently nightly: ${NIGHTLY_CHANNEL_SUMMARY}`;
+        return isPrereleaseVersion(VERSION)
+          ? "Currently stable: this nightly build stays until a newer stable release"
+          : "Currently stable";
       case "font-size-increase":
       case "font-size-decrease":
         return `Currently ${state.config.fontSize ?? 12}px`;
@@ -176,6 +202,8 @@ export function createRootCommandItemBuilder({
         return state.config.telemetry?.usage === false ? "off" : "on";
       case "toggle-attention-counts":
         return state.config.telemetry?.attention === true ? "on" : "off";
+      case "release-channel":
+        return resolveUpdateChannel(state.config);
       default:
         return command.prefix || undefined;
     }
@@ -185,8 +213,16 @@ export function createRootCommandItemBuilder({
     switch (command.id) {
       case "set-portfolio-position":
         return "edit position update position modify position manual position portfolio position";
+      // "update" is a whole word here so it lands on this command before Set
+      // Portfolio Position (whose keywords say "update position") and Release
+      // Channel, which keeps the word further back.
+      // Ready and failed rename the row; its own name still finds it.
       case "check-for-updates":
-        return state.updateProgress?.phase === "ready" ? "check for updates restart relaunch" : "";
+        if (state.updateProgress?.phase === "ready") return "update check for updates restart relaunch";
+        if (state.updateProgress?.phase === "error") return "update check for updates retry";
+        return "update";
+      case "release-channel":
+        return "nightly stable beta prerelease update updates channel";
       default:
         return "";
     }
@@ -203,9 +239,14 @@ export function createRootCommandItemBuilder({
       right: smartRight(command, arg),
       shortcutQuery: command.prefix || undefined,
       searchText: smartSearchText(command),
+      ...(command.id === "check-for-updates" && state.updateProgress?.phase === "error"
+        ? { lines: failedUpdateLines(state.updateProgress) }
+        : {}),
+      // Busy while it checks, downloads or installs; a failed update is retried from here.
       disabled:
         command.id === "check-for-updates" &&
-        (state.updateCheckInProgress || (!!state.updateProgress && !canRestartToApply(state.updateProgress))),
+        (state.updateCheckInProgress
+          || (!!state.updateProgress && !canRestartToApply(state.updateProgress) && state.updateProgress.phase !== "error")),
       action: () => runDirectCommand(command, arg),
     };
   };

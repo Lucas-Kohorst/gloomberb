@@ -30,7 +30,7 @@ interface LockedFunction {
   settings?: Record<string, unknown>;
   /** What the lock says the function needs. */
   needs: "Gloom Cloud Pro" | "a free Gloom sign-in";
-  /** The command the note names as the free route, or null when none answers. */
+  /** The command the note names as the free route, or null when none has data for the ticker. */
   free: string | null;
   /** The command that reads with a session, as the note's last line ends it. */
   command: string;
@@ -39,8 +39,11 @@ interface LockedFunction {
 const LOCKED_FUNCTIONS: LockedFunction[] = [
   { module: scannerModule, template: "scanner-flow-pane", token: "FLOW", argument: "", needs: "Gloom Cloud Pro", free: "gloomberb options <ticker> lists the company's option chain", command: "gloomberb fn FLOW then reads" },
   { module: estimateRevisionsModule, template: "estimate-revisions-em", token: "EM", argument: "ACME:NASDAQ", needs: "a free Gloom sign-in", free: "gloomberb earnings ACME:NASDAQ lists", command: "gloomberb fn EM ACME:NASDAQ then reads" },
-  { module: estimateRevisionsModule, template: "estimate-revisions-guid", token: "GUID", argument: "ACME:NASDAQ", settings: { tab: "guidance" }, needs: "a free Gloom sign-in", free: "gloomberb fn GUIDE ACME:NASDAQ lists", command: "gloomberb fn GUID ACME:NASDAQ then reads" },
+  // GUIDE has nothing for ACME (its read is refused like every other here), so the note names its 8-Ks.
+  { module: estimateRevisionsModule, template: "estimate-revisions-guid", token: "GUID", argument: "ACME:NASDAQ", settings: { tab: "guidance" }, needs: "a free Gloom sign-in", free: "gloomberb filings ACME:NASDAQ --form 8-K lists", command: "gloomberb fn GUID ACME:NASDAQ then reads" },
   { module: earningsCallsModule, template: "earnings-calls-pane", token: "CALLS", argument: "ACME", needs: "Gloom Cloud Pro", free: "gloomberb events ACME lists ACME's earnings dates", command: "gloomberb fn CALLS ACME then reads" },
+  // No earnings dates on file for QUIET: events would answer with none, so no route is named.
+  { module: earningsCallsModule, template: "earnings-calls-pane", token: "CALLS", argument: "QUIET", needs: "Gloom Cloud Pro", free: null, command: "gloomberb fn CALLS QUIET then reads" },
   { module: jobsModule, template: "jobs-pane", token: "JOBS", argument: "", needs: "Gloom Cloud Pro", free: "gloomberb fn HIRE <ticker> previews", command: "gloomberb fn JOBS then reads" },
   { module: socialMentionsModule, template: "social-mentions-pane", token: "BUZZ", argument: "ACME", needs: "a free Gloom sign-in", free: null, command: "gloomberb fn BUZZ ACME then reads" },
 ];
@@ -56,8 +59,19 @@ function refuse(fn: LockedFunction, status: 401 | 402 | 403) {
     restores.push(() => spy.mockRestore());
     return;
   }
-  setCloudApiFetchTransport((async () => new Response("Refused", { status })) as typeof fetch);
+  setCloudApiFetchTransport((async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    // The SEC's filing list is free, so a route to ACME's 8-Ks reads it signed out.
+    if (url.pathname === "/cloud/sec/filings") return Response.json({ filings: url.searchParams.get("ticker") === "ACME" ? [{ form: "8-K" }] : [], hasMore: false });
+    return new Response("Refused", { status });
+  }) as typeof fetch);
 }
+
+/** What the free routes read besides the SEC's filings: ACME has a report date and earnings on file; QUIET has neither. */
+const ACME_DATA = createTestDataProvider({
+  getEarningsCalendar: async (symbols) => (symbols.some((symbol) => symbol.startsWith("ACME")) ? [{ symbol: "ACME" }] : []) as never,
+  getCorporateActions: async (symbol) => ({ symbol, dividends: [], splits: [], earnings: symbol === "ACME" ? [{}] : [] }) as never,
+});
 
 function run(fn: LockedFunction) {
   const template = fn.module.paneTemplates!.find((candidate) => candidate.id === fn.template)!;
@@ -71,7 +85,7 @@ function run(fn: LockedFunction) {
       capability: { id: template.id },
       pane: fn.module.panes!.find((pane) => pane.id === template.paneId),
     } as never,
-    { dataProvider: createTestDataProvider(), config: createDefaultConfig("/tmp/gloomberb-lock-note-test"), store: { loadTicker: async () => null } } as never,
+    { dataProvider: ACME_DATA, config: createDefaultConfig("/tmp/gloomberb-lock-note-test"), store: { loadTicker: async () => null } } as never,
     fn.argument,
   );
 }

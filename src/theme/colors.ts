@@ -1,5 +1,6 @@
 import { blendForContrast, blendForContrastOnSurfaces, blendHex, higherContrast } from "./color-utils";
 import { getTheme, DEFAULT_THEME, type Theme } from "./themes";
+import { roleColours } from "./ui-tokens";
 
 export type ThemeColors = Readonly<Omit<Theme, "name" | "description">>;
 
@@ -116,6 +117,25 @@ export function hoverBg(palette: ThemeColors = colors): string {
   return blendHex(palette.bg, palette.selected, 0.5);
 }
 
+/** Body-text contrast, which text on a hovered control keeps whatever the surface. */
+const HOVER_TEXT_MIN_CONTRAST = 4.5;
+
+/**
+ * Text on a control under the pointer: the theme's bright text, which hovered
+ * buttons and table actions light up to, pushed toward black or white only as
+ * far as `surface` needs for it to stay readable. A chip tinted with its own
+ * tone (a ticker's day move, a mention) is the case that needs it: a phosphor
+ * theme's bright text is its own hue, and red on a green chip is not readable.
+ */
+export function hoverText(surface: string, palette: ThemeColors = colors): string {
+  return blendForContrast(
+    palette.textBright,
+    surface,
+    higherContrast("#ffffff", "#000000", surface),
+    HOVER_TEXT_MIN_CONTRAST,
+  );
+}
+
 function syncThemeCssVariables(): void {
   const documentLike = (globalThis as {
     document?: { documentElement?: { style?: { setProperty: (name: string, value: string) => void } } };
@@ -129,6 +149,7 @@ function syncThemeCssVariables(): void {
     style.setProperty(name, currentColors[key]);
   }
   style.setProperty("--gloom-hover-bg", hoverBg());
+  for (const [name, value] of roleColours(currentColors)) style.setProperty(name, value);
 }
 
 export function commandBarBg(palette: ThemeColors = colors): string {
@@ -295,4 +316,15 @@ export function priceColor(value: number, palette: ThemeColors = colors): string
   if (value > 0) return palette.positive;
   if (value < 0) return palette.negative;
   return palette.neutral;
+}
+
+const TONE_TINT = 0.18;
+
+/**
+ * The background a tone tints, such as a ticker badge in its day's move or a
+ * price that moved since the user last looked. A `strength` under 1 lightens
+ * it, for a tint on its way out.
+ */
+export function toneTintBg(tone: string, strength = 1, palette: ThemeColors = colors): string {
+  return blendHex(palette.bg, tone, TONE_TINT * strength);
 }

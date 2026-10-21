@@ -15,9 +15,16 @@ const CACHE_POLICY = {
 } as const;
 
 export type ImpactFilter = "high" | "medium" | "low" | "all";
-export type CountryFilter = "all" | "US" | "G7" | "EU";
+/** A region the pane cycles through, or one country by its two-letter code (`econ --country TR`). */
+export type CountryFilter = "all" | "US" | "G7" | "EU" | (string & {});
 
 export const FILTER_CYCLE: ImpactFilter[] = ["all", "high", "medium", "low"];
+/**
+ * Where a calendar nobody has filtered opens. Most rows are low-impact
+ * releases few people follow; the high-impact ones still fill a few a day.
+ * A filter the user picked is saved with the pane and wins.
+ */
+export const DEFAULT_IMPACT_FILTER: ImpactFilter = "high";
 export const COUNTRY_CYCLE: CountryFilter[] = ["all", "US", "G7", "EU"];
 
 /** The seven members plus the EU, which attends every summit. */
@@ -161,12 +168,59 @@ export function matchesImpact(event: EconEvent, filter: ImpactFilter): boolean {
   return filter === "all" || event.impact === filter;
 }
 
+const IMPACT_WORDS: Record<Exclude<ImpactFilter, "all">, string> = {
+  high: "high-impact",
+  medium: "medium-impact",
+  low: "low-impact",
+};
+
+/**
+ * What an empty list says when the filters, not the calendar, emptied it:
+ * "No high-impact US events listed". Null with no filter set.
+ */
+export function filteredEmptyTitle(impact: ImpactFilter, country: CountryFilter): string | null {
+  if (impact === "all" && country === "all") return null;
+  const words = [impact === "all" ? null : IMPACT_WORDS[impact], country === "all" ? null : country];
+  return `No ${words.filter(Boolean).join(" ")} events listed`;
+}
+
 export function matchesCountry(event: EconEvent, filter: CountryFilter): boolean {
   if (filter === "all") return true;
   if (filter === "US") return event.country === "US";
   if (filter === "G7") return G7_COUNTRIES.has(event.country);
   if (filter === "EU") return event.country === "EU";
-  return true;
+  return event.country === filter;
+}
+
+/**
+ * How long after its release time a high-impact print is still news: the
+ * calendar is asked for it this long, and a print that turns up later is
+ * recorded without a toast.
+ */
+export const PRINT_PENDING_MS = 20 * 60 * 1000;
+
+/** High-impact releases whose time has come in the last {@link PRINT_PENDING_MS} and that have no actual yet. */
+export function pendingHighImpactPrints(events: readonly EconEvent[], now: number): EconEvent[] {
+  return events.filter((event) => {
+    if (event.impact !== "high" || event.actual) return false;
+    const releasedFor = now - event.date.getTime();
+    return releasedFor >= 0 && releasedFor <= PRINT_PENDING_MS;
+  });
+}
+
+export function hasPendingHighImpactPrint(events: readonly EconEvent[], now: number): boolean {
+  return pendingHighImpactPrints(events, now).length > 0;
+}
+
+/** High-impact rows that were blank in `previous` and have an actual in `next`. */
+export function landedHighImpactPrints(
+  previous: ReadonlyMap<string, string | null>,
+  next: readonly EconEvent[],
+): EconEvent[] {
+  return next.filter((event) => {
+    if (event.impact !== "high" || !event.actual || !previous.has(event.id)) return false;
+    return !previous.get(event.id);
+  });
 }
 
 export function formatCountdown(ms: number): string {
@@ -205,6 +259,10 @@ function deserializeEvents(events: PersistedEconEvent[]): EconEvent[] {
 
 export function getCalendarCache(options?: { allowExpired?: boolean }): EconCalendarCacheEntry | null {
   return cache.get(CACHE_KEY, options);
+}
+
+export function subscribeCalendar(listener: () => void): () => void {
+  return cache.subscribe(CACHE_KEY, listener);
 }
 
 export interface EconCalendarLoadResult extends EconCalendarCacheEntry {

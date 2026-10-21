@@ -3,7 +3,7 @@ import { isAccessDenied } from "../../../api-client/errors";
 import { usePlanAccess } from "../../../api-client/plan-access";
 import type { AppAttentionFilter, AppAttentionPayload, AppChart } from "../../../api-client/app-attention";
 import type { HiringBoard, HiringPayload } from "../../../api-client/hiring";
-import { ChartTableHeader, DataTableView, EmptyState, KeyValueRow, PageStackView, PaneFooterScope, PaneStatusBody, QueryBar, useChartTableSelection, usePagedRows, useTableLoadMore, usePaneNoticeFooter, usePaneStatusFooter, usePaneTabs, type PaneHint } from "../../../components";
+import { ChartTableHeader, DataTableView, KeyValueRow, PageStackView, PaneFooterScope, QueryBar, useChartTableSelection, usePagedRows, useTableLoadMore, usePaneNoticeFooter, usePaneStatusFooter, usePaneTabs, type PaneHint } from "../../../components";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "../../../public/react";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
@@ -19,7 +19,7 @@ import { humanLabel, listingCell, missingCell, shareCell, signedColor, toneColor
 import { AppRankView } from "./app-rank";
 import { useAttentionEvidence } from "./evidence";
 import { cachedAttention, fetchAttention, loadAttention, validateAttention, type AttentionPayload } from "./client";
-import { appsModel, attentionNumber, attentionSeries, count, hiringModel, remoteText, SIGNED_COLUMNS, sortAttentionRows, type AttentionKind, type AttentionRow, type AttentionTab } from "./model";
+import { appsModel, attentionNumber, attentionSeries, attentionTabs, count, hiringModel, remoteText, SIGNED_COLUMNS, sortAttentionRows, type AttentionKind, type AttentionRow, type AttentionTab } from "./model";
 
 type Size = Pick<PaneProps, "width" | "height" | "focused">;
 const rowId = (row: AttentionRow) => row.id;
@@ -67,7 +67,7 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   const upgrade = useCloudUpgradeAction(kind === "hiring" ? "hire" : "apps");
   const [openingTab] = usePaneSettingValue<string>("tab", "table");
   const [savedTab, setTab] = usePluginPaneState<string>(`${kind}:${symbol ?? "board"}:tab`, openingTab);
-  const tab: AttentionTab = ["chart", "mix", "peers", "evidence"].includes(savedTab) && (kind === "apps" || symbol) ? savedTab as AttentionTab : "table";
+  const tab: AttentionTab = (attentionTabs(kind, symbol) as string[]).includes(savedTab) ? savedTab as AttentionTab : "table";
   const [openingCountry] = usePaneSettingValue<string>("country", "");
   const [country, setCountry] = usePluginPaneState<string>(`${kind}:country`, openingCountry);
   const [openingChart] = usePaneSettingValue<string>("chart", "");
@@ -81,7 +81,8 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   const loader = useCallback((force: boolean) => snapshot ? Promise.resolve({ payload: snapshot, stale: false, refreshError: null }) : loadAttention(kind, symbol, accessKey, filters, force), [kind, symbol, accessKey, filters, snapshot]);
   const resource = useAsyncResource(loader, { initialData: () => cachedAttention(kind, symbol, accessKey, filters), clearOnError: isAccessDenied });
   const data = resource.data?.payload;
-  const model = useMemo(() => data ? kind === "hiring" ? hiringModel(data as HiringPayload | HiringBoard, mix) : appsModel(data as AppAttentionPayload, mix) : null, [data, kind, mix]);
+  const filtered = !!(country || chart);
+  const model = useMemo(() => data ? kind === "hiring" ? hiringModel(data as HiringPayload | HiringBoard, mix) : appsModel(data as AppAttentionPayload, mix, filtered) : null, [data, kind, mix, filtered]);
   const [selectedId, setSelected] = usePluginPaneState<string | null>(`${kind}:${symbol ?? "board"}:${tab}:selected`, null);
   const [openCompany, setOpenCompany] = usePluginPaneState<string | null>(`${kind}:${symbol ?? "board"}:company`, null);
   const [openAppId, setOpenApp] = usePluginPaneState<string | null>(`${kind}:${symbol ?? "board"}:app`, null);
@@ -91,12 +92,12 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   const paginated = kind === "apps" && ["table", "evidence", "peers"].includes(tab) || kind === "hiring" && !symbol;
   const pageLoader = useCallback(async ({ offset, signal }: { offset: number; signal: AbortSignal; force: boolean }) => {
     const payload = offset === 0 && data ? data : await fetchAttention(kind, symbol, { ...filters, offset, limit: 100 }, undefined, signal);
-    const projected = kind === "hiring" ? hiringModel(payload as HiringPayload | HiringBoard, mix) : appsModel(payload as AppAttentionPayload, mix);
+    const projected = kind === "hiring" ? hiringModel(payload as HiringPayload | HiringBoard, mix) : appsModel(payload as AppAttentionPayload, mix, filtered);
     const nextOffset = "companies" in payload && kind === "hiring" && "total" in payload
       ? !payload.preview && offset + payload.companies.length < payload.total ? offset + payload.companies.length : null
       : (payload as AppAttentionPayload).page?.nextOffset ?? null;
     return { rows: projected.sections[tab].rows, hasMore: !snapshot && nextOffset !== null, nextOffset };
-  }, [data, kind, symbol, filters, mix, tab, snapshot]);
+  }, [data, kind, symbol, filters, mix, tab, snapshot, filtered]);
   const paged = usePagedRows(data && paginated ? pageLoader : null, { getId: rowId });
   const sectionRows = paginated && paged.status !== "idle" ? paged.rows : section?.rows ?? [];
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -116,8 +117,10 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   const evidence = rows.find((row) => row.id === openEvidence) ?? null;
   const app = rows.find((row) => row.id === openAppId)?.app ?? null;
   const detailOpen = !!openCompany || !!evidence || !!app;
-  const tabs = [{ value: "table", label: "Table" }, ...(kind === "apps" || symbol ? [{ value: "chart", label: "Chart" }, { value: "mix", label: kind === "hiring" ? "Mix" : "Markets" }, { value: "peers", label: kind === "apps" && !symbol ? "Companies" : "Peers" }, { value: "evidence", label: "Evidence" }] : [])];
-  const { strip, rows: tabRows } = usePaneTabs(model && !openCompany && !app ? { tabs, activeValue: tab, onSelect: (value) => { setTab(value); setOpenEvidence(null); }, focused, dense: true } : null);
+  const tabLabels: Record<AttentionTab, string> = { table: "Table", chart: "Chart", mix: kind === "hiring" ? "Mix" : "Markets", peers: kind === "apps" && !symbol ? "Companies" : "Peers", evidence: "Evidence" };
+  const tabs = attentionTabs(kind, symbol).map((value) => ({ value, label: tabLabels[value] }));
+  const signInWall = !data && isCloudSessionRequired(resource.error);
+  const { strip, rows: tabRows } = usePaneTabs(!signInWall && !openCompany && !app ? { tabs, activeValue: tab, onSelect: (value) => { setTab(value); setOpenEvidence(null); }, focused, dense: true } : null);
   const bodyHeight = Math.max(3, height - tabRows);
   const series = useMemo(() => model ? attentionSeries(model, colors.textBright) : [], [model, colors.textBright]);
   const chartSelection = useChartTableSelection({ rows, getId: rowId, getDate: rowDate, selectedId: selected?.id ?? null, onSelect: setSelected, focused: focused && !detailOpen, enabled: tab === "chart" });
@@ -140,7 +143,7 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   usePaneStatusFooter({ registrationId: `${kind}:status`, enabled: !openCompany && !app, loading: resource.loading || paged.loadingMore, error: data ? resource.error ?? paged.moreError?.message ?? paged.error?.message : null, stale: resource.data?.stale,
     info: [...(model?.asOf ? [{ id: "observed", asOf: true, parts: [{ text: `as of ${model.asOf.slice(0, 10)}`, tone: "muted" as const }] }] : []), ...(model?.preview ? [{ id: "preview", parts: [{ text: "Pro preview", tone: "warning" as const }] }] : [])], hints });
   usePaneNoticeFooter({ registrationId: `${kind}:notices`, enabled: !openCompany && !app, focused, notices: [...(model?.notices ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
-  if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement={kind === "hiring" ? "hiring-momentum-signin" : "app-attention-signin"} action={kind === "hiring" ? "view hiring momentum" : "view app attention"} needsVerification={session.needsVerification} />;
+  if (signInWall) return <SignInWall placement={kind === "hiring" ? "hiring-momentum-signin" : "app-attention-signin"} action={kind === "hiring" ? "view hiring momentum" : "view app attention"} needsVerification={session.needsVerification} />;
   const countryOptions = data && kind === "apps" ? (data as AppAttentionPayload).coverage.configuredCountries : [];
   const query = kind === "hiring" && tab !== "mix" ? undefined : <QueryBar width={width} filters={kind === "apps" ? [
     { id: "country", label: "Country", value: country, defaultValue: "", options: [{ value: "", label: "All countries" }, ...countryOptions.map((value) => ({ value, label: value }))], onChange: setCountry },
@@ -150,13 +153,15 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
   ] : tab === "mix" ? [{ id: "mix", label: "Group", value: mix, options: [{ value: "functions", label: "Role family" }, { value: "seniority", label: "Seniority" }, { value: "countries", label: "Countries" }, { value: "locations", label: "Locations" }, { value: "signals", label: "Signals" }], onChange: setMix }] : []} />;
   return <Box width={width} height={height} flexDirection="column">
     {strip}
-    <PaneStatusBody loading={!data && resource.loading} error={!data ? resource.error : null} subject={kind === "hiring" ? "hiring momentum" : "app attention"}>
-      {model && section ? <PageStackView focused={focused} detailOpen={detailOpen} onBack={() => { setOpenCompany(null); setOpenEvidence(null); setOpenApp(null); }} detailTitle={openCompany ?? app?.name ?? (evidence ? String(evidence.values.title ?? evidence.values.name ?? evidence.id) : undefined)}
+    <PageStackView focused={focused} detailOpen={detailOpen} onBack={() => { setOpenCompany(null); setOpenEvidence(null); setOpenApp(null); }} detailTitle={openCompany ?? app?.name ?? (evidence ? String(evidence.values.title ?? evidence.values.name ?? evidence.id) : undefined)}
         detailContent={openCompany ? <PaneFooterScope active><AttentionView key={openCompany} kind={kind} symbol={openCompany} width={width} height={bodyHeight - 1} focused={focused} /></PaneFooterScope> : app ? <PaneFooterScope active><AppRankView focus={app} accessKey={accessKey} width={width} height={bodyHeight - 1} focused={focused} /></PaneFooterScope> : evidence ? <Evidence row={evidence} width={width} height={bodyHeight - 1} focused={focused} /> : null}
-        rootContent={<DataTableView columns={columns} items={rows} rootWidth={width} rootHeight={bodyHeight} focused={focused && !detailOpen} scrollRef={scrollRef} onBodyScrollActivity={scrollMore}
-          rootBefore={<ChartTableHeader width={width} height={bodyHeight} tableRows={rows.length} tableColumns={columns} query={query} figures={model.figures}
-            chart={tab === "chart" ? { series, ...chartSelection, formatValue: (value) => kind === "hiring" ? count(value) : value.toFixed(1), empty: series.length ? undefined : model.preview ? "Full history requires Pro."
-              : model.chart.since ? `Collecting history since ${model.chart.since.slice(0, 10)}` : "Collecting history", remoteKind: `${kind}-history` } : null} />}
+        rootContent={<DataTableView columns={columns} items={model && section ? rows : []} rootWidth={width} rootHeight={bodyHeight} focused={focused && !detailOpen} scrollRef={scrollRef} onBodyScrollActivity={scrollMore}
+          // A filter change reloads under the query bar, which stays.
+          status={!data ? { loading: resource.loading, error: resource.error, subject: kind === "hiring" ? "hiring momentum" : "app attention" }
+            : !model || !section ? { empty: true, emptyTitle: "Observations are not available yet." } : undefined}
+          rootBefore={<ChartTableHeader width={width} height={bodyHeight} tableRows={rows.length} tableColumns={columns} query={query} figures={model?.figures}
+            chart={model && tab === "chart" ? { series, ...chartSelection, formatValue: (value) => kind === "hiring" ? count(value) : value.toFixed(1), empty: series.length ? undefined : model.unmapped ?? (model.preview ? "Full history requires Pro."
+              : model.chart.since ? `Collecting history since ${model.chart.since.slice(0, 10)}` : "Collecting history"), remoteKind: `${kind}-history` } : null} />}
           selection={{ kind: "id", selectedId: selected?.id ?? null, getId: rowId, onChange: setSelected }} getItemKey={rowId}
           sortColumnId={sort.column} sortDirection={sort.direction} onHeaderClick={(column) => setSort((old) => ({ column, direction: old.column === column && old.direction === "desc" ? "asc" : "desc" }))}
           onActivate={(row) => row.id.startsWith("locked:") ? void upgrade() : row.app ? setOpenApp(row.id) : row.symbol && row.symbol !== symbol && (tab === "peers" || !symbol) ? setOpenCompany(row.symbol) : row.details ? setOpenEvidence(row.id) : row.url ? void host.openExternal(row.url) : undefined}
@@ -179,8 +184,7 @@ function AttentionView({ kind, symbol, width, height, focused }: Size & { kind: 
             return { text, value, color: numeric && SIGNED_COLUMNS.has(column.id) ? signedColor(value, colors)
               : column.id === "name" || column.id === "title" ? colors.textBright : column.id === "date" || column.id === "observed" || column.id === "confidence" ? colors.textDim : colors.text };
           }} selectedTextOverridesCellColor showHorizontalScrollbar resetScrollKey={`${kind}:${symbol}:${tab}:${mix}:${country}:${chart}`}
-          emptyStateTitle={section.empty} bodyAfter={lockedRows && desktop ? <LockedOverlay rows={lockedRows} text="Upgrade for all observations" onPress={upgrade} role="attention-upgrade" /> : undefined} />}
-      /> : <EmptyState title="Observations are not available yet." />}
-    </PaneStatusBody>
+          emptyStateTitle={model?.unmapped ?? section?.empty ?? ""} bodyAfter={lockedRows && desktop ? <LockedOverlay rows={lockedRows} text="Upgrade for all observations" onPress={upgrade} role="attention-upgrade" /> : undefined} />}
+      />
   </Box>;
 }

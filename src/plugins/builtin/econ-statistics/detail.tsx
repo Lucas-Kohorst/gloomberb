@@ -3,6 +3,9 @@ import { ExternalLinkText, type StatItem } from "../../../components/ui";
 import { fredSeriesUrl } from "../../../sources/gloomberb-cloud/fred-series";
 import { colors } from "../../../theme/colors";
 import { Box, Text } from "../../../ui";
+import { formatBasisPoints } from "../../../utils/basis-points";
+import { historySpanStat } from "../shared/history-span";
+import { formatMoveRank } from "../shared/move-rank";
 import { scalarLine, SeriesDetailChart, type SeriesAxis } from "../shared/series-detail-chart";
 import type { StatDef } from "./defs";
 import type { StatViewModel } from "./view";
@@ -39,7 +42,14 @@ export function StatDetail({
     { id: "year-ago", label: "1Y ago", value: view.yearAgo ? stat.formatValue(view.yearAgo.value) : "--" },
     { id: "high", label: "High", value: stat.formatValue(view.high.value), detail: view.high.date },
     { id: "low", label: "Low", value: stat.formatValue(view.low.value), detail: view.low.date },
-  ], [stat, view.high, view.low, view.yearAgo]);
+    // A range longer than the history shows all of it, from where it starts.
+    ...[historySpanStat(view.span)].filter((item): item is StatItem => item !== null),
+    // A daily rate's last moves, in bp, and how big each was against every one since the series began.
+    ...view.moves.map((move): StatItem => ({
+      id: `move-${move.horizon}`, label: move.horizon, value: formatBasisPoints(move.change),
+      ...(formatMoveRank(move) ? { detail: formatMoveRank(move)! } : {}),
+    })),
+  ], [stat, view.high, view.low, view.moves, view.span, view.yearAgo]);
   const lines = useMemo(
     () => [scalarLine(statAxis(stat), stat.id, stat.shortLabel, colors.textBright, visible)],
     [stat, visible],

@@ -4,11 +4,8 @@ import {
   confirmDialog,
   DataTableView,
   FieldLabel,
-  PaneStatusBody,
   StatGrid,
   TextField,
-  unavailableText,
-  usePaneNoticeFooter,
   usePaneTabs,
   type DataTableCell,
   type DataTableColumn,
@@ -34,7 +31,7 @@ import {
 } from "../../../ui";
 import { useDialog, type AlertContext } from "../../../ui/dialog";
 import type { SelectControl } from "../../../components/ui/select-button";
-import { FRAMED_TEXTAREA_DESKTOP_STYLE } from "../../../components/ui/fields";
+import { FRAMED_TEXTAREA_DESKTOP_STYLE, fieldFrameStyle } from "../../../components/ui/fields";
 import { apiClient, type AccountProfile, type CloudPricing } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { SignInWall } from "../cloud/auth-actions";
@@ -70,6 +67,7 @@ import {
   formatTrialOffer,
 } from "../../../account/billing";
 import { PasswordChangeDialog } from "./password-dialog";
+import { endTrialAfterWarning } from "./trial-cancel";
 import { CalendarAccountTab } from "./calendar-tab";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
@@ -92,7 +90,7 @@ import { useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { resolvePlanAccess } from "../../../api-client/plan-access";
 import { usePluginPaneState } from "../../runtime";
 
-type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | null;
+type AccountBusy = "profile" | "password" | "alerts" | "billing" | "trial" | "delete" | null;
 const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = [
   { label: "Profile", value: "profile" },
   { label: "Emails", value: "emails" },
@@ -127,7 +125,8 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
   ],
   // Its actions are footer hints; the tab owns its footer.
   calendar: [],
-  pro: ["upgradeAction"],
+  // Cancel Trial shows only while a trial runs.
+  pro: ["upgradeAction", "cancelTrialAction"],
   // The Teams tab owns its own keyboard handling (a list, not form fields).
   teams: [],
   // Remote assistants allowed to drive this terminal; a list with its own footer.
@@ -234,8 +233,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     () => ACCOUNT_TAB_FIELD_ORDER[activeTab][0] ?? "username",
   );
   const [message, setMessage] = useState<{ tone: "info" | "success" | "error"; text: string } | null>(null);
-  const [profileMissing, setProfileMissing] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<AccountBusy>(null);
 
   // A requested tab switches the open pane; one requested before it mounted wins over the restored tab once.
@@ -263,14 +260,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const bodyHeight = Math.max(5, height);
   // Chat's card settings show once the server keeps them; the desks only while showing them is on.
   const chatCardSupported = profile?.showLocalTime !== undefined;
+  const planAccess = useMemo(() => resolvePlanAccess(profile), [profile]);
   const fieldOrder = useMemo(() => ACCOUNT_TAB_FIELD_ORDER[activeTab].filter((field) => {
     if (field === "showLocalTime" || field === "showDesks") return chatCardSupported;
     if (field === "desks") return chatCardSupported && draft.showDesks;
+    if (field === "cancelTrialAction") return planAccess.isTrialActive;
     return true;
-  }), [activeTab, chatCardSupported, draft.showDesks]);
+  }), [activeTab, chatCardSupported, draft.showDesks, planAccess.isTrialActive]);
   const accountTabs = ACCOUNT_TAB_DEFS.map((tab) => ({ ...tab, label: t(tab.label) }));
 
-  const planAccess = useMemo(() => resolvePlanAccess(profile), [profile]);
   const planPrice = useMemo(() => formatCloudMonthlyPrice(pricing), [language, pricing]);
   const trialOffer = useMemo(() => formatTrialOffer(pricing), [language, pricing]);
   const planStatusLabel = useMemo(() => {
@@ -480,8 +478,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const loadProfile = useCallback(async () => {
     if (!apiClient.isSignedIn()) {
       setProfile(null);
-      setProfileMissing(false);
-      setNotice(null);
       setDraft(profileToDraft(null));
       return;
     }
@@ -491,13 +487,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       const nextProfile = await apiClient.getAccountProfile();
       setProfile(nextProfile);
       setDraft(profileToDraft(nextProfile));
-      setProfileMissing(false);
-      setNotice(null);
       setMessage(null);
-    } catch {
-      setMessage(null);
-      if (profileRef.current) setNotice(unavailableText("Account profile"));
-      else setProfileMissing(true);
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : t("Failed to load account profile."),
+      });
     }
   }, []);
 
@@ -582,7 +577,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               await apiClient.changePassword(currentPassword, newPassword);
               setMessage({ tone: "success", text: t("Password changed.") });
             } catch (error) {
-              setMessage(null);
+              setMessage({
+                tone: "error",
+                text: error instanceof Error ? error.message : t("Failed to change password."),
+              });
               throw error;
             } finally {
               setBusy(null);
@@ -625,7 +623,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     const current = draftRef.current;
     const bio = bioRef.current?.editBuffer.getText() ?? current.bio;
     if (!current.username.trim() || !current.name.trim()) {
-      setNotice(null);
       setMessage({ tone: "error", text: t("Username and full name are required.") });
       return;
     }
@@ -652,11 +649,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       setProfile(nextProfile);
       setDraft(profileToDraft(nextProfile));
       await chatController.refreshSession().catch(() => {});
-      setNotice(null);
       setMessage({ tone: "success", text: t("Account profile saved.") });
-    } catch {
-      setMessage(null);
-      setNotice(unavailableText("Account profile"));
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : t("Failed to save account profile."),
+      });
     } finally {
       setBusy(null);
     }
@@ -679,11 +677,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         positionAlertsEnabled: nextProfile.positionAlertsEnabled,
       }));
       setProfile(nextProfile);
-      setNotice(null);
       setMessage({ tone: "success", text: t("Email alerts are off.") });
-    } catch {
-      setMessage(null);
-      setNotice(unavailableText("Email alerts"));
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : t("Failed to update alert settings."),
+      });
     } finally {
       setBusy(null);
     }
@@ -734,21 +733,53 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       setDraft(profileToDraft(null));
       setHasSession(false);
       await chatController.refreshSession().catch(() => {});
-      setNotice(null);
       setMessage({ tone: "success", text: t("Account deleted.") });
-    } catch {
-      setMessage(null);
-      setNotice(unavailableText("Account"));
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : t("Failed to delete account."),
+      });
     } finally {
       setBusy(null);
     }
   }, [busy, dialog]);
 
-  usePaneNoticeFooter({
-    registrationId: "account-management:notices",
-    focused,
-    notices: notice ? [notice] : [],
-  });
+  // Only after the warning that it ends the trial and Pro now (trial-cancel.ts).
+  const endTrial = useCallback(async () => {
+    setActiveField("cancelTrialAction");
+    if (busy) return;
+    try {
+      // Asks nothing unless a trial is running.
+      const result = await endTrialAfterWarning(
+        dialog,
+        planAccess,
+        () => apiClient.endCloudTrial(),
+        () => {
+          setBusy("trial");
+          setMessage({ tone: "info", text: t("Ending trial...") });
+        },
+      );
+      if (!result) return;
+      // The plan changed on the server: the session, the status bar and the tab follow it.
+      await chatController.refreshSession().catch(() => {});
+      const nextProfile = await apiClient.getAccountProfile().catch(() => null);
+      if (nextProfile) setProfile(nextProfile);
+      setMessage({
+        tone: "success",
+        text: result.endedNow
+          ? t("Trial ended. Pro is off and you won't be charged.")
+          : t("Cancelled. Pro stays on until the end of the billing period."),
+      });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : t("Failed to cancel the trial."),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, dialog, planAccess]);
+
   useAccountManagementFooter({
     busy,
     // The Calendar and Agents tabs save nothing and show their own status.
@@ -763,6 +794,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     cyclePortfolio,
     deleteAccount,
     draftRef,
+    endTrial,
     fieldOrder,
     // Behind the sign-in wall the fields are not there, and Enter is the wall's.
     focused: focused && activeTab !== "teams" && activeTab !== "calendar" && activeTab !== "agents" && (hasSession || apiClient.isSignedIn()),
@@ -805,9 +837,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       <ScrollBox ref={scrollRef} height={Math.max(3, bodyHeight - tabRows)} scrollY focusable={false}>
         <Box flexDirection="column" width={contentWidth} gap={1}>
           {activeTab === "profile" ? (
-            profileMissing && !profile ? (
-              <PaneStatusBody subject="Account profile" error={unavailableText("Account profile")} />
-            ) : (
             <>
               <FieldRow twoColumns={twoColumns}>
                 <CheckboxRow
@@ -892,13 +921,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 <Box
                   height={3}
                   width={Math.max(18, formWidth - formLabelWidth - 1)}
-                  border
+                  border={!nativePaneChrome}
                   borderColor={activeField === "bio" ? colors.borderFocused : colors.border}
                   backgroundColor={colors.panel}
-                  style={{
-                    borderRadius: 6,
-                    overflow: "hidden",
-                  }}
+                  // The field look, as every other field of the form has it. OpenTUI applies `style`
+                  // too: the terminal keeps the clip it always had.
+                  style={nativePaneChrome ? { ...fieldFrameStyle(activeField === "bio"), overflow: "hidden" } : { overflow: "hidden" }}
                 >
                   <Textarea
                     key={`bio:${profile?.updatedAt ?? "empty"}`}
@@ -908,7 +936,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                     focused={focused && activeField === "bio"}
                     textColor={colors.text}
                     placeholderColor={colors.textDim}
-                    backgroundColor={colors.panel}
+                    backgroundColor={nativePaneChrome ? "transparent" : colors.panel}
                     flexGrow={1}
                     wrapText
                     {...(nativePaneChrome ? { style: FRAMED_TEXTAREA_DESKTOP_STYLE } : {})}
@@ -938,7 +966,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 <Button label={busy === "profile" ? t("Saving...") : t("Save Profile")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
-            )
           ) : null}
 
           {activeTab === "emails" ? (
@@ -990,7 +1017,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           ) : null}
 
           {activeTab === "calendar" ? (
-            <CalendarAccountTab width={contentWidth} sessionMarker={sessionMarker} focused={focused} />
+            <CalendarAccountTab width={contentWidth} sessionMarker={sessionMarker} />
           ) : null}
 
           {activeTab === "pro" ? (
@@ -1000,14 +1027,27 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 width={contentWidth}
                 activePlan={planAccess.hasProAccess ? "pro" : "free"}
               />
-              <Box ref={fieldNodeRef("upgradeAction")} flexDirection="row">
-                <Button
-                  label={planAccess.isPayingPro ? t("Manage Pro") : busy === "billing" ? t("Opening...") : t("Upgrade to Pro")}
-                  variant={planAccess.isPayingPro ? "secondary" : "primary"}
-                  active={activeField === "upgradeAction"}
-                  onPress={openUpgrade}
-                  disabled={!!busy}
-                />
+              <Box flexDirection="row" gap={1}>
+                <Box ref={fieldNodeRef("upgradeAction")} flexDirection="row">
+                  <Button
+                    label={planAccess.isPayingPro ? t("Manage Pro") : busy === "billing" ? t("Opening...") : t("Upgrade to Pro")}
+                    variant={planAccess.isPayingPro ? "secondary" : "primary"}
+                    active={activeField === "upgradeAction"}
+                    onPress={openUpgrade}
+                    disabled={!!busy}
+                  />
+                </Box>
+                {planAccess.isTrialActive ? (
+                  <Box ref={fieldNodeRef("cancelTrialAction")} flexDirection="row">
+                    <Button
+                      label={busy === "trial" ? t("Ending...") : t("Cancel Trial")}
+                      variant="danger"
+                      active={activeField === "cancelTrialAction"}
+                      onPress={() => { void endTrial(); }}
+                      disabled={!!busy}
+                    />
+                  </Box>
+                ) : null}
               </Box>
             </>
           ) : null}

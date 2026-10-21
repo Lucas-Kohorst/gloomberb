@@ -7,6 +7,7 @@ import { FUTURES_CONTRACTS, futuresBoardContractForTicker, futuresContractByCode
 import { formatPercentileRank } from "../../../utils/format";
 import { cryptoPairCoin, isFuturesSymbol } from "../shared/crypto-pair";
 import { parseReportTime } from "../../../utils/utc-time";
+import { DATE_OPTION_FORMATS, readCalendarDate } from "../../../utils/calendar-date";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 
 /**
@@ -32,6 +33,19 @@ export function normalizeCurveRoot(value: unknown): string | null {
   const raw = value.trim().toUpperCase().replace(/=F$/, "");
   const root = raw === "VIX" ? "VX" : raw;
   return CURVE_ROOTS.some((row) => row.value === root) ? root : null;
+}
+
+/**
+ * A curve's window title, its root ("Curve · BZ"), so two curves open at once
+ * are told apart in their windows and in the layout list.
+ */
+export function curveTitle(root: string): string {
+  return `Curve · ${root}`;
+}
+
+/** The root a curve pane shows: its setting, else what it was opened with, else ES. */
+export function paneCurveRoot(pane: { settings?: Record<string, unknown>; params?: Record<string, string> } | null | undefined): unknown {
+  return pane?.settings?.root ?? pane?.params?.root ?? "ES";
 }
 
 /** What a root CTM does not list is told: the roots that work, with the FUT board's, VIX and CME crypto named by group. */
@@ -462,13 +476,10 @@ export function shortDatedBasisNote(rows: readonly Pick<FuturesContract, "symbol
 
 /** A past date for the as-of view: empty (or "latest") for the live curve, else YYYY-MM-DD no later than today. */
 export function curveAsOfDate(value: unknown, now = new Date()): string {
-  const date = typeof value === "string" ? value.trim() : "";
-  if (!date || date.toLowerCase() === "latest") return "";
-  const time = Date.parse(`${date}T00:00:00Z`);
-  // A month or day out of range parses to NaN or rolls over; both are refused.
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== date) {
-    throw new Error("Use an as-of date in YYYY-MM-DD format, or latest.");
-  }
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text.toLowerCase() === "latest") return "";
+  const date = readCalendarDate(text);
+  if (!date) throw new Error(`Use an as-of date as ${DATE_OPTION_FORMATS}, or latest.`);
   if (date > now.toISOString().slice(0, 10)) throw new Error("A futures curve cannot use a future date.");
   return date;
 }
@@ -493,6 +504,34 @@ function archivedRowStale(row: ArchivedRow, curve: FuturesCurveAsOfPayload): boo
 }
 
 /**
+ * The curve with every contract expiring on its last trading day, the one
+ * date its row, its chart point, its ghosts and the roll yield all count to.
+ * A listed expiration can be a day the contract no longer trades: Brent's
+ * December (BZZ26) stops on Oct 30, the last business day of the second month
+ * before delivery, and is listed Nov 2. The roll yield is per year of the
+ * front pair's spacing, so it is rescaled from the listed spacing to the
+ * traded one; a curve already dated by its last trades is returned as it is.
+ */
+export function withTradedExpirations(data: FuturesCurvePayload): FuturesCurvePayload {
+  const traded = new Map(data.contracts.map((row) => [row.symbol, row.lastTrade ?? row.expiration]));
+  if (data.contracts.every((row) => traded.get(row.symbol) === row.expiration)
+    && data.ghosts.every((ghost) => ghost.points.every((point) => (traded.get(point.symbol) ?? point.expiration) === point.expiration))) return data;
+  const expiry = (symbol: string, listed: string) => traded.get(symbol) ?? listed;
+  const front = data.contracts.find((row) => row.symbol === data.slope.frontSymbol);
+  const next = data.contracts.find((row) => row.symbol === data.slope.nextSymbol);
+  const spacing = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / DAY_MS;
+  const listedDays = front && next ? spacing(front.expiration, next.expiration) : 0;
+  const tradedDays = front && next ? spacing(expiry(front.symbol, front.expiration), expiry(next.symbol, next.expiration)) : 0;
+  const roll = data.slope.annualizedRollYield;
+  return {
+    ...data,
+    contracts: data.contracts.map((row) => ({ ...row, expiration: expiry(row.symbol, row.expiration) })),
+    ghosts: data.ghosts.map((ghost) => ({ ...ghost, points: ghost.points.map((point) => ({ ...point, expiration: expiry(point.symbol, point.expiration) })) })),
+    slope: { ...data.slope, annualizedRollYield: roll != null && listedDays > 0 && tradedDays > 0 ? roll * listedDays / tradedDays : roll },
+  };
+}
+
+/**
  * The archived curve on a past date in the live curve's shape, so the pane
  * draws it the same way. Its week- and month-back ghosts are the curves as
  * they stood then, contracts that have since expired included. A row is dated
@@ -502,11 +541,13 @@ function archivedRowStale(row: ArchivedRow, curve: FuturesCurveAsOfPayload): boo
 export function archivedFuturesCurve(root: string, curve: FuturesCurveAsOfPayload,
   lookbacks: { "1W": FuturesCurveAsOfPayload | null; "1M": FuturesCurveAsOfPayload | null }, fetchedAt: string): FuturesCurvePayload {
   const rowDate = (row: ArchivedRow, stale: boolean) => stale ? row.asOf.slice(0, 10) : row.tradeDate;
+  // A contract expires on its last trading day, as on the live curve (withTradedExpirations).
+  const expiration = (row: ArchivedRow) => row.lastTrade ?? row.expiration;
   const contracts: FuturesContract[] = curve.contracts.flatMap((row) => {
     if (!row.expiration) return [];
     const stale = archivedRowStale(row, curve);
     return [{
-      symbol: row.symbol, label: row.label, expiration: row.expiration, price: row.price, change: null, asOf: rowDate(row, stale),
+      symbol: row.symbol, label: row.label, expiration: expiration(row)!, price: row.price, change: null, asOf: rowDate(row, stale),
       currency: curve.currency ?? "USD", quoteUnit: curve.quoteUnit ?? curve.currency ?? "USD", volume: row.volume,
       openInterest: row.openInterest, delayMinutes: null, stale, percentile: null, samples: 0, historyStart: null, historyEnd: null,
       // Only a row the archive confirms is a settlement; an unconfirmed one is that session's last trade.
@@ -518,7 +559,7 @@ export function archivedFuturesCurve(root: string, curve: FuturesCurveAsOfPayloa
     const past = lookbacks[label];
     return { label, requestedDate: curveLookbackDate(curve.date, label === "1W" ? 7 : 30), asOf: past?.asOf ?? null,
       points: past ? past.contracts.flatMap((row) => row.expiration
-        ? [{ symbol: row.symbol, expiration: row.expiration, price: row.price, asOf: rowDate(row, archivedRowStale(row, past)) }] : []) : [] };
+        ? [{ symbol: row.symbol, expiration: expiration(row)!, price: row.price, asOf: rowDate(row, archivedRowStale(row, past)) }] : []) : [] };
   });
   // The front pair on the curve's own session: settlements where the archive has them, else that session's
   // last trades. Carried prices, and a last trade beside a settlement, do not make a spread.

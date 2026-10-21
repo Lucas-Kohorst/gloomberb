@@ -21,10 +21,11 @@ import type { DataProvider } from "../../types/data-provider";
 import type { PinTickerOptions } from "../../types/plugin";
 import {
   resolveTickerOpenTarget,
+  tickerOpenFailureMessage,
   type TickerOpenTarget,
 } from "../../tickers/open-target";
-import { AmbiguousTickerError, findExactTickerSearchMatch } from "../../tickers/search";
-import { isDialogOpen } from "../../ui/dialog-stack";
+import { findExactTickerSearchMatch, upsertTickerFromSearchResult } from "../../tickers/search";
+import { offerTickerListings, publishTickerOpenTarget as publishOpenTarget } from "./ticker-open-target";
 import { parsePublicTickerKey, publicTickerKey } from "../../utils/exchanges";
 import { attentionActionForPane, captureAttentionAction } from "../../telemetry/attention-counts";
 import { tickerHasListingSuffix } from "../../sources/listing-symbols";
@@ -73,16 +74,12 @@ export function useAppTickerOpenRuntime({
         tickerRepository,
       });
       if (!target && canPresentFeedback()) {
-        pluginRegistry.notify({ body: `Could not open ${rawSymbol}.`, type: "error" });
+        pluginRegistry.notify({ body: tickerOpenFailureMessage(rawSymbol), type: "error" });
       }
       return target;
     } catch (err) {
       if (!canPresentFeedback()) return null;
-      // Ticker search offers the listings, unless a dialog would sit over the bar.
-      if (err instanceof AmbiguousTickerError && !isDialogOpen()) {
-        dispatch({ type: "SET_COMMAND_BAR", open: true, query: rawSymbol,
-          launch: { kind: "ticker-search", query: rawSymbol } });
-      }
+      offerTickerListings(err, rawSymbol, dispatch);
       const message = err instanceof Error ? err.message : String(err);
       pluginRegistry.notify({ body: `Failed to open ${rawSymbol}: ${message}`, type: "error" });
       return null;
@@ -90,13 +87,7 @@ export function useAppTickerOpenRuntime({
   }, [dataProvider, dispatch, pluginRegistry, stateRef, tickerRepository]);
 
   const publishTickerOpenTarget = useCallback((target: TickerOpenTarget) => {
-    const currentTicker = stateRef.current.tickers.get(target.symbol);
-    if (currentTicker !== target.ticker) {
-      dispatch({ type: "UPDATE_TICKER", ticker: target.ticker });
-    }
-    if (target.created) {
-      pluginRegistry.events.emit("ticker:added", { symbol: target.symbol, ticker: target.ticker });
-    }
+    publishOpenTarget(target, { tickers: stateRef.current.tickers, dispatch, events: pluginRegistry.events });
   }, [dispatch, pluginRegistry.events, stateRef]);
 
   /**
@@ -167,7 +158,7 @@ export function useAppTickerOpenRuntime({
         persistLayout(nextLayout);
       }
       if (paneType === TICKER_RESEARCH_PANE_ID && options?.tabId) {
-        dispatch({ type: "UPDATE_PANE_STATE", paneId: existing.instanceId, patch: { activeTabId: options.tabId } });
+        dispatch({ type: "UPDATE_PANE_STATE", paneId: existing.instanceId, patch: { ...options.tabState, activeTabId: options.tabId } });
       }
       focusVisiblePane(existing.instanceId, nextLayout);
       return;
@@ -195,7 +186,7 @@ export function useAppTickerOpenRuntime({
       );
     persistLayout(nextLayout);
     if (paneType === TICKER_RESEARCH_PANE_ID && options?.tabId) {
-      dispatch({ type: "UPDATE_PANE_STATE", paneId: instance.instanceId, patch: { activeTabId: options.tabId } });
+      dispatch({ type: "UPDATE_PANE_STATE", paneId: instance.instanceId, patch: { ...options.tabState, activeTabId: options.tabId } });
     }
     activatePane(instance.instanceId);
   }, [
@@ -214,9 +205,21 @@ export function useAppTickerOpenRuntime({
     // Before resolving, so a refused open adds no ticker either.
     if (refuseWhileOwnerOff(rawSymbol, options, () => { void openPinnedTicker(rawSymbol, options); })) return;
     const recordAttention = captureAttentionAction();
-    const selectedTicker = options?.instrument !== undefined && (options.instrument || options.listing) ? await tickerRepository.loadTicker(rawSymbol) : null;
+    let selected = options?.instrument !== undefined && (options.instrument || options.listing)
+      ? { ticker: await tickerRepository.loadTicker(rawSymbol), created: false } : null;
+    // A listing the caller chose, such as one contract of an options chain,
+    // opens as given: no search could name it better than its own chain.
+    if (selected && !selected.ticker && options?.listing) {
+      const { listing, instrument } = options;
+      selected = await upsertTickerFromSearchResult(tickerRepository, {
+        providerId: instrument?.brokerId ?? "", ...(instrument?.brokerInstanceId ? { brokerInstanceId: instrument.brokerInstanceId } : {}),
+        symbol: rawSymbol, name: listing.name, exchange: listing.exchange, type: listing.type,
+        ...(listing.currency ? { currency: listing.currency } : {}), ...(instrument ? { brokerContract: instrument } : {}),
+      });
+    }
+    const selectedTicker = selected?.ticker;
     const target = selectedTicker
-      ? { symbol: selectedTicker.metadata.ticker, ticker: selectedTicker, created: false, instrument: options?.instrument, listing: options?.listing }
+      ? { symbol: selectedTicker.metadata.ticker, ticker: selectedTicker, created: selected!.created, instrument: options?.instrument, listing: options?.listing }
       : await resolveOpenTickerTarget(rawSymbol, options?.instrument === null);
     if (!target) return;
     placePinnedTickerTarget(target, options, rawSymbol);

@@ -20,6 +20,7 @@ import {
 } from "../../../../market-data/market/status";
 import { t } from "../../../../i18n";
 import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
+import { delistingLabel, delistingStateLabel } from "../../../../market-data/quotes/delisting";
 import { formatQuoteNavAsOf } from "../../../../market-data/quotes/time";
 import { useQuoteFlashDirection } from "../../../../components/quote-flash";
 import { followLiveSparklinePrice } from "../../../../components/price-sparkline/model";
@@ -59,7 +60,7 @@ function extendedLineParts(
   return candidates.find(({ label, figures }) => fits(`${label} ${figures}`)) ?? null;
 }
 
-const DESKTOP_DETAIL_TEXT_STYLE = { fontSize: "12px", lineHeight: "14px", whiteSpace: "nowrap" };
+const DESKTOP_DETAIL_TEXT_STYLE = { fontSize: "var(--gloom-type-ui)", lineHeight: "14px", whiteSpace: "nowrap" };
 
 function ExtendedSessionLine({
   parts,
@@ -89,6 +90,8 @@ interface QuoteStatus {
   failed: boolean;
   text: string;
   stale?: boolean;
+  /** DELISTED or INACTIVE: the listing no longer trades, and `text` says since when. */
+  ended?: string;
 }
 
 function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string, quote: Quote | null | undefined): QuoteStatus {
@@ -98,6 +101,7 @@ function resolveQuoteStatus(entry: QueryEntry<Quote> | null, symbol: string, quo
       ? { failed: true, text: `${symbol} not recognized` }
       : { failed: true, text: error.message || "Quote unavailable" };
   }
+  if (quote?.delisting) return { failed: true, text: delistingLabel(quote.delisting), stale: true, ended: delistingStateLabel(quote.delisting) };
   if (isQuoteStaleForCurrentSession(quote)) return { failed: true, text: "Stale quote", stale: true };
   if (entry?.phase === "ready") return { failed: false, text: "No quote data" };
   return { failed: false, text: "Loading quote..." };
@@ -175,8 +179,9 @@ export function QuoteMonitorCard({
   // One decimal count per instrument, so streamed ticks never narrow or widen the price column.
   const priceOptions = liveQuoteFormatOptions(quote, currency, assetCategory, cachedFinancials?.quoteMetadata?.instrumentType);
   const priceText = display ? formatMarketPriceWithCurrency(display.price, currency, priceOptions) : "";
-  const changePercentText = display ? formatPercentRaw(display.changePercent) : "";
-  const changeValueText = display ? formatSignedMarketPrice(display.change, priceOptions) : "";
+  // A listing that no longer trades shows its last close alone: no move, not even a dash for one.
+  const changePercentText = display && !quote?.delisting ? formatPercentRaw(display.changePercent) : "";
+  const changeValueText = display && !quote?.delisting ? formatSignedMarketPrice(display.change, priceOptions) : "";
   const priceColumnWidth = Math.max(priceText.length, changePercentText.length + changeValueText.length + 1);
   const nameMaxWidth = Math.max(10, width - priceColumnWidth - (nativePaneChrome ? 5 : 3));
   // The terminal sets the line beside the change, under the symbol (or after it in a
@@ -187,6 +192,8 @@ export function QuoteMonitorCard({
   const extendedParts = display && extended
     ? extendedLineParts(extended, formatMarketPriceWithCurrency(extended.price, currency, priceOptions), (text) => displayWidth(text) <= extendedRoom)
     : null;
+  // A desktop card says a listing no longer trades on a row of its own.
+  const endedRow = nativePaneChrome && quoteFailed && !!quoteStatus.ended && !extendedParts;
   const extendedColor = quoteFailed ? colors.textDim : priceColor(extended?.change ?? 0);
   const extendedDim = !!flashDirection && headlineHolds;
   const sparklineRange = resolvePriceSparklineRange(priceHistory, chartPeriod);
@@ -203,9 +210,10 @@ export function QuoteMonitorCard({
     || height >= (stacked ? 3 : 2) + statusRows + terminalSparklineHeight;
   // Figures sit over the sparkline, so the desktop rings them in the card colour.
   const figureHalo = { textShadow: `0 1px 2px ${colors.bg}` };
+  // The card's title: a heading over the app's 12px name, under the 20px price.
   const desktopSymbolStyle = nativePaneChrome
     ? {
-        fontSize: "15px",
+        fontSize: "var(--gloom-type-heading)",
         lineHeight: "18px",
       }
     : undefined;
@@ -237,12 +245,10 @@ export function QuoteMonitorCard({
         position: "relative",
         width: "100%",
         height: "100%",
-        paddingLeft: 10,
-        paddingRight: 10,
-        paddingTop: 6,
-        paddingBottom: 4,
-        borderRight: showRightDivider ? `1px solid ${colors.border}` : undefined,
-        borderBottom: showBottomDivider ? `1px solid ${colors.border}` : undefined,
+        padding: "var(--gloom-space-xs) var(--gloom-inset)",
+        // The rules between the board's cards are the app's hairline.
+        borderRight: showRightDivider ? "1px solid var(--gloom-hairline)" : undefined,
+        borderBottom: showBottomDivider ? "1px solid var(--gloom-hairline)" : undefined,
         outline: selected ? `1px solid ${colors.borderFocused}` : undefined,
         outlineOffset: selected ? -1 : undefined,
       } : undefined}
@@ -255,7 +261,7 @@ export function QuoteMonitorCard({
           <Text attributes={TextAttributes.BOLD} fg={symbolFg} bg={symbolBg} style={desktopSymbolStyle}>
             {symbol}
           </Text>
-          <Text fg={quoteStatus.failed ? colors.negative : colors.textDim}>{quoteStatus.text}</Text>
+          <Text fg={quoteStatus.ended ? colors.warning : quoteStatus.failed ? colors.negative : colors.textDim}>{quoteStatus.text}</Text>
         </Box>
       ) : nativePaneChrome ? (
         <Box
@@ -267,7 +273,7 @@ export function QuoteMonitorCard({
             // The name gives way first; the price keeps its natural width.
             gridTemplateColumns: "minmax(0, 1fr) auto",
             gridTemplateRows: "auto 1fr auto auto",
-            columnGap: 12,
+            columnGap: "var(--gloom-space-md)",
             width: "100%",
             height: "100%",
           }}
@@ -277,7 +283,7 @@ export function QuoteMonitorCard({
             minWidth={0}
             style={{
               gridColumn: "1",
-              gridRow: extendedParts ? "1" : "1 / span 2",
+              gridRow: extendedParts || endedRow ? "1" : "1 / span 2",
               minWidth: 0,
               overflow: "hidden",
             }}
@@ -285,8 +291,8 @@ export function QuoteMonitorCard({
             <Text attributes={TextAttributes.BOLD} fg={symbolFg} bg={symbolBg} style={desktopSymbolStyle}>
               {symbol}
             </Text>
-            {quoteFailed && (
-              <Text fg={colors.negative} style={{ fontSize: "12px", lineHeight: "14px" }}>
+            {quoteFailed && !endedRow && (
+              <Text fg={quoteStatus.ended ? colors.warning : colors.negative} style={{ fontSize: "var(--gloom-type-ui)", lineHeight: "14px" }}>
                 {quoteStatus.text}
               </Text>
             )}
@@ -294,7 +300,7 @@ export function QuoteMonitorCard({
               <Text
                 fg={colors.textDim}
                 style={{
-                  fontSize: "12px",
+                  fontSize: "var(--gloom-type-ui)",
                   lineHeight: "14px",
                   maxWidth: "100%",
                   overflow: "hidden",
@@ -306,7 +312,7 @@ export function QuoteMonitorCard({
               </Text>
             )}
             {navAsOf && (
-              <Text fg={colors.textDim} style={{ fontSize: "12px", lineHeight: "14px" }}>
+              <Text fg={colors.textDim} style={{ fontSize: "var(--gloom-type-ui)", lineHeight: "14px" }}>
                 {navAsOf}
               </Text>
             )}
@@ -320,9 +326,9 @@ export function QuoteMonitorCard({
               gridRow: "1",
               justifySelf: "end",
               backgroundColor: colors.bg,
-              borderRadius: 4,
+              borderRadius: "var(--gloom-radius-sm)",
               boxShadow: `0 0 0 2px ${colors.bg}`,
-              paddingLeft: 6,
+              paddingLeft: "var(--gloom-space-xs)",
               paddingBottom: 1,
             }}
           >
@@ -332,6 +338,28 @@ export function QuoteMonitorCard({
               <FigureText part="sub" fg={changeColor} dim={flashing} style={figureHalo}>{changeValueText}</FigureText>
             </Box>
           </Box>
+
+          {endedRow && (
+            // Under the price, across the card, so the date is never cut on a narrow card;
+            // backed like the price so the sparkline does not run through it.
+            <Text
+              fg={colors.warning}
+              style={{
+                gridColumn: "1 / -1",
+                gridRow: "2",
+                justifySelf: "start",
+                alignSelf: "start",
+                fontSize: "var(--gloom-type-ui)",
+                lineHeight: "14px",
+                whiteSpace: "nowrap",
+                backgroundColor: colors.bg,
+                borderRadius: "var(--gloom-radius-sm)",
+                boxShadow: `0 0 0 2px ${colors.bg}`,
+              }}
+            >
+              {quoteStatus.text}
+            </Text>
+          )}
 
           {extendedParts && (
             <ExtendedSessionLine
@@ -361,10 +389,10 @@ export function QuoteMonitorCard({
                 gridRow: "3",
                 justifySelf: "end",
                 alignSelf: "end",
-                fontSize: "11px",
-                lineHeight: "13px",
+                fontSize: "var(--gloom-type-ui)",
+                lineHeight: "14px",
                 backgroundColor: colors.bg,
-                paddingLeft: 6,
+                paddingLeft: "var(--gloom-space-xs)",
                 paddingRight: 2,
                 boxShadow: `0 0 0 2px ${colors.bg}`,
               }}
@@ -386,7 +414,7 @@ export function QuoteMonitorCard({
               </Box>
               <Box flexDirection="column">
                 <FigureText fg={changeColor} dim={flashing} style={figureHalo}>
-                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.stale ? "STALE" : "ERROR"}` : priceText}
+                  {compactQuoteFailure ? `${priceText} · ${quoteStatus.ended ?? (quoteStatus.stale ? "STALE" : "ERROR")}` : priceText}
                 </FigureText>
                 <Box flexDirection="row" gap={1}>
                   <FigureText part="sub" fg={changeColor} dim={flashing} style={figureHalo}>{changePercentText}</FigureText>
@@ -410,7 +438,7 @@ export function QuoteMonitorCard({
                   <Text
                     fg={colors.textDim}
                     style={{
-                      fontSize: "12px",
+                      fontSize: "var(--gloom-type-ui)",
                       lineHeight: "16px",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -433,7 +461,7 @@ export function QuoteMonitorCard({
           )}
 
           {quoteFailed && !compactQuoteFailure && (
-            <Box height={1} overflow="hidden"><Text fg={colors.negative}>{quoteStatus.text}</Text></Box>
+            <Box height={1} overflow="hidden"><Text fg={quoteStatus.ended ? colors.warning : colors.negative}>{quoteStatus.text}</Text></Box>
           )}
           {navAsOf && !compactNavAsOf && (
             <Box height={1} overflow="hidden"><Text fg={colors.textDim}>{navAsOf}</Text></Box>
@@ -449,7 +477,7 @@ export function QuoteMonitorCard({
               area={!nativePaneChrome}
             />
             {nativePaneChrome && rangeLabel && (
-              <Text fg={colors.textDim} style={{ fontSize: "11px", lineHeight: "14px" }}>
+              <Text fg={colors.textDim} style={{ fontSize: "var(--gloom-type-ui)", lineHeight: "14px" }}>
                 {rangeLabel}
               </Text>
             )}

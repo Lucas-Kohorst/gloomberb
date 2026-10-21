@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { HeadlessPaneDefinition, HeadlessPaneResult } from "../../types/plugin";
 import { cloudNewsFreshness, quoteObservation } from "../../plugins/builtin/shared/report-freshness";
 import { createTestQuote } from "../../test-support/data-provider";
+import { quotesFreshness } from "../freshness";
 import { formatUtcTime, setDisplayTimeZone } from "../../utils/utc-time";
-import { captureStatusLine, delayLength, deriveHeadlessFreshness, formatFreshnessLine, formatStatusLine, paneStatusLine, periodicityOf, statusLineVariants } from "./freshness";
+import { captureStatusLine, delayLength, deriveCaptureReport, deriveHeadlessFreshness, formatFreshnessLine, formatStatusLine, paneStatusLine, periodicityOf, statusLineVariants } from "./freshness";
 
 const NOW = Date.parse("2026-10-09T05:00:00Z"); // Friday, before the US open
 const rows = (freshness?: HeadlessPaneDefinition["freshness"]) => ({ shape: "rows" as const, ...(freshness ? { freshness } : {}) });
@@ -35,10 +36,11 @@ describe("report freshness", () => {
     expect([15, 20, 60, 90, 720, 3 * 24 * 60].map(delayLength)).toEqual(["15 min", "20 min", "1 h", "90 min", "12 h", "3 days"]);
     const delayed = (delayMinutes: number) => ({ dataSource: "delayed", delayMinutes, lastUpdated: NOW - 20 * 60_000 });
     expect(line(rows(), { rows: [delayed(15), delayed(20)] })).toBe("Source: Gloom Cloud · Fri 9 Oct 2026 04:40 UTC · 15-20 min delayed");
-    // News held back for an account without real-time access says how far; with it, the wire is live.
+    // News held back for an account without real-time access says how far; with it, the wire is live. The time is the
+    // newest story's and says so, so it is not read as the time now.
     const stories = { rows: [{ publishedAt: "2026-10-08T16:30:00Z" }, { publishedAt: "2026-10-08T15:00:00Z" }] };
-    expect(line(rows(cloudNewsFreshness(false)), stories)).toBe("Source: Gloom Cloud · Thu 8 Oct 2026 16:30 UTC · 12 h delayed");
-    expect(line(rows(cloudNewsFreshness(true)), stories)).toBe("Source: Gloom Cloud · Thu 8 Oct 2026 16:30 UTC · live");
+    expect(line(rows(cloudNewsFreshness(false)), stories)).toBe("Source: Gloom Cloud · newest story Thu 8 Oct 2026 16:30 UTC · 12 h delayed");
+    expect(line(rows(cloudNewsFreshness(true)), stories)).toBe("Source: Gloom Cloud · newest story Thu 8 Oct 2026 16:30 UTC · live");
     expect(line(rows(), { rows: [{ dataSource: "delayed", lastUpdated: NOW - 60_000 }] }))
       .toBe("Source: Gloom Cloud · Fri 9 Oct 2026 04:59 UTC · delayed");
   });
@@ -133,7 +135,7 @@ describe("report freshness", () => {
     });
     const airlines = { rows: [quote("NYSE", "2026-10-13T23:45:00Z"), quote("XETRA", "2026-10-13T15:35:00Z"), quote("EPA", "2026-10-13T15:35:00Z")] };
     expect(formatFreshnessLine(deriveHeadlessFreshness(rows({ datesEachVenue: true }), airlines, WED)))
-      .toBe("Source: Gloom Cloud · US, XETRA and EPA Tue 13 Oct 2026 close · 15 min delayed · markets closed until 06:00 UTC");
+      .toBe("Source: Gloom Cloud · US, XETRA and EPA Tue 13 Oct 2026 close · 15 min delayed · markets closed · regular session opens 06:00 UTC");
     // A venue whose newest row is a day older says so beside the others.
     const stale = { rows: [quote("NYSE", "2026-10-13T23:45:00Z"), quote("XETRA", "2026-10-12T15:35:00Z")] };
     expect(formatStatusLine(deriveHeadlessFreshness(rows({ datesEachVenue: true }), stale, WED)))
@@ -157,9 +159,9 @@ describe("report freshness", () => {
     const status = (quote: ReturnType<typeof index>) => formatStatusLine(deriveHeadlessFreshness(rows(), { rows: [quoteObservation(quote, WED)] }, WED));
     const gspc = index("^GSPC", "SNP", "PRE", "2026-10-13T20:33:00Z", "America/New_York", window("2026-10-14", "13:30", "20:00"), window("2026-10-13", "13:30", "20:00"));
     // A prior close under a pre-market chip says whose close it is and when the market opens, as the equity lines do.
-    expect(status(gspc)).toBe("US trading day Tue 13 Oct 2026 close \u00b7 15 min delayed \u00b7 pre-market, opens 13:30 UTC");
+    expect(status(gspc)).toBe("US trading day Tue 13 Oct 2026 close \u00b7 15 min delayed \u00b7 pre-market open \u00b7 regular session opens 13:30 UTC");
     // Without the sessions the line is the bare print, as before.
-    expect(status({ ...gspc, indexSession: undefined })).toBe("Tue 13 Oct 2026 20:33 UTC \u00b7 15 min delayed \u00b7 pre-market");
+    expect(status({ ...gspc, indexSession: undefined })).toBe("Tue 13 Oct 2026 20:33 UTC \u00b7 15 min delayed \u00b7 pre-market open");
     // A print from before the last session opened is no close of it.
     expect(status({ ...gspc, lastUpdated: Date.parse("2026-10-13T12:00:00Z") })).not.toContain("close");
     // Another market's index keeps its bare date: its publisher's name (OSAKA) is no market, and a closed session has no open to wait for.
@@ -170,6 +172,59 @@ describe("report freshness", () => {
     const trading = { ...gspc, marketState: "REGULAR" as const, lastUpdated: Date.parse("2026-10-14T13:50:00Z") };
     expect(formatStatusLine(deriveHeadlessFreshness(rows(), { rows: [quoteObservation(trading, open)] }, open)))
       .toBe("Wed 14 Oct 2026 13:50 UTC \u00b7 15 min delayed \u00b7 markets open");
+  });
+
+  test("an index quote that states no session is placed on the sessions it carries", () => {
+    const window = (day: string, from = "13:30", to = "20:00") => ({ start: Date.parse(`${day}T${from}:00Z`), end: Date.parse(`${day}T${to}:00Z`) });
+    const days = ["2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-19"];
+    // As `quote ^GSPC --json` sends it: no marketState, only the sessions. `current` is today's, or the next one while it has not opened.
+    const gspc = (current: string, lastUpdated: string) => {
+      const regular = days.filter((day) => day < current).slice(-6).map((day) => window(day));
+      return createTestQuote({
+        symbol: "^GSPC", name: "S&P 500", instrumentType: "INDEX", listingExchangeName: "SNP", exchangeName: "SNP",
+        sessionConfidence: "unknown", lastUpdated: Date.parse(lastUpdated), dataSource: "delayed", providerId: "gloomberb-cloud",
+        indexSession: {
+          source: "gloom", symbol: "^GSPC", exchange: "SNP", currency: "USD", sourceSymbol: "^GSPC",
+          timeZone: "America/New_York", fetchedAt: Date.parse(lastUpdated), current: window(current), regular,
+        } as never,
+      });
+    };
+    // `quote` and QQ read the same quote through the same report, so they print the same footer.
+    const footer = (quote: ReturnType<typeof gspc>, now: number) => {
+      const quoted = formatFreshnessLine(quotesFreshness([quote], undefined, now)!);
+      expect(formatFreshnessLine(deriveHeadlessFreshness(rows(), { rows: [quoteObservation(quote, now)] }, now))).toBe(quoted);
+      return quoted;
+    };
+    const at = (time: string) => Date.parse(`${time}Z`);
+    // Before the open, on the day of it: pre-market, waiting for the open.
+    expect(footer(gspc("2026-10-15", "2026-10-14T20:00:00Z"), at("2026-10-15T12:30:00")))
+      .toBe("Source: Gloom Cloud \u00b7 US trading day Wed 14 Oct 2026 close \u00b7 15 min delayed \u00b7 pre-market open \u00b7 regular session opens 13:30 UTC");
+    // In the session: open, and the open is behind it.
+    expect(footer(gspc("2026-10-15", "2026-10-15T13:50:00Z"), at("2026-10-15T14:05:00")))
+      .toBe("Source: Gloom Cloud \u00b7 Thu 15 Oct 2026 13:50 UTC \u00b7 15 min delayed \u00b7 markets open");
+    // After the close: the session that just ended is the close, and no open is named.
+    expect(footer(gspc("2026-10-15", "2026-10-15T20:00:00Z"), at("2026-10-15T21:00:00")))
+      .toBe("Source: Gloom Cloud \u00b7 US trading day Thu 15 Oct 2026 close \u00b7 15 min delayed \u00b7 markets closed");
+    // A weekend is closed, not pre-market, until the day of the open.
+    expect(footer(gspc("2026-10-19", "2026-10-16T20:00:00Z"), at("2026-10-17T12:30:00")))
+      .toBe("Source: Gloom Cloud \u00b7 US trading day Fri 16 Oct 2026 close \u00b7 15 min delayed \u00b7 markets closed until Mon");
+    // A state the quote does state wins over the calendar.
+    expect(footer({ ...gspc("2026-10-15", "2026-10-14T20:00:00Z"), marketState: "CLOSED" }, at("2026-10-15T12:30:00")))
+      .toContain("\u00b7 markets closed \u00b7 regular session opens 13:30 UTC");
+    // Without sessions there is nothing to place it on.
+    expect(footer({ ...gspc("2026-10-15", "2026-10-14T20:00:00Z"), indexSession: undefined }, at("2026-10-15T12:30:00")))
+      .toBe("Source: Gloom Cloud \u00b7 Wed 14 Oct 2026 20:00 UTC \u00b7 15 min delayed");
+    // Another market's index keeps its bare date.
+    const n225 = createTestQuote({
+      symbol: "^N225", instrumentType: "INDEX", listingExchangeName: "OSAKA", exchangeName: "OSAKA", sessionConfidence: "unknown",
+      lastUpdated: at("2026-10-14T06:45:00"), dataSource: "delayed", providerId: "gloomberb-cloud",
+      indexSession: {
+        source: "gloom", symbol: "^N225", exchange: "OSAKA", currency: "JPY", sourceSymbol: "^N225",
+        timeZone: "Asia/Tokyo", fetchedAt: at("2026-10-14T07:00:00"), current: window("2026-10-14", "00:00", "06:30"), regular: [window("2026-10-13", "00:00", "06:30"), window("2026-10-14", "00:00", "06:30")],
+      } as never,
+    });
+    expect(footer(n225, at("2026-10-14T07:00:00")))
+      .toBe("Source: Gloom Cloud \u00b7 Wed 14 Oct 2026 close \u00b7 15 min delayed \u00b7 markets closed");
   });
 
   test("a dataset that names its observation ends fn, the pane footer and a capture with one line", () => {
@@ -186,38 +241,53 @@ describe("report freshness", () => {
     const quoted = deriveHeadlessFreshness(rows(), { rows: [
       { dataSource: "delayed", delayMinutes: 15, sessionExchange: "NYSE", marketState: "CLOSED", lastUpdated: Date.parse("2026-10-09T20:00:00Z") },
     ] }, SUN);
-    expect(captureStatusLine({ report: freshness, quoted, selfDated: false, rendered: () => quoted }).variants[0]).toBe(one);
+    expect(captureStatusLine({ report: { freshness, declaresData: true }, quoted, selfDated: false, rendered: () => quoted }).variants[0]).toBe(one);
     // Without a name the dataset keeps its own line, and a delayed feed that is no dataset has no lag.
     expect(formatStatusLine(deriveHeadlessFreshness(rows({ ...tape, observation: undefined }), { rows: [] }, SUN)))
       .toBe("Source: DTCC \u00b7 observed Fri 9 Oct \u00b7 lag 2d");
     expect(deriveHeadlessFreshness(rows({ ...tape, dataset: undefined }), { rows: [] }, SUN).lagDays).toBeUndefined();
   });
 
-  test("a capture states its report's freshness as fn ends, unless the pane or its quotes date the view", () => {
+  test("a capture ends as its report's fn line when the report says what its data is; quotes date only quotes and prices", () => {
     const SUN = Date.parse("2026-10-11T06:17:00Z");
-    const cot = deriveHeadlessFreshness(rows({ source: "CFTC", status: "not-a-feed", basis: "weekly report", maxAgeMinutes: 14 * 24 * 60 }),
+    const cot = deriveCaptureReport(rows({ source: "CFTC", status: "not-a-feed", basis: "weekly report", maxAgeMinutes: 14 * 24 * 60 }),
       { rows: [{ asOf: "2026-10-06" }, { asOf: "2026-09-29" }] }, SUN);
     const rendered = deriveHeadlessFreshness(rows(), { rows: [] }, SUN);
-    const quoted = deriveHeadlessFreshness(rows(), { rows: [
-      { dataSource: "delayed", delayMinutes: 15, sessionExchange: "NASDAQ", marketState: "CLOSED", lastUpdated: Date.parse("2026-10-09T23:59:00Z") },
-    ] }, SUN);
+    const delayedClose = { dataSource: "delayed", delayMinutes: 15, sessionExchange: "NASDAQ", marketState: "CLOSED", lastUpdated: Date.parse("2026-10-09T23:59:00Z") };
+    const quoted = deriveHeadlessFreshness(rows(), { rows: [delayedClose] }, SUN);
+    const marketLine = "US trading day Fri 9 Oct 2026 close \u00b7 15 min delayed \u00b7 markets closed until Mon";
     const pick = (inputs: Partial<Parameters<typeof captureStatusLine>[0]>) => captureStatusLine({ selfDated: false, rendered: () => rendered, ...inputs });
     // The footer ends as `fn` does, then gives up the oldest observation, then its source.
     // It dates the pane's own data, so the pane's own `as of` goes.
-    expect(pick({ report: cot })).toEqual({ freshness: cot, dates: "data", variants: [
+    expect(cot.declaresData).toBe(true);
+    expect(pick({ report: cot })).toEqual({ freshness: cot.freshness, dates: "data", variants: [
       "Source: CFTC \u00b7 Tue 6 Oct 2026 (oldest Tue 29 Sep 2026) \u00b7 not a live feed (weekly report)",
       "Source: CFTC \u00b7 Tue 6 Oct 2026 \u00b7 not a live feed (weekly report)",
       "Tue 6 Oct 2026 \u00b7 not a live feed (weekly report)",
     ] });
-    expect(pick({ report: cot }).variants[0]).toBe(formatFreshnessLine(cot));
-    // Quotes on screen keep the market line; a pane that dates its own view keeps its word.
-    expect(pick({ report: cot, quoted }).variants[0]).toBe("US trading day Fri 9 Oct 2026 close \u00b7 15 min delayed \u00b7 markets closed until Mon");
-    expect(pick({ report: cot, quoted }).dates).toBe("quotes");
+    expect(pick({ report: cot }).variants[0]).toBe(formatFreshnessLine(cot.freshness));
+    // The quotes the page loaded beside it (EE's, MDAY's ticker) do not date it, undated or not.
+    expect(pick({ report: cot, quoted }).variants[0]).toBe(formatFreshnessLine(cot.freshness));
+    const estimates = deriveCaptureReport(rows({ status: "not-a-feed", basis: "estimates and reported earnings", oldest: null }),
+      { rows: [{ date: "2026-11-09" }, { date: "2026-08-11" }] }, SUN);
+    expect(pick({ report: estimates, quoted }).variants[0])
+      .toBe("Source: Gloom Cloud \u00b7 retrieved Sun 11 Oct 2026 06:17 UTC \u00b7 not a live feed (estimates and reported earnings)");
+    // A pane that dates its own view keeps its word.
     expect(pick({ report: cot, quoted, selfDated: true }).freshness).toBe(rendered);
+    // Quotes keep the market line: a report whose rows are quotes, a price chart's bars, a report that declares nothing.
+    const board = deriveCaptureReport(rows({ status: "delayed" }), { rows: [delayedClose] }, SUN);
+    const bars = deriveCaptureReport(rows({ status: "not-a-feed", basis: "daily closes", cadence: "daily", prices: true }), { rows: [{ asOf: "2026-10-09" }] }, SUN);
+    const silent = deriveCaptureReport(rows(), { rows: [] }, SUN);
+    for (const report of [board, bars, silent]) {
+      expect(report.declaresData).toBe(false);
+      expect(pick({ report, quoted })).toMatchObject({ dates: "quotes", freshness: quoted });
+      expect(pick({ report, quoted }).variants[0]).toBe(marketLine);
+    }
+    expect(pick({ report: bars }).variants[0]).toBe(formatFreshnessLine(bars.freshness));
     // A report that cannot tell falls back to the rendered view.
-    expect(pick({ report: rendered, quoted: undefined })).toEqual({ freshness: rendered, dates: null, variants: ["Retrieved Sun 11 Oct 2026 06:17 UTC \u00b7 status not reported"] });
+    expect(pick({ report: silent, quoted: undefined })).toEqual({ freshness: rendered, dates: null, variants: ["Retrieved Sun 11 Oct 2026 06:17 UTC \u00b7 status not reported"] });
     // A dataset's report dates it whatever else the capture shows.
-    const dataset = deriveHeadlessFreshness(rows({ status: "not-a-feed", dataset: true }), { rows: [{ asOf: "2026-10-04" }] }, SUN);
+    const dataset = deriveCaptureReport(rows({ status: "not-a-feed", dataset: true }), { rows: [{ asOf: "2026-10-04" }] }, SUN);
     expect(pick({ report: dataset, quoted, selfDated: true }).variants[0]).toBe("Source: Gloom Cloud \u00b7 observed Sun 4 Oct \u00b7 lag 7d");
   });
 

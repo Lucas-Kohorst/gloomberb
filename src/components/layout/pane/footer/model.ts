@@ -1,6 +1,6 @@
 import type { ContextMenuItem } from "../../../../types/context-menu";
 import { t } from "../../../../i18n";
-import { displayWidth } from "../../../../utils/format";
+import { clipToDisplayWidth, displayWidth } from "../../../../utils/format";
 import { getShortcutHintWidth } from "../../../ui/shortcut-hint";
 
 export interface PaneFooterRegistration {
@@ -23,12 +23,17 @@ export interface PaneFooterRegistration {
 export interface PaneFooterSegment {
   id: string;
   parts: PaneFooterPart[];
-  /** Desktop affordance; parts retain the terminal representation. */
-  icon?: "warning";
+  /**
+   * Desktop affordance; parts retain the terminal representation. `clock` is
+   * data a source delivers late: build it with {@link delayedFooterSegment}.
+   */
+  icon?: "warning" | "clock";
   /**
    * The segment only dates the pane's data (`as of 2026-10-05`). A `gloomberb
    * shot` whose status line already dates that data leaves it out, so the
    * date is not said twice, and gives it up before its status line is cut.
+   * A segment that reads `as of <date>` is one without saying so; set it for
+   * a segment worded another way (`holdings 2026-06-30`).
    */
   asOf?: boolean;
   /**
@@ -48,6 +53,73 @@ export interface PaneFooterSegment {
   shortcut?: string;
   onPress?: () => void;
   disabled?: boolean;
+}
+
+/** The terminal's mark for data that arrives late, as quote ages carry it (`◷15s`). */
+const DELAYED_FOOTER_GLYPH = "◷";
+
+/**
+ * The footer's one form for data a source delivers late: a yellow clock with
+ * `detail` in its tooltip on the desktop, and the clock with the delay
+ * (`◷15m`) in the terminal, which has no tooltip, so it takes a few cells
+ * rather than a phrase. `onPress` makes it a button, such as an upgrade.
+ */
+export function delayedFooterSegment({
+  id,
+  detail,
+  delay,
+  onPress,
+  quoteStatus,
+}: {
+  id: string;
+  /** What is late and by how much, in words: the tooltip and the accessible name. */
+  detail: string;
+  /** How late, when known (`15m`, `12h`); the terminal draws it after the clock. */
+  delay?: string;
+  onPress?: () => void;
+  quoteStatus?: boolean;
+}): PaneFooterSegment {
+  return {
+    id,
+    icon: "clock",
+    label: detail,
+    title: detail,
+    parts: [{ text: `${DELAYED_FOOTER_GLYPH}${delay ?? ""}`, tone: "warning" }],
+    ...(onPress ? { onPress } : {}),
+    ...(quoteStatus ? { quoteStatus } : {}),
+  };
+}
+
+/** A pane whose market data is all delayed, by no one figure: the clock alone, its tooltip saying so. */
+export const DELAYED_SEGMENT: PaneFooterSegment = delayedFooterSegment({ id: "delayed", detail: "Delayed market data" });
+
+/** A status that opens with how late its data is: `15m delayed`, `mixed real-time and delayed`, `delayed`. */
+const DELAYED_LEAD = /^(\d+[smhd] delayed|mixed real-time and delayed|delayed)(?: · |$)/;
+
+/**
+ * A status segment whose text opens with how late its data is (`15m delayed ·
+ * as of 14:47 UTC`) as the footer's clock (see {@link delayedFooterSegment})
+ * and the rest of its text; any other segment as it is.
+ */
+export function splitDelayedStatus(segment: PaneFooterSegment): PaneFooterSegment[] {
+  const [first, ...more] = segment.parts;
+  const match = first ? DELAYED_LEAD.exec(first.text) : null;
+  if (!first || !match) return [segment];
+  const lead = match[1]!;
+  const clock = delayedFooterSegment({
+    id: `${segment.id}-delay`,
+    detail: lead,
+    delay: /^\d/.test(lead) ? lead.slice(0, lead.indexOf(" ")) : undefined,
+    quoteStatus: segment.quoteStatus,
+  });
+  const rest = first.text.slice(match[0].length);
+  const parts = rest ? [{ ...first, text: rest }, ...more] : more;
+  return parts.length ? [clock, { ...segment, parts }] : [clock];
+}
+
+/** Whether the segment only dates the pane's data: marked `asOf`, or reading `as of <date>`. */
+export function datesPaneData(segment: Pick<PaneFooterSegment, "asOf" | "parts">): boolean {
+  return segment.asOf ?? /^as of\b/i.test(segment.parts[0]?.text ?? "");
 }
 
 export interface PaneFooterPressEvent {
@@ -75,6 +147,13 @@ export interface PaneHint {
   title?: string;
   onPress?: (event?: PaneFooterPressEvent) => void;
   disabled?: boolean;
+  /**
+   * For a hint a shared component adds to whatever pane hosts it, such as a
+   * chart's `p` pin: the pane's own hints and keys come first. While another
+   * one in the pane takes the same key, this one leaves the footer and is
+   * listed in the pane menu without a key.
+   */
+  yieldsKey?: boolean;
 }
 
 export interface CombinedPaneFooter {
@@ -113,7 +192,7 @@ function infoTextWidth(segments: readonly PaneFooterSegment[]): number {
  * The info segments as they fit `width`: segments with `variants` step down
  * together, one variant at a time, until the row fits or none is left.
  */
-export function fitPaneFooterInfo(info: PaneFooterSegment[], width: number): PaneFooterSegment[] {
+export function fitPaneFooterInfo(info: PaneFooterSegment[], width: number, { besideHints = true }: { besideHints?: boolean } = {}): PaneFooterSegment[] {
   const stages = Math.max(0, ...info.map((segment) => segment.variants?.length ?? 0));
   let fitted = info;
   for (let stage = 0; stage < stages && infoTextWidth(fitted) > width; stage += 1) {
@@ -126,7 +205,37 @@ export function fitPaneFooterInfo(info: PaneFooterSegment[], width: number): Pan
       } : segment;
     });
   }
+  // A trailing status cut mid-word reads as part of the hints beside it ("quote 12h t[x] put"): one that does not
+  // fit ends in an ellipsis a column short of them, or is left out when less than half of it would show. A
+  // warning, an icon or a pressable segment stays as it is, clipped by the row if it must be. With no hints beside it
+  // (a pane picture's footer), the row clips it, so a frame that fits its own status line sees it overflow.
+  while (besideHints && fitted.length > 1 && infoTextWidth(fitted) > width) {
+    const last = fitted.at(-1)!;
+    if (last.icon || last.onPress || last.parts.some((part) => part.tone === "warning" || part.tone === "negative")) break;
+    const room = width - infoTextWidth(fitted.slice(0, -1)) - 2;
+    if (room * 2 >= infoTextWidth([last])) return [...fitted.slice(0, -1), clipSegment(last, room)];
+    fitted = fitted.slice(0, -1);
+  }
   return fitted;
+}
+
+/** A segment cut to `width` behind an ellipsis, each part keeping its tone; the full text stays as its title. */
+function clipSegment(segment: PaneFooterSegment, width: number): PaneFooterSegment {
+  const full = segment.parts.map((part) => part.text).join(" ");
+  const clipped = clipToDisplayWidth(full, width);
+  if (clipped === full) return segment;
+  const body = clipped.slice(0, -1);
+  const parts: PaneFooterPart[] = [];
+  let offset = 0;
+  for (const part of segment.parts) {
+    if (offset >= body.length) break;
+    parts.push({ ...part, text: body.slice(offset, offset + part.text.length) });
+    offset += part.text.length + 1;
+  }
+  const last = parts.at(-1);
+  if (!last) return { ...segment, title: segment.title ?? full, parts: [{ ...segment.parts[0]!, text: clipped }] };
+  parts[parts.length - 1] = { ...last, text: `${last.text}…` };
+  return { ...segment, title: segment.title ?? full, parts };
 }
 
 function moreControl(budget: number): { label: string; width: number } {
@@ -227,8 +336,20 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
     }
   }
 
-  if (info.length === 0 && hints.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
-  return { info, hints, menu, keys };
+  // A key a pane holds but has turned off does nothing, so it takes nothing.
+  const taken = new Set([...hints, ...keys].flatMap((hint) => hint.yieldsKey || hint.disabled ? [] : [hint.key]));
+  const yielded = hints.filter((hint) => hint.yieldsKey && taken.has(hint.key));
+  if (yielded.length > 0) {
+    if (menu.length > 0) menu.push({ type: "divider", id: "yielded-hints:divider" });
+    for (const hint of yielded) {
+      const onPress = hint.onPress;
+      if (!hint.disabled && onPress) menu.push({ id: `pane-hint:${hint.id}`, label: paneHintTitle(hint), onSelect: () => onPress() });
+    }
+  }
+  const shown = yielded.length > 0 ? hints.filter((hint) => !yielded.includes(hint)) : hints;
+
+  if (info.length === 0 && shown.length === 0 && menu.length === 0 && keys.length === 0) return EMPTY_FOOTER;
+  return { info, hints: shown, menu, keys };
 }
 
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {

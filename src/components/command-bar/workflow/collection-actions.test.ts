@@ -3,11 +3,13 @@ import type { Dispatch } from "react";
 import { createInitialState, type AppAction, type AppState } from "../../../state/app/context";
 import { createDefaultConfig } from "../../../types/config";
 import type { DataProvider } from "../../../types/data-provider";
-import type { TickerRecord } from "../../../types/ticker";
+import type { TickerPosition, TickerRecord } from "../../../types/ticker";
 import { EventBus } from "../../../plugins/event-bus";
 import type { PluginRegistry } from "../../../plugins/registry";
 import { createCommandBarCollectionWorkflowActions } from "./collection-actions";
 import { createTestTicker } from "../../../test-support/ticker";
+import { buildAddToPortfolioWorkflow, buildSetPortfolioPositionWorkflow } from "./portfolio-position";
+import { loadFuturesContractTermsCached } from "../../../market-data/futures-contract";
 
 function ticker(symbol: string, portfolios: string[] = []): TickerRecord {
   return createTestTicker(symbol, symbol, { portfolios });
@@ -19,6 +21,7 @@ function createHarness(initialTicker: TickerRecord) {
     tickers: new Map([[initialTicker.metadata.ticker, initialTicker]]),
   };
   const order: string[] = [];
+  const saved: TickerRecord[] = [];
   const payloads: Array<{ symbol: string; portfolioId: string }> = [];
   const events = new EventBus();
   const pluginRegistry = { events } as PluginRegistry;
@@ -43,7 +46,8 @@ function createHarness(initialTicker: TickerRecord) {
     tickerRepository: {
       loadAllTickers: async () => [],
       loadTicker: async () => null,
-      saveTicker: async () => {
+      saveTicker: async (record) => {
+        saved.push(record);
         order.push("save:start");
         await Promise.resolve();
         order.push("save:end");
@@ -53,7 +57,7 @@ function createHarness(initialTicker: TickerRecord) {
     },
   });
 
-  return { actions, order, payloads };
+  return { actions, order, payloads, saved };
 }
 
 describe("command-bar collection workflow actions", () => {
@@ -66,6 +70,45 @@ describe("command-bar collection workflow actions", () => {
     }
     await actions.setPortfolioPositionFromWorkflow({ portfolioId: "main", ticker: "AAPL", shares: "10", avgCost: "0" });
     expect(order).toEqual(["save:start", "save:end", "dispatch", "event"]);
+  });
+
+  test("saving the position form unchanged keeps the total shares and cost basis of several lots", async () => {
+    const lot = (shares: number, avgCost: number, dateAcquired: string): TickerPosition =>
+      ({ portfolio: "main", broker: "manual", shares, avgCost, currency: "USD", dateAcquired });
+    const holding = createTestTicker("AAPL", "Apple", {
+      portfolios: ["main"],
+      positions: [lot(10, 150, "2024-01-02"), lot(5, 170, "2024-06-03")],
+    });
+    const config = createDefaultConfig(":memory:");
+    for (const form of [
+      buildSetPortfolioPositionWorkflow(config, { activeCollectionId: "main", activeTicker: holding }),
+      buildAddToPortfolioWorkflow(config, { preferredPortfolioId: "main", ticker: holding }),
+    ]) {
+      const { actions, saved } = createHarness(holding);
+
+      await actions.setPortfolioPositionFromWorkflow(form!.values);
+
+      const positions = saved[0]!.metadata.positions;
+      expect(positions).toHaveLength(1);
+      expect(positions[0]).toMatchObject({ portfolio: "main", broker: "manual", shares: 15, currency: "USD" });
+      expect(positions[0]!.shares * positions[0]!.avgCost!).toBeCloseTo(10 * 150 + 5 * 170, 9);
+    }
+  });
+
+  test("a future saves in contracts of its size, a cost typed as it is quoted in cents counts cents, and zero names contracts", async () => {
+    // The form reads a future's terms where the portfolio does: oats are 5,000 bushels, quoted in US cents.
+    await loadFuturesContractTermsCached("ZO=F", async (symbol) => ({
+      symbol, root: "ZO", name: "Oats", contract: "ZOZ26", contractSymbol: "ZOZ26", deliveryMonth: "2026-12",
+      spec: { unit: "US cents / bushel", size: "5,000 bushels", pointValue: 50, tick: 0.25, tickValue: 12.5, settlement: "physical" },
+      lastTrade: null, firstNotice: null, inDelivery: false, settlement: null,
+    }));
+    const oats = createTestTicker("ZO=F", "Oats Dec 26", { exchange: "CBT", assetCategory: "FUTURE" });
+    const { actions, saved } = createHarness(oats);
+    // As the AP form fills it: the quote's price as the cost, the currency left blank.
+    const form = buildAddToPortfolioWorkflow(createDefaultConfig(":memory:"), { preferredPortfolioId: "main", ticker: oats, quoteCurrency: "USX", defaultAvgCost: 350 })!;
+    await actions.setPortfolioPositionFromWorkflow({ ...form.values, shares: "-3" });
+    expect(saved[0]!.metadata.positions).toEqual([{ portfolio: "main", shares: -3, avgCost: 350, currency: "USX", broker: "manual", multiplier: 5000 }]);
+    await expect(actions.setPortfolioPositionFromWorkflow({ ...form.values, shares: "0" })).rejects.toThrow("Contracts cannot be 0");
   });
 
   test("emits portfolio membership after the ticker is saved and dispatched", async () => {

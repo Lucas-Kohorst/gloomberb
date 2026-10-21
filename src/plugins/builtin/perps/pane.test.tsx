@@ -56,10 +56,12 @@ test("no market opens the board in its preview; a named market still opens its h
   expect(board).toContain("Hyperliquid");
   expect(board).not.toContain("NaN");
   await remount();
-  serve({ board: perpBoard({ access: "preview", locked: 5 }) });
+  serve({ board: perpBoard({ access: "preview", locked: 5, sources: ["hyperliquid", "binance"].map((source) => ({ source })) }) });
   await mount({ market: "BTC" });
   const history = await tui.waitForFrameToContain("Full history requires Gloom Pro.");
   expect(history).toContain("Funding / 8h");
+  // The lock says what Pro adds, with the venues Gloom Cloud collects.
+  expect(history).toContain("Gloom Pro adds Hyperliquid BTC history and every market on 2 venues.");
   expect(history).toContain("Upgrade for full history");
 });
 
@@ -180,7 +182,8 @@ test("evidence distinguishes source time, raw interval, reference price and reta
   setCloudApiFetchTransport(async (url) => Response.json(String(url).includes("/market?") ? { ...board, evidence: [{ kind: "funding", period_at: board.asOf, received_at: board.asOf, superseded_at: null, fingerprint: "revision-one", payload: {} }], methodologyUrl: "https://gloom.sh/docs/perpetuals" } : board));
   await mount({ tab: "evidence" });
   const frame = await tui.waitForFrameToContain("Funding 8h / APR");
-  expect(frame).toContain("APR = current 8h rate × 3 × 365");
+  // The market funds hourly, so its APR is the 1h rate × 24 × 365, as the server computes it (+0.00083% × 24 × 365).
+  expect(frame).toContain("+0.0066% / +7.27%  APR = current 1h rate × 24 × 365");
   // A crypto perp has no listed underlying, so the reference-price rows are left out rather than shown as unavailable.
   expect(frame).not.toContain("Underlying last");
   expect(frame).toContain("Source as of");

@@ -26,12 +26,19 @@ export interface HeadlessPaneArgumentDef {
   minimum?: number;
   /** Maximum item count for ticker and symbol list arguments. */
   maximum?: number;
+  /**
+   * Arguments as typed after the function (`GAS`, `EUA`), which the catalog
+   * shows as examples: for an argument that takes forms its placeholder does
+   * not name.
+   */
+  examples?: readonly string[];
 }
 
 export interface HeadlessPaneOptionValue {
   value: string;
   aliases?: string[];
 }
+
 
 /**
  * Declarative option schema shared by headless panes and the pane function CLI.
@@ -51,10 +58,21 @@ export interface HeadlessPaneOptionDef {
     pluginId: string;
     key?: string;
   };
-  /** The value's name in the catalog's flag, `--expiration <YYYY-MM-DD|unix>`; the type when absent. */
+  /**
+   * Set when the pane does not draw the option and only the report reads it
+   * (`--limit`'s rows of text): `shot` refuses it rather than capture the
+   * pane without it; `reportOnly` says what the report does with it, for
+   * the refusal (`sets how many rows the report lists`). Left out, the pane
+   * draws it, through `settingKey`, `pluginState`, a setting of the option's
+   * own key, or `shotState`.
+   */
+  shot?: { reportOnly: string };
+  /** The value's name in the catalog's flag, `--expiration <date|unix>`; the type when absent. */
   placeholder?: string;
   /** The option in use as typed after the function, such as `--expiration 2028-01-21`; the catalog shows it as an example. */
   example?: string;
+  /** The example runs without the function's optional argument, as an option that works only then does (`fn INS --side sell`). */
+  exampleWithoutArgument?: boolean;
   /**
    * Checks a typed value and returns it as the pane reads it, in place of the
    * type's own check; throws an Error that names what is wrong.
@@ -85,6 +103,8 @@ export interface HeadlessPaneContext {
   /** Effective instance settings, after template creation and option normalization. */
   settings?: Record<string, unknown>;
   capabilities?: CapabilityInvoker;
+  /** Locally registered broker adapters. Reports may read account data; they never submit orders. */
+  resolveBroker?: (brokerType: string) => import("./broker").BrokerAdapter | null;
   /** Read one local portfolio without passing holdings through a remote endpoint. */
   resolvePortfolio?: (id: string) => Promise<{
     portfolio: import("./ticker").Portfolio;
@@ -96,6 +116,14 @@ export interface HeadlessPaneContext {
   resolveWatchlist?: (id: string) => Promise<import("./ticker").TickerRecord[] | null>;
   /** Resolve locally remembered exchange identities without coupling plugins to storage. */
   resolveInstrument?: (symbol: string) => Promise<{ symbol: string; exchange?: string }>;
+  /**
+   * Read a bare symbol as `quote` reads it: the listing its quote is for and
+   * that listing's company, or null when nothing better than the symbol is
+   * known. A code several companies list (BDI) throws asking which, with
+   * `quote`'s message; `argumentWith(key)` is the function's argument naming
+   * that listing instead (`BDI:TSX`), for the retry each listing offers.
+   */
+  resolveListing?: (symbol: string, argumentWith: (key: string) => string) => Promise<{ symbol: string; exchange?: string; name?: string } | null>;
 }
 
 export type HeadlessPaneRow = Record<string, unknown>;
@@ -105,6 +133,12 @@ export interface HeadlessPaneColumn {
   header: string;
   /** Print `header` as written, a field name such as `source`, where reports would otherwise title-case it. */
   literalHeader?: boolean;
+  /**
+   * What the text report heads the column with when it can say more than an
+   * export's header should (`Chg % UTC` over `Chg %`), printed as written;
+   * CSV keeps `header`, so a column read by its name stays where it was.
+   */
+  textHeader?: string;
   align?: "left" | "right" | "center";
   width?: number;
   /** False keeps the column whole when the text table is fitted to a narrow width, so a time or an id is never cut. */
@@ -144,6 +178,12 @@ export interface HeadlessPaneEntry {
   value: unknown;
   /** Human-readable form used by text output while JSON retains `value`. */
   formatted?: string;
+  /**
+   * The unit of a numeric `value` (`USD`, `USD per 1% move`). Exports then
+   * write the value as it is, every digit, with the unit beside the label,
+   * rather than read back the number `formatted` draws.
+   */
+  unit?: string;
 }
 
 /**
@@ -197,9 +237,18 @@ export interface HeadlessPaneFreshness {
   /**
    * How often the data is published, when its dates mark the start of a period
    * (a monthly statistic is dated the 1st). The report then names the month,
-   * quarter or year, not a day it was never observed on.
+   * quarter or year, not a day it was never observed on. A semiannual estimate
+   * is dated by the month it was made in (USDA's coffee and sugar balances),
+   * so it names that month.
    */
-  periodicity?: "monthly" | "quarterly" | "annual";
+  periodicity?: "monthly" | "quarterly" | "semiannual" | "annual";
+  /**
+   * The newest row is a weekly or monthly bar whose period had not ended when
+   * it was served (October's bar on 16 Oct), and the last day it covers so
+   * far. The report is then dated by that day, `month to date, through Thu 15
+   * Oct 2026`, not by the start of the period the bar is dated by.
+   */
+  periodToDate?: { period: "week" | "month"; through?: string | null };
   /** The newest observation is stale once it is older than this many minutes. */
   maxAgeMinutes?: number;
   /**
@@ -242,6 +291,13 @@ export interface HeadlessPaneFreshness {
    */
   dataset?: boolean;
   /**
+   * The rows are a listing's price bars, which its quote carries on (`G AAPL`,
+   * `HP`). A screenshot dates them as it dates a quote board, by the quotes it
+   * shows with their delay and market. Any other report that declares a
+   * `status` ends its screenshot as it ends `fn`, whatever quotes the page loaded.
+   */
+  prices?: boolean;
+  /**
    * What a dataset's newest observation is, when its every line names it:
    * `last trade` makes the `fn` footer, the pane footer and a screenshot read
    * the same, `Source: DTCC · last trade 2026-10-09 · lag 2 days`, dated as
@@ -269,6 +325,11 @@ export interface HeadlessPaneFreshness {
    * listing's Friday close and another's later print.
    */
   citeOldest?: boolean;
+  /**
+   * What the newest observation is, said before its time so the time is not read as when the report was read:
+   * `newest story` dates a news list `newest story Tue 29 Sep 2026 20:17 UTC`.
+   */
+  asOfLabel?: string;
   /** What the figures are, said after the status: `funding = current estimate, pays 08:00 UTC`. */
   note?: string;
   /**
@@ -305,6 +366,17 @@ interface HeadlessPaneResultBase {
   freshness?: HeadlessPaneFreshness;
 }
 
+/** A table only `--csv` and `--ndjson` write, after the report's own rows. */
+export interface HeadlessExportTable {
+  title: string;
+  columns: HeadlessPaneColumn[];
+  rows: HeadlessPaneRow[];
+  /** The unit every figure is in, which each exported row names in `currency_or_unit`. */
+  unit?: string;
+  /** The interval the rows are at (`1d`), which each exported row names in `interval`. */
+  interval?: string;
+}
+
 export interface HeadlessRowsResult extends HeadlessPaneResultBase {
   columns?: HeadlessPaneColumn[];
   /**
@@ -314,8 +386,27 @@ export interface HeadlessRowsResult extends HeadlessPaneResultBase {
    */
   textColumns?: HeadlessPaneColumn[];
   rows: HeadlessPaneRow[];
+  /** The rows `textColumns` read, when the text report adds lines that are no record (the position under its lots); `rows` when absent. CSV, NDJSON and JSON keep `rows`. */
+  textRows?: HeadlessPaneRow[];
   /** What the report says when `rows` is empty, in place of "No data.": why there are none. */
   empty?: string;
+  /**
+   * The row fields naming each row's own unit, symbol and observation date
+   * (an ISO date or instant), for rows of several series dated apart: each
+   * exported row names them in `currency_or_unit`, `symbol_or_series` and
+   * `as_of`, as a bundle section's `rowUnitKey`, `rowSymbolKey` and `rowAsOfKey` do.
+   */
+  rowUnitKey?: string;
+  rowSymbolKey?: string;
+  rowAsOfKey?: string;
+  /** The interval every row is at (`daily`), which each exported row names in `interval`. */
+  interval?: string;
+  /**
+   * Tables `--csv` and `--ndjson` write after the rows, each in its own
+   * section, such as the dated history the rows sum up. The text report and
+   * JSON leave them out.
+   */
+  exportTables?: HeadlessExportTable[];
 }
 
 export type HeadlessBundleSection =
@@ -334,19 +425,74 @@ export type HeadlessBundleSection =
     textColumns?: HeadlessPaneColumn[];
     /** The rows `textColumns` read, when the pane's rows are not the records (one per holding and scenario shock); `rows` when absent. */
     textRows?: HeadlessPaneRow[];
+    /**
+     * The currency or unit the rows' figures are in (`USD per 1% move`),
+     * which every exported row names in `currency_or_unit`.
+     */
+    unit?: string;
+    /**
+     * The row field naming each row's own unit, for a table of metrics whose
+     * rows differ (`%`, a ratio, a count): each exported row names it in
+     * `currency_or_unit` in place of `unit`, blank when the field is empty.
+     */
+    rowUnitKey?: string;
+    /**
+     * The row field naming the symbol each row is of, for a table of several
+     * (a ranking): each exported row names it in `symbol_or_series`.
+     */
+    rowSymbolKey?: string;
+    /**
+     * The row field holding when each row's figures were observed (an ISO
+     * date or instant), for rows dated apart: each exported row names it in
+     * `as_of`, blank when the field is empty.
+     */
+    rowAsOfKey?: string;
+    /** The bar interval the rows are of (`1d`), which every exported row names in `interval`. */
+    interval?: string;
+    /** The symbol every row is of, where the report's own is not (a section per name): each exported row names it in `symbol_or_series`. */
+    symbol?: string;
+    /** When every row was observed (an ISO date or instant), where it is not the report's newest: each exported row names it in `as_of`. */
+    asOf?: string;
+    /**
+     * The free view holds this table back for Gloom Pro. Left empty, the text
+     * report leaves it out and says once, on its Pro line, what Pro adds, in
+     * place of a lock under each table; JSON keeps the section with `locked`.
+     */
+    locked?: boolean;
     entries?: never;
+    textEntries?: never;
   }
   | {
     title: string;
     entries: HeadlessPaneEntry[];
+    /**
+     * The lines the text report prints in place of `entries`, when the pane
+     * says in one line what the exported records keep apart (a range as
+     * `low to high`, a level with its distance from spot). CSV, NDJSON and
+     * JSON keep `entries`.
+     */
+    textEntries?: HeadlessPaneEntry[];
+    /** The symbol the figures are of, where the report's own is not: each exported line names it in `symbol_or_series`. */
+    symbol?: string;
+    /** When the figures were observed (an ISO date or instant), where it is not the report's newest: each exported line names it in `as_of`. */
+    asOf?: string;
     columns?: never;
     rows?: never;
     textColumns?: never;
     textRows?: never;
+    unit?: never;
+    rowUnitKey?: never;
+    interval?: never;
+    locked?: never;
   };
 
 export interface HeadlessBundleResult extends HeadlessPaneResultBase {
   sections: HeadlessBundleSection[];
+  /**
+   * What the report says once when no section has a row, in place of each
+   * section's own `empty`: one reason covers them all (a ticker no source maps).
+   */
+  empty?: string;
 }
 
 export interface HeadlessSeriesPoint extends HeadlessPaneRow {
@@ -362,6 +508,8 @@ export interface HeadlessSeriesPoint extends HeadlessPaneRow {
 export interface HeadlessSeries {
   id: string;
   label: string;
+  /** The company or security a security's series is of (Apple Inc.), from its quote. */
+  name?: string;
   /** Explicit unit of the point values; report formatting does not rescale them. */
   unit?: string;
   /** The symbol or series ID the series was asked for as (`USDZAR=X`, `DEXSFUS`), which exports name each row by. */
@@ -394,6 +542,13 @@ export interface HeadlessPaneDefinition<Shape extends HeadlessPaneShape = Headle
   discovery?: {
     id?: string;
     aliases?: string[];
+    /**
+     * Words that are no function's code but ask for this function's data
+     * (IVOL, IV for implied volatility). They do not open it, since one word
+     * can mean several functions: `fn IVOL` answers with the functions it
+     * means and the commands that run them, and `catalog ivol` lists them first.
+     */
+    suggestFor?: string[];
     intents?: string[];
     dataRequirements?: string[];
     limitations?: string[];
@@ -435,8 +590,30 @@ export interface HeadlessPaneDefinition<Shape extends HeadlessPaneShape = Headle
     args: HeadlessPaneLoadArgs,
     ctx: HeadlessPaneContext,
   ): Promise<HeadlessArgumentExpansion | null>;
+  /**
+   * How `shot` opens the pane on a request, past the settings its options
+   * name: 13F opens the fund a name resolved to, on the tab its view names.
+   * `load` is the report's own load, for state that depends on what it found.
+   * `given` names the options typed, by key: `args` carries every option's
+   * default too, which the pane may open on differently (M&A of one company
+   * opens on every status, its report on pending), so state an option sets
+   * is written only when it was asked for.
+   * Throws when the pane cannot draw the request, which `shot` reports
+   * instead of capturing another view.
+   */
+  shotState?(
+    args: HeadlessPaneLoadArgs,
+    load: () => Promise<HeadlessPaneResultByShape[Shape]>,
+    given: ReadonlySet<string>,
+  ): HeadlessShotState | Promise<HeadlessShotState>;
   /** What is true of every load: its source, and whether it is a feed. */
   freshness?: HeadlessPaneFreshness;
+  /**
+   * A `--csv` export also closes with the report's warnings, as notes, for a
+   * report whose warnings say which rows it left out (a backtest's dropped
+   * sessions), so a saved file keeps what stderr said.
+   */
+  exportWarnings?: boolean;
   columns?: HeadlessPaneColumn[];
   /**
    * The report title. A report passes the loaded result, so a title can name
@@ -459,6 +636,14 @@ export interface HeadlessPaneDefinition<Shape extends HeadlessPaneShape = Headle
 }
 
 export type HeadlessPaneResult = HeadlessPaneResultByShape[HeadlessPaneShape];
+
+/** What `shot` merges into the captured pane for a request (`shotState`). */
+export interface HeadlessShotState {
+  /** Merged into the pane's settings. */
+  settings?: Record<string, unknown>;
+  /** Merged into the pane's plugin state, by plugin id. */
+  pluginState?: Record<string, Record<string, unknown>>;
+}
 
 /** What a function runs with once it has widened its argument (`expandArgument`). */
 export interface HeadlessArgumentExpansion {

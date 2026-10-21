@@ -5,7 +5,7 @@ import { t } from "../../../../i18n";
 import { ShortcutHint } from "../../../ui/shortcut-hint";
 import { Button } from "../../../ui/button";
 import { ChoiceDialog } from "../../../ui/choice-dialog";
-import { IconButton } from "../../../ui/icon";
+import { Icon, IconButton } from "../../../ui/icon";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
 import { useOptionalDialog, type PromptContext } from "../../../../ui/dialog";
 import { nativePaneFooterRows } from "../sizing";
@@ -22,7 +22,11 @@ import {
 } from "./model";
 
 export {
+  datesPaneData,
+  DELAYED_SEGMENT,
+  delayedFooterSegment,
   hasPaneFooterContent,
+  splitDelayedStatus,
   type CombinedPaneFooter,
   type PaneFooterPressEvent,
   type PaneFooterSegment,
@@ -103,6 +107,21 @@ function SegmentView({ segment, focused }: { segment: PaneFooterSegment; focused
     if (startedOnTrigger) segment.onPress?.();
     else stopMouseEvent(event);
   };
+
+  if (nativePaneChrome && segment.icon && !segment.onPress) {
+    // A status, not a control: the icon button's box, with its detail on hover.
+    return (
+      <Box
+        role="img"
+        aria-label={label}
+        title={segment.title ?? label}
+        data-gloom-role="pane-footer-icon"
+        data-icon={segment.icon}
+      >
+        <Icon name={segment.icon} size={14} color={segment.disabled ? colors.textMuted : footerToneColor(segment.parts[0] ?? { text: "" })} />
+      </Box>
+    );
+  }
 
   if (nativePaneChrome && segment.icon) {
     return (
@@ -246,7 +265,7 @@ function FooterContent({
     : undefined;
   // A segment with shorter forms takes the longest that fits beside the hints, gaps and terminal keys included.
   const keysWidth = nativePaneChrome ? 0 : footer.info.reduce((total, segment) => total + terminalSegmentKey(segment, focused).length, 0);
-  const info = infoWidth != null ? fitPaneFooterInfo(footer.info, infoWidth - keysWidth) : footer.info;
+  const info = infoWidth != null ? fitPaneFooterInfo(footer.info, infoWidth - keysWidth, { besideHints: hasHints }) : footer.info;
 
   if (!hasInfo && !hasHints) {
     return <Box flexGrow={1} height={1} />;
@@ -256,6 +275,9 @@ function FooterContent({
     <Box
       height={1}
       flexGrow={1}
+      // A box with a height does not shrink on the desktop unless it says so: this row has to follow
+      // the pane's edge between two layouts, with the hints against it and the status giving way.
+      flexShrink={nativePaneChrome ? 1 : undefined}
       flexDirection="row"
       justifyContent="space-between"
       overflow="hidden"
@@ -269,7 +291,8 @@ function FooterContent({
           {...(infoWidth != null ? { width: infoWidth } : {})}
         >
           {info.map((segment, index) => (
-            <Box key={segment.id} flexDirection="row" marginRight={index === info.length - 1 ? 0 : 1}>
+            // An icon is a few cells that mean nothing cut: the text beside it gives way first.
+            <Box key={segment.id} flexDirection="row" flexShrink={segment.icon ? 0 : undefined} marginRight={index === info.length - 1 ? 0 : 1}>
               <SegmentView segment={segment} focused={focused} />
             </Box>
           ))}
@@ -319,7 +342,6 @@ export function PaneFooterBar({
   const resolvedFooter = footer ?? EMPTY_FOOTER;
   const empty = !hasPaneFooterContent(resolvedFooter);
   const borderColor = focused ? colors.borderFocused : colors.border;
-  const topBorderColor = colors.border;
   const nativeBackgroundColor = empty
     ? "transparent"
     : focused
@@ -340,10 +362,10 @@ export function PaneFooterBar({
         data-focused={focused ? "true" : "false"}
         data-empty={empty ? "true" : "false"}
         style={{
-          "--pane-footer-border-color": empty ? "transparent" : topBorderColor,
-          borderTop: `1px solid ${empty ? "transparent" : topBorderColor}`,
+          // The one hairline (styles.css), and no highlight under it.
+          "--pane-footer-border-color": empty ? "transparent" : "var(--gloom-hairline)",
+          borderTop: `1px solid ${empty ? "transparent" : "var(--gloom-hairline)"}`,
           backgroundColor: nativeBackgroundColor,
-          boxShadow: empty ? "none" : `inset 0 1px 0 ${blendHex(nativeBackgroundColor, colors.textBright, 0.03)}`,
         }}
       >
         <FooterContent

@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ChoiceDialog, confirmDialog, DataTableView, EmptyState, PageStackView, PaneStatusBody, QueryBar, StatGrid, statGridRows,
+import { splitDelayedStatus, Button, ChoiceDialog, confirmDialog, DataTableView, EmptyState, PageStackView, PaneStatusBody, QueryBar, StatGrid, statGridRows,
   usePaneFooter, usePaneNoticeFooter, usePaneTabs, type DataTableColumn, type SelectControl, type StatItem } from "../../../components";
 import { useAsyncResource, useInputCapture, usePaneInstance, usePaneSettingValue, usePaneTicker,
   usePluginAppActions, usePluginPaneState, usePluginState, useShortcut } from "../../../public/react";
+import { usePaneAppConfig } from "../../../state/app/context";
+import { usePluginBrokerActions, usePluginTickerActions } from "../../runtime";
+import { brokerCanTrade, brokerCanTradeStrategy, openTradeTicket } from "../broker-trading/command";
+import { MAX_STRATEGY_LEGS, strategyFromLegs } from "../broker-trading/strategy";
+import { optionContractName } from "../../../utils/options";
 import { Box } from "../../../ui";
 import { useDialogState } from "../../../ui/dialog";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
@@ -21,10 +26,14 @@ import { buildOptionQuoteKey, freshOptionQuote, OPTIONS_QUOTE_EXCHANGE } from ".
 import { liveScenarioPosition, scenarioLegContractSymbol } from "./live";
 import { ScenarioPayoffChart } from "./charts";
 import { ScenarioLegEditor, ScenarioSaveForm, ScenarioInputsForm } from "./editor";
-import { loadScenarioMarket, scenarioControlsFromSettings, scenarioPositionFromSettings, scenarioSpotBasis, type ScenarioMarketSnapshot } from "./client";
+import { loadScenarioMarket, scenarioControlsFromSettings, scenarioPositionFromSettings, scenarioSpotBasis, suppliedScenarioInputs,
+  type ScenarioMarketSnapshot } from "./client";
+import { scenarioFreshness } from "./freshness";
 import { cashSecuredPut, cspStatItems, loadNextEarningsDate } from "./csp";
+import { collarStatItems, scenarioCollar } from "./collar";
 import { useAssetData } from "../../runtime";
-import { formatSpotTime } from "../options/model-spot";
+import { extendedSession, formatSpotTime } from "../options/model-spot";
+import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { buildScenario, currencyLabel, scenarioCurrency, scenarioValueUnit, UNKNOWN_CURRENCY, type ScenarioLeg, type ScenarioPosition,
   type ScenarioControls, validatePosition } from "./model";
 import { EMPTY_SAVED_STRATEGIES, restoreSavedStrategies, type SavedScenarioStrategy } from "./state";
@@ -68,13 +77,16 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
   const [consumedSeed, setConsumedSeed] = usePluginPaneState<string | null>("consumedSeed", null);
   const [localError, setLocalError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const brokerInstrument = target?.instrument ?? null;
   const explicitSpot = Number(settings.spot);
   const loadMarket = useCallback(async (force: boolean) => {
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
-    return loadScenarioMarket({ instrument: { symbol: underlying, exchange },
-      expiration: expiration ?? undefined, forceRefresh: force, signal: abort.signal });
-  }, [underlying, exchange, expiration]);
+    // The chain OMON reads for this ticker, from its broker when it is linked to one: one chain, one source, one cache entry.
+    return loadScenarioMarket({ instrument: { symbol: underlying, exchange, brokerId: brokerInstrument?.brokerId,
+      brokerInstanceId: brokerInstrument?.brokerInstanceId, instrument: brokerInstrument },
+    expiration: expiration ?? undefined, forceRefresh: force, signal: abort.signal });
+  }, [underlying, exchange, expiration, brokerInstrument]);
   // Fully specified calculations and screenshot snapshots never need a quote refresh.
   const needsMarket = !frozen && (!["spot", "rate", "dividendYield"].every((key) => settings[key] != null && settings[key] !== "") || detail === "chain");
   const resource = useAsyncResource(underlying && needsMarket ? loadMarket : null);
@@ -122,7 +134,7 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
       delayed ||= quote!.dataSource !== "live";
     }
     return { position: liveScenarioPosition(storedPosition, spotQuote.price, Date.now(), mids), quotes,
-      observedAt: spotQuote.lastUpdated, basis: delayed ? "delayed" : "real-time" };
+      observedAt: spotQuote.lastUpdated, basis: delayed ? "delayed" : "real-time", session: extendedSession(spotQuote) };
   }, [follow, storedPosition, liveEntries, underlying, exchange, legSymbols, freshnessNow, subscriptionStartedAt]);
   const position = live?.position ?? storedPosition;
   const [controlState, setControls] = usePluginPaneState<ScenarioControls | null>("controls", null);
@@ -157,6 +169,18 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
   const csp = useMemo(() => cspStrategy && scenario && !earnings.loading
     ? cashSecuredPut(scenario.position, live?.basis ?? spotBasis ?? "last price", earningsDate) : null,
   [cspStrategy, scenario, earnings.loading, earningsDate, live?.basis, spotBasis]);
+  // A collar seeded, or one typed with the shares it hedges, as the report reads it.
+  const collarStrategy = settings.strategy === "collar";
+  const collar = useMemo(() => scenario && (collarStrategy || scenario.position.underlying)
+    ? scenarioCollar(scenario.position, live?.basis ?? spotBasis ?? "last price") : null, [collarStrategy, scenario, live?.basis, spotBasis]);
+  // A report or capture of the pane is dated as `fn OSA` dates the same position: by the underlying's quote, its delay and where its market stands.
+  const inputsOnly = suppliedScenarioInputs(settings);
+  useRemoteUiNode(scenario && (market || inputsOnly) ? { role: "report-freshness", label: "Scenario freshness",
+    getMetadata: () => ({ ...scenarioFreshness(market, inputsOnly) }) } : null);
+  // The session the position is valued in, when it is not the regular one: its spot is the market's print (not a typed what-if or a saved position's).
+  const valuedSession = live ? live.session
+    : market?.underlyingQuote && scenario?.position.asOf === market.underlyingQuote.lastUpdated && spotBasis !== "typed"
+      ? extendedSession(market.underlyingQuote) : null;
   // The report's Hedge budget, from the same position and quotes; a live position sizes at its live quotes and spot.
   const hedge = useMemo(() => {
     if (!scenario) return { value: null, error: null };
@@ -224,6 +248,32 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
   };
   // Freezing keeps the marks shown at this moment as the scenario's inputs.
   const freeze = () => { if (live) setPosition(live.position); setFollow(false); };
+  // With a broker that takes them, the position trades as one order: a
+  // spread on the underlying's Trade tab, or one contract's own ticket. The
+  // live mids, else the entry prices, say whether it opens for a debit or a credit.
+  const { pinTicker } = usePluginTickerActions();
+  const { getBrokerAdapter } = usePluginBrokerActions();
+  const { brokerInstances } = usePaneAppConfig();
+  const tradeIntent = useMemo(() => {
+    const legs = position?.legs ?? [];
+    if (frozen || !underlying || !legs.length || legs.length > MAX_STRATEGY_LEGS || legs.some((leg) => leg.multiplier !== 100 || !legSymbols.get(leg.id))) return null;
+    const intent = strategyFromLegs(legs.map((leg) => {
+      const quote = live?.quotes.get(leg.id);
+      return { contractSymbol: legSymbols.get(leg.id)!, quantity: leg.quantity, price: quote ? optionMid(quote) ?? leg.price : leg.price };
+    }));
+    if (!intent) return null;
+    const tradable = intent.legs.length === 1 ? brokerCanTrade(brokerInstances, getBrokerAdapter, intent.legs[0]!.contractSymbol, "OPT")
+      : brokerCanTradeStrategy(brokerInstances, getBrokerAdapter, underlying, intent.legs.length);
+    return tradable ? intent : null;
+  }, [frozen, underlying, position?.legs, legSymbols, live?.quotes, brokerInstances, getBrokerAdapter]);
+  const trade = () => {
+    if (!tradeIntent) return;
+    const [only] = tradeIntent.legs;
+    if (tradeIntent.legs.length === 1 && only) {
+      openTradeTicket({ pinTicker }, only.contractSymbol, { action: only.action, quantity: tradeIntent.quantity * only.ratio },
+        { instrument: null, listing: { name: optionContractName(only.contractSymbol) ?? only.contractSymbol, exchange: "", currency: position?.currency ?? "USD", type: "OPT" } });
+    } else openTradeTicket({ pinTicker }, symbol ?? underlying, tradeIntent);
+  };
   const hints = detail === "chain" ? [{ id: "expiry", key: "d", label: "ate", onPress: () => chainExpiryControl.current?.open() }] : detail || volActive ? [] : [
     { id: "add", key: "a", label: "dd leg", onPress: addTyped },
     { id: "chain", key: "c", label: "hain", onPress: () => setDetail("chain") },
@@ -234,6 +284,7 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
       { id: "vol", key: "v", label: "ol shift", onPress: () => setVolActive(true) },
       { id: "save", key: "s", label: "ave", onPress: () => setDetail("save") }] : []),
     { id: "load", key: "b", label: "rowse saved", onPress: () => void loadSaved() },
+    ...(tradeIntent ? [{ id: "trade", key: "t", label: "rade", onPress: trade }] : []),
     ...(live ? [{ id: "follow", key: "f", label: "reeze", onPress: freeze }]
       : follow || frozen || frozenMarket || !storedPosition ? [] : [{ id: "follow", key: "f", label: "ollow market", onPress: () => setFollow(true) }]),
   ];
@@ -254,8 +305,8 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
     ...(resource.loading ? [{ id: "loading", parts: [{ text: "loading chain", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ...(hedge.error ? [{ id: "hedge-error", parts: [{ text: hedge.error, tone: "warning" as const }] }] : []),
-    ...(live ? [{ id: "asof", parts: [{ text: `${live.basis} · ${spotText} · ${new Date(live.observedAt).toISOString().slice(11, 19)} UTC`, tone: "muted" as const }],
-      variants: [[{ text: shortSpotText, tone: "muted" as const }]] }]
+    ...(live ? splitDelayedStatus({ id: "asof", parts: [{ text: `${live.basis} · ${spotText} · ${new Date(live.observedAt).toISOString().slice(11, 19)} UTC`, tone: "muted" }],
+      variants: [[{ text: shortSpotText, tone: "muted" }]] })
       : position ? [{ id: "asof", parts: [{ text: `${spotText} · ${formatSpotTime(position.asOf)} · ${market?.source ? "market" : "input assumptions"}${midVolatility}`, tone: "muted" as const }],
         variants: [[{ text: shortSpotText, tone: "muted" as const }]] }] : []),
   ], hints }), [hints, position, market?.source, resource.loading, error, hedge.error, live?.basis, live?.observedAt, midVolatility, spotText, shortSpotText]);
@@ -299,14 +350,16 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
   ] : [];
   const hedgeItems = hedge.value ? hedgeStatItems(hedge.value) : [];
   const cspItems = csp ? cspStatItems(csp) : [];
+  const collarItems = collar ? collarStatItems(collar) : [];
   // The query bar and the stat band sit above the content only once a scenario prices.
   const bodyHeight = Math.max(3, height - tabRows - (scenario ? 1 + statGridRows(stats, width) : 0)
-    - (hedgeItems.length ? statGridRows(hedgeItems, width) : 0) - (cspItems.length ? statGridRows(cspItems, width) : 0));
+    - (hedgeItems.length ? statGridRows(hedgeItems, width) : 0) - (cspItems.length ? statGridRows(cspItems, width) : 0)
+    - (collarItems.length ? statGridRows(collarItems, width) : 0));
   const legColumns: DataTableColumn[] = [{ id: "quantity", label: "Contracts", width: 10, align: "right" },
     { id: "side", label: "Option", width: 7, align: "left" }, { id: "strike", label: "Strike", width: 11, align: "right" },
     { id: "expiration", label: "Expiry", width: 12, align: "left" }, { id: "price", label: "Entry / share", width: 14, align: "right" },
     { id: "volatility", label: "IV %", width: 9, align: "right" }, { id: "multiplier", label: "Units", width: 7, align: "right" }];
-  const activeContent = scenario && tab === "payoff" ? <ScenarioPayoffChart scenario={scenario} width={width} height={bodyHeight} focused={tabsFocused} />
+  const activeContent = scenario && tab === "payoff" ? <ScenarioPayoffChart scenario={scenario} width={width} height={bodyHeight} focused={tabsFocused} session={valuedSession} />
     : scenario && tab === "grid" ? <DataTableView focused={focused && !volActive} rootWidth={width}
       rootHeight={bodyHeight} items={scenario.grid.toSorted((a, b) => { const value = (row: typeof a) => gridSort.columnId === "spot" ? row.spot : gridSort.columnId === "move" ? row.move ?? 0 : row.values[Number(gridSort.columnId)] ?? 0; return (value(a) - value(b)) * (gridSort.direction === "asc" ? 1 : -1); })}
       sortColumnId={gridSort.columnId} sortDirection={gridSort.direction} onHeaderClick={(id) => {
@@ -358,6 +411,7 @@ export function OptionsScenarioPane({ width, height, focused }: PaneProps) {
       <StatGrid items={stats} width={width} />
       {hedgeItems.length > 0 && <StatGrid items={hedgeItems} width={width} />}
       {cspItems.length > 0 && <StatGrid items={cspItems} width={width} />}
+      {collarItems.length > 0 && <StatGrid items={collarItems} width={width} />}
     </>}
     {!position?.legs.length && !scenario ? <PaneStatusBody loading={!!resource.loading && !market} error={seeded.error} subject="scenario inputs">
       <Box paddingX={1}><EmptyState title="Build an options position." actions={<Button label="Add leg" onPress={addTyped} />} /></Box>

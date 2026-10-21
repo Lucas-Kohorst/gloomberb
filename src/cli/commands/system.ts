@@ -1,9 +1,12 @@
 import { join } from "path";
+import { logFailure } from "../../utils/log-failure";
 import { VERSION } from "../../version";
 import { saveConfig } from "../../data/config/store";
 import { builtinPluginGroupMembers } from "../../plugins/ownership";
 import type { AppConfig, TelemetryConfig } from "../../types/config";
 import { canonicalTimeZone } from "../../utils/utc-time";
+import { readBaseCurrency } from "../../utils/base-currency";
+import { NIGHTLY_CHANNEL_SUMMARY, parseUpdateChannel, withUpdateChannel } from "../../updater/channel";
 import type { CliCommandDef } from "../../types/plugin";
 import { resolveCliDataDir, withCliServices, withConfigData } from "../context";
 import { CLI_COMMAND_GROUPS } from "../help";
@@ -33,6 +36,8 @@ const STAR_PROMPT_CONFIG_KEY = "starPrompt.enabled";
 const TIMEZONE_CONFIG_KEY = "timezone";
 /** What `config set timezone` takes to go back to UTC alone. */
 const NO_TIMEZONE = "none";
+/** Stable releases, or nightly builds as well. */
+const UPDATE_CHANNEL_CONFIG_KEY = "updates.channel";
 const EDITABLE_CONFIG_KEYS = [
   "baseCurrency",
   "refreshIntervalMinutes",
@@ -41,6 +46,7 @@ const EDITABLE_CONFIG_KEYS = [
   ...Object.keys(TELEMETRY_CONFIG_KEYS),
   STAR_PROMPT_CONFIG_KEY,
   TIMEZONE_CONFIG_KEY,
+  UPDATE_CHANNEL_CONFIG_KEY,
 ];
 
 function isTelemetryConfigKey(key: string): key is TelemetryConfigKey {
@@ -58,6 +64,32 @@ function parseTimezoneSetting(value: string): string | null {
     `"${value.trim()}" is not a time zone name.`,
     `Use an IANA zone name, Region/City, such as Asia/Tokyo, or ${NO_TIMEZONE} for UTC alone.`,
   );
+}
+
+/**
+ * The code `config set baseCurrency` stores (`cad` is CAD); fails on a name
+ * or sign, naming the code it stands for, and on anything that is no code.
+ */
+function parseBaseCurrencySetting(value: string): string {
+  const reading = readBaseCurrency(value);
+  if ("code" in reading) return reading.code;
+  const [first] = reading.suggestions;
+  return fail(reading.error, first
+    ? `baseCurrency takes an ISO 4217 code: gloomberb config set baseCurrency ${first}`
+    : "baseCurrency takes an ISO 4217 code such as USD, EUR or CAD.");
+}
+
+/** A saved base currency that is no code (an older version stored names), with what to set instead; null for a code. */
+function baseCurrencyProblem(value: unknown): string | null {
+  const reading = readBaseCurrency(typeof value === "string" ? value : "");
+  if ("code" in reading) return null;
+  const [first] = reading.suggestions;
+  return `${reading.error} Set one: gloomberb config set baseCurrency ${first ?? "<code>"}`;
+}
+
+function describeBaseCurrency(value: unknown): string {
+  const problem = baseCurrencyProblem(value);
+  return problem ? `${String(value)} ${cliStyles.warning(`(${problem})`)}` : String(value);
 }
 
 function describeTimezone(value: unknown): string {
@@ -152,7 +184,8 @@ export function createSystemCliCommands(): CliCommandDef[] {
       let dataDir: string | null = null;
       try {
         dataDir = await resolveCliDataDir();
-      } catch {
+      } catch (error) {
+        logFailure("cli-system", "Resolve data directory failed")(error);
         dataDir = null;
       }
       ctx.printResult({
@@ -183,6 +216,9 @@ export function createSystemCliCommands(): CliCommandDef[] {
           checks.push({ check: "database", status: "ok", detail: join(services.dataDir, ".gloomberb-cache.db") });
           checks.push({ check: "plugins", status: "ok", detail: String(services.services.pluginRegistry.allPlugins.size) });
           checks.push({ check: "capabilities", status: "ok", detail: String(services.services.pluginRegistry.capabilities.manifests().length) });
+          // Only a saved value no conversion can price is worth a line.
+          const baseCurrencyIssue = baseCurrencyProblem(services.config.baseCurrency);
+          if (baseCurrencyIssue) checks.push({ check: "baseCurrency", status: "warn", detail: baseCurrencyIssue });
           const theme = services.config.theme;
           checks.push({
             check: "theme",
@@ -219,6 +255,7 @@ export function createSystemCliCommands(): CliCommandDef[] {
         "config set telemetry.usage false",
         "config set starPrompt.enabled false",
         "config set timezone <Region/City>|none",
+        "config set updates.channel stable|nightly",
         "config get keybindings",
         "config set keybindings.actions.<action> <keys>|null|default",
         "config set keybindings.commands.<keys> <command>|null",
@@ -235,6 +272,11 @@ export function createSystemCliCommands(): CliCommandDef[] {
         title: "Themes",
         lines: [
           `theme takes one of these ids, or its name as config themes lists it: ${getThemeIds().join(", ")}.`,
+        ],
+      }, {
+        title: "Release channel",
+        lines: [
+          `The app updates itself from stable releases. With updates.channel nightly (Release Channel in the command bar) it also installs the nightly build: ${NIGHTLY_CHANNEL_SUMMARY}. Back on stable, a nightly build stays until a newer stable release is out. GLOOMBERB_UPDATE_CHANNEL overrides the setting for one run; npm and Bun installs always follow stable.`,
         ],
       }],
       examples: [
@@ -255,7 +297,8 @@ export function createSystemCliCommands(): CliCommandDef[] {
         let current: string | null = null;
         try {
           current = await withConfigData(ctx, ({ config }) => config.theme);
-        } catch {
+        } catch (error) {
+          logFailure("cli-system", "Read current theme failed")(error);
           current = null;
         }
         ctx.printResult({ data: themeListRows(current) }, {
@@ -287,6 +330,7 @@ export function createSystemCliCommands(): CliCommandDef[] {
           "telemetry.attention": context.config.telemetry?.attention === true,
           [STAR_PROMPT_CONFIG_KEY]: context.config.starPrompt?.enabled !== false,
           [TIMEZONE_CONFIG_KEY]: context.config.timezone ?? null,
+          [UPDATE_CHANNEL_CONFIG_KEY]: context.config.updates?.channel ?? "stable",
         };
 
         if (action === "list") {
@@ -297,6 +341,7 @@ export function createSystemCliCommands(): CliCommandDef[] {
               ...(key === KEYBINDINGS_CONFIG_KEY ? { format: summarizeKeybindings } : {}),
               ...(key === "theme" ? { format: (value: unknown) => describeThemeId(String(value)) } : {}),
               ...(key === TIMEZONE_CONFIG_KEY ? { format: describeTimezone } : {}),
+              ...(key === "baseCurrency" ? { format: describeBaseCurrency } : {}),
             })),
           });
           return;
@@ -315,7 +360,8 @@ export function createSystemCliCommands(): CliCommandDef[] {
           }
           ctx.printResult({ data: { key, value: safeConfig[key] } }, {
             text: (data) => key === KEYBINDINGS_CONFIG_KEY ? renderKeybindings(data.value)
-              : key === TIMEZONE_CONFIG_KEY ? describeTimezone(data.value) : describeConfigValue(data.value),
+              : key === TIMEZONE_CONFIG_KEY ? describeTimezone(data.value)
+                : key === "baseCurrency" ? describeBaseCurrency(data.value) : describeConfigValue(data.value),
           });
           return;
         }
@@ -347,11 +393,18 @@ export function createSystemCliCommands(): CliCommandDef[] {
           if ((isTelemetryConfigKey(key) || key === STAR_PROMPT_CONFIG_KEY) && value !== "true" && value !== "false") {
             ctx.fail(`Usage: gloomberb config set ${key} true|false`);
           }
+          if (key === UPDATE_CHANNEL_CONFIG_KEY && !parseUpdateChannel(value)) {
+            ctx.fail(`Usage: gloomberb config set ${key} stable|nightly`);
+          }
           // A display name may come unquoted: config set theme White Phosphor.
           const parsedValue = key === "theme"
             ? requireThemeId(args.slice(2).join(" "))
+            : key === "baseCurrency"
+              ? parseBaseCurrencySetting(args.slice(2).join(" "))
             : key === TIMEZONE_CONFIG_KEY
               ? parseTimezoneSetting(value)
+              : key === UPDATE_CHANNEL_CONFIG_KEY
+              ? parseUpdateChannel(value)
               : key === "refreshIntervalMinutes"
               ? Number(value)
               : isBooleanConfigKey(key)
@@ -363,7 +416,9 @@ export function createSystemCliCommands(): CliCommandDef[] {
               ? { ...context.config, starPrompt: { ...context.config.starPrompt, enabled: parsedValue as boolean } }
               : key === TIMEZONE_CONFIG_KEY
                 ? withTimezone(context.config, parsedValue as string | null)
-                : { ...context.config, [key]: parsedValue };
+                : key === UPDATE_CHANNEL_CONFIG_KEY
+                  ? withUpdateChannel(context.config, parsedValue as "stable" | "nightly")
+                  : { ...context.config, [key]: parsedValue };
           if (!ctx.cliOptions.dryRun) await saveConfig(nextConfig);
           ctx.printResult({
             data: {

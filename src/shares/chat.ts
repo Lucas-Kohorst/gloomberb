@@ -1,26 +1,15 @@
 import type { PaneImageCapture } from "./pane-image";
 
-export interface ShareTarget {
-  channelId: string;
-  label: string;
-  description?: string;
-}
-
-export interface SharePost {
-  channelId: string;
-  caption: string;
-  includeLink: boolean;
-}
-
-/** Chat is optional. The host's Share dialog and Copy link still work with the plugin disabled. */
+/**
+ * Chat is optional. Report a Bug posts a pane's picture through it and is not
+ * offered without it; Share copies a link and does not need it.
+ */
 export interface PaneChatSharing {
-  ready(retry: () => void): boolean;
-  targets(): Promise<ShareTarget[]>;
-  defaultChannel(targets: readonly ShareTarget[]): string;
-  includeLink(): boolean;
-  setIncludeLink(value: boolean): void;
-  post(capture: PaneImageCapture, request: SharePost, content: string): Promise<{ messageId: string }>;
-  posted(result: SharePost & { messageId: string }, targets: readonly ShareTarget[]): void;
+  /** Loads chat's session and channels, so a post can go out. */
+  prepare(): Promise<void>;
+  post(capture: PaneImageCapture, channelId: string, content: string): Promise<{ messageId: string }>;
+  /** Opens a conversation in a chat pane at one of its messages. */
+  openMessage(channelId: string, messageId: string): void;
 }
 
 let chat: PaneChatSharing | null = null;

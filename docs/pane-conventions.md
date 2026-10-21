@@ -40,9 +40,172 @@ not the rule. Details follow below.
    not cell counts. The terminal keeps its own cell layout, byte for byte.
 
 A UI change says in its description what it was checked against: all views,
-both themes, a narrow and a wide pane. Rules 2, 6 and 8 are enforced by CI as
-the checks land (Linear GLO-768); until a check exists, the reviewer enforces
-them.
+both themes, a narrow and a wide pane. CI enforces rules 2, 6 and 8 ("Holding
+the line", below): every UI change is benchmarked across all panes and
+plugins, and its blast-radius sheet is attached to the pull request.
+
+## Design system (desktop and web)
+
+The conventions below are the principles in numbers. Each family is one
+shared component; a pane that needs something else extends the component.
+The terminal keeps its own cell layout and takes none of these values.
+
+### Tokens
+
+Defined once: CSS variables in `src/renderers/dom/styles.css` (on `body`)
+and TS constants in `src/theme/ui-tokens.ts` (`TYPE`, `WEIGHT`, `SPACE`,
+`RADIUS`). Colour roles are set per theme by `src/theme/colors.ts`.
+Style with `var(--gloom-…)`, never a number of your own.
+
+| Token | Value | Use |
+|---|---|---|
+| `--gloom-type-caption` | 10px | key caps only |
+| `--gloom-type-ui` | 12px | everything that is not reading text: chrome, tables, controls, tabs, footers, labels, metadata |
+| `--gloom-type-body` | 14px, line height 1.6 | reading text in a reader column |
+| `--gloom-type-heading` | 16px bold | a heading in reading text |
+| `--gloom-type-title` | 20px bold | a reader's title, a pane's lead figure |
+| `--gloom-weight-regular`, `-bold` | 400, 700 | the only two weights |
+| `--gloom-space-xs/sm/md/lg/xl` | 4, 8, 12, 16, 24px | gaps, padding, margins |
+| `--gloom-inset` | one cell (8px) | a pane body's inset on every side |
+| `--gloom-radius-sm/md/lg/full` | 3, 6, 8, 999px; bars and tables 0 | small marks (key caps, chips); controls; floating surfaces; dots |
+| `--gloom-hairline` | text at 14% | every rule inside the app: bars, footer, status bar, menus, dividers |
+| `--gloom-hover-fill` | bright text at 8% | the pointer over a control, a menu item, a hint |
+| `--gloom-band` | bright text at 3.5% | the query bar, stack header and figure bands |
+| `--gloom-elevation` | `0 12px 32px` bg at 48% | the one shadow, for floating surfaces and floating panes only |
+| `--gloom-surface-raised` | panel toward bg | dialogs, menus, popovers, toasts, the command bar, cards |
+| `--gloom-surface-sunken` | bg | inside a field, a select, a checkbox |
+| `--gloom-control-border` | border toward the accent | buttons, fields, selects, floating surfaces |
+| `--gloom-accent` | border-focused | focus, the active tab's underline, a chosen control |
+| `--gloom-link`, `--gloom-link-hover` | text, bright text | links |
+| `--gloom-error` | negative | errors |
+| `--gloom-locked` | dim text | the lock of a locked or Pro state |
+
+Levels step by at least about 15% in size (12, 14, 16, 20) or differ by
+weight and colour. 14 to 16 is 14%, so a reading heading is also bold,
+bright and set off by space; the lead is the body size, bright. A reader
+column under 480px steps every reading level down together (13.2px body).
+
+### Families
+
+| Family | The convention (component) |
+|---|---|
+| Buttons (`Button`, `IconButton`) | Four kinds, one radius (`md`), no shadow. Primary: accent fill, bold. Danger: the same in negative. Secondary: 1px control border, regular. Ghost (`ghost`, `plain`): text that takes the hover fill. Icon: 20×18, hover fill; a tab's close mark and a chart's tool are icon buttons. Height one row (18px), a bar's controls the bar's 20px. A chosen button takes the selection fill. What a settings row does when pressed is a secondary button; its current value is a chip. |
+| Tabs, segmented choices (`Tabs`, `SegmentedControl`, query bar choices) | One look: 12px text, 8px padding, no box and no radius; inactive dim, hover the text colour, active bright and bold on a 2px accent underline. Sub-tabs, the query bar's choices and segmented choices are the same. Title-bar tabs (a pane's primary strip, drawn in its title bar) are the same text and spacing in boxes instead of underlines: the active tab is a box with `md` top corners, open at the bottom, its top and sides the title bar's rule (the accent while the pane is focused), filled with the surface under it so it opens into the pane; an inactive one takes the hover fill in that shape. Their labels sit on the title's centre line. |
+| Chips (`Badge`, ticker chips) | 16px in an 18px row, `sm` radius, 8px padding, a subtle fill, the tone in the text. Regular weight; tickers bold. A chip that is chosen (a filter that is on) is the solid tone with the background colour in its text. A chip is a mark: a word drawn without a fill or a border is text, and a pressable one is a ghost button. |
+| Key caps | 14px tall, caption size, `sm` radius, a 1px ring and a faint fill mixed from the text colour around it. |
+| Fields and selects (`TextField`, `SelectField`, `SelectButton`) | One row tall, sunken fill, 1px control border, `md` radius, 8px padding; focused or open, the accent border (`fieldFrameStyle` for a field a pane frames itself, such as a text area). In a query bar they are its segments. A select in a form is `SelectButton variant="form"`: the label bold above the field, as a text field's. A search strip (`InputSearchBar` `strip`) is the band with the field's text at the inset. A block of code to copy is sunken too, `md` radius, 8 by 12px inside. |
+| Checkbox | 14px, `sm` radius, control border, sunken fill; checked, the accent. |
+| Links (`ExternalLinkText`) | The text around them, underlined; bright under the pointer or focus. |
+| Toolbars (`QueryBar`) | The band: 20px, hairline under it, segments split by hairlines with 8px padding, the first one at the inset. |
+| Tables (`DataTable`) | Header 20px, bold dim on a fill; rows 18px, cell padding 0 8px; hover fill on rows; selection fill on the chosen row. No zebra. A table inside a column of prose (HELP's Basics) drops its cell padding so its rows line up with the text. |
+| Key-value rows (`KeyValueRow`, `StatGrid`, `FieldGrid`) | 18px rows, label dim, value regular or bold; no rule between rows. Grid bands keep their hairline below and between cells. |
+| Section headings (`SectionHeading`) | 12px bold bright in data panes; 16px in readers. |
+| Cards (`Card`, `cardSurfaceStyle`) | Raised surface, 1px hairline, `md` radius, 8px inside; chosen, the accent border. For a unit of content (a quote tile, a flow step, a company to pick), never for rows. A card that belongs to a colour (a relationship's role, a series) takes `accent`: a 2px rule down its left edge and the fill tinted toward it. A card that must be its own positioned box (a diagram node) draws `cardSurfaceStyle` and keeps its own rows. |
+| Quotes (`quoteBlockStyle`) | A quoted passage (a filing, a disclosure): the 2px rule of the colour it belongs to (the accent by default), a faint tint of it, 4 by 12px inside. |
+| Tooltips (`TOOLTIP_SURFACE_STYLE`) | What the pointer is over on a chart, map or heat map: the floating surface at its small size, raised fill, control border, `lg` radius, the elevation, 4 by 8px inside, 12px text. It never takes the pointer. A key that belongs to a chart (a legend's) is the same surface without the elevation (`FLAT_SURFACE_STYLE`). |
+| Lists (`ListView`) | Rows 18px, `md` radius, 8px padding, hover fill. The chosen row is filled; a list a dialog's keyboard walks also rings it in the accent (`selection="frame"`, the default), one inside the command bar is filled alone, as the command bar's rows are (`selection="fill"`). |
+| States (`EmptyState`, `PaneStatusBody`, `Spinner`, `Notice`, walls) | At the inset (8px from each edge); the message dim, an error in negative, actions under it. Loading is the one spinner and "Loading …". Locked: the lock in the locked colour, the action bright. An `EmptyState` that finds itself flush with its pane's edge (a tab body with no padding of its own) takes the inset itself, so a pane that already pads it is not padded twice. |
+| Pane chrome | Title bar 20px, title 12px bold whatever the focus (focus changes colour, never weight), 8px inset, hairline below (accent when focused); title-bar tabs are boxes on that rule (see Tabs). Footer 20px, 12px, hairline above; hints are ghost buttons: key bright, word dim. Detail back row: the band, Back as its first segment. |
+| Shell | App header and status bar at 12px, theme text roles (no greys of their own); status bar items are ghost buttons. |
+| Dialogs, menus, popovers, toasts, command bar | One floating surface: raised fill, 1px control border, `lg` radius, the elevation shadow; 16px inside a dialog, 4px inside a menu; menu items a row with 4px above and below (26px), `md` radius, hover fill. |
+| Readers (`ArticleReader`, `DetailReader`, Docs, `MarkdownText`) | One column, centred at 66ch of the reading size, the pane's inset on each side, 12px above and 16px below; title 20, headings 16 bold bright (a list's label too), body and lead 14 at line height 1.6, metadata and label and value facts 12. One paragraph gap (0.9em) after every block; a section heading 0.9em of its size above and 0.4em below. Every prose bullet (an article's key facts and lists, markdown and Docs lists) is body text: 14, a dim dot, the text hanging 2ch in, no space between items. The pane chrome check `readers:` holds the three to this. |
+| Chart chrome | Legends and axes 12px dim; a legend over a map or chart sits at the inset. A chart drawn as a stretched SVG puts its labels in HTML over it, so they keep the app's type. Labels a heat map, treemap or map fits to its own shapes are allowed to size themselves. |
+
+### Exceptions
+
+A value written out instead of taken from a token (a font size, a weight
+other than 400 and 700, a corner radius, a drop shadow, padding, a margin or a
+gap in pixels, and in DOM-only code a grey) is counted per file by
+`src/architecture/ui-literals.test.ts`. A file
+may keep what `src/architecture/ui-literals-allowlist.json` records for it,
+and every entry says why:
+
+```json
+"src/plugins/builtin/gpu/ladder.tsx": {
+  "literals": { "radius": 4 },
+  "why": "Ladder rungs, ranges and markers are data marks."
+}
+```
+
+The count can only go down: `bun scripts/update-ui-literals-allowlist.ts`
+lowers it after a cleanup and lists files that still need a reason. A
+reviewer accepts a reason when the value belongs to the data rather than to
+the chrome: data marks (bars, swatches, flags, markers), labels fitted to a
+chart's shapes, pages drawn without the app's styles. Every pane is on the
+kit; chat has its own owner and its entries say so.
+
+### Seeing it
+
+`bun run kit:page` serves the kit page: every family in every state, in the
+white and paper themes, at any width (`scripts/pane-chrome/kit-page.ts`;
+`--shots` writes one picture per family at 640 and 1280px). It is the
+benchmark a UI change is compared against; `bun run audit:ui` measures the
+whole app against it and `bun run audit:ui:compare --before <run> --after <run>`
+says how far two runs differ, family by family (CONTRIBUTING.md).
+
+### Holding the line
+
+**Every UI change is benchmarked across all panes and plugins, and its
+blast-radius sheet is attached to the pull request.** Two checks hold the
+system in CI, and both run locally:
+
+- **Tokens** (`bun run check:ui-tokens`, the UI tokens workflow, every pull
+  request; it fails). Every function's views, the bundled and registry
+  plugins' panes and the shell, docked at 640 and 1280 px on the real web
+  build, with their details and tabs, measured by the UI audit. It fails on a
+  text size off the type scale (10, 12, 14, 16, 20px), a weight other than
+  400 and 700, a kit element's corner off 0, 3, 6, 8 and 999px, and pane-body
+  text closer than the inset (8px) to the pane's left edge. Labels a chart
+  fits to its shapes, a chart's axes and legends, and a spinner's turning
+  glyph are left out. A deliberate exception is an entry in
+  `src/architecture/ui-tokens-allowlist.json` (the function, the measure, the
+  value, the component, and why). The page reads Gloom Cloud only from a
+  snapshot kept in the Actions cache, so a pull request is measured on the
+  same data every time; with no snapshot every pane draws its offline state
+  and that is what is held. Main records the week's snapshot (`--record`:
+  every view once live, then checked offline from what it kept, as a pull
+  request reads it), and with it pins each registry plugin to the commit its
+  ref points to, so a plugin author's push reaches the check only with the
+  next snapshot. A value off the tokens in a registry plugin's view fails only
+  when the recording did not have it: the plugin's code and data are the
+  same, so the change under check made it. The plugin's own values are
+  warnings for its author; the bundled plugins (pinned by `bun.lock`) fail
+  like built-in panes. Branch protection requires the one job named UI
+  tokens, which passes when its four shards do. In the code, `src/architecture/ui-literals.test.ts`
+  (Verify) counts type sizes, weights, radii, drop shadows, greys and pixel
+  spacing written out instead of taken from the tokens, per file, against
+  `src/architecture/ui-literals-allowlist.json`; the count only goes down.
+- **Blast radius** (`bun run ui:benchmark`, the UI benchmark workflow, on pull
+  requests that touch the DOM renderer, components, `src/ui`, plugin code,
+  layouts, the theme or styles.css; it reports and never fails). Every view
+  pictured on the base and on the head at 640 and 1280 px in Chromium, pane
+  bodies compared pixel by pixel, both sides from the same data (the week's
+  snapshot, or one fetch by the base). A view that moved is pictured on each
+  side a second time; one whose two pictures of the same code differ (a 3D
+  surface's labels, a value read from the clock) is named as unsteady and left
+  out of the count. A shard that did not finish, a view pictured on one side
+  only and a view that did not open are named above the count, which then
+  says it is incomplete. Four shards run two at a time, so the report waits
+  rather than hold runners the required checks need. One comment on the pull
+  request (the workflow bot's, found by its marker), edited on every run, says
+  how many of how many views changed and lists them; the `ui-benchmark`
+  artifact has the sheets: before, after and the difference of every view that
+  moved, and a sheet per family. Locally,
+  `bun run ui:benchmark --base origin/main` writes the same under
+  `~/.cache/gloomberb-pane-chrome/ui-benchmark/run` (`--only T,MAP` for a few
+  functions while working).
+
+Read the sheet before asking for review: every view that moved is one the
+change meant to move. A view that moved and should not have is a regression,
+however small. Attach the sheet (or the comment's count and the views you
+looked at) to the pull request, with the neighbours you compared.
+
+Not covered by the checks, so the reviewer still looks: the right edge and
+vertical spacing (a wrapped line's box and a table that scrolls sideways reach
+the edge on purpose), colours (the audit's report lists them), hover and focus
+states, WebKit (Linux WebKit crashes on several panes; the local audit
+pictures it), signed-in and Pro panes beyond their walls, and the terminal
+(its own frames, held byte for byte by the terminal tests).
 
 ## 1. Anatomy
 
@@ -62,8 +225,9 @@ never goes there.
 - Body: content only. Tabs, tables, details, forms, charts.
 - Header zone: the top of the body, in this order and nothing else: the
   `QueryBar` (search, filters, view), then a `StatGrid` of summary figures,
-  then content. On the desktop the title-bar tab takes the colour of whatever
-  sits under it, so the tab, the bar and the figures read as one surface.
+  then content. The title-bar tabs, the bar and the figures read as one
+  surface: the active tab opens into the bar under it and takes its fill,
+  the bands share one fill.
   No loose text lines, blank rows or button rows above or between them.
 - Footer, registered with `usePaneFooter`: `info` on the left (changing
   status), `hints` on the right (pane actions with their keys, visible only
@@ -78,7 +242,8 @@ never goes there.
 | Summary figures for the whole pane or an open detail (VWAP, spread, percentile, range) | Header zone, under the query bar | `StatGrid` |
 | A control that changes what the pane shows (range, window, scope, level) | Query bar, never a cycling footer hint | `QueryBar` |
 | Non-blocking data limitation (missing period, fallback dates, partial source) | One amber `⚠` in the footer, `!` or click opens details | `usePaneNoticeFooter` |
-| Nothing can render yet (first load, hard failure, no data) | Body, replacing content | `PaneStatusBody` |
+| Data a source delivers late (`15m delayed`, delayed options, a delayed feed) | One yellow clock in the footer, the detail in its tooltip; the terminal draws `◷15m` | `delayedFooterSegment`, `DELAYED_SEGMENT`, `splitDelayedStatus` for a `15m delayed · …` status |
+| Nothing can render yet (first load, hard failure, no data) | Body, replacing content below the tab strip and query bar, which stay | `PaneStatusBody`, a table's `status` |
 | No ticker, no selection, empty result | Body | `EmptyState` |
 | Refresh failed but last data exists | Keep the data, failure in footer info | `loading={loading && !data}`, `error={!data ? error : null}` |
 | Limitation on content still worth reading | Inline beside that content | `Notice` |
@@ -93,7 +258,8 @@ never goes there.
 
 Nowhere: a row count as its own line, in the footer, in a tab label, or as "showing N of M";
 the pane's own name; fixed labels; generic key hints (`j/k`, `Enter to open`,
-`r to refresh`); explanatory paragraphs; the data provider.
+`r to refresh`, a sidebar's `<`/`>`, a key that focuses a message field Enter
+already focuses); explanatory paragraphs; the data provider.
 
 **The data provider is invisible.** Never show which vendor or internal
 route served the data: no `provider:gloomberb-cloud`, `gloomberb-cloud`,
@@ -123,6 +289,10 @@ the origin of a number. The one count the kit draws is the
   clickable. Hints follow the selection: a different array when a row is
   selected, a detail is open, a tab changes. A hint with no target is omitted
   or `disabled`, never a no-op.
+- A key that only repeats what Enter already does, or that adjusts the
+  layout rather than acting on what the pane shows, is not drawn: it goes in
+  `keys`, which binds it, and in `menu` with its `accelerator`, which lists
+  it. `PaneSidebar` does this for `<` and `>`; Chat does it for Compose.
 - `r` refreshes every pane. No per-pane refresh hint (PR #589). Built-in
   panes bind it with `usePaneRefreshKey(reload, { focused })`, or with
   `handleRefreshKey` inside a table's key handler.
@@ -190,11 +360,31 @@ so the selected row reads in the selection color without each cell checking
 goes in a cell's `leading` or a column's `headerLeading`: the terminal skips
 it, the text keeps its own selection color, and exports read only the text.
 
+**Broker logos.** Wherever a list names a broker or an account at one (Add
+Broker Account, the Brokers pane's profiles, a portfolio's tab and its
+overflow menu, the first-run guide's brokers), the desktop and the web lead the
+name with the broker's logo: `LogoMark` (`components/ui/logo-mark.tsx`) with
+the image from `brokers/logos.ts`, which takes the icon of the plugin that
+registered the broker and falls back to Gloom's own mark for a broker it
+connects for you, then to the broker's initial on a tile. It goes in a table
+cell's `leading`, a `ListView` item's `leading`, or a tab's or menu item's
+`leading`; the terminal draws none of them and keeps its rows as they were. A
+row tile is one line tall. A choice whose row is two lines (`rowDescriptions`:
+its name, then one muted line under it on how it connects) is drawn by
+`ListRowLines` (`components/ui/list-row-lines.tsx`), and so is any other
+two-line row with a logo (the first-run guide's): each line's box runs from its
+capitals to its baseline, the lines are `--gloom-space-sm` apart, and the
+`lead` tile is a square exactly as tall as the two, so the name's capitals
+start at the logo's top edge and the second line sits on its bottom edge. A
+row does not set its own line gap or tile size.
+
 **A table set inline.** A short table that sits in a page between prose (keys in Help, a plan comparison) takes `fitRows` with `virtualize={false}`: the terminal gives it its rows, the desktop and the web make it exactly as tall as its header and rows, where a count of rows is short by the taller header bar. Its box takes no height there either.
 
 **The body under a bar.** What sits under a pane's tabs, query bar and figures takes the rest of the pane by flex on the desktop and the web: spread `FILL_REST` (`components/ui/fill.ts`) on its box, and on the pane's own root box, instead of the rows the terminal counts. A chrome bar is taller than a row there, so a body given `height - 1` rows runs past the footer by the difference. Tables, charts and the 3D surface in that box fill it to the footer. `SeriesListDetail` does this for a series list beside its detail. A pane that shows other panes as views under its own bars (Fixed Income) puts each in a box with `data-gloom-role="nested-pane-content"`, and the view's root takes that box the way a pane's root takes the pane.
 
 **Text that may not fit.** One line that can run past its room (a name in a table cell, a heading, a read under a chart) is `ClippedText`, or `SectionHeading` with a `width`: the terminal cuts it at a count of cells, the desktop and the web at the box's edge in CSS with an ellipsis. Siblings that must stay whole (a ticker, a kind badge) keep their room and the text gives way. Never pass a string already cut with `truncateToDisplayWidth` to a DOM render. `ClippedText` takes the caller's own terminal cut (`cut={truncateWithEllipsis}`) so the terminal frame stays as it was, a `lead` kept whole before the text, and `wrap` for a message or description the desktop should wrap rather than cut. An optional item that shows only when it fits beside the rest (a ticker after a name) goes in a row with `flexWrap: "wrap"`, one line tall and clipped: the browser moves what does not fit to the hidden line, as the terminal's count of columns dropped it.
+
+**Against the right edge.** On the desktop and the web, whatever sits against a row's right edge (a track between two figures, a hint at the end of the footer, a figure at the end of a line) is placed by CSS in the box the row gives it. A box sized in cells keeps the cells its pane last rendered at until the next catch-up, so its right edge stays where the pane's was, past the new edge or short of it, for up to a tenth of a second of a resize, and the row jumps then. `RangeTrack` takes `fill` for a track that takes the room of its box; short pairs that wrap (a return strip) are a row with `flexWrap: "wrap"`, not rows packed by a count of cells. `check:pane-chrome` steps jump a pane's edge in one move and fail on a piece that is not where CSS puts it on the first frame.
 
 **Table + detail.** `DataTableStackView` is the "list, then open one" shape:
 Enter or click calls `onActivate`, the pane sets the open item, the stack
@@ -211,17 +401,17 @@ back button or clicking Back pops it. Rules:
   stack's `detailScrollRef`, so j/k step it a line at a time and the next
   item starts at the top. An item's facts and text read through
   `DetailReader` (`src/components/reader/detail-reader.tsx`): label and value
-  pairs, then the text in short paragraphs in the reader's type, across the
-  pane's width on the desktop and the web. `FeedDataTableStackView` takes the
+  pairs, then the text in short paragraphs in the reader's type, in the one
+  reader column on the desktop and the web. `FeedDataTableStackView` takes the
   facts as `detailFacts`; the Changelog and Trials details are the reference.
 - Reading text on the desktop and the web (the article reader, `DetailReader`,
-  Docs) takes one type scale, from `src/components/reader/reader-text.tsx`:
-  metadata, facts, tables and coverage at the app's own size (12px) and
-  dimmer; body 14px at line height 1.6; a lead 15px; section headings 16px
-  bold with space above them; a title 20px bold. In a column under 480px the
-  body is 13.2px and the levels above it follow. Levels differ by weight and
-  space as much as by size, so a reader sits beside the app's tables without
-  shouting. A pane does not set its own reading size.
+  Docs) takes one type scale and one column, from
+  `src/components/reader/reader-text.tsx` (Design system, Readers): metadata,
+  facts, tables and coverage at the app's own size (12px) and dimmer; body and
+  lead 14px at line height 1.6, the lead brighter; section headings 16px bold
+  and bright with space above them; a title 20px bold. In a column under 480px
+  the body is 13.2px and the levels above it follow. A pane does not set its
+  own reading size or column.
 - Any other scrolling body is a `ScrollBox`. Leaving `scrollY` out means it
   scrolls vertically, with the wheel and, while the pane is focused, with the
   arrows, j/k, PageUp, PageDown, Home and End; `scrollY={false}` turns that off.
@@ -229,6 +419,14 @@ back button or clicking Back pops it. Rules:
 - A detail the user reads and comes back from is the stack, not a dialog or
   a floating pane. A new pane (`pinTicker`, `createPaneFromTemplate`) is for
   something kept beside the list.
+- A row that is shown but does not apply right now (an exited holder, a story
+  or print after the tab's pinned moment) reads in `textMuted` and plain
+  weight across the row, its value colours included, and stays selectable.
+- A board row whose figures are not the market now says so in a word beside
+  its date, in `MarketBoardStack`'s as-of column, never by colour alone:
+  `stale` (warning colour) for an observation too old to be current, `so far`
+  for a day still trading. The column widens for the word and the name column
+  gives way first, so the date and the word are never cut.
 - A row's DES (`d`, a menu entry, a linked ticker) opens through
   `useOpenDescription` (`shared/open-description.ts`), which brings forward
   the DES already open for that listing instead of opening a second one.
@@ -335,8 +533,19 @@ header, with the detail's height.
   A pane's primary strip is `usePaneTabs` (above any early return): the
   desktop draws it in the pane title bar and `strip` is null; the terminal
   draws `strip` as the first row of the body. Subtract `rows`. Never in the
-  footer. Register `null` while a sign-in wall or any state makes every tab
-  show the same thing.
+  footer. The strip is chrome: registered from the first frame and drawn
+  above every body state, so a tab switch, a filter change, a refresh, a
+  failed load or an empty answer never takes it away. Register `null` only
+  while there is nothing to choose between: a sign-in or plan wall, no
+  ticker or portfolio yet, or a detail that replaces the tabs by design.
+  A conditional strip is listed with its reason in
+  `src/architecture/pane-tabs-allowlist.json`, which a test holds.
+- A tab or filter change that reloads keeps the query bar and figures where
+  they are; only the body below them waits. Pass the state to the table
+  (`DataTableView`/`DataTableStackView` `status`) instead of wrapping the
+  table, and its `rootBefore`, in `PaneStatusBody`. A pane that keeps the
+  last rows while a search refines (`keepPreviousRows`, `keepPreviousData`)
+  keeps doing so.
 - A chart you pan and draw on sits one level below a tab strip: the strip
   keeps Left, Right, `h` and `l`; Down, Enter, a click or a chart tool moves
   into the chart, and Esc or Up hands the keys back, with `[Esc]tabs` in the
@@ -369,6 +578,10 @@ header, with the detail's height.
   four or fewer short exclusive options, `multi`, `toggle`, `text` for a second
   field. One terminal row; on the desktop it scrolls sideways when narrow.
   Status never goes in the bar; units and as-of context may use `meta`.
+  The inline filter or view that picks a chart's range sets `chartRange`:
+  choosing the selected range again sends the pane's charts back to it, as `0`
+  does, so every chart's range strip behaves the same. Bind the range's number
+  keys the same way (`useSeriesList` does for a list beside a detail chart).
 - `useQueryBarSearch()` holds whether the search owns the keyboard; spread its
   `searchProps` into `search`. The bar already binds `/`, so a pane binds it
   again only to add a condition.
@@ -424,7 +637,8 @@ header, with the detail's height.
 - A list of conversations, channels or documents beside the selected one is
   `PaneSidebar` on the left (`PaneSidebarRow`, `PaneSidebarAction`,
   `ActionRow` section headers), width persisted and drag-resizable,
-  `shouldShowPaneSidebar` deciding whether the pane is big enough. Sidebar
+  `<` and `>` bound to its width and listed in the pane menu (not the
+  footer), `shouldShowPaneSidebar` deciding whether the pane is big enough. Sidebar
   when the user switches items many times a session; stack when they open
   one, read, and go back.
 - Loading: `useAsyncResource` + `useAutoRefresh` + `useUpdatedAgo`, seeded

@@ -82,6 +82,14 @@ const ASSET_HINT_MAP: Record<string, TickerSearchInstrumentClass> = {
 
 const SAVED_MATCH_BONUS = 900;
 /**
+ * The symbol match rank of a benchmark future asked for by its commodity's name: above an exact symbol (4), so
+ * the future leads and the company or fund of that ticker follows it. Several answer one name ("oil" is WTI,
+ * then Brent) in the order the server sent them.
+ */
+const BENCHMARK_FUTURE_RANK = 5;
+/** What a benchmark future's own name is worth as a text match: an exact alias. */
+const BENCHMARK_FUTURE_NAME_SCORE = 8_000;
+/**
  * How many times more popular a company whose name only starts with the query
  * must be to lead one named exactly as typed. TSMC is searched about five
  * times as often as Taiwan Semiconductor Co.; Siemens Energy about as often as
@@ -227,8 +235,10 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
         }),
       );
       const aliases = getItemSearchAliases(item);
+      // "nasdaq futures" reads as a venue and a type with no name left to match, so the future the server sent
+      // for what was typed matches by its own names.
       const aliasScore = (exactListingSymbol ? [...aliases, exactListingSymbol] : aliases)
-        .reduce((best, alias) => Math.max(best, scoreSearchAlias(intent, alias)), 0);
+        .reduce((best, alias) => Math.max(best, scoreSearchAlias(intent, alias)), answersToFutureName(item, query) ? BENCHMARK_FUTURE_NAME_SCORE : 0);
       // Several words match on all of them, in any order, across the name, type,
       // venue and the themes the row answers to; a theme alone ranks after a name.
       const keywordScore = scoreAllWords(intent, [...(item.searchKeywords ?? [])]) > 0 ? KEYWORD_MATCH_SCORE : 0;
@@ -252,6 +262,7 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
           : null,
         explicitIntentScore,
         themeFund: themeWord != null && isThemeFund(item, themeWord) ? 1 : 0,
+        themeCompany: themeWord != null && isThemeCompany(item, themeWord) ? 1 : 0,
         normalizedSymbol: normalizeSearchText(item.symbol || item.label),
         symbolMatchRank: scoreSymbolMatchRank(intent, item),
         nameOnly: companyMatchRank > 0 && labelScore + aliasScore <= 0
@@ -269,6 +280,14 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     const symbol = normalizeTickerSymbol(entry.item.symbol || entry.item.label);
     if (!namedCompany && leadingFunds.size < LEADING_THEME_FUNDS) leadingFunds.add(symbol);
     if (!leadingFunds.has(symbol)) entry.themeFund = 0;
+  }
+  // The companies the server sent with the theme (Albemarle, SQM and PLS for "lithium") follow those funds, in its
+  // order, ahead of the smaller companies whose names carry the word, so the leaders are on the first screen.
+  const leadingCompanies = new Set<string>();
+  for (const entry of ranked.filter(({ themeCompany }) => themeCompany).sort(byProviderRank)) {
+    const key = getTickerSearchListingKey(entry.item);
+    if (!namedCompany && leadingCompanies.size < LEADING_THEME_COMPANIES) leadingCompanies.add(key);
+    if (!leadingCompanies.has(key)) entry.themeCompany = 0;
   }
 
   // A saved symbol replaces its own source listing, not every exchange using it.
@@ -374,16 +393,22 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
 
   filtered.sort((a, b) => {
     // Precedence is exact symbol, explicit query hints, a sector word's funds
-    // in the server's order, whole-word company relevance, issuer relevance, provider order within that issuer, partial
+    // and then the companies sent with it, each in the server's order, whole-word company relevance, issuer relevance, provider order within that issuer, partial
     // symbol, saved relevance, then stable source order.
     const aExactSymbolRank = a.symbolMatchRank >= 2 ? a.symbolMatchRank : 0;
     const bExactSymbolRank = b.symbolMatchRank >= 2 ? b.symbolMatchRank : 0;
     if (bExactSymbolRank !== aExactSymbolRank) return bExactSymbolRank - aExactSymbolRank;
+    if (aExactSymbolRank === BENCHMARK_FUTURE_RANK) {
+      const aProviderRank = a.item.providerRank ?? Number.POSITIVE_INFINITY;
+      const bProviderRank = b.item.providerRank ?? Number.POSITIVE_INFINITY;
+      if (aProviderRank !== bProviderRank) return aProviderRank - bProviderRank;
+    }
     if (hasExplicitHint && b.explicitIntentScore !== a.explicitIntentScore) {
       return b.explicitIntentScore - a.explicitIntentScore;
     }
     if (b.themeFund !== a.themeFund) return b.themeFund - a.themeFund;
-    if (a.themeFund) {
+    if (b.themeCompany !== a.themeCompany) return b.themeCompany - a.themeCompany;
+    if (a.themeFund || a.themeCompany) {
       const aProviderRank = a.item.providerRank ?? Number.POSITIVE_INFINITY;
       const bProviderRank = b.item.providerRank ?? Number.POSITIVE_INFINITY;
       if (aProviderRank !== bProviderRank) return aProviderRank - bProviderRank;
@@ -589,6 +614,13 @@ export function themeQueryWord(
 
 /** How many sector funds lead a sector word's list: the rest of the list is the companies named for it. */
 const LEADING_THEME_FUNDS = 5;
+/** How many companies sent with a sector word follow its funds, before the companies named for it. */
+const LEADING_THEME_COMPANIES = 5;
+
+/** A company the server sent with the theme: a sector's leader whose name need not say it (Albemarle for "lithium"). */
+function isThemeCompany(item: Partial<TickerSearchRankableItem>, word: string): boolean {
+  return item.instrumentClass === "equity" && !!item.searchKeywords?.some((keyword) => normalizeSearchText(keyword) === word);
+}
 
 /**
  * A fund that tracks the theme (sent with it, or named for it) on a US exchange, where the large sector funds
@@ -666,6 +698,36 @@ export function answersToIndexCode(
     && !!item.searchAliases?.some((alias) => code(alias) === typed);
 }
 
+/** Words a search adds to a commodity's name without asking for anything else: "gold futures" is "gold". */
+const FUTURES_QUERY_FILLER = new Set(["FUTURE", "FUTURES", "FUT", "CONTRACT", "CONTRACTS"]);
+
+function futuresNameKey(text: string): string {
+  return normalizeSearchText(text).split(" ").filter((word) => word && !FUTURES_QUERY_FILLER.has(word)).join(" ");
+}
+
+/**
+ * Whether the query is, word for word, a name the server sent a future with:
+ * "brent", "oil" and "natgas" are how the market asks for a benchmark
+ * (BZ=F, CL=F, NG=F), and "s&p 500 futures", "nasdaq futures", "10 year note
+ * futures" or "vix futures" for an index, rate or volatility future (ES=F,
+ * NQ=F, ZN=F, VX1), which the server lists first and names in
+ * `searchAliases`. Only a continuous future answers, or the front generic of
+ * a root with no continuous symbol (VX1) sent as a future: a stock or a fund
+ * sent with the same word as an alias keeps the rank its own symbol gives it,
+ * and "gold etf" or "gold mining" name something else than the future.
+ */
+export function answersToFutureName(
+  item: Pick<TickerSearchRankableItem, "label"> & Partial<Pick<TickerSearchRankableItem, "symbol" | "searchAliases" | "instrumentType">>,
+  query: string,
+): boolean {
+  const symbol = normalizeTickerSymbol(item.symbol || item.label);
+  const typed = futuresNameKey(query);
+  const isFront = /^[A-Z0-9]{1,6}=F$/.test(symbol) || (/^[A-Z]{2,5}1$/.test(symbol) && item.instrumentType?.toUpperCase() === "FUTURE");
+  return typed !== "" && isFront && !!item.searchAliases?.some((alias) => (
+    normalizeSearchText(alias) !== normalizeSearchText(symbol) && futuresNameKey(alias) === typed
+  ));
+}
+
 function scoreSymbolMatchRank(
   intent: SearchQueryIntent,
   item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>,
@@ -675,6 +737,9 @@ function scoreSymbolMatchRank(
   if (parsePublicTickerKey(item.symbol || item.label).symbol === normalizeTickerSymbol(intent.rawQuery)) return 4;
   // Below a real symbol of that name (SPX Technologies), above every partial match (IBOV11).
   if (answersToIndexCode(item, intent.rawQuery)) return 2;
+  // The benchmark future of a commodity named as such leads even the symbol of that name (GOLD is
+  // a company before it is a metal, and still follows right behind the future).
+  if (answersToFutureName(item, intent.rawQuery)) return BENCHMARK_FUTURE_RANK;
   if (isCryptoInstrumentType(item.instrumentType)) return 0;
   if (isExplicitMarketSymbol(item.symbol || item.label)) return 0;
   if (!intent.normalizedQuery && !intent.compactQuery) return 0;

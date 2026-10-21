@@ -1,7 +1,7 @@
 import { memo, Profiler, useCallback, useMemo, type ReactNode } from "react";
 import { useAppLanguage } from "../../../i18n/react";
 import { isPerfTraceEnabled, recordPerfSample } from "../../../utils/perf-marks";
-import { PaneInViewProvider } from "../../../state/app/activity";
+import { PaneFocusedProvider, PaneInViewProvider } from "../../../state/app/activity";
 import { PaneInstanceProvider } from "../../../state/app/context";
 import { RemoteUiPaneScope } from "../../../remote/semantic-tree";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -9,6 +9,7 @@ import { PaneKeyboardScrollController } from "../../../state/pane-scroll-registr
 import type { PaneDef } from "../../../types/plugin";
 import { Box } from "../../../ui";
 import { PaneErrorBoundary } from "./error-boundary";
+import { PaneTickerFateGate } from "./ticker-fate-gate";
 
 // Under GLOOMBERB_PERF_TRACE every pane commit is reported by pane, which is
 // how a store update that fans out to the whole layout gets attributed. The
@@ -72,14 +73,16 @@ export const PaneContent = memo(function PaneContent({
   const body = useMemo(() => (
     <PaneErrorBoundary paneType={paneType} title={title} onClose={closePane ? closeFailedPane : undefined}>
       <PaneRenderTrace paneId={paneId} paneType={paneType}>
-        <Component
-          paneId={paneId}
-          paneType={paneType}
-          focused={focused}
-          width={width}
-          height={height}
-          close={onClose ? close : undefined}
-        />
+        <PaneTickerFateGate paneId={paneId}>
+          <Component
+            paneId={paneId}
+            paneType={paneType}
+            focused={focused}
+            width={width}
+            height={height}
+            close={onClose ? close : undefined}
+          />
+        </PaneTickerFateGate>
       </PaneRenderTrace>
     </PaneErrorBoundary>
   ), [Component, close, closeFailedPane, closePane, focused, height, language, onClose, paneId, paneType, theme, title, width]);
@@ -88,19 +91,21 @@ export const PaneContent = memo(function PaneContent({
     <PaneInstanceProvider paneId={paneId}>
       <RemoteUiPaneScope paneId={paneId}>
         <PaneInViewProvider value={inView}>
-          <PaneKeyboardScrollController paneId={paneId} focused={focused} />
-          <Box
-            flexDirection="column"
-            flexGrow={1}
-            flexShrink={1}
-            flexBasis={0}
-            minWidth={0}
-            minHeight={0}
-            overflow="hidden"
-            data-gloom-role="pane-content"
-          >
-            {body}
-          </Box>
+          <PaneFocusedProvider value={focused}>
+            <PaneKeyboardScrollController paneId={paneId} focused={focused} />
+            <Box
+              flexDirection="column"
+              flexGrow={1}
+              flexShrink={1}
+              flexBasis={0}
+              minWidth={0}
+              minHeight={0}
+              overflow="hidden"
+              data-gloom-role="pane-content"
+            >
+              {body}
+            </Box>
+          </PaneFocusedProvider>
         </PaneInViewProvider>
       </RemoteUiPaneScope>
     </PaneInstanceProvider>

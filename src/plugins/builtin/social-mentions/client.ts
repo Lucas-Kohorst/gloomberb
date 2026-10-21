@@ -1,8 +1,8 @@
 import { apiClient } from "../../../api-client";
-import { isAccessDenied } from "../../../api-client/errors";
-import { unavailableText } from "../../../components/ui/status";
+import { ApiRequestError, isAccessDenied } from "../../../api-client/errors";
 import type { SocialMentionDayPosts, SocialMentionPost, SocialMentionsPayload, SocialMentionsRange } from "../../../api-client/social-mentions";
 import { createPluginCache } from "../../../data/plugin-cache";
+import { CLOUD_SESSION_REQUIRED } from "../shared/research-cloud-session";
 
 export const socialMentionsCache = createPluginCache<SocialMentionsPayload>({
   kind: "social-mentions", source: "gloom-cloud", schemaVersion: 1,
@@ -56,8 +56,8 @@ export async function fetchSocialMentions(symbol: string, range: SocialMentionsR
   client: Pick<typeof apiClient, "getCloudSocialMentions"> = apiClient): Promise<SocialMentionsPayload> {
   try { return validateSocialMentions(await client.getCloudSocialMentions(symbol, range), symbol, range); }
   catch (error) {
-    if (isAccessDenied(error)) throw error;
-    throw new Error(unavailableText("Social mentions"));
+    if (error instanceof ApiRequestError && error.status === 404) throw new Error("Social mentions are not available yet");
+    throw error;
   }
 }
 export interface SocialMentionsResource { payload: SocialMentionsPayload; stale: boolean; refreshError: string | null }
@@ -70,10 +70,15 @@ export function cachedSocialMentions(symbol: string, range: SocialMentionsRange)
 }
 export async function loadSocialMentions(symbol: string, range: SocialMentionsRange, force = false): Promise<SocialMentionsResource> {
   const result = await socialMentionsCache.load(cacheKey(symbol, range), () => fetchSocialMentions(symbol, range), { force });
-  if (isAccessDenied(result.error)) throw result.error;
-  if (!result.data) throw new Error(unavailableText("Social mentions"));
-  return { payload: validateSocialMentions(result.data, symbol, range), stale: result.stale, refreshError: result.refreshError ? unavailableText("Social mentions") : null };
+  if (result.error instanceof ApiRequestError && [401, 403].includes(result.error.status ?? 0)) throw result.error;
+  return { payload: validateSocialMentions(result.data, symbol, range), stale: result.stale, refreshError: result.refreshError ?? null };
 }
+
+/**
+ * What the pane's sign-in wall keys on. The route answers a missing or
+ * unverified session with a bare 401/403, which the pane would show as a failure.
+ */
+export const asSessionRequired = (error: unknown) => isAccessDenied(error) ? new Error(CLOUD_SESSION_REQUIRED, { cause: error }) : error;
 
 export async function loadSocialMentionPosts(symbol: string, date: string): Promise<SocialMentionPost[]> {
   const result = await socialMentionPostsCache.load(`${symbol}:${date}`, async () => {

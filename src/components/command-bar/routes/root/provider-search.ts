@@ -7,6 +7,7 @@ import {
   mergePlainRootTickerResults,
   mergeTickerSearchResultItems,
   QUICK_LOOK_TICKER_SEARCH_OPTIONS,
+  tickerSearchFailureItems,
   venueDropdownResults,
 } from "../ticker-search/results";
 import { orderListResults, type ResultItem } from "../../list/model";
@@ -41,6 +42,8 @@ export function useRootProviderSearch(options: {
 }): {
   activeRootProviderResultsKey: string | null;
   orderedRootResults: ResultItem[];
+  /** False while the list is the local stand-in for a symbol search that has not answered. */
+  rootResultsCurrent: boolean;
   rootSearching: boolean;
   rootSectionOrder: CommandBarSectionOrder;
 } {
@@ -151,16 +154,9 @@ export function useRootProviderSearch(options: {
           activeSearchPortfolio?.brokerInstanceId,
         );
         publish(combined);
-      } catch {
+      } catch (error) {
         if (requestId !== rootSearchRequestIdRef.current) return;
-        setRootProviderResults([{
-          id: "search-error",
-          label: "Search failed",
-          detail: "Check your connection",
-          category: "Search",
-          kind: "info",
-          action: () => {},
-        }]);
+        setRootProviderResults(tickerSearchFailureItems(error, searchQuery, localTickerSearchResultItems(searchQuery, { limit: 6 })));
         setRootProviderResultsQuery(searchQuery);
       } finally {
         if (requestId === rootSearchRequestIdRef.current) {
@@ -231,9 +227,13 @@ export function useRootProviderSearch(options: {
     ].join("\n");
   }, [rootPlainTickerSearchArg, rootProviderResults, rootProviderResultsQuery, rootTickerSearchArg]);
 
+  // The rows before the answer are for whatever the query matches locally, not the rows Enter will land on.
+  const rootResultsCurrent = !rootTickerSearchArg || (rootProviderResultsQuery === rootTickerSearchArg && !!rootProviderResults);
+
   return {
     activeRootProviderResultsKey,
     orderedRootResults,
+    rootResultsCurrent,
     rootSearching,
     rootSectionOrder,
   };

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  DELAYED_SEGMENT,
   PaneStatusBody, type DataTableCell,
   type DataTableColumn,
   type PaneFooterSegment
@@ -29,7 +30,7 @@ const LIST_WIDTH = 46;
 /** The range strip names the key that picks each range: 1, 2 and 3, as the chart's range keys do. */
 const RANGE_VIEW_OPTIONS = RANGE_OPTIONS.map((option, index) => ({ ...option, hint: String(index + 1) }));
 
-type ColumnId = "name" | "value" | "zone" | "percentile" | "sigma";
+type ColumnId = "name" | "value" | "zone" | "percentile" | "since" | "sigma";
 interface Column extends DataTableColumn { id: ColumnId }
 
 interface IndicatorRow {
@@ -56,9 +57,11 @@ function buildColumns(width: number, stacked: boolean): Column[] {
     { id: "name", label: "INDICATOR", width: 11, flexGrow: 1, align: "left" },
     { id: "value", label: "VALUE", width: 8, align: "right" },
     { id: "zone", label: "ZONE", width: 11, align: "right" },
-    { id: "percentile", label: "RICH", width: 6, align: "right" },
+    { id: "percentile", label: "RICH", title: "Percentile against its own history; higher is more expensive", width: 6, align: "right" },
+    // Where each history starts, which the percentile and trend are taken from whatever the range.
     ...(withTrend
-      ? [{ id: "sigma" as const, label: "TREND", width: 8, align: "right" as const }]
+      ? [{ id: "since" as const, label: "SINCE", width: 5, align: "right" as const },
+        { id: "sigma" as const, label: "TREND", width: 8, align: "right" as const }]
       : []),
   ];
 }
@@ -75,6 +78,7 @@ function cellsFor(row: IndicatorRow): Record<ColumnId, DataTableCell> {
       value: { text: "--", color: colors.textDim },
       zone: { text: "Unavailable", color: colors.warning },
       percentile: { text: "--", color: colors.textDim },
+      since: { text: view?.historyStart?.slice(0, 4) ?? "--", color: colors.textDim },
       sigma: { text: "--", color: colors.textDim },
     };
   }
@@ -85,6 +89,7 @@ function cellsFor(row: IndicatorRow): Record<ColumnId, DataTableCell> {
     // Restated so a high number always means expensive, whichever way the
     // underlying measure runs, otherwise the column cannot be read down.
     percentile: { text: view.richPercentile == null ? "--" : formatNumber(view.richPercentile, 0), color: colors.text },
+    since: { text: view.historyStart?.slice(0, 4) ?? "--", color: colors.textMuted },
     sigma: { text: formatSigma(view.richSigma), color: colors.textMuted },
   };
 }
@@ -118,7 +123,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     selectedId: indicatorId,
     onSelect: setIndicatorId,
     reload: refresh,
-    range: { value: range, options: RANGE_VIEW_OPTIONS, onChange: setRange },
+    range: { value: range, options: RANGE_VIEW_OPTIONS, onChange: setRange, chartRange: true },
   });
   const { selected } = list;
   const selectedView = selected?.view;
@@ -136,7 +141,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
     if (!selectedView) return [];
     const info: PaneFooterSegment[] = [
       { id: "as-of", parts: [{ text: `as of ${selectedView.asOf}`, tone: "muted" }] },
-      ...(width >= 80 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
+      ...(width >= 80 ? [DELAYED_SEGMENT] : []),
     ];
     if (selectedView.observationStale) {
       info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });

@@ -1,5 +1,7 @@
+import { logFailure } from "../utils/log-failure";
 import { resolveAssetDisplayKind } from "../market-data/market/format";
 import { hasValidQuoteObservationTime } from "../market-data/quotes/freshness";
+import { delistingLabel } from "../market-data/quotes/delisting";
 import { SnapshotHistoryUnavailableError } from "../market-data/snapshot-provider";
 import { financialPeriodCoverage, financialPeriodCoverageWarnings, limitSeriesObservations } from "./financial-period-coverage";
 import { HistoryCoverageError, historyCoverageNotice } from "../sources/history-coverage";
@@ -9,6 +11,7 @@ import { getRouterEntityKey } from "../sources/provider-router/cache";
 import { publicListingTarget } from "../sources/listing-target";
 import { fetchHistoryResult } from "../sources/history-result";
 import type { HistorySession, PriceHistoryResult } from "../types/price-history";
+import type { BrokerContractRef } from "../types/instrument";
 import { FINANCIAL_VINTAGE_NOTICE, SEC_EPS_BASIS_NOTICE } from "../utils/financial-statements";
 import { appendLiveQuotePoint, hasUnknownBondHistoryBasis } from "./chart-data";
 import { LiveBarAccumulator } from "./live-bars";
@@ -45,6 +48,7 @@ import {
 } from "./field-catalog";
 import {
   fundamentalSeriesUsesAvailabilityFallback,
+  unreportedStatementPeriod,
   valuationCurrencyWarning,
   valuationPriceIssues,
   valuationSeriesUsesLiveQuote,
@@ -61,7 +65,7 @@ import {
 } from "./studies";
 import { applyResolvedSeriesTransform } from "./transforms";
 import { clipSeriesToWindow } from "./alignment";
-import { clipPriceComparison, priceComparisonBoundsForSeries, priceComparisonSeriesIds, priceObservationWindowFilter, resolvePriceComparison, type PriceComparison } from "./price-comparison";
+import { bufferPriceComparison, clipPriceComparison, comparedBufferPoints, priceComparisonBoundsForSeries, priceComparisonSeriesIds, priceObservationWindowFilter, resolvePriceComparison, type PriceComparison } from "./price-comparison";
 import { reportingCurrencySeries } from "./reporting-currency";
 import { chartQuoteOverrideKeyForSource, compareChartQuoteRecency } from "./live-quotes";
 import { chartSeriesSourceKey } from "../capabilities/chart-series";
@@ -76,6 +80,7 @@ import {
 import {
   canonicalExchange,
   isUsListingExchange,
+  parsePublicTickerKey,
   publicTickerKey,
   resolveExchangeTimeZone,
 } from "../utils/exchanges";
@@ -84,7 +89,10 @@ import { timeZoneLabel, zonedDateKey, zonedWallClockMs } from "../utils/zoned-da
 import { formatShortDate } from "../utils/datetime-format";
 import { latestSessionStart, latestTradingSessionOpen, listingTimeZone, priorSessionClose } from "../market-data/market/trading-sessions";
 import { futuresGenericCaption, futuresGenericListing, futuresListingPriceBasis } from "../utils/futures-generic";
-import { isOhlcSeriesStyle } from "./spec";
+import { classifyInstrumentType, kindFromListingSyntax } from "../tickers/instrument-kind";
+import { contractPriceUnit } from "./price-units";
+import { INDEX_POINTS_UNIT, isIndexLevel } from "../market-data/market/index-level";
+import { isDatasetChart, isOhlcSeriesStyle } from "./spec";
 import { SERIES_COLORS } from "../theme/series-colors";
 import type {
   ChartResolutionResult,
@@ -112,6 +120,12 @@ export interface ChartResolveSources {
    * it is charted; nothing for a series that keeps what it loaded.
    */
   capabilityRefreshMs?: (source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>) => number | undefined;
+  /**
+   * What a futures price counts, from its contract terms ("USD / gallon"), so
+   * the chart states it and a formula can tell gallons from barrels. Null where
+   * the terms do not say. Without it a future's price is in its currency alone.
+   */
+  loadFuturesPriceUnit?: (symbol: string) => Promise<string | null>;
   /** Provider-neutral boundary for plugin-owned chart series. */
   resolveCapabilitySeries?: (
     source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>,
@@ -153,6 +167,8 @@ const tailRequestsInFlight = new WeakMap<DataProvider, Map<string, Promise<Price
 export class ChartResolveCache {
   readonly financialsByInstrument = new Map<string, Promise<TickerFinancials | null>>();
   readonly quoteMetadataByInstrument = new Map<string, Promise<QuoteMetadata | null>>();
+  /** Each futures symbol's contract price unit, asked once per chart once known. */
+  readonly futuresPriceUnits = new Map<string, Promise<string | null>>();
   readonly priceHistoryByRequest = new Map<string, Promise<LoadedPriceHistory>>();
   readonly priceHistoryExpiryByRequest = new Map<string, number>();
   readonly priceHistoryRefreshAfter = new Map<string, number>();
@@ -300,7 +316,7 @@ function behindHistoryNotice(
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
   const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
   const label = spec.source.kind === "security"
-    ? `${instrumentLabel(spec.source)} ${field?.shortLabel ?? spec.source.fieldId.split(".").at(-1) ?? "Series"}`
+    ? `${instrumentLabel(spec.source)} ${field?.seriesLabel ?? field?.shortLabel ?? spec.source.fieldId.split(".").at(-1) ?? "Series"}`
     : spec.source.kind === "economic"
       ? `FRED ${spec.source.seriesId}`
       : spec.source.seriesId;
@@ -594,6 +610,21 @@ function followLatestMarketObservation(
 }
 
 /**
+ * The dates a capability series (CHOKE's transits) is asked for. A view the
+ * user panned or zoomed keeps the range's dates loaded too: the chart's
+ * navigation stops at the newest observation it has, so a series asked for
+ * the moved view alone ended where the view did, and the view could never go
+ * forward to the newest data again, not even by zooming out.
+ */
+function capabilityRequestBounds(view: DateBounds, range: DateBounds, moved: boolean): DateBounds {
+  if (!moved) return view;
+  return {
+    start: view.start === null || range.start === null ? null : Math.min(view.start, range.start),
+    end: view.end === null || range.end === null ? null : Math.max(view.end, range.end),
+  };
+}
+
+/**
  * A chart of capability series alone (CHOKE's vessel transits) ends at its
  * newest observation, not today: such data is published days late, and an
  * axis running on to today would read as days with nothing in them. The
@@ -695,7 +726,7 @@ export function seedChartResolutionResult(
     const history = historyByInstrument.get(instrumentKey(seriesSpec.source));
     if (!history?.length) return;
     const facts = readSeedListingFacts(seriesSpec.source.instrument);
-    const resolved = baseSecuritySeries(seriesSpec, emptyFinancials(history), index, resolution, facts?.quoteMetadata);
+    const resolved = baseSecuritySeries(seriesSpec, emptyFinancials(history), index, resolution, facts?.quoteMetadata, facts?.contractUnit);
     if (!resolved?.points.length) return;
     series.push(resolved);
     if (facts?.resolutionSupport?.length) support.push(facts.resolutionSupport);
@@ -725,8 +756,8 @@ export function seedChartResolutionResult(
   const axisWarnings: string[] = [];
   const bufferedSeries = assignAxes([
     ...baseSeries,
-    ...applyStudyPresentationTransforms(studies.series, spec.studies, series, comparisonBounds, undefined, priceComparison),
-  ], [...spec.series, ...spec.studies], axisWarnings).map((entry) => clipPriceComparison(entry, priceComparison));
+    ...applyStudyPresentationTransforms(studies.series, spec.studies, series, comparisonBounds, undefined, priceComparison, bounds),
+  ], [...spec.series, ...spec.studies], axisWarnings).map((entry) => bufferPriceComparison(entry, priceComparison, bounds));
   const visible = bufferedSeries.map((entry) => {
     const entryBounds = presentationBounds(entry, spec.studies, priceComparison, bounds);
     const clipped = entryBounds.start !== null && entryBounds.end !== null
@@ -1139,21 +1170,36 @@ async function loadPriceHistory(
   return { ...result, expiresAt: retryAt ?? Date.now() + HISTORY_RETENTION_MAX_AGE_MS };
 }
 
+/**
+ * A US stock or fund listing, including one a broker contract routes through
+ * SMART in dollars. Options and futures have no pre-market session.
+ */
+function tradesUsExtendedHours(exchange: string | undefined, contract: BrokerContractRef | null | undefined): boolean {
+  if (contract?.secType && !["STK", "ETF"].includes(contract.secType.toUpperCase())) return false;
+  const venue = exchange || contract?.primaryExchange || contract?.exchange;
+  return isUsListingExchange(venue) || isUsListingExchange(contract?.primaryExchange)
+    || (!!contract && canonicalExchange(venue) === "SMART" && (!contract.currency || contract.currency.toUpperCase() === "USD"));
+}
+
 function baseSecuritySeries(
   spec: ChartSeriesSpec,
   financials: TickerFinancials,
   index: number,
   marketResolution?: ManualChartResolution | null,
   quoteMetadata: QuoteMetadata | null | undefined = financials.quoteMetadata,
+  /** What a futures contract's price counts ("USD / gallon"), from its terms. */
+  contractUnit?: string | null,
 ): ResolvedSeries | null {
   if (spec.source.kind !== "security") return null;
   const field = getTimeSeriesField(spec.source.fieldId);
   if (!field) return null;
   const points = extractSecuritySeries(financials, spec.source);
+  const unreportedPeriod = points.length === 0 ? unreportedStatementPeriod(financials, spec.source) : null;
   const symbol = instrumentLabel(spec.source);
   const statementCurrency = field.id.startsWith("fundamental.") && field.unit.startsWith("currency")
     ? reportingCurrencySeries(points, financials.financialCurrency) : null;
-  const currency = statementCurrency ? statementCurrency.currency : financials.quote?.currency || quoteMetadata?.currency;
+  // A broker contract names its currency even before (or without) a quote.
+  const currency = statementCurrency ? statementCurrency.currency : financials.quote?.currency || quoteMetadata?.currency || spec.source.instrument.instrument?.currency;
   const assetKind = resolveAssetDisplayKind({ assetCategory: financials.quote?.instrumentType || quoteMetadata?.instrumentType });
   const unknownBondBasis = hasUnknownBondHistoryBasis(financials.quote,
     spec.source.instrument.instrument?.secType, quoteMetadata?.instrumentType);
@@ -1170,9 +1216,15 @@ function baseSecuritySeries(
   // future's continuous symbol or contract in points, not dollars, as its quote does.
   const genericBasis = field.unitGroup === "price" && isMarketFieldId(field.id)
     ? futuresListingPriceBasis(spec.source.instrument.symbol, spec.source.instrument.exchange) : null;
-  const genericUnit = genericBasis === "points" ? "points" : genericBasis === "thirty-seconds" ? "32nds" : null;
+  // An index's level is points too, never the currency its members trade in.
+  const indexLevel = field.unitGroup === "price" && isMarketFieldId(field.id)
+    && isIndexLevel(financials.quote?.instrumentType || quoteMetadata?.instrumentType);
+  const genericUnit = genericBasis === "points" || indexLevel ? INDEX_POINTS_UNIT : genericBasis === "thirty-seconds" ? "32nds" : null;
+  // A future's price in a currency counts what its contract terms say: heating
+  // oil is USD / gallon and crude USD / barrel, which a bare USD does not tell apart.
+  const statedUnit = !genericUnit && unitTemplate === "currency" ? contractPriceUnit(contractUnit, currency) : null;
   const unit = field.id === "market.volume" ? volumeUnit ?? ""
-    : genericUnit ?? (unitTemplate.startsWith("currency") && currency ? unitTemplate.replace("currency", currency) : unitTemplate);
+    : statedUnit ?? genericUnit ?? (unitTemplate.startsWith("currency") && currency ? unitTemplate.replace("currency", currency) : unitTemplate);
   const currencyUnitGroup = genericUnit ? `${field.unitGroup}:${genericUnit}`
     : unknownBondBasis && field.unitGroup === "price" ? "price:unknown"
     : field.unit.startsWith("currency") && currency
@@ -1182,10 +1234,25 @@ function baseSecuritySeries(
     || financials.quote?.listingExchangeName
     || financials.quote?.exchangeName;
   const marketField = isMarketFieldId(spec.source.fieldId);
+  // A routing code such as a broker's SMART names no venue. The quote's
+  // listing then supplies the session clock, so closed hours stay off the axis.
+  const sessionExchange = [marketExchange, financials.quote?.listingExchangeName, quoteMetadata?.listingExchangeName, financials.quote?.exchangeName]
+    .find((value) => resolveExchangeTimeZone(value));
+  // A dollar listing saved with IBKR's SMART route and no other venue trades on
+  // the US session, and so does a dollar option, which names no venue at all.
+  const dollars = !currency || currency === "USD";
+  const usOption = dollars && (spec.source.instrument.instrument?.secType?.toUpperCase() === "OPT"
+    || /^OPTION$/i.test(financials.quote?.instrumentType ?? quoteMetadata?.instrumentType ?? ""));
+  const routedUsListing = !sessionExchange && ((canonicalExchange(marketExchange) === "SMART" && dollars) || usOption);
   const marketTimeZone = marketField
     && canonicalExchange(marketExchange) !== "CCC"
-    ? resolveExchangeTimeZone(marketExchange)
+    ? resolveExchangeTimeZone(sessionExchange) ?? (routedUsListing ? "America/New_York" : null)
     : null;
+  // A route has no hours of its own: its sessions, which the day view and
+  // VWAP follow, are the venue's, and NYSE's for an unnamed dollar listing.
+  const listingExchange = canonicalExchange(marketExchange) === "SMART" || usOption
+    ? canonicalExchange(sessionExchange) || (routedUsListing ? "NYSE" : marketExchange)
+    : marketExchange;
   const latestChangePercent = marketField && field.unit.startsWith("currency")
     && !unknownBondBasis
     && financials.quote && hasValidQuoteObservationTime(financials.quote)
@@ -1198,10 +1265,11 @@ function baseSecuritySeries(
     && points.every((point) => [point.open, point.high, point.low].every((value) => value == null || value === point.close));
   return {
     id: spec.id,
-    label: spec.label?.trim() || (generic ? futuresGenericCaption(generic) : `${symbol} ${field.shortLabel}`),
+    label: spec.label?.trim() || (generic ? futuresGenericCaption(generic) : `${symbol} ${field.seriesLabel ?? field.shortLabel}`),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
     unit,
     unitGroup: currencyUnitGroup,
+    ...(statedUnit ? { statedUnit } : {}),
     priceAssetCategory: marketField && field.unitGroup === "price" && !unknownBondBasis
       ? financials.quote?.instrumentType || quoteMetadata?.instrumentType : undefined,
     volumeUnit,
@@ -1210,6 +1278,7 @@ function baseSecuritySeries(
       ? "Volume unit unknown." : statementCurrency?.warning ?? valuationCurrencyWarning(financials, spec.source),
     nativeFrequency: marketField ? marketSeriesFrequency(spec.source, marketResolution)
       : spec.source.period && spec.source.period !== "auto" ? spec.source.period : field.nativeFrequency,
+    ...(unreportedPeriod ? { unreportedPeriod } : {}),
     ...(marketField ? { historyResolution: marketResolution } : {}),
     timestampMode: spec.source.timestampMode,
     dataShape: field.dataShape,
@@ -1219,12 +1288,12 @@ function baseSecuritySeries(
     panelId: spec.panelId,
     interpolation: spec.interpolation,
     observationKind: marketField ? "market" : undefined,
-    ...(marketField ? { listing: { symbol: spec.source.instrument.symbol, exchange: marketExchange ?? "" } } : {}),
+    ...(marketField ? { listing: { symbol: spec.source.instrument.symbol, exchange: listingExchange ?? "" } } : {}),
     timeBasis: marketTimeZone
       ? {
           kind: "market",
           timeZone: marketTimeZone,
-          exchange: canonicalExchange(marketExchange) || undefined,
+          exchange: canonicalExchange(sessionExchange) || undefined,
           cadenceMs: marketResolution
             ? CHART_RESOLUTION_STEP_MS[marketResolution]
             : undefined,
@@ -1344,6 +1413,39 @@ function assignAxes(
   });
 }
 
+/**
+ * A series drawn in a ticker's price (a moving average of it, a band around
+ * it) takes the units of that ticker's price series when the chart has it, so
+ * the two share an axis and the line sits on the price instead of on a scale
+ * of its own.
+ */
+function adoptPriceUnits(series: ResolvedSeries[], specs: readonly ChartSeriesSpec[]): ResolvedSeries[] {
+  if (!series.some((entry) => entry.priceOf)) return series;
+  const specsById = new Map(specs.map((spec) => [spec.id, spec]));
+  const prices = series.filter((entry) => {
+    const source = specsById.get(entry.id)?.source;
+    return source?.kind === "security" && getTimeSeriesField(source.fieldId)?.unitGroup === "price"
+      && entry.transform === "raw";
+  });
+  if (prices.length === 0) return series;
+  return series.map((entry) => {
+    if (!entry.priceOf) return entry;
+    const wanted = parsePublicTickerKey(entry.priceOf.toUpperCase());
+    const key = publicTickerKey(wanted.symbol, wanted.exchange);
+    const named = (price: ResolvedSeries) => {
+      const source = specsById.get(price.id)?.source;
+      if (source?.kind !== "security") return false;
+      return publicTickerKey(source.instrument.symbol, source.instrument.exchange) === key
+        || (!wanted.exchange && source.instrument.symbol.toUpperCase() === wanted.symbol);
+    };
+    const price = prices.find((candidate) => named(candidate) && candidate.panelId === entry.panelId)
+      ?? prices.find(named);
+    return price && entry.transform === "raw"
+      ? { ...entry, unit: price.unit, unitGroup: price.unitGroup }
+      : entry;
+  });
+}
+
 function prepareBaseSeriesForStudies(
   series: ResolvedSeries,
   bounds: DateBounds,
@@ -1414,6 +1516,7 @@ function applyStudyPresentationTransforms(
   visibleBounds: DateBounds,
   fallbackBaselineBounds?: DateBounds,
   priceComparison?: PriceComparison | null,
+  view: DateBounds = visibleBounds,
 ): ResolvedSeries[] {
   const rawById = new Map(rawSeries.map((series) => [series.id, series] as const));
   return outputs.map((output) => {
@@ -1429,7 +1532,7 @@ function applyStudyPresentationTransforms(
       : undefined;
     const transformed = applyResolvedSeriesTransform(output, input.transform, { baseline });
     const inputBounds = priceComparison?.sourceBounds?.[input.id];
-    return inputBounds ? { ...transformed, points: filterPoints(transformed.points, inputBounds) } : transformed;
+    return inputBounds ? { ...transformed, points: comparedBufferPoints(transformed.points, inputBounds, view) } : transformed;
   });
 }
 
@@ -1539,6 +1642,7 @@ async function resolveChartSpecPass(
     && entry.source.kind === "security" && isFundamentalFieldId(entry.source.fieldId))
     ? [FINANCIAL_VINTAGE_NOTICE] : [];
   const priorityWarnings: string[] = [];
+  const delistings = new Map<string, { symbol: string; label: string; notice: string }>();
   const baseSeriesIds = new Set(spec.series.map((entry) => entry.id));
   const visibleSeriesIds = new Set(spec.series
     .filter((entry) => entry.visible !== false)
@@ -1581,7 +1685,11 @@ async function resolveChartSpecPass(
           if (statementHistory && (!value.statementHistory || value.statementHistory.status === "retryable-failure")) cache.financialsByInstrument.delete(key);
           return value;
         })
-        .catch(() => { cache.financialsByInstrument.delete(key); return null; });
+        .catch((error) => {
+          logFailure("time-series-resolve", "Loading chart financials failed")(error);
+          cache.financialsByInstrument.delete(key);
+          return null;
+        });
       cache.financialsByInstrument.set(key, pending);
       cache.revision += 1;
     }
@@ -1597,7 +1705,11 @@ async function resolveChartSpecPass(
         : provider.getQuote(source.instrument.symbol, source.instrument.exchange ?? "", requestContext(source)).then(quoteMetadataFromQuote))
         .then((metadata) => metadata && quoteMetadataMatchesTarget(metadata, source.instrument.symbol, source.instrument.exchange) ? metadata : null)
         .then((metadata) => { if (!metadata) cache.quoteMetadataByInstrument.delete(key); return metadata; })
-        .catch(() => { cache.quoteMetadataByInstrument.delete(key); return null; });
+        .catch((error) => {
+          logFailure("time-series-resolve", "Loading chart quote metadata failed")(error);
+          cache.quoteMetadataByInstrument.delete(key);
+          return null;
+        });
       cache.quoteMetadataByInstrument.set(key, pending);
       cache.revision += 1;
     }
@@ -1640,7 +1752,7 @@ async function resolveChartSpecPass(
         // preset in charge, the same as a source without the capability.
         pending = Promise.resolve(result)
           .then((value) => normalizeChartResolutionSupport(value))
-          .catch(() => [] as ChartResolutionSupport[]);
+          .catch(logFailure("time-series-resolve", "Could not load chart resolution support", [] as ChartResolutionSupport[]));
         const settledPending = pending;
         settledPending.then((settled) => {
           if (cache.resolutionSupportByInstrument.get(key) !== settledPending) return;
@@ -1732,10 +1844,10 @@ async function resolveChartSpecPass(
   const hasExplicitWindow = explicitBounds(spec) !== null || movedWindow;
   const initialCalculationBounds = calculationBounds(spec, requestVisibleBounds, initialResolution);
 
-  // Only US listings trade before and after the regular session; asking elsewhere costs a request for nothing.
+  // Only US stocks and funds trade before and after the regular session; asking elsewhere costs a request for nothing.
   const extendedHoursFor = (source: Extract<ChartSeriesSpec["source"], { kind: "security" }>, resolution: ManualChartResolution) => (
     spec.viewport.extendedHours === true && isMarketFieldId(source.fieldId) && isIntradayResolution(resolution)
-      && !source.instrument.instrument && isUsListingExchange(source.instrument.exchange)
+      && tradesUsExtendedHours(source.instrument.exchange, source.instrument.instrument)
   );
   // A history starts after the visible window because its source keeps no more.
   let retainedHistoryOnly = false;
@@ -1871,6 +1983,14 @@ async function resolveChartSpecPass(
     const history = loaded.points;
     const coverageNotice = historyCoverageNotice(loaded.coverageStart, request.visibleBounds.start);
     if (coverageNotice) priorityWarnings.push(coverageNotice);
+    // A listing that no longer trades is named so beside its bars, which end on its last session.
+    if (loaded.delisting) {
+      const symbol = parsePublicTickerKey(source.instrument.symbol).symbol;
+      const label = delistingLabel(loaded.delisting);
+      const notice = `${symbol}: ${label}`;
+      priorityWarnings.push(notice);
+      if (!delistings.has(notice)) delistings.set(notice, { symbol, label, notice });
+    }
     // Read per request: one recovered window answers every visible window that shares its acquisition.
     if (loaded.recovery && request.visibleBounds.start !== null && request.visibleBounds.start < loaded.recovery.start) {
       priorityWarnings.push(historyRetentionNotice(loaded.recovery.retention, loaded.resolution ?? request.resolution,
@@ -1932,6 +2052,30 @@ async function resolveChartSpecPass(
     };
   };
 
+  // What a future's price counts, asked once per symbol beside its history.
+  // Index and Treasury futures read in points or 32nds, which their unit already says.
+  const loadPriceUnit = (
+    source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+    instrumentType: string | undefined,
+  ): Promise<string | null> => {
+    const { symbol, exchange } = source.instrument;
+    if (!sources.loadFuturesPriceUnit || getTimeSeriesField(source.fieldId)?.unitGroup !== "price" || !isMarketFieldId(source.fieldId)
+      || (classifyInstrumentType(instrumentType) !== "future" && kindFromListingSyntax(symbol, exchange) !== "future")
+      || futuresListingPriceBasis(symbol, exchange)) return Promise.resolve(null);
+    const key = symbol.trim().toUpperCase();
+    let pending = cache.futuresPriceUnits.get(key);
+    if (!pending) {
+      pending = sources.loadFuturesPriceUnit(key).catch(logFailure("time-series-resolve", "Could not load futures price unit", null)).then((unit) => {
+        // Terms that did not say are asked again on a later pass, when the source allows.
+        if (unit === null) cache.futuresPriceUnits.delete(key);
+        else cache.revision += 1;
+        return unit;
+      });
+      cache.futuresPriceUnits.set(key, pending);
+    }
+    return pending;
+  };
+
   const loadEconomicSeries = (request: FredSeriesRequest) => {
     const key = `${request.seriesId.trim().toUpperCase()}|${request.startDate}|${request.sortOrder}`;
     let pending = cache.fredSeriesByRequest.get(key);
@@ -1957,13 +2101,14 @@ async function resolveChartSpecPass(
         if (!sources.resolveCapabilitySeries) {
           throw new Error(`Chart series capability "${seriesSpec.source.capabilityId}" is unavailable. Enable its plugin or provider.`);
         }
+        const capabilityBounds = capabilityRequestBounds(requestVisibleBounds, initialVisibleBounds, movedWindow);
         const capabilityViewport: ChartSpec["viewport"] = {
           ...spec.viewport,
-          ...(requestVisibleBounds.start !== null && requestVisibleBounds.end !== null
+          ...(capabilityBounds.start !== null && capabilityBounds.end !== null
             ? {
                 dateWindow: {
-                  start: new Date(requestVisibleBounds.start).toISOString(),
-                  end: new Date(requestVisibleBounds.end).toISOString(),
+                  start: new Date(capabilityBounds.start).toISOString(),
+                  end: new Date(capabilityBounds.end).toISOString(),
                 },
               }
             : {}),
@@ -2006,6 +2151,8 @@ async function resolveChartSpecPass(
       const needsFinancials = !isPriceOnlyMarketFieldId(source.fieldId)
         || !source.instrument.exchange?.trim();
       const financialsPromise = needsFinancials ? loadFinancials(source) : Promise.resolve(null);
+      // A continuous future (HO=F) is known by its symbol: its terms load beside its history.
+      void loadPriceUnit(source, undefined);
       let resolvedSource = source;
       let financials: TickerFinancials | null;
       let history: LoadedPriceHistory | null;
@@ -2056,10 +2203,12 @@ async function resolveChartSpecPass(
       );
       const quoteMetadata = mergeQuoteMetadata(existingMetadata, needsMetadata ? await loadQuoteMetadata(resolvedSource) : null);
       if (quoteMetadata || merged.quoteMetadata) merged = { ...merged, quoteMetadata };
+      const contractUnit = await loadPriceUnit(resolvedSource, merged.quote?.instrumentType || quoteMetadata?.instrumentType);
       if (marketField) {
         // Same precedence as baseSecuritySeries: the quote's own facts first.
         const listingFacts = mergeQuoteMetadata(merged.quote ? quoteMetadataFromQuote(merged.quote) : undefined, quoteMetadata);
         if (listingFacts?.currency || listingFacts?.instrumentType) rememberSeedListingFacts(source.instrument, { quoteMetadata: listingFacts });
+        if (contractUnit) rememberSeedListingFacts(source.instrument, { contractUnit });
       }
       if (history) {
         // Classification must be available before combining observations. A
@@ -2091,6 +2240,7 @@ async function resolveChartSpecPass(
         index,
         history?.resolution,
         quoteMetadata,
+        contractUnit,
       );
       if (!result) throw new Error(`Unknown field ${source.fieldId}.`);
       if (marketField && history?.historyStart !== undefined && Number.isFinite(history.historyStart)) {
@@ -2104,7 +2254,7 @@ async function resolveChartSpecPass(
         quoteReferences.set(seriesSpec.id, { close: reference.previousClose, time: reference.lastUpdated });
       }
       if (realizedVolInputs.has(seriesSpec.id)) {
-        const historicalResult = baseSecuritySeries(resolvedSpec, historical, index, history?.resolution, quoteMetadata);
+        const historicalResult = baseSecuritySeries(resolvedSpec, historical, index, history?.resolution, quoteMetadata, contractUnit);
         if (historicalResult) historicalPriceSeries.set(seriesSpec.id, historicalResult);
       }
       const reportedForwardPE = merged.fundamentals?.forwardPE;
@@ -2142,10 +2292,9 @@ async function resolveChartSpecPass(
     ? latestSessionView(primaryRaw, rawSeries.filter((entry) => entry.observationKind === "market"),
       extendedHistories.has(primaryRaw?.id ?? ""), quoteReferences.get(primaryRaw?.id ?? ""))
     : null;
-  const capabilityOnly = spec.series.length > 0 && spec.series.every(({ source }) => source.kind === "capability");
   const bounds = hasExplicitWindow
     ? requestVisibleBounds
-    : sessionView?.bounds ?? (capabilityOnly
+    : sessionView?.bounds ?? (isDatasetChart(spec)
       ? endAtNewestObservation(initialVisibleBounds, rawSeries)
       : followLatestMarketObservation(initialVisibleBounds, rawSeries));
   if (sessionView?.priorClose != null && primaryRaw?.transform === "raw"
@@ -2184,14 +2333,15 @@ async function resolveChartSpecPass(
         comparisonBounds,
         priceComparison ? undefined : requestVisibleBounds,
         priceComparison,
+        bounds,
       ),
     ];
     warnings.push(...studyResult.warnings);
     errors.push(...studyResult.errors);
   }
 
-  const bufferedSeries = assignAxes(resolved, [...spec.series, ...spec.studies], warnings)
-    .map((entry) => clipPriceComparison(entry, priceComparison));
+  const bufferedSeries = assignAxes(adoptPriceUnits(resolved, spec.series), [...spec.series, ...spec.studies], warnings)
+    .map((entry) => bufferPriceComparison(entry, priceComparison, bounds));
   resolved = bufferedSeries.map((entry) => {
     const entryBounds = presentationBounds(entry, spec.studies, priceComparison, bounds);
     return entryBounds.start !== null && entryBounds.end !== null
@@ -2237,8 +2387,10 @@ async function resolveChartSpecPass(
   ];
   for (const entry of resolved) {
     if (entry.warning) warnings.push(`${entry.label}: ${entry.warning}`);
-    // A currency mismatch already explains an empty valuation series.
-    if (entry.points.length === 0 && !entry.warning?.startsWith(VALUATION_CURRENCY_WARNING_PREFIX)) {
+    if (entry.points.length === 0 && entry.unreportedPeriod) {
+      warnings.push(`${entry.label}: no ${entry.unreportedPeriod} figures are reported; annual figures are available.`);
+    } else if (entry.points.length === 0 && !entry.warning?.startsWith(VALUATION_CURRENCY_WARNING_PREFIX)) {
+      // A currency mismatch already explains an empty valuation series.
       warnings.push(`${entry.label}: no observations in the selected date range.`);
     }
   }
@@ -2276,6 +2428,7 @@ async function resolveChartSpecPass(
     loading: false,
     errors,
     warnings: [...new Set([...priorityWarnings, ...warnings])],
+    ...(delistings.size ? { delistings: [...delistings.values()] } : {}),
     viewport,
     resolution,
   };
@@ -2325,7 +2478,10 @@ export function reconcileChartTail(
   }
   const run: Promise<boolean> = Promise.all([...cache.liveTails].map(async ([key, tail]) => {
     const pending = cache.priceHistoryByRequest.get(key);
-    const loaded = pending ? await pending.catch(() => null) : null;
+    const loaded = pending ? await pending.catch(() => {
+      // Intentional ignore: resolveChartSpecPass already includes this history failure in the series errors.
+      return null;
+    }) : null;
     if (!pending || !loaded || loaded.resolution !== tail.resolution) return false;
     const accumulated = cache.accumulatedPriceHistory.get(tail.accumulationKey);
     const latest = latestObservationTime(accumulated?.points ?? loaded.points);
@@ -2346,7 +2502,7 @@ export function reconcileChartTail(
     if (!request) {
       const fetched = fetchHistoryResult(provider, symbol, exchange ?? "",
         { kind: "detail", start: new Date(start), end: new Date(end), interval: tail.resolution }, context)
-        .catch(() => null)
+        .catch(logFailure("time-series-resolve", "Could not reconcile chart history", null))
         .finally(() => {
           if (shared.get(requestKey) === fetched) shared.delete(requestKey);
         });

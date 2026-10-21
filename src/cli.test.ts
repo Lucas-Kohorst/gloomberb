@@ -84,6 +84,21 @@ describe("CLI watchlist commands", () => {
     expect(stdout).toContain("gloomberb watchlist create <name>");
   });
 
+  test("a help flag after a function prints that function's options, not fn's", async () => {
+    await createCliFixture({ watchlists: [] });
+
+    const own = await captureConsole(() => runCli(["fn", "BT", "--preset", "trend-200", "--help"]));
+    expect(own.stdout).toContain("--include-partial <boolean>");
+    expect(own.stdout).toContain("gloomberb fn BT <ticker> --csv --equity");
+    expect(own.stdout).not.toContain("Run a market function");
+    // A pane id runs the function, so it is helped like one.
+    expect((await captureConsole(() => runCli(["fn", "backtest", "--help"]))).stdout).toContain("--include-partial <boolean>");
+    // Without a function, or with a word that names none, the command's own help stands.
+    for (const args of [["fn", "--help"], ["fn", "NOTAFUNCTION", "--help"]]) {
+      expect((await captureConsole(() => runCli(args))).stdout).toContain("Run a market function and print its report");
+    }
+  });
+
   test("creates a watchlist and persists the generated id", async () => {
     const { dataDir } = await createCliFixture({ watchlists: [] });
 
@@ -272,6 +287,29 @@ describe("CLI portfolio commands", () => {
       currency: "EUR",
       broker: "manual",
     }]);
+  });
+
+  test("a size of 1.250 on a listing held in whole lots asks which was meant, as 1,250 does; a US listing takes it as 1.25", async () => {
+    const { dataDir } = await createCliFixture({
+      portfolios: [{ id: "lira", name: "Lira", currency: "TRY" }],
+      watchlists: [],
+      tickers: [
+        createTestTicker("THYAO.IS", "Turk Hava Yollari", { exchange: "BIST", currency: "TRY", assetCategory: "STK" }),
+        makeTicker({ assetCategory: "STK" }),
+      ],
+    });
+
+    const lots = await captureConsole(() => runCli(["portfolio", "position", "set", "Lira", "THYAO.IS:BIST", "1.250", "312,50", "TRY"]));
+    expect(lots.exitCode).toBe(1);
+    expect(lots.stderr).toContain("Shares 1.250 could be 1250 (thousands) or 1.25 (decimal point), and THYAO.IS:BIST trades in whole shares; type 1250 or 1.25.");
+
+    const fraction = await captureConsole(() => runCli(["portfolio", "position", "set", "Lira", "NVDA", "1.250", "180", "USD"]));
+    expect(fraction.exitCode).toBe(0);
+    const persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+    const store = new TickerRepository(persistence.tickers);
+    expect((await store.loadTicker("NVDA"))?.metadata.positions[0]?.shares).toBe(1.25);
+    expect((await store.loadTicker("THYAO.IS"))?.metadata.positions).toEqual([]);
+    persistence.close();
   });
 
   test("removes portfolio membership and positions, then cleans all references on delete", async () => {

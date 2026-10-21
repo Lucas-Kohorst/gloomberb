@@ -8,10 +8,11 @@ import { serveFixturePage, type FixturePage } from "./page";
  * Panes at rest, pixel for pixel, against a base checkout: each fixture layout
  * (fixture.tsx) drawn by both checkouts in the same headless Chrome, at the
  * same size, compared pixel by pixel. Reports how many pixels differ, in which
- * pane and where, and saves the base, head and diff images of every layout
- * that differs under the cache folder.
+ * pane and where, and saves base and head images of every layout for review,
+ * plus a diff image of each layout that differs, under the cache folder.
  *
  *   bun run check:pane-rest --base <checkout> [--head <checkout>] [--width 1440] [--height 900]
+ *     [--only chat] [--theme paper] [--label rest-diff]
  *
  * A difference is not a failure by itself: the report says where it is, and
  * a change that means to draw something differently says why in its PR.
@@ -36,7 +37,9 @@ const LAYOUTS: Array<{ name: string; query: string }> = [
   { name: "floating chart under a table", query: "scenario=resize&float=under" },
   { name: "chart under a table beside a chart, docked", query: "scenario=stacked" },
   { name: "chat beside a plain pane", query: "scenario=chat" },
+  { name: "long chat with replies", query: "scenario=chat&count=500&loaded=500&replies=1&solo=1" },
   { name: "DES overview beside a plain pane", query: "scenario=des" },
+  { name: "DES with its footer hint, long names and a narrow pane", query: "scenario=des&long=1&footer=1&ratio=0.38" },
 ];
 
 interface PaneRect { id: string; x: number; y: number; width: number; height: number }
@@ -133,7 +136,11 @@ async function main(): Promise<void> {
   if (!baseRoot) throw new Error("Usage: rest-diff.ts --base <checkout> [--head <checkout>] [--width 1440] [--height 900]");
   const width = Number(takeOption(args, "--width") ?? 1440);
   const height = Number(takeOption(args, "--height") ?? 900);
-  const outDir = cacheDir("rest-diff");
+  const only = takeOption(args, "--only");
+  const theme = takeOption(args, "--theme");
+  const layouts = LAYOUTS.filter((layout) => !only || layout.name.includes(only));
+  if (layouts.length === 0) throw new Error(`No fixture layout matches ${only}`);
+  const outDir = cacheDir(takeOption(args, "--label") ?? "rest-diff");
   await mkdir(outDir, { recursive: true });
   const base = await serveFixturePage(resolve(baseRoot), cacheDir("build", `rest-base-${process.pid}`), { ownFixtureFallback: true });
   const head = await serveFixturePage(resolve(takeOption(args, "--head") ?? join(import.meta.dir, "../..")), cacheDir("build", `rest-head-${process.pid}`));
@@ -147,7 +154,8 @@ async function main(): Promise<void> {
     "|---|---|---|",
   ];
   try {
-    for (const layout of LAYOUTS) {
+    for (const original of layouts) {
+      const layout = { ...original, query: original.query + (theme ? `&theme=${encodeURIComponent(theme)}` : "") };
       const before = await shoot(browser.cdp, base, layout.query);
       const after = await shoot(browser.cdp, head, layout.query);
       const diff = await compare(browser.cdp, before.png, after.png, after.panes);
@@ -156,12 +164,10 @@ async function main(): Promise<void> {
         .map((region) => `${region.where}: ${region.pixels} px in ${region.box.width} by ${region.box.height} at (${region.box.x}, ${region.box.y})`)
         .join("; ");
       lines.push(`| ${layout.name} | ${diff.pixels} | ${where || "nothing"} |`);
-      if (diff.image) {
-        const slug = layout.query.replace(/[^a-z0-9]+/gi, "-");
-        await Bun.write(join(outDir, `${slug}-base.png`), Buffer.from(before.png, "base64"));
-        await Bun.write(join(outDir, `${slug}-head.png`), Buffer.from(after.png, "base64"));
-        await Bun.write(join(outDir, `${slug}-diff.png`), Buffer.from(diff.image, "base64"));
-      }
+      const slug = layout.query.replace(/[^a-z0-9]+/gi, "-");
+      await Bun.write(join(outDir, `${slug}-base.png`), Buffer.from(before.png, "base64"));
+      await Bun.write(join(outDir, `${slug}-head.png`), Buffer.from(after.png, "base64"));
+      if (diff.image) await Bun.write(join(outDir, `${slug}-diff.png`), Buffer.from(diff.image, "base64"));
       console.error(`${layout.name}: ${diff.pixels} px differ`);
     }
   } finally {
@@ -169,7 +175,7 @@ async function main(): Promise<void> {
     await base.close();
     await head.close();
   }
-  lines.push("", `Images of every layout that differs: ${outDir}`);
+  lines.push("", `Images of every layout, plus differences: ${outDir}`);
   console.log(lines.join("\n"));
 }
 

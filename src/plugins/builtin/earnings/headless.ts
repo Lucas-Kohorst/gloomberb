@@ -13,14 +13,23 @@ import { fetchEarningsCalendar, fetchEarningsHistory } from "./client";
 import { loadEarningsCalendar } from "./data/cache";
 import { epsText, impliedText, moneyText, moveSize, signedPercent, TIMING_LABEL } from "./format";
 import { historyRows } from "./history-model";
-import { EPS_BASIS_NOTE, epsBasisName, showsEpsBasis } from "../shared/earnings-report";
+import { loadNoEarningsText } from "./no-earnings";
+import { EPS_BASIS_NOTE, epsBasisName, PROVISIONAL_NOTE, showsEpsBasis } from "../shared/earnings-report";
 import { isUsListingExchange } from "../../../utils/exchanges";
 import { listingAbroadVenue } from "../../../utils/sec";
 import { findUsListingOfCompany } from "../../../tickers/us-listing";
 import { shortCompanyName } from "../../../tickers/company-name";
+import { REPORT_ROWS } from "../shared/headless-options";
 
 const right = "right" as const;
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+/** The text report says a provisional figure's basis is provisional; exports keep the basis alone and `epsActualProvisional`. */
+const BASIS_COLUMN: HeadlessPaneColumn = {
+  key: "epsBasis",
+  header: "Basis",
+  textFormat: (value, row) => (value == null ? "-" : row.epsActualProvisional === true ? `${String(value)}, provisional` : String(value)),
+};
 
 const BOARD_COLUMNS: HeadlessPaneColumn[] = [
   { key: "date", header: "Date" },
@@ -32,7 +41,8 @@ const BOARD_COLUMNS: HeadlessPaneColumn[] = [
   { key: "epsEstimate", header: "EPS est", align: right, format: (value) => epsText(num(value)) },
   { key: "epsAnalysts", header: "Ests", align: right },
   { key: "epsActual", header: "EPS act", align: right, format: (value) => epsText(num(value)) },
-  { key: "epsBasis", header: "Basis" },
+  BASIS_COLUMN,
+  { key: "epsSurprise", header: "EPS surp", align: right, format: (value) => signedPercent(num(value)) },
   { key: "revenueEstimate", header: "Sales est", align: right, format: (value) => moneyText(num(value)) },
   { key: "impliedMove", header: "Implied", align: right, format: (value) => impliedText(num(value)) },
   { key: "averageMove", header: "Avg move", align: right, format: (value) => moveSize(num(value)) },
@@ -49,7 +59,7 @@ const HISTORY_COLUMNS: HeadlessPaneColumn[] = [
   { key: "epsEstimate", header: "EPS est", align: right, format: (value) => epsText(num(value)) },
   { key: "epsAnalysts", header: "Ests", align: right },
   { key: "epsActual", header: "EPS act", align: right, format: (value) => epsText(num(value)) },
-  { key: "epsBasis", header: "Basis" },
+  BASIS_COLUMN,
   { key: "epsSurprise", header: "EPS surp", align: right, format: (value) => signedPercent(num(value)) },
   { key: "revenueEstimate", header: "Sales est", align: right, format: (value) => moneyText(num(value)) },
   { key: "revenueActual", header: "Sales act", align: right, format: (value) => moneyText(num(value)) },
@@ -120,7 +130,9 @@ async function boardRows(args: HeadlessPaneLoadArgs, context: HeadlessPaneContex
     epsEstimate: report.epsEstimate,
     epsAnalysts: report.epsAnalysts,
     epsActual: report.epsActual,
+    epsActualProvisional: report.provisional,
     epsBasis: showsEpsBasis(report) ? epsBasisName(report.epsBasis) : null,
+    epsSurprise: report.epsSurprise,
     revenueEstimate: report.revenueEstimate,
     impliedMove: report.impliedMove,
     averageMove: report.averageMove,
@@ -137,6 +149,7 @@ async function boardRows(args: HeadlessPaneLoadArgs, context: HeadlessPaneContex
       to: query.to,
       averageMoveOver: `last 8 reports, at least ${MIN_AVERAGE_REPORTS}`,
       epsBasis: EPS_BASIS_NOTE,
+      provisional: PROVISIONAL_NOTE,
       marketCap: MARKET_CAP_NOTE,
       total: all.length,
       returned: rows.length,
@@ -179,29 +192,36 @@ async function historyReport(symbol: string, context: HeadlessPaneContext, deps:
     epsEstimate: row.epsEstimate,
     epsAnalysts: row.epsAnalysts,
     epsActual: row.epsActual,
+    epsActualProvisional: row.provisional,
     epsBasis: showsEpsBasis(row) ? epsBasisName(row.epsBasis) : null,
     epsSurprise: row.epsSurprise,
     revenueEstimate: row.revenueEstimate,
     revenueActual: row.revenueActual,
+    revenueActualProvisional: row.revenueProvisional,
     revenueSurprise: row.revenueSurprise,
     impliedMove: row.implied,
     impliedFrom: row.impliedMethod === "trade-close" ? "trade closes" : row.impliedMethod === "quote-mid" ? "quote mids" : null,
     move: row.move,
   }));
+  // An ETF, an index, a currency pair, a coin or a future has no earnings: that is the answer, not a gap in the data,
+  // and a history that failed for one (a coin is no US ticker) is no error.
+  const noEarnings = rows.length === 0 && !abroad ? await loadNoEarningsText(context.marketData, symbol, "cli") : null;
   return {
     columns: HISTORY_COLUMNS,
     rows,
-    errors: history.status === "rejected" ? [String(history.reason instanceof Error ? history.reason.message : history.reason)] : undefined,
+    ...(noEarnings ? { empty: noEarnings, complete: true, unavailableSymbols: [] } : {}),
+    errors: history.status === "rejected" && !noEarnings ? [String(history.reason instanceof Error ? history.reason.message : history.reason)] : undefined,
     metadata: {
       symbol, name: payload?.name ?? next?.name ?? null, asOf: payload?.asOf ?? null,
       epsBasis: EPS_BASIS_NOTE,
+      provisional: PROVISIONAL_NOTE,
       ...(notice ? { notices: [notice] } : {}),
     },
   };
 }
 
 /** EVTS: the market board, whatever ticker is given. */
-const EARNINGS_CALENDAR: HeadlessPaneFreshness = { status: "not-a-feed", basis: "calendar" };
+export const EARNINGS_CALENDAR: HeadlessPaneFreshness = { status: "not-a-feed", basis: "calendar" };
 
 export function createEarningsBoardHeadless(deps: EarningsHeadlessDependencies = defaultDependencies): HeadlessPaneDefinition<"rows"> {
   return {
@@ -209,7 +229,7 @@ export function createEarningsBoardHeadless(deps: EarningsHeadlessDependencies =
     freshness: EARNINGS_CALENDAR,
     argument: { kind: "ticker", placeholder: "ticker", description: "Optional; the board is the same.", minimum: 0, maximum: 1 },
     options: [
-      { key: "limit", description: "Maximum rows.", type: "integer", defaultValue: 200, minimum: 1, maximum: 1000 },
+      { key: "limit", shot: REPORT_ROWS, description: "Maximum rows.", type: "integer", defaultValue: 200, minimum: 1, maximum: 1000 },
     ],
     columns: BOARD_COLUMNS,
     describe: () => "Earnings Calendar",
@@ -231,7 +251,7 @@ export function createEarningsHeadless(deps: EarningsHeadlessDependencies = defa
       maximum: 100,
     },
     options: [
-      { key: "limit", description: "Maximum rows on the market board or a ticker list.", type: "integer", defaultValue: 200, minimum: 1, maximum: 1000 },
+      { key: "limit", shot: REPORT_ROWS, description: "Maximum rows on the market board or a ticker list.", type: "integer", defaultValue: 200, minimum: 1, maximum: 1000 },
     ],
     columns: BOARD_COLUMNS,
     describe: (args) => (args.symbols.length === 0 ? "Earnings Calendar" : `ERN ${args.symbols.join(", ")}`),

@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import type { TapeFeedEvent } from "./tape";
 import type {
   AuthUser,
@@ -109,6 +110,7 @@ export class CloudApiSocket {
   private reconnectDelayMs = 1000;
 
   private readonly channelListeners = new Map<string, Set<ChannelListener>>();
+  private readonly chatMentionCandidatesListeners = new Set<() => void>();
   private readonly chatNotificationListeners =
     new Set<ChatNotificationListener>();
   private readonly chatChannelStateListeners =
@@ -187,7 +189,7 @@ export class CloudApiSocket {
     try {
       ws?.close();
     } catch {
-      // ignore closed sockets
+      // Intentional ignore: Closing an already closed socket needs no further cleanup.
     }
   }
 
@@ -254,6 +256,11 @@ export class CloudApiSocket {
     };
   }
 
+  subscribeChatMentionCandidatesChanged(listener: () => void): () => void {
+    this.chatMentionCandidatesListeners.add(listener);
+    return () => { this.chatMentionCandidatesListeners.delete(listener); };
+  }
+
   /**
    * The reader's read state or mute changed on another device or window. Like
    * notifications, it never opens the socket by itself.
@@ -306,7 +313,8 @@ export class CloudApiSocket {
     try {
       this.ws.send(JSON.stringify(payload));
       return true;
-    } catch {
+    } catch (error) {
+      logFailure("cloud-socket", "WebSocket frame send failed")(error);
       return false;
     }
   }
@@ -551,7 +559,8 @@ export class CloudApiSocket {
     let parsed: any;
     try {
       parsed = JSON.parse(raw);
-    } catch {
+    } catch (error) {
+      logFailure("cloud-socket", "WebSocket message decoding failed")(error);
       return;
     }
 
@@ -631,6 +640,10 @@ export class CloudApiSocket {
       return;
     }
 
+    if (parsed?.type === "chat.mentions_changed") {
+      for (const listener of this.chatMentionCandidatesListeners) listener();
+      return;
+    }
     if (parsed?.type === "chat.channel_state") {
       const state = normalizeChatChannelStateFrame(parsed.data);
       if (state) {

@@ -3,7 +3,8 @@ import type { DataTableColumn } from "../../../components";
 import type { AppAttentionPayload, AppChart } from "../../../api-client/app-attention";
 import type { HiringBoard, HiringPayload } from "../../../api-client/hiring";
 import { fetchAppRank, fetchAttention } from "./client";
-import { appsModel, appsPreviewNote, attentionNumber, hiringModel, hiringPreviewNote, remoteText, type AttentionKind } from "./model";
+import { appsModel, appsPreviewNote, attentionNumber, attentionSectionTitle, attentionTabs, hiringModel, hiringPreviewNote, remoteText, type AttentionKind } from "./model";
+import { REPORT_PAGE, REPORT_ROWS } from "../shared/headless-options";
 
 /**
  * Numbers print as the pane draws them: shares to a tenth, ratings and
@@ -26,8 +27,8 @@ export function attentionHeadless(kind: AttentionKind): HeadlessPaneDefinition<"
       : { source: "App Store and Google Play charts", status: "not-a-feed", basis: "observed chart ranks", dataset: true },
     argument: { kind: "ticker", optional: true, placeholder: "ticker", description: "Company ticker, including exchange for non-US listings. Omit for the global board." },
     options: [
-      { key: "limit", type: "string", defaultValue: "100", description: "Rows per REST page, up to 200 for hiring and 500 for apps." },
-      { key: "offset", type: "string", defaultValue: "0", description: "Continuation offset from the prior report metadata." },
+      { key: "limit", shot: REPORT_ROWS, type: "string", defaultValue: "100", description: "Rows per REST page, up to 200 for hiring and 500 for apps." },
+      { key: "offset", shot: REPORT_PAGE, type: "string", defaultValue: "0", description: "Continuation offset from the prior report metadata." },
       { key: "tab", type: "enum", settingKey: "tab", values: ["table", "chart", "mix", "peers", "evidence"].map((value) => ({ value })), defaultValue: "table", description: "Table, dated history, geographic or role mix, peers, or source evidence." },
       ...(kind === "apps" ? [
         { key: "appId", aliases: ["app-id"], type: "string" as const, settingKey: "appId", description: "Open one app's exact country/chart rank history instead of a company." },
@@ -48,7 +49,8 @@ export function attentionHeadless(kind: AttentionKind): HeadlessPaneDefinition<"
         return { complete: rank.access === "pro" && rank.page.nextOffset === null, sections: [{ title: "App rank history", rows: rank.rankHistory }], metadata: { nextOffset: rank.page.nextOffset, preview: rank.access === "preview", lockedRows: rank.locked, provenance: rank } };
       }
       const data = await fetchAttention(kind, args.symbols[0], { limit: Number(args.options.limit) || 100, offset: Number(args.options.offset) || 0, ...(typeof args.options.country === "string" ? { country: args.options.country } : {}), ...(typeof args.options.chart === "string" ? { chart: args.options.chart as AppChart } : {}), days: Number(args.options.days) || 90 }, ctx.apiClient);
-      const model = kind === "hiring" ? hiringModel(data as HiringPayload | HiringBoard) : appsModel(data as AppAttentionPayload);
+      const filtered = typeof args.options.country === "string" && !!args.options.country || typeof args.options.chart === "string" && !!args.options.chart;
+      const model = kind === "hiring" ? hiringModel(data as HiringPayload | HiringBoard) : appsModel(data as AppAttentionPayload, undefined, filtered);
       const offset = Number(args.options.offset) || 0;
       // The free preview ignores the offset, so it has no next page to point at.
       const nextOffset = kind === "hiring" && "total" in data ? !data.preview && offset + data.companies.length < data.total ? offset + data.companies.length : null : (data as AppAttentionPayload).page?.nextOffset ?? null;
@@ -58,9 +60,15 @@ export function attentionHeadless(kind: AttentionKind): HeadlessPaneDefinition<"
         complete: !model.preview && !model.partial && nextOffset === null,
         ...(lock ? { errors: [lock] } : {}),
         ...(notes.length ? { notes } : {}),
-        sections: Object.entries(model.sections).map(([key, section]) => ({ title: key === "mix" ? kind === "hiring" ? "Role family" : "Countries" : key,
-          columns: section.columns.map(reportColumn), empty: section.empty,
-          rows: section.rows.map((row) => ({ ...row.values, ...(row.url ? { sourceUrl: row.url } : {}), ...(row.details ? { evidence: row.details } : {}) })) })),
+        // A ticker no observed app is mapped to says so once, not under each empty view.
+        ...(model.unmapped ? { empty: model.unmapped } : {}),
+        // The views the pane has tabs for, each headed by what its rows are.
+        sections: attentionTabs(kind, args.symbols[0]).map((tab) => {
+          const section = model.sections[tab];
+          return { title: attentionSectionTitle(kind, tab, args.symbols[0]),
+            columns: section.columns.map(reportColumn), empty: section.empty, ...(section.locked ? { locked: true } : {}),
+            rows: section.rows.map((row) => ({ ...row.values, ...(row.url ? { sourceUrl: row.url } : {}), ...(row.details ? { evidence: row.details } : {}) })) };
+        }),
         metadata: { nextOffset, asOf: model.asOf, preview: model.preview, lockedRows: model.locked, unit: model.chart.unit, provenance: data },
       };
     },

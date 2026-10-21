@@ -7,6 +7,7 @@ import { zonedDateTimeParts } from "./zoned-date-time";
 import { regularHistorySessionStaleness } from "../market-data/history-session";
 import type { HistorySession } from "../types/price-history";
 import { BAR_INTERVAL_UNIT_MS, parseBarInterval } from "../time-series/resolution";
+import { parseOptionTicker } from "./options";
 
 // A venue without session hours here (OTC Markets, Cboe Canada) has no
 // session to hold: its copy is current while the latest bar is this recent.
@@ -217,6 +218,9 @@ export function isPriceHistoryStaleForCurrentWindow(
   // Daily/weekly/monthly labels are period starts, not live observation times.
   // Their cache policy controls refresh; an intraday lag test is inapplicable.
   if (intervalMs != null && intervalMs >= DAY_MS) return false;
+  // An option contract can go hours without a trade, so its last bar's age says nothing of
+  // its source; judged on it, a contract quiet since the open had no chart at all.
+  if (options.symbol && parseOptionTicker(options.symbol)) return false;
 
   const latestTime = getPricePointTimestamp(latest);
   if (!Number.isFinite(latestTime)) return false;
@@ -436,6 +440,17 @@ export function calendarHistoryFetchState(
 }
 
 /**
+ * The venue date of the latest regular session whose bar is final at `now`:
+ * closed for the settle allowance, on the calendar calendarHistoryFetchState
+ * reads. Null for a listing without a venue and for venues whose sessions are
+ * unknown, round-the-clock ones included.
+ */
+export function latestSettledSessionDate(exchange: string | undefined, now = Date.now()): string | null {
+  const venue = canonicalExchange(exchange);
+  return venue ? latestRegularSessionClose(venue, now - SESSION_BAR_SETTLE_MS)?.date ?? null : null;
+}
+
+/**
  * True when the latest bar is from the venue's latest settled session or a
  * later one, read on the calendar calendarHistoryFetchState uses. A venue
  * whose sessions are unknown, round-the-clock ones included, proves nothing.
@@ -457,8 +472,9 @@ export function reachesLatestSettledSession(
   return !isBarBeforeSession(latestTime, session.date, Math.max(intervalMs, DAY_MS), session.timeZone);
 }
 
+/** One price and no volume: 0, or missing where a coin's feed sends 0 for no data. */
 function isPlaceholderBar(point: PricePoint): boolean {
-  return point.volume === 0 && Number.isFinite(point.close)
+  return !point.volume && Number.isFinite(point.close)
     && point.open === point.close && point.high === point.close && point.low === point.close;
 }
 

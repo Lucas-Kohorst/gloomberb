@@ -16,6 +16,8 @@ const finite = (value: unknown): value is number => typeof value === "number" &&
 const nonnegative = (value: unknown) => finite(value) && value >= 0;
 const nullableNumber = (value: unknown) => value === null || nonnegative(value);
 const optionalText = (value: unknown) => value === undefined || nullableText(value);
+/** A period length in months; absent from older servers. */
+export const validPeriodMonths = (value: unknown) => value === undefined || value === null || Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 60;
 const date = (value: unknown) => text(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const timestamp = (value: unknown) => text(value) && Number.isFinite(Date.parse(value));
 const tier = (value: unknown) => Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 6;
@@ -52,7 +54,7 @@ export function validSupplyRow(value: SupplyRow): boolean {
     && (value.jurisdiction == null || (text(value.jurisdiction) && /^[A-Z]{2}$/.test(value.jurisdiction)))
     && [undefined, null, "entity", "group", "anonymous", "aggregate"].includes(value.entityScope)
     && (value.pctOfRevenue === null || value.pctBasis !== null) && (value.usd === null || value.usdBasis !== null)
-    && text(value.period) && nullableText(value.fiscalYear) && ["xbrl", "filing_text", "call", "news", "web", "import", "press_release"].includes(value.sourceKind)
+    && text(value.period) && validPeriodMonths(value.periodMonths) && nullableText(value.fiscalYear) && ["xbrl", "filing_text", "call", "news", "web", "import", "press_release"].includes(value.sourceKind)
     && nullableText(value.form) && (value.filedDate === null || date(value.filedDate)) && date(value.asOf)
     && finite(value.confidence) && value.confidence >= 0 && value.confidence <= 1
     && text(value.quote) && (value.quote.trim().length > 0 || !!value.evidence?.length) && nullableText(value.quoteLanguage)
@@ -86,13 +88,20 @@ export function validateSupplyChain(data: SupplyChainPayload): SupplyChainPayloa
       return Array.isArray(rows) && rows.every(validSupplyRow) && new Set(rows.map((entry) => entry.id)).size === rows.length
         && SUPPLY_ROLES.every((role) => Number.isInteger(data.counts?.[key]?.[role])
           && data.counts[key][role] >= rows.filter((entry) => entry.role === role).length);
-    }) && Number.isInteger(data.totalRows) && data.totalRows >= data.says.length + data.names.length
+    }) && (data.earlier === undefined || ["says", "names"].every((view) => {
+      const key = view as "says" | "names";
+      const rows = data.earlier![key];
+      return Array.isArray(rows) && rows.every(validSupplyRow) && new Set(rows.map((entry) => entry.id)).size === rows.length
+        && SUPPLY_ROLES.every((role) => Number.isInteger(data.earlierCounts?.[key]?.[role])
+          && data.earlierCounts![key][role] >= rows.filter((entry) => entry.role === role).length);
+    })) && Number.isInteger(data.totalRows) && data.totalRows >= data.says.length + data.names.length
     && ["full", "preview"].includes(data.access) && Number.isInteger(data.lockedRows) && data.lockedRows >= 0
     && typeof data.truncated === "boolean" && [3, null].includes(data.previewRowsPerRole)
     && text(data.disclaimer) && (data.tierCounts === undefined || TIER_OPTIONS.every(({ value }) => Number.isInteger(data.tierCounts?.[value]) && data.tierCounts![value] >= 0));
   if (!valid) throw new Error("The server returned unreadable supply chain disclosures");
   const normalizeEntity = (value: SupplyEntity): SupplyEntity => ({ ...value, aggregate: value.aggregate ?? false });
-  return { ...data, entity: data.entity ? normalizeEntity(data.entity) : null, says: data.says.map(normalizeSupplyRow), names: data.names.map(normalizeSupplyRow) };
+  return { ...data, entity: data.entity ? normalizeEntity(data.entity) : null, says: data.says.map(normalizeSupplyRow), names: data.names.map(normalizeSupplyRow),
+    ...(data.earlier ? { earlier: { says: data.earlier.says.map(normalizeSupplyRow), names: data.earlier.names.map(normalizeSupplyRow) } } : {}) };
 }
 export async function fetchSupplyChain(symbol: string, client: Pick<typeof apiClient, "getCloudSupplyChain"> = apiClient, options: SupplyOptions = {}) {
   try { return validateSupplyChain(await client.getCloudSupplyChain(symbol, options)); }

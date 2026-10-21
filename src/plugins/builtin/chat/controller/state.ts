@@ -2,8 +2,10 @@ import type {
   ChatChannel,
   ChatChannelState,
   ChatMessage,
+  ChatMentionCandidate,
   PersistedAuthUser,
 } from "../../../../api-client";
+import type { ConversationActivity } from "../conversation-recency";
 import { createClientMessageId, getLatestMessageId } from "./utils";
 import type { ChatDraftAttachment, DraftAttachmentEntry } from "./attachments";
 
@@ -44,10 +46,24 @@ export interface PersistedTranscript {
   messages: ChatMessage[];
 }
 
+/** Who the unread messages of one channel are from, by account id. */
+export interface ChannelUnreadPeople {
+  /** Everyone who sent an unread message there. */
+  senders: string[];
+  /** The ones among them with an unread message that mentions you. */
+  mentioners: string[];
+}
+
 export interface ChatControllerSnapshot {
   channelId: string;
   channels: ChatChannel[];
   channelStates: ChatChannelState[];
+  /**
+   * When each direct and group conversation last had a message, in ms, by
+   * channel id; a conversation with no known activity is left out. The same
+   * object until one of them changes.
+   */
+  conversationActivity: ConversationActivity;
   channelsLoading: boolean;
   loading: boolean;
   /** Last message-load failure for this channel, or null. */
@@ -58,11 +74,20 @@ export interface ChatControllerSnapshot {
   onlineCount: number;
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
+  /** Undefined until the first scoped read, then authoritative even when empty. */
+  mentionCandidates?: ChatMentionCandidate[];
   draft: string;
   /** Images waiting in the composer for the next message. */
   draftAttachments: ChatDraftAttachment[];
   replyToId: string | null;
   unreadMentionCount: number;
+  /**
+   * Who sent the unread messages of each channel with any, by channel id: what
+   * the app badge counts people from. Empty unless the badge asked for it
+   * ({@link ChatController.trackUnreadPeople}). A channel whose unread messages
+   * are not on this device yet lists only the ones that are, until they load.
+   */
+  unreadPeople: Record<string, ChannelUnreadPeople>;
 }
 
 type ChatConnection = {

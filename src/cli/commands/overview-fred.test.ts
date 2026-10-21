@@ -97,10 +97,14 @@ test("--start takes a year or a month as the first day of it, and a series that 
   expect(year.text).not.toContain("Showing from");
   await runFred(["T10Y2Y", "--start", "1999-07"]);
   expect(queries[1]!.get("startDate")).toBe("1999-07-01");
-  for (const bad of ["1960-13", "99", "abc", "1960-1-1"]) {
-    await expect(fred.execute(["T10Y2Y", "--start", bad], createTestCliContext().context))
-      .rejects.toThrow(`--start takes a date as yyyy-mm-dd, yyyy-mm or yyyy, got "${bad}".`);
+  await runFred(["T10Y2Y", "--start", "01.10.2026"]);
+  expect(queries[2]!.get("startDate")).toBe("2026-10-01");
+  const formats = "Use a --start date as YYYY-MM-DD, DD.MM.YYYY, Oct 14 2026, 14 October 2026, YYYY-MM or YYYY";
+  for (const bad of ["1960-13", "99", "abc"]) {
+    await expect(fred.execute(["T10Y2Y", "--start", bad], createTestCliContext().context)).rejects.toThrow(`${formats}, such as --start `);
   }
+  await expect(fred.execute(["T10Y2Y", "--start", "1960-1-1"], createTestCliContext().context))
+    .rejects.toThrow(`${formats}: type --start 1960-01-01 for 1960-1-1.`);
 });
 
 test("a start before the series begins starts every format at its first observation, and the CSV says where it begins", async () => {
@@ -160,6 +164,14 @@ test("nothing on or after --start names the latest observation, and fails a CSV 
   // A series with no data at all, or a failed second look, keeps the plain answer.
   serveSeries(() => ({ observations: [] }));
   expect((await runFred(["DGS10", "--start", "2026-10-11"])).text.split("\n")[0]).toBe("No results.");
+
+  // A spread exports in basis points, so the empty line names that figure, not FRED's percentage points.
+  serveSeries((query) => ({
+    observations: query.get("startDate") ? [] : [{ date: "2026-10-09", value: 0.44 }],
+    info: T10Y2Y_INFO,
+  }));
+  expect((await runFred(["T10Y2Y", "--start", "2026-10-11"])).text.split("\n")[0])
+    .toBe("Latest observation: 2026-10-09 (44). Nothing on or after 2026-10-11.");
 });
 
 test("a yield ahead of FRED names Treasury and when it published, in the source line and on its row; FRED's own stay FRED", async () => {
@@ -186,6 +198,20 @@ test("a yield ahead of FRED names Treasury and when it published, in the source 
   const listed = await runFred(["DGS10"]);
   expect(listed.text.split("\n").at(-1)).toBe("Source: FRED \u00b7 Fri 9 Oct 2026 \u00b7 not a live feed (published statistics)");
   expect(listed.result.freshness).toMatchObject({ publisher: info.source, publishedAt: "2026-10-12T20:16:37.000Z" });
+});
+
+test("a series FRED does not carry names its publisher and where it is read from, never FRED", async () => {
+  // Turkish CPI: September 2026 read as it came out, August read with the history.
+  serveSeries(() => ({
+    observations: [
+      { date: "2026-09-01", value: 29.73, publisher: "TurkStat", publishedAt: "2026-10-05T07:05:00.000Z" },
+      { date: "2026-08-01", value: 31.51, publisher: "TurkStat" },
+    ],
+    info: { id: "TURCPIYOY", units: "Percent change from year ago", frequency: "Monthly", observationEnd: "2026-09-01" },
+  }));
+  const turkey = await runFred(["TURCPIYOY"]);
+  expect(turkey.text.split("\n").at(-1)).toStartWith("Source: TurkStat via the CBRT, published 2026-10-05 \u00b7 Sep 2026");
+  expect(turkey.result.freshness).toMatchObject({ publisher: "TurkStat", publishedAt: "2026-10-05T07:05:00.000Z" });
 });
 
 test("a monthly series is dated by its month, and a lagging one carries its note", async () => {
@@ -237,5 +263,5 @@ test("yield-curve reads each tenor's move against the previous observation, not 
   expect(result.data.map((row: Record<string, unknown>) => [row.seriesId, row.previousDate, row.changeBasisPoints]))
     .toEqual([["DGS3MO", "2026-10-09", 0], ["DGS2", "2026-10-09", -4], ["DGS10", "2026-10-09", 4.1], ["DGS30", null, null]]);
   const rows = serializeCliResult({ ...result, freshness: undefined }, DEFAULT_CLI_OPTIONS, options).split("\n").slice(2).map((line) => line.split(/\s+/));
-  expect(rows.map(([tenor, yieldText, change]) => [tenor, yieldText, change])).toEqual([["3M", "4.25", "0bp"], ["2Y", "4.80", "-4bp"], ["10Y", "5.24", "+4bp"], ["30Y", "5.60", "-"]]);
+  expect(rows.map(([tenor, yieldText, change]) => [tenor, yieldText, change])).toEqual([["3M", "4.25", "0.0bp"], ["2Y", "4.80", "-4.0bp"], ["10Y", "5.24", "+4.1bp"], ["30Y", "5.60", "-"]]);
 });

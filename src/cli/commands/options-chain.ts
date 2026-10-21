@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import type { OptionContract, OptionsChain, Quote, TickerFinancials } from "../../types/financials";
 import type { DataProvider } from "../../types/data-provider";
 import type { CliListing } from "../listing-arg";
@@ -12,9 +13,10 @@ import {
   chainOpenInterestAsOf, loadListedOpenInterest, openInterestAsOfLabel, type OpenInterestAsOf, statedOpenInterestAsOf,
 } from "../../plugins/builtin/options/open-interest-as-of";
 import { DEFAULT_OPTION_CALC_DRAFT } from "../../plugins/builtin/options-calculator/model";
-import { expiryIsoDate, parseOptionExpiration } from "../../utils/option-expiry";
+import { expiryIsoDate, OPTION_EXPIRATION_PLACEHOLDER, parseOptionExpiration } from "../../utils/option-expiry";
+import { loadModelDividendYield } from "../../market-data/model-dividend-yield";
 
-export const OPTIONS_USAGE = "options <symbol> [--expiration <YYYY-MM-DD|unix>]";
+export const OPTIONS_USAGE = `options <symbol> [--expiration <${OPTION_EXPIRATION_PLACEHOLDER}>]`;
 
 export { parseOptionExpiration };
 
@@ -66,6 +68,14 @@ interface OptionModelFigures {
 /** The risk-free rate every options valuation in the app assumes. */
 export const OPTION_MODEL_RATE = DEFAULT_OPTION_CALC_DRAFT.rate;
 
+/** What each contract's two volatilities are, stated in the chain's JSON metadata so neither is read as the other. */
+export const OPTION_VOLATILITY_FIELDS = {
+  iv: "Annualized volatility (decimal) solved from the quote midpoint, one per strike from its out-of-the-money side, at the "
+    + "spot, valuation time and rate in metadata.model. Delta here and dealer gamma (GEX) are valued with it.",
+  impliedVolatility: "The data provider's own reported implied volatility, passed through unchanged. Delta does not use it; "
+    + "GEX falls back to it only at a strike with no two-sided quote on either side.",
+} as const;
+
 /**
  * IV and delta per contract, from the same solver and Greeks as the options
  * pane (put-call parity forward, one volatility per strike, the pane's rate).
@@ -105,16 +115,19 @@ export function loadUnderlyingFinancials(
 ): Promise<TickerFinancials | null> {
   return Promise.resolve().then(() => dataProvider.getTickerFinancials(
     listing.request.symbol, listing.request.exchange, { cacheMode: refresh ? "refresh" : "default" },
-  )).catch(() => null);
+  )).catch(logFailure("cli.commands-options-chain", "Read option underlying financials failed", null));
 }
 
 /**
  * Spot and dividend yield for IV and delta, read from the underlying the way the
- * options pane does; missing ones stay missing. `financials` shares one read of
- * them with a caller that needs more of them.
+ * options pane does; missing ones stay missing. The dividend yield is any the
+ * fundamentals state, stale or not, else, as OSA reads it
+ * (`loadModelDividendYield`), 0 for a history with no dividend paid, and 0
+ * for a dividend that stopped.
+ * `financials` shares one read of them with a caller that needs more of them.
  */
 export async function loadOptionModelInputs(
-  dataProvider: Pick<DataProvider, "getTickerFinancials">,
+  dataProvider: Pick<DataProvider, "getTickerFinancials" | "getCorporateActions">,
   listing: CliListing,
   quote: Promise<Quote | null>,
   refresh: boolean,
@@ -123,10 +136,12 @@ export async function loadOptionModelInputs(
   const financials = await underlying;
   const current = [await quote, financials?.quote]
     .find((candidate) => candidate && candidate.stale !== true && isFiniteNumber(candidate.price) && candidate.price > 0);
-  const dividendYield = financials?.fundamentals?.dividendYield;
+  const { symbol, exchange } = listing.request;
+  const dividend = await loadModelDividendYield(financials?.fundamentals, symbol,
+    dataProvider.getCorporateActions ? () => dataProvider.getCorporateActions!(symbol, exchange) : null);
   return {
     ...(current ? { spot: current.price, quote: current } : {}),
-    ...(isFiniteNumber(dividendYield) && dividendYield >= 0 ? { dividendYield } : {}),
+    ...(dividend ? { dividendYield: dividend.value } : {}),
   };
 }
 
@@ -180,7 +195,8 @@ export function optionsBasisFootnote(basis: OptionsChainBasis): string {
   const parts: string[] = [];
   if (basis.spot) {
     parts.push(`Greeks at spot ${formatModelSpotPrice(basis.spot.price)} (${modelSpotLabel(basis.spot)}), `
-      + `dividend yield ${basis.dividendYield == null ? "0%" : `${Number((basis.dividendYield * 100).toFixed(2))}%`}, `
+      // An unknown yield is valued as none, and says so rather than read as a stated 0%.
+      + `dividend yield ${basis.dividendYield == null ? "unknown (valued at 0%)" : `${Number((basis.dividendYield * 100).toFixed(2))}%`}, `
       + `rate ${Number((OPTION_MODEL_RATE * 100).toFixed(2))}%`);
   }
   const oi = basis.openInterest;

@@ -4,8 +4,8 @@
     {
       "id": "alerts",
       "name": "Alerts",
-      "description": "Price, market and filing event alerts",
-      "tagline": "Price, market and filing alerts.",
+      "description": "Price, earnings, filing, news and flow alerts",
+      "tagline": "Price, earnings, filing, news and flow alerts.",
       "categories": [
         "alerts"
       ],
@@ -194,7 +194,7 @@
     {
       "id": "broker",
       "name": "Broker",
-      "description": "Broker profiles, account sync, and connection status.",
+      "description": "Broker profiles, account sync, order review, and trading status.",
       "tagline": "Broker accounts, sync and connections.",
       "categories": [
         "broker"
@@ -207,6 +207,7 @@
       ],
       "contributes": {
         "panes": [
+          "broker-orders",
           "brokers"
         ],
         "capabilities": [],
@@ -216,11 +217,17 @@
             "code": "BR",
             "name": "Brokers",
             "description": "Open broker profiles and connection status"
+          },
+          {
+            "code": "ORD",
+            "name": "Orders",
+            "description": "Open orders and recent activity for a broker account"
           }
         ]
       },
       "highlights": [
-        "BR"
+        "BR",
+        "ORD"
       ]
     },
     {
@@ -320,7 +327,7 @@
           {
             "code": "CDS",
             "name": "Single-Name CDS",
-            "description": "Single-name corporate CDS from DTCC public dissemination: with no argument, the issuers traded in the last 5 days with their 5Y spread; with a ticker or issuer, its 5Y spread history and trades."
+            "description": "Single-name corporate CDS from DTCC public dissemination: with no argument, the issuers traded in the last 5 days with their 5Y spread and its 1W and 1M moves (in points upfront past 2,000bp), ranked by any column (fn CDS --sort 1m); with a ticker or issuer, its 5Y spread history, trades and daily levels (fn CDS F --csv --section daily exports them)."
           },
           {
             "code": "CDX",
@@ -360,7 +367,7 @@
           {
             "code": "PDLR",
             "name": "Primary Dealer Positions",
-            "description": "Weekly net positions and settlement fails in Treasuries and mortgage-backed securities."
+            "description": "Weekly net positions with history, by sector and Treasury tenor, and settlement fails."
           },
           {
             "code": "CRDOC",
@@ -419,7 +426,7 @@
           {
             "code": "CRYP",
             "name": "Crypto",
-            "description": "Top crypto assets by market cap with live prices, 7D, 30D and 1Y returns, volume and market cap."
+            "description": "Top crypto assets by market cap with live prices, 7D, 30D and 1Y returns, volume and market cap, and stablecoin supply."
           },
           {
             "code": "PERP",
@@ -590,8 +597,8 @@
           },
           {
             "code": "ETF",
-            "name": "ETF Filings",
-            "description": "A US-listed fund's SEC filings: registration statements, prospectus updates, shareholder reports, N-CEN and N-PORT."
+            "name": "Fund Facts",
+            "description": "A US-listed fund's fee, NAV, premium or discount, net assets, sponsor, inception and index, then its SEC filings: prospectus updates, shareholder reports, N-CEN and N-PORT."
           },
           {
             "code": "RISK",
@@ -690,7 +697,7 @@
           {
             "code": "PSD",
             "name": "Crop Balances",
-            "description": "World balances for wheat, corn, soybeans and cotton, with season-average price forecasts when a table is published."
+            "description": "World balances for wheat, corn, soybeans, cotton, coffee and sugar, with season-average price forecasts when a table is published."
           },
           {
             "code": "JODI",
@@ -1056,7 +1063,7 @@
           {
             "code": "GEX",
             "name": "Dealer Gamma",
-            "description": "Net dealer gamma by strike, its total, flip level and the range for the dealer assumption."
+            "description": "Net dealer gamma by strike, its total, flip level, call and put walls and the range for the dealer assumption."
           },
           {
             "code": "OVME",
@@ -1155,7 +1162,7 @@
           {
             "code": "INS",
             "name": "Insider",
-            "description": "Insider transaction activity for the selected ticker."
+            "description": "Insider transactions for a ticker; alone, the companies whose insiders are buying or selling."
           },
           {
             "code": "SI",
@@ -1374,7 +1381,7 @@
           {
             "code": "VIX",
             "name": "VIX Curve",
-            "description": "Dated VIX tenor closes, FRED history and the cross-asset volatility board."
+            "description": "Dated VIX tenor closes, the 3M/30D ratio history and the cross-asset volatility board."
           },
           {
             "code": "VOLS",
@@ -1656,7 +1663,7 @@
           {
             "code": "DVD",
             "name": "Dividend Yield",
-            "description": "Cash distribution history, trailing cash yield, forward yield from the latest distribution, and growth. Future payments are not forecast."
+            "description": "Cash distribution history, trailing and forward yield, payout and growth; gloomberb fn DVD with several tickers ranks them by yield. A bond fund's SEC yield beside its distribution yield, and with --tax-rate a muni fund's tax-equivalent yield. Future payments are not forecast."
           },
           {
             "code": "RDCF",
@@ -1672,7 +1679,7 @@
             "code": "EXEC",
             "name": "Executives",
             "description": "Named executive officers and what they were paid, read from the company's proxy statement and checked against the filing.",
-            "access": "pro"
+            "access": "preview"
           },
           {
             "code": "TAS",

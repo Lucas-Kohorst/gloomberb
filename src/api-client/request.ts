@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import { httpFetch, isHttpFetchStreaming } from "../utils/http-transport";
 import { withDeadline } from "../utils/async-deadline";
 import {
@@ -148,7 +149,7 @@ export async function putWithRevision<T, Current extends { revision: number }>(
     });
   } catch (error) {
     if (!(error instanceof ApiRequestError) || error.status !== 412) throw error;
-    const current = await revision.loadCurrent().catch(() => null);
+    const current = await revision.loadCurrent().catch(logFailure("cloud-request", "Current revision request failed", null));
     throw new revision.conflict(error.message, current, current?.revision ?? (revision.expected ?? 0) + 1);
   }
 }
@@ -269,7 +270,7 @@ export class CloudApiRequestTransport {
         });
         throwIfRequestAborted(options.signal);
         if (!response.ok) {
-          const text = await response.text().catch(() => "");
+          const text = await response.text().catch(logFailure("cloud-request", "Error response body read failed", ""));
           throw new ApiRequestError(
             parseApiErrorMessage(text),
             response.status,
@@ -411,12 +412,19 @@ export class CloudApiRequestTransport {
     // layers, which a server without them answers with 404, or a ticker
     // change lookup: a note beside a quote, never one of the refused market
     // requests a lookup of many symbols waits out and retries. Nor the
-    // tickers beside a list of organization names, which say so in place.
+    // tickers beside a list of organization names, which say so in place,
+    // or a 13F filer's EDGAR filing list, whose report says it went unchecked.
+    // Nor the batched searches and ticker changes a list of symbols starts
+    // with: a service without them answers 404, and whatever they leave
+    // unanswered is looked up one symbol at a time, which is tracked.
     if (
       path.startsWith("/telemetry/")
       || path === "/assist/searches"
       || path === "/cloud/geo/layers"
+      || path.startsWith("/cloud/sec/13f/filer?")
       || path.startsWith("/market/ticker-changes?")
+      || path === "/market/ticker-changes/batch"
+      || path === "/market/search/batch"
       || path === "/market/organization-tickers"
     ) return request();
     return this.connectionHealth.track(

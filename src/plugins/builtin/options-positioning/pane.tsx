@@ -60,6 +60,10 @@ import {
   formatPayout,
   formatRatio,
   formatStrike,
+  gammaWalls,
+  netGammaByExpiry,
+  openInterestTotal,
+  strikeChartOpenInterest,
   isPositioningTab,
   POSITIONING_TABS,
   strikeAxis,
@@ -83,7 +87,9 @@ const strikeKey = (row: { strike: number }) => String(row.strike);
 const expiryKey = (row: ExpiryOpenInterest) => row.date;
 /** Sep 29: the OI session is days old, so the footer leaves out its year. */
 const shortDate = (date: string) => expiryLabel(date).replace(/ '\d\d$/, "");
-const total = (row: { callOI: number | null; putOI: number | null }) => (row.callOI ?? 0) + (row.putOI ?? 0);
+const expirySize = (row: { callOI: number; putOI: number }) => row.callOI + row.putOI;
+const reportedOpenInterest = (row: { callOI: number | null; putOI: number | null }) =>
+  (row.callOI == null ? 0 : row.callOI) + (row.putOI == null ? 0 : row.putOI);
 
 function strikeColumns(changes: boolean): DataTableColumn[] {
   return [
@@ -95,7 +101,7 @@ function strikeColumns(changes: boolean): DataTableColumn[] {
     { id: "payout", label: "Payout $", width: 10, align: "right" },
   ];
 }
-function expiryColumns(changes: boolean): DataTableColumn[] {
+function expiryColumns(changes: boolean, gamma: boolean): DataTableColumn[] {
   return [
     { id: "date", label: "Expiry", width: 11, align: "left" },
     { id: "days", label: "Days", width: 5, align: "right" },
@@ -105,6 +111,7 @@ function expiryColumns(changes: boolean): DataTableColumn[] {
     ...(changes ? [{ id: "change", label: "OI chg", width: 10, align: "right" as const }] : []),
     { id: "maxPain", label: "Max pain", width: 9, align: "right" },
     { id: "distance", label: "Vs spot", width: 8, align: "right" },
+    ...(gamma ? [{ id: "netGamma", label: "Net GEX $", width: 11, align: "right" as const }] : []),
   ];
 }
 const GAMMA_COLUMNS: DataTableColumn[] = [
@@ -206,21 +213,24 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   const tabs = useMemo(() => data?.underlying === "VIX"
     ? POSITIONING_TABS.filter((entry) => entry.value !== "gex") : POSITIONING_TABS, [data?.underlying]);
   const tab: PositioningTab = isPositioningTab(savedTab) && tabs.some((entry) => entry.value === savedTab) ? savedTab : "strikes";
+  const hasGamma = !!data && data.underlying !== "VIX";
   // A saved expiry that has since expired, or was listed for the last underlying, falls back to all of them.
   const gammaChoice = gammaExpiry !== ALL_EXPIRIES && expiryDates.includes(gammaExpiry) ? gammaExpiry : ALL_EXPIRIES;
-  // Gamma prices every expiry's chain, so it loads only once its tab is open; a single
-  // expiry waits for the listed expiries to say whether it is still there.
+  // Expiries shows every expiry's net gamma, whichever expiry GEX is set to.
+  const gammaScope = tab === "expiries" ? ALL_EXPIRIES : gammaChoice;
+  // Gamma prices every expiry's chain, so it loads only once a tab that shows it is open; a
+  // single expiry waits for the listed expiries to say whether it is still there.
   const gammaLoader = useCallback(
-    (_force: boolean) => loadGamma(symbol, gammaChoice === ALL_EXPIRIES ? null : gammaChoice),
-    [symbol, gammaChoice],
+    (_force: boolean) => loadGamma(symbol, gammaScope === ALL_EXPIRIES ? null : gammaScope),
+    [symbol, gammaScope],
   );
-  const gammaReady = tab === "gex" && (!!data || gammaExpiry === ALL_EXPIRIES);
+  const gammaReady = (tab === "gex" && (!!data || gammaExpiry === ALL_EXPIRIES)) || (tab === "expiries" && hasGamma);
   const gamma = useAsyncResource<GammaPayload>(gammaReady ? gammaLoader : null, { keepPreviousData: true });
   useAutoRefresh(openInterest.updatedAt, openInterest.load, { intervalMs: OPEN_INTEREST_REFRESH_MS });
-  useAutoRefresh(gamma.updatedAt, gamma.load, { intervalMs: tab === "gex" ? GAMMA_REFRESH_MS : null });
+  useAutoRefresh(gamma.updatedAt, gamma.load, { intervalMs: gammaReady ? GAMMA_REFRESH_MS : null });
   usePaneRefreshKey(() => {
     void openInterest.reload();
-    if (tab === "gex") void gamma.reload();
+    if (gammaReady) void gamma.reload();
   }, { focused });
 
   // Expiry steps: [ and ] move through the expiries on Strikes and GEX.
@@ -254,9 +264,7 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
       enabled: expiryIndex < expiryDates.length - 1, onSelect: () => stepExpiry(1) },
   ], [expiryDates.length, expiryIndex, stepExpiry, tab]);
 
-  const { strip: tabStrip, rows: tabRows } = usePaneTabs(data?.expiries.length
-    ? { tabs, activeValue: tab, onSelect: (value: string) => setTab(value), focused, dense: true }
-    : null);
+  const { strip: tabStrip, rows: tabRows } = usePaneTabs({ tabs, activeValue: tab, onSelect: (value: string) => setTab(value), focused, dense: true });
   const bodyHeight = Math.max(3, height - tabRows);
 
   // Footer: what the data is (delayed or real time, the OI session), and its gaps.
@@ -270,10 +278,12 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
     ...(changes && tab !== "gex" ? [{ id: "oi-change", parts: [{ text: `chg since ${shortDate(data!.previousOiDate!)}`, tone: "muted" as const }] }] : []),
   ], [accessSegment, changes, data?.oiDate, data?.previousOiDate, tab]);
   const activeResource = tab === "gex" ? gamma : openInterest;
+  // Expiries' Net GEX column loads beside the open interest it sits with.
+  const columnGamma = tab === "expiries" && gammaReady ? gamma : null;
   usePaneStatusFooter({
     registrationId: "options-positioning",
-    loading: activeResource.loading,
-    error: activeResource.data ? activeResource.error : null,
+    loading: activeResource.loading || !!columnGamma?.loading,
+    error: activeResource.data ? activeResource.error ?? columnGamma?.error ?? null : null,
     info,
     hints: upgradeHint ? [upgradeHint] : undefined,
   });
@@ -300,7 +310,7 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   const maxPain = expiries.find((row) => row.date === shownExpiry)?.maxPain ?? null;
   const strikeRows = useMemo(() => sortRows(strikes, strikeSort, (row, id) =>
     id === "strike" ? row.strike : (row[id as keyof StrikeOpenInterest] as number | null)), [strikes, strikeSort]);
-  const strikeWindow = useMemo(() => chartWindow(strikes, total, spot, [maxPain]), [strikes, spot, maxPain]);
+  const strikeWindow = useMemo(() => chartWindow(strikes, reportedOpenInterest, spot, [maxPain]), [strikes, spot, maxPain]);
   const strikeChart = useMemo(() => strikeWindow.length >= 3 ? strikeAxis(strikeWindow.map((row) => row.strike)) : null, [strikeWindow]);
   const nearestSpotStrike = useMemo(() => spot == null ? null : strikes.reduce<StrikeOpenInterest | null>((best, row) =>
     !best || Math.abs(row.strike - spot) < Math.abs(best.strike - spot) ? row : best, null), [spot, strikes]);
@@ -313,10 +323,10 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
     focused, enabled: tab === "strikes",
   });
   const strikeSeries = useMemo(() => strikeChart ? [
-    staticSeries(strikeWindow.map((row) => scalarPoint(strikeChart.toDate(row.strike), row.callOI ?? 0)),
+    staticSeries(strikeWindow.map((row) => scalarPoint(strikeChart.toDate(row.strike), strikeChartOpenInterest(row).call)),
       { id: "calls", label: "Call OI", color: colors.positive, style: "columns", calendarSpaced: true }),
     // Puts hang below zero so the two sides of a strike never cover each other.
-    staticSeries(strikeWindow.map((row) => scalarPoint(strikeChart.toDate(row.strike), -(row.putOI ?? 0))),
+    staticSeries(strikeWindow.map((row) => scalarPoint(strikeChart.toDate(row.strike), strikeChartOpenInterest(row).put)),
       { id: "puts", label: "Put OI", color: colors.negative, style: "columns", calendarSpaced: true }),
   ] : [], [colors.negative, colors.positive, strikeChart, strikeWindow]);
   const callTotal = expiries.find((row) => row.date === shownExpiry);
@@ -333,8 +343,11 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   const selectedStrikeRow = strikes.find((row) => strikeKey(row) === strikeSelectedId) ?? null;
   const strikeStrip = useMemo<ChartStripSpec | null>(() => strikeWindow.length < 3 ? null : {
     label: "Open interest by strike",
-    values: strikeWindow.map(total),
-    value: selectedStrikeRow ? `${formatStrike(selectedStrikeRow.strike)} ${formatCompact(total(selectedStrikeRow))}` : "",
+    values: strikeWindow.flatMap((row) => {
+      const value = openInterestTotal(row);
+      return value == null ? [] : [value];
+    }),
+    value: selectedStrikeRow ? `${formatStrike(selectedStrikeRow.strike)} ${formatCompact(openInterestTotal(selectedStrikeRow) ?? undefined)}` : "",
     color: colors.textMuted,
   }, [colors.textMuted, selectedStrikeRow, strikeWindow]);
   const renderStrike = useCallback((row: StrikeOpenInterest, column: DataTableColumn): DataTableCell => {
@@ -357,10 +370,13 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   }, [colors, maxPain]);
 
   // ---- Expiries ----
+  // Older servers send no per-expiry gamma; the column then reads --.
+  const netGammas = useMemo(() => netGammaByExpiry(gamma.data), [gamma.data]);
   const expiryRows = useMemo(() => sortRows(expiries, expirySort, (row, id) =>
     id === "date" ? row.date : id === "distance" ? (row.maxPain == null || spot == null ? null : row.maxPain / spot)
       : id === "change" ? (row.callChange == null ? null : row.callChange + (row.putChange ?? 0))
-        : (row[id as keyof ExpiryOpenInterest] as number | null)), [expiries, expirySort, spot]);
+        : id === "netGamma" ? netGammas?.get(row.date) ?? null
+          : (row[id as keyof ExpiryOpenInterest] as number | null)), [expiries, expirySort, netGammas, spot]);
   const expiryChart = useMemo(() => expiries.length >= 3 ? expiryAxis(expiryDates) : null, [expiries.length, expiryDates]);
   const expirySelectedId = expiryRows.some((row) => row.date === selectedExpiry) ? selectedExpiry!
     : shownExpiry && expiryRows.some((row) => row.date === shownExpiry) ? shownExpiry : expiryRows[0]?.date ?? null;
@@ -379,21 +395,21 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
     const calls = expiries.reduce((sum, row) => sum + row.callOI, 0);
     const puts = expiries.reduce((sum, row) => sum + row.putOI, 0);
     const change = changes ? expiries.reduce((sum, row) => sum + (row.callChange ?? 0) + (row.putChange ?? 0), 0) : null;
-    const largest = expiries.reduce((best, row) => total(row) > total(best) ? row : best);
+    const largest = expiries.reduce((best, row) => expirySize(row) > expirySize(best) ? row : best);
     return [
       { id: "oi", label: "Open interest", value: formatCompact(calls + puts),
         detail: change == null ? undefined : formatCountChange(change),
         split: [{ id: "calls", value: calls, color: colors.positive }, { id: "puts", value: puts, color: colors.negative }] },
       { id: "pc", label: "P/C OI", value: formatRatio(calls > 0 ? puts / calls : null) },
-      { id: "largest", label: "Largest expiry", value: expiryLabel(largest.date), detail: formatCompact(total(largest)) },
+      { id: "largest", label: "Largest expiry", value: expiryLabel(largest.date), detail: formatCompact(expirySize(largest)) },
       { id: "spot", label: "Spot", value: formatLevel(spot) },
     ];
   }, [changes, colors.negative, colors.positive, expiries, spot]);
   const selectedExpiryRow = expiries.find((row) => row.date === expirySelectedId) ?? null;
   const expiryStrip = useMemo<ChartStripSpec | null>(() => expiries.length < 3 ? null : {
     label: "Open interest by expiry",
-    values: expiries.map(total),
-    value: selectedExpiryRow ? `${expiryLabel(selectedExpiryRow.date)} ${formatCompact(total(selectedExpiryRow))}` : "",
+    values: expiries.map(expirySize),
+    value: selectedExpiryRow ? `${expiryLabel(selectedExpiryRow.date)} ${formatCompact(expirySize(selectedExpiryRow))}` : "",
     color: colors.textMuted,
   }, [colors.textMuted, expiries, selectedExpiryRow]);
   const renderExpiry = useCallback((row: ExpiryOpenInterest, column: DataTableColumn): DataTableCell => {
@@ -414,9 +430,14 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
         value: row.maxPain == null || spot == null ? null : Number(((row.maxPain / spot - 1) * 100).toFixed(4)),
         color: colors.textMuted,
       };
+      case "netGamma": {
+        const net = netGammas?.get(row.date) ?? null;
+        return { text: formatGamma(net), value: net,
+          color: net == null ? colors.textMuted : net >= 0 ? colors.positive : colors.negative };
+      }
       default: return { text: "" };
     }
-  }, [colors, spot]);
+  }, [colors, netGammas, spot]);
 
   // ---- GEX ----
   const gammaData = gamma.data;
@@ -444,15 +465,20 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   ] : [], [colors.negative, colors.positive, gammaChart, gammaWindow]);
   const band = gammaData?.band;
   const shares = band ? `${Math.round(band.shareLow * 100)}-${Math.round(band.shareHigh * 100)}%` : "";
+  const walls = useMemo(() => gammaWalls(gammaStrikes), [gammaStrikes]);
   const gammaFigures = useMemo<StatItem[]>(() => !gammaData?.total ? [] : [
     { id: "net", label: "Net GEX", value: formatGamma(gammaData.total.net), detail: "$ per 1% move",
       color: gammaData.total.net >= 0 ? colors.positive : colors.negative },
     { id: "flip", label: "Flip", value: formatLevel(gammaData.flip),
       detail: gammaData.flip == null ? "none within 15%" : `${formatDistance(gammaData.flip, gammaSpot)} vs spot` },
+    ...([["call-wall", "Call wall", walls.callWall], ["put-wall", "Put wall", walls.putWall]] as const).map(([id, label, strike]) => ({
+      id, label, value: strike == null ? "--" : formatStrike(strike),
+      detail: strike == null ? undefined : `${formatDistance(strike, gammaSpot)} vs spot`,
+    })),
     ...(band ? [{ id: "band", label: "Dealer range", value: `${formatGamma(band.low)} to ${formatGamma(band.high)}`,
       detail: `${shares} with dealers${gammaData.boxes?.length ? ", boxes out" : ""}` }] : []),
     { id: "spot", label: "Spot", value: formatLevel(gammaSpot) },
-  ], [band, colors.negative, colors.positive, gammaData, gammaSpot, shares]);
+  ], [band, colors.negative, colors.positive, gammaData, gammaSpot, shares, walls]);
   // The assumption rides in the legend, where the numbers it changes are read; the
   // dealer range figure names its own share. It gives way before the series name does.
   const assumption = width >= 60 ? "dealers long calls, short puts" : width >= 48 ? "long calls, short puts" : null;
@@ -479,7 +505,7 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   }, [colors, gammaSpot]);
 
   const strikeColumnList = useMemo(() => strikeColumns(changes), [changes]);
-  const expiryColumnList = useMemo(() => expiryColumns(changes), [changes]);
+  const expiryColumnList = useMemo(() => expiryColumns(changes, hasGamma), [changes, hasGamma]);
   const markerColor = colors.textBright;
 
   let content: ReactNode = null;
@@ -521,7 +547,8 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
       sortColumnId={expirySort.columnId} sortDirection={expirySort.direction}
       onHeaderClick={(id) => setExpirySort((current) => nextHeaderSort(current, id))}
       emptyStateTitle="No listed expiries."
-      getExportMetadata={() => [["open interest as of", data?.oiDate ?? ""], ["change since", data?.previousOiDate ?? ""], ["spot", spot ?? ""]]}
+      getExportMetadata={() => [["open interest as of", data?.oiDate ?? ""], ["change since", data?.previousOiDate ?? ""], ["spot", spot ?? ""],
+        ...(hasGamma ? [["net GEX unit", "dollars of dealer delta per 1% move"], ["quotes as of", netGammas ? gamma.data?.quotesAsOf ?? "" : ""]] : [])]}
       rootBefore={<ChartTableHeader width={width} height={bodyHeight} figures={ladderFigures}
         tableRows={expiryRows.length} tableChromeRows={chartTableChromeRows(expiryColumnList, width)}
         chart={expiryChart ? {
@@ -559,7 +586,7 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
               ...(gammaData.bandWithBoxes ? [["range with boxes low", gammaData.bandWithBoxes.low],
                 ["range with boxes high", gammaData.bandWithBoxes.high],
                 ["box legs left out", (gammaData.boxes ?? []).map((leg) => `${leg.expiry} ${leg.strike} x${leg.contracts}`).join("; ")]] : []),
-              ["flip", gammaData.flip ?? ""],
+              ["flip", gammaData.flip ?? ""], ["call wall", walls.callWall ?? ""], ["put wall", walls.putWall ?? ""],
               ["open interest as of", gammaData.oiDate ?? ""], ["quotes as of", gammaData.quotesAsOf ?? ""]]}
             rootBefore={<ChartTableHeader width={width} height={bodyHeight} query={query} figures={gammaFigures}
               tableRows={gammaRows.length} tableChromeRows={chartTableChromeRows(GAMMA_COLUMNS, width)}
@@ -581,13 +608,11 @@ function OptionsPositioningView({ width, height, focused, symbol }: PaneProps & 
   }
 
   return <Box width={width} height={height} flexDirection="column">
+    {tabStrip}
     <PaneStatusBody loading={openInterest.loading && !data} error={!data ? openInterest.error : null}
       empty={!!data && !data.expiries.length} subject="open interest"
       emptyTitle={`No listed options for ${parsePublicTickerKey(symbol).symbol.replace(/^\^/, "")}.`}>
-      {data?.expiries.length ? <>
-        {tabStrip}
-        {content}
-      </> : null}
+      {data?.expiries.length ? content : null}
     </PaneStatusBody>
   </Box>;
 }

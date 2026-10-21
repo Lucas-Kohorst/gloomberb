@@ -1,5 +1,8 @@
+import type { BrokerContractRef } from "../types/instrument";
 import { FINANCIAL_VINTAGE_NOTICE } from "../utils/financial-statements";
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { apiClient } from "../api-client";
+import { GloomberbCloudProvider } from "../sources/gloomberb-cloud";
 import { chartSeriesSourceKey } from "../capabilities";
 import type { FredSeriesData, FredSeriesLoadResult } from "../sources/gloomberb-cloud/fred-series";
 import { buildCustomChartPreset } from "../plugins/builtin/chart-composer/presets";
@@ -123,6 +126,42 @@ describe("resolveChartSpecData", () => {
     expect(withoutMetadata.errors).toEqual([]);
     expect(withoutMetadata.series[0]?.points.map((point) => point.value)).toEqual([77.53]);
     expect(withoutMetadata.series[0]?.unit).toBe("currency");
+  });
+
+  test("a series drawn in a ticker's price shares that price's axis instead of taking a scale of its own", async () => {
+    const history = [
+      { date: new Date("2026-01-14"), close: 75, volume: 10 },
+      { date: new Date("2026-01-15"), close: 77.53, volume: 12 },
+    ];
+    const provider = createTestDataProvider({
+      getQuote: async () => ({ symbol: "NESN", listingExchangeName: "SWX", currency: "CHF", instrumentType: "EQUITY", price: 77.53, change: 0, changePercent: 0, lastUpdated: Date.parse("2026-01-16") }),
+      getTickerFinancials: async () => emptyFinancials(),
+      getPriceHistory: async () => history,
+      getPriceHistoryForResolution: async () => history,
+    });
+    const line = (id: string, priceOf?: string) => async () => ({
+      id, label: id, color: "#fff", unit: "currency", unitGroup: "series:currency", ...(priceOf ? { priceOf } : {}),
+      nativeFrequency: "daily" as const, dataShape: "scalar" as const, style: "line" as const, transform: "raw" as const,
+      axis: "left" as const, panelId: "main", interpolation: "none" as const,
+      points: [{ date: new Date("2026-01-15"), observedAt: new Date("2026-01-15"), value: 76 }],
+    });
+    const spec = chartSpec({
+      viewport: { range: "1M", resolution: "1d" },
+      series: [
+        chartSeries({ id: "price", source: { kind: "security", instrument: { symbol: "NESN", exchange: "SWX" }, fieldId: "market.close" } }),
+        chartSeries({ id: "average", source: { kind: "capability", capabilityId: "lab", seriesId: "avg/NESN%3ASWX" }, axis: "auto" }),
+      ],
+    });
+    const sources = { dataProvider: provider, loadFredSeries: async () => fredLoad(), now: new Date("2026-01-16") };
+    const over = await resolveChartSpecData(spec, { ...sources, resolveCapabilitySeries: line("avg", "NESN:SWX") });
+    expect(over.series.map((entry) => [entry.id, entry.unitGroup, entry.axis])).toEqual([
+      ["price", "price:CHF", "left"],
+      ["average", "price:CHF", "left"],
+    ]);
+    expect(over.warnings.filter((warning) => warning.includes("axis"))).toEqual([]);
+    // Without priceOf, a series in an unknown currency keeps its own scale on the other axis.
+    const apart = await resolveChartSpecData(spec, { ...sources, resolveCapabilitySeries: line("avg") });
+    expect(apart.series[1]).toMatchObject({ unitGroup: "series:currency", axis: "right" });
   });
 
   test("seeds study series so their panels survive the wait for real data", async () => {
@@ -387,7 +426,9 @@ describe("resolveChartSpecData", () => {
     expect(resolved.series[0]?.points[0]?.value).toBe(42);
   });
 
-  test("resolves capability coverage for each effective panned viewport and caches by structured bounds", async () => {
+  test("keeps a panned dataset loaded to its newest observation, so the view can go back to it", async () => {
+    // A daily series published days late, served only for the dates asked, as the map's series route does.
+    const newest = Date.parse("2026-02-26T00:00:00.000Z");
     const spec: ChartSpec = chartSpec({
       viewport: { range: "1M", resolution: "auto" },
       series: [chartSeries({
@@ -403,7 +444,10 @@ describe("resolveChartSpecData", () => {
       now: new Date("2026-03-01T00:00:00.000Z"),
       resolveCapabilitySeries: async (_source: any, viewport: ChartSpec["viewport"]) => {
         requested.push(viewport);
-        const date = new Date(viewport.dateWindow!.start);
+        const from = Date.parse(viewport.dateWindow!.start.slice(0, 10));
+        const to = Math.min(Date.parse(viewport.dateWindow!.end.slice(0, 10)), newest);
+        const points = [];
+        for (let time = from; time <= to; time += 86_400_000) points.push({ date: new Date(time), observedAt: new Date(time), value: 1 });
         return {
           id: "provider",
           label: "Provider",
@@ -417,22 +461,27 @@ describe("resolveChartSpecData", () => {
           axis: "left" as const,
           panelId: "main",
           interpolation: "none" as const,
-          points: [{ date, observedAt: date, value: 1 }],
+          points,
         };
       },
     };
-    const firstViewport = { start: new Date("2026-01-01T00:00:00.000Z"), end: new Date("2026-01-08T00:00:00.000Z") };
-    const secondViewport = { start: new Date("2026-02-01T00:00:00.000Z"), end: new Date("2026-02-08T00:00:00.000Z") };
+    const rangeWindow = { start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z" };
+    const olderViewport = { start: new Date("2026-01-01T00:00:00.000Z"), end: new Date("2026-01-08T12:00:00.000Z") };
+    const zoomedViewport = { start: new Date("2026-02-03T00:00:00.000Z"), end: new Date("2026-02-10T12:00:00.000Z") };
 
-    await resolveChartSpecData(spec, sources, cache, { requestViewport: firstViewport });
-    const panned = await resolveChartSpecData(spec, sources, cache, { requestViewport: secondViewport });
-    await resolveChartSpecData(spec, sources, cache, { requestViewport: firstViewport });
+    const panned = await resolveChartSpecData(spec, sources, cache, { requestViewport: olderViewport });
+    const zoomed = await resolveChartSpecData(spec, sources, cache, { requestViewport: zoomedViewport });
+    await resolveChartSpecData(spec, sources, cache, { requestViewport: olderViewport });
 
-    expect(panned.series[0]?.points[0]?.date.toISOString()).toBe(secondViewport.start.toISOString());
-    expect(panned.viewport).toEqual(secondViewport);
+    // The view stays where the user put it; the series runs on to the newest observation.
+    expect(panned.viewport).toEqual(olderViewport);
+    expect(panned.series[0]?.points.at(-1)?.date.toISOString()).toBe("2026-01-08T00:00:00.000Z");
+    expect(panned.bufferedSeries?.[0]?.points.at(-1)?.date.getTime()).toBe(newest);
+    expect(zoomed.viewport).toEqual(zoomedViewport);
+    expect(zoomed.bufferedSeries?.[0]?.points.at(-1)?.date.getTime()).toBe(newest);
     expect(requested.map((viewport) => viewport.dateWindow)).toEqual([
-      { start: firstViewport.start.toISOString(), end: firstViewport.end.toISOString() },
-      { start: secondViewport.start.toISOString(), end: secondViewport.end.toISOString() },
+      { start: olderViewport.start.toISOString(), end: rangeWindow.end },
+      rangeWindow,
     ]);
     expect(chartSeriesSourceKey({ kind: "capability", capabilityId: "a", seriesId: "b:c" }))
       .not.toBe(chartSeriesSourceKey({ kind: "capability", capabilityId: "a-b", seriesId: "c" }));
@@ -865,6 +914,45 @@ describe("resolveChartSpecData", () => {
     expect(result.resolution).toBe("1mo");
     expect(result.resolutionSupport).toContainEqual({ resolution: "1wk", maxRange: "5Y" });
     expect(result.warnings).toContain("1WK data is unavailable for this range. Auto resolution was used instead.");
+  });
+
+  test("a routing exchange such as SMART takes its session clock from the quote's listing", async () => {
+    const source = {
+      kind: "security" as const,
+      instrument: { symbol: "NVDA", exchange: "SMART" },
+      fieldId: "market.ohlcv",
+    };
+    const provider = createTestDataProvider({
+      getPriceHistoryForResolution: async () => [
+        { date: new Date("2026-10-15T19:45:00Z"), open: 215, high: 216, low: 214, close: 215 },
+        { date: new Date("2026-10-16T13:30:00Z"), open: 214, high: 215, low: 213, close: 214 },
+      ],
+    });
+    const spec: ChartSpec = chartSpec({
+      viewport: { range: "1W", resolution: "15m" },
+      series: [{ id: "price", source, style: "candles", transform: "raw", axis: "left", panelId: "main", interpolation: "none" }],
+    });
+    const result = await resolveChartSpecData(spec, {
+      dataProvider: provider,
+      now: new Date("2026-10-16T20:00:00Z"),
+      quoteOverrides: new Map([[chartQuoteOverrideKeyForSource(source), {
+        symbol: "NVDA", price: 214, currency: "USD", change: 1, changePercent: 0.5, lastUpdated: Date.parse("2026-10-16T19:55:00Z"), exchangeName: "NASDAQ",
+      }]]),
+      loadFredSeries: async () => fredLoad(),
+    });
+    expect(result.series[0]?.timeBasis).toMatchObject({ kind: "market", timeZone: "America/New_York", exchange: "NASDAQ" });
+    // Without a quote naming the venue, a SMART-routed dollar listing still trades on the US session.
+    const unquoted = await resolveChartSpecData(spec, { dataProvider: provider, now: new Date("2026-10-16T20:00:00Z"), loadFredSeries: async () => fredLoad() });
+    expect(unquoted.series[0]?.timeBasis).toMatchObject({ kind: "market", timeZone: "America/New_York" });
+    // Its sessions are the venue's too, so the day view and VWAP know when the day opened.
+    expect(result.series[0]?.listing).toEqual({ symbol: "NVDA", exchange: "NASDAQ" });
+    expect(unquoted.series[0]?.listing).toEqual({ symbol: "NVDA", exchange: "NYSE" });
+    // A dollar option names no venue; it trades on the US session too.
+    const optionSource = { kind: "security" as const, fieldId: "market.ohlcv", instrument: { symbol: "NVDA261218C00200000", exchange: "",
+      instrument: { brokerId: "aries", symbol: "NVDA", localSymbol: "NVDA261218C00200000", secType: "OPT", currency: "USD", right: "C" as const, strike: 200, lastTradeDateOrContractMonth: "20261218", multiplier: "100" } } };
+    const option = await resolveChartSpecData({ ...spec, series: [{ ...spec.series[0]!, source: optionSource }] }, { dataProvider: provider, now: new Date("2026-10-16T20:00:00Z"), loadFredSeries: async () => fredLoad() });
+    expect(option.series[0]?.timeBasis).toMatchObject({ kind: "market", timeZone: "America/New_York" });
+    expect(option.series[0]?.listing).toEqual({ symbol: "NVDA261218C00200000", exchange: "NYSE" });
   });
 
   test("keeps the snapshot exchange when a newer quote omits it", async () => {
@@ -1953,7 +2041,8 @@ describe("resolveChartSpecData", () => {
       const price = result.series.find((entry) => entry.id === "price");
       const sma = result.series.find((entry) => entry.id === "sma");
       expect(price?.points.at(-1)?.date.getTime()).toBe(elapsed ? quoteTime : now - 86_400_000);
-      expect(price?.points.at(-1)?.close).toBe(elapsed ? 129 : 100);
+      // After the close the daily bar takes the regular close (130), not the 129 after-hours print.
+      expect(price?.points.at(-1)?.close).toBe(elapsed ? 130 : 100);
       expect(price?.latestChangePercent).toBe(elapsed ? 30 : undefined);
       expect(sma?.points.at(-1)?.date.getTime()).toBe(elapsed ? quoteTime : now - 86_400_000);
     } finally { clock.mockRestore(); }
@@ -1995,13 +2084,121 @@ describe("resolveChartSpecData", () => {
       ] }),
       now: new Date(now),
       quoteOverrides: new Map([[chartQuoteOverrideKeyForSource(source), {
-        symbol: "SQQQ", price: 100, postMarketPrice: 105, currency: "USD", change: 0, changePercent: 0,
+        symbol: "SQQQ", price: 101, postMarketPrice: 105, currency: "USD", change: 0, changePercent: 0,
         lastUpdated: now - 60_000, marketState: "POST",
       }]]),
     });
     expect(result.errors).toEqual([]);
     expect(result.series[0]?.points).toHaveLength(1);
-    expect(result.series[0]?.points[0]?.value).toBe(105);
+    // The after-hours quote reaches the day's bar at the regular close, not its extended print.
+    expect(result.series[0]?.points[0]?.value).toBe(101);
+  });
+
+  test("a closed market's last daily candle is its regular close, as history serves it", async () => {
+    // CRWV after Thursday's after-hours session: Gloom Cloud's price is the 68.10 print, its close 69.69 beside it.
+    const now = Date.parse("2026-10-16T03:45:00Z");
+    const source = { kind: "security" as const, instrument: { symbol: "CRWV", exchange: "NASDAQ" }, fieldId: "market.ohlcv" };
+    const history = [
+      { date: new Date("2026-10-14T00:00:00Z"), open: 71.74, high: 72.52, low: 64.41, close: 65.78, volume: 111_214_200 },
+      { date: new Date("2026-10-15T00:00:00Z"), open: 61.43, high: 69.76, low: 59.51, close: 69.69, volume: 130_000_400 },
+    ];
+    const result = await resolveChartSpecData(chartSpec({
+      viewport: { range: "1M", resolution: "1d" },
+      series: [chartSeries({ source, style: "candles" })],
+    }), {
+      dataProvider: createTestDataProvider({ getPriceHistoryForResolution: async () => history }),
+      now: new Date(now),
+      quoteOverrides: new Map([[chartQuoteOverrideKeyForSource(source), {
+        symbol: "CRWV", price: 68.1, currency: "USD", change: 2.32, changePercent: 3.53, previousClose: 65.78,
+        listingExchangeName: "NASDAQ", marketState: "POSTPOST", changeSessionDate: "2026-10-15",
+        regularClose: 69.69, regularCloseSessionDate: "2026-10-15", regularChange: 3.91, regularChangePercent: 5.944,
+        lastUpdated: Date.parse("2026-10-15T23:59:59Z"),
+      }]]),
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.series[0]?.points.map((point) => point.value)).toEqual([65.78, 69.69]);
+    expect(result.series[0]?.points.at(-1)).toMatchObject({ open: 61.43, high: 69.76, low: 59.51 });
+  });
+
+  test("a session closed the same UTC day keeps its bar's open, high, low and volume, at the regular close", async () => {
+    // AAPL on Friday 16 Oct at 22:12Z: closed at 343.46, last printed 342.88 after hours. Gloom Cloud reads a
+    // date-only end as exclusive, so a window ending on today's date has no bar of today.
+    const now = Date.parse("2026-10-16T22:12:00Z");
+    const bars = [
+      { date: "2026-10-15T00:00:00.000Z", open: 346.95, high: 347.85, low: 341.6, close: 342, volume: 39_678_300 },
+      { date: "2026-10-16T00:00:00.000Z", open: 346.085, high: 347.82, low: 340.46, close: 343.46, volume: 60_122_725 },
+    ];
+    const asked: Array<string | undefined> = [];
+    const original = apiClient.getCloudHistory;
+    apiClient.getCloudHistory = async (_symbol, _exchange, params = {}) => {
+      asked.push(params.endDate);
+      return { status: "success", data: bars.filter((bar) => bar.date.slice(0, 10) < params.endDate!) };
+    };
+    setSystemTime(now);
+    try {
+      const cloud = new GloomberbCloudProvider();
+      const source = { kind: "security" as const, instrument: { symbol: "AAPL", exchange: "NASDAQ" }, fieldId: "market.ohlcv" };
+      const resolve = (quote: Record<string, unknown>, at = now) => resolveChartSpecData(chartSpec({
+        viewport: { range: "1M", resolution: "1d" },
+        series: [chartSeries({ source, style: "candles" })],
+      }), {
+        dataProvider: createTestDataProvider({
+          getPriceHistoryForResolutionWithMetadata: (...args) => cloud.getPriceHistoryForResolutionWithMetadata(...args),
+        }),
+        now: new Date(at),
+        quoteOverrides: new Map([[chartQuoteOverrideKeyForSource(source), {
+          symbol: "AAPL", currency: "USD", change: 1.46, changePercent: 0.43, previousClose: 342, listingExchangeName: "NASDAQ",
+          lastUpdated: Date.parse("2026-10-16T22:10:00Z"), ...quote,
+        } as never]]),
+      });
+      const result = await resolve({
+        price: 342.88, marketState: "POST", postMarketPrice: 342.88, changeSessionDate: "2026-10-16",
+        regularClose: 343.46, regularCloseSessionDate: "2026-10-16", regularChange: 1.46, regularChangePercent: 0.427,
+      });
+      expect(result.errors).toEqual([]);
+      expect(result.series[0]?.points.at(-1)).toMatchObject({
+        date: new Date("2026-10-16T00:00:00Z"), open: 346.085, high: 347.82, low: 340.46, value: 343.46, volume: 60_122_725,
+      });
+      expect(asked.at(-1)).toBe("2026-10-17");
+      // While the session trades the window still ends today: the day's bar is the live quote's.
+      const midday = Date.parse("2026-10-16T15:00:00Z");
+      setSystemTime(midday);
+      await resolve({ price: 345, marketState: "REGULAR", lastUpdated: midday - 60_000 }, midday);
+      expect(asked.at(-1)).toBe("2026-10-16");
+    } finally {
+      apiClient.getCloudHistory = original;
+      setSystemTime();
+    }
+  });
+
+  test("a fresh chart of a day the history lacks opens its candle with the session's range, mid-session and just after the close", async () => {
+    // Friday 16 Oct: the history ends on Thursday, so Friday's candle is the quote's.
+    const source = { kind: "security" as const, instrument: { symbol: "AAPL", exchange: "NASDAQ" }, fieldId: "market.ohlcv" };
+    const history = [{ date: new Date("2026-10-15T00:00:00Z"), open: 346.95, high: 347.85, low: 341.6, close: 342, volume: 39_678_300 }];
+    const session = { open: 346.085, high: 347.82, low: 340.46, volume: 60_000_000 };
+    const resolveAt = async (time: string, quote: Record<string, unknown>) => {
+      const now = Date.parse(time);
+      const result = await resolveChartSpecData(chartSpec({
+        viewport: { range: "1M", resolution: "1d" },
+        series: [chartSeries({ source, style: "candles" })],
+      }), {
+        dataProvider: createTestDataProvider({ getPriceHistoryForResolution: async () => history }),
+        now: new Date(now),
+        quoteOverrides: new Map([[chartQuoteOverrideKeyForSource(source), {
+          symbol: "AAPL", currency: "USD", change: 1.46, changePercent: 0.43, previousClose: 342, listingExchangeName: "NASDAQ",
+          lastUpdated: now - 60_000, ...session, ...quote,
+        } as never]]),
+      });
+      expect(result.errors).toEqual([]);
+      return result.series[0]?.points.at(-1);
+    };
+    expect(await resolveAt("2026-10-16T17:00:00Z", { price: 345, marketState: "REGULAR" }))
+      .toMatchObject({ date: new Date("2026-10-16T00:00:00Z"), open: 346.085, high: 347.82, low: 340.46, value: 345, volume: 60_000_000 });
+    // After-hours print under the day's low: the close is the regular close, the low the session's.
+    expect(await resolveAt("2026-10-16T20:10:00Z", {
+      price: 340, marketState: "POST", postMarketPrice: 340, changeSessionDate: "2026-10-16",
+      regularClose: 343.46, regularCloseSessionDate: "2026-10-16", regularChange: 1.46, regularChangePercent: 0.427,
+    })).toMatchObject({ open: 346.085, high: 347.82, low: 340.46, value: 343.46 });
   });
 
   test("reuses raw source loads while live quotes recompute the chart tail", async () => {
@@ -2550,9 +2747,9 @@ describe("one-day charts show the latest session", () => {
   test("asks US listings for extended hours and falls back to the regular session when they are not served", async () => {
     const requests: Array<string | undefined> = [];
     const bars = [...hourlyBars("2026-10-01T13:30:00Z", "2026-10-01T19:30:00Z", 330), ...hourlyBars("2026-10-02T08:00:00Z", "2026-10-02T23:00:00Z", 333)];
-    const resolveExtended = (symbol: string, exchange: string, served: boolean) => resolveChartSpecData(chartSpec({
+    const resolveExtended = (symbol: string, exchange: string, served: boolean, contract?: BrokerContractRef) => resolveChartSpecData(chartSpec({
       viewport: { range: "1D", resolution: "1h", extendedHours: true },
-      series: [chartSeries({ style: "candles", source: { kind: "security", instrument: { symbol, exchange }, fieldId: "market.ohlcv" } })],
+      series: [chartSeries({ style: "candles", source: { kind: "security", instrument: { symbol, exchange, ...(contract ? { instrument: contract } : {}) }, fieldId: "market.ohlcv" } })],
     }), {
       dataProvider: createTestDataProvider({
         getPriceHistoryForResolutionWithMetadata: async (_symbol, _exchange, _range, resolution, context) => {
@@ -2574,6 +2771,12 @@ describe("one-day charts show the latest session", () => {
     expect(unserved.warnings).toContain("AAPL:XNAS: pre-market and after-hours bars are unavailable; the chart shows the regular session.");
     await resolveExtended("7203.T", "JPX", true);
     expect(requests).toEqual(["extended", "extended", undefined]);
+    // A broker's dollar contract routed through SMART asks too; its options do not.
+    requests.length = 0;
+    const routed = { brokerId: "aries", brokerInstanceId: "sim", symbol: "AAPL", secType: "STK", exchange: "SMART", currency: "USD" };
+    expect((await resolveExtended("AAPL", "SMART", true, routed)).viewport?.start).toEqual(new Date("2026-10-02T08:00:00Z"));
+    await resolveExtended("AAPL261218C00300000", "", true, { ...routed, localSymbol: "AAPL261218C00300000", secType: "OPT", right: "C", strike: 300, lastTradeDateOrContractMonth: "20261218", multiplier: "100" });
+    expect(requests).toEqual(["extended", undefined]);
   });
 
   test("keeps a rolling day for crypto", async () => {

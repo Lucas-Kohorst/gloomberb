@@ -18,8 +18,13 @@ import { OptionsScenarioPane } from "./pane";
 import { type SavedScenarioStrategy } from "./state";
 import { formatHedgePrice, scenarioHedgeBudget } from "./hedge";
 import { createTestPaneConfig } from "../../../test-support/pane";
+import { createTestQuote } from "../../../test-support/data-provider";
+import { renderedReportFreshness, renderedReportObservations } from "../../../cli/pane-functions/report-notices";
 import { createTestTicker } from "../../../test-support/ticker";
 import type { TickerRecord } from "../../../types/ticker";
+import type { BrokerAdapter } from "../../../types/broker";
+import type { PinTickerOptions } from "../../../types/plugin";
+import { takeTradeIntent } from "../broker-trading/command";
 
 const ID = "options-scenario:test";
 const PLUGIN = "ticker-research";
@@ -242,6 +247,30 @@ test("a pane bound to a listing key reads the market for the bare symbol and kee
   }
 });
 
+test("the Payoff names the legs it values and the session, and the pane dates its report by the quote it values at", async () => {
+  const base = closeMarket();
+  // The close's chain, 15 minutes behind, against an after-hours print the position is valued at.
+  const market: ScenarioMarketSnapshot = { ...base, chain: { ...base.chain!, dataSource: "delayed", delayMinutes: 15 },
+    underlyingQuote: createTestQuote({ symbol: "AAPL", price: 100.25, lastUpdated: base.asOf, providerId: "gloomberb-cloud", dataSource: "delayed",
+      listingExchangeName: "NASDAQ", marketState: "POST", postMarketPrice: 100.25, extendedSessionPrint: true }) };
+  const settings = { ...SEEDED, strategy: "put", strike: "100", scenarioMarketSnapshot: market };
+  await mount(configFor(settings, { activeTabId: "payoff" }));
+  expect(tui.frame()).toContain("Long 1 AAPL 100 put");
+  // The legend dates the one expiry; the legs row does not say it twice.
+  expect(tui.frame()).toContain("Expiry 2026-09-23");
+  expect(tui.frame()).not.toContain("23 Sep 2026");
+  expect(tui.frame()).toContain("valued after hours");
+  // What a capture reads: the chain's feed and delay, and the quote it values at (its session is read against the clock: freshness.test.ts).
+  expect(renderedReportFreshness(registry.snapshot())).toEqual({ status: "delayed", delayMinutes: 15 });
+  expect(renderedReportObservations(registry.snapshot())).toMatchObject([{ updatedAt: base.asOf, dataSource: "delayed", delayMinutes: 15 }]);
+  await tui.destroy();
+
+  // A typed spot is a what-if, not the print.
+  await mount(configFor({ ...settings, spot: "101" }, { activeTabId: "payoff" }));
+  expect(tui.frame()).toContain("Long 1 AAPL 100 put");
+  expect(tui.frame()).not.toContain("valued after hours");
+});
+
 test("a hedge budget shows the report's sizing under the scenario figures, and says why it cannot size", async () => {
   const market = closeMarket();
   WIDTH = 220;
@@ -264,3 +293,24 @@ test("a hedge budget shows the report's sizing under the scenario figures, and s
     expect(tui.frame()).toContain("budget of 1,000,000.00 USD NAV is 1.00 USD; one contract costs");
   } finally { WIDTH = 100; }
 });
+
+test("with a broker that takes spreads, t trades the position as one order on its underlying's Trade tab", async () => {
+  const pinned: Array<{ symbol: string; options?: PinTickerOptions }> = [];
+  const adapter = { id: "demo", placeOrder: async () => ({}), previewOrder: async () => ({}),
+    getTradingCapabilities: (_profile: unknown, contract: { secType?: string }) => contract.secType === "BAG" ? { orderTypes: ["LMT"], maxLegs: 4 } : { orderTypes: [] } } as unknown as BrokerAdapter;
+  const legs = "call,100,2026-12-18,2,5,25;call,110,2026-12-18,-2,2,25";
+  const withBroker = configFor({ legs });
+  withBroker.brokerInstances = [{ id: "sim", brokerType: "demo", label: "Demo", enabled: true, config: {} }];
+  // No broker: nothing to trade, nothing new in the footer.
+  await mount(configFor({ legs }), createStatefulTestPluginRuntime({ pinTicker: (symbol, options) => { pinned.push({ symbol, options }); }, getBrokerAdapter: () => adapter }));
+  await shortcut("t");
+  expect(pinned).toHaveLength(0);
+  await tui.destroy();
+  await mount(withBroker, createStatefulTestPluginRuntime({ pinTicker: (symbol, options) => { pinned.push({ symbol, options }); }, getBrokerAdapter: () => adapter }));
+  await shortcut("t");
+  expect(pinned).toMatchObject([{ symbol: "AAPL", options: { tabId: "broker-trade" } }]);
+  // Two of the 100/110 call vertical, paying a debit at the 5 and 2 entries.
+  expect(takeTradeIntent(pinned[0]!.options!.tabState!.brokerTradeIntent as string)).toEqual({ action: "BUY", quantity: 2, legs: [
+    { contractSymbol: "AAPL261218C00100000", action: "BUY", ratio: 1 }, { contractSymbol: "AAPL261218C00110000", action: "SELL", ratio: 1 }] });
+});
+

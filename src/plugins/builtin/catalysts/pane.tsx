@@ -20,7 +20,7 @@ import { listingCell, toneColor } from "../shared/research-cells";
 import { isCloudSessionRequired, useResearchCloudSession } from "../shared/research-cloud-session";
 import { loadCatalystDetail, loadCatalysts, validateCatalysts } from "./client";
 import { CatalystEventDetail } from "./detail";
-import { catalystAgency, catalystCell, catalystColumns, catalystLabel, catalystQuery, catalystSection, catalystStatusTone, catalystSymbol, catalystTab, catalystTypeTone, CATALYST_TABS } from "./model";
+import { catalystAgency, catalystCell, catalystColumns, catalystEmptyTitle, catalystLabel, catalystQuery, catalystSection, catalystStatusTone, catalystSymbol, catalystTab, catalystTypeTone, CATALYST_TABS } from "./model";
 
 type Row = SectionedRow<CatalystEvent> | { kind: "locked"; key: string };
 const rowKey = (row: Row) => row.key;
@@ -147,19 +147,19 @@ export function CatalystView({ width, height, focused, symbol, litigation = fals
   if (isCloudSessionRequired(error?.message)) return <SignInWall placement="catalysts-signin" action="view catalysts" needsVerification={session.needsVerification} />;
   return <Box width={width} height={height} flexDirection="column">
     {strip}
-    <PaneStatusBody loading={!openId && !data && resource.loading} error={!openId && (!data || denied) ? error?.message : null} subject={litigation ? "company litigation" : "catalysts"}>
-      <PageStackView focused={focused} detailOpen={!!openId} onBack={() => setOpenId("")} detailTitle={open?.title ?? "Catalyst"}
+    <PageStackView focused={focused} detailOpen={!!openId} onBack={() => setOpenId("")} detailTitle={open?.title ?? "Catalyst"}
         detailContent={open ? <CatalystEventDetail key={open.id} event={open} accessKey={accessKey} snapshot={detailSnapshots[open.id]} width={width} height={Math.max(3, height - 1)} focused={focused} initialTab={detailTab} openUpgrade={openUpgrade} /> : <PaneStatusBody loading={externalOpen.loading} error={externalOpen.error} subject="catalyst event"><EmptyState title="Event unavailable." /></PaneStatusBody>}
         rootContent={<DataTableView<Row> rootWidth={width} rootHeight={Math.max(3, height - tabRows)} rootBefore={queryBar} focused={focused && !openId && !searchActive && !dateFieldActive}
+          // A tab or filter change loads under the query bar, which stays.
+          status={{ loading: !data && resource.loading, error: !data || denied ? error?.message : null, subject: litigation ? "company litigation" : "catalysts" }}
           items={items} sortColumnId={null} sortDirection="asc" columns={columns} getItemKey={rowKey}
           isNavigable={isSelectable} renderSectionHeader={(row) => row.kind === "locked" ? null : renderSectionedRowHeader(row)}
           selection={{ kind: "id", selectedId: selected?.id ?? null, getId: rowKey, onChange: (id) => { if (!id.startsWith("locked:")) setSelectedId(id); } }}
           onActivate={(row) => row.kind === "locked" ? openUpgrade() : isEventRow(row) ? setOpenId(row.item.id) : undefined}
           renderCell={renderCell}
           scrollRef={scrollRef} onBodyScrollActivity={loadMore} resetScrollKey={JSON.stringify(query)} showHorizontalScrollbar selectedTextOverridesCellColor
-          emptyStateTitle={data?.coverage.totalEvents === 0 ? "Catalyst history is collecting." : tab === "changes" ? "No observed status or date changes match." : "No events match these filters."}
+          emptyStateTitle={catalystEmptyTitle(data, query, tab === "changes")}
           bodyAfter={lockedRows && desktop ? <LockedOverlay rows={lockedRows} text="Upgrade for every catalyst and its history" onPress={openUpgrade} role="catalysts-upgrade" /> : undefined} />}
       />
-    </PaneStatusBody>
   </Box>;
 }
