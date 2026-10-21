@@ -112,9 +112,9 @@ export function SocialMentionsPane({ width, height, focused }: Pick<PaneProps, "
   useShortcut((event) => { if (focused && isPlainKey(event, "r")) { event.preventDefault(); void resource.reload(); } });
   usePaneNoticeFooter({ registrationId: "social-mentions:notices", focused,
     notices: [...(data?.warnings ?? []), ...(resource.data?.refreshError ? [resource.data.refreshError] : [])] });
-  // The empty body owns its failure; the footer keeps failures beside retained data.
+  // The wall says it; a missing sign-in is not a failure for the footer to repeat.
   const signInWall = !data && isCloudSessionRequired(resource.error);
-  usePaneStatusLinkFooter({ registrationId: "social-mentions", focused, loading: resource.loading || pending, error: data ? resource.error : null,
+  usePaneStatusLinkFooter({ registrationId: "social-mentions", focused, loading: resource.loading || pending, error: signInWall ? null : resource.error,
     url: selected?.topPost?.url ?? (symbol ? `https://x.com/search?q=%24${symbol}` : null), showOpenHint: true,
     info: data ? [
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: updatedAgo, tone: "muted" as const }] }] : []),
@@ -126,7 +126,7 @@ export function SocialMentionsPane({ width, height, focused }: Pick<PaneProps, "
   if (!symbol) return <EmptyState title="This ticker cannot be searched as a cashtag." message="Use a symbol of up to six letters and digits, starting with a letter." />;
   const latest = summary?.latest ?? null;
   return <Box flexDirection="column" width={width} height={height}>
-    <PaneStatusBody loading={resource.loading && !data} error={!data ? resource.error : null} subject="Social mentions"
+    <PaneStatusBody loading={resource.loading && !data} error={!data ? resource.error : null} subject="social mentions"
       empty={!resource.loading && !resource.error && !!data && !data.x.days.length && !pending} emptyTitle="No mention history yet.">
       {data ? <DataTableStackView<SocialDayRow, SocialColumn>
         focused={focused} rootWidth={width} rootHeight={height} emptyStateTitle="Counting mentions." columns={SOCIAL_COLUMNS} items={rows} freezeFirstColumn

@@ -60,7 +60,7 @@ test("the Cloud boundary rejects unordered days, bad stances and non-X links", (
 
 test("a server without the endpoint reads as unavailable while sign-in errors pass through", async () => {
   await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw new ApiRequestError("missing", 404); } }))
-    .rejects.toThrow("Social mentions unavailable.");
+    .rejects.toThrow("social mentions unavailable.");
   const denied = new ApiRequestError("Unauthorized", 401);
   await expect(fetchSocialMentions("NVDA", "1y", { getCloudSocialMentions: async () => { throw denied; } })).rejects.toBe(denied);
 });

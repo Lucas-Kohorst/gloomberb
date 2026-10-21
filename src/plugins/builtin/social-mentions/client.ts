@@ -57,7 +57,7 @@ export async function fetchSocialMentions(symbol: string, range: SocialMentionsR
   client: Pick<typeof apiClient, "getCloudSocialMentions"> = apiClient): Promise<SocialMentionsPayload> {
   try { return validateSocialMentions(await client.getCloudSocialMentions(symbol, range), symbol, range); }
   catch (error) {
-    if (error instanceof ApiRequestError && error.status === 404) throw new Error(unavailableText("Social mentions"));
+    if (error instanceof ApiRequestError && error.status === 404) throw new Error(unavailableText("social mentions"));
     throw error;
   }
 }
