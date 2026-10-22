@@ -3,9 +3,6 @@ import type { AppState } from "../core/state/app/types";
 import { isPaneInLayout } from "./pane-manager";
 import { findPaneInstance, type PaneInstanceConfig } from "../types/config";
 
-/** Same single-cell mark a linked pane title uses. */
-export const LINKED_TICKER_MARK = "\u29c9";
-
 export interface SelectedLayoutTicker {
   rootInstanceId: string;
   symbol: string;

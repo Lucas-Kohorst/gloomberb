@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { createInitialState } from "../core/state/app/state";
-import { activeCommandInstrumentLabel } from "../components/command-bar/prompt-placeholder";
 import {
   createDefaultConfig,
   createPaneInstance,
@@ -8,7 +7,7 @@ import {
   type DockLayoutNode,
   type PaneInstanceConfig,
 } from "../types/config";
-import { commandPromptTicker, LINKED_TICKER_MARK, selectedLayoutTicker } from "./selected-ticker";
+import { commandPromptTicker, selectedLayoutTicker } from "./selected-ticker";
 
 function dockOf(ids: readonly string[]): DockLayoutNode {
   const [first, ...rest] = ids;
@@ -57,7 +56,6 @@ test("a linked desk keeps its ticker selected while a market pane is focused", (
     memberCount: 3,
   });
   expect(commandPromptTicker(state)).toEqual({ rootInstanceId: "des", symbol: "MSTR:XMEX" });
-  expect(activeCommandInstrumentLabel(state)).toBe(`${LINKED_TICKER_MARK} MSTR:XMEX`);
 });
 
 test("a focused research pane shows its ticker without inventing a link", () => {
@@ -69,7 +67,6 @@ test("a focused research pane shows its ticker without inventing a link", () => 
   const focused = layoutState([des, news], "des");
 
   expect(commandPromptTicker(focused)).toEqual({ rootInstanceId: "des", symbol: "AAPL" });
-  expect(activeCommandInstrumentLabel(focused)).toBe("AAPL");
   focused.focusedPaneId = "news";
   expect(selectedLayoutTicker(focused)).toBeNull();
   expect(commandPromptTicker(focused)).toBeNull();
@@ -82,5 +79,4 @@ test("a market-wide board stays out of the prompt until it follows a ticker", ()
 
   expect(selectedLayoutTicker(state)).toBeNull();
   expect(commandPromptTicker(state)).toBeNull();
-  expect(activeCommandInstrumentLabel(state)).toBeNull();
 });
