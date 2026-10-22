@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
-import type { HeadlessPaneDefinition, HeadlessPaneFreshness, HeadlessPaneOptionDef } from "./headless";
+import type { HeadlessPaneContext, HeadlessPaneDefinition, HeadlessPaneFreshness, HeadlessPaneOptionDef } from "./headless";
 
 export type {
   HeadlessArgumentExpansion,
@@ -28,6 +28,7 @@ export type {
   HeadlessSeries,
   HeadlessSeriesPoint,
   HeadlessSeriesResult,
+  HeadlessShotState,
   HeadlessSnapshotResult,
 } from "./headless";
 import type { ConnectionHealthRegistry } from "../core/connection-health";
@@ -100,11 +101,16 @@ export interface PanePortableShareDef {
     state?: PaneSharePrivateFields;
   };
   /**
-   * Rewrites the instance before it leaves the device. The receiver has none
-   * of the sender's local ticker records, so anything resolved through them
-   * (a listing's venue, for example) must be pinned into the instance here.
+   * Rewrites the instance before it leaves the device, on every publish. The
+   * receiver has none of the sender's local ticker records, so anything
+   * resolved through them (a listing's venue, for example) must be pinned into
+   * the instance here; a layout published to the gallery passes none.
    */
-  prepare?(pane: PaneInstanceConfig, context: { tickers: ReadonlyMap<string, TickerRecord> }): PaneInstanceConfig;
+  prepare?(pane: PaneInstanceConfig, context: {
+    tickers: ReadonlyMap<string, TickerRecord>;
+    /** The moment the pane's layout tab has its crosshair pinned at, so a link opens there. */
+    pinnedTime?: number;
+  }): PaneInstanceConfig;
 }
 
 /** What covers a pane when a report of it is refused: see `PaneDef.reportLockNote`. */
@@ -117,6 +123,12 @@ export interface PaneLock {
   token?: string;
   /** The session is signed in and its email is not verified yet. */
   verifyEmail?: boolean;
+  /**
+   * Reads data as the report does, so a note can check that a free route it
+   * would name has data for the symbol before naming it. Absent where nothing
+   * can be read.
+   */
+  context?: HeadlessPaneContext;
 }
 
 export interface PaneDef {
@@ -139,6 +151,13 @@ export interface PaneDef {
    */
   tickerFollower?: boolean | ((pane: PaneInstanceConfig) => boolean);
   /**
+   * Instrument kinds this pane has data for, such as `["equity"]` for company
+   * data, as a research tab declares them. Bound to a ticker of another known
+   * kind (an index, an ETF), the pane says so in place of its data, and `fn`
+   * and `shot` answer before loading. Omit when every ticker has it.
+   */
+  instruments?: readonly TickerInstrumentKind[];
+  /**
    * For a pane type that two or more functions open (ERN and EVTS): the settings that say
    * what a window shows, as against how (a range, a toggle, a column choice). Opening a
    * function again focuses a window whose binding, params and settings match what the
@@ -149,6 +168,13 @@ export interface PaneDef {
    * An empty list says binding and params alone name the window.
    */
   identitySettings?: readonly string[];
+  /**
+   * The title a saved window of this pane has, from its params and settings,
+   * for lists that name windows without rendering them (the Layouts browser).
+   * A pane that titles itself by what it shows ("Curve \u00b7 BZ") gives the same
+   * title here, so two of its windows are told apart before either is opened.
+   */
+  instanceTitle?(pane: PaneInstanceConfig): string | null;
   /** Renderer-neutral data model used by CLI functions, automation, and hosted tools. */
   headless?: HeadlessPaneDefinition;
   /**
@@ -175,9 +201,10 @@ export interface PaneDef {
    * read without it and where, and how to unlock it. A `headless` pane's report
    * prints it when the server refuses the read (401, 402 or 403). Without it
    * the report prints the wall's own words, or the refusal. Either way it cites
-   * no source, since nothing was read.
+   * no source, since nothing was read. A free route it names must have data
+   * for the symbol (`lock.context` reads it), so the note may resolve later.
    */
-  reportLockNote?(lock: PaneLock): string;
+  reportLockNote?(lock: PaneLock): string | Promise<string>;
   /**
    * What a rendered-view report needs before it shows anything, such as a
    * sign-in: `gloomberb catalog` lists it under Requires, as it does a
@@ -187,9 +214,10 @@ export interface PaneDef {
   /**
    * A `shot` without `--height` grows to the pane's natural height, up to the
    * height limit, so a fixed board (FUT) shows every row instead of cutting
-   * the last ones. Leave it off for long or paged lists.
+   * the last ones. Leave it off for long or paged lists; a pane with tabs
+   * answers for the instance shown, so only its fixed board's tab grows.
    */
-  shotFitsRows?: true;
+  shotFitsRows?: true | ((pane: PaneInstanceConfig) => boolean);
   /**
    * A report of the pane grows to the whole text of the page its reader has
    * open (a docs page), so it is not cut at the first screen. A list the reader
@@ -202,8 +230,9 @@ export interface PaneDef {
   /** Portable sharing is public by default; list the few pane-owned fields that must remain local. */
   portableShare?: PanePortableShareDef;
   /**
-   * The person's own data the pane shows, so posting a picture of it to chat
-   * and attaching it to an Ask Gloom question ask first. A function decides
+   * The person's own data the pane shows, so copying a public link to it,
+   * posting its picture in a bug report and attaching it to an Ask Gloom
+   * question ask first. A function decides
    * per instance from what it shows now (a chat pane on a public channel, a
    * quote of a ticker not held), and a function that returns null opts that
    * instance out. Leave it off for market data. A pane that says nothing is
@@ -452,6 +481,14 @@ export interface PaneTemplateDef {
   shortcut?: PaneTemplateShortcut;
   /** Template-specific headless model. Takes precedence over the pane-level model. */
   headless?: HeadlessPaneDefinition;
+  /**
+   * Source and status of the view this template opens, for a template that
+   * opens one view of a pane hosting several (Fixed Income's Issuer Debt).
+   * Captures and rendered-view reports merge it over the pane's own
+   * `reportFreshness`: each field set here wins, the rest are the pane's. So
+   * they date the filings on screen, not the issuer's stock quote.
+   */
+  reportFreshness?: Pick<HeadlessPaneFreshness, "source" | "status" | "basis">;
   wizard?: WizardStep[];
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
   createInstance?: (
@@ -850,8 +887,8 @@ export interface AppNotificationRequest {
   };
   /**
    * What a built-in notice is about, so the Unread list can keep it after the
-   * toast is gone and open it again: `price:<alertId>`, `catalyst:<eventId>`
-   * or `team:<cardId>`. Other values are not kept.
+   * toast is gone and open it again: `price:<alertId>`, `catalyst:<eventId>`,
+   * `econ:<eventId>` or `team:<cardId>`. Other values are not kept.
    */
   refId?: string;
   /** Rendered next to `action`. Use for a dismissing counterpart such as snooze. */
@@ -865,6 +902,13 @@ export interface BrokerInstanceUpdateOptions {
   label?: string;
   enabled?: boolean;
   replaceConfig?: boolean;
+  /** Keep this connection's data on this device, out of Gloom Cloud sync (`BrokerInstanceConfig.localOnly`). */
+  localOnly?: boolean;
+}
+
+export interface BrokerInstanceCreateOptions {
+  /** Keep the new connection's data on this device from the start, before its first import. */
+  localOnly?: boolean;
 }
 
 export interface PinTickerOptions {
@@ -876,6 +920,8 @@ export interface PinTickerOptions {
   listing?: TickerListingRef;
   /** Select this research tab once the requested ticker has resolved. */
   tabId?: string;
+  /** Merge this state into the resolved research pane when selecting `tabId`. */
+  tabState?: Record<string, unknown>;
 }
 
 export interface GloomPluginContext {
@@ -907,6 +953,8 @@ export interface GloomPluginContext {
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerRecord | null;
   getConfig(): import("./config").AppConfig;
+  /** Resolve a broker registered by another plugin, without connecting it. */
+  getBrokerAdapter?(brokerType: string): BrokerAdapter | null;
   getPaneDef(paneId: string): PaneDef | undefined;
 
   readonly marketData: DataProvider;
@@ -919,7 +967,7 @@ export interface GloomPluginContext {
   readonly paneSettings: PluginPaneSettingsState;
   readonly teamState: PluginTeamState;
 
-  createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
+  createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>, options?: BrokerInstanceCreateOptions): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
   syncBrokerInstance(instanceId: string): Promise<void>;
   removeBrokerInstance(instanceId: string): Promise<void>;
@@ -936,7 +984,7 @@ export interface GloomPluginContext {
   pinTicker(symbol: string, options?: PinTickerOptions): void;
   navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }): void;
   openPaneSettings(paneId?: string): void;
-  /** Opens Share for a pane instance (the focused pane when omitted): post a picture or copy a live link. */
+  /** Shares a pane instance (the focused pane when omitted): copies a live link to it. */
   sharePane(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;

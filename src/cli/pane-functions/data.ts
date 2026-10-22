@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 export { clipPriceHistoryToRange } from "../../time-series/history-window";
@@ -5,7 +6,7 @@ import { CHART_COMPOSER_PANE_ID, LEGACY_TICKER_DETAIL_PANE_ID } from "../../type
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { normalizeTickerInput } from "../../tickers/search";
 import type { MarketContext } from "../types";
-import { cleanTickerInput } from "./options";
+import { argumentNamesTicker, cleanTickerInput } from "./options";
 import { parsePublicTickerKey, publicTickerKey } from "../../utils/exchanges";
 import type { ResolvedPaneFunction } from "./resolver";
 import { toMarketDataContext } from "../../market-data/selectors";
@@ -26,7 +27,7 @@ const SHOT_PRICE_HISTORY_RANGE = "5Y" as const;
 const FINANCIAL_ANALYSIS_PANE_ID = "financial-analysis";
 const FINANCIAL_ANALYSIS_TEMPLATE_ID = "financial-analysis-pane";
 
-async function loadStoredShotTicker(context: MarketContext, symbol: string): Promise<TickerRecord | null> {
+export async function loadStoredShotTicker(context: MarketContext, symbol: string): Promise<TickerRecord | null> {
   const normalized = cleanTickerInput(symbol);
   const { symbol: bare } = parsePublicTickerKey(normalized);
   return await context.store.loadTicker(normalized)
@@ -122,7 +123,7 @@ export async function withShotReturnHistory(
   financials: TickerFinancials,
 ): Promise<TickerFinancials> {
   const support = await Promise.resolve(context.dataProvider.getChartResolutionSupport?.(instrument.symbol, exchange) ?? [])
-    .catch(() => []);
+    .catch(logFailure("cli.pane-functions-data", "Read chart resolution support failed", []));
   const series = await loadReturnSeries(context.dataProvider, {
     symbol: instrument.symbol,
     exchange,
@@ -208,7 +209,7 @@ export async function createFallbackTicker(symbol: string, financials: TickerFin
   const known = quote ? quoteMetadataFromQuote(quote) : financials?.quoteMetadata;
   const listing = instrument.exchange || known?.listingExchangeName
     ? known
-    : await context.dataProvider.getQuoteMetadata?.(instrument.symbol, "").catch(() => null) ?? known;
+    : await context.dataProvider.getQuoteMetadata?.(instrument.symbol, "").catch(logFailure("cli.pane-functions-data", "Read screenshot quote metadata failed", null)) ?? known;
   return {
     metadata: {
       // A listing key stays the key the pane is bound to (CAR:ASX), as a saved listing abroad is keyed.
@@ -237,7 +238,7 @@ export function collectShotSymbols(resolved: ResolvedPaneFunction, rawArg: strin
     }
   }
   // A text argument is a phrase, not a symbol, so it must never be looked up as one.
-  const argIsTicker = resolved.template?.shortcut?.argKind !== "text";
+  const argIsTicker = argumentNamesTicker(resolved.template, resolved.headless);
   let symbols = resolved.createOptions?.symbols?.length
     ? resolved.createOptions.symbols
     : [

@@ -6,11 +6,13 @@ import {
   formatExpiryList,
   formatOptionDeltaCell,
   formatOptionIvCell,
+  loadOptionModelInputs,
   optionRows,
   optionsBasisFootnote,
   valueChainAtModelSpot,
 } from "./options-chain";
 import { missingExpiryMessage } from "../../utils/option-expiry";
+import type { CliListing } from "../listing-arg";
 
 const at = (date: string) => Date.parse(`${date}T00:00:00Z`) / 1000;
 
@@ -105,7 +107,23 @@ test("a chain from the close keeps the close's delta when the stock moves before
   expect(Math.abs(put.delta! - valueOption({ side: "put", spot: 103, strike: 95, daysToExpiry: days, rate: 0.04, volatility: put.iv!, dividendYield: 0 }).delta))
     .toBeGreaterThan(0.05);
   expect(optionsBasisFootnote({ spot, dividendYield: 0.0234, openInterest: { date: "2026-10-09", listedDate: "2026-10-09", compared: 4, matched: 4 } }))
-    .toBe("Greeks at spot 100.00 (close Mon 12 Oct 20:00 UTC), dividend yield 2.34%, rate 4% · OI as of Fri 9 Oct");
+    .toBe("Greeks at spot 100.00 (close Mon 12 Oct), dividend yield 2.34%, rate 4% · OI as of Fri 9 Oct");
   expect(optionsBasisFootnote({ spot: null, dividendYield: null, openInterest: { date: null, listedDate: "2026-10-09", compared: 35, matched: 17 } }))
     .toBe("OI date not published: the counts differ from OPX's 2026-10-09 counts on 18 of 35 contracts");
+});
+
+test("the Greeks take any yield the fundamentals state, stale or under another spelling of the symbol, before a dividend history", async () => {
+  const inputs = (fundamentals: { dividendYield?: number; stale?: boolean }, quoteSymbol: string, request: string) => {
+    let historyRead = false;
+    const listing = { request: { symbol: request, exchange: "" } } as CliListing;
+    return loadOptionModelInputs({
+      getTickerFinancials: async () => ({ quote: { symbol: quoteSymbol, price: 70, currency: "USD", change: 0, changePercent: 0, lastUpdated: 1 },
+        fundamentals, annualStatements: [], quarterlyStatements: [], priceHistory: [] }),
+      getCorporateActions: async () => { historyRead = true; return { symbol: request, coverage: { dividends: "available" }, dividends: [], splits: [], earnings: [] }; },
+    }, listing, Promise.resolve(null), false).then((result) => ({ dividendYield: result.dividendYield, historyRead }));
+  };
+  expect(await inputs({ dividendYield: 0.029, stale: true }, "KO", "KO")).toEqual({ dividendYield: 0.029, historyRead: false });
+  expect(await inputs({ dividendYield: 0.034 }, "BHP.AX", "BHP:ASX")).toEqual({ dividendYield: 0.034, historyRead: false });
+  // No stated yield: the history OSA reads decides, a covered one with no dividend being 0.
+  expect(await inputs({}, "GLD", "GLD")).toEqual({ dividendYield: 0, historyRead: true });
 });

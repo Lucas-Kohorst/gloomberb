@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { convertCurrency, displayWidth, formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw, formatSignificant, padTo, truncateToDisplayWidth } from "./format";
 import { normalizeTimestamp } from "./timestamp";
+import { fxRateCurrencies } from "./currency-units";
 
 test("currency conversion never presents a missing or invalid FX leg as parity", () => {
   const rates = new Map([["EUR", 1.2], ["JPY", 0.008]]);
@@ -20,6 +21,22 @@ test("currency conversion never presents a missing or invalid FX leg as parity",
       expect(format(value)).toBe("—");
     }
   }
+});
+
+test("money in a minor unit converts at a hundredth of its major currency's rate, which the rates loaded include", () => {
+  // The rates useFxRatesMap holds for these holdings: what it asks for (fxRateCurrencies), less what Gloom Cloud
+  // does not serve (no GBX or ILA rate). ZAC it serves, per South African cent.
+  const served = new Map([["USD", 1], ["EUR", 1.1], ["GBP", 1.25], ["ZAR", 0.055], ["ZAC", 0.00055], ["ILS", 0.27]]);
+  const rates = new Map(fxRateCurrencies(["GBp", "GBX", "ZAc", "ILA", "EUR"]).flatMap((code) => served.has(code) ? [[code, served.get(code)!] as const] : []));
+  expect(convertCurrency(7_000, "GBp", "USD", rates)).toBeCloseTo(87.5, 9);
+  expect(convertCurrency(7_000, "GBX", "EUR", rates)).toBeCloseTo(70 * 1.25 / 1.1, 9);
+  expect(convertCurrency(10_000, "ZAc", "USD", rates)).toBeCloseTo(5.5, 9);
+  expect(convertCurrency(10_000, "ILA", "USD", rates)).toBeCloseTo(27, 9);
+  expect(convertCurrency(87.5, "USD", "GBp", rates)).toBeCloseTo(7_000, 9);
+  // GBP is pounds: its rate is never read as the penny's.
+  expect(convertCurrency(70, "GBP", "USD", rates)).toBeCloseTo(87.5, 9);
+  // Without the major currency's rate a minor unit is not converted, never valued at parity.
+  expect(convertCurrency(7_000, "GBX", "USD", new Map([["USD", 1]]))).toBeNaN();
 });
 
 describe("formatCurrency", () => {
@@ -42,6 +59,14 @@ describe("formatCurrency", () => {
     expect(formatCurrency(3025, "JPY")).toBe("¥3,025.00");
     expect(formatCurrency(1.366, "USD", 6)).toBe("$1.366");
     expect(formatCurrency(1.366, "IQD")).toBe("IQD\u00a01.37");
+  });
+
+  test("writes a minor unit after the amount rather than as its major currency", () => {
+    // Intl reads GBp as GBP, which would print pence as pounds.
+    expect(formatCurrency(412.5, "GBp")).toBe("412.50p");
+    expect(formatCurrency(412.5, "GBP")).toBe("£412.50");
+    expect(formatCurrency(-314.95, "USX")).toBe("-314.95¢");
+    expect(formatCurrency(-0.001, "USX")).toBe("0.00¢");
   });
 });
 

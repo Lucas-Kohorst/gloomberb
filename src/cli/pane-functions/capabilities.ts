@@ -18,6 +18,8 @@ export interface PaneFunctionCapability {
   botSafe: boolean;
   tickerCardinality: PaneFunctionTickerCardinality;
   aliases: string[];
+  /** Words that are no code but ask for this function's data: `fn` and `catalog` answer them with it. */
+  suggestFor?: string[];
   intents: string[];
   outputKind: string;
   reportReadiness: PaneFunctionReadiness;
@@ -77,6 +79,63 @@ function optionToken(value: string): string {
   return value.trim().toLowerCase().replace(/[\s_.-]+/g, "");
 }
 
+// Choices longer than this move from the flag into its description, where they can wrap.
+export const MAX_INLINE_CHOICES = 24;
+
+export function optionChoices(option: PaneFunctionOptionDef): string[] {
+  return option.values?.map(({ value }) => String(value)) ?? [];
+}
+
+/** `--commodity <oil|gas>`: an option as the catalog and errors write it, its choices inline when they are short. */
+export function optionFlags(option: PaneFunctionOptionDef): string {
+  const choices = optionChoices(option).join("|");
+  const value = choices && choices.length <= MAX_INLINE_CHOICES ? choices : option.values?.length ? "value" : option.placeholder ?? option.type;
+  return `--${option.key} <${value}>`;
+}
+
+/** The option values a typed word is, by value or alias: `gas` is JODI's `--commodity gas`. */
+function optionValueOf(options: readonly PaneFunctionOptionDef[], typed: string): string | null {
+  const token = optionToken(typed);
+  for (const option of options) {
+    const value = option.values?.find((candidate) => optionToken(candidate.value) === token
+      || candidate.aliases?.some((alias) => optionToken(alias) === token));
+    if (value) return `--${option.key} ${value.value}`;
+  }
+  return null;
+}
+
+/** An option in use, as typed after the function: its own example, else a choice that is not the default. */
+function optionExample(option: PaneFunctionOptionDef): string {
+  if (option.example) return option.example;
+  if (option.type === "boolean") return `--${option.key}`;
+  const choice = option.values?.find(({ value }) => value !== option.defaultValue);
+  if (choice) return `--${option.key} ${choice.value}`;
+  return `--${option.key} <${option.placeholder ?? option.type}>`;
+}
+
+/** Options a no-argument error lists before it points at the catalog for the rest. */
+const LISTED_OPTIONS = 6;
+
+/**
+ * What a function that takes no argument answers one with: its options and a
+ * command to run. A word that is one of an option's values runs as that option
+ * (`fn JODI gas` is `fn JODI --commodity gas`); anything else gets an option's example.
+ */
+export function noArgumentMessage(
+  options: readonly PaneFunctionOptionDef[],
+  code: string,
+  typed: string,
+  command: "fn" | "shot" = "fn",
+): string {
+  const head = `${code} does not accept an argument.`;
+  if (options.length === 0) return `${head} Run: gloomberb ${command} ${code}`;
+  const asOption = optionValueOf(options, typed);
+  const listed = options.slice(0, LISTED_OPTIONS).map(optionFlags).join(", ");
+  const more = options.length > LISTED_OPTIONS ? ` and ${options.length - LISTED_OPTIONS} more (gloomberb catalog ${code})` : "";
+  const run = asOption ? `Run: gloomberb ${command} ${code} ${asOption}` : `Example: gloomberb ${command} ${code} ${optionExample(options[0]!)}`;
+  return `${head} Options: ${listed}${more}. ${run}`;
+}
+
 function headlessTickerCardinality(argument: HeadlessPaneArgumentDef): PaneFunctionTickerCardinality {
   switch (argument.kind) {
     case "ticker":
@@ -124,7 +183,8 @@ export function getPaneFunctionCapability(
   };
 }
 
-function resolveOptionDef(
+/** The option a key names, by its own name or an alias, in any spelling (`min-pct`, `minPct`). */
+export function findCapabilityOption(
   capability: PaneFunctionCapability,
   rawKey: string,
 ): PaneFunctionOptionDef | undefined {
@@ -137,7 +197,7 @@ function resolveOptionDef(
 
 /** Whether the function has an option of its own under this name or an alias. */
 export function capabilityHasOption(capability: PaneFunctionCapability, key: string): boolean {
-  return resolveOptionDef(capability, key) !== undefined;
+  return findCapabilityOption(capability, key) !== undefined;
 }
 
 function normalizeEnumValue(option: PaneFunctionOptionDef, rawValue: string, argument: string | null): string {
@@ -193,7 +253,7 @@ export function normalizeCapabilityOptions(
   if (!capability.botSafe) {
     // A rendered view takes any pane setting; the options it declares are checked.
     return Object.fromEntries(Object.entries(options).map(([key, value]) => {
-      const option = resolveOptionDef(capability, key);
+      const option = findCapabilityOption(capability, key);
       return option ? [option.key, normalizeOptionValue(option, value, settings.argument)] : [key, value];
     }));
   }
@@ -203,7 +263,7 @@ export function normalizeCapabilityOptions(
     if (option.defaultValue !== undefined) normalized[option.key] = option.defaultValue;
   }
   for (const [rawKey, rawValue] of Object.entries(options)) {
-    const option = resolveOptionDef(capability, rawKey);
+    const option = findCapabilityOption(capability, rawKey);
     if (!option) {
       if (settings.strict === false) {
         normalized[rawKey] = rawValue;

@@ -136,7 +136,7 @@ export const chatModule: PluginModule = {
     id: UNREAD_INBOX_TEMPLATE_ID,
     paneId: UNREAD_INBOX_PANE_ID,
     label: "Unread",
-    description: "Unread chat, then price alerts, catalysts and team notices you missed",
+    description: "Unread chat, then price alerts, catalysts, economic releases and team notices you missed",
     keywords: ["unread", "chat", "inbox", "mentions", "missed", "notifications", "alerts"],
     createInstance: () => ({
       placement: "floating",
@@ -157,7 +157,7 @@ export const chatModule: PluginModule = {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
     chatSidebarStore.attach(ctx.persistence);
     chatHandlePromptStore.attach(ctx.persistence);
-    // The desktop app's Dock badge follows the Unread count; other hosts have no badge.
+    // The desktop app's Dock badge counts the people who wrote to you or tagged you, plus the missed notices; other hosts have no badge.
     disposeUnreadBadge?.();
     const badgeHost = getAppBadgeHost();
     disposeUnreadBadge = badgeHost

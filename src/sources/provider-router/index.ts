@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import type { PriceHistoryResult } from "../../types/price-history";
 import type { ResourceStore } from "../../data/resource-store";
 import type { ConnectionHealthRegistry } from "../../core/connection-health";
@@ -25,6 +26,7 @@ import { mergeQuoteMetadata, quoteMetadataFromQuote, quoteMetadataMatchesTarget 
 import type { NewsArticle, NewsQuery } from "../../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
 import type { TickerChanges } from "../../types/ticker-changes";
+import type { IssuerListings } from "../../types/issuer-listings";
 import type { TimeRange } from "../../time-series/range";
 import type { ChartResolutionSupport, ManualChartResolution } from "../../time-series/resolution";
 import { debugLog } from "../../utils/debug-log";
@@ -174,8 +176,8 @@ export class AssetDataRouter implements DataProvider {
         if (!provider.canProvide || await provider.canProvide(ticker, exchange, context)) {
           return true;
         }
-      } catch {
-        // continue through provider chain
+      } catch (error) {
+        logFailure("sources.provider-router.index", "Checking provider availability failed")(error);
       }
     }
     return false;
@@ -252,7 +254,9 @@ export class AssetDataRouter implements DataProvider {
           known = mergeQuoteMetadata(known, metadata);
           if (known?.currency && known.instrumentType) return known;
         }
-      } catch { /* Optional listing metadata must not prevent historical research. */ }
+      } catch (error) {
+        logFailure("sources.provider-router.index", "Loading listing metadata failed")(error);
+      }
     }
     return known ?? null;
   }
@@ -289,6 +293,18 @@ export class AssetDataRouter implements DataProvider {
     return (await this.getCachedQuery("getCorporateActions", [ticker, exchange, context]).load({ force: context?.cacheMode === "refresh", background: this.revalidateInBackground })).value;
   }
 
+  searchBatch(queries: string[], options?: { limit?: number; signal?: AbortSignal }): Promise<Map<string, InstrumentSearchResult[]> | null> {
+    return this.searchRoutes.searchBatch(queries, options);
+  }
+
+  /** The first source that answers a batch of symbol changes; null when none can or it fails. */
+  async getTickerChangesBatch(symbols: string[], options?: { signal?: AbortSignal }): Promise<Map<string, TickerChanges | null> | null> {
+    const provider = this.providersInPriorityOrder().find((candidate) => candidate.getTickerChangesBatch);
+    if (!provider) return null;
+    return await provider.getTickerChangesBatch!(symbols, options)
+      .catch(logFailure("sources.provider-router.index", "Batched ticker changes failed", null));
+  }
+
   /** The first source that keeps symbol changes answers; one that fails is passed over. */
   async getTickerChanges(symbol: string, options?: { signal?: AbortSignal }): Promise<TickerChanges | null> {
     for (const provider of this.providersInPriorityOrder()) {
@@ -297,6 +313,21 @@ export class AssetDataRouter implements DataProvider {
         return await provider.getTickerChanges(symbol, options);
       } catch {
         if (options?.signal?.aborted) return null;
+      }
+    }
+    return null;
+  }
+
+  /** The first source that holds the company's listings; one that fails is passed over. */
+  async getIssuerListings(symbol: string, exchange?: string, options?: { signal?: AbortSignal }): Promise<IssuerListings | null> {
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getIssuerListings) continue;
+      try {
+        const listings = await provider.getIssuerListings(symbol, exchange, options);
+        if (listings) return listings;
+      } catch (error) {
+        if (options?.signal?.aborted) return null;
+        logFailure("sources.provider-router.index", "Issuer listings failed")(error);
       }
     }
     return null;
@@ -397,7 +428,8 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
-    return (await this.getCachedQuery("getOptionsChain", [ticker, exchange, expirationDate, context]).load({ force: context?.cacheMode === "refresh", background: this.revalidateInBackground })).value;
+    return (await this.getCachedQuery("getOptionsChain", [ticker, exchange, expirationDate, context])
+      .load({ force: context?.cacheMode === "refresh", background: this.revalidateInBackground && context?.cacheMode !== "current" })).value;
   }
 
   getCachedQuery<K extends CachedAssetMethod>(method: K, args: CachedAssetArgs<K>) {

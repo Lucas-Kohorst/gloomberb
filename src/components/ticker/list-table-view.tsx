@@ -37,6 +37,8 @@ export interface TickerTableCell {
   color?: string;
   /** The full-precision number behind a rounded `text`, which exports and rendered-view reports keep. */
   value?: number | null;
+  /** A tint behind a cell that stands out for a moment, such as a price that moved since the user last looked. */
+  backgroundColor?: string;
   /**
    * Makes the cell a link: a click selects the row and calls this instead of
    * the row's own click. The pane gives the same action a key (its menu).
@@ -80,6 +82,8 @@ export interface TickerListTableViewProps {
   onBodyScrollActivity?: () => void;
   keyboardNavigation?: boolean;
   onRootKeyDown?: (event: DataTableKeyEvent) => boolean | void;
+  /** Any press in the table: a row, a cell, the header or the empty body. */
+  onTableMouseDown?: () => void;
   onVisibleRangeChange?: (range: TickerListVisibleRange) => void;
   visibleRangeBuffer?: number;
   resetScrollKey?: unknown;
@@ -212,6 +216,7 @@ export function TickerListTableView({
   onBodyScrollActivity,
   keyboardNavigation = true,
   onRootKeyDown,
+  onTableMouseDown,
   onVisibleRangeChange,
   visibleRangeBuffer,
   resetScrollKey,
@@ -288,7 +293,7 @@ export function TickerListTableView({
       };
     }
 
-    const { text, color, onPress, value } = resolveCellRef.current.resolve(column, ticker, financials);
+    const { text, color, onPress, value, backgroundColor } = resolveCellRef.current.resolve(column, ticker, financials);
     const shouldFlash = flashSymbolsRef.current.has(ticker.metadata.ticker)
       && flashesOnQuoteTick(column.id, financials?.quote);
     return {
@@ -296,6 +301,7 @@ export function TickerListTableView({
       ...(value !== undefined ? { value } : {}),
       color: color || (rowState.selected ? colors.selectedText : undefined),
       attributes: shouldFlash ? TextAttributes.DIM : TextAttributes.NONE,
+      ...(backgroundColor ? { backgroundColor } : {}),
       // Any other button falls through to the row, so a right click still opens its menu.
       onMouseDown: onPress ? (event: TableMouseEvent) => {
         if ((event.button ?? 0) !== 0) return;
@@ -405,6 +411,7 @@ export function TickerListTableView({
       visibleRangeBuffer={visibleRangeBuffer}
       keyboardNavigation={keyboardNavigation}
       onRootKeyDown={onRootKeyDown}
+      onTableMouseDown={onTableMouseDown}
       resetScrollKey={resetScrollKey}
     />
   );

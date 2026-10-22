@@ -1,0 +1,201 @@
+/** @jsxImportSource react */
+import { useCallback, useLayoutEffect, useRef } from "react";
+import { observeElementRect, observeElementOffset, elementScroll } from "@tanstack/react-virtual";
+import type { WindowedListProps } from "../../components/ui/windowed-list";
+import type { ScrollBoxRenderable } from "../../ui/host";
+import { STICKY_BOTTOM_THRESHOLD_PX } from "../../ui/sticky-scroll";
+import { ScrollBox } from "../../ui";
+import { useWindowedRows } from "./windowed-rows";
+
+/** Uses the table's windowing engine, with measured rows and end anchoring. */
+export function WebWindowedList({ itemKeys, renderItem, scrollRef, estimateSize = 64, overscan = 8, onScrollActivity, onPinChange, onPointerMove, role }: WindowedListProps) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // Only the reader (a scroll to a position the list did not set) or a jump
+  // unpins. Sizes and arrivals keep it, as the DOM scroll box's sticky scroll
+  // does, and being at the end pins.
+  const pinnedRef = useRef(true);
+  // On a hidden initial mount, rows can be measured on reveal before the
+  // viewport observer runs. Keep the initial pin until that first real rect.
+  const resizingViewport = useRef(true);
+  // display:none, until the viewport is measured again. Its scroll position is not the list's then.
+  const hiddenRef = useRef(false);
+  // The position the list last set, or last read from a scroll event.
+  const knownTop = useRef<number | null>(null);
+  // A jump to a message: where it lands decides the pin, the end does not pull it back.
+  const navigating = useRef(false);
+  const syncOffset = useRef<((offset: number, scrolling: boolean) => void) | null>(null);
+  const onPinRef = useRef(onPinChange);
+  onPinRef.current = onPinChange;
+  const reportPin = useCallback((pinned: boolean) => {
+    if (pinnedRef.current === pinned) return;
+    pinnedRef.current = pinned;
+    onPinRef.current?.(pinned);
+  }, []);
+  /** A position the list did not set is the reader's: it pins or unpins by where it is. */
+  const readerScrolled = useCallback((element: HTMLElement) => {
+    if (knownTop.current === null || element.scrollTop === knownTop.current) return false;
+    knownTop.current = element.scrollTop;
+    reportPin(element.scrollHeight - element.clientHeight - element.scrollTop <= STICKY_BOTTOM_THRESHOLD_PX);
+    return true;
+  }, [reportPin]);
+  const getItemKey = useCallback((index: number) => itemKeys[index]!, [itemKeys]);
+  const { list, rows } = useWindowedRows(contentRef, {
+    count: itemKeys.length,
+    getItemKey,
+    getScrollElement: () => contentRef.current?.parentElement ?? null,
+    estimateSize: () => estimateSize,
+    // Images can end at fractional pixels. Rounding rows accumulates gaps or
+    // overlaps, and a remounted row may have a different wrapping width.
+    measureElement: (node, entry, instance) => {
+      // display:none reports zero for every row. Those are not new message
+      // heights: retain the measured history until its tab is visible again.
+      if (!instance.scrollElement?.clientHeight) return instance.measurementsCache[Number(node.dataset.index)]?.size ?? estimateSize;
+      return entry?.borderBoxSize?.[0]?.blockSize ?? node.getBoundingClientRect().height;
+    },
+    overscan,
+    // Start with the tail, never a first render of the entire channel. The
+    // actual viewport and row sizes replace these estimates before paint.
+    initialRect: { width: 0, height: 1 },
+    initialOffset: () => itemKeys.length * estimateSize,
+    anchorTo: "end",
+    // A hidden scrollport reports no extent, which otherwise looks like its
+    // end to the windowing engine when a message arrives in an inactive tab.
+    followOnAppend: pinnedRef.current,
+    scrollEndThreshold: STICKY_BOTTOM_THRESHOLD_PX,
+    scrollToFn: (offset, options, instance) => {
+      // Grow the scroll extent before scrolling to it. Otherwise the browser
+      // clamps a size correction to the old bottom, losing the last wrapped line.
+      if (contentRef.current) contentRef.current.style.height = `${instance.getTotalSize()}px`;
+      elementScroll(offset, options, instance);
+      // Measurements can arrive before the browser's scroll event. Report the
+      // applied position now so they cannot correct against the previous jump.
+      const element = instance.scrollElement;
+      if (element && element.clientHeight > 0) {
+        knownTop.current = element.scrollTop;
+        syncOffset.current?.(element.scrollTop, false);
+      }
+    },
+    observeElementOffset: (instance, callback) => {
+      syncOffset.current = callback;
+      // The engine's settle callback repeats the last event's offset, which an
+      // adjustment since may have replaced: read the live one.
+      const dispose = observeElementOffset(instance, (_offset, scrolling) => {
+        const element = instance.scrollElement;
+        if (!element?.clientHeight || hiddenRef.current) return;
+        if (!resizingViewport.current) readerScrolled(element);
+        knownTop.current = element.scrollTop;
+        callback(element.scrollTop, scrolling);
+      });
+      return () => { syncOffset.current = null; dispose?.(); };
+    },
+    observeElementRect: (instance, callback) => {
+      let height: number | undefined;
+      return observeElementRect(instance, (rect) => {
+        if (rect.height === 0) { hiddenRef.current = true; return; }
+        // Width belongs to CSS. A live horizontal resize need not render React.
+        if (height === rect.height && !hiddenRef.current) return;
+        const restore = hiddenRef.current;
+        hiddenRef.current = false;
+        height = rect.height;
+        const follow = pinnedRef.current;
+        const offset = instance.scrollOffset;
+        resizingViewport.current = true;
+        callback({ width: 0, height: rect.height });
+        if (follow) instance.scrollToEnd();
+        else if (restore && offset !== null) instance.scrollToOffset(offset);
+        resizingViewport.current = false;
+      });
+    },
+    onChange: (instance) => {
+      const element = instance.scrollElement;
+      if (resizingViewport.current || hiddenRef.current || !element?.clientHeight) return;
+      if (readerScrolled(element) || navigating.current) return;
+      const end = element.scrollHeight - element.clientHeight;
+      const atEnd = end - element.scrollTop <= STICKY_BOTTOM_THRESHOLD_PX;
+      if (!pinnedRef.current) {
+        if (atEnd) reportPin(true);
+        return;
+      }
+      // Rows can report new heights before the viewport reports its own in the
+      // same frame, and a row that grows in view keeps its top. Neither is the
+      // reader leaving the end: keep it, by the DOM's extent, not the engine's.
+      if (!atEnd) instance.scrollToOffset(end);
+    },
+  });
+  // Preserve the top of the first visible row, including a partially read row.
+  // Measuring overscan above it must adjust even during an upward wheel gesture.
+  list.shouldAdjustScrollPositionOnItemSizeChange = (row, _delta, instance) => row.end <= (instance.scrollOffset ?? 0);
+  const keysRef = useRef(itemKeys);
+  keysRef.current = itemKeys;
+  const restoreFrame = useRef<number | null>(null);
+  const cancelRestore = useCallback(() => {
+    if (restoreFrame.current !== null) cancelAnimationFrame(restoreFrame.current);
+    restoreFrame.current = null;
+  }, []);
+  /** Scrolls for a jump, then pins or unpins by where it landed. Nothing moved, nothing changes. */
+  const navigate = useCallback((scroll: () => void) => {
+    const from = list.scrollElement?.scrollTop;
+    navigating.current = true;
+    try { scroll(); } finally { navigating.current = false; }
+    if (list.scrollElement?.clientHeight && list.scrollElement.scrollTop !== from) reportPin(list.isAtEnd(STICKY_BOTTOM_THRESHOLD_PX));
+  }, [list, reportPin]);
+  const handleScrollActivity = useCallback<NonNullable<WindowedListProps["onScrollActivity"]>>((event) => {
+    if (event?.scroll) cancelRestore();
+    onScrollActivity?.(event);
+  }, [cancelRestore, onScrollActivity]);
+  const setScrollRef = useCallback((handle: ScrollBoxRenderable | null) => {
+    if (handle) {
+      handle.scrollToEnd = () => {
+        cancelRestore();
+        pinnedRef.current = true;
+        list.scrollToEnd();
+        onPinRef.current?.(true);
+      };
+      handle.scrollToItem = (key, { align = "auto", offset = 0 } = {}) => {
+        const index = keysRef.current.indexOf(key);
+        if (index < 0) return false;
+        cancelRestore();
+        if (align === "center") {
+          const row = list.elementsCache.get(key)?.getBoundingClientRect();
+          const view = list.scrollElement?.getBoundingClientRect();
+          // A link to an already visible row marks it without moving the reader.
+          if (row && view && view.height > 0 && row.top >= view.top && row.bottom <= view.bottom) return true;
+        }
+        // Selection calls this even when the row is already in view. A no-op
+        // must not unpin a reader at the bottom before the composer resizes.
+        navigate(() => list.scrollToIndex(index, { align }));
+        if (align === "start") {
+          // The target must be mounted and measured before restoring a partial
+          // row at the viewport's top. Cancel on disposal or a subsequent jump.
+          restoreFrame.current = requestAnimationFrame(() => {
+            restoreFrame.current = requestAnimationFrame(() => {
+              restoreFrame.current = null;
+              const row = list.elementsCache.get(key);
+              const scroller = list.scrollElement;
+              if (row && scroller) navigate(() => list.scrollToOffset(scroller.scrollTop + row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - offset));
+            });
+          });
+        }
+        return true;
+      };
+    }
+    scrollRef.current = handle;
+  }, [cancelRestore, list, navigate, scrollRef]);
+  useLayoutEffect(() => {
+    list.scrollToEnd();
+    return cancelRestore;
+  }, [cancelRestore, list]);
+  const setContent = useCallback((node: HTMLDivElement | null) => {
+    contentRef.current = node;
+  }, []);
+  return <ScrollBox ref={setScrollRef} flexGrow={1} scrollY focusable={false}
+    data-gloom-role={role} onMouseScroll={handleScrollActivity} onMouseMove={onPointerMove}
+    style={{ minHeight: 0, display: "block", overflowAnchor: "none" }}>
+    <div ref={setContent} style={{ position: "relative", width: "100%", height: list.getTotalSize() }}>
+      {rows.map((row) => <div key={row.key} data-index={row.index} ref={list.measureElement}
+        style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${row.start}px)` }}>
+        {renderItem(row.index)}
+      </div>)}
+    </div>
+  </ScrollBox>;
+}

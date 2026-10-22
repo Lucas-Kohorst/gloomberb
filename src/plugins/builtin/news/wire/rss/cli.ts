@@ -26,8 +26,9 @@ export const rssCliCommand: CliCommandDef = {
       authority: 50,
       enabled: true,
     }]);
-    const articles = await capability.provider.fetchNews({ feed: "latest", limit: ctx.cliOptions.limit ?? 20 });
-    ctx.printResult({ data: articles.map((article) => ({
+    const page = await capability.provider.fetchNewsPage!({ feed: "latest", limit: ctx.cliOptions.limit ?? 20 });
+    if (page.error) ctx.fail(page.error);
+    ctx.printResult({ data: page.articles.map((article) => ({
       title: article.title,
       source: article.source,
       publishedAt: article.publishedAt.toISOString(),
@@ -36,7 +37,7 @@ export const rssCliCommand: CliCommandDef = {
     })) }, {
       textColumns: [
         { key: "publishedAt", header: "Published" },
-        { key: "source", header: "Source", maxWidth: 20 },
+        { key: "source", header: "Source" },
         { key: "title", header: "Title" },
         { key: "url", header: "URL", optional: true },
         { key: "summary", header: "Summary", optional: true },

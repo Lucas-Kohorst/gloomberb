@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import { useCallback, useEffect, type Dispatch } from "react";
 import { loadPersistedBrokerAccountMap } from "../../brokers/account-cache";
 import type { AppSessionSnapshot } from "../../core/state/session-persistence";
@@ -107,6 +108,10 @@ export function useAppStartupRuntime({
     appLog.info("app activity propagated", { active: appActive });
   }, [appActive]);
 
+  useEffect(() => {
+    chatController.setRaisesBackgroundAlerts(!isDetachedWindow);
+  }, [isDetachedWindow]);
+
   // Runs for the life of the app: a freeze is only reportable if something
   // was watching the clock while it happened.
   useEffect(() => startMainThreadStallMonitor(), []);
@@ -151,7 +156,7 @@ export function useAppStartupRuntime({
           sessionHydrationTargetCount: sessionSnapshot?.hydrationTargets.length ?? 0,
         });
       } catch (err) {
-        // Will show empty state.
+        logFailure("app.runtime.startup", "Workspace startup hydration failed")(err);
       }
     })();
   }, [
@@ -211,9 +216,7 @@ export function useAppStartupRuntime({
     });
     void Promise.race([pluginsReady, waitForPlugins]).then(() => {
       recordRestoredFunctions(restoredUsageFunctions(config.layout, pluginRegistry, config.disabledPlugins));
-    }).catch(() => {
-      /* Counting is best effort and must not surface as a crash. */
-    });
+    }).catch(logFailure("app.runtime.startup", "Restored function usage recording failed"));
   }, [getState, isDetachedWindow, pluginRegistry, pluginsReady, state.initialized]);
 
   useEffect(() => {

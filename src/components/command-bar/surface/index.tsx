@@ -17,6 +17,7 @@ import {
 } from "../routes/root/search-providers";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
+import { useRootPickPrefetch } from "../routes/root/pick-prefetch";
 import { createQuickLookTickerCandidates } from "../routes/ticker-search/results";
 import { useCommandSearchReport } from "../routes/root/search-report";
 import { useAppStateRef } from "../../../state/app/context";
@@ -78,9 +79,10 @@ export function CommandBar({
     titleBarOverlay,
     visibleListStateRef,
   } = useCommandBarEnvironment();
+  // Without an updater (the web terminal) neither checking nor a channel means anything.
   const availableCommands = useMemo(() => onCheckForUpdates
     ? allAvailableCommands
-    : allAvailableCommands.filter((command) => command.id !== "check-for-updates"), [allAvailableCommands, onCheckForUpdates]);
+    : allAvailableCommands.filter((command) => command.id !== "check-for-updates" && command.id !== "release-channel"), [allAvailableCommands, onCheckForUpdates]);
   const {
     applyThemePreview,
     clearThemePreview,
@@ -408,6 +410,7 @@ export function CommandBar({
     activeMatch,
     orderedRootResults,
     rootGhostSuffix,
+    rootResultsCurrent,
     rootSearching,
     rootSectionOrder,
     rootShortcutFeedback,
@@ -461,6 +464,9 @@ export function CommandBar({
     tickerActionItems,
     writeTickerSearchCache,
   });
+  // The row plain Enter runs: the best match while the list is untouched. Not
+  // the stand-in rows shown while the search for the typed query is out.
+  useRootPickPrefetch(currentRoute || !rootResultsCurrent ? null : orderedRootResults[rootSelectedIdx]);
   const themePickerActive = !currentRoute && activeMatch?.command.id === "theme";
   const themePickerFilter = themePickerActive ? activeMatch.arg : "";
   // A theme picked from the root ("TH dracula", Enter) is the typed shortcut

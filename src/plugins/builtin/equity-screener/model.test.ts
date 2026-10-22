@@ -1,20 +1,23 @@
 import { screenFixture as payload } from "./test-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { apiClient } from "../../../api-client";
-import { RESEARCH_FIELDS, SOCIAL_FIELDS, VOLATILITY_FIELDS, type ScreenSnapshot } from "../../../api-client/equity-screener";
+import { DIVIDEND_FIELDS, RESEARCH_FIELDS, SOCIAL_FIELDS, VOLATILITY_FIELDS, type ScreenSnapshot } from "../../../api-client/equity-screener";
 import { fetchScreen, fetchScreenFields } from "./client";
 import {
   appendScreenPage,
   columnWidth,
   criterionText,
   DEFAULT_SCREEN,
+  dividendYieldBasis,
   formatScreenValue,
   metricDate,
   parseCriterion,
   parseThreshold,
   resultFields,
   parseScreenDefinition,
+  screenColumnLabel,
   screenLabel,
+  screenYtdBase,
   SHORT_LABELS,
   SIGN_COLORED,
   validateScreenPayload,
@@ -83,6 +86,13 @@ test("query boundary rejects valid rows from different criteria", async () => {
   })).rejects.toThrow("requested criteria");
 });
 
+test("a field typed without its unit or in part names the screen fields it means", () => {
+  const criterion = (field: string) => () => parseScreenDefinition({ ...DEFAULT_SCREEN, criteria: [{ field, op: "lte", value: 60 }] });
+  expect(criterion("payoutRatio")).toThrow('"payoutRatio" is not a screen field (did you mean payoutRatioPercent?)');
+  expect(criterion("dividendGrowth")).toThrow("did you mean dividendGrowth1YPercent or dividendGrowth3YPercent?");
+  expect(criterion("bogus")).toThrow('"bogus" is not a screen field: use a numeric field');
+});
+
 test("thresholds accept scale suffixes and reject anything else", () => {
   expect(parseThreshold("10B")).toBe(10_000_000_000);
   expect(parseThreshold("1.5t")).toBe(1_500_000_000_000);
@@ -113,6 +123,14 @@ test("undated provider values show their collection date, never an invented sour
   expect(metricDate({ ...base, value: null, asOf: null, observedAt: null })).toEqual({ text: "--", collected: false });
 });
 
+test("a dividend yield names its own row's basis, and none the server did not state", () => {
+  const base = { ...payload().rows[0]!.metrics.trailingPE, value: 3.2, unit: "%" };
+  const basis = (reason: string) => dividendYieldBasis({ ...base, reason });
+  expect(basis("forward yield; provider observation date unavailable")).toBe("latest distribution annualized");
+  expect(basis("trailing yield; provider observation date unavailable")).toBe("last 12 months of distributions");
+  expect(basis("Unspecified yield; provider observation date unavailable")).toBeNull();
+});
+
 test("result columns lead with the focus metric and the screen's criteria; money needs a currency", () => {
   const definition = parseScreenDefinition({
     version: 1,
@@ -131,12 +149,13 @@ test("social and research fields format by kind, and an older server's rows stil
     formatScreenValue("beta", 1.052), formatScreenValue("ivRank", 46.89)])
     .toEqual(["+32.5", "-2.0", "45.9x", "1.05", "47"]);
   const older = payload();
-  for (const row of older.rows) for (const field of [...SOCIAL_FIELDS, ...RESEARCH_FIELDS, ...VOLATILITY_FIELDS])
+  for (const row of older.rows) for (const field of [...SOCIAL_FIELDS, ...RESEARCH_FIELDS, ...VOLATILITY_FIELDS, ...DIVIDEND_FIELDS])
     delete (row.metrics as Partial<typeof row.metrics>)[field];
   const loaded = validateScreenPayload(older);
   expect(loaded.rows[0]!.metrics.xPostsVsMedian).toMatchObject({ value: null, state: "unavailable" });
   expect(loaded.rows[0]!.metrics.atrPercent).toMatchObject({ value: null, state: "unavailable" });
   expect(loaded.rows[0]!.metrics.roePercent).toMatchObject({ value: null, state: "unavailable" });
+  expect(loaded.rows[0]!.metrics.payoutRatioPercent).toMatchObject({ value: null, state: "unavailable" });
   const broken = payload();
   delete (broken.rows[0]!.metrics as Partial<typeof broken.rows[0]["metrics"]>).price;
   expect(() => validateScreenPayload(broken)).toThrow("price");
@@ -171,9 +190,27 @@ test("the field list is requested with the volatility group, which servers witho
   } as never);
   try {
     const data = await fetchScreenFields();
-    expect(String(ask.mock.calls[0]![0])).toMatch(/^fields\?include=.*\bvolatility\b/);
+    expect(String(ask.mock.calls[0]![0])).toMatch(/^fields\?include=.*\bvolatility\b.*\bdividends\b/);
     expect(data.fields.map((entry) => entry.id)).toEqual(["atrPercent"]);
   } finally {
     ask.mockRestore();
   }
+});
+
+test("YTD's header names the prior year's last close the returns start from", () => {
+  const base = payload().rows[0]!;
+  const row = (asOf: string) => ({ ...base, metrics: { ...base.metrics,
+    returnYtdPercent: { ...base.metrics.returnYtdPercent, value: 13.27, asOf, state: "available" as const } } });
+  const now = Date.parse("2026-10-20T17:00:00Z");
+  expect(screenYtdBase([row("2026-10-19")], null, now)).toBe("31 Dec");
+  // A row still on the year's first session reads from the close before it.
+  expect(screenYtdBase([row("2026-01-02")], null, now)).toBe("31 Dec");
+  // No row with YTD: the snapshot's day.
+  expect(screenYtdBase([], "2026-10-20T16:30:00Z", now)).toBe("31 Dec");
+  expect(screenYtdBase([], null, now)).toBeNull();
+  expect(screenColumnLabel("returnYtdPercent", "31 Dec", "report")).toBe("YTD% vs 31 Dec close");
+  expect(screenColumnLabel("returnYtdPercent", "31 Dec")).toBe("YTD% vs 31 Dec");
+  expect(screenColumnLabel("returnYtdPercent", "31 Dec", "compact")).toBe("YTD% 31 Dec");
+  expect(screenColumnLabel("returnYtdPercent", null)).toBe(SHORT_LABELS.returnYtdPercent);
+  expect(screenColumnLabel("trailingPE", "31 Dec", "report")).toBe(SHORT_LABELS.trailingPE);
 });

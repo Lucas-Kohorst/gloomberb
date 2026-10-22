@@ -15,10 +15,13 @@ const SUB_UNIT_NAMES: Record<string, string> = {
 
 /**
  * A currency code as a reader should see it; a sub-unit says which one,
- * "GBp (pence)", and with `ofMajor` what it divides: "ILA (agorot, 1/100 ILS)".
+ * "GBp (pence)", "US¢ (US cents)", and with `ofMajor` what it divides:
+ * "ILA (agorot, 1/100 ILS)".
  */
 export function currencyUnitLabel(code?: string | null, { ofMajor = false }: { ofMajor?: boolean } = {}): string {
   const raw = (code ?? "").trim();
+  // US cents have no standard code; the one quotes carry (USX) is shown as US¢.
+  if (raw.toUpperCase() === US_CENTS) return ofMajor ? "US¢ (US cents, 1/100 USD)" : "US¢ (US cents)";
   const unit = SUB_UNIT_NAMES[raw];
   const major = SUB_UNIT_CURRENCIES[raw];
   if (!unit) return raw;
@@ -42,9 +45,82 @@ const SUB_UNIT_EXCHANGE_RULES = [
   { exchanges: new Set(["JSE"]), currency: "ZAR", divisor: 100 },
 ] as const;
 
+/**
+ * US cents, in which CBOT grains and ICE softs quote (corn at USX 473.25). Kept
+ * out of SUB_UNIT_CURRENCIES, whose divisor rescales quotes and histories into
+ * dollars: a cents future's price and chart stay in cents, and only money held
+ * in cents converts, at its fixed hundredth of a dollar.
+ */
+export const US_CENTS = "USX";
+
+/**
+ * Minor units with a sign of their own, by upper-cased code; GBp is read in
+ * its own case, as GBP is pounds. Agorot (ILA) have none in common use and
+ * keep their code.
+ */
+const MINOR_UNIT_SIGNS: Readonly<Record<string, string>> = { USX: "¢", GBX: "p", ZAC: "c" };
+
+/**
+ * The sign a price in a minor unit is written with, after the amount, where
+ * a major currency's symbol goes before it: US cents 314.95¢ (grains and
+ * softs), pence 412.50p, South African cents 1,250.00c. Null for a major
+ * currency, or a minor unit without one.
+ */
+export function minorUnitSign(code: string | null | undefined): string | null {
+  const raw = (code ?? "").trim();
+  if (raw === "GBp") return "p";
+  return MINOR_UNIT_SIGNS[raw.toUpperCase()] ?? null;
+}
+
+/**
+ * A quote currency's code as a column of codes shows it: US cents, a code no
+ * standard has, as US¢; every other code as it is (USD, GBp).
+ */
+export function currencyCodeLabel(code: string | null | undefined): string {
+  const raw = (code ?? "").trim();
+  return raw.toUpperCase() === US_CENTS ? "US¢" : raw;
+}
+
+/**
+ * A currency's rate to USD where it is fixed rather than quoted: the dollar
+ * itself, and US cents. Undefined for any other, whose rate the market sets.
+ */
+export function fixedUsdRate(currency: string | null | undefined): number | undefined {
+  const code = currency?.trim().toUpperCase();
+  return code === "USD" ? 1 : code === US_CENTS ? 0.01 : undefined;
+}
+
 export interface CurrencyUnitInfo {
   currency: string;
   divisor: number;
+}
+
+/**
+ * The currency money held in a code is counted in, and how many of the code
+ * make one of it: resolveCurrencyUnit's, and US cents as a hundredth of a
+ * dollar, which a lot's cost in USX is.
+ */
+export function heldCurrencyUnit(currency?: string | null): CurrencyUnitInfo {
+  return currency?.trim().toUpperCase() === US_CENTS ? { currency: "USD", divisor: 100 } : resolveCurrencyUnit(currency);
+}
+
+/**
+ * The codes whose USD rates convert money held in `currencies`: each as a
+ * rate is asked for (upper-cased), and a minor unit's major currency too,
+ * which convertCurrency reads a hundredth of when the unit has no rate of its
+ * own. Gloom Cloud serves none for GBX or ILA, and ZAc and GBp are kept in
+ * their own case, which no upper-cased rate matches.
+ */
+export function fxRateCurrencies(currencies: Iterable<string | null | undefined>): string[] {
+  const codes = new Set<string>();
+  for (const currency of currencies) {
+    const raw = currency?.trim();
+    if (!raw) continue;
+    codes.add(raw.toUpperCase());
+    const unit = heldCurrencyUnit(raw);
+    if (unit.divisor !== 1 && unit.currency) codes.add(unit.currency);
+  }
+  return [...codes].sort((left, right) => left.localeCompare(right));
 }
 
 interface ExchangeSubUnitOptions {
@@ -55,6 +131,16 @@ interface ExchangeSubUnitOptions {
 
 function normalizeExchange(value?: string | null): string {
   return (value ?? "").trim().toUpperCase();
+}
+
+/**
+ * A currency code as a position saves it: upper-cased, except a minor unit
+ * whose code is written in its own case (GBp, ZAc), which stays as typed so
+ * pence are not read as pounds. GBX and gbp read as pence and pounds.
+ */
+export function normalizeHeldCurrencyCode(code: string | null | undefined): string {
+  const raw = (code ?? "").trim();
+  return SUB_UNIT_CURRENCIES[raw] && raw !== raw.toUpperCase() ? raw : raw.toUpperCase();
 }
 
 export function resolveCurrencyUnit(currency?: string | null): CurrencyUnitInfo {

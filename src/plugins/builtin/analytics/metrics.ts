@@ -1,6 +1,7 @@
 import type { PricePoint } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
+import { isDepositaryReceiptCategory, normalizeAssetCategory } from "../../../utils/asset-category";
 import { getPricePointTimestamp } from "../../../utils/price-history";
 import { mergePriceHistoryIntegrity, pricePointIntegrity, type PriceHistoryIntegrity } from "../../../utils/price-history-integrity";
 
@@ -26,6 +27,9 @@ export function syntheticAccountUnsupportedReason(account?: BrokerAccount | null
   return null;
 }
 
+/** Normalised categories the equity basket takes besides depositary receipts; no category at all counts as an equity. */
+const EQUITY_CATEGORIES: ReadonlySet<string> = new Set(["", "STK", "STOCK", "COMMONSTOCK", "EQUITY", "ETF", "ETN", "FUND", "REIT"]);
+
 export function syntheticPositionUnsupportedReason(ticker: TickerRecord, quoteCurrency: string, portfolioId?: string): string | null {
   const positions = ticker.metadata.positions.filter((position) => (
     (!portfolioId || position.portfolio === portfolioId) && position.shares !== 0
@@ -33,15 +37,15 @@ export function syntheticPositionUnsupportedReason(ticker: TickerRecord, quoteCu
   if (positions.some((position) => position.side === "short" || position.shares < 0)) {
     return "Short positions: signed exposure history required";
   }
-  const category = (ticker.metadata.assetCategory ?? "").toUpperCase();
+  const category = normalizeAssetCategory(ticker.metadata.assetCategory);
   // Crypto trades every day at another close, so its daily returns do not pair with the equity factor proxies.
   if (category.startsWith("CRYPTO") || /-[A-Z]{3,4}$/.test(ticker.metadata.ticker)) {
     return "Crypto is not covered by the equity basket";
   }
   // "Common Stock" is the category provider search hands a ticker added from
-  // the command bar, so a plain equity must not read as unsupported.
-  const equityCategories = new Set(["", "STK", "STOCK", "COMMON STOCK", "EQUITY", "ETF", "ETN", "FUND", "ADR", "REIT"]);
-  if (!equityCategories.has(category)
+  // the command bar, so a plain equity must not read as unsupported; a
+  // depositary receipt is the equity of its home market, whatever it is called.
+  if (!(EQUITY_CATEGORIES.has(category) || isDepositaryReceiptCategory(category))
     || positions.some((position) => position.multiplier != null && position.multiplier !== 1)
     || /=[A-Z]+$|\d{6}[CP]\d{8}$/.test(ticker.metadata.ticker)) {
     return "Asset type is not covered by the equity basket";
@@ -134,23 +138,61 @@ function returnIntervalKey(point: DatedReturn): string {
   return `${point.startDateKey}/${point.dateKey}`;
 }
 
+/** The intervals every series covers, and each series' return on them, in the first series' order. */
+interface AlignedSeries {
+  series: DatedReturn[][];
+  lengths: number[];
+  points: DatedReturn[];
+  values: Float64Array[];
+}
+
+/**
+ * Lined-up holdings, kept with their series: weights move with every quote,
+ * the series only with their bars, so a portfolio valued again (each Cloud
+ * sync values every one, GLO-925) only weighs returns already lined up
+ * instead of matching every interval of every holding again. A few lists per
+ * first series, since one holding can open more than one portfolio.
+ */
+const alignedByFirstSeries = new WeakMap<DatedReturn[], AlignedSeries[]>();
+
+function alignSeries(series: DatedReturn[][]): AlignedSeries {
+  const kept = alignedByFirstSeries.get(series[0]!) ?? [];
+  const cached = kept.find((entry) => entry.series.length === series.length
+    && entry.series.every((returns, index) => returns === series[index] && entry.lengths[index] === returns.length));
+  if (cached) return cached;
+  const samples = series.map((returns) => new Map(returns
+    .filter(validReturnInterval)
+    .map((point) => [returnIntervalKey(point), point])));
+  const points: DatedReturn[] = [];
+  const columns: number[][] = series.map(() => []);
+  for (const [key, first] of samples[0]!) {
+    const row: number[] = [];
+    for (const sample of samples) {
+      const point = sample.get(key);
+      if (!point) break;
+      row.push(point.value);
+    }
+    if (row.length < samples.length) continue;
+    points.push(first);
+    row.forEach((value, index) => columns[index]!.push(value));
+  }
+  const aligned = { series: [...series], lengths: series.map((returns) => returns.length), points, values: columns.map((column) => Float64Array.from(column)) };
+  alignedByFirstSeries.set(series[0]!, [aligned, ...kept].slice(0, 4));
+  return aligned;
+}
+
 export function computeWeightedPortfolioReturns(series: WeightedReturnSeries[]): DatedReturn[] {
   const holdings = series.filter((entry) => Number.isFinite(entry.weight) && entry.weight > 0);
   const totalWeight = holdings.reduce((sum, entry) => sum + entry.weight, 0);
   if (!holdings.length || !Number.isFinite(totalWeight) || totalWeight <= 0) return [];
-  const samples = holdings.map((entry) => new Map(entry.returns
-    .filter(validReturnInterval)
-    .map((point) => [returnIntervalKey(point), point])));
+  const { points, values } = alignSeries(holdings.map((entry) => entry.returns));
   const returns: DatedReturn[] = [];
-  for (const [key, first] of samples[0]!) {
+  for (let row = 0; row < points.length; row++) {
     let value = 0;
-    let complete = true;
     for (let index = 0; index < holdings.length; index++) {
-      const point = samples[index]!.get(key);
-      if (!point) { complete = false; break; }
-      value += point.value * (holdings[index]!.weight / totalWeight);
+      value += values[index]![row]! * (holdings[index]!.weight / totalWeight);
     }
-    if (complete && Number.isFinite(value)) returns.push({ ...first, value });
+    if (Number.isFinite(value)) returns.push({ ...points[row]!, value });
   }
   return returns.sort((left, right) => left.dateKey.localeCompare(right.dateKey));
 }

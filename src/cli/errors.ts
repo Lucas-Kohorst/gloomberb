@@ -4,6 +4,7 @@ import { DEFAULT_CLI_OPTIONS, type CliGlobalOptions } from "./options";
 import { serializeCliError, type CliErrorObject } from "./result";
 import { cliStyles, cliTerminalWidth, wrapText } from "../utils/cli-output";
 import { withSearchHints, type FredSeriesCheck } from "./not-a-ticker";
+import { isProviderBusy, SEARCH_BUSY_CODE, SEARCH_BUSY_MESSAGE } from "../sources/provider-errors";
 
 const USAGE_PREFIX = "Usage: ";
 /** The code of every error a command fails with: bad input, nothing found, an option it does not take. */
@@ -22,13 +23,16 @@ class CliFailure extends Error {
   readonly code: string;
   readonly details?: unknown;
   readonly retryable?: boolean;
+  /** What a structured format carries beside the message; text prints the message alone. */
+  readonly fields?: Record<string, unknown>;
 
-  constructor(message: string, details?: unknown, code = CLI_ERROR_CODE, retryable?: boolean) {
+  constructor(message: string, details?: unknown, code = CLI_ERROR_CODE, retryable?: boolean, fields?: Record<string, unknown>) {
     super(message);
     this.name = "CliFailure";
     this.code = code;
     this.details = details;
     this.retryable = retryable;
+    this.fields = fields;
   }
 }
 
@@ -36,12 +40,26 @@ export function fail(message: string, details?: unknown, code?: string): never {
   throw new CliFailure(message, details, code);
 }
 
+/**
+ * Fails with its own code and the fields `--json` reads beside the message:
+ * `{ ok: false, error: { code, message, ...fields } }`. Text prints the
+ * message alone, and the exit status is any failure's.
+ */
+export function failWithFields(message: string, code: string, fields: Record<string, unknown>): never {
+  throw new CliFailure(message, undefined, code, undefined, fields);
+}
+
+/** Fails with what asking again shortly may get past (a busy service): `--json` marks it `retryable`. */
+export function failRetryable(message: string, code: string): never {
+  throw new CliFailure(message, undefined, code, true);
+}
+
 export function closeAndFail(persistence: AppPersistence, message: string, details?: string): never {
   persistence.close();
   fail(message, details);
 }
 
-function isCliFailure(error: unknown): error is CliFailure {
+export function isCliFailure(error: unknown): error is CliFailure {
   return error instanceof CliFailure;
 }
 
@@ -57,7 +75,12 @@ function cliErrorObject(error: unknown): CliErrorObject {
       message: error.message,
       details: error.details,
       retryable: error.retryable,
+      ...error.fields,
     };
+  }
+  // A symbol or name search was too busy to look up: not a miss, and asking again may find it.
+  if (isProviderBusy(error)) {
+    return { code: SEARCH_BUSY_CODE, message: SEARCH_BUSY_MESSAGE, retryable: true };
   }
   // Gloom Cloud refused what was asked (an unknown series, a bad date): the input was wrong, not the program.
   if (error instanceof ApiRequestError && error.status === 400) {

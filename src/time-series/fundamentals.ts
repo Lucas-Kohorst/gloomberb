@@ -4,14 +4,17 @@ import type {
 } from "../types/financials";
 import { areNearbyFinancialPeriodEnds, completeAvailability, statementFieldAvailability } from "../utils/financial-statements";
 import { copyIncomeField, incomeFieldKnowledgeDate, incomeFieldOwner, isIncomeStatementField } from "../utils/income-statement";
+import { fiscalPeriodLabel, fiscalYearEndMonth, ttmPeriodLabel } from "../utils/fiscal-period";
 import { hasStatementGap, mergeStatementGaps } from "../utils/statement-gaps";
 import { canonicalTimeSeriesFieldId, getTimeSeriesField } from "./field-catalog";
 import { forwardPeHistory, realizedNtmPeHistory } from "./forward-valuation";
 import { reportingCurrencySeries } from "./reporting-currency";
 import { createValuationCurrencyContext, type ValuationCurrencyContext } from "./valuation-currency";
-import { valuationPriceAtOrBefore, valuationQuoteIssue, type ValuationPriceIssue } from "./valuation-price";
+import { currentValuationPrice, valuationPriceAtOrBefore, valuationQuoteIssue, type ValuationPriceIssue } from "./valuation-price";
 import type { SecuritySeriesSource, SeriesPeriod, TimeSeriesPoint } from "./types";
 import { isFiniteNumber } from "../utils/guards";
+import { liveForwardPE, liveTrailingPE } from "../market-data/quotes/live-valuation";
+import { comparablePriceEarnings } from "../utils/price-earnings";
 
 type NumericStatementField =
   | "totalRevenue"
@@ -107,7 +110,7 @@ const VALUATION_IDS = new Set([
   "priceFcf",
 ]);
 
-/** Statement-based multiples whose latest point is the live quote over the latest period. */
+/** Statement-based multiples whose latest point is the regular session price over the latest trailing period. */
 const QUOTE_DERIVED_VALUATION_IDS = new Set([
   "trailingPE",
   "priceSales",
@@ -462,6 +465,26 @@ function buildTtmStatements(statements: readonly FinancialStatement[]): Internal
   return result;
 }
 
+/**
+ * A split restates EPS onto the new share count, and SEC history dates the
+ * restated figure by the filing that evidenced the split. The earnings were
+ * known at the original filing; price history is split-adjusted the same way,
+ * so a multiple of the restated figure steps when it was first filed. The
+ * EPS series itself keeps the restatement's date: its value is the restated one.
+ */
+export function knownWhenFiled(row: FinancialStatement): FinancialStatement {
+  const filed = row.epsBasis?.status === "split-adjusted" ? row.epsBasis.originalFiled : undefined;
+  if (!filed || !Number.isFinite(Date.parse(filed))) return row;
+  const current = row.fieldAvailability !== undefined ? row.fieldAvailability.eps : row.availableAt;
+  if (current && Date.parse(current) <= Date.parse(filed)) return row;
+  return { ...row, fieldAvailability: { ...row.fieldAvailability, eps: filed } };
+}
+
+/** The statements a multiple is priced from, each restated EPS dated by its first filing. */
+function valuationStatements(financials: TickerFinancials): { quarterly: FinancialStatement[]; annual: FinancialStatement[] } {
+  return { quarterly: financials.quarterlyStatements.map(knownWhenFiled), annual: financials.annualStatements.map(knownWhenFiled) };
+}
+
 function normalizeFundamentalPeriod(period: SeriesPeriod | undefined): "annual" | "quarterly" | "ttm" | "auto" {
   return period === "annual" || period === "quarterly" || period === "ttm" ? period : "auto";
 }
@@ -472,9 +495,12 @@ function sourceStatements(
   valuationMetric?: string,
 ): { statements: InternalStatement[]; period: "annual" | "quarterly" | "ttm" } {
   const normalized = normalizeFundamentalPeriod(period);
-  const quarterly = deriveQuarterlyStatements(financials.quarterlyStatements, financials.annualStatements);
+  const known = valuationMetric
+    ? valuationStatements(financials)
+    : { quarterly: financials.quarterlyStatements, annual: financials.annualStatements };
+  const quarterly = deriveQuarterlyStatements(known.quarterly, known.annual);
   if (normalized === "annual") {
-    return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
+    return { statements: mergeStatementsByPeriod(known.annual), period: "annual" };
   }
   if (normalized === "ttm" || valuationMetric) {
     const ttm = buildTtmStatements(quarterly);
@@ -484,13 +510,13 @@ function sourceStatements(
     }
     if (normalized === "ttm") return { statements: [], period: "ttm" };
     if (valuationMetric) {
-      return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
+      return { statements: mergeStatementsByPeriod(known.annual), period: "annual" };
     }
   }
   if (normalized === "quarterly" || (normalized === "auto" && quarterly.length > 0)) {
     return { statements: quarterly, period: "quarterly" };
   }
-  return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
+  return { statements: mergeStatementsByPeriod(known.annual), period: "annual" };
 }
 
 function ratio(numerator: unknown, denominator: unknown): number | null {
@@ -648,6 +674,8 @@ function pointForStatement(
   period: "annual" | "quarterly" | "ttm",
   timestampMode: SecuritySeriesSource["timestampMode"],
   derived: boolean,
+  /** The month the issuer's fiscal year ends; null names the period by its end date. */
+  yearEndMonth: number | null,
 ): TimeSeriesPoint | null {
   const observedAt = validDate(statement.date);
   if (!observedAt) return null;
@@ -665,6 +693,8 @@ function pointForStatement(
     // Providers do not supply a reliable issuer fiscal-year/quarter identity.
     // Calendar-month numbering would mislabel non-calendar fiscal years.
     periodLabel: `${period === "annual" ? "Year" : period === "ttm" ? "TTM" : "Quarter"} ended ${statement.date}`,
+    // The period as FA's columns name it (`Q3 FY26`), which the legend prints beside the value.
+    fiscalPeriod: period === "ttm" ? ttmPeriodLabel(statement.date, yearEndMonth) : fiscalPeriodLabel(statement.date, period, yearEndMonth),
     provenance: {
       quality: derived || (metric === "eps" && statement.epsBasis?.factor !== undefined && statement.epsBasis.factor !== 1) ? "derived" : "reported",
       ...((metric === "eps" || metric === "trailingPE") && statement.epsBasis ? { secEpsBasis: statement.epsBasis } : {}),
@@ -734,15 +764,17 @@ function providerCurrentValuationPoint(
   financials: TickerFinancials,
   metric: string,
 ): TimeSeriesPoint | null {
+  // A forward P/E is measured at the regular session price, as `valuation` reads it; PEG stays as served.
   const value = metric === "forwardPE"
-    ? financials.fundamentals?.forwardPE
+    ? comparablePriceEarnings(liveForwardPE(financials.quote, financials.fundamentals))
     : metric === "pegRatio"
       ? financials.fundamentals?.pegRatio
       : undefined;
   if (!isFiniteNumber(value) || (metric === "forwardPE" && value <= 0)) return null;
   const quoteTime = financials.quote?.lastUpdated;
-  const date = validDate(isFiniteNumber(quoteTime) && quoteTime > 0 ? quoteTime : null);
-  if (!date) return null;
+  const quoteDate = validDate(isFiniteNumber(quoteTime) && quoteTime > 0 ? quoteTime : null);
+  if (!quoteDate) return null;
+  const date = metric === "forwardPE" ? currentValuationPrice(financials.quote)?.date ?? quoteDate : quoteDate;
   return {
     date,
     observedAt: date,
@@ -756,6 +788,21 @@ function providerCurrentValuationPoint(
   };
 }
 
+/**
+ * The trailing P/E `valuation`, DES and the portfolio columns show: the served
+ * one at the regular session price, over positive EPS.
+ */
+function servedTrailingPE(financials: TickerFinancials): number | null {
+  return comparablePriceEarnings(liveTrailingPE(financials.quote, financials.fundamentals));
+}
+
+/**
+ * The latest point of a statement-based multiple: the regular session price
+ * (after the close, the close, dated by it) over the latest period known when
+ * the quote was observed. The statements decide whether there is one; a
+ * trailing P/E then takes the served one at that price where there is one, so
+ * the chart ends on the P/E `valuation` prints.
+ */
 function currentDerivedValuationPoint(
   financials: TickerFinancials,
   statements: readonly FinancialStatement[],
@@ -766,6 +813,8 @@ function currentDerivedValuationPoint(
   if (valuationQuoteIssue(quote)) return null;
   const quoteDate = validDate(quote?.lastUpdated);
   if (!quoteDate || !isFiniteNumber(quote?.price) || quote.price <= 0) return null;
+  const current = currentValuationPrice(quote);
+  if (!current) return null;
   const quoteTime = quoteDate.getTime();
   // Select the latest known period first. Missing inputs, a loss or incompatible
   // currency cannot make an older period's denominator current again.
@@ -781,21 +830,39 @@ function currentDerivedValuationPoint(
     ))
     .at(-1)?.candidate;
   if (!statement) return null;
-  const comparablePrice = currencies.priceInStatementUnits(statement, quote.price);
+  const comparablePrice = currencies.priceInStatementUnits(statement, current.price);
   if (comparablePrice === null) return null;
   const value = valuationAtPrice(statement, metric, comparablePrice);
   if (value === null) return null;
   return {
-    date: quoteDate,
-    observedAt: quoteDate,
-    availableAt: quoteDate,
-    value,
+    date: current.date,
+    observedAt: current.date,
+    availableAt: current.date,
+    value: (metric === "trailingPE" ? servedTrailingPE(financials) : null) ?? value,
     periodLabel: "Current",
     provenance: {
       providerId: quote.providerId,
       quality: "derived",
     },
   };
+}
+
+/**
+ * The periods a Current multiple is read from: the selected ones, and beside
+ * fiscal years the trailing twelve months the quarters after them sum to, so a
+ * fiscal year's EPS never prices today once later quarters are reported. A
+ * fiscal year is itself a trailing twelve months at its end.
+ */
+function currentValuationStatements(
+  financials: TickerFinancials,
+  selected: ReturnType<typeof sourceStatements>,
+  metric: string,
+): InternalStatement[] {
+  if (selected.period !== "annual") return selected.statements;
+  const known = valuationStatements(financials);
+  const trailing = buildTtmStatements(deriveQuarterlyStatements(known.quarterly, known.annual))
+    .filter((statement) => hasValuationInputs(statement, metric));
+  return [...selected.statements, ...trailing];
 }
 
 /** Whether a valuation field derives a current point from the latest quote. */
@@ -878,6 +945,7 @@ export function extractFundamentalSeries(
   const [namespace, metric = ""] = canonicalId.split(".");
   if (namespace === "fundamental" && FUNDAMENTAL_IDS.has(metric)) {
     const selected = sourceStatements(financials, source.period);
+    const yearEndMonth = fiscalYearEndMonth(financials.annualStatements);
     let hasObservation = false;
     const points = selected.statements.flatMap((statement) => {
       const result = fundamentalValue(statement, metric);
@@ -889,6 +957,7 @@ export function extractFundamentalSeries(
         selected.period,
         source.timestampMode,
         result.derived,
+        yearEndMonth,
       );
       return point ? [point] : [];
     });
@@ -916,6 +985,7 @@ export function extractFundamentalSeries(
 
   const selected = sourceStatements(financials, source.period, metric);
   const currencies = createValuationCurrencyContext(financials);
+  const yearEndMonth = fiscalYearEndMonth(financials.annualStatements);
   let hasHistoricalObservation = false;
   const historical = selected.statements.flatMap((statement) => {
     const historical = historicalValuation(financials, statement, metric, currencies);
@@ -927,13 +997,14 @@ export function extractFundamentalSeries(
       selected.period,
       source.timestampMode,
       true,
+      yearEndMonth,
     );
     if (point && historical?.integrity) point.provenance = { ...point.provenance, priceHistoryIntegrity: historical.integrity };
     if (point && historical?.issue) point.provenance = { ...point.provenance,
       valuationPriceIssues: [{ ...historical.issue, affectedAt: point.date.toISOString() }] };
     return point ? [point] : [];
   });
-  const current = currentDerivedValuationPoint(financials, selected.statements, metric, currencies);
+  const current = currentDerivedValuationPoint(financials, currentValuationStatements(financials, selected, metric), metric, currencies);
   if (!hasHistoricalObservation && !current) return [];
   const dedupedHistorical = dedupeFundamentalPeriods(historical);
   // Publication timestamps can be shared by distinct fiscal periods. Their
@@ -944,13 +1015,28 @@ export function extractFundamentalSeries(
   ));
 }
 
+/**
+ * The period a fundamental series asks for that its company reports no figure
+ * of, though it reports annual ones: `quarterly` for an issuer that reports
+ * twice a year. Null for any other series, and when the annual figures are as
+ * missing as the quarterly ones.
+ */
+export function unreportedStatementPeriod(
+  financials: TickerFinancials,
+  source: SecuritySeriesSource,
+): "quarterly" | null {
+  if (source.period !== "quarterly" || !canonicalTimeSeriesFieldId(source.fieldId).startsWith("fundamental.")) return null;
+  return extractFundamentalSeries(financials, { ...source, period: "annual" }).length > 0 ? "quarterly" : null;
+}
+
 export function fundamentalSeriesUsesAvailabilityFallback(
   financials: TickerFinancials | null,
   source: SecuritySeriesSource,
 ): boolean {
   if (!financials || source.timestampMode === "period-end") return false;
+  // A gap has no value to place, so it has no date to fall back for.
   const points = extractFundamentalSeries(financials, source);
-  return points.some((point) => point.availableAt === undefined);
+  return points.some((point) => point.value != null && point.availableAt === undefined);
 }
 
 /** Explains withheld currency-dependent values through chart and export metadata. */
@@ -976,7 +1062,7 @@ export function valuationPriceIssues(financials: TickerFinancials, source: Secur
   const quoteIssue = valuationQuoteIssue(financials.quote);
   const issues = rows.flatMap((row) => {
     const price = valuationPriceAtOrBefore(financials.priceHistory, metricAvailability(row, metric) ?? row.date);
-    const date = pointForStatement(row, metric, null, selected.period, source.timestampMode, true)?.date;
+    const date = pointForStatement(row, metric, null, selected.period, source.timestampMode, true, null)?.date;
     return price?.issue && date ? [{ ...price.issue, affectedAt: date.toISOString() }] : [];
   });
   return [...(quoteIssue ? [quoteIssue] : []), ...new Map(issues.map((issue) => [JSON.stringify(issue), issue])).values()];

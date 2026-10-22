@@ -1,4 +1,5 @@
 import { compareSortValues } from "../../../utils/sort-values";
+import { zonedDateKey } from "../../../utils/zoned-date-time";
 import type {
   FilingPositionColumn,
   FilingPositionColumnId,
@@ -17,6 +18,8 @@ import type {
   HoldingAction,
   ThirteenFBrowserTab,
   ThirteenFDetailTab,
+  ThirteenFFilerStatus,
+  ThirteenFFilingGap,
   ThirteenFFormSummary,
   ThirteenFFund,
   ThirteenFHoldingRecord,
@@ -68,6 +71,17 @@ export const DEFAULT_FILING_POSITION_SORT: FundSortPreference<FilingPositionColu
 const TICKER_LIKE_RE = /^[A-Z][A-Z0-9.-]{0,5}$/;
 const CIK_RE = /^\d{6,10}$/;
 
+/**
+ * A word shaped like a ticker in any case (aapl, BRK.B, brk-b), for a report
+ * that tries it as a ticker before a fund name. The pane's live search keeps
+ * lowercase words for fund names (`inferBrowserTabFromQuery`).
+ */
+export function isTickerShapedQuery(query: string): boolean {
+  const trimmed = query.trim();
+  return !CIK_RE.test(trimmed) && !/^(latest|recent)$/i.test(trimmed)
+    && TICKER_LIKE_RE.test(trimmed.replace(/^\$/, "").toUpperCase());
+}
+
 export function inferBrowserTabFromQuery(query: string): ThirteenFBrowserTab {
   const trimmed = query.trim();
   if (!trimmed) return "performance";
@@ -82,6 +96,64 @@ function normalizeQuarterDate(value: Date): string {
   const month = value.getUTCMonth();
   const quarter = Math.floor(month / 3) + 1;
   return `${year}Q${quarter}`;
+}
+
+const DUE_DAYS = 45;
+
+/** The third Monday of February, a federal holiday a February deadline can fall on. */
+function presidentsDay(year: number): number {
+  const first = new Date(Date.UTC(year, 1, 1)).getUTCDay();
+  return 1 + ((8 - first) % 7) + 14;
+}
+
+/**
+ * The day a quarter's 13F is due: 45 days after the quarter ends, moved past a
+ * weekend, and past Presidents' Day, the one federal holiday a 13F deadline
+ * (14 Feb, 15 May, 14 Aug, 14 Nov) can roll onto.
+ */
+export function thirteenFDueDate(period: string): string {
+  const due = new Date(`${period}T00:00:00Z`);
+  due.setUTCDate(due.getUTCDate() + DUE_DAYS);
+  for (;;) {
+    const day = due.getUTCDay();
+    const holiday = due.getUTCMonth() === 1 && due.getUTCDate() === presidentsDay(due.getUTCFullYear());
+    if (day !== 0 && day !== 6 && !holiday) break;
+    due.setUTCDate(due.getUTCDate() + 1);
+  }
+  return due.toISOString().slice(0, 10);
+}
+
+/** The newest quarter whose 13F deadline has passed in New York, with that deadline. */
+export function newestDueQuarter(now = new Date()): { period: string; due: string } {
+  const today = zonedDateKey(now.getTime(), "America/New_York");
+  const month = Number(today.slice(5, 7)) - 1;
+  const quarterStart = month - (month % 3);
+  // The current quarter ends after today; its predecessors end before it.
+  for (let back = 0; ; back += 1) {
+    const period = new Date(Date.UTC(Number(today.slice(0, 4)), quarterStart - back * 3, 0)).toISOString().slice(0, 10);
+    const due = thirteenFDueDate(period);
+    if (due < today) return { period, due };
+  }
+}
+
+/**
+ * What a fund whose latest report is `latestPeriod` filed for the newest
+ * quarter past its deadline, or null when that report is not behind it.
+ * `status` is EDGAR's list of the fund's filings, null when it could not be
+ * read. The latest filing for the quarter decides: a 13F-NT, or a report the
+ * loaded filings do not have yet.
+ */
+export function filingGapFor(
+  latestPeriod: string | null | undefined,
+  status: ThirteenFFilerStatus | null,
+  now = new Date(),
+): ThirteenFFilingGap | null {
+  const { period, due } = newestDueQuarter(now);
+  if (!latestPeriod || latestPeriod >= period) return null;
+  const filing = status?.filings
+    .filter((entry) => entry.period === period)
+    .sort((left, right) => right.filed.localeCompare(left.filed) || right.accession.localeCompare(left.accession))[0] ?? null;
+  return { period, due, filing, checked: status != null };
 }
 
 export function latestLikely13FQuarter(now = new Date()): string {
@@ -306,32 +378,171 @@ function aggregateHoldings(holdings: ThirteenFHoldingRecord[]): Map<string, Hold
   return aggregates;
 }
 
-function resolveAction(current: HoldingAggregate | undefined, previous: HoldingAggregate | undefined): HoldingAction {
+/**
+ * The change from `previous` shares to `shares`, with the previous ones carried
+ * across a split of `ratio` new shares per old (1 for none, as filed). A line
+ * held through a split is not a change, whatever float noise (70 × 0.1) says.
+ */
+function sharesDelta(shares: number, previous: number, ratio: number): number {
+  const delta = shares - previous * ratio;
+  return ratio === 1 ? delta : Math.round(delta * 1e3) / 1e3 || 0;
+}
+
+function resolveAction(current: HoldingAggregate | undefined, previous: HoldingAggregate | undefined, ratio = 1): HoldingAction {
   if (current && !previous) return "new";
   if (!current && previous) return "exit";
   if (!current || !previous) return "held";
   if (current.shares == null || previous.shares == null) return "unknown";
-  const delta = current.shares - previous.shares;
+  const delta = sharesDelta(current.shares, previous.shares, ratio);
   if (delta > 0) return "add";
   if (delta < 0) return "trim";
   return "held";
 }
 
-function estimateHoldingPnl(
-  current: HoldingAggregate | undefined,
-  previous: HoldingAggregate | undefined,
-): number | null {
-  if (!current || !previous) return null;
+/** The figures of one line of a fund's two filings that its Est P&L reads. */
+interface HoldingLine {
+  id: string;
+  putCall: string;
+  value: number | null;
+  shares: number | null;
+  previousValue: number | null;
+  previousShares: number | null;
+}
+
+/**
+ * Each line's split factor by row id, new shares per old: 1 when its corporate
+ * actions show no split between the filings, null when they could not be read.
+ */
+export type SplitFactors = ReadonlyMap<string, number | null>;
+
+/**
+ * The Est P&L of a line held through the quarter, and the value of the shares
+ * it is earned on at the quarter's start. `ratio` is the new shares per old of
+ * a split between the filings (1 for none): the start is then priced on
+ * split-adjusted shares. Null for a line with nothing to price.
+ */
+function priceHolding(line: HoldingLine, ratio = 1): { pnl: number; base: number } | null {
   // A 13F option value is underlying notional. Its change cannot price the
   // option, and the filing does not identify strike, expiry or premium.
-  if (current.putCall || previous.putCall) return null;
-  if (current.value == null || previous.value == null || current.value <= 0 || previous.value <= 0) return null;
-  if (current.shares == null || previous.shares == null || current.shares <= 0 || previous.shares <= 0) return null;
+  if (line.putCall.trim()) return null;
+  const { value, shares, previousValue, previousShares } = line;
+  if (value == null || previousValue == null || value <= 0 || previousValue <= 0) return null;
+  if (shares == null || previousShares == null || shares <= 0 || previousShares <= 0) return null;
+  const startPrice = previousValue / (previousShares * ratio);
+  const held = Math.min(shares, previousShares * ratio);
+  return { pnl: (value / shares - startPrice) * held, base: startPrice * held };
+}
 
-  const currentPrice = current.value / current.shares;
-  const previousPrice = previous.value / previous.shares;
-  const overlappingShares = Math.min(current.shares, previous.shares);
-  return (currentPrice - previousPrice) * overlappingShares;
+type HoldingEstimate =
+  | { kind: "none" }
+  | { kind: "unread" }
+  | { kind: "priced"; pnl: number; base: number; ratio: number };
+
+/**
+ * The one rule for a line's Est P&L, behind the Holdings column and a fund's
+ * quarter estimate alike. A filing prices a line only as value over shares, so
+ * a split between the filings reads as a crash (a reverse split as a surge).
+ * A line that moves like a split is priced by its factor in `splits`: split-
+ * adjusted shares for a split, as it is for 1 (a trade or rebalance), and not
+ * at all (`unread`) when its factor is null or absent: never as the crash.
+ * `none`: new, exited, an option, or a figure missing.
+ */
+function estimateHolding(line: HoldingLine, splits?: SplitFactors): HoldingEstimate {
+  const plain = priceHolding(line);
+  if (!plain) return { kind: "none" };
+  if (!movesLikeSplit(line)) return { kind: "priced", ...plain, ratio: 1 };
+  const factor = splits?.get(line.id);
+  if (factor == null || !(factor > 0)) return { kind: "unread" };
+  return { kind: "priced", ...priceHolding(line, factor)!, ratio: factor };
+}
+
+/** A line of a fund's two filings: its ticker, else its issuer. */
+export interface FilingLine {
+  ticker: string;
+  issuer: string;
+}
+
+/** A fund's return over its latest quarter estimated from its own two filings. */
+export interface FilingQuarterReturn {
+  /** Percent, as the performance ranking states one; null without a comparable prior quarter or a position held through it. */
+  percent: number | null;
+  /** Lines split between the filings, priced on split-adjusted shares, with the new shares per old (10 for 10:1, 0.1 for 1:10). */
+  splits: Array<FilingLine & { ratio: number }>;
+  /** Lines that moved as across a split whose corporate actions could not be read, left out. */
+  skipped: FilingLine[];
+}
+
+/** The least change in a line's share count that reads as a split: 3:2. */
+const SPLIT_MIN_SHARE_RATIO = 1.5;
+/** The least move in its value per share the other way: a 3:2 split still reads as one after a quarter up 25%. */
+const SPLIT_MIN_PRICE_RATIO = 1.2;
+
+/**
+ * Whether a line's shares and value per share moved inversely by about the
+ * same ratio between the filings, as across a split: shares up 10x and the
+ * value per share down to about a tenth, or a reverse split the other way,
+ * the value per share still free to halve or double over the quarter. A
+ * position rebalanced to the same dollars after its price doubled or halved
+ * moves the same way, so only the line's corporate actions tell the two apart.
+ */
+function movesLikeSplit(row: HoldingLine): boolean {
+  if (!row.previousValue || !row.previousShares || !row.shares || !row.value) return false;
+  const shareRatio = row.shares / row.previousShares;
+  const startOverEndPrice = (row.previousValue / row.previousShares) / (row.value / row.shares);
+  const forward = shareRatio >= SPLIT_MIN_SHARE_RATIO && startOverEndPrice >= SPLIT_MIN_PRICE_RATIO;
+  const reverse = shareRatio <= 1 / SPLIT_MIN_SHARE_RATIO && startOverEndPrice <= 1 / SPLIT_MIN_PRICE_RATIO;
+  return (forward || reverse) && Math.abs(Math.log(shareRatio) - Math.log(startOverEndPrice)) <= Math.LN2;
+}
+
+/** `10:1`, `3:2`, `1:10`: a split ratio of new shares per old. */
+export function formatSplitRatio(ratio: number): string {
+  const up = ratio >= 1 ? ratio : 1 / ratio;
+  const old = [1, 2, 3, 4, 5, 10].find((shares) => Math.abs(up * shares - Math.round(up * shares)) < 1e-6);
+  const [next, per] = old ? [Math.round(up * old), old] : [Number(up.toFixed(2)), 1];
+  return ratio >= 1 ? `${next}:${per}` : `${per}:${next}`;
+}
+
+/**
+ * The lines of a fund's two filings whose shares and value per share moved
+ * as across a split (movesLikeSplit), by row id, for their corporate actions
+ * to say whether one happened: the lines estimateHolding leaves unread when
+ * no factor is known.
+ */
+export function filingSplitCandidates(data: FundDetailData): Array<FilingLine & { id: string }> {
+  return buildFundHoldingRows(data).filter((row) => row.splitUnread).map((row) => ({ id: row.id, ticker: row.ticker, issuer: row.issuer }));
+}
+
+/**
+ * A fund's estimated return over its latest quarter from its own two filings,
+ * in percent as the performance ranking states one: the Est P&L of the share
+ * positions held at both quarter ends (the Holdings view's column) over what
+ * those shares were worth at the start of the quarter. Options are left out,
+ * as Est P&L leaves them out.
+ *
+ * Each line is priced by estimateHolding, the rule the Holdings column uses,
+ * so the two cannot disagree. `splits` holds, for each of
+ * filingSplitCandidates, the split factor its corporate actions show between
+ * the two quarter ends: a split's start is priced on split-adjusted shares,
+ * and a line with none (1) is a trade, priced as it is. A candidate without
+ * one (null or absent: its actions could not be read) is left out, rather than
+ * read as a crash or a split it may not be.
+ */
+export function estimateFilingQuarterReturn(data: FundDetailData, splits: SplitFactors = new Map()): FilingQuarterReturn {
+  const adjusted: FilingQuarterReturn["splits"] = [];
+  const skipped: FilingLine[] = [];
+  if (!hasComparable13FQuarter(data)) return { percent: null, splits: adjusted, skipped };
+  let pnl = 0;
+  let base = 0;
+  for (const row of buildFundHoldingRows(data)) {
+    const estimate = estimateHolding(row, splits);
+    const line = { ticker: row.ticker, issuer: row.issuer };
+    if (estimate.kind === "unread") skipped.push(line);
+    if (estimate.kind !== "priced") continue;
+    if (estimate.ratio !== 1) adjusted.push({ ...line, ratio: estimate.ratio });
+    pnl += estimate.pnl;
+    base += estimate.base;
+  }
+  return { percent: base > 0 ? (pnl / base) * 100 : null, splits: adjusted, skipped };
 }
 
 export function hasComparable13FQuarter(data: FundDetailData): boolean {
@@ -349,7 +560,16 @@ function adjacentQuarterPeriods(current: string | undefined, previous: string | 
   return previous === priorEnd.toISOString().slice(0, 10);
 }
 
-export function buildFundHoldingRows(data: FundDetailData | null): FundHoldingRow[] {
+/**
+ * A fund's holdings with their change from the prior quarter. `splits` says,
+ * for the lines that moved as across a split (filingSplitCandidates), whether
+ * a split happened between the filings (estimateHolding). A confirmed split
+ * prices Est P&L on split-adjusted shares and measures the change in shares
+ * and the action from the prior shares carried across it (`splitRatio`); a
+ * line without a factor has no Est P&L (`splitUnread`) and keeps its change
+ * as filed.
+ */
+export function buildFundHoldingRows(data: FundDetailData | null, splits?: SplitFactors): FundHoldingRow[] {
   if (!data?.latestForm) return [];
   const current = aggregateHoldings(data.latestHoldings);
   const comparable = hasComparable13FQuarter(data);
@@ -370,11 +590,14 @@ export function buildFundHoldingRows(data: FundDetailData | null): FundHoldingRo
     const valueChange = comparable && (!currentHolding || value != null) && (!previousHolding || previousValue != null)
       ? (value ?? 0) - (previousValue ?? 0)
       : null;
+    // The split ratio estimateHolding confirmed carries the prior shares to today's basis for the change and the action too: one rule.
+    const estimate = estimateHolding({ id, putCall: display.putCall, value, shares, previousValue, previousShares }, splits);
+    const ratio = estimate.kind === "priced" ? estimate.ratio : 1;
     const sharesChange = comparable && (!currentHolding || shares != null) && (!previousHolding || previousShares != null)
-      ? (shares ?? 0) - (previousShares ?? 0)
+      ? sharesDelta(shares ?? 0, previousShares ?? 0, ratio)
       : null;
     const sharesChangePercent = sharesChange != null && previousShares && previousShares !== 0
-      ? sharesChange / previousShares
+      ? sharesChange / (previousShares * ratio)
       : null;
     return {
       id,
@@ -390,10 +613,12 @@ export function buildFundHoldingRows(data: FundDetailData | null): FundHoldingRo
       previousValue,
       previousShares,
       valueChange,
-      estimatedPnl: estimateHoldingPnl(currentHolding, previousHolding),
+      estimatedPnl: estimate.kind === "priced" ? estimate.pnl : null,
+      ...(ratio !== 1 ? { splitRatio: ratio } : {}),
+      ...(estimate.kind === "unread" ? { splitUnread: true } : {}),
       sharesChange,
       sharesChangePercent,
-      action: comparable ? resolveAction(currentHolding, previousHolding) : "unknown",
+      action: comparable ? resolveAction(currentHolding, previousHolding, ratio) : "unknown",
       accessionNumber: display.accessionNumber,
     };
   });

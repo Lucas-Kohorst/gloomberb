@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import type { CachePolicy } from "../types/persistence";
 import type { PluginPersistence } from "../types/plugin";
 import { CachedQuery, type CachedValue } from "./cached-query";
@@ -31,7 +32,10 @@ export function createPluginCache<T, Stored = T>(options: {
     if (!record) return null;
     let value: T;
     try { value = options.decode ? options.decode(record.value) : record.value as unknown as T; }
-    catch { return null; } // A corrupt cache entry must not prevent a fresh load.
+    catch (error) {
+      logFailure("data.plugin-cache", "Decoding a cached resource failed")(error);
+      return null;
+    } // A corrupt cache entry must not prevent a fresh load.
     return {
       value,
       fetchedAt: record.fetchedAt,
@@ -39,6 +43,24 @@ export function createPluginCache<T, Stored = T>(options: {
       expiresAt: record.expiresAt,
       source: options.source,
     };
+  };
+  /**
+   * Listeners by key, kept apart from the queries so they outlive a reset:
+   * a pane that subscribed before the plugin attached its store still hears
+   * the loads made after.
+   */
+  const listeners = new Map<string, Set<() => void>>();
+  const emit = (key: string) => {
+    for (const listener of [...listeners.get(key) ?? []]) listener();
+  };
+  const queryFor = (key: string): CachedQuery<T> => {
+    let query = queries.get(key);
+    if (!query) {
+      query = new CachedQuery({ read: (allowExpired) => read(key, allowExpired) });
+      query.subscribe(() => emit(key));
+      queries.set(key, query);
+    }
+    return query;
   };
   const reset = () => {
     generation += 1;
@@ -49,21 +71,29 @@ export function createPluginCache<T, Stored = T>(options: {
   };
   return {
     attach(next: PluginPersistence) {
-      if (persistence !== next) reset();
+      if (persistence === next) return;
+      reset();
       persistence = next;
+      // What a listener reads now comes from another store.
+      for (const key of [...listeners.keys()]) emit(key);
     },
     reset,
+    subscribe(key: string, listener: () => void): () => void {
+      const keyed = listeners.get(key) ?? new Set<() => void>();
+      listeners.set(key, keyed);
+      keyed.add(listener);
+      return () => {
+        keyed.delete(listener);
+        if (keyed.size === 0 && listeners.get(key) === keyed) listeners.delete(key);
+      };
+    },
     get(key: string, { allowExpired = false } = {}): PluginCacheResult<T> | null {
       const cached = read(key, allowExpired) ?? queries.get(key)?.getSnapshot().result;
       if (!cached || (!allowExpired && cached.expiresAt <= Date.now())) return null;
       return { data: cached.value, fetchedAt: cached.fetchedAt, stale: cached.staleAt <= Date.now(), source: "cache" };
     },
     async load(key: string, loader: () => Promise<T>, { force = false, replace = false } = {}): Promise<PluginCacheResult<T>> {
-      let query = queries.get(key);
-      if (!query) {
-        query = new CachedQuery({ read: (allowExpired) => read(key, allowExpired) });
-        queries.set(key, query);
-      }
+      const query = queryFor(key);
       const owner = generation;
       const before = query.getSnapshot().result;
       const result = await query.load({ force, replace, fetch: async () => {

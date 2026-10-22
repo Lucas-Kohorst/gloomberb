@@ -3,7 +3,7 @@ import { CHART_SPEC_VERSION, type ChartSpec, type ResolvedSeries, type TimeSerie
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { createTestResolvedSeries } from "../../../test-support/time-series";
 import { resolveChartSpecData } from "../../../time-series/resolve";
-import { applyCompositeChartCursor, buildCompositeChartScene, resolveAdjacentCompositeCursorDate, resolveCompositeCursorDate } from "./scene";
+import { applyCompositeChartCursor, buildCompositeChartScene, compositeCursorAsOf, resolveAdjacentCompositeCursorDate, resolveCompositeCursorDate } from "./scene";
 import { countMeasureBars } from "./tools";
 import { pricePointIntegrity } from "../../../utils/price-history-integrity";
 import { reuseResolvedSeriesIdentity } from "./panel-series";
@@ -145,4 +145,65 @@ test("a quarantined crypto observation stays selectable beside an exchange sessi
   expect(selected.cursorDate?.getTime()).toBe(invalidDate.getTime());
   expect(selected.cursorValues.find(value => value.seriesId === "BTC")?.value).toBeNull();
   expect(selected.cursorValues.find(value => value.seriesId === "BTC")?.point?.provenance?.priceHistoryIntegrity).toEqual(integrity);
+});
+
+test("a cursor time from another chart lands on the bar at or before it, and on none outside the view", () => {
+  const days = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09"].map(day => `${day}T14:30:00Z`);
+  const daily = market("D", "America/New_York", days, [1, 2, 3, 4, 5]);
+  const scene = buildCompositeChartScene([daily], [{ id: "main" }], { width: 101, height: 20 })!;
+  const linked = (iso: string) => applyCompositeChartCursor(scene, new Date(iso), "linked");
+  // An intraday time late on the 7th is nearer the 8th's bar, yet it is the 7th's.
+  const lateSeventh = linked("2026-01-08T13:00:00Z");
+  expect(lateSeventh.cursorDate?.toISOString()).toBe("2026-01-07T14:30:00.000Z");
+  expect(lateSeventh.cursorValues[0]?.value).toBe(3);
+  expect(applyCompositeChartCursor(scene, new Date("2026-01-08T13:00:00Z")).cursorDate?.toISOString())
+    .toBe("2026-01-08T14:30:00.000Z");
+  // Before the first bar there is no bar it is on.
+  expect(linked("2026-01-05T10:00:00Z").cursorDate).toBeNull();
+  // After the newest bar, even past the drawn edge, it is still that bar.
+  expect(linked("2026-03-01T00:00:00Z").cursorDate?.toISOString()).toBe("2026-01-09T14:30:00.000Z");
+  // A chart panned back to earlier bars does not pin a later time to its right edge.
+  const earlier = buildCompositeChartScene([daily], [{ id: "main" }], {
+    width: 101, height: 20, viewport: { start: new Date(days[0]!), end: new Date(days[2]!) }, clipToViewport: true,
+  })!;
+  const panned = applyCompositeChartCursor(earlier, new Date("2026-01-09T15:00:00Z"), "linked");
+  expect(panned.cursorDate).toBeNull();
+  expect(panned.cursorXRatio).toBeNull();
+  // A monthly series, on calendar time, reads its latest month on any later day, but not panned back from it.
+  const months = ["2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01"];
+  const monthly = createTestResolvedSeries({ id: "M", color: "#ffffff", points: months.map((month, index) => ({ date: new Date(month), value: index })) });
+  const latest = buildCompositeChartScene([monthly], [{ id: "main" }], { width: 101, height: 20 })!;
+  expect(applyCompositeChartCursor(latest, new Date("2025-10-16T15:00:00Z"), "linked").cursorDate?.toISOString()).toBe("2025-04-01T00:00:00.000Z");
+  const back = buildCompositeChartScene([monthly], [{ id: "main" }], {
+    width: 101, height: 20, viewport: { start: new Date(months[0]!), end: new Date(months[1]!) }, clipToViewport: true,
+  })!;
+  expect(applyCompositeChartCursor(back, new Date("2025-10-16T15:00:00Z"), "linked").cursorDate).toBeNull();
+});
+
+test("a cursor is shared as its bar's last instant, so a daily and an intraday chart land on the same session", () => {
+  // Daily bars stamped at midnight UTC, as date-only bars are; 30-minute bars over two New York sessions.
+  const daily = createTestResolvedSeries({
+    id: "D", color: "#ffffff", timeBasis: { kind: "market", timeZone: "America/New_York", cadenceMs: 86_400_000 },
+    points: ["2026-01-07", "2026-01-08"].map((day, index) => ({ date: new Date(`${day}T00:00:00Z`), value: index })),
+  });
+  const intradayTimes = ["2026-01-07T14:30:00Z", "2026-01-07T20:30:00Z", "2026-01-08T14:30:00Z", "2026-01-08T20:30:00Z"];
+  const intraday = createTestResolvedSeries({
+    id: "I", color: "#ffffff", timeBasis: { kind: "market", timeZone: "America/New_York", cadenceMs: 1_800_000 },
+    points: intradayTimes.map((time, index) => ({ date: new Date(time), value: index })),
+  });
+  const dailyScene = buildCompositeChartScene([daily], [{ id: "main" }], { width: 101, height: 20 })!;
+  const intradayScene = buildCompositeChartScene([intraday], [{ id: "main" }], { width: 101, height: 20 })!;
+  // The 8th's daily bar, stamped before that session opens, lands on the 8th's last bar, not the 7th's.
+  const dailyAsOf = compositeCursorAsOf(dailyScene, new Date("2026-01-08T00:00:00Z"));
+  expect(applyCompositeChartCursor(intradayScene, new Date(dailyAsOf), "linked").cursorDate?.toISOString()).toBe("2026-01-08T20:30:00.000Z");
+  // The 7th's closing bar ends at its interval, not at the next morning's bar: it lands on the 7th.
+  const closeAsOf = compositeCursorAsOf(intradayScene, new Date("2026-01-07T20:30:00Z"));
+  expect(closeAsOf).toBe(Date.parse("2026-01-07T21:00:00Z") - 1);
+  expect(applyCompositeChartCursor(dailyScene, new Date(closeAsOf), "linked").cursorDate?.toISOString()).toBe("2026-01-07T00:00:00.000Z");
+  // A monthly series on calendar time shares a month through its end, its newest one included.
+  const monthly = createTestResolvedSeries({ id: "M", color: "#ffffff", points: ["2025-11-01", "2025-12-01", "2026-01-01"].map((month, index) => ({ date: new Date(month), value: index })) });
+  const monthlyScene = buildCompositeChartScene([monthly], [{ id: "main" }], { width: 101, height: 20 })!;
+  expect(compositeCursorAsOf(monthlyScene, new Date("2025-11-01"))).toBe(Date.parse("2025-12-01") - 1);
+  expect(applyCompositeChartCursor(dailyScene, new Date(compositeCursorAsOf(monthlyScene, new Date("2026-01-01"))), "linked").cursorDate?.toISOString())
+    .toBe("2026-01-08T00:00:00.000Z");
 });

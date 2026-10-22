@@ -11,13 +11,16 @@ import {
   mapCloudNewsArticle,
 } from "../../../sources/gloomberb-cloud/news";
 import { parsePublicTickerKey } from "../../../utils/exchanges";
+import { formatUtcSeconds } from "../../../utils/utc-time";
 import { cloudNewsFreshness, cloudRealtimeAccess } from "../shared/report-freshness";
+import { REPORT_FILTER, REPORT_ROWS } from "../shared/headless-options";
 
+// Stories carry their time to the second, so a story published on a whole minute prints its seconds too.
 const NEWS_COLUMNS = [
-  { key: "publishedAt", header: "Published" },
+  { key: "publishedAt", header: "Published", textFormat: formatUtcSeconds },
   { key: "source", header: "Source" },
   { key: "headline", header: "Headline" },
-  { key: "tickers", header: "Tickers" },
+  { key: "tickers", header: "Tickers", textFormat: (value: unknown) => Array.isArray(value) ? value.join(", ") : String(value ?? "") },
   { key: "sentiment", header: "Sentiment" },
   { key: "importance", header: "Score", align: "right" as const },
 ];
@@ -103,6 +106,7 @@ function newsOptions() {
   return [
     {
       key: "sentiment",
+      shot: REPORT_FILTER,
       description: "Story sentiment to include.",
       type: "enum" as const,
       values: [
@@ -115,6 +119,7 @@ function newsOptions() {
     },
     {
       key: "minImportance",
+      shot: REPORT_FILTER,
       aliases: ["importance"],
       description: "Minimum importance score.",
       type: "integer" as const,
@@ -124,6 +129,7 @@ function newsOptions() {
     },
     {
       key: "limit",
+      shot: REPORT_ROWS,
       description: "Maximum stories to return.",
       type: "integer" as const,
       defaultValue: 50,

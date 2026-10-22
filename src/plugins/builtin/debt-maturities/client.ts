@@ -3,6 +3,7 @@ import type {
   DebtFact,
   DebtMaturitiesPayload,
   DebtMetric,
+  DebtQuarter,
 } from "../../../api-client/debt-maturities";
 import { ApiRequestError } from "../../../api-client/errors";
 import { listingAbroad, type IssuerListingParams } from "../../../api-client/paths";
@@ -116,8 +117,60 @@ function validMetric(
   );
 }
 
-/** Reject mixed filing/currency cohorts and preserve absent principal as null. */
+/**
+ * A 10-Q newer than the schedule, in its currency, whose amounts are facts of
+ * that filing on its own balance-sheet date. Servers before it was added send
+ * no field, which reads as no newer 10-Q.
+ */
+function validQuarter(
+  quarter: DebtQuarter,
+  latest: NonNullable<DebtMaturitiesPayload["latest"]>,
+): boolean {
+  const fact = (value: DebtFact | null) =>
+    value === null ||
+    (!!value &&
+      number(value.value) &&
+      typeof value.tag === "string" &&
+      !!value.tag &&
+      value.unit === quarter.currency &&
+      value.start === null &&
+      value.end === quarter.asOf &&
+      value.accession === quarter.accession &&
+      value.filed === quarter.filed &&
+      value.form === quarter.form);
+  return (
+    !!quarter &&
+    day(quarter.asOf) &&
+    day(quarter.filed) &&
+    quarter.asOf <= quarter.filed &&
+    quarter.asOf > latest.asOf &&
+    accession(quarter.accession) &&
+    /^10-Q(\/A)?$/.test(quarter.form) &&
+    quarter.currency === latest.currency &&
+    sourceUrl(quarter.filingUrl) &&
+    fact(quarter.current) &&
+    fact(quarter.noncurrent) &&
+    (quarter.current !== null || quarter.noncurrent !== null)
+  );
+}
+
+/**
+ * Reject mixed filing/currency cohorts and preserve absent principal as null.
+ * The latest 10-Q is optional and additive: one that does not hold up, or
+ * comes with no annual schedule, is dropped and the schedule stands. The
+ * payload keeps the field only when it carries a 10-Q.
+ */
 export function validateDebtMaturities(
+  data: DebtMaturitiesPayload,
+  symbol: string,
+): DebtMaturitiesPayload {
+  if (!data || typeof data !== "object" || !("latestQuarter" in data)) return validateSchedule(data, symbol);
+  const { latestQuarter, ...schedule } = data;
+  const valid = validateSchedule(schedule, symbol);
+  return latestQuarter != null && valid.latest && validQuarter(latestQuarter, valid.latest) ? data : valid;
+}
+
+function validateSchedule(
   data: DebtMaturitiesPayload,
   symbol: string,
 ): DebtMaturitiesPayload {

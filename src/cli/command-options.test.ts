@@ -6,6 +6,7 @@ import { checkCliCommandOptions, type BuiltinCliCommandDef } from "./command-opt
 import { dispatchCli } from "./index";
 import { parseCliGlobalArgs } from "./options";
 import { captureConsole } from "../test-support/console";
+import { marketDataCliCommands } from "./commands/market";
 
 const history: BuiltinCliCommandDef = {
   name: "history",
@@ -50,6 +51,19 @@ test("an undeclared option fails with the command's options, a close match and i
   expect(failure(() => check(history, ["AAPL", "--explain"])).details).toStartWith(
     "--explain follows the reports of fn <function> and portfolio show. gloomberb catalog explain <term> prints what one term means; gloomberb catalog glossary lists every term.",
   );
+});
+
+test("financials --quarterly points at the functions that list quarters, with the symbol typed", () => {
+  const financials = marketDataCliCommands.find((command) => command.name === "financials")!;
+  const hint = "financials lists fiscal years. For quarters: gloomberb fn GF WFC --period quarterly --periods 40 (one metric at a time), "
+    + "or gloomberb fn FA WFC --period quarterly (the statements).";
+  for (const flag of ["--quarterly", "--period", "--freq"]) {
+    const value = flag === "--quarterly" ? [] : ["quarterly"];
+    expect(failure(() => check(financials, ["WFC", flag, ...value])).details).toStartWith(hint);
+    // Before the symbol: a switch is not followed by its value, an option that takes one is.
+    expect(failure(() => check(financials, [flag, ...value, "WFC"])).details).toStartWith(hint);
+  }
+  expect(failure(() => check(financials, ["--exchange", "NYSE", "--quarterly", "WFC"])).details).toStartWith(hint);
 });
 
 const tempDirs: string[] = [];

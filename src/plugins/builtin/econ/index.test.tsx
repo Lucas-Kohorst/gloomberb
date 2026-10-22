@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { act } from "react";
 import { createOpenTuiTestHarness } from "../../../renderers/opentui/test-utils";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
@@ -9,7 +9,9 @@ import { MemoryPluginPersistence } from "../../../test-support/plugin-persistenc
 import type { PluginRuntimeAccess } from "../../runtime";
 import { attachEconCalendarPersistence, resetEconCalendarPersistence } from "./calendar-model";
 import { economicCalendarModule } from "./index";
-import { TestPaneProvider } from "../../../test-support/pane";
+import { createTestPaneConfig, TestPaneProvider } from "../../../test-support/pane";
+import { PaneInViewProvider } from "../../../state/app/activity";
+import { apiClient, type CloudEconEventPayload } from "../../../api-client";
 
 const EconPane = economicCalendarModule.panes![0]!.component as (props: {
   paneId: string;
@@ -60,14 +62,20 @@ afterEach(() => {
   resetEconCalendarPersistence();
 });
 
-async function renderPane(width: number) {
-  const state = createInitialState(createDefaultConfig("/tmp/gloomberb-econ-test"));
+/** `impactFilter` is the filter saved with the pane; without one it opens on its default. `params` are a command's (`ECO MX,BR`). */
+async function renderPane(width: number, impactFilter: string | null = "all", inView = true, params?: Record<string, string>) {
+  const state = createInitialState(params
+    ? createTestPaneConfig("/tmp/gloomberb-econ-test", { instanceId: "econ-calendar", paneId: "econ-calendar", params })
+    : createDefaultConfig("/tmp/gloomberb-econ-test"));
+  if (impactFilter) state.paneState["econ-calendar"] = { pluginState: { econ: { impactFilter } } };
   await tui.render(
     <TestPaneProvider state={state} paneId="econ-calendar" runtime={{} as unknown as PluginRuntimeAccess} pluginId="econ">
       <PaneFooterProvider>
         {(footer) => (
           <Box width={width} height={25} flexDirection="column">
-            <EconPane paneId="econ-calendar" paneType="econ-calendar" focused width={width} height={24} />
+            <PaneInViewProvider value={inView}>
+              <EconPane paneId="econ-calendar" paneType="econ-calendar" focused width={width} height={24} />
+            </PaneInViewProvider>
             <PaneFooterBar footer={footer} width={width} focused />
           </Box>
         )}
@@ -85,6 +93,28 @@ async function renderPane(width: number) {
 }
 
 describe("EconCalendarPane", () => {
+  // Most rows are low-impact releases; a newcomer should see the few that move markets.
+  test("opens on high-impact events unless a filter was saved, and says so when none match", async () => {
+    seedCalendar();
+    const opened = await renderPane(110, null);
+    expect(opened).toContain("CPI m/m");
+    expect(opened).not.toContain("Retail Sales");
+
+    const saved = await renderPane(110, "all");
+    expect(saved).toContain("CPI m/m");
+    expect(saved).toContain("Retail Sales");
+
+    const persistence = new MemoryPluginPersistence();
+    persistence.seedResource("calendar", "global", [{
+      id: "low", date: new Date(Date.now() + 3_600_000).toISOString(), time: "13:00", country: "GB",
+      event: "MPC Member Speaks", impact: "low", actual: null, forecast: null, prior: null,
+    }], { sourceKey: "gloomberb-cloud", schemaVersion: 1 });
+    attachEconCalendarPersistence(persistence);
+    const empty = await renderPane(110, null);
+    expect(empty).toContain("No high-impact events listed");
+    expect(empty).toContain("Show all");
+  });
+
   // The column math has to leave room for gaps, padding, and the scrollbar
   // lane; one column short silently clipped the last value of every row.
   test("fits the last column instead of clipping released values", async () => {
@@ -184,5 +214,57 @@ describe("EconCalendarPane", () => {
     expect(frame).toContain("23:30");
     if (localClock !== "23:30") expect(frame).not.toContain(localClock);
     expect(frame).toContain(separator);
+  });
+
+  // ECO MX,TR: the countries a command names, a bank that states no time left blank, and a country with nothing said plainly.
+  test("opens on the countries a command names, with a blank time where a bank states none", async () => {
+    const persistence = new MemoryPluginPersistence();
+    const day = Date.UTC(2026, 7, 22);
+    persistence.seedResource("calendar", "global", [
+      { id: "us", date: new Date(day + 12.5 * 3_600_000).toISOString(), time: "12:30", country: "US", event: "Core PCE m/m",
+        impact: "high", actual: null, forecast: null, prior: "0.2%" },
+      { id: "mx", date: new Date(day + 12 * 3_600_000).toISOString(), time: "12:00", country: "MX", event: "Mid-Month CPI",
+        impact: "high", actual: null, forecast: null, prior: null, kind: "statistics-release", localTime: "06:00", timeZone: "America/Mexico_City" },
+      { id: "tr", date: new Date(day).toISOString(), time: "All Day", country: "TR", event: "CBRT Interest Rate Decision",
+        impact: "high", actual: null, forecast: null, prior: "39.50%", kind: "central-bank-decision", localTime: null,
+        timeZone: "Europe/Istanbul", timeNote: "The bank's calendar gives the day, not the time" },
+    ], { sourceKey: "gloomberb-cloud", schemaVersion: 1 });
+    attachEconCalendarPersistence(persistence);
+    const frame = await renderPane(110, "all", true, { country: "MX,TR", tabAt: "1" });
+    expect(frame).toContain("MX, TR");
+    expect(frame).toContain("Mid-Month CPI");
+    expect(frame).toMatch(/12:00\s+HIGH\s+MX\s+Mid-Month CPI/);
+    expect(frame).toContain("39.50%");
+    // The decision's row has no time: its line holds the flag, the country and the event, nothing in the time column.
+    expect(frame.split("\n").find((line) => line.includes("CBRT Interest Rate Decision"))).not.toMatch(/\d\d:\d\d/);
+    expect(frame).not.toContain("Core PCE");
+    expect(frame).toContain("next CBRT Interest Rate Decision Sat");
+    expect(frame).not.toMatch(/CBRT Interest Rate Decision in \d/);
+
+    const quiet = await renderPane(110, "all", true, { country: "ZA", tabAt: "2" });
+    expect(quiet).toContain("No scheduled releases for ZA in this window");
+  });
+
+  // The pane's own refresh follows the global cadence; a print due now cannot wait for it.
+  test("asks for a due high-impact print while in view with the setting off, and nothing while covered", async () => {
+    const cpi: CloudEconEventPayload = {
+      id: "cpi", date: new Date(Date.now() - 60_000).toISOString(), time: "11:59", country: "US",
+      event: "CPI m/m", impact: "high", actual: null, forecast: "0.3%", prior: "0.2%",
+    };
+    const persistence = new MemoryPluginPersistence();
+    persistence.seedResource("calendar", "global", [cpi], { sourceKey: "gloomberb-cloud", schemaVersion: 1 });
+    attachEconCalendarPersistence(persistence);
+    const fetches = spyOn(apiClient, "getCloudEconomicCalendar").mockResolvedValue([{ ...cpi, actual: "0.4%" }]);
+    try {
+      const covered = await renderPane(110, "all", false);
+      expect(fetches).not.toHaveBeenCalled();
+      expect(covered).not.toContain("0.4%");
+
+      await renderPane(110);
+      await tui.waitForFrameToContain("0.4%");
+      expect(fetches).toHaveBeenCalledTimes(1);
+    } finally {
+      fetches.mockRestore();
+    }
   });
 });

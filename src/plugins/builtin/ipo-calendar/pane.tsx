@@ -13,16 +13,18 @@ import {
 } from "../../../components";
 import { usePaneStatusFooter } from "../../../components/layout/pane/status-footer";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
-import type { IpoDeal, IpoStatus } from "../../../api-client/ipo";
+import type { IpoDeal } from "../../../api-client/ipo";
 import { useAsyncResource, useAutoRefresh, usePluginPaneState } from "../../../public/react";
 import { priceColor, type ThemeColors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, TextAttributes } from "../../../ui";
+import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
+import { COUNTRY_FLAG_CELLS, withCountryFlag } from "../../../components/ui/country-flag";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { usePluginTickerActions } from "../../runtime";
+import { useCommandValue } from "../shared/command-tab";
 import { getCachedIpoCalendar, loadIpoCalendar } from "./client";
 import {
   buildIpoColumns,
@@ -36,6 +38,7 @@ import {
   formatIpoSize,
   IPO_CALENDAR_PANE_ID,
   IPO_TABS,
+  ipoBoardStatus,
   ipoTickerKey,
   isIpoTab,
   marketsBehind,
@@ -43,6 +46,7 @@ import {
   marketColumnWidth,
   MISSING,
   sortIpoDeals,
+  type IpoBoardStatus,
   type IpoColumn,
   type IpoColumnId,
   type IpoSortPreference,
@@ -53,9 +57,13 @@ const NO_DEALS: IpoDeal[] = [];
 const TABS = IPO_TABS.map((tab) => ({ label: tab.label, value: tab.value as string }));
 const dealKey = (deal: IpoDeal) => deal.id;
 
-function statusColor(status: IpoStatus, colors: ThemeColors): string {
+function statusColor(status: IpoBoardStatus, colors: ThemeColors): string {
   switch (status) {
-    case "upcoming": return colors.warning;
+    // Not priced yet: a date ahead, or a book open now.
+    case "upcoming":
+    case "offering": return colors.warning;
+    // Its listing day went by with no word: no longer next, not called off either.
+    case "overdue": return colors.textDim;
     case "priced": return colors.textBright;
     case "listed": return colors.positive;
     case "withdrawn": return colors.negative;
@@ -75,17 +83,22 @@ export function IpoCalendarPane({ focused, width, height }: PaneProps) {
   const tab = isIpoTab(storedTab) ? storedTab : "all";
   const [selectedId, setSelectedId] = usePluginPaneState<string | null>("selected", null);
   const [sort, setSort] = useState<IpoSortPreference>(DEFAULT_IPO_SORT);
-  const [query, setQuery] = useState("");
+  // `IPO japan` opens on that search, as `fn IPO japan` reads it.
+  const [query, setQuery] = useCommandValue(IPO_CALENDAR_PANE_ID, "query", (params) => params.search ?? null, "");
   const { active: searching, focus: focusSearch, blur: blurSearch, searchProps } = useQueryBarSearch();
 
   useAutoRefresh(resource.updatedAt, resource.load);
   usePaneRefreshKey(() => void resource.reload(), { focused, enabled: !searching });
 
-  const rows = useMemo(() => sortIpoDeals(filterIpoDeals(deals, tab, query), sort), [deals, query, sort, tab]);
+  // One clock per board, so a deal's status, its place and a search for it agree.
+  const now = useMemo(() => new Date(), [deals, resource.updatedAt]);
+  const rows = useMemo(() => sortIpoDeals(filterIpoDeals(deals, tab, query, now), sort, now), [deals, now, query, sort, tab]);
   // The cursor starts on the first deal, and moves there when its deal leaves the list.
   const selected = rows.find((deal) => deal.id === selectedId) ?? rows[0] ?? null;
   // Sized on the whole board, so switching tabs does not move the columns.
-  const marketWidth = useMemo(() => marketColumnWidth(deals), [deals]);
+  // The desktop and the web lead each venue with its country's flag.
+  const flagged = useUiCapabilities().nativePaneChrome === true;
+  const marketWidth = useMemo(() => marketColumnWidth(deals) + (flagged ? COUNTRY_FLAG_CELLS : 0), [deals, flagged]);
   const columns = useMemo(() => buildIpoColumns(width, marketWidth), [marketWidth, width]);
 
   const openDeal = useCallback((deal: IpoDeal) => {
@@ -145,7 +158,7 @@ export function IpoCalendarPane({ focused, width, height }: PaneProps) {
       case "company":
         return { text: deal.company, color: colors.text };
       case "market":
-        return { text: deal.venue || deal.mic, color: colors.textDim };
+        return withCountryFlag({ text: deal.venue || deal.mic, color: colors.textDim }, deal.country, flagged);
       case "date": {
         // A target date the venue has not set yet reads quieter than a set
         // one, and so does a book's closing day standing in for a listing
@@ -157,8 +170,10 @@ export function IpoCalendarPane({ focused, width, height }: PaneProps) {
           color: !deal.listingDate || deal.dateKind === "expected" ? colors.textMuted : colors.text,
         };
       }
-      case "status":
-        return { text: deal.status, color: statusColor(deal.status, colors) };
+      case "status": {
+        const status = ipoBoardStatus(deal, now);
+        return { text: status, color: statusColor(status, colors) };
+      }
       case "price": {
         const text = formatIpoPrice(deal);
         return { text, color: text === MISSING ? colors.textMuted : colors.text };
@@ -174,7 +189,7 @@ export function IpoCalendarPane({ focused, width, height }: PaneProps) {
         };
       }
     }
-  }, [colors]);
+  }, [colors, flagged, now]);
 
   if (!payload) {
     return (

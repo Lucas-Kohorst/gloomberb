@@ -147,7 +147,10 @@ describe("MarketValuationPane", () => {
 
   test("a direct indicator shows no dollar levels row", async () => {
     const frame = await renderPane({ indicator: "shiller-cape" });
-    expect(frame).toContain("ATL");
+    // The high, the low and the mean are the whole history's, whatever the range, and say so.
+    expect(frame).toMatch(/High \(since \d{4}\)/);
+    expect(frame).toMatch(/Low \(since \d{4}\)/);
+    expect(frame).toMatch(/mean \(since \d{4}\)/);
     expect(frame).not.toContain("Mkt cap");
     expect(frame).not.toContain("Equities");
   });
@@ -157,6 +160,21 @@ describe("MarketValuationPane", () => {
     expect(frame).toContain("equities = net worth");
     expect(frame).toContain("mean");
   });
+});
+
+test("the selected range's key, pressed again, returns a zoomed detail chart to that range and leaves an unmoved one alone", async () => {
+  const resting = await renderPane({ indicator: "tobins-q" });
+  // The default range is the second of three, so key 2 is the selected one.
+  await tui.emitKeypress({ name: "2", sequence: "2" }, { trackPropagation: true });
+  await settle();
+  expect(tui.frame()).toBe(resting);
+
+  await tui.emitKeypress({ name: "=", sequence: "+", shift: true }, { trackPropagation: true });
+  await settle();
+  expect(tui.frame()).not.toBe(resting);
+  await tui.emitKeypress({ name: "2", sequence: "2" }, { trackPropagation: true });
+  await settle();
+  expect(tui.frame()).toBe(resting);
 });
 
 test("a short stacked pane leads its detail with monetary basis and extrema dates", async () => {

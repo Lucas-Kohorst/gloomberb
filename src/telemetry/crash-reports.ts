@@ -1,9 +1,11 @@
+import { logFailure } from "../utils/log-failure";
 import {
   apiClient,
   type CrashReportError,
   type CrashReportKind,
   type CrashReportSurface,
   type CrashReportsPayload,
+  type UpdateFailureReport,
 } from "../api-client";
 import type { TelemetryConfig } from "../types/config";
 import { isSleepRpcTimeout } from "../utils/rpc-timeout-error";
@@ -16,7 +18,9 @@ import { VERSION } from "../version";
  * failures are posted to Gloom's API, which forwards them to error tracking;
  * the app never talks to an analytics service itself. What leaves the
  * machine is the error (type, message, stack), the surface, the app version
- * and the OS. Nothing from the workspace goes along: no portfolio, config,
+ * and the OS. A plugin load failure can add a line of state about the
+ * plugin's files to the message (see `CrashReportContext.detail`). Nothing
+ * from the workspace goes along: no portfolio, config,
  * query, ticker list or layout. The user's home directory is replaced by `~`
  * before sending.
  *
@@ -67,6 +71,14 @@ export interface CrashReportContext {
   pane?: string;
   /** React's component stack for a render crash; appended to the stack. */
   componentStack?: string | null;
+  /** A failed update step (update-failures.ts), sent as it is: it holds no free text. */
+  update?: UpdateFailureReport;
+  /**
+   * State that explains the failure, appended to the message in brackets.
+   * The message, not the stack: error tracking keeps only frames from the
+   * stack, and an import error has none.
+   */
+  detail?: string;
 }
 
 interface PendingError {
@@ -101,11 +113,14 @@ function isOptOut(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
-/** Replaces the home directory, in native, forward-slash and URL-encoded forms, with `~`. */
+/**
+ * Replaces the home directory, in native, forward-slash, URL-encoded and
+ * escaped (a Windows path in JSON or a string literal) forms, with `~`.
+ */
 export function stripHomeDir(text: string, homeDir: string | null | undefined): string {
   const home = homeDir?.trim().replace(/[\\/]+$/, "");
   if (!home || home.length < 3) return text;
-  const forms = new Set([home, home.replaceAll("\\", "/")]);
+  const forms = new Set([home, home.replaceAll("\\", "/"), home.replaceAll("\\", "\\\\")]);
   for (const form of [...forms]) forms.add(encodeURI(form));
   let result = text;
   for (const form of forms) {
@@ -151,7 +166,9 @@ function topFrame(stack: string | undefined, type: string): string {
 }
 
 function toReportError(error: unknown, context: CrashReportContext): PendingError {
-  const described = describeError(error);
+  const thrown = describeError(error);
+  const detail = readString(context.detail?.trim());
+  const described = detail ? { ...thrown, message: `${thrown.message} [${detail}]` } : thrown;
   const componentStack = readString(context.componentStack?.trim());
   const stack = [
     described.stack ? clip(described.stack, MAX_STACK_LENGTH) : null,
@@ -166,6 +183,7 @@ function toReportError(error: unknown, context: CrashReportContext): PendingErro
       ...(stack ? { stack } : {}),
       ...(context.plugin ? { plugin: clip(context.plugin, MAX_LABEL_LENGTH) } : {}),
       ...(context.pane ? { pane: clip(context.pane, MAX_LABEL_LENGTH) } : {}),
+      ...(context.update ? { update: context.update } : {}),
     },
   };
 }
@@ -187,8 +205,8 @@ export function reportCrash(error: unknown, context: CrashReportContext): void {
     accepted += 1;
     pending.push(entry);
     scheduleFlush(pending.length >= MAX_ERRORS_PER_REQUEST ? 0 : FLUSH_DELAY_MS);
-  } catch {
-    /* A reporter that throws inside a crash handler would hide the crash. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not queue crash report")(error);
   }
 }
 
@@ -223,8 +241,8 @@ export async function flushCrashReports(options: { timeoutMs?: number } = {}): P
   });
   try {
     await Promise.race([flushNow(), deadline]);
-  } catch {
-    /* Failures are swallowed; the caller is on its way out. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not flush crash reports")(error);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -241,8 +259,8 @@ export function spoolPendingCrashReports(): void {
     const batch = takeBatch(pending, host).map((entry) => entry.error);
     host.spool({ surface: host.surface, appVersion: VERSION, ...(host.os ? { os: host.os } : {}), errors: batch });
     spooledKeys = pending.slice(0, batch.length).map((entry) => entry.key);
-  } catch {
-    /* Best effort. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not save pending crash reports")(error);
   }
 }
 
@@ -289,9 +307,8 @@ async function flushNow(): Promise<void> {
           spooledKeys = [];
           current.clearSpool?.();
         }
-      } catch {
-        // One request that could not be sent is not retried; the spool, when
-        // the host has one, still carries it into the next session.
+      } catch (error) {
+        logFailure("telemetry-crash-reports", "Could not complete crash report delivery")(error);
       }
     }
   })().finally(() => {
@@ -336,8 +353,8 @@ async function sendSpooled(current: CrashReporterHost): Promise<void> {
       if (!Array.isArray(report.errors) || report.errors.length === 0) continue;
       await send(current, { installId, ...report, errors: report.errors.map((error) => scrub(error, current.homeDir)) });
     }
-  } catch {
-    /* A report from last time is not worth a failure this time. */
+  } catch (error) {
+    logFailure("telemetry-crash-reports", "Could not send pending crash reports")(error);
   }
 }
 

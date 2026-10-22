@@ -38,6 +38,7 @@ import {
   type McpKeyFailure,
 } from "./model";
 import { useMcpConnectSections } from "./sections";
+import { logFailure } from "../../../../utils/log-failure";
 
 /** Wide enough for a key and its closing quote on one snippet row. */
 const MAX_CONTENT_WIDTH = 78;
@@ -88,7 +89,8 @@ function SnippetBlock({ text, secret, width }: { text: string; secret: string | 
       width={width}
       paddingX={1}
       backgroundColor={nativePaneChrome ? colors.bg : colors.panel}
-      style={nativePaneChrome ? { padding: "8px 10px", borderRadius: 4 } : undefined}
+      // A block of code is sunken, as a field is: what is in it is to be copied out.
+      style={nativePaneChrome ? { padding: "var(--gloom-space-sm) var(--gloom-space-md)", borderRadius: "var(--gloom-radius-md)", backgroundColor: "var(--gloom-surface-sunken)" } : undefined}
       data-gloom-role="mcp-connect-snippet"
       data-gloom-selectable="true"
     >
@@ -230,7 +232,7 @@ function McpConnectDialog({
     if (isPlainKey(event, "d")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      void renderer.openExternal(MCP_DOCS_URL).catch(() => {});
+      void renderer.openExternal(MCP_DOCS_URL).catch(logFailure("cloud.mcp-connect", "Open the MCP docs link failed"));
       return;
     }
     if (event.name === "escape") {
@@ -327,7 +329,7 @@ export function openMcpConnectDialog(dialog: DialogApi, options: { viewportWidth
       style: { width: width + TERMINAL_DIALOG_CHROME },
       content: (context) => <McpConnectDialog {...context} width={width} />,
     })
-    .then(() => {}, () => {});
+    .then(() => {}, logFailure("cloud.mcp-connect", "The MCP connect dialog failed"));
 }
 
 const dialogRequestListeners = new Set<() => void>();

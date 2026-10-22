@@ -28,7 +28,7 @@ export { NumberPromptDialog } from "./number-prompt-dialog";
 export { SelectButton } from "./select-button";
 export type { SelectButtonOption, SelectButtonProps, SelectControl } from "./select-button";
 
-export { FieldLabel, TextField, NumberField } from "./fields";
+export { FieldLabel, FRAMED_TEXTAREA_DESKTOP_STYLE, fieldFrameStyle, TextField, NumberField } from "./fields";
 export { useFieldRing } from "./field-ring";
 export type { FieldRing, FieldRingOptions } from "./field-ring";
 export { QueryBar, useQueryBarSearch } from "./query-bar";
@@ -36,11 +36,14 @@ export { FieldGrid, GridFieldView, fieldGridColumns, fieldGridRows } from "./fie
 export type { FieldGridProps, GridField } from "./field-grid";
 export { StatGrid, statGridColumns, statGridRows } from "./stat-grid";
 export { ColumnGrid, ColumnGridPair } from "./column-grid";
-export type { ColumnGridCell, ColumnGridColumn, ColumnGridPairProps, ColumnGridProps } from "./column-grid";
+export type { ColumnGridCell, ColumnGridColumn, ColumnGridLink, ColumnGridPairProps, ColumnGridProps } from "./column-grid";
 export type { StatGridProps, StatItem } from "./stat-grid";
+export { COUNTRY_FLAG_CELLS, CountryFlag, CountryFlagLead, withCountryFlag, withFlagRoom } from "./country-flag";
+export type { CountryFlagProps } from "./country-flag";
 export { RatioBar } from "./ratio-bar";
 export type { RatioBarProps } from "./ratio-bar";
 export { RangeTrack } from "./range-track";
+export { AudioPlayer, PlaybackLine, useCanPlayAudio } from "./audio-player";
 export type { RangeTrackProps } from "./range-track";
 export type { QueryBarProps, QueryBarFilter, QueryBarMultiFilter, QueryBarSearch, QueryBarSearchFocus, QueryBarSelectFilter, QueryBarTextFilter, QueryBarToggleFilter, QueryBarView } from "./query-bar";
 export type { FieldLabelProps, TextFieldProps, NumberFieldProps } from "./fields";
@@ -60,8 +63,10 @@ export type { TabsProps } from "./tabs";
 export { SegmentedControl } from "./toggle";
 export type { SegmentedControlProps } from "./toggle";
 export { EmptyState, PaneStatusBody, Notice, loadingText, unavailableText } from "./status";
-export type { EmptyStateProps, PaneStatusBodyProps, NoticeProps } from "./status";
+export type { EmptyStateProps, PaneStatusBodyProps, NoticeProps, StatusRetry } from "./status";
 export { Badge, BulletList, Divider, FigureList, KeyValueRow, Prose, READING_WIDTH, Section, SectionHeading } from "./display";
+export { Card } from "./card";
+export type { CardProps } from "./card";
 export type {
   BadgeProps, BulletListProps, DividerProps, FigureListItem, FigureListProps, KeyValueRowProps, ProseProps, SectionProps,
   SectionHeadingProps,

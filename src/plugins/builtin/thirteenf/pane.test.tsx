@@ -2,8 +2,11 @@ import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { act, useReducer } from "react";
 import { createOpenTuiTestHarness, type TestKeyEvent } from "../../../renderers/opentui/test-utils";
 import { appReducer, createInitialState, type AppState } from "../../../state/app/context";
+import { createTestDataProvider } from "../../../test-support/data-provider";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import type { DataProvider } from "../../../types/data-provider";
+import type { CorporateActionsData } from "../../../types/financials";
 import type { TickerResearchTabDef } from "../../../types/plugin";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { setSharedRegistryForTests, type PluginRegistry } from "../../registry";
@@ -26,14 +29,14 @@ afterEach(() => {
   setSystemTime();
 });
 
-function Harness() {
+function Harness({ marketData = null }: { marketData?: DataProvider | null }) {
   const initialState = createInitialState(createDefaultConfig("/tmp/gloomberb-thirteenf-pane-test"));
   initialState.focusedPaneId = PANE_ID;
   const [state, dispatch] = useReducer(appReducer, initialState);
   latestState = state;
 
   return (
-    <TestPaneProvider state={state} dispatch={dispatch} paneId={PANE_ID} pluginId="ticker-research" runtime={createTestPluginRuntime()}>
+    <TestPaneProvider state={state} dispatch={dispatch} paneId={PANE_ID} pluginId="ticker-research" runtime={createTestPluginRuntime({ getMarketData: () => marketData })}>
       <ThirteenFPane
         paneId={PANE_ID}
         paneType="thirteenf-funds"
@@ -58,11 +61,13 @@ const emitKeypress = (event: TestKeyEvent) => tui.emitKeypress(event, { trackPro
 
 const emitKeypressBatch = (events: TestKeyEvent[]) => tui.emitKeypress(events, { trackPropagation: true });
 
-function installAlpha13FTransport(urls: string[] = []) {
+function installAlpha13FTransport(urls: string[] = [], override?: (path: string, parsed: URL) => Response | null) {
   setHttpFetchTransport(async (url) => {
     urls.push(String(url));
     const parsed = new URL(String(url));
     const path = parsed.pathname;
+    const answer = override?.(path, parsed);
+    if (answer) return answer;
     if (path.endsWith("/topfunds")) {
       return json([
         { cik: "1", name: "Alpha Capital", period_of_report: "2026-03-31", pnl: null },
@@ -282,6 +287,44 @@ describe("ThirteenFPane", () => {
     expect(holdingsFrame).not.toContain("Accession");
   });
 
+  test("a line that moved as across a split has no Est P&L until its corporate actions answer, then the split-adjusted figure, never the crash", async () => {
+    // KLAC 10:1: 10 shares at 100 become 100 at 12. Read as value over shares that is -$880; split-adjusted it is +$200.
+    const holdings = { "0000000001-26-000001": { value: 1200, ssh_prnamt: 100 }, "0000000001-25-000004": { value: 1000, ssh_prnamt: 10 } };
+    installAlpha13FTransport([], (path, parsed) => {
+      if (path.endsWith("/forms")) return json([
+        { cik: "0000000001", accession_number: "0000000001-26-000001", submission_type: "13F-HR", period_of_report: "2026-03-31", filed_as_of_date: "2026-05-15", company_name: "Alpha Capital", table_value_total: 1200, table_entry_total: 1, is_amendment: false },
+        { cik: "0000000001", accession_number: "0000000001-25-000004", submission_type: "13F-HR", period_of_report: "2025-12-31", filed_as_of_date: "2026-02-14", company_name: "Alpha Capital", table_value_total: 1000, table_entry_total: 1, is_amendment: false },
+      ]);
+      const accession = parsed.searchParams.get("accession_number") as keyof typeof holdings;
+      return path.endsWith("/form")
+        ? json([{ cik: "0000000001", accession_number: accession, name_of_issuer: "KLA Corp", title_of_class: "COM", cusip: "482480100", ticker: "KLAC", ssh_prnamt_type: "SH", ...holdings[accession] }])
+        : null;
+    });
+    const actions = Promise.withResolvers<CorporateActionsData>();
+    const lookups: string[] = [];
+    const marketData = createTestDataProvider({ getCorporateActions: (ticker) => { lookups.push(ticker); return actions.promise; } });
+
+    await act(async () => {
+      await tui.render(<Harness marketData={marketData} />, { width: 100, height: 24 });
+    });
+    await renderFrames();
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderFrames(6);
+
+    // The table is up while the lookup is out, with no figure to read as a crash.
+    expect(lookups).toEqual(["KLAC"]);
+    const waiting = tui.frame();
+    expect(waiting).toContain("KLAC");
+    expect(waiting).not.toContain("-$880");
+    expect(waiting).not.toContain("$200");
+
+    actions.resolve({ symbol: "KLAC", dividends: [], earnings: [], splits: [{ date: "2026-02-05", fromFactor: 1, toFactor: 10 }] });
+    await renderFrames(4);
+    const answered = tui.frame();
+    expect(answered).toContain("$200");
+    expect(answered).not.toContain("-$880");
+  });
+
   test("filing detail owns refresh requests and backspace returns to filings", async () => {
     const urls: string[] = [];
     installAlpha13FTransport(urls);
@@ -351,6 +394,58 @@ describe("ThirteenFPane", () => {
     expect(frame).toContain("Overlap");
     expect(frame).not.toContain("SECOND %");
   });
+
+  test("a covered ETF's ticker in the overlap search compares the fund with the ETF's holdings file", async () => {
+    // Alpha Capital holds AAPL and MSFT shares, 60 and 40; the IVV file holds them at 7% and 6%, NVDA at 7% and cash for the rest.
+    const member = (id: string, symbol: string | null, weight: number) => ({
+      id, symbol, name: symbol ?? "Cash", sector: null, weight, shares: 1, holdingPrice: 1, marketValue: weight, price: null, priceAsOf: null,
+      changePercent: null, dailyAsOf: null, return1WPercent: null, return1MPercent: null, returnYtdPercent: null, contribution: null, stale: false,
+    });
+    const fund = { ticker: "IVV", name: "iShares Core S&P 500", aliases: ["SPY", "SPX"], changes: "sp500" };
+    installAlpha13FTransport([], (path, parsed) => {
+      if (path.endsWith("/cloud/members")) return json({ funds: [{ ...fund, asOf: "2026-05-14" }] });
+      if (path.endsWith("/cloud/members/IVV")) return json({
+        fund, asOf: "2026-05-14T00:00:00Z", fetchedAt: "2026-05-14T00:00:00Z", excludedDerivatives: 0, stale: false, quotesUnavailable: false,
+        snapshotAsOf: null, fundDailyAsOf: null, quoteCap: 0,
+        members: [member("aapl", "AAPL", 7), member("msft", "MSFT", 6), member("nvda", "NVDA", 7), member("cash", null, 80)],
+        aggregate: { sum: 0, fundReturn: null, residual: null, tolerancePp: 0, withinTolerance: null, covered: 0, total: 4, coveredWeight: 0, holdingsWeight: 100, fresh1D: 0 },
+      });
+      if (path.endsWith("/form")) return json([["Apple Inc.", "037833100", "AAPL", 60], ["Microsoft Corp", "594918104", "MSFT", 40]].map(([issuer, cusip, ticker, value]) => ({
+        cik: "0000000001", accession_number: parsed.searchParams.get("accession_number"), name_of_issuer: issuer, title_of_class: "COM", cusip, ticker,
+        value, ssh_prnamt: 10, ssh_prnamt_type: "SH", investment_discretion: "SOLE", voting_authority_sole: 10, voting_authority_shared: 0, voting_authority_none: 0,
+      })));
+      return null;
+    });
+    await act(async () => { await tui.render(<Harness />, { width: 110, height: 26 }); });
+    await renderFrames();
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderFrames(6);
+    await emitKeypress({ name: "right", sequence: "\u001B[C" });
+    await renderFrames(2);
+    await emitKeypress({ name: "right", sequence: "\u001B[C" });
+    await renderFrames(2);
+    await emitKeypress({ name: "/", sequence: "/" });
+    await act(async () => { await tui.setup().mockInput.typeText("SPY"); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    await renderFrames(4);
+    // Offered above the managers, by the ticker asked for and the file it reads.
+    expect(tui.frame()).toContain("SPY · iShares Core S&P 500 holdings");
+    await emitKeypress({ name: "down", sequence: "\u001B[B" });
+    await renderFrames(2);
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderFrames(6);
+    const frame = tui.frame();
+    expect(frame).toContain("SPY holdings");
+    expect(frame).toContain("IVV file");
+    expect(frame).toMatch(/Overlap\s+13\.0%\s+active share 87\.0%/);
+    expect(frame).toMatch(/AAPL\s+Apple Inc\.\s+60\.0%\s+7\.00%\s+7\.00%/);
+    expect(frame).toContain("SPY %");
+    // Back returns to the picker, the fund still open.
+    await emitKeypress({ name: "backspace", sequence: "\u007f" });
+    await renderFrames(2);
+    expect(tui.frame()).toContain("Back Alpha Capital");
+    expect(tui.frame()).not.toContain("SPY %");
+  }, 20_000);
 
   test("slash in a fund opened from a ticker query reaches the overlap search", async () => {
     installAlpha13FTransport();

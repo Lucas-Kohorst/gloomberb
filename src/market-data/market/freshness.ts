@@ -2,6 +2,7 @@ import type { MarketState, QuoteIndexSession } from "../../types/financials";
 import { canonicalExchange, EXCHANGE_TIME_ZONES, isUsListingExchange } from "../../utils/exchanges";
 import { hasPublishedApacCalendar, isPublishedApacClosure } from "../published-apac-sessions";
 import { hasPublishedCnCalendar, isPublishedCnClosure } from "../published-cn-sessions";
+import { hasPublishedFuturesCalendar, isPublishedFuturesClosure, isPublishedFuturesVenue } from "../published-futures-sessions";
 import { hasPublishedJpxCalendar, isPublishedJpxClosure } from "../published-jpx-sessions";
 import { hasPublishedNseCalendar, isPublishedNseClosure } from "../published-nse-sessions";
 import { getPublishedUsEquityCalendarDay, getPublishedUsEquityCalendarYears, getPublishedUsEquitySession } from "../published-us-sessions";
@@ -275,7 +276,7 @@ function isPublishedClosure(exchange: string, date: string): boolean {
   if (exchange === "JPX") return isPublishedJpxClosure(date);
   if (exchange === "NSE" || exchange === "BSE") return isPublishedNseClosure(date);
   if (exchange === "SSE" || exchange === "SZSE") return isPublishedCnClosure(date);
-  if (isPublishedApacClosure(exchange, date)) return true;
+  if (isPublishedApacClosure(exchange, date) || isPublishedFuturesClosure(exchange, date)) return true;
   return getPublishedUsEquityCalendarDay(exchange, date) === "closed";
 }
 
@@ -356,6 +357,33 @@ export function latestRegularSessionClose(
     if (close != null && close <= time) return { date, close, timeZone };
   }
   return null;
+}
+
+/**
+ * When the venue's regular session on `date` (its local `YYYY-MM-DD`) closed,
+ * a published early close included. Null when the venue had no session that
+ * day or its hours are unknown.
+ */
+export function regularSessionCloseOn(exchange: string | undefined, date: string): number | null {
+  const timeZone = sessionCalendarTimeZone(exchange);
+  if (!timeZone || isoLocalDateToUtcDay(date) == null) return null;
+  const endOfDay = zonedWallClockToUtcMs(timeZone, Number(date.slice(0, 4)), Number(date.slice(5, 7)), Number(date.slice(8, 10)), 23, 59, 59);
+  const close = latestRegularSessionClose(exchange, endOfDay);
+  return close?.date === date ? close.close : null;
+}
+
+/** The US pre-market opens at 04:00 New York. */
+const US_PRE_MARKET_OPEN_MINUTES = 4 * 60;
+
+/**
+ * When a US listing's pre-market opened on `date` (its New York
+ * `YYYY-MM-DD`): 04:00 there. Null for any other venue, whose pre-market
+ * hours are not known, and for a date that does not parse.
+ */
+export function preMarketOpenOn(exchange: string | undefined, date: string): number | null {
+  if (!isUsListingExchange(canonicalExchange(exchange)) || isoLocalDateToUtcDay(date) == null) return null;
+  return zonedWallClockToUtcMs("America/New_York", Number(date.slice(0, 4)), Number(date.slice(5, 7)), Number(date.slice(8, 10)),
+    Math.floor(US_PRE_MARKET_OPEN_MINUTES / 60), US_PRE_MARKET_OPEN_MINUTES % 60, 0);
 }
 
 /**
@@ -460,15 +488,66 @@ export function isRegularSessionTime(
  * True when the venue's full-day closures for the year of `date` are
  * published: US venues, JPX, NSE, BSE, SSE, SZSE, KRX, KOSDAQ, TWSE, TPEX,
  * HKEX, SGX, ASX and EGX. Elsewhere a local holiday reads as a trading day.
+ * For the futures venues (CME, CBT, NYM, CMX, NYB) a closure is a weekday
+ * with no trade date, and a day some of a venue's contracts settled and
+ * others did not is unknown.
  */
 export function hasPublishedSessionCalendar(exchange: string | undefined, date: string): boolean {
   const canonical = canonicalExchange(exchange);
+  if (isPublishedFuturesVenue(canonical)) return hasPublishedFuturesCalendar(canonical, date);
   const year = Number(date.slice(0, 4));
   if (canonical === "JPX") return hasPublishedJpxCalendar(year);
   if (canonical === "NSE" || canonical === "BSE") return hasPublishedNseCalendar(year);
   if (canonical === "SSE" || canonical === "SZSE") return hasPublishedCnCalendar(year);
   if (hasPublishedApacCalendar(canonical, year)) return true;
   return !!getPublishedUsEquityCalendarYears(canonical)?.includes(year);
+}
+
+/**
+ * The venue's regular session before the one a move is dated to (`date`, its
+ * local `YYYY-MM-DD`), from its published calendar, with the days of its
+ * trading week it was closed in between (the Chung Yeung holiday HKEX took on
+ * Mon 19 Oct 2026 lies between Fri 16 and Tue 20 Oct). A `date` that is no
+ * session (a quote dated by when it was read, on a Saturday or a holiday) is
+ * the latest session on or before it: Friday's move, read on Saturday, is
+ * from Thursday's close. With `closedDayRollsForward`, a `date` the venue had
+ * no session on is instead the next session's: CME Globex trades most US
+ * holidays and books those trades on the next trade date, so a future's move
+ * dated Memorial Day is Tuesday's, from Friday's settlement. Null for
+ * round-the-clock and unknown venues, and when a day the walk passes is in a
+ * year whose closures the venue has not published: a holiday there would
+ * read as a session.
+ */
+export function previousPublishedSession(
+  exchange: string | undefined,
+  date: string,
+  { closedDayRollsForward = false }: { closedDayRollsForward?: boolean } = {},
+): { date: string; closed: string[] } | null {
+  const canonical = canonicalExchange(exchange);
+  const day = isoLocalDateToUtcDay(date);
+  if (day == null || ALWAYS_OPEN_EXCHANGES.has(canonical)) return null;
+  let session: number | null = null;
+  const closed: string[] = [];
+  for (let offset = 0; offset <= SESSION_LOOKBACK_DAYS * 2; offset++) {
+    const at = new Date((day - offset) * MS_PER_DAY);
+    const iso = at.toISOString().slice(0, 10);
+    if (!isTradingWeekday(canonical, at.getUTCDay())) continue;
+    if (!hasPublishedSessionCalendar(canonical, iso)) return null;
+    const open = !isPublishedClosure(canonical, iso);
+    // First the session the move is from's own day, then the one before it.
+    if (session == null) {
+      if (open) session = offset;
+      else if (offset === 0 && closedDayRollsForward) {
+        session = offset;
+        closed.push(iso);
+      }
+      continue;
+    }
+    if (offset - session > SESSION_LOOKBACK_DAYS) return null;
+    if (open) return { date: iso, closed: closed.reverse() };
+    closed.push(iso);
+  }
+  return null;
 }
 
 /** How far the delayed feed runs behind the venue's trades. */
@@ -518,7 +597,7 @@ function formatUsSessionState(timestampMs: number): UsSessionState {
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
   const totalMinutes = hour * 60 + minute;
 
-  if (totalMinutes < 4 * 60) return "PREPRE";
+  if (totalMinutes < US_PRE_MARKET_OPEN_MINUTES) return "PREPRE";
   if (totalMinutes < 9 * 60 + 30) return "PRE";
   if (totalMinutes < 16 * 60) return "REGULAR";
   if (totalMinutes < 20 * 60) return "POST";
@@ -633,9 +712,7 @@ export function isTimestampStaleForExchangeSession(
 ): boolean {
   try {
     return isTimestampStaleForExchangeSessionUnsafe(timestampMs, exchange, now, marketState, weekendDays);
-  } catch {
-    return true;
-  }
+  } catch { /* Intentional ignore: Invalid session dates are conservatively stale, never fresh. */ return true; }
 }
 
 function isTimestampStaleForExchangeSessionUnsafe(

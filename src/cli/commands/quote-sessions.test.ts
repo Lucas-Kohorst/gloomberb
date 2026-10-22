@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import type { Quote, TickerFinancials } from "../../types/financials";
 import type { HeadlessPaneContext } from "../../types/headless";
@@ -10,6 +10,7 @@ import { serializeCliResult } from "../result";
 import { renderHeadlessPaneText } from "../pane-functions/headless";
 import { quoteComparisonHeadless } from "../../plugins/builtin/ticker-detail/headless";
 import { relativeValuationHeadless } from "../../plugins/builtin/research/relative-valuation-headless";
+import { boardHeadlineQuote } from "../../plugins/builtin/shared/use-quote-board";
 import { deriveHeadlessFreshness } from "../pane-functions/freshness";
 import { quotesFreshness, valuationFreshness } from "../freshness";
 import { marketDataCliCommands } from "./market";
@@ -102,7 +103,7 @@ test("quote marks each stale row in its Feed cell, as many as the closing line c
   expect((result.data as Array<{ quote: Quote }>)[0]!.quote.dataSource).toBe("delayed");
 });
 
-test("ticker dates the bid and ask of a closed market as its last quote and leaves an open book alone", async () => {
+test("ticker names the book out of regular hours: the extended session's, or a closed market's last quote; an open book stays bare", async () => {
   const book = { ...afterHours, bid: 202, ask: 208.74, bidSize: 100, askSize: 1400 };
   const report = (quote: Quote) => buildTickerReport({
     symbol: quote.symbol,
@@ -112,6 +113,9 @@ test("ticker dates the bid and ask of a closed market as its last quote and leav
     toBase: async (value) => value,
   });
   expect(await report(book)).toContain("Bid / Ask  $202.00 x 100 / $208.74 x 1,400  (last quote, Fri 9 Oct)");
+  // ITA at 17:45 ET: the book beside Last and the After Hours print is the after-hours one.
+  expect(await report({ ...book, marketState: "POST" })).toContain("Bid / Ask  $202.00 x 100 / $208.74 x 1,400  (after-hours book)");
+  expect(await report({ ...book, marketState: "PRE" })).toContain("(pre-market book)");
   expect(await report({ ...book, marketState: "REGULAR" })).toMatch(/Bid \/ Ask +\$202\.00 x 100 \/ \$208\.74 x 1,400\n/);
   // Without a quoted book there is nothing to date.
   expect(await report({ ...book, bid: undefined, ask: undefined })).not.toContain("last quote");
@@ -155,6 +159,8 @@ test("quote, RV and valuation read the same close after hours, with the extended
   const closes = [117.15, 138.11, 336.64];
   const capMeasuredAt = [116.9, 138.11, 336.64];
   const saturday = Date.parse("2026-10-10T12:00:00Z");
+  // Read on the Saturday the quotes are from: a later week would find them a session behind.
+  setSystemTime(saturday);
 
   const quoted = await compare(symbols.map((symbol) => financials.get(symbol)!.quote!));
   const ctx = { signal: new AbortController().signal, marketData: createTestDataProvider({
@@ -197,19 +203,93 @@ test("quote, RV and valuation read the same close after hours, with the extended
   expect(renderHeadlessPaneText(relativeValuationHeadless, peers, args, "Relative Valuation"))
     .toMatch(/NEM +\$117\.15 +-0\.59% +\$116\.96 -0\.16% +124\.43B USD/);
   expect(deriveHeadlessFreshness(relativeValuationHeadless, peers, saturday)).toMatchObject({ asOfClose: "2026-10-09" });
+  setSystemTime();
 });
 
 test("quote gives the overnight session its own column and names it, saying when its price is a midpoint", async () => {
   const traded = sessionQuotes("XLK").overnight;
   const marked = sessionQuotes("XLE").overnightMark;
-  const { rows, text } = await compare([traded, marked]);
+  // Sunday evening in New York, as the overnight quotes are.
+  setSystemTime(new Date("2026-10-12T00:35:00Z"));
+  const { rows, text } = await compare([traded, marked]).finally(() => setSystemTime());
   expect(rows.map(({ rawPrice, changePercent, extendedSession, rawExtendedPrice, extendedChangePercent, extendedMark, session }) =>
     ({ rawPrice, changePercent, extendedSession, rawExtendedPrice, extendedChangePercent, extendedMark, session }))).toEqual([
     { rawPrice: 198.78, changePercent: 0.51, extendedSession: "OVERNIGHT", rawExtendedPrice: 198.95, extendedChangePercent: 0.09, extendedMark: false, session: "OVERNIGHT" },
     { rawPrice: 198.78, changePercent: 0.51, extendedSession: "OVERNIGHT", rawExtendedPrice: 198.95, extendedChangePercent: 0.09, extendedMark: true, session: "OVERNIGHT" },
   ]);
-  expect(text).toMatch(/Chg% +Overnight +Session/);
-  expect(text.split("\n").find((line) => line.startsWith("XLK"))).toMatch(/\$198\.78 +\+0\.51% +\$198\.95 \+0\.09% +OVERNIGHT/);
+  expect(text).toMatch(/Chg% +Chg Basis +Overnight +Session/);
+  // Friday's move, from Thursday's close; the overnight print moves from Friday's.
+  expect(text.split("\n").find((line) => line.startsWith("XLK"))).toMatch(/\$198\.78 +\+0\.51% +vs Thu 8 Oct close +\$198\.95 \+0\.09% +OVERNIGHT/);
   expect(text.split("\n").find((line) => line.startsWith("XLE"))).toMatch(/\$198\.95 mid \+0\.09% +OVERNIGHT/);
   expect(text).not.toMatch(/After Hours|Pre-Market/);
+});
+
+// Linear: GLO-1089. The table sets what Chg% is from beside it; an export adds it after the columns it had.
+test("quote's change basis follows Chg% in the table, with the holiday under it, and comes last in CSV and NDJSON rows", async () => {
+  const hk: Quote = { symbol: "3042.HK", name: "ChinaAMC Bitcoin ETF", currency: "HKD", price: 9.88, change: -0.06, changePercent: -0.6,
+    previousClose: 9.94, changeSessionDate: "2026-10-20", marketState: "CLOSED", listingExchangeName: "HKEX", exchangeName: "HKEX",
+    lastUpdated: Date.parse("2026-10-20T08:08:00Z") };
+  setSystemTime(new Date("2026-10-21T00:30:00Z"));
+  try {
+    const cli = createTestCliContext({ config, dataProvider: {
+      getQuotesBatch: async () => [{ target: { symbol: hk.symbol, exchange: "" }, quote: hk }],
+    } });
+    await marketDataCliCommands.find((command) => command.name === "quote")!.execute([hk.symbol], cli.context);
+    const [{ result, options }] = cli.printed as [PrintedCliResult];
+    const text = serializeCliResult(result, { ...DEFAULT_CLI_OPTIONS, format: "text" }, options);
+    expect(text).toMatch(/Chg% +Chg Basis +Session/);
+    expect(text).toMatch(/-0\.60% +vs Fri 16 Oct close +CLOSED/);
+    expect(text).toContain("\nHKEX closed Mon 19 Oct, holiday");
+    const csv = serializeCliResult(result, { ...DEFAULT_CLI_OPTIONS, format: "csv" }, options).split("\n");
+    expect(csv[0]).toContain(",Chg%,Pre-Market,");
+    expect(csv[0]).toContain(",Updated,Chg Basis,Chg Basis Note,symbol_or_series,");
+    expect(csv[1]).toContain(",vs Fri 16 Oct close,\"HKEX closed Mon 19 Oct, holiday\",3042.HK,");
+    const row = JSON.parse(serializeCliResult(result, { ...DEFAULT_CLI_OPTIONS, format: "ndjson" }, options).split("\n")[0]!);
+    const keys = Object.keys(row);
+    expect(keys.slice(keys.indexOf("error"), keys.indexOf("error") + 3)).toEqual(["error", "changeBasis", "changeBasisNote"]);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("a pre-market nothing has traded in reads as the close it stands at in quote, QQ, the boards and the watchlist, and exports keep the state", async () => {
+  // PLTR on Fri 16 Oct 2026 at 08:14 UTC: no pre-market trade; the price is Thursday's last after-hours print at 23:59 UTC.
+  const waiting: Quote = {
+    symbol: "PLTR", name: "Palantir Technologies Inc.", currency: "USD", price: 200.66, change: 0.16, changePercent: 0.0798,
+    previousClose: 200.5, regularClose: 200.5, regularCloseSessionDate: "2026-10-15", regularChange: -0.47, regularChangePercent: -0.2339,
+    changeSessionDate: "2026-10-16", marketState: "PRE", extendedSessionPrint: false, listingExchangeName: "NASDAQ",
+    lastUpdated: Date.parse("2026-10-15T23:59:00Z"),
+  };
+  // Another name that has traded in it, at 08:03:45.
+  const printed: Quote = { ...waiting, symbol: "SOFI", price: 201.29, preMarketPrice: 201.29, extendedSessionPrint: true,
+    lastUpdated: Date.parse("2026-10-16T08:03:45Z") };
+  const thursdayClose = "2026-10-15T20:00:00.000Z";
+  setSystemTime(new Date("2026-10-16T08:14:00Z"));
+  try {
+    const { rows, text } = await compare([waiting, printed]);
+    expect(rows.map(({ session, sessionLabel, updatedAt }) => ({ session, sessionLabel, updatedAt }))).toEqual([
+      { session: "PRE-MKT", sessionLabel: "Thu close", updatedAt: thursdayClose },
+      { session: "PRE-MKT", sessionLabel: "PRE-MKT", updatedAt: "2026-10-16T08:03:45.000Z" },
+    ]);
+    expect(text.split("\n").find((line) => line.startsWith("PLTR"))).toContain("Thu close");
+    // CSV keeps the state the Session column always held.
+    const cli = createTestCliContext({ config, dataProvider: {
+      getQuotesBatch: async () => [{ target: { symbol: "PLTR", exchange: "" }, quote: waiting }],
+    } });
+    await marketDataCliCommands.find((command) => command.name === "quote")!.execute(["PLTR"], cli.context);
+    const [{ result, options }] = cli.printed as [PrintedCliResult];
+    const csv = serializeCliResult(result, { ...DEFAULT_CLI_OPTIONS, format: "csv" }, options).split("\n");
+    expect(csv[1]).toContain(`,PRE-MKT,USD,`);
+    expect(csv[1]).toContain(thursdayClose);
+
+    // QQ, a board's row and the watchlist report date it by the same close.
+    const ctx = { signal: new AbortController().signal, marketData: createTestDataProvider({ getQuote: async () => waiting }) } as HeadlessPaneContext;
+    const board = await quoteComparisonHeadless.load({ symbols: ["PLTR"], argument: ["PLTR"], rawArgument: "PLTR", options: {} }, ctx);
+    expect(board.rows[0]).toMatchObject({ price: 200.5, extendedSession: null, updatedAt: Date.parse(thursdayClose) });
+    expect(boardHeadlineQuote(waiting)).toMatchObject({ price: 200.5, change: -0.47, lastUpdated: Date.parse(thursdayClose) });
+    // A quote with a pre-market trade keeps its time.
+    expect(boardHeadlineQuote(printed).lastUpdated).toBe(printed.lastUpdated);
+  } finally {
+    setSystemTime();
+  }
 });

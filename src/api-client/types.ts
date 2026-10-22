@@ -120,6 +120,12 @@ export interface ChatMessage {
   attachmentReview?: "pending" | "failed";
   /** What the message opens in the terminal (a Gloom Wire story or calendar). Only the server sets it. */
   paneLink?: ChatPaneLink;
+  /**
+   * An announcement Gloom posted, drawn as one. Only the server sets it, and
+   * only on one that still stands: a retracted announcement is the removal
+   * placeholder without it.
+   */
+  announcement?: true;
   clientStatus?: "sending" | "failed";
   clientError?: string | null;
   /** The idempotency key a local send went out with, so a retry repeats it. */
@@ -143,6 +149,21 @@ export interface ChatChannel {
   teamId?: string;
   dmUser?: ChatUserSummary | null;
   members?: ChatUserSummary[];
+  /**
+   * When the newest message you can see in a direct or group conversation was
+   * sent; null when it has none. Absent from channels of other kinds and from
+   * servers that do not report it.
+   */
+  lastMessageAt?: string | null;
+}
+
+/** Minimal identities scoped by the server to this channel and existing DMs. */
+export interface ChatMentionCandidate {
+  id: string;
+  username: string;
+  displayName: string | null;
+  channelActivityAt: string | null;
+  conversationActivityAt: string | null;
 }
 
 export interface ChatChannelState {
@@ -459,6 +480,11 @@ export interface CloudPricePointPayload {
   low?: number;
   close: number;
   volume?: number;
+  /**
+   * One venue's count for a bar whose market volume is unavailable (a US session still trading, counted on IEX
+   * alone), served in place of `volume`.
+   */
+  venueVolume?: { venue: string; volume: number };
   /** A daily bar still forming when served: a coin's UTC day, or the trade date a future is trading. */
   partial?: boolean;
   /** A coin's daily bar whose prices were rebuilt from hourly bars; a day the source left empty has no volume. */
@@ -479,6 +505,42 @@ export interface CloudEconEventPayload {
   forecast: string | null;
   prior: string | null;
   impact: CloudEconImpact;
+  /** Rows the calendar adds beside its feeds: a central bank's kept decision or a statistics office's listed release. */
+  kind?: "central-bank-decision" | "statistics-release";
+  /** The publisher's own clock time and its IANA zone; null when it states no time. */
+  localTime?: string | null;
+  timeZone?: string;
+  /** Why a row has no time, when its publisher states none. */
+  timeNote?: string | null;
+  priorAsOf?: string | null;
+  referencePeriod?: string | null;
+  source?: { name: string; url: string };
+}
+
+/** One currency's short-term rate, as GET /cloud/econ/short-rates serves it. */
+export interface CloudShortRate {
+  currency: string;
+  /** "SOFR", "TIIE 28d". */
+  name: string;
+  /** "overnight" or the term the rate is for. */
+  tenor: string;
+  tenorDays: number;
+  /** Days in the year the rate is quoted over. */
+  dayCountBasis: 360 | 365;
+  publisher: string;
+  sourceUrl: string;
+  /** Percent a year; null when it could not be read. */
+  value: number | null;
+  /** The day the rate is for. */
+  asOf: string | null;
+  fetchedAt: string | null;
+  stale: boolean;
+  unavailableReason: string | null;
+}
+
+export interface CloudShortRatesPayload {
+  generatedAt: string;
+  rates: CloudShortRate[];
 }
 
 /** CPI, payrolls and FOMC statement days as published, as GET /cloud/econ/release-days serves them. */
@@ -596,9 +658,25 @@ export interface CloudCdsHistoryPointPayload {
   reported: number;
   /** The contract on the run that day, e.g. "2031-12-20". */
   maturity: string;
+  /** For a line quoted upfront: that day's level in points on the line's coupon. */
+  upfrontPts?: number;
 }
 
-export interface CloudCdsHistoryResponse {
+/**
+ * Past 2,000bp a name is quoted in points upfront on its running coupon, the
+ * level and its moves alike; `spreadBp` and the bp moves stay beside them.
+ * Absent from servers before it, which read as `spread`.
+ */
+interface CloudCdsUpfrontQuote {
+  quote?: "spread" | "upfront";
+  /** The line's running coupon, bp. */
+  couponBp?: number | null;
+  upfrontPts?: number | null;
+  change1WPts?: number | null;
+  change1MPts?: number | null;
+}
+
+export interface CloudCdsHistoryResponse extends CloudCdsUpfrontQuote {
   source: string;
   /** The matched reference entity, or null when nothing on the tape matched. */
   issuer: string | null;
@@ -606,14 +684,31 @@ export interface CloudCdsHistoryResponse {
   currency: string | null;
   asOf: string | null;
   points: CloudCdsHistoryPointPayload[];
+  /**
+   * The last point's move over a week and a month in bp, on one contract and
+   * chained through the contract before across a roll, as the index board's.
+   * Null without a comparable level, or once the level is more than 5 trading
+   * days behind the tape; absent from servers before them.
+   */
+  change1W?: number | null;
+  change1M?: number | null;
+  /**
+   * Why the line has no level in the month to its newest print, when one
+   * cause explains it: `upfront-side-unknown` when the prints carry an
+   * upfront without the side that paid it and nothing else places the level.
+   */
+  noLevelReason?: string | null;
 }
 
 /** An issuer's latest 5Y level: the last point of its history over the last month. */
-export interface CloudCdsLevelPayload {
+export interface CloudCdsLevelPayload extends CloudCdsUpfrontQuote {
   /** The reference entity as the history response names it. */
   issuer: string;
   spreadBp: number;
   date: string;
+  /** As the history response's moves for the same name. */
+  change1W?: number | null;
+  change1M?: number | null;
 }
 
 export interface CloudCdsLevelsResponse {
@@ -765,6 +860,11 @@ export interface CloudEarningsCallPayload {
   sentiment: number | null;
   /** The replay or event page the transcript came from. */
   webcastUrl?: string | null;
+  /**
+   * Whether `callAt` is the call's start or its day alone (00:00 UTC of that
+   * New York day). Absent from a server that predates it.
+   */
+  callTimeKnown?: boolean;
 }
 
 interface CloudJobsSeriesPoint {
@@ -951,6 +1051,13 @@ interface CloudProxyStatementSummaryPayload {
 }
 
 export interface CloudProxyStatementPayload extends CloudProxyStatementSummaryPayload {
+  /**
+   * `preview` for an account without Pro: each executive's total pay from
+   * the latest proxy, with the breakdown, the year before, the pay ratio,
+   * say-on-pay, highlights, key figures and other years null or empty.
+   * Absent on Pro's full statement.
+   */
+  access?: "preview";
   docUrl: string;
   ceo: (CloudExecutiveRowPayload & { priorYearTotal: number | null }) | null;
   namedExecutives: CloudExecutiveRowPayload[];
@@ -1072,6 +1179,8 @@ export interface CloudProxyStatementListPayload {
     shortName: string;
   };
   proxies: CloudProxyStatementSummaryPayload[];
+  /** `preview` for an account without Pro: the latest proxy alone, without the year before or the pay ratio. */
+  access?: "preview";
 }
 
 export interface CloudTranscriptTurnPayload {
@@ -1084,6 +1193,8 @@ export interface CloudTranscriptTurnPayload {
   isQa: boolean;
   /** Offset into the recording; null when the company published the transcript as a document. */
   startSeconds: number | null;
+  /** Where each of `paragraphs` starts in the recording, in seconds; absent without timings or on older servers. */
+  paragraphStarts?: number[];
 }
 
 interface CloudTranscriptKeyFigurePayload {
@@ -1128,6 +1239,20 @@ export interface CloudEarningsTranscriptPayload {
   wordCount: number | null;
   asrModel: string | null;
   updatedAt: string | null;
+}
+
+/**
+ * A call's audio to play beside its transcript. `kind` names what it is; a
+ * stored recording is the only kind so far.
+ */
+export interface CloudEarningsCallAudioPayload {
+  kind: "recording";
+  /** A signed address that plays until `expiresAt`, seeking included. */
+  url: string;
+  expiresAt: string;
+  durationSeconds: number | null;
+  bytes?: number;
+  contentType?: string;
 }
 
 export type CloudSearchDocType = "transcript" | "news" | "filing";
@@ -1248,10 +1373,14 @@ interface CloudSecFilingPayload {
   primaryDocument?: string;
   primaryDocDescription?: string;
   items?: string;
+  /** SEC's period of report, YYYY-MM-DD: a 10-Q's or 10-K's balance-sheet date. Absent from older servers. */
+  reportDate?: string;
   cik: string;
   companyName?: string;
   filingUrl: string;
   primaryDocumentUrl?: string;
+  /** The filing's SEC file number for this company, empty when it has none. Absent from older servers. */
+  fileNumber?: string;
 }
 
 interface CloudSecDocumentPayload {
@@ -1473,8 +1602,18 @@ export interface CloudMarketResponse<T> {
   session?: unknown;
   /** "1day" when daily bars answer an intraday range: the listing has no intraday bars. */
   servedResolution?: unknown;
+  /**
+   * Untrusted: daily sessions the bars leave out and why, as
+   * `[{ date: "2020-04-20", reason: "non-positive-close" }]`. Validated by the history adapter.
+   */
+  omittedSessions?: unknown;
   /** Untrusted until the history adapter validates its boundary dates. */
   coverage?: CloudHistoryCoverage;
+  /**
+   * Untrusted: a US listing that no longer trades, `{ status, lastTradeDate,
+   * historyStart }`. Its history ends on `lastTradeDate`. Read by parseListingDelisting.
+   */
+  delisting?: unknown;
   providerMeta?: {
     provider?: string;
     upstream?: string;
@@ -1518,6 +1657,15 @@ export interface CloudMarketBatchPayload<T> {
 export type CloudMarketScreenerCategory = "gainers" | "losers" | "most-active";
 
 /**
+ * What Gloom Cloud selects and ranks Gainers and Losers by: `regular` the last
+ * completed regular session's move, the Chg% a row shows; `extended` the
+ * latest print, after-hours or pre-market included. While the regular session
+ * trades the two are one list. A server that predates the choice ignores it
+ * and ranks by the latest print.
+ */
+export type CloudMoverSession = "regular" | "extended";
+
+/**
  * A movers row's quote sessions, under the quote's field names and meaning:
  * the session it was read in, the day its change is dated to, the last
  * completed regular session's close and move, and an open pre-market or
@@ -1529,7 +1677,7 @@ export type CloudMoverSessionFields = Partial<Pick<Quote,
   | "preMarketPrice" | "preMarketChange" | "preMarketChangePercent"
   | "postMarketPrice" | "postMarketChange" | "postMarketChangePercent">>;
 
-/** price, change and changePercent are the live print the list is ranked by; the session fields say how it reads. */
+/** price, change and changePercent are the live print the server ranks the list by; the session fields say how it reads. */
 export interface CloudMarketScreenerItem extends CloudMoverSessionFields {
   rank: number;
   symbol: string;
@@ -2098,6 +2246,15 @@ export interface TeamCollectionItem {
   exchange: string;
   quantity: number | null;
   note: string | null;
+  /**
+   * A portfolio holding's purchase date (YYYY-MM-DD), its currency, and the
+   * rate its cost was bought at (one unit of `currency` in `costFxCurrency`).
+   * Null when no one has sent one; missing from a server that keeps none.
+   */
+  dateAcquired?: string | null;
+  currency?: string | null;
+  costFxRate?: number | null;
+  costFxCurrency?: string | null;
   addedBy: string;
   addedAt: string;
   updatedAt: string;

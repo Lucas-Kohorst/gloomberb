@@ -1,4 +1,4 @@
-import { Box } from "../../../ui";
+import { Box, useUiCapabilities } from "../../../ui";
 import { nextHeaderSort } from "../../../utils/sort-values";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, EmptyState, usePaneFooter, usePaneTabs, type DataTableKeyEvent } from "../../../components";
@@ -8,7 +8,6 @@ import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { publicTickerKey } from "../../../utils/exchanges";
 import { usePaneSettingValue } from "../../../state/app/context";
-import { usePlanAccess } from "../../../api-client/plan-access";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import { useAutoRefresh } from "../../../react/auto-refresh";
@@ -38,7 +37,7 @@ import {
   type ScreenerTabId,
   type TabId,
 } from "./model";
-import { loadMarketMoverTab } from "./client";
+import { loadMarketMoverTab, marketMoverQuoteError } from "./client";
 import { summaryFooterSegments } from "./footer";
 import { isSessionTab, resolveActiveTab, usSessionAt, type UsSession } from "./session";
 import { SessionMoversBody } from "./session-body";
@@ -87,7 +86,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const [savedTab, setSavedTab] = usePluginPaneState<TabId>("activeTab", tabs[0]!.id);
   const [pickedIn, setPickedIn] = usePluginPaneState<string | null>("activeTabSession", null);
   const [requestedTab, setRequestedTab] = usePluginPaneState<TabId | null>("requestedTab", null);
-  const access = usePlanAccess();
   const session = useUsSession();
   const tabIds = useMemo(() => tabs.map((tab) => tab.id), [tabs]);
   const activeTab = resolveActiveTab({
@@ -96,7 +94,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     pickedIn,
     session,
     requested: requestedTab,
-    sessionListsOpen: access.signedIn && access.emailVerified && access.hasProAccess,
   });
 
   // The index summary is a quote board like any other, so it runs on the shared
@@ -164,7 +161,7 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<MarketMoverSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [moversStale, setMoversStale] = useState(false);
-  const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+  const [lastSuccess, setLastSuccess] = useState<{ tab: ScreenerTabId; at: number } | null>(null);
 
   const fetchGenRef = useRef(0);
 
@@ -229,12 +226,16 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       });
       if (fetchGenRef.current !== gen) return;
 
-      setQuotes(result.quotes);
-      setLoadedTab(tab);
+      const quoteError = marketMoverQuoteError(result);
+      // A partial list shows only its current rows; a total failure keeps this list's prior rows.
+      if (!quoteError || result.quotes.length > 0) {
+        setQuotes(result.quotes);
+        setLoadedTab(tab);
+        if (!options?.background) setSelectedSymbol(null);
+      }
       setMoversStale(result.stale);
-      if (!options?.background) setSelectedSymbol(null);
-      setLoadError(null);
-      setLastLoadedAt(Date.now());
+      setLoadError(quoteError);
+      if (!quoteError && !result.stale) setLastSuccess({ tab, at: Date.now() });
     } catch {
       if (fetchGenRef.current !== gen) return;
       setMoversStale(true);
@@ -253,7 +254,7 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
   const backgroundRefresh = useCallback(() => {
     void loadTab(activeTab, { background: true });
   }, [activeTab, loadTab]);
-  useAutoRefresh(lastLoadedAt, backgroundRefresh);
+  useAutoRefresh(lastSuccess?.tab === activeTab ? lastSuccess.at : null, backgroundRefresh);
 
   const openSymbol = useCallback((row: MarketMoverRow) => {
     pinTicker(moverKey(row), { floating: true, paneType: TICKER_RESEARCH_PANE_ID, instrument: null });
@@ -265,6 +266,8 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
     }));
   }, []);
 
+  const logos = useUiCapabilities().nativePaneChrome === true;
+  const renderCell = useCallback((row: MarketMoverRow, column: MarketMoverColumn) => renderMarketMoverCell(row, column, logos), [logos]);
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => (
     handleRefreshKey(event, () => loadTab(activeTab, { forceRefresh: true }), { stopPropagation: true })
   ), [activeTab, loadTab]);
@@ -304,7 +307,7 @@ function ScreenerMoversBody({ activeTab, focused, width, summaryQuotes, liveStre
       onHeaderClick={handleHeaderClick}
       getItemKey={moverKey}
       onActivate={openSymbol}
-      renderCell={renderMarketMoverCell}
+      renderCell={renderCell}
       selectedTextOverridesCellColor
       emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No movers returned."}
       emptyContent={loadError ? (

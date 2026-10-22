@@ -2,6 +2,9 @@ import { useMemo } from "react";
 import { Box, Text, useUiCapabilities } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { clamp } from "../../../utils/math";
+import type { SeriesAxisTag } from "./panel-labels";
+import { placeSeriesAxisTags, SeriesAxisTags } from "./series-axis-tags";
+import type { ChartMouseEvent } from "../core/pointer";
 
 function formatAxisCell(label: string | null, width: number): string {
   if (width <= 0) return "";
@@ -34,6 +37,24 @@ interface PriceAxisLabelsProps {
   axisColor?: string;
   /** Anchors that stay put while the cursor moves, such as a measure start. */
   extraMarkers?: readonly PriceAxisMarker[];
+  /** Desktop/web observations, separate from a drawing tool's endpoint. */
+  seriesTags?: readonly SeriesAxisTag[];
+  measuredPixelHeight?: number;
+  /** A value axis the pointer stretches and squeezes: a drag or the wheel on it, a double click back. */
+  gestures?: PriceAxisGestures;
+  /** A button sits at the foot of the axis (Auto, while scaled by hand): tick labels make room for it. */
+  footButton?: boolean;
+}
+
+/** The button at the foot of an axis sits this far above its bottom edge (`--gloom-space-xs`). */
+const FOOT_BUTTON_INSET_PX = 4;
+
+interface PriceAxisGestures {
+  onMouseDown: (event: ChartMouseEvent) => void;
+  onMouseDrag: (event: ChartMouseEvent) => void;
+  onMouseUp: (event: ChartMouseEvent) => void;
+  onMouseDragEnd: (event: ChartMouseEvent) => void;
+  onMouseScroll: (event: ChartMouseEvent) => void;
 }
 
 interface CursorPriceAxisOverlay {
@@ -134,8 +155,12 @@ export function PriceAxisLabels({
   cursorBackgroundColor = colors.bg,
   axisColor = colors.textDim,
   extraMarkers,
+  seriesTags,
+  measuredPixelHeight,
+  gestures,
+  footButton = false,
 }: PriceAxisLabelsProps) {
-  const { cellHeightPx = 18, fractionalViewport = false } = useUiCapabilities();
+  const { cellHeightPx = 18, fractionalViewport = false, nativePaneChrome } = useUiCapabilities();
   const overlay = useMemo(() => buildCursorPriceAxisOverlay({
     axisWidth,
     axisSectionWidth,
@@ -147,7 +172,11 @@ export function PriceAxisLabels({
   const usePixelOverlay = fractionalViewport && overlay.labelText !== null && overlay.topPercent !== null;
   // Row-snapped labels drift up to a row off the gridlines they name.
   const usePixelTicks = fractionalViewport && axisTicks !== undefined;
-  const pixelHeight = Math.max(height * cellHeightPx, 1);
+  const pixelHeight = Math.max(measuredPixelHeight ?? height * cellHeightPx, 1);
+  const placedSeriesTags = seriesTags ? placeSeriesAxisTags(seriesTags, pixelHeight, cellHeightPx) : [];
+  const lanes = Math.max(1, ...placedSeriesTags.map((tag) => tag.lane + 1));
+  // Fixed reference labels yield to observations, never the other way round.
+  const visibleMarkers = extraMarkers?.filter((marker) => placedSeriesTags.every((tag) => Math.abs(tag.centerY - marker.pixelY) >= cellHeightPx));
   const placedTicks = usePixelTicks
     ? placeAxisTicks({
       ticks: axisTicks,
@@ -155,7 +184,9 @@ export function PriceAxisLabels({
       cellHeightPx,
       badgeCentersPx: [
         ...(usePixelOverlay ? [(overlay.topPercent! / 100) * (pixelHeight - 1)] : []),
-        ...(extraMarkers?.map((marker) => marker.pixelY) ?? []),
+        ...(visibleMarkers?.map((marker) => marker.pixelY) ?? []),
+        ...placedSeriesTags.map((tag) => tag.centerY),
+        ...(footButton ? [pixelHeight - FOOT_BUTTON_INSET_PX - cellHeightPx / 2] : []),
       ],
     })
     : null;
@@ -184,6 +215,7 @@ export function PriceAxisLabels({
     )
   );
 
+  const placedStyle = usePixelOverlay || usePixelTicks ? { position: "relative", height: "auto", alignSelf: "stretch" } : undefined;
   return (
     <Box
       width={axisSectionWidth}
@@ -192,7 +224,11 @@ export function PriceAxisLabels({
       overflow="hidden"
       // Labels placed in percentages follow the row's height as a resize
       // draws the chart at a new size between renders.
-      style={usePixelOverlay || usePixelTicks ? { position: "relative", height: "auto", alignSelf: "stretch" } : undefined}
+      style={gestures && nativePaneChrome ? { ...placedStyle, cursor: "ns-resize" } : placedStyle}
+      {...gestures}
+      data-gloom-interactive={gestures ? "true" : undefined}
+      data-gloom-role={side ? "composite-chart-value-axis" : undefined}
+      data-gloom-side={side}
     >
       {Array.from({ length: height }, (_, row) => {
         const isCursorRow = !usePixelOverlay && cursorLabel !== null && cursorRow === row;
@@ -201,7 +237,7 @@ export function PriceAxisLabels({
           : extraMarkers?.find((entry) => entry.row === row);
         const label = isCursorRow
           ? cursorLabel
-          : marker?.label ?? (usePixelTicks ? null : axisLabels.get(row) ?? null);
+          : marker?.label ?? (usePixelTicks || (footButton && row === height - 1) ? null : axisLabels.get(row) ?? null);
         return (
           <Box key={row} height={1}>
             {renderAxisLabel(
@@ -233,7 +269,7 @@ export function PriceAxisLabels({
           </Box>
         );
       }) : null}
-      {usePixelOverlay || usePixelTicks ? extraMarkers?.map((marker) => (
+      {usePixelOverlay || usePixelTicks ? visibleMarkers?.map((marker) => (
         <Box
           key={`${marker.label}:${marker.pixelY}`}
           width={axisSectionWidth}
@@ -255,6 +291,7 @@ export function PriceAxisLabels({
           {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
         </Box>
       )) : null}
+      {seriesTags ? <SeriesAxisTags placed={placedSeriesTags} pixelHeight={pixelHeight} lanes={lanes} background={cursorBackgroundColor} /> : null}
       {usePixelOverlay ? (
         <Box
           width={axisSectionWidth}
@@ -268,7 +305,8 @@ export function PriceAxisLabels({
             transform: "translateY(-50%)",
             whiteSpace: "pre",
             pointerEvents: "none",
-            zIndex: 1,
+            // The value under the pointer reads whole, over a series' tag at that height.
+            zIndex: 3,
           }}
         >
           <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">

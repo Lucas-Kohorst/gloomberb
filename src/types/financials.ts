@@ -1,3 +1,4 @@
+import type { PerpBoardRow } from "../api-client/perps";
 import type { PriceBasis } from "./instrument";
 
 export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "CLOSED";
@@ -32,6 +33,20 @@ export interface QuoteProvenance {
   descriptive?: QuoteFieldProvenance;
   fields?: Record<string, QuoteFieldProvenance>;
   rejectedPriceProviders?: string[];
+}
+
+/**
+ * A US listing that no longer trades, as Gloom Cloud states it: TWTR, last
+ * traded 2022-10-27 and removed from NYSE the next day. Its daily history is
+ * still served, ending on that session. Dates are New York trading dates.
+ */
+export interface ListingDelisting {
+  /** "delisted": the exchange's removal of the listing is on record; "inactive": only its last trade is known. */
+  status: "delisted" | "inactive";
+  /** The last session with a trade (YYYY-MM-DD). */
+  lastTradeDate: string;
+  /** The first session served (YYYY-MM-DD). */
+  historyStart: string;
 }
 
 /** Static listing facts from a quote observation, without an investable price. */
@@ -81,6 +96,13 @@ export interface Quote extends DepositaryReceiptFacts {
   providerPriceDivisor?: number;
   change: number;
   changePercent: number;
+  /**
+   * What change and changePercent measure from when it is not previousClose,
+   * as Gloom Cloud says of a coin whose previous close it cannot date to the
+   * last two days: the last 24 hours ("24h", previousClose absent), or
+   * nothing ("none", no move). Absent on every other quote.
+   */
+  changeBasis?: "24h" | "none";
   previousClose?: number;
   /** Official close of a completed regular session, in this quote's currency. */
   regularClose?: number;
@@ -100,6 +122,8 @@ export interface Quote extends DepositaryReceiptFacts {
   receivedAt?: number; // local receipt timestamp ms for streamed/display freshness
   delivery?: QuoteDelivery;
   stale?: boolean;
+  /** The listing no longer trades: the price is its last trade (ListingDelisting). */
+  delisting?: ListingDelisting;
   exchangeName?: string;
   fullExchangeName?: string;
   listingExchangeName?: string;
@@ -158,6 +182,12 @@ export interface Quote extends DepositaryReceiptFacts {
   provenance?: QuoteProvenance;
   /** Freshness class for the quote data. Provider identity lives in providerId/provenance. */
   dataSource?: QuoteDataSource;
+  /**
+   * A perpetual contract's whole market row as of this quote (funding, open
+   * interest, premium), so every view of the contract reads the figures that
+   * came with its price, streamed or fetched.
+   */
+  perpetual?: PerpBoardRow;
 }
 
 export interface QuoteContribution extends Quote {
@@ -435,6 +465,8 @@ export interface EarningsAction {
   /** Null when the basis cannot be determined; absent from sources that do not say. */
   epsBasis?: EarningsEpsBasis | null;
   dateStatus?: EarningsDateStatus;
+  /** `press-release` when `epsActual` is the company's release's, provisional until the calendar has the quarter. */
+  epsActualSource?: "press-release";
 }
 
 export interface CorporateActionsData {
@@ -457,6 +489,12 @@ export interface CorporateActionsData {
 
 export interface CompanyProfile {
   description?: string;
+  /**
+   * Who published the description and where, when it is quoted from a
+   * document rather than the data provider's own text: a fund's issuer page,
+   * or the key facts its exchange publishes.
+   */
+  descriptionSource?: { publisher: string; url: string };
   sector?: string;
   industry?: string;
   employees?: number;
@@ -787,6 +825,11 @@ export interface PricePoint {
   low?: number;
   close: number;
   volume?: number;
+  /**
+   * The trades of one venue alone, when the market's volume for the bar is unavailable: never its volume, so no sum
+   * or comparison with a day's count takes it.
+   */
+  venueVolume?: { venue: string; volume: number };
   /** The bar's period had not ended when it was served: its close is the latest price, and it may have no volume yet. */
   partial?: boolean;
   /** The bar's prices were rebuilt from shorter bars where the source left it empty or too coarse. */

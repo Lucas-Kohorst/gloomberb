@@ -212,11 +212,23 @@ export function mergeQuoteContribution(
     overnightPriceKind: next.overnightPriceKind,
     // The board this observation was read on; one read on the listing's own line names none.
     tradingExchangeName: next.tradingExchangeName,
+    // Whether the listing no longer trades is said with each observation: a symbol that trades again drops it.
+    delisting: next.delisting,
     regularClose: next.regularClose,
     regularCloseSessionDate: next.regularClose != null ? next.regularCloseSessionDate : undefined,
     regularChange: next.regularClose != null ? next.regularChange : undefined,
     regularChangePercent: next.regularClose != null ? next.regularChangePercent : undefined,
   };
+
+  // What this observation's move is from, when not its previous close (a coin's
+  // 24 hours, Linear: GLO-1089), is said with each one: a quote back on its
+  // previous close drops an earlier "24h", and one on 24 hours drops the
+  // earlier close its move no longer runs from.
+  if (next.changeBasis == null) {
+    delete merged.changeBasis;
+  } else if (next.previousClose === undefined) {
+    delete merged.previousClose;
+  }
 
   if (isOtherTradingDay(current, next)) {
     const record = merged as unknown as Record<string, unknown>;

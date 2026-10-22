@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../../../api-client";
 import type {
   ScannerFlowPayload,
@@ -11,6 +11,8 @@ import { useCloudAccessFooter } from "../shared/cloud-upgrade";
 import { usePaneStatusFooter } from "../../../components/layout/pane/status-footer";
 import { CLOUD_QUOTE_DELAY_MINUTES } from "../../../api-client/plan-access";
 import { useAppVisible } from "../../../state/app/activity";
+import { ScannerClientContext } from "../shared/scanner-capture";
+import { delayedFooterSegment } from "../../../components/layout/pane/footer/model";
 
 export interface ScannerFeedState<T extends ScannerPayload> {
   payload: T | null;
@@ -26,6 +28,7 @@ function useScannerFeed<T extends ScannerPayload>(scanner: "hilo" | "flow"): Sca
   // A hidden app drops the subscription like every other stream; the last
   // payload stays on screen until the server resends on return.
   const appVisible = useAppVisible();
+  const client = useContext(ScannerClientContext) ?? apiClient;
   const subscribedScannerRef = useRef(scanner);
 
   useEffect(() => {
@@ -34,12 +37,12 @@ function useScannerFeed<T extends ScannerPayload>(scanner: "hilo" | "flow"): Sca
       setState(INITIAL_STATE);
     }
     if (!appVisible) return;
-    return apiClient.subscribeScanner(scanner, (event) => {
+    return client.subscribeScanner(scanner, (event) => {
       setState(event.type === "denied"
         ? { payload: null, denied: true, deniedReason: event.reason }
         : { payload: event.payload as unknown as T, denied: false, deniedReason: null });
     });
-  }, [appVisible, scanner]);
+  }, [appVisible, client, scanner]);
 
   return state;
 }
@@ -100,7 +103,11 @@ export function useScannerStatusFooter(
   const info = useMemo<PaneFooterSegment[]>(
     () => {
       const base = segment ? [segment, ...status]
-        : delayMinutes != null ? [{ id: "scanner-delay", parts: [{ text: tf("{delay} delayed", { delay: tf("{count}m", { count: delayMinutes }) }), tone: "muted" as const }] }, ...status]
+        : delayMinutes != null ? [delayedFooterSegment({
+          id: "scanner-delay",
+          detail: tf("{delay} delayed", { delay: tf("{count}m", { count: delayMinutes }) }),
+          delay: tf("{count}m", { count: delayMinutes }),
+        }), ...status]
           : status;
       return extra ? [...base, extra] : base;
     },

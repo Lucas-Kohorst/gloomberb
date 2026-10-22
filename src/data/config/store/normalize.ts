@@ -24,9 +24,12 @@ import { migrateSavedConfig, type ConfigMigrationHost } from "./migrations";
 import { encodeBuiltinDisabledPluginIds, expandBuiltinPluginGroups } from "../../../plugins/ownership";
 import { sanitizeSavedPaneState } from "./pane-state";
 import { isRecord } from "../../../utils/guards";
+import { normalizeStoredBaseCurrency } from "../../../utils/base-currency";
 import { debugLog } from "../../../utils/debug-log";
 import { DEFAULT_THEME, themes } from "../../../theme/themes";
 import { sanitizeStarPrompt } from "../../../app/star-prompt/model";
+import { sanitizeCommandBarOpens } from "../../../app/command-bar-intro";
+import { sanitizeUpdatesConfig } from "../../../updater/channel";
 
 const configLog = debugLog.createLogger("config");
 const reportedUnknownThemes = new Set<string>();
@@ -78,7 +81,9 @@ export function normalizeLoadedConfig(
   const config: AppConfig = {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
-    baseCurrency: typeof candidate.baseCurrency === "string" ? candidate.baseCurrency : defaults.baseCurrency,
+    // A name or sign an older version saved (Canadian dollar, CA$) reads as its code; nothing turns into USD unasked.
+    baseCurrency: typeof candidate.baseCurrency === "string" && candidate.baseCurrency.trim()
+      ? normalizeStoredBaseCurrency(candidate.baseCurrency) : defaults.baseCurrency,
     refreshIntervalMinutes: typeof candidate.refreshIntervalMinutes === "number" ? candidate.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
     portfolios: sanitizePortfolios(candidate.portfolios, defaults.portfolios),
     watchlists: sanitizeWatchlists(candidate.watchlists, defaults.watchlists),
@@ -99,6 +104,7 @@ export function normalizeLoadedConfig(
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     recentCommands: sanitizeRecentCommands(candidate.recentCommands, defaults.recentCommands),
+    commandBarOpens: sanitizeCommandBarOpens(candidate.commandBarOpens),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
     onboardingProgress,
@@ -106,6 +112,7 @@ export function normalizeLoadedConfig(
     ...withKeybindings(sanitizeKeybindings(candidate.keybindings)),
     ...withTelemetry(sanitizeTelemetry(candidate.telemetry)),
     ...withStarPrompt(sanitizeStarPrompt(candidate.starPrompt)),
+    ...withUpdates(sanitizeUpdatesConfig(candidate.updates)),
   };
 
   const needsSave =
@@ -160,6 +167,7 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
     recentCommands: sanitizeRecentCommands(config.recentCommands, []),
+    commandBarOpens: sanitizeCommandBarOpens(config.commandBarOpens),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
   };
@@ -169,6 +177,8 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
   Object.assign(persisted, withTelemetry(sanitizeTelemetry(config.telemetry)));
   delete persisted.starPrompt;
   Object.assign(persisted, withStarPrompt(sanitizeStarPrompt(config.starPrompt)));
+  delete persisted.updates;
+  Object.assign(persisted, withUpdates(sanitizeUpdatesConfig(config.updates)));
 
   return persisted;
 }
@@ -183,6 +193,10 @@ function withTelemetry(telemetry: TelemetryConfig | undefined): Pick<AppConfig, 
 
 function withStarPrompt(starPrompt: AppConfig["starPrompt"]): Pick<AppConfig, "starPrompt"> {
   return starPrompt ? { starPrompt } : {};
+}
+
+function withUpdates(updates: AppConfig["updates"]): Pick<AppConfig, "updates"> {
+  return updates ? { updates } : {};
 }
 
 /** Only the switches that are set survive; an empty object is the same as none. */
@@ -356,6 +370,12 @@ function sanitizePortfolioAllocation(entry: Portfolio): Portfolio {
   if (isRecord(importedFrom) && importedFrom.kind === "13f"
     && [importedFrom.cik, importedFrom.name, importedFrom.period, importedFrom.filed].every((value) => typeof value === "string" && value)) {
     next.importedFrom = { kind: "13f", cik: importedFrom.cik, name: importedFrom.name, period: importedFrom.period, filed: importedFrom.filed };
+    // All of the 13F weights or none: a subset would renormalise into other weights than the filing's.
+    const weights = isRecord(importedFrom.weights) ? Object.entries(importedFrom.weights) : [];
+    if (weights.length > 0 && weights.every(([symbol, weight]) =>
+      !!symbol.trim() && typeof weight === "number" && Number.isFinite(weight) && weight > 0 && weight <= 1)) {
+      next.importedFrom.weights = Object.fromEntries(weights) as Record<string, number>;
+    }
   }
   if (isRecord(cash) && typeof cash.amount === "number" && Number.isFinite(cash.amount)
     && typeof cash.currency === "string" && /^[A-Z]{3}$/.test(cash.currency)) {

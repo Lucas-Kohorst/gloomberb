@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import { logFailure } from "./log-failure";
 import {
   cssUrl,
   imageLayerRect,
@@ -172,7 +173,7 @@ function paintImageLayer(
     for (const stop of gradient.stops) fill.addColorStop(stop.offset, stop.color);
     context.fillStyle = fill;
   } catch {
-    // A stop colour the canvas cannot read.
+    // Intentional ignore: Unsupported canvas colors leave this optional gradient unpainted.
     return false;
   }
   context.fillRect(tile.x, tile.y, tile.width, tile.height);
@@ -464,15 +465,20 @@ function drawCanvasElement(
   try {
     context.drawImage(canvas, rect.left - origin.left, rect.top - origin.top, rect.width, rect.height);
   } catch {
-    // Ignore canvases the browser considers unsafe to read.
+    // Intentional ignore: Browser security can exclude a source canvas from the screenshot.
   }
 }
+
+/** Inputs whose value is not text on screen. A button's value is its label, so it is painted. */
+const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "range", "color", "file", "hidden", "image"]);
 
 function drawInputElement(
   context: CanvasRenderingContext2D,
   element: HTMLInputElement | HTMLTextAreaElement,
   origin: CaptureOrigin,
 ): void {
+  // A checkbox's value ("on" unless set) is not on screen; its box is painted from its CSS.
+  if (element instanceof HTMLInputElement && NON_TEXT_INPUTS.has(element.type)) return;
   // Paint what the screen shows: a password field is dots, never its value.
   const typed = element instanceof HTMLInputElement && element.type === "password"
     ? "\u2022".repeat(element.value.length)
@@ -508,16 +514,19 @@ function drawRaster(
     if (element instanceof HTMLImageElement) {
       const fitted = objectFitRect(style.objectFit, local, { width: element.naturalWidth, height: element.naturalHeight });
       context.save();
-      context.beginPath();
-      context.rect(local.x, local.y, local.width, local.height);
-      context.clip();
-      context.drawImage(raster, fitted.x, fitted.y, fitted.width, fitted.height);
-      context.restore();
+      try {
+        context.beginPath();
+        context.rect(local.x, local.y, local.width, local.height);
+        context.clip();
+        context.drawImage(raster, fitted.x, fitted.y, fitted.width, fitted.height);
+      } finally {
+        context.restore();
+      }
     } else {
       context.drawImage(raster, local.x, local.y, local.width, local.height);
     }
-  } catch {
-    // A raster that cannot be drawn is left out, like a failed one.
+  } catch (error) {
+    logFailure("utils-dom-screenshot", "Could not draw screenshot image")(error);
   }
 }
 
@@ -589,6 +598,12 @@ function drawElement(pass: PaintPass, element: Element): void {
 
   const style = getComputedStyle(element);
   if (!isVisible(style)) return;
+  // A `display: contents` element (a ColumnGrid row) has no box of its own: its children are laid
+  // out in its parent's, so its empty rect must not leave them out.
+  if (style.display === "contents") {
+    drawChildren(pass, element);
+    return;
+  }
 
   const rect = localRect(element.getBoundingClientRect(), origin);
   if (rect.width <= 0 || rect.height <= 0) return;
@@ -620,17 +635,19 @@ function drawElement(pass: PaintPass, element: Element): void {
   }
 
   // An SVG's shapes and text are in its raster; they are not boxes to walk.
-  if (!(element instanceof SVGElement)) {
-    for (const child of paintOrder(element)) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        drawTextNode(context, child as Text, origin);
-      } else {
-        drawElement(pass, child as Element);
-      }
-    }
-  }
+  if (!(element instanceof SVGElement)) drawChildren(pass, element);
 
   context.restore();
+}
+
+function drawChildren(pass: PaintPass, element: Element): void {
+  for (const child of paintOrder(element)) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      drawTextNode(pass.context, child as Text, pass.origin);
+    } else {
+      drawElement(pass, child as Element);
+    }
+  }
 }
 
 /** Where a child falls in its parent's paint: below the flow, in it, or above it at its z-index. */
@@ -691,7 +708,7 @@ async function waitForFonts(): Promise<void> {
   await Promise.race([
     fontSet.ready,
     new Promise((resolve) => setTimeout(resolve, 250)),
-  ]).catch(() => {});
+  ]).catch(() => { /* Intentional ignore: Missing fonts retain the browser fallback fonts for the screenshot. */ });
 }
 
 async function paintElement(

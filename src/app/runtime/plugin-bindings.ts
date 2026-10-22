@@ -1,9 +1,10 @@
+import { logFailure } from "../../utils/log-failure";
 import type { Dispatch } from "react";
 import {
   clearPersistedBrokerAccounts,
   getBrokerAccountCacheSourceKey,
 } from "../../brokers/account-cache";
-import { findPortfolioHeir } from "../../brokers/broker-portfolio-sync";
+import { clearLeftoverBrokerHoldings, findPortfolioHeir, knownBrokerHoldings } from "../../brokers/broker-portfolio-sync";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import type { MarketDataCoordinator } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
@@ -104,7 +105,7 @@ export function bindPluginRegistryRuntimeAccess({
       pluginRegistry.events.emit("config:changed", { config: nextConfig });
     },
 
-    createBrokerInstance: async (brokerType, label, values) => {
+    createBrokerInstance: async (brokerType, label, values, options = {}) => {
       const instanceId = createBrokerInstanceId(
         brokerType,
         label,
@@ -117,6 +118,7 @@ export function bindPluginRegistryRuntimeAccess({
         connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : undefined,
         config: values,
         enabled: true,
+        ...(options.localOnly ? { localOnly: true } : {}),
       };
       const nextConfig = {
         ...stateRef.current.config,
@@ -136,7 +138,7 @@ export function bindPluginRegistryRuntimeAccess({
       const broker = pluginRegistry.brokers.get(instance.brokerType);
       if (!broker) throw new Error(`Broker "${instance.brokerType}" is not available.`);
 
-      const valid = await broker.validate(instance).catch(() => false);
+      const valid = await broker.validate(instance).catch(logFailure("app.runtime.plugin-bindings", "Broker setup validation failed", false));
       if (!valid) throw new Error(`${broker.name} setup is incomplete.`);
 
       await broker.connect?.(instance);
@@ -152,12 +154,15 @@ export function bindPluginRegistryRuntimeAccess({
         instance.id === instanceId
           ? (() => {
             const nextValues = options.replaceConfig ? values : { ...instance.config, ...values };
+            const { localOnly: wasLocalOnly, ...rest } = instance;
+            const localOnly = options.localOnly ?? wasLocalOnly === true;
             return {
-              ...instance,
+              ...rest,
               label: options.label ?? instance.label,
               enabled: options.enabled ?? instance.enabled,
               connectionMode: typeof nextValues.connectionMode === "string" ? nextValues.connectionMode : instance.connectionMode,
               config: nextValues,
+              ...(localOnly ? { localOnly: true } : {}),
             };
           })()
           : instance,
@@ -216,15 +221,20 @@ export function bindPluginRegistryRuntimeAccess({
         return [heirId ? { ...portfolio, brokerInstanceId: heirId } : portfolio];
       });
       const nextTickers = new Map(stateRef.current.tickers);
+      const nextBrokerInstances = stateRef.current.config.brokerInstances.filter((entry) => entry.id !== instanceId);
+      // What older removals and pulls from other devices left behind goes as well.
+      const known = knownBrokerHoldings({ portfolios: nextPortfolios, brokerInstances: nextBrokerInstances });
 
       for (const ticker of stateRef.current.tickers.values()) {
-        const nextPositions = ticker.metadata.positions.filter((position) => position.brokerInstanceId !== instanceId);
+        // A position here without a profile came from another device's sync of this one.
+        const nextPositions = ticker.metadata.positions.filter((position) => position.brokerInstanceId !== instanceId
+          && !(removedPortfolioIds.has(position.portfolio) && !position.brokerInstanceId));
         const heldPortfolioIds = new Set(nextPositions.map((position) => position.portfolio));
         const nextPortfolioRefs = ticker.metadata.portfolios.filter((portfolioId) =>
           !removedPortfolioIds.has(portfolioId) && (!heirs.has(portfolioId) || heldPortfolioIds.has(portfolioId)));
         const nextBrokerContracts = (ticker.metadata.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
 
-        const nextTicker: TickerRecord = {
+        const removedTicker: TickerRecord = {
           ...ticker,
           metadata: {
             ...ticker.metadata,
@@ -233,12 +243,13 @@ export function bindPluginRegistryRuntimeAccess({
             broker_contracts: nextBrokerContracts,
           },
         };
+        const nextTicker = clearLeftoverBrokerHoldings(removedTicker, known) ?? removedTicker;
 
         const shouldDeleteTicker =
-          nextPositions.length === 0
-          && nextPortfolioRefs.length === 0
+          nextTicker.metadata.positions.length === 0
+          && nextTicker.metadata.portfolios.length === 0
           && nextTicker.metadata.watchlists.length === 0
-          && nextBrokerContracts.length === 0
+          && (nextTicker.metadata.broker_contracts ?? []).length === 0
           && nextTicker.metadata.tags.length === 0
           && Object.keys(nextTicker.metadata.custom).length === 0;
 
@@ -256,7 +267,7 @@ export function bindPluginRegistryRuntimeAccess({
 
       const nextConfig = {
         ...stateRef.current.config,
-        brokerInstances: stateRef.current.config.brokerInstances.filter((entry) => entry.id !== instanceId),
+        brokerInstances: nextBrokerInstances,
         portfolios: nextPortfolios,
       };
 
@@ -266,7 +277,7 @@ export function bindPluginRegistryRuntimeAccess({
       pluginRegistry.events.emit("config:changed", { config: nextConfig });
       // The profile that kept a portfolio fills in what the removed one held there.
       for (const heirId of new Set(heirs.values())) {
-        void importBrokerPositions(heirId).catch(() => {});
+        void importBrokerPositions(heirId).catch(logFailure("app.runtime.plugin-bindings", "Replacement broker positions import failed"));
       }
     },
   });

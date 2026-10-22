@@ -1,7 +1,9 @@
 import type { PriceBasis } from "../../types/instrument";
 import type { Quote } from "../../types/financials";
 import { resolvePriceBasis } from "./price-basis";
-import { currencyPriceDigits, formatCompact, formatCurrency } from "../../utils/format";
+import { isIndexLevel } from "./index-level";
+import { currencyPriceDigits, formatCompact, formatCurrency, formatCurrencyCode } from "../../utils/format";
+import { minorUnitSign } from "../../utils/currency-units";
 
 export type AssetDisplayKind = "cash" | "crypto" | "equity" | "contract" | "other";
 
@@ -24,6 +26,8 @@ export interface MarketFormatOptions extends AssetDisplayContext {
   fixedFractionDigits?: number;
   /** Source units per displayed currency unit; a price quoted in pence keeps its pence decimals in pounds. */
   quotedUnitDivisor?: number;
+  /** Write the currency's code after a money price (259.36 USD) instead of its sign ($259.36): a report for a base currency other than USD. */
+  currencyCode?: boolean;
   /** A price that holds still for the session, such as the previous close. With
    * `fixedFractionDigits`, the kind's decimal ceiling is read at this price
    * instead of at the value, so a live price keeps its decimals as it moves. */
@@ -99,9 +103,7 @@ export function getCurrencySymbol(currency: string): string {
       maximumFractionDigits: 0,
     });
     symbol = formatter.formatToParts(0).find((part) => part.type === "currency")?.value ?? normalizedCurrency;
-  } catch {
-    // A malformed code (free text typed as a position currency) has no symbol.
-  }
+  } catch { /* Intentional ignore: A user-entered currency code rejected by Intl retains the code as its symbol. */ }
   currencySymbols.set(normalizedCurrency, symbol);
   return symbol;
 }
@@ -120,6 +122,8 @@ function formatVariableNumber(
   maxWidth: number | undefined,
   minimumFractionDigits = 0,
 ): string {
+  // Intl signs a negative zero (-0.00): a move rounded to nothing, as a cell that pre-rounds leaves it, is unsigned.
+  if (value === 0) value = 0;
   const groupedModes = [true, false];
 
   for (const useGrouping of groupedModes) {
@@ -282,12 +286,12 @@ function compactScaledPrice(
   maxWidth: number | undefined,
 ): string {
   const sign = value < 0 ? "-" : "";
-  const symbol = getCurrencySymbol(currency);
+  const marks = currencyMarks(currency, currency.trim().toUpperCase() || "USD");
   const numericWidth = maxWidth == null
     ? undefined
-    : Math.max(1, maxWidth - sign.length - symbol.length - suffix.length);
+    : Math.max(1, maxWidth - sign.length - marks.prefix.length - suffix.length - marks.suffix.length);
   const formatted = formatVariableNumber(Math.abs(value) / divisor, 1, numericWidth, 1);
-  return `${sign}${symbol}${formatted}${suffix}`;
+  return `${sign}${marks.prefix}${formatted}${suffix}${marks.suffix}`;
 }
 
 export function resolveAssetDisplayKind({
@@ -428,7 +432,7 @@ export function formatMarketChangeWithCurrency(
   referencePrice?: number,
 ): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  if (isIndexLevel(options) || resolvePriceBasis(options.priceBasis, options.assetCategory) !== "per-unit") return formatSignedMarketPrice(value, options);
+  if (isIndexLevel(options.assetCategory) || resolvePriceBasis(options.priceBasis, options.assetCategory) !== "per-unit") return formatSignedMarketPrice(value, options);
   if (options.fixedFractionDigits !== undefined) {
     const maxWidth = options.maxWidth == null ? undefined : Math.max(1, options.maxWidth - 1);
     const body = formatMarketPriceWithCurrency(Math.abs(value), currency, { ...options, maxWidth });
@@ -448,18 +452,27 @@ export function formatMarketChangeWithCurrency(
       return `${value > 0 ? "+" : ""}${formatMarketPriceWithCurrency(value, currency, options)}`;
     }
   }
+  const money = options.currencyCode ? formatCurrencyCode : formatCurrency;
   // A move that rounds to zero cents is unsigned rather than -$0.00.
-  if (Math.abs(value) < smallestMove) return formatCurrency(0, currency);
-  return `${value > 0 ? "+" : ""}${formatCurrency(value, currency)}`;
+  if (Math.abs(value) < smallestMove) return money(0, currency);
+  return `${value > 0 ? "+" : ""}${money(value, currency)}`;
 }
 
 /** Decimals the currency's minor unit has: two for GBP, none for JPY. */
+// A chart reads every series' price at the crosshair on each pointer move, so
+// building a formatter per call is what the readout spent its time on.
+const currencyMinorDigitsByCode = new Map<string, number>();
+
 export function currencyMinorDigits(currency: string | undefined): number {
+  const code = currency || "USD";
+  const cached = currencyMinorDigitsByCode.get(code);
+  if (cached !== undefined) return cached;
+  let digits = 2;
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
+    digits = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch { /* Intentional ignore: A currency code rejected by Intl uses the documented two-decimal fallback. */ }
+  currencyMinorDigitsByCode.set(code, digits);
+  return digits;
 }
 
 /** Decimals a money price is padded to: its minor unit up to two (USD 2, JPY 0), three for the thousandth currencies (OMR, KWD). */
@@ -603,9 +616,16 @@ export function liveQuoteFormatOptions(
   return withStablePriceDigits(quoteFormatOptions(quote, fallbackAssetCategory, metadataInstrumentType), currency, quote);
 }
 
-/** An index level is points, not money: ^GSPC at 7,805.45 has no currency to name, wherever it is shown. */
-function isIndexLevel(options: MarketFormatOptions): boolean {
-  return options.assetCategory?.trim().toUpperCase() === "INDEX";
+/**
+ * Where an amount's currency is written: a major currency's symbol before it
+ * ($314.95, CHF314.95), a minor unit's sign after it (314.95¢ for US cents,
+ * 412.50p for pence), as `minorUnitSign` names them. A minor unit is read
+ * before upper-casing, as GBp is pence and GBP pounds.
+ */
+function currencyMarks(currency: string, normalizedCurrency: string, code = false): { prefix: string; suffix: string } {
+  const minor = minorUnitSign(currency);
+  if (minor) return { prefix: "", suffix: minor };
+  return code ? { prefix: "", suffix: ` ${normalizedCurrency}` } : { prefix: getCurrencySymbol(normalizedCurrency), suffix: "" };
 }
 
 export function formatMarketPriceWithCurrency(
@@ -614,15 +634,15 @@ export function formatMarketPriceWithCurrency(
   options: MarketFormatOptions = {},
 ): string {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
-  if (isIndexLevel(options) || resolvePriceBasis(options.priceBasis, options.assetCategory) !== "per-unit") return formatMarketPrice(value, options);
+  if (isIndexLevel(options.assetCategory) || resolvePriceBasis(options.priceBasis, options.assetCategory) !== "per-unit") return formatMarketPrice(value, options);
   const normalizedCurrency = currency.trim().toUpperCase() || "USD";
   const sign = value < 0 ? "-" : "";
-  const symbol = getCurrencySymbol(normalizedCurrency);
+  const { prefix, suffix } = currencyMarks(currency, normalizedCurrency, options.currencyCode);
   const numericWidth = options.maxWidth == null
     ? undefined
-    : Math.max(1, options.maxWidth - sign.length - symbol.length);
+    : Math.max(1, options.maxWidth - sign.length - prefix.length - suffix.length);
   const body = formatMarketPrice(Math.abs(value), { ...options, currency: normalizedCurrency, maxWidth: numericWidth });
-  return `${hasNonZeroDigit(body) ? sign : ""}${symbol}${body}`;
+  return `${hasNonZeroDigit(body) ? sign : ""}${prefix}${body}${suffix}`;
 }
 
 export function formatMarketCostWithCurrency(
@@ -634,10 +654,10 @@ export function formatMarketCostWithCurrency(
   if (resolvePriceBasis(options.priceBasis, options.assetCategory) !== "per-unit") return formatMarketCost(value, options);
   const normalizedCurrency = currency.trim().toUpperCase() || "USD";
   const sign = value < 0 ? "-" : "";
-  const symbol = getCurrencySymbol(normalizedCurrency);
+  const { prefix, suffix } = currencyMarks(currency, normalizedCurrency, options.currencyCode);
   const numericWidth = options.maxWidth == null
     ? undefined
-    : Math.max(1, options.maxWidth - sign.length - symbol.length);
+    : Math.max(1, options.maxWidth - sign.length - prefix.length - suffix.length);
   // A money cost keeps its currency's minor unit: $189.20, not $189.2 (JPY has none).
   const body = formatMarketCost(Math.abs(value), {
     minimumFractionDigits: currencyPriceMinDigits(normalizedCurrency),
@@ -645,7 +665,7 @@ export function formatMarketCostWithCurrency(
     currency: normalizedCurrency,
     maxWidth: numericWidth,
   });
-  return `${sign}${symbol}${body}`;
+  return `${sign}${prefix}${body}${suffix}`;
 }
 
 /** @deprecated Slated for removal. Use `formatMarketPriceWithCurrency` with `maxWidth` to fit a column. */

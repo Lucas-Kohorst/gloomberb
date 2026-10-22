@@ -4,7 +4,10 @@ import { createTestDataProvider } from "../test-support/data-provider";
 import type { HistorySession } from "../types/price-history";
 import { LiveBarAccumulator } from "./live-bars";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
-import { ChartResolveCache, mergePriceHistoryWindows, reconcileChartTail, resolveChartSpecData, type ChartResolveSources } from "./resolve";
+import { resolveChartSpecData } from "./resolve";
+import { ChartResolveCache, type ChartResolveSources } from "./resolve-context";
+import { reconcileChartTail } from "./tail-reconcile";
+import { mergePriceHistoryWindows } from "./history-acquisition";
 import { CHART_SPEC_VERSION, type ChartSpec } from "./types";
 
 const at = (time: string) => Date.parse(`2026-09-22T${time}Z`);
@@ -20,6 +23,10 @@ function quote(time: string, price: number, volume?: number, overrides: Partial<
 
 function bar(time: string, open: number, high: number, low: number, close: number, volume: number): PricePoint {
   return { date: new Date(at(time)), open, high, low, close, volume };
+}
+
+function dated(date: string, open: number, high: number, low: number, close: number, volume: number): PricePoint {
+  return { date: new Date(`${date}T00:00:00Z`), open, high, low, close, volume };
 }
 
 describe("LiveBarAccumulator", () => {
@@ -108,6 +115,92 @@ describe("LiveBarAccumulator", () => {
     expect(points[1]).toMatchObject({ date: new Date("2026-09-23T00:00:00Z"), open: 99, high: 101, low: 99, close: 101, volume: 2_600_000 });
   });
 
+  describe("a calendar bar formed from the quote takes the session's own range", () => {
+    // Tuesday 22 Sep 2026: the history ends on Monday's candle, as a fresh process reads it.
+    const history = [dated("2026-09-21", 100, 104, 98, 103, 40_000_000)];
+    const options = (next: Quote) => ({ now: next.lastUpdated, resolution: "1d" as const, exchange: "NASDAQ" });
+    const session = { open: 101, high: 106, low: 100.5 };
+
+    test("mid-session: open, high and low from the quote, widened by later prints", () => {
+      const bars = new LiveBarAccumulator();
+      let next = quote("15:00:00", 105, 12_000_000, session);
+      expect(bars.apply(history, next, options(next)).at(-1)).toEqual({
+        date: new Date("2026-09-22T00:00:00Z"), open: 101, high: 106, low: 100.5, close: 105, volume: 12_000_000,
+      });
+      next = quote("15:30:00", 107, 13_000_000, { ...session, high: 107.2 });
+      expect(bars.apply(history, next, options(next)).at(-1)).toMatchObject({ open: 101, high: 107.2, low: 100.5, close: 107, volume: 13_000_000 });
+      // A quote without the session's range falls back to the prints alone.
+      next = quote("16:00:00", 99, 14_000_000);
+      expect(bars.apply(history, next, options(next)).at(-1)).toMatchObject({ open: 101, high: 107.2, low: 99, close: 99 });
+      expect(new LiveBarAccumulator().apply(history, next, options(next)).at(-1)).toMatchObject({ open: 99, high: 99, low: 99, close: 99 });
+    });
+
+    test("inside the settle window after the close: the session's range, closing at the regular close", () => {
+      const closed = (time: string, print: number): Quote => quote(time, print, 40_000_000, {
+        ...session, marketState: "POST", postMarketPrice: print, changeSessionDate: "2026-09-22", regularClose: 103.5,
+        regularCloseSessionDate: "2026-09-22", regularChange: 0.5, regularChangePercent: 0.48,
+      });
+      const bars = new LiveBarAccumulator();
+      let next = closed("20:10:00", 102.5);
+      expect(bars.apply(history, next, options(next)).at(-1)).toMatchObject({
+        date: new Date("2026-09-22T00:00:00Z"), open: 101, high: 106, low: 100.5, close: 103.5, volume: 40_000_000,
+      });
+      // An after-hours print below the day's low is not part of the session.
+      next = closed("20:20:00", 95);
+      expect(bars.apply(history, next, options(next)).at(-1)).toMatchObject({ open: 101, high: 106, low: 100.5, close: 103.5 });
+    });
+
+    test("a range that belongs to another session, or to other units, is not taken", () => {
+      let next = quote("15:00:00", 105, 12_000_000, { ...session, changeSessionDate: "2026-09-21" });
+      expect(new LiveBarAccumulator().apply(history, next, options(next)).at(-1)).toMatchObject({ open: 105, high: 105, low: 105 });
+      next = quote("15:00:00", 105, 12_000_000, { open: 10_100, high: 10_600, low: 10_050 });
+      expect(new LiveBarAccumulator().apply(history, next, options(next)).at(-1)).toMatchObject({ open: 105, high: 105, low: 105 });
+    });
+  });
+
+  describe("a weekly or monthly bar keeps the open of its period", () => {
+    const options = (next: Quote, resolution: "1wk" | "1mo") => ({ now: next.lastUpdated, resolution, exchange: "NASDAQ" });
+    const day = (date: string, time: string, price: number, overrides: Partial<Quote>): Quote =>
+      ({ ...quote("00:00:00", price, 30_000_000, overrides), lastUpdated: Date.parse(`${date}T${time}Z`) });
+
+    test("history holding earlier days of the period: the open stays, the range widens", () => {
+      // Thursday's session over the week's bar from Monday.
+      const history = [dated("2026-09-14", 98, 101, 96, 99, 150_000_000), dated("2026-09-21", 100, 104, 98, 103, 90_000_000)];
+      const next = day("2026-09-24", "15:00:00", 107, { open: 103.5, high: 108, low: 102 });
+      expect(new LiveBarAccumulator().apply(history, next, options(next, "1wk")).at(-1)).toMatchObject({
+        date: new Date("2026-09-21T00:00:00Z"), open: 100, high: 108, low: 98, close: 107,
+      });
+      const monthly = [dated("2026-08-01", 90, 99, 88, 97, 2_000_000_000), dated("2026-09-01", 97, 104, 94, 103, 1_000_000_000)];
+      expect(new LiveBarAccumulator().apply(monthly, next, options(next, "1mo")).at(-1)).toMatchObject({
+        date: new Date("2026-09-01T00:00:00Z"), open: 97, high: 108, low: 94, close: 107,
+      });
+    });
+
+    test("a period's first session opens its bar with its own open; a later one cannot name the period's", () => {
+      const weekly = [dated("2026-09-14", 98, 101, 96, 99, 150_000_000)];
+      // Monday 21 Sep opens the week.
+      let next = day("2026-09-21", "15:00:00", 105, { open: 101, high: 106, low: 100.5 });
+      expect(new LiveBarAccumulator().apply(weekly, next, options(next, "1wk")).at(-1)).toMatchObject({
+        date: new Date("2026-09-21T00:00:00Z"), open: 101, high: 106, low: 100.5, close: 105,
+      });
+      // Tuesday's session is the week's second: its open is not the week's.
+      next = day("2026-09-22", "15:00:00", 105, { open: 101, high: 106, low: 100.5 });
+      expect(new LiveBarAccumulator().apply(weekly, next, options(next, "1wk")).at(-1)).toMatchObject({
+        date: new Date("2026-09-21T00:00:00Z"), open: 105, high: 106, low: 100.5, close: 105,
+      });
+      // Thursday 1 Oct opens October; Friday 2 Oct is its second session.
+      const monthly = [dated("2026-09-01", 97, 104, 94, 103, 1_000_000_000)];
+      next = day("2026-10-01", "15:00:00", 105, { open: 101, high: 106, low: 100.5 });
+      expect(new LiveBarAccumulator().apply(monthly, next, options(next, "1mo")).at(-1)).toMatchObject({
+        date: new Date("2026-10-01T00:00:00Z"), open: 101, high: 106, low: 100.5,
+      });
+      next = day("2026-10-02", "15:00:00", 105, { open: 101, high: 106, low: 100.5 });
+      expect(new LiveBarAccumulator().apply(monthly, next, options(next, "1mo")).at(-1)).toMatchObject({
+        date: new Date("2026-10-01T00:00:00Z"), open: 105, high: 106, low: 100.5,
+      });
+    });
+  });
+
   test("an overnight price moves no daily candle: no history covers that session", () => {
     const history = [bar("00:00:00", 100, 104, 98, 103, 40_000_000)];
     const options = (next: Quote) => ({ now: next.lastUpdated, resolution: "1d" as const, exchange: "NASDAQ" });
@@ -119,20 +212,39 @@ describe("LiveBarAccumulator", () => {
     expect(new LiveBarAccumulator().apply(history, overnight, options(overnight))).toEqual(history);
   });
 
-  test("a pre-market quote still carrying yesterday's count does not become today's volume", () => {
+  test("a pre-market print opens no daily candle; the regular session opens it with its own count", () => {
     const history = [bar("00:00:00", 100, 104, 98, 103, 40_000_000)];
     const bars = new LiveBarAccumulator();
     const options = (next: Quote) => ({ now: next.lastUpdated, resolution: "1d" as const, exchange: "NASDAQ" });
+    // Still carrying yesterday's count.
     let next: Quote = { ...quote("00:00:00", 103, 40_000_000, { marketState: "PRE", preMarketPrice: 104 }),
       lastUpdated: Date.parse("2026-09-23T12:00:00Z") };
-    let points = bars.apply(history, next, options(next));
-    expect(points[1]).toMatchObject({ date: new Date("2026-09-23T00:00:00Z"), close: 104 });
-    expect(points[1]?.volume).toBeUndefined();
-    // The regular session restarts the count on the same date, here first seen mid-morning.
+    expect(bars.apply(history, next, options(next))).toBe(history);
+    // The regular session's count starts on the same date, here first seen mid-morning.
     next = { ...quote("00:00:00", 105, 25_000_000), lastUpdated: Date.parse("2026-09-23T15:00:00Z") };
-    points = bars.apply(history, next, options(next));
+    const points = bars.apply(history, next, options(next));
     expect(points[0]?.volume).toBe(40_000_000);
-    expect(points[1]).toMatchObject({ close: 105, volume: 25_000_000 });
+    expect(points[1]).toMatchObject({ date: new Date("2026-09-23T00:00:00Z"), close: 105, volume: 25_000_000 });
+  });
+
+  test("after the close the daily candle holds at the regular close while after-hours prints arrive", () => {
+    const history = [bar("00:00:00", 100, 104, 98, 103, 40_000_000)];
+    const bars = new LiveBarAccumulator();
+    const options = (next: Quote) => ({ now: next.lastUpdated, resolution: "1d" as const, exchange: "NASDAQ" });
+    // As Gloom Cloud sends it in the after-hours session: the close, the session's print beside it.
+    const closed = (time: string, print: number): Quote => quote(time, 103.5, 40_000_000, {
+      marketState: "POST", postMarketPrice: print, changeSessionDate: "2026-09-22", regularClose: 103.5,
+      regularCloseSessionDate: "2026-09-22", regularChange: 1.5, regularChangePercent: 1.47,
+    });
+    bars.apply(history, closed("20:30:00", 99), options(closed("20:30:00", 99)));
+    let points = bars.apply(history, closed("23:30:00", 97), options(closed("23:30:00", 97)));
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({ high: 104, low: 98, close: 103.5 });
+    // Past the after-hours session the price is the last print, and the close still stands.
+    const evening: Quote = { ...closed("00:00:00", 96.5), price: 96.5, marketState: "POSTPOST", lastUpdated: Date.parse("2026-09-23T00:30:00Z") };
+    points = bars.apply(history, evening, options(evening));
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({ low: 98, close: 103.5 });
   });
 
   test("regular bars keep extended-hours prints out, including a bar still open after the close", () => {

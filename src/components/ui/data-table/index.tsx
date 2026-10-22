@@ -34,7 +34,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
     if (!paneId || !renderer.saveTextFile) return;
     return registerPaneTableExporter(paneId, (filename) => renderer.saveTextFile!({
       name: filename,
-      text: createDataTableCsv(propsRef.current),
+      text: propsRef.current.exportCsv?.() ?? createDataTableCsv(propsRef.current),
       mimeType: "text/csv;charset=utf-8",
     }));
   }, [paneId, renderer]);
@@ -151,7 +151,9 @@ function reportedRows<T, C extends DataTableColumn>(props: DataTableProps<T, C>)
           ...(typeof cell.value === "number" && Number.isFinite(cell.value) ? { value: cell.value } : {}),
         };
       });
-    return { key: props.getItemKey(item, index), selected, cells: cells.filter((cell) => cell.text.length > 0) };
+    // A section header (FUT's sector) is marked, so a count of the table's rows can leave it out.
+    return { key: props.getItemKey(item, index), selected, ...(section ? { section: true } : {}),
+      cells: cells.filter((cell) => cell.text.length > 0) };
   });
 }
 

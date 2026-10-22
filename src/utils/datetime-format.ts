@@ -39,6 +39,22 @@ export function formatRelativeAge(timestamp: number | undefined, now = Date.now(
   return elapsed ? `${elapsed.count}${elapsed.unit} ago` : "just now";
 }
 
+/** Time until something scheduled, on the same ladder: "in <1m", "in 25m", "in 3h", "in 3h 20m". */
+export function formatCountdown(ms: number): string {
+  if (ms <= 60_000) return "in <1m";
+  const totalMin = Math.floor(ms / 60_000);
+  if (totalMin < 60) return `in ${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
+}
+
+// Reuse the locale formatter when a feed contains older items. Constructing
+// one for every row dominates opening a long transcript, even without edits.
+const olderRelativeDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "numeric", day: "numeric", year: "2-digit",
+});
+
 /**
  * Relative time that turns into a date ("1/5/26") after a week, for feeds read
  * by recency: "just now", "5m ago", "3h ago", "2d ago". `short` drops the
@@ -50,7 +66,7 @@ export function formatTimeAgo(date: Date | string, { short = false }: { short?: 
   const elapsed = elapsedUnits(Date.now() - ts);
   if (!elapsed) return short ? "<1m" : "just now";
   if (elapsed.unit === "d" && elapsed.count >= 7) {
-    return new Date(ts).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
+    return olderRelativeDateFormatter.format(ts);
   }
   return `${elapsed.count}${elapsed.unit}${short ? "" : " ago"}`;
 }

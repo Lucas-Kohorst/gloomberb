@@ -1,5 +1,6 @@
+import { unavailableText } from "../../../components/ui/status";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FieldGrid, KeyValueRow, QueryBar, usePaneFooter, usePaneNoticeFooter, type GridField } from "../../../components";
+import { delayedFooterSegment, FieldGrid, KeyValueRow, QueryBar, usePaneFooter, usePaneNoticeFooter, type GridField } from "../../../components";
 import { CompositeChart } from "../../../components/chart/composite/composite-chart";
 import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useInputCapture } from "../../../public/react";
@@ -194,7 +195,7 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
   const calculation = useMemo(() => {
     const unavailable = seedError ?? (american ? dividendInput.error : null)
       ?? (surfaceSource && !draft.symbol ? "Choose an underlying ticker for surface IV." : null)
-      ?? (surfaceSource && !surfaceResource.loading && surface?.volatility == null ? surface?.error ?? surfaceResource.error ?? "Surface IV unavailable." : null);
+      ?? (surfaceSource && !surfaceResource.loading && surface?.volatility == null ? surface?.error ?? surfaceResource.error ?? unavailableText("Surface IV") : null);
     if (unavailable || surfaceSource && surface?.volatility == null) {
       return { valuation: null, implied: { volatility: null, note: null }, problem: unavailable };
     }
@@ -279,7 +280,9 @@ export function OptionsCalculatorPane({ focused, width, height }: PaneProps) {
       ...(surfaceSource && surfaceResource.loading ? [{ id: "loading", parts: [{ text: "loading surface", tone: "muted" as const }] }] : []),
       ...(surfaceSource && surface?.asOf ? [{ id: "surface-asof", parts: [{ text: `surface · ${surface.asOf}`, tone: "muted" as const }] }] : []),
       ...(effectiveSteps && effectiveSteps !== (draft.steps ?? 400) ? [{ id: "refined", parts: [{ text: `tree refined to ${effectiveSteps} steps`, tone: "muted" as const }] }] : []),
-      ...(liveInputs ? [{ id: "market", parts: [{ text: liveInputs.delayed ? "delayed market" : "real-time market", tone: "muted" as const }] }] : []),
+      ...(liveInputs ? [liveInputs.delayed
+        ? delayedFooterSegment({ id: "market", detail: "Delayed market inputs" })
+        : { id: "market", parts: [{ text: "real-time market", tone: "muted" as const }] }] : []),
     ],
     hints: activeFieldId ? [] : [
       // Names the cell Enter or `e` edits, which the grid does not mark.
@@ -398,7 +401,7 @@ function ContractPremiumChart({
   width: number;
   focused: boolean;
 }) {
-  const empty = unavailable ? "Premium history unavailable." : series.length < 1 ? "No premium history." : undefined;
+  const empty = unavailable ? unavailableText("Premium history") : series.length < 1 ? "No premium history." : undefined;
   return (
     <Box flexDirection="column" paddingX={1} height={PREMIUM_CHART_ROWS} flexShrink={0}>
       {empty && !loading ? (

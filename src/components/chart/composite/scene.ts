@@ -26,6 +26,7 @@ import { isFiniteNumber } from "../../../utils/guards";
 import { volumeProfile } from "../../../time-series/trader-studies";
 import { extendedHoursSpans, isIntradaySeries } from "./session-shading";
 import { listingTimeZone } from "../../../market-data/market/trading-sessions";
+import { manualValueRangeApplies, valueScaleKey, valueScaleSlot, type CompositeManualValueScale } from "./value-scale";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -328,11 +329,19 @@ function buildAxisDomain(
   series: ResolvedSeries[],
   scale: PanelScale,
   rows: number,
+  manualScale?: CompositeManualValueScale,
 ): CompositeAxisDomain | undefined {
   const axisSeries = series.filter((entry) => entry.axis === side);
   if (axisSeries.length === 0) return undefined;
   const values = axisSeries.flatMap(seriesDomainValues);
-  const { min, max } = paddedDomain([...values, ...priorCloseInReach(axisSeries, values)], scale);
+  const fitted = paddedDomain([...values, ...priorCloseInReach(axisSeries, values)], scale);
+  const scaleKey = valueScaleKey(scale, axisSeries);
+  // A range set by hand holds while the axis plots the same series and some
+  // of their data is in it; otherwise the axis fits the data again.
+  const manual = manualScale && manualScale.key === scaleKey && manualValueRangeApplies(manualScale, fitted, scale)
+    ? manualScale
+    : null;
+  const { min, max } = manual ?? fitted;
   const first = axisSeries[0]!;
   return {
     side,
@@ -346,6 +355,8 @@ function buildAxisDomain(
     seriesIds: axisSeries.map((entry) => entry.id),
     maxTicks: compositeAxisMaxTicks(rows),
     tickRows: rows,
+    scaleKey,
+    ...(manual ? { manual: true } : {}),
   };
 }
 
@@ -510,7 +521,8 @@ function attachLastPriceMarker(
   const value = lastCloseOf(projected.points);
   if (value === null) return;
   const yRatio = projectCompositeValue(value, domain);
-  if (yRatio === null) return;
+  // An axis scaled by hand can leave the last close off the panel.
+  if (yRatio === null || (domain.manual && (yRatio < 0 || yRatio > 1))) return;
   panel.lastPrice = {
     seriesId: primary.id,
     color: primary.color,
@@ -662,15 +674,72 @@ function buildCursorValues(
 }
 
 /**
+ * The bar a time from another chart lands on: the last one at or before it,
+ * as a bar stands for the time from its open until the next. A time before
+ * the first bar in view lands on none, and so does one past the plot's right
+ * edge while the chart is panned back from its newest bar, rather than
+ * pinning the cursor to an edge the time is not at. A chart showing its
+ * newest bar lands any later time on it, so a monthly series still reads its
+ * latest month on a day after it.
+ */
+function linkedCursorDate(scene: CompositeChartScene, requested: Date): Date | null {
+  const target = requested.getTime();
+  const { dates, timeScale } = scene;
+  if (!Number.isFinite(target) || dates.length === 0) return null;
+  const plotEnd = unprojectCompositeTimestamp(timeScale, 1);
+  const newest = timeScale.kind === "market" ? timeScale.anchors.at(-1)?.timestamp : scene.newestTime;
+  if (target > plotEnd && (newest === undefined || newest > plotEnd)) return null;
+  let low = 0;
+  let high = dates.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (dates[middle]!.getTime() <= target) low = middle + 1;
+    else high = middle;
+  }
+  return dates[low - 1] ?? null;
+}
+
+/** The bar another chart's cursor time lands on (see `linkedCursorDate`), as its timestamp. */
+export function compositeLinkedCursorTime(scene: CompositeChartScene, time: number): number | null {
+  return linkedCursorDate(scene, new Date(time))?.getTime() ?? null;
+}
+
+/**
+ * The last instant of the bar a cursor is on, which is the time it is shared
+ * at: a bar stands until the next one or its own interval ends, whichever is
+ * first. Another chart then lands on its last bar at or before it, so a daily
+ * cursor shows the day's last intraday bar, whose close is the day's, and an
+ * intraday cursor shows its own day's bar rather than the next one's. On
+ * calendar time the newest bar, with no next one, stands as long as the one
+ * before it did, so a series' latest month lands a daily chart on that
+ * month's latest day rather than its first.
+ */
+export function compositeCursorAsOf(scene: CompositeChartScene, date: Date): number {
+  const start = date.getTime();
+  const next = scene.dates.find((entry) => entry.getTime() > start)?.getTime() ?? Number.POSITIVE_INFINITY;
+  const previous = scene.dates.findLast((entry) => entry.getTime() < start)?.getTime();
+  const intervalEnd = scene.timeScale.kind === "market" ? start + scene.timeScale.cadenceMs
+    : next === Number.POSITIVE_INFINITY && previous !== undefined ? start + (start - previous)
+      : Number.POSITIVE_INFINITY;
+  const end = Math.min(next, intervalEnd);
+  return Number.isFinite(end) ? end - 1 : start;
+}
+
+/**
  * Applies cursor-only state without rebuilding panel domains or projected
  * series. Keeping those references stable lets renderers reuse the expensive
- * base chart while the cursor moves.
+ * base chart while the cursor moves. `linked` places a time another chart's
+ * cursor is at (see `linkedCursorDate`); otherwise the cursor goes to the
+ * nearest bar.
  */
 export function applyCompositeChartCursor(
   scene: CompositeChartScene,
   requestedCursor: Date | null,
+  snap: "nearest" | "linked" = "nearest",
 ): CompositeChartScene {
-  const cursorDate = requestedCursor ? nearestDate(scene.dates, requestedCursor) : null;
+  const cursorDate = !requestedCursor ? null
+    : snap === "linked" ? linkedCursorDate(scene, requestedCursor)
+      : nearestDate(scene.dates, requestedCursor);
   const currentTimestamp = scene.cursorDate?.getTime() ?? null;
   const nextTimestamp = cursorDate?.getTime() ?? null;
   if (currentTimestamp === nextTimestamp) return scene;
@@ -780,8 +849,8 @@ export function buildCompositeChartScene(
       ? dataSeries.filter((entry) => entry.panelId === panel.id)
       : panelSeries;
     const rows = panelHeights.get(panel.id) ?? 1;
-    const left = buildAxisDomain("left", domainSeries, scale, rows);
-    const right = buildAxisDomain("right", domainSeries, scale, rows);
+    const left = buildAxisDomain("left", domainSeries, scale, rows, options.valueScales?.[valueScaleSlot(panel.id, "left")]);
+    const right = buildAxisDomain("right", domainSeries, scale, rows, options.valueScales?.[valueScaleSlot(panel.id, "right")]);
     const axes: Partial<Record<CompositeAxisSide, CompositeAxisDomain>> = { left, right };
     return {
       id: panel.id,
@@ -818,6 +887,7 @@ export function buildCompositeChartScene(
     cursorDate,
     cursorXRatio,
     cursorValues: buildCursorValues(panelScenes, cursorDate, { startTime, endTime, timeScale }),
+    newestTime: lastTime,
     ...(timeZone ? { timeZone } : {}),
   };
 }

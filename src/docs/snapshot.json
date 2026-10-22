@@ -1,7 +1,7 @@
 {
  "format": 1,
  "site": "https://gloom.sh",
- "updatedAt": "2026-10-14",
+ "updatedAt": "2026-10-17",
  "categories": [
   {
    "id": "research",
@@ -159,7 +159,7 @@
    "code": "DDIS",
    "name": "Debt maturities",
    "description": "Principal due by year",
-   "detail": "Principal due in the next 12 months, in each of years two to five, and after, from the latest annual filing, with the near-term share ranked against 10 years. History tracks principal and interest expense.",
+   "detail": "Principal due in the next 12 months, in each of years two to five, and after, from the latest annual filing, with the near-term share ranked against 10 years. A newer 10-Q adds its current and non-current debt. History tracks principal and interest expense.",
    "category": "research",
    "arg": "ORCL",
    "shot": "https://gloom.sh/screenshots/fn/DDIS.png",
@@ -268,7 +268,7 @@
    "code": "OPX",
    "name": "Options positioning",
    "description": "Open interest, max pain, gamma",
-   "detail": "Open interest by strike with max pain, each expiry's put/call ratio, and dealer gamma by strike with its flip level. Open interest is the prior session's. GEX and MAXPAIN open it too.",
+   "detail": "Open interest by strike with max pain, each expiry's put/call ratio and net dealer gamma, and dealer gamma by strike with its flip level and call and put walls. Open interest is about two sessions old; the footer names its date. GEX and MAXPAIN open it too.",
    "category": "research",
    "arg": "SPY",
    "shot": "https://gloom.sh/screenshots/fn/OPX.png",
@@ -480,7 +480,7 @@
    "code": "EXEC",
    "name": "Executives",
    "description": "Officers and pay from the proxy",
-   "detail": "Named executive officers and their compensation, read from the proxy statement and checked against the filing.",
+   "detail": "Named executive officers and their compensation, read from the proxy statement and checked against the filing. Free shows each executive's total pay; Pro adds the breakdown and earlier years.",
    "category": "research",
    "arg": "NVDA",
    "access": "pro",
@@ -695,7 +695,7 @@
    "code": "MOST",
    "name": "Market movers",
    "description": "Gainers, losers, pre-market, gaps",
-   "detail": "Today's top gainers, losers, most active and trending tickers with price, change, volume against average and market cap. Pro adds pre-market and after-hours movers and the gaps at the open.",
+   "detail": "Today's top gainers, losers, most active and trending tickers with price, change, volume against average and market cap, and the pre-market and after-hours movers. Pro adds the gaps at the open.",
    "category": "markets",
    "shot": "https://gloom.sh/screenshots/fn/MOST.png",
    "lesson": "/academy/macro-markets-and-news/markets/movers-highs-halts"
@@ -759,10 +759,17 @@
    "code": "CRYP",
    "name": "Crypto board",
    "description": "Top coins by market cap",
-   "detail": "The top 100 coins by market cap, stablecoins on their own tab, with returns from a day to a year, a 30-day sparkline, volume, and market cap. Prices stream live on every plan where the market allows.",
+   "detail": "The top 100 coins by market cap, with returns from a day to a year, a 30-day sparkline, volume, and market cap. Stablecoins have their own tab: total supply over time stacked by coin, and each coin's supply, 7- and 30-day supply growth and share of the total. Prices stream live on every plan where the market allows.",
    "category": "markets",
    "shot": "https://gloom.sh/screenshots/fn/CRYP.png",
    "lesson": "/academy/crypto-and-prediction-markets/crypto-from-zero"
+  },
+  {
+   "code": "ETFF",
+   "name": "Crypto ETF flows",
+   "description": "Daily spot bitcoin and ether ETF flows",
+   "detail": "Daily net flows of the US spot bitcoin and ether ETFs, fund by fund in US$ millions, as Farside Investors publishes them: the last 5 and 20 days, the running total since launch, and the funds the newest day still waits on.",
+   "category": "markets"
   },
   {
    "code": "PERP",
@@ -777,8 +784,8 @@
   {
    "code": "FUT",
    "name": "Futures board",
-   "description": "Most active futures",
-   "detail": "Each root's most active contract across equity index, rates, energy, metals, agriculture, and FX with last price, unit and session change, grouped by sector, naming the nearer month while it still trades.",
+   "description": "Front-month futures",
+   "detail": "Each root's front contract until its stated roll date across equity index, rates, energy, metals, agriculture, and FX with last price, unit and session change, grouped by sector, naming the day's most active month by volume when it is another one.",
    "category": "markets",
    "shot": "https://gloom.sh/screenshots/fn/FUT.png",
    "lesson": "/academy/futures-commodities-energy/futures-from-zero"
@@ -1186,7 +1193,7 @@
    "code": "CDS",
    "name": "Single-name CDS",
    "description": "Corporate 5Y CDS and trades",
-   "detail": "Single-name corporate CDS. CDS alone lists the issuers traded in the last 5 days with trade count, last trade and 5Y spread, to rank them by; with a ticker or issuer, its 5Y spread (level, date, 1M change, range) and its trades.",
+   "detail": "Single-name corporate CDS. CDS alone lists the issuers traded in the last 5 days with trade count, last trade, 5Y spread and its 1W and 1M moves through the roll while the level is current (points upfront past 2,000 bp), ranked with --sort spread, 1w or 1m; with a ticker or issuer, its 5Y spread (level, date, 1W and 1M change, range), its trades and its daily 5Y levels (--csv --section daily exports them).",
    "category": "macro",
    "arg": "F",
    "shot": "https://gloom.sh/screenshots/fn/CDS.png",
@@ -1229,8 +1236,8 @@
   {
    "code": "TRACE",
    "name": "Corporate bond tape",
-   "description": "Latest corporate and agency sales",
-   "detail": "Latest corporate and agency bond sales: issuer, coupon, price, yield, and grade. TRACE alone lists the tape; TRACE with an issuer filters to that name. It opens the Bonds section of Fixed Income.",
+   "description": "Corporate and agency sales by issuer or CUSIP",
+   "detail": "Latest corporate and agency bond sales: issuer, CUSIP, coupon, maturity, price, yield, and grade. TRACE alone lists the tape; TRACE with an issuer name, a bond symbol root, a stock ticker, or a CUSIP finds that issuer's outstanding bonds. It opens the Bonds section of Fixed Income.",
    "category": "macro",
    "arg": "issuer"
   },
@@ -1299,8 +1306,8 @@
   {
    "code": "INS",
    "name": "Insider transactions",
-   "description": "Form 4 activity",
-   "detail": "Insider buys, sells, awards, and gifts from Form 4 filings with insider name, size, and price. US equities only.",
+   "description": "Form 4 activity, insider buying and selling",
+   "detail": "Insider buys, sells, awards, and gifts from Form 4 filings with insider name, size, and price. Alone it ranks the companies whose insiders are buying, or selling, in the market, with why: clusters, repeat trades, size against their usual, the stake added or sold. Filters by role, size, cluster, new or exited positions and market cap. US equities only.",
    "category": "ownership",
    "arg": "NVDA",
    "shot": "https://gloom.sh/screenshots/fn/INS.png",
@@ -1401,9 +1408,9 @@
   },
   {
    "code": "ALRT",
-   "name": "Price alerts",
-   "description": "Price triggers",
-   "detail": "Your price alerts with current price, distance to target, and trigger state.",
+   "name": "Alerts",
+   "description": "Price, earnings, filing, news and flow alerts",
+   "detail": "Price alerts with current price, distance to target, and trigger state, plus alerts on earnings, CPI and FOMC dates, filings and 13F, news keywords, analyst changes, 52-week highs and lows, unusual volume, short interest, insider and congress trades, catalysts, IV spikes, options flow, and perps.",
    "category": "workspace",
    "shot": "https://gloom.sh/screenshots/fn/ALRT.png",
    "lesson": "/academy/terminal-and-workspace/your-workspace/alerts"
@@ -1692,7 +1699,7 @@
     "desktop",
     "tui"
    ],
-   "updatedAt": "2026-10-11",
+   "updatedAt": "2026-10-15",
    "blocks": [
     {
      "type": "heading",
@@ -1714,6 +1721,10 @@
     {
      "type": "paragraph",
      "text": "The desktop app and Homebrew cask require Apple Silicon. Intel Macs can use the [browser version](#browser); check [release assets](https://github.com/gloom-sh/gloomberb/releases/latest) for terminal binary availability."
+    },
+    {
+     "type": "paragraph",
+     "text": "Coming from Bloomberg? [What runs on a Mac](/answers/bloomberg-terminal-on-mac)."
     },
     {
      "type": "heading",
@@ -1823,6 +1834,23 @@
        "`bun install -g gloomberb@latest`"
       ]
      ]
+    },
+    {
+     "type": "heading",
+     "level": 3,
+     "text": "Release channels"
+    },
+    {
+     "type": "paragraph",
+     "text": "The app updates from **stable** releases, the ones on the [changelog](/changelog). **Nightly** is a daily build of main that gets fixes first and can break. To switch, run **Release Channel** from the command bar (on the Mac, also **Gloomberb > Release Channel...**), or in a terminal:"
+    },
+    {
+     "type": "code",
+     "code": "gloomberb config set updates.channel nightly"
+    },
+    {
+     "type": "paragraph",
+     "text": "Switching back to stable never installs an older version: your nightly build stays until a newer stable release is out. Nightly applies to the desktop app and the terminal app; Homebrew, Bun and the install script always get stable."
     },
     {
      "type": "paragraph",
@@ -2386,9 +2414,14 @@
     "drift",
     "rebalance",
     "weights",
-    "glossary"
+    "glossary",
+    "dividend income",
+    "yield",
+    "DRIP",
+    "reinvest",
+    "DVD"
    ],
-   "updatedAt": "2026-10-12",
+   "updatedAt": "2026-10-17",
    "blocks": [
     {
      "type": "heading",
@@ -2473,6 +2506,31 @@
      ]
     },
     {
+     "type": "heading",
+     "level": 2,
+     "text": "Dividend income"
+    },
+    {
+     "type": "paragraph",
+     "text": "`gloomberb portfolio show Core` also lists what each share or fund pays a year: its trailing twelve months of dividends per share times the shares you hold, in the portfolio's currency, and that as a yield on the holding's value. The TOTAL row gives the portfolio's income and its yield on the whole portfolio, cash included. A holding whose dividends could not be read shows `—`, and so does the total, never $0."
+    },
+    {
+     "type": "paragraph",
+     "text": "To see what reinvesting them adds, ask for a DRIP projection:"
+    },
+    {
+     "type": "code",
+     "code": "gloomberb portfolio show Core --drip --years 3 --withholding 15"
+    },
+    {
+     "type": "paragraph",
+     "text": "Each year the shares you hold pay today's dividend, the withholding comes off, and the rest buys shares at today's price. The table gives each holding's shares now and after the last year, and the income each year, net of withholding. `--years` takes 1 to 5."
+    },
+    {
+     "type": "paragraph",
+     "text": "To compare payers before you buy, rank them by yield with payout and growth: `gloomberb fn DVD KO PEP JNJ`."
+    },
+    {
      "type": "details",
      "summary": "Fine print",
      "blocks": [
@@ -2480,6 +2538,7 @@
        "type": "list",
        "items": [
         "Targets need not add up to 100%; the report says what is unallocated.",
+        "Income uses trailing dividends, not announced ones. DRIP holds dividends, prices and exchange rates where they are today and reinvests once a year; it is an illustration, not a forecast.",
         "Trades use the current price and leave out fees, taxes and lot sizes.",
         "A broker portfolio uses the cash its account reports.",
         "In the PF pane the columns read `WEIGHT`, `TGT WT`, `DRIFT` and `TRADE`."
@@ -2489,7 +2548,7 @@
     },
     {
      "type": "paragraph",
-     "text": "Related: [PF](/docs/functions#pf), [CLI](/docs/cli-functions#portfolios-and-notes)."
+     "text": "Related: [PF](/docs/functions#pf), [CLI](/docs/cli-functions#portfolios-and-notes). Methodology: [dividend income and DRIP](https://github.com/gloom-sh/gloomberb/blob/main/docs/research-data.md#portfolio-income-and-drip)."
     }
    ]
   },
@@ -4267,6 +4326,10 @@
      "text": "Pro unlocks the full board, history and Changes. Free, signed in or not, shows the three latest rows. Asks and AWS spot update hourly, other rates every 6 to 24 hours."
     },
     {
+     "type": "paragraph",
+     "text": "The public [GPU rental price index](/gpu-prices) lists every model without an account, with a page per model such as [H100 rental price per hour](/gpu-prices/h100)."
+    },
+    {
      "type": "heading",
      "level": 2,
      "text": "Keep in mind"
@@ -4394,6 +4457,216 @@
     {
      "type": "paragraph",
      "text": "MCP `power.board`, `power.summary`, `power.history`, `power.project`, `power.coverage`. Related: [GPU rental prices](/docs/gpu-rental-prices), [`SPLC`](/docs/functions#splc)."
+    }
+   ]
+  },
+  {
+   "slug": "options-positioning",
+   "title": "Options positioning and GEX",
+   "lead": "OPX shows where open interest sits on a US option underlying; GEX estimates the gamma dealers carry against it",
+   "category": "Understand the data",
+   "tags": [
+    "GEX",
+    "OPX",
+    "MAXPAIN",
+    "gamma",
+    "open interest",
+    "max pain",
+    "call wall",
+    "put wall"
+   ],
+   "updatedAt": "2026-10-16",
+   "blocks": [
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "Open it"
+    },
+    {
+     "type": "table",
+     "headers": [
+      "Command",
+      "Opens"
+     ],
+     "rows": [
+      [
+       "`GEX SPY`",
+       "Dealer gamma by strike, every expiry summed"
+      ],
+      [
+       "`OPX SPY`",
+       "Open interest by strike for one expiry, with max pain"
+      ],
+      [
+       "`OPX SPX`",
+       "The S&P 500 index with its SPX and SPXW options"
+      ]
+     ]
+    },
+    {
+     "type": "paragraph",
+     "text": "NDX and RUT options are not covered; QQQ and IWM follow the same indexes."
+    },
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "What you see"
+    },
+    {
+     "type": "table",
+     "headers": [
+      "Tab",
+      "Shows"
+     ],
+     "rows": [
+      [
+       "Strikes",
+       "Call and put open interest by strike for one expiry, max pain and spot"
+      ],
+      [
+       "Expiries",
+       "Each expiry's open interest, put/call ratio, max pain and net GEX"
+      ],
+      [
+       "GEX",
+       "Net GEX by strike, the flip, call and put walls and the dealer range"
+      ]
+     ]
+    },
+    {
+     "type": "paragraph",
+     "text": "`[` and `]` step through expiries. On GEX, `All` sums every expiry."
+    },
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "How GEX is estimated"
+    },
+    {
+     "type": "paragraph",
+     "text": "Nobody publishes who holds which option. GEX assumes customers sell calls and buy puts, so **dealers are long every call and short every put**. Net GEX is call gamma minus put gamma."
+    },
+    {
+     "type": "paragraph",
+     "text": "Positive means dealers hedge against a move: they sell rallies and buy dips. Negative means they hedge with it."
+    },
+    {
+     "type": "table",
+     "headers": [
+      "Figure",
+      "Means"
+     ],
+     "rows": [
+      [
+       "Unit",
+       "Dollars of dealer delta per 1% move in the underlying"
+      ],
+      [
+       "Flip",
+       "The spot level, within 15% of spot, where net GEX changes sign"
+      ],
+      [
+       "Call wall",
+       "The strike with the most call gamma, in one expiry or all"
+      ],
+      [
+       "Put wall",
+       "The strike with the most put gamma, in one expiry or all"
+      ],
+      [
+       "Dealer range",
+       "Net GEX if dealers held only 25% to 75% of each side"
+      ]
+     ]
+    },
+    {
+     "type": "paragraph",
+     "text": "The Expiries tab's net GEX uses the same strikes and volatilities as `All`, so its rows add up to it."
+    },
+    {
+     "type": "details",
+     "summary": "How each figure is computed",
+     "blocks": [
+      {
+       "type": "list",
+       "items": [
+        "Gamma per contract is Black-Scholes gamma with the forward at spot, times the 100-share multiplier. Time runs to 16:00 New York on the expiry date, at least one hour.",
+        "Each strike's volatility comes from its expiry's out-of-the-money quotes, linear between quoted strikes and flat beyond. An expiry without usable quotes is left out and named.",
+        "GEX at a strike is gamma × 100 × spot × 1% of spot × open interest.",
+        "The flip reprices net GEX from 15% below to 15% above spot in 0.25% steps, each strike keeping its volatility, and takes the sign change nearest spot.",
+        "A tie for a wall goes to the lowest strike. Walls mark where hedging is heaviest, not levels the price has to respect."
+       ]
+      }
+     ]
+    },
+    {
+     "type": "details",
+     "summary": "Dealer range and box spreads",
+     "blocks": [
+      {
+       "type": "list",
+       "items": [
+        "The range sets the dealer share anywhere from 25% to 75% of the calls and, separately, of the puts. The low end is 25% of call gamma minus 75% of put gamma, the high end the reverse.",
+        "The headline figure counts all of the open interest, so it can sit outside the range. When the range spans zero, the sign of net GEX depends on who holds which side.",
+        "On SPX and XSP, matched call and put open interest at paired round strikes far from spot is read as box spreads and taken out of both sides. Net GEX and the flip stay the same; the range narrows and says `boxes out`."
+       ]
+      }
+     ]
+    },
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "How fresh it is"
+    },
+    {
+     "type": "table",
+     "headers": [
+      "Input",
+      "As of"
+     ],
+     "rows": [
+      [
+       "Open interest",
+       "About two sessions old. The footer names its date."
+      ],
+      [
+       "Spot and option quotes",
+       "15 minutes behind on Free and signed out, live on Pro"
+      ],
+      [
+       "GEX",
+       "Repriced at the current spot every minute while the pane is open"
+      ]
+     ]
+    },
+    {
+     "type": "paragraph",
+     "text": "During a session, GEX applies today's spot and volatilities to open interest from about two sessions back."
+    },
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "Exports"
+    },
+    {
+     "type": "paragraph",
+     "text": "`gloomberb fn GEX SPY --csv` opens with a summary: spot and quote times, the open interest session, the unit, net GEX, the dealer range, the flip and both walls. Puts export negative, so call and put GEX add up to net. `--json` has the same under `metadata.gamma`."
+    },
+    {
+     "type": "heading",
+     "level": 2,
+     "text": "Keep in mind"
+    },
+    {
+     "type": "list",
+     "items": [
+      "GEX is a model on open interest, not measured dealer positions. On single stocks the customer side can be the reverse.",
+      "VIX options settle on VIX futures, so VIX has no GEX tab."
+     ]
+    },
+    {
+     "type": "paragraph",
+     "text": "Learn the idea in the Academy: [Dealer gamma](/academy/options-and-volatility/positioning-and-flow/dealer-gamma). Related: [`OPX`](/docs/functions#opx), [CLI](/docs/cli-functions)."
     }
    ]
   },
@@ -5039,6 +5312,10 @@
        "Revenue and EPS, profile, multiples, dividends and splits, ratings and targets"
       ],
       [
+       "`fn DVD <symbols>`",
+       "Dividend yield and history; several symbols rank in one table by yield, with payout, growth, last ex-date and pay date"
+      ],
+      [
        "`holders`, `insider`, `13f`, `filings` `<symbol>`",
        "Holders, insiders, institutions and funds, SEC filings"
       ],
@@ -5100,7 +5377,7 @@
      "rows": [
       [
        "`portfolio list|show|create|delete <name>`",
-       "Manual portfolios; `show` lists value, weight, target, drift and the trade to rebalance, and `show --explain` adds what those terms mean"
+       "Manual portfolios; `show` lists value, weight, a year of dividend income and its yield, target, drift and the trade to rebalance; `show --explain` adds what those terms mean, and `show --drip [--years 1-5] [--withholding <pct>]` projects reinvested dividends"
       ],
       [
        "`portfolio add|remove <portfolio> <symbols...> [--file <csv|txt>]`",
@@ -5218,7 +5495,7 @@
     },
     {
      "type": "paragraph",
-     "text": "`gloomberb catalog <function>` lists a function's options. `shot` also takes `--tab <id>`."
+     "text": "`gloomberb catalog <function>` lists a function's options. `shot` also takes `--tab <id>`. `shot` draws a function's options as its pane does: `gloomberb shot 13F 0001067983 --compare SPY` opens the fund's overlap with SPY. An option only the text report reads, such as `--limit`, fails `shot` with exit 1 and names the `fn` command that reads it, instead of saving the pane without it."
     },
     {
      "type": "paragraph",
@@ -6122,6 +6399,10 @@
      "text": "A Bloomberg workbook ports with find and replace: `BDP(` to `GLOOM(`, `BDH(` to `GLOOMH(`. Bloomberg tickers answer as Bloomberg does, down to London prices in pence (`CRNCY` is `GBp`), so the workbook's own arithmetic still holds."
     },
     {
+     "type": "paragraph",
+     "text": "Coming from Bloomberg? [BDP and BDH next to their Sheets formulas](/answers/bloomberg-bdp-bdh-google-sheets)."
+    },
+    {
      "type": "table",
      "headers": [
       "",
@@ -6339,6 +6620,10 @@
     {
      "type": "paragraph",
      "text": "The News API is Gloomberb's market news for your own product, backend, model pipeline, or dashboard. It is not needed to use the app and is billed separately from [Gloom Cloud](/docs/cloud-and-data)."
+    },
+    {
+     "type": "paragraph",
+     "text": "The [financial news API](/news) page shows the live wire and has the Get API key button."
     },
     {
      "type": "paragraph",
@@ -7303,7 +7588,7 @@
   {
    "url": "/academy/futures-commodities-energy/futures-from-zero",
    "title": "Futures from zero (FUT)",
-   "summary": "A futures contract is a standard, exchange-traded promise to buy or sell a set quantity on a set month at a price agreed today, settled with daily margin, and FUT shows the most active months across markets.",
+   "summary": "A futures contract is a standard, exchange-traded promise to buy or sell a set quantity on a set month at a price agreed today, settled with daily margin, and FUT shows each market's front month.",
    "chapter": "Futures, commodities and energy",
    "minutes": 5
   },
@@ -7403,7 +7688,7 @@
    "title": "Credit default swaps (CDS, CDX, SOVR)",
    "summary": "A credit default swap is insurance on a borrower's default, and CDS, CDX and SOVR show reported trades on companies, the main indices and 5-year country spreads.",
    "chapter": "Rates, bonds and credit",
-   "minutes": 4
+   "minutes": 5
   },
   {
    "url": "/academy/rates-bonds-credit/credit/debt-and-covenants",

@@ -163,6 +163,7 @@ export const jobsHeadless: HeadlessPaneDefinition<"bundle"> = {
   options: [
     {
       key: "roles",
+      shot: { reportOnly: "sets how many open roles the text report lists" },
       aliases: ["limit"],
       description: "Open roles listed for a company, newest first; companies listed without one.",
       type: "integer",
@@ -182,11 +183,11 @@ export const jobsHeadless: HeadlessPaneDefinition<"bundle"> = {
     const symbol = args.symbols[0];
     if (symbol) {
       const state = await fetchJobs(symbol, { force: true, client: ctx.apiClient as JobsCloudClient });
-      if (state.kind === "denied") throw explainRefusal(new ApiRequestError(state.message, state.status), jobsLockNote, { symbol });
+      if (state.kind === "denied") throw await explainRefusal(new ApiRequestError(state.message, state.status), jobsLockNote, { symbol, context: ctx });
       return companyBundle(symbol, state, limit);
     }
     const payload = await fetchJobsMovers(ctx.apiClient as JobsCloudClient)
-      .catch((error: unknown) => { throw explainRefusal(error, jobsLockNote, { symbol: null }); });
+      .catch(async (error: unknown) => { throw await explainRefusal(error, jobsLockNote, { symbol: null }); });
     const rows = buildMoverRows(payload.movers).slice(0, Math.max(limit, 15)).map((row) => ({
       ticker: row.ticker,
       company: row.company,

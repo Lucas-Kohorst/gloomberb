@@ -10,6 +10,7 @@ import {
 } from "../../../components";
 import type { DataTableViewProps } from "../../../components/data-table/view";
 import { handleRefreshKey } from "../../../components/data-table/table-pane";
+import { useChartViewReset } from "../../../components/chart/core/view-reset";
 import { FILL_REST } from "../../../components/ui/fill";
 import { useShortcut } from "../../../react/input";
 import { Box, ScrollBox, useUiCapabilities } from "../../../ui";
@@ -41,7 +42,8 @@ export function shouldPersistSelection({
 
 /**
  * Filter, selection and keys for a series list beside its detail: `/` focuses
- * the filter, `r` reloads, and a range option's `hint` key picks that range.
+ * the filter, `r` reloads, and a range option's `hint` key picks that range. A
+ * range marked `chartRange` sends the detail chart back to it when chosen again.
  */
 export function useSeriesList<Item, R extends string>({
   focused,
@@ -63,10 +65,11 @@ export function useSeriesList<Item, R extends string>({
   selectedId: string;
   onSelect: (id: string) => void;
   reload: () => void;
-  range: Pick<QueryBarView<R>, "value" | "options" | "onChange">;
+  range: Pick<QueryBarView<R>, "value" | "options" | "onChange" | "chartRange">;
 }) {
   const [query, setQuery] = useState("");
   const { active: searchFocused, searchProps } = useQueryBarSearch();
+  const resetChartView = useChartViewReset();
 
   // The table leaves `r` to this handler, which also answers with no table focused.
   useShortcut((event) => {
@@ -76,7 +79,8 @@ export function useSeriesList<Item, R extends string>({
     if (!picked) return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    range.onChange(picked.value);
+    if (range.chartRange && picked.value === range.value) resetChartView();
+    else range.onChange(picked.value);
   });
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -137,8 +141,9 @@ export function SeriesListDetail<Row, Column extends DataTableColumn, R extends 
   isNavigable,
   renderSectionHeader,
   emptyStateTitle,
+  status,
   renderDetail,
-}: Pick<DataTableViewProps<Row, Column>, "renderCell" | "isNavigable" | "renderSectionHeader" | "emptyStateTitle"> & {
+}: Pick<DataTableViewProps<Row, Column>, "renderCell" | "isNavigable" | "renderSectionHeader" | "emptyStateTitle" | "status"> & {
   list: ReturnType<typeof useSeriesList<unknown, R>>;
   width: number;
   height: number;
@@ -202,6 +207,7 @@ export function SeriesListDetail<Row, Column extends DataTableColumn, R extends 
               renderCell={renderCell}
               renderSectionHeader={renderSectionHeader}
               emptyStateTitle={emptyStateTitle}
+              status={status}
             />
           </Box>
         </Box>

@@ -83,7 +83,9 @@ test("a short curve tab lists the contracts once, and a tall one ends on the las
   const lines = await render(96, 29);
   expect(lines.join("\n")).toContain("Latest");
   expect(lines[27]).toContain("ESU28.CME");
-  expect(lines[28]).toContain("10m delayed");
+  // The delay is the footer's clock: its glyph and the delay, the detail on the desktop's hover.
+  expect(lines[28]).toContain("◷10m");
+  expect(lines[28]).not.toContain("delayed");
 });
 
 test("the curve names what it plots, and its rows add the moves the chart only shows as ghosts", async () => {
@@ -152,7 +154,7 @@ test("Dutch TTF gas reads in euros per MWh on the chart caption, the footer and 
     currency: "EUR", quoteUnit: "EUR", spec: null, settlementDate: "2026-09-22" }));
   const curve = (await render(120, 30, "curve", { root: "TTF" })).join("\n");
   expect(curve).toContain("EUR / MWh by contract month");
-  expect(curve).toContain("10m delayed · EUR / MWh");
+  expect(curve).toContain("◷10m EUR / MWh");
   expect(curve).toContain("TTFX26.NYM");
   expect(curve).toMatch(/81\.434\s+81\.434/);
   expect(curve).not.toMatch(/USD|\$/);
@@ -179,6 +181,9 @@ describe("crypto basis against spot", () => {
     slope: { ...payload().slope, frontSymbol: "BTCV26.CME", nextSymbol: "BTCX26.CME" } });
   const spot = (minutesOld: number) => async (symbol: string) =>
     createTestQuote({ symbol, price: 80_000, lastUpdated: NOW - minutesOld * 60_000, marketState: "REGULAR" });
+  // The quote path reports the pair's listing and whether the feed is real-time; the footer names both.
+  const reportingSpot = (minutesOld: number) => async (symbol: string) =>
+    createTestQuote({ symbol, price: 80_000, lastUpdated: NOW - minutesOld * 60_000, marketState: "REGULAR", listingExchangeName: "CCC", dataSource: "live" });
   const row = (lines: string[], code: string) => lines.find((line) => line.includes(code)) ?? "";
 
   test("each contract shows its premium and annualised basis, and the footer names the spot it used", async () => {
@@ -197,6 +202,23 @@ describe("crypto basis against spot", () => {
     expect(row(lines, "BTCH27.CME")).toMatch(/--\s+--\s+--/);
     expect(lines.join("\n")).toMatch(/spot BTC-USD 80,000\.00 · (\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC/);
     expect(lines.join("\n")).not.toContain("Basis blank:");
+  });
+
+  test("the footer names the listing and feed the quote reports, and a short-dated rate is no data warning", async () => {
+    spy = spyOn(apiClient, "getCloudFuturesCurve").mockImplementation(async () => btcPayload());
+    let lines = await render(130, 30, "curve", { root: "BTC", quote: reportingSpot(2) });
+    expect(lines.join("\n")).toMatch(/spot BTC-USD 80,000\.00 · (\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC \(CCC, real-time\)/);
+    // BTCV26 is 21 days out, so its rate is noisy, but that is how the contract is, not a problem with the data: only the CLI report says so.
+    expect(lines.join("\n")).not.toContain("⚠");
+    await act(async () => tui.setup().mockInput.pressKey("!"));
+    await settle();
+    expect(tui.frame()).not.toMatch(/Data warnings|noisy under 30 days/);
+    // A narrower footer gives the listing up before the price and its time.
+    spy.mockRestore(); futuresCurveCache.reset();
+    spy = spyOn(apiClient, "getCloudFuturesCurve").mockImplementation(async () => btcPayload(BTC_CONTRACTS.slice(0, 2)));
+    lines = await render(90, 30, "curve", { root: "BTC", quote: reportingSpot(2) });
+    expect(lines.join("\n")).toMatch(/spot BTC-USD 80,000\.00 · \d{2}:\d{2} UTC/);
+    expect(lines.join("\n")).not.toContain("(CCC");
   });
 
   test("a print over an hour before the spot is blank, and a data warning counts those thin contracts", async () => {
@@ -259,7 +281,8 @@ describe("crypto basis against spot", () => {
       expect(header).toContain("ANN BASIS");
       expect(header).not.toContain("PCTL");
       expect(row(lines, "BTCV26.CME")).toMatch(/\+0\.25%\s+\+4\.3%/);
-      expect(lines.join("\n")).not.toContain("…");
+      // The table: the footer's status may end in an ellipsis where it meets the key hints.
+      expect(lines.filter((line) => !line.startsWith("└")).join("\n")).not.toContain("…");
     }
   });
 

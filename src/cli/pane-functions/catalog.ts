@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import { commands as builtInCommands, getCommandPrefixes } from "../../components/command-bar/commands/registry";
 import type { PaneDef, PaneTemplateCreateOptions, PaneTemplateDef } from "../../types/plugin";
 import type { MarketContext } from "../types";
@@ -9,6 +10,9 @@ import {
 import {
   getHeadlessPaneDefinition,
   getPaneFunctionCapability,
+  MAX_INLINE_CHOICES,
+  optionChoices,
+  optionFlags,
   type PaneFunctionCapability,
   type PaneFunctionOptionDef,
   type PaneFunctionReadiness,
@@ -26,6 +30,7 @@ import {
 } from "../../utils/cli-output";
 import { renderGlossaryEntries, type GlossaryLookup } from "../glossary";
 import { renderSeriesMatches, type SeriesMatch } from "../series-search";
+import { typoDistance } from "../../utils/typo-distance";
 
 export interface PaneFunctionCatalog {
   panes: ReadonlyMap<string, PaneDef>;
@@ -45,6 +50,10 @@ export interface PaneCatalogEntry {
   aliases: string[];
   argKind?: string;
   argPlaceholder?: string;
+  /** Arguments the examples show it with, past the placeholder (`GAS`, `EUA` for EPWR). */
+  argExamples?: readonly string[];
+  /** What `shot` takes when the pane shows one ticker but the report ranks several (DVD). */
+  shotArgument?: string;
   keywords: string[];
   defaultSettings: Record<string, unknown>;
   capability: PaneFunctionCapability;
@@ -152,6 +161,70 @@ export function findFunctionCode(registry: PaneFunctionCatalog, token: string): 
   };
 }
 
+/** A function code a typed one is a slip away from: what to type, and the function's name. */
+export interface NearFunctionCode {
+  code: string;
+  label: string;
+}
+
+/** Typed names shorter than this are too short for one slip to leave them recognisable (`HQ` is a slip from a dozen codes). */
+const MIN_CODE_TYPO_LENGTH = 3;
+/**
+ * A word typed as a command is as likely a ticker as a slip from a code
+ * (`PLTR`, `META`, `QQQ`): it is read as a slip only from this length and
+ * when its first letter is the code's.
+ */
+const MIN_COMMAND_WORD_TYPO_LENGTH = 4;
+/** Near codes an unknown one is answered with; more than this many is no suggestion. */
+const NEAR_CODE_LIMIT = 3;
+
+/**
+ * The function codes one slip of the keys from a name that opens no function
+ * (a letter swapped, missing, extra or wrong: `RCDF` for RDCF, `HPP` for HP),
+ * among the mnemonics the command bar takes, each named by the code it is
+ * near (`DES` for Ticker Research, whose code is T). Empty when none is that
+ * close, the name is too short to tell, or so many are that none stands out.
+ * A word typed as a command (`commandWord`, `gloomberb RCDF PLTR`) is held to
+ * MIN_COMMAND_WORD_TYPO_LENGTH and the code's first letter, so a ticker typed
+ * there is not taken for a code.
+ */
+export function nearFunctionCodes(
+  registry: PaneFunctionCatalog,
+  name: string,
+  { commandWord = false }: { commandWord?: boolean } = {},
+): NearFunctionCode[] {
+  const wanted = normalizeLookupToken(name);
+  if (wanted.length < (commandWord ? MIN_COMMAND_WORD_TYPO_LENGTH : MIN_CODE_TYPO_LENGTH)) return [];
+  const near = new Map<PaneTemplateDef, string>();
+  for (const template of registry.paneTemplates.values()) {
+    const prefix = template.shortcut?.prefix;
+    if (!prefix) continue;
+    const code = [prefix, ...template.shortcut?.aliases ?? []].find((candidate) => {
+      const known = normalizeLookupToken(candidate);
+      return (!commandWord || known[0] === wanted[0]) && typoDistance(wanted, known) === 1;
+    });
+    if (code) near.set(template, code.toUpperCase());
+  }
+  if (near.size > NEAR_CODE_LIMIT) return [];
+  return [...near].map(([template, code]) => ({ code, label: template.label }))
+    .sort((left, right) => left.code.localeCompare(right.code));
+}
+
+/**
+ * The functions a word that is no code asks for (`IVOL`, `IV`: HIVG and
+ * OVDV), as their `discovery.suggestFor` lists it, each by its code.
+ */
+export function suggestedFunctionCodes(registry: PaneFunctionCatalog, name: string): NearFunctionCode[] {
+  const wanted = normalizeLookupToken(name);
+  if (!wanted) return [];
+  return [...registry.paneTemplates.values()].flatMap((template) => {
+    const pane = registry.panes.get(template.paneId);
+    const words = pane ? getHeadlessPaneDefinition(template, pane)?.discovery?.suggestFor ?? [] : [];
+    const code = template.shortcut?.prefix;
+    return code && words.some((word) => normalizeLookupToken(word) === wanted) ? [{ code: code.toUpperCase(), label: template.label }] : [];
+  }).sort((left, right) => left.code.localeCompare(right.code));
+}
+
 function sampleArgForTemplate(template: PaneTemplateDef): string {
   switch (template.shortcut?.argKind) {
     case "ticker":
@@ -179,7 +252,8 @@ async function buildTemplateCatalogEntry(
     try {
       const spec = await template.createInstance(buildTemplateContext(context, primarySymbol), createOptions);
       defaultSettings = spec?.settings ?? {};
-    } catch {
+    } catch (error) {
+      logFailure("cli-catalog", "Read template default settings failed")(error);
       defaultSettings = {};
     }
   }
@@ -196,6 +270,9 @@ async function buildTemplateCatalogEntry(
     aliases: [...(template.shortcut?.aliases ?? [])],
     argKind: headless?.argument.kind ?? template.shortcut?.argKind,
     argPlaceholder: headless?.argument.placeholder ?? template.shortcut?.argPlaceholder,
+    ...(headless?.argument.examples?.length ? { argExamples: headless.argument.examples } : {}),
+    ...(headless?.argument.kind === "tickers" && template.shortcut?.argKind === "ticker"
+      ? { shotArgument: argumentHint({ argKind: "ticker", argPlaceholder: template.shortcut.argPlaceholder }) } : {}),
     keywords: template.keywords ?? [],
     defaultSettings,
     capability: getPaneFunctionCapability(template, pane),
@@ -229,6 +306,7 @@ export async function buildPaneCatalogEntries(
       aliases,
       argKind: pane.headless?.argument.kind,
       argPlaceholder: pane.headless?.argument.placeholder,
+      ...(pane.headless?.argument.examples?.length ? { argExamples: pane.headless.argument.examples } : {}),
       keywords: [],
       defaultSettings: {},
       capability: getPaneFunctionCapability(undefined, pane),
@@ -276,8 +354,8 @@ function queryTerms(query: string): string[] {
   return named.length > 0 ? named : words;
 }
 
-/** What a function is called and says it does, apart from its flags. */
-function nameAndDescription(entry: PaneCatalogEntry): string {
+/** The texts that say what a function is called and does, apart from its flags, each on its own. */
+function nameAndDescriptionFields(entry: PaneCatalogEntry): string[] {
   return [
     entry.token,
     entry.label,
@@ -290,7 +368,12 @@ function nameAndDescription(entry: PaneCatalogEntry): string {
     ...entry.keywords,
     ...entry.capability.aliases,
     ...entry.capability.intents,
-  ].filter((value): value is string => !!value).join(" ").toLowerCase();
+  ].filter((value): value is string => !!value).map((value) => value.toLowerCase());
+}
+
+/** What a function is called and says it does, apart from its flags. */
+function nameAndDescription(entry: PaneCatalogEntry): string {
+  return nameAndDescriptionFields(entry).join(" ");
 }
 
 function flagText(entry: PaneCatalogEntry): string {
@@ -323,6 +406,7 @@ function scorePaneCatalogEntry(entry: PaneCatalogEntry, query: string): CatalogM
     entry.token,
     entry.shortcut,
     ...entry.aliases,
+    ...entry.capability.suggestFor ?? [],
     entry.templateId,
     entry.paneId,
   ].filter((value): value is string => !!value).map((value) => normalizeLookupToken(value));
@@ -393,17 +477,31 @@ function rankPaneCatalogEntries(entries: PaneCatalogEntry[], query: string): Pan
 const FUSED_PART_MIN = 3;
 
 /**
+ * Whether one of the function's texts has `head` and `tail` as the starts of two words in a row ("vol surf" in
+ * "implied volatility surface"), the way a name typed without its space is written. The two words may sit
+ * anywhere in the name and description, but not apart: "baltic" cut into "bal" and "tic" is not the
+ * "balance sheet" and the "ticker" of Financial Analysis.
+ */
+function hasConsecutiveWordStarts(entry: PaneCatalogEntry, head: string, tail: string): boolean {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const consecutive = new RegExp(`(^|[^a-z0-9])${escape(head)}[a-z0-9]*[^a-z0-9]+${escape(tail)}`);
+  return nameAndDescriptionFields(entry).some((field) => consecutive.test(field));
+}
+
+/**
  * Two words typed as one ("volsurf" for Volatility Surface) match the functions that carry both
- * words, found by cutting the query into two word starts.
+ * words in a row, found by cutting the query into two word starts.
  */
 function fusedQueryMatches(entries: PaneCatalogEntry[], query: string): PaneCatalogEntry[] {
   const word = query.trim().toLowerCase();
   if (/\s/.test(word)) return [];
   for (let cut = FUSED_PART_MIN; cut <= word.length - FUSED_PART_MIN; cut += 1) {
-    const split = `${word.slice(0, cut)} ${word.slice(cut)}`;
+    const [head, tail] = [word.slice(0, cut), word.slice(cut)];
+    const split = `${head} ${tail}`;
     const ranked = rankPaneCatalogEntries(entries, split);
     const { shown, loose } = selectPaneCatalogMatches(ranked, split, ranked.length);
-    if (shown.length > 0 && !loose) return shown;
+    const written = loose ? [] : shown.filter((entry) => hasConsecutiveWordStarts(entry, head, tail));
+    if (written.length > 0) return written;
   }
   return [];
 }
@@ -475,19 +573,6 @@ function readinessCell(readiness: PaneFunctionReadiness): string {
   return cliStyles.muted(label);
 }
 
-// Choices longer than this move from the flag into its description, where they can wrap.
-const MAX_INLINE_CHOICES = 24;
-
-function optionChoices(option: PaneFunctionOptionDef): string[] {
-  return option.values?.map(({ value }) => String(value)) ?? [];
-}
-
-function optionFlags(option: PaneFunctionOptionDef): string {
-  const choices = optionChoices(option).join("|");
-  const value = choices && choices.length <= MAX_INLINE_CHOICES ? choices : option.values?.length ? "value" : option.placeholder ?? option.type;
-  return `--${option.key} <${value}>`;
-}
-
 function optionDescription(option: PaneFunctionOptionDef): string {
   const choices = optionChoices(option);
   const parts = [option.description.replace(/\.$/, "")];
@@ -538,12 +623,61 @@ function renderCatalogEntry(entry: PaneCatalogEntry): string {
   lines.push("", renderSection("Examples"));
   if (capability.reportReadiness !== "unsupported") {
     lines.push(...wrapCommandLine(`gloomberb fn ${invocation}`, width));
+    for (const example of entry.argExamples ?? []) lines.push(...wrapCommandLine(`gloomberb fn ${entry.token} ${example}`, width));
     for (const option of capability.options) {
-      if (option.example) lines.push(...wrapCommandLine(`gloomberb fn ${invocation} ${option.example}`, width));
+      if (option.example) lines.push(...wrapCommandLine(`gloomberb fn ${option.exampleWithoutArgument ? entry.token : invocation} ${option.example}`, width));
     }
   }
-  lines.push(...wrapCommandLine(`gloomberb shot ${invocation} --output ${entry.token.toLowerCase()}.png`, width));
+  const shotInvocation = entry.shotArgument ? `${entry.token} ${entry.shotArgument}` : invocation;
+  lines.push(...wrapCommandLine(`gloomberb shot ${shotInvocation} --output ${entry.token.toLowerCase()}.png`, width));
   return lines.join("\n");
+}
+
+/** The functions a search lists, one row each. */
+function renderMatchesTable(shown: readonly PaneCatalogEntry[]): string {
+  return renderTable(
+    [
+      { header: "Function", shrink: false },
+      { header: "Name" },
+      { header: "Argument" },
+      { header: "Report" },
+      // A scan list: the description is cut where it does not fit, and `catalog <function>` prints it whole.
+      { header: "Description", shrink: true, minWidth: 20 },
+    ],
+    shown.map((entry) => [
+      cliStyles.command(entry.token),
+      entry.label,
+      argumentHint(entry),
+      readinessCell(entry.capability.reportReadiness),
+      entry.description,
+    ]),
+  );
+}
+
+/** The most other functions an exact code's page names. */
+const ALSO_MATCHES_LIMIT = 5;
+
+/**
+ * The other functions that list a query as one of their own keywords, when the
+ * query is also a function's code: `catalog port` opens PORT and still names
+ * MAP, whose ports layer answers to the same word.
+ */
+function renderAlsoMatches(exact: PaneCatalogEntry, entries: readonly PaneCatalogEntry[], query: string): string {
+  const others = entries
+    .filter((entry) => entry !== exact && [...entry.keywords, ...entry.capability.aliases].some((keyword) => keyword.toLowerCase() === query))
+    .slice(0, ALSO_MATCHES_LIMIT);
+  return others.length === 0 ? "" : [renderSection(`Also matches "${query}"`), renderMatchesTable(others)].join("\n");
+}
+
+/**
+ * `fn <function> --help` and `shot <function> --help`: the function's own
+ * card, as `catalog <function>` prints it, then where the options every
+ * function takes are listed, since the card names only the function's.
+ */
+export function renderFunctionHelp(entry: PaneCatalogEntry, command: string): string {
+  const width = Math.min(cliTerminalWidth() ?? CATALOG_TEXT_WIDTH, CATALOG_TEXT_WIDTH);
+  const note = `The options every function takes, and the output formats, are in gloomberb help ${command}.`;
+  return [renderCatalogEntry(entry), "", ...wrapText(note, width).map((line) => cliStyles.muted(line))].join("\n");
 }
 
 /**
@@ -577,14 +711,16 @@ export function renderPaneCatalogReport(
   series: readonly SeriesMatch[] = [],
   /** The `config` command a query names a setting of ("light theme"), printed last, beside the functions. */
   setting: string | null = null,
+  /** The setting answers the query ahead of the functions its words find (`csv` is the flag, not CDS): printed first. */
+  settingFirst = false,
 ): string {
   const query = args.query.trim().toLowerCase();
   const exact = query
     ? entries.find((entry) => entry.token.toLowerCase() === query)
       ?? entries.find((entry) => entry.aliases.some((alias) => alias.toLowerCase() === query))
     : undefined;
-  const withSetting = (text: string) => [text, setting ?? ""].filter(Boolean).join("\n\n");
-  if (exact) return withSetting(renderCatalogEntry(exact));
+  const withSetting = (text: string) => (settingFirst ? [setting ?? "", text] : [text, setting ?? ""]).filter(Boolean).join("\n\n");
+  if (exact) return withSetting([renderCatalogEntry(exact), renderAlsoMatches(exact, entries, query)].filter(Boolean).join("\n\n"));
 
   const width = Math.min(cliTerminalWidth() ?? CATALOG_TEXT_WIDTH, CATALOG_TEXT_WIDTH);
   const terms = renderCatalogGlossary(glossary, width);
@@ -595,6 +731,9 @@ export function renderPaneCatalogReport(
 
   const note = (text: string) => wrapText(text, width).map((line) => cliStyles.muted(line)).join("\n");
   if (entries.length === 0) {
+    // With no function to list, the command the query names comes first: "usdt" is CRYP's stablecoins
+    // before the USD/TWD series its letters start.
+    if (setting && charted) return [gap ? wrapText(gap, width).join("\n") : "", setting, charted, terms].filter(Boolean).join("\n\n");
     if (charted) return withGap([charted, terms].filter(Boolean).join("\n\n"));
     if (glossary.exact.length > 0 || gap || setting) return withGap(terms);
     return withTerms(note(args.query
@@ -610,22 +749,7 @@ export function renderPaneCatalogReport(
     : `Add --all to list all ${entries.length}.`;
   const lines = [
     `${renderSection(title)} ${cliStyles.muted(`(${count})`)}`,
-    renderTable(
-      [
-        { header: "Function", shrink: false },
-        { header: "Name", maxWidth: 20 },
-        { header: "Argument", maxWidth: 14 },
-        { header: "Report" },
-        { header: "Description" },
-      ],
-      shown.map((entry) => [
-        cliStyles.command(entry.token),
-        entry.label,
-        argumentHint(entry),
-        readinessCell(entry.capability.reportReadiness),
-        entry.description,
-      ]),
-    ),
+    renderMatchesTable(shown),
     "",
     note([
       loose ? "No function carries every word of the query; these are the closest." : "",

@@ -1,4 +1,6 @@
-const PROVIDER_MISS_BRAND = Symbol("provider-miss");
+// Registered, so a miss raised by another copy of this module (a plugin that
+// resolved `gloomberb/market-data` from the source tree) is still recognized.
+const PROVIDER_MISS_BRAND = Symbol.for("gloomberb.provider-miss");
 const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
 
 const MAX_REASON_LENGTH = 200;
@@ -47,6 +49,27 @@ function isProviderMiss(error: unknown): error is ProviderMissError {
     || (!!error && typeof error === "object" && PROVIDER_MISS_BRAND in error);
 }
 
+/**
+ * A source that could not answer just now (rate limited, overloaded, timed
+ * out) and may if asked again shortly. Unlike a miss, it says nothing about
+ * whether what was asked for exists.
+ */
+export class ProviderBusyError extends Error {
+  constructor(message = "The data service is busy", options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "ProviderBusyError";
+  }
+}
+
+export function isProviderBusy(error: unknown): error is ProviderBusyError {
+  return error instanceof ProviderBusyError;
+}
+
+/** What a search its sources could not answer says, rather than that nothing matched. */
+export const SEARCH_BUSY_MESSAGE = "Search is busy, try again in a moment.";
+/** The code a structured answer (CLI `--json`, remote control) gives that failure. */
+export const SEARCH_BUSY_CODE = "search_busy";
+
 /** The reason a provider gave for a miss, or undefined when it gave none. */
 export function providerMissReason(error: unknown): string | undefined {
   return isProviderMiss(error) ? error.reason : undefined;
@@ -57,12 +80,15 @@ export interface ProviderMissNote {
   reason?: string;
   /** True while every provider that failed said it found no listing; one that failed another way (a timeout) clears it. */
   notFound?: boolean;
+  /** The last provider failure that was not a miss (a refused session, a rate limit, a timeout). */
+  failure?: unknown;
 }
 
 export function noteProviderMiss(note: ProviderMissNote | undefined, error: unknown): void {
   if (!note) return;
   const reason = providerMissReason(error);
   if (reason) note.reason = reason;
+  if (!isProviderMiss(error)) note.failure = error;
   note.notFound = note.notFound !== false && isProviderMiss(error) && error.notFound === true;
 }
 
@@ -93,6 +119,13 @@ export function isNoProviderMessage(message: string): boolean {
   return /\bprovider available for\b/i.test(message) || notATickerSymbol(message) !== null;
 }
 
+/** The router's generic answer that no provider served a request, holding the failure behind it when a provider failed rather than missed. */
+class NoProviderError extends Error {
+  constructor(message: string, readonly failure: unknown) {
+    super(message);
+  }
+}
+
 /**
  * The router's final error when no provider answered. A reason a provider gave
  * replaces the generic wording, and so does the service's answer that no
@@ -102,7 +135,18 @@ export function isNoProviderMessage(message: string): boolean {
 export function noProviderError(message: string, note: ProviderMissNote | undefined, symbol?: string): Error {
   if (note?.reason) return createProviderMiss(note.reason, note.reason);
   if (note?.notFound === true && symbol) return createProviderMiss(notATickerMessage(symbol), undefined, { notFound: true });
-  return new Error(message);
+  return new NoProviderError(message, note?.failure);
+}
+
+/**
+ * Whether a failed read means no source has what was asked for: a source's
+ * miss, or the router's answer that none served it when none failed another
+ * way. A refused session, a rate limit or a timeout is not, as asked again it may answer.
+ */
+export function isNoSourceAnswer(error: unknown): boolean {
+  if (isProviderMiss(error)) return true;
+  if (error instanceof NoProviderError) return error.failure === undefined;
+  return error instanceof Error && !(error instanceof ProviderBusyError) && isNoProviderMessage(error.message);
 }
 
 export function shouldLogProviderError(error: unknown): boolean {

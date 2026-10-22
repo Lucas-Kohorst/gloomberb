@@ -1,5 +1,5 @@
 import { apiClient } from "../../api-client";
-import type { PerpBoardRow, PerpMarketPayload } from "../../api-client/perps";
+import type { PerpBoardPayload, PerpBoardRow, PerpMarketPayload } from "../../api-client/perps";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { PricePoint, Quote } from "../../types/financials";
 import type { PriceHistoryResult } from "../../types/price-history";
@@ -115,7 +115,55 @@ export function perpetualQuote(row: PerpBoardRow, listing: PerpetualListing): Qu
     dataSource: "delayed",
     ...(row.markPrice != null ? { mark: row.markPrice } : {}),
     ...(row.lastPrice != null ? { lastTradePrice: row.lastPrice } : {}),
-    ...(row.stale || row.delisted ? { stale: true } : {}),
+    // Said either way: a fresh reading merged over a stale one must clear it, not inherit it.
+    stale: row.stale === true || row.delisted === true,
+    perpetual: row,
+  };
+}
+
+/** The figures a streamed row is read by: each a finite number, or none. */
+const STREAMED_FIGURES = ["markPrice", "lastPrice", "fundingRate8h", "openInterestUsd", "premium"] as const;
+
+/**
+ * A row the market socket carried for this listing's market, readable as a fetched one; null for anything else. A
+ * figure the frame leaves out (a server writes no key for a value it does not have) is none, as null says.
+ */
+function streamedRow(value: unknown, listing: PerpetualListing): PerpBoardRow | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as PerpBoardRow;
+  if (typeof row.marketId !== "string" || row.marketId.toLowerCase() !== listing.marketId.toLowerCase()
+    || typeof row.quoteCurrency !== "string" || typeof row.observedAt !== "string" || !Number.isFinite(Date.parse(row.observedAt))) return null;
+  const figures: Partial<Record<(typeof STREAMED_FIGURES)[number], number | null>> = {};
+  for (const field of STREAMED_FIGURES) {
+    const figure: unknown = row[field];
+    if (figure != null && !(typeof figure === "number" && Number.isFinite(figure))) return null;
+    figures[field] = figure ?? null;
+  }
+  return { ...row, ...figures };
+}
+
+/**
+ * A perpetual's quote from the market socket: the same quote its fetched row
+ * makes, from the row the socket carried, marked live while the venue's own
+ * socket feeds it. Null when the frame holds no row for this market.
+ */
+export function streamedPerpetualQuote(
+  frame: { perpetual?: unknown; dataSource?: unknown; delivery?: unknown; stale?: unknown; bid?: unknown; ask?: unknown },
+  listing: PerpetualListing,
+): Quote | null {
+  const row = streamedRow(frame.perpetual, listing);
+  const quote = row ? perpetualQuote(row, listing) : null;
+  if (!quote) return null;
+  const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  const bid = number(frame.bid);
+  const ask = number(frame.ask);
+  return {
+    ...quote,
+    ...(frame.dataSource === "live" ? { dataSource: "live" as const } : {}),
+    ...(frame.delivery === "stream" || frame.delivery === "poll" ? { delivery: frame.delivery } : {}),
+    stale: quote.stale === true || frame.stale === true,
+    ...(bid !== undefined ? { bid } : {}),
+    ...(ask !== undefined ? { ask } : {}),
   };
 }
 
@@ -137,6 +185,25 @@ function searchResult(row: PerpBoardRow): InstrumentSearchResult | null {
     exchange: listing.exchange,
     type: PERPETUAL_TYPE,
     currency: row.quoteCurrency,
+  };
+}
+
+/**
+ * A client whose board searches are answered from one copy of the board, as
+ * the board answers them: its rows whose symbol, base asset or name holds the
+ * words, in its order. The board read without a search is the one a search
+ * reads (all of it with Pro, its preview without), so a list's searches cost
+ * one board request and find what each would find alone.
+ */
+export function boardSearchesFrom(board: PerpBoardPayload, client: PerpsClient = apiClient): PerpsClient {
+  const rows = Array.isArray(board?.rows) ? board.rows : [];
+  return {
+    getCloudPerpsMarket: client.getCloudPerpsMarket,
+    getCloudPerpsHistory: client.getCloudPerpsHistory,
+    getCloudPerpsBoard: async ({ search } = {}) => {
+      const wanted = search?.trim().toUpperCase();
+      return { ...board, rows: wanted ? rows.filter((row) => `${row.symbol} ${row.baseAsset} ${row.displayName}`.toUpperCase().includes(wanted)) : rows };
+    },
   };
 }
 

@@ -1,5 +1,6 @@
 import { formatCompact, formatCompactAmount } from "../../../utils/format";
 import { formatExpDate } from "../../../utils/options";
+import { modelSpotLabel, modelSpotStamp, modelSpotStampVariants, observedModelSpot } from "../options/model-spot";
 
 export type PositioningTab = "strikes" | "expiries" | "gex";
 export const POSITIONING_TABS: { value: PositioningTab; label: string }[] = [
@@ -11,6 +12,39 @@ export const isPositioningTab = (value: unknown): value is PositioningTab =>
   POSITIONING_TABS.some((tab) => tab.value === value);
 /** The GEX tab's expiry choice for every expiry at once. */
 export const ALL_EXPIRIES = "all";
+/** What every GEX figure is in, as exports name a unit. */
+export const GAMMA_UNIT = "USD per 1% move";
+
+/**
+ * The call wall is the strike with the most call gamma in the strikes given
+ * (one expiry's or every expiry's), the put wall the strike with the most put
+ * gamma. Ties go to the lowest strike; a side with no gamma has no wall.
+ */
+export function gammaWalls(strikes: readonly { strike: number; calls: number; puts: number }[]): {
+  callWall: number | null;
+  putWall: number | null;
+} {
+  let call: { strike: number; size: number } | null = null;
+  let put: { strike: number; size: number } | null = null;
+  for (const row of strikes.toSorted((left, right) => left.strike - right.strike)) {
+    // Puts arrive as a positive amount from the server; a signed one counts by its size.
+    const puts = Math.abs(row.puts);
+    if (row.calls > 0 && (!call || row.calls > call.size)) call = { strike: row.strike, size: row.calls };
+    if (puts > 0 && (!put || puts > put.size)) put = { strike: row.strike, size: puts };
+  }
+  return { callWall: call?.strike ?? null, putWall: put?.strike ?? null };
+}
+
+/**
+ * Net dealer gamma of each expiry, from an all-expiries gamma answer. Null
+ * when the answer is for one expiry or the server is older than the field.
+ */
+export function netGammaByExpiry(
+  payload: { expiry: string | null; byExpiry?: readonly { expiry: string; net: number }[] } | null | undefined,
+): Map<string, number> | null {
+  if (!payload || payload.expiry != null || !payload.byExpiry) return null;
+  return new Map(payload.byExpiry.map((row) => [row.expiry, row.net]));
+}
 
 const dateSeconds = (date: string) => Date.parse(`${date}T00:00:00Z`) / 1000;
 /** Oct 16 '26, as OMON names its expiries. */
@@ -33,6 +67,29 @@ export function formatRatio(value: number | null | undefined): string {
 export function formatLevel(value: number | null | undefined): string {
   return value == null || !Number.isFinite(value) ? "--" : value.toFixed(2);
 }
+/**
+ * The spot Gloom Cloud read the distances and dealer gamma at, stamped as
+ * every options pane stamps its spot (`modelSpotStamp`), as a stat cell
+ * carries it: `pre-market Wed 21 Oct 09:35 UTC`, its shorter forms, then
+ * none, so the band keeps the columns it has in regular hours. Nothing for
+ * the regular session's price.
+ */
+export function positioningSpotDetail(spot: number | null | undefined, spotAsOf: string | null | undefined):
+  { detail?: string; detailVariants?: string[] } {
+  const at = spotAsOf ? Date.parse(spotAsOf) : Number.NaN;
+  if (spot == null || !Number.isFinite(at)) return {};
+  const observed = observedModelSpot(spot, at);
+  const stamp = modelSpotStamp(observed);
+  return stamp ? { detail: stamp, detailVariants: [...modelSpotStampVariants(observed), ""] } : {};
+}
+
+/** The spot as a report says it: `770.88 pre-market Wed 21 Oct 09:35 UTC`, `770.10 last Wed 21 Oct 14:05 UTC`. */
+export function formatPositioningSpot(spot: number | null | undefined, spotAsOf: string | null | undefined): string {
+  const at = spotAsOf ? Date.parse(spotAsOf) : Number.NaN;
+  if (spot == null || !Number.isFinite(spot)) return "--";
+  return Number.isFinite(at) ? `${formatLevel(spot)} ${modelSpotLabel(observedModelSpot(spot, at))}` : formatLevel(spot);
+}
+
 /** Where a level sits against spot: +0.6%. */
 export function formatDistance(level: number | null | undefined, spot: number | null | undefined): string {
   if (level == null || spot == null || !(spot > 0)) return "--";
@@ -46,6 +103,20 @@ export function formatGamma(value: number | null | undefined): string {
 }
 export function formatPayout(value: number | null | undefined): string {
   return value == null ? "--" : formatCompact(value);
+}
+
+/** Both sides, or blank when either was not reported. A reported zero stays zero. */
+export function openInterestTotal(row: { callOI: number | null; putOI: number | null }): number | null {
+  if (row.callOI == null || row.putOI == null) return null;
+  return row.callOI + row.putOI;
+}
+
+/** Strike-chart levels. A missing side is omitted. Puts hang below zero. */
+export function strikeChartOpenInterest(row: { callOI: number | null; putOI: number | null }): { call: number | null; put: number | null } {
+  return {
+    call: row.callOI,
+    put: row.putOI == null ? null : -row.putOI,
+  };
 }
 
 /**

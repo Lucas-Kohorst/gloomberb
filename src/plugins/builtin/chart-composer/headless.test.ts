@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { createTestDataProvider } from "../../../test-support/data-provider";
-import { chartHeadless, chartResolutionDrop, economicChartDates, type ChartPaneModel } from "./headless";
+import { chartHeadless, chartResolutionDrop, periodChartDates, type ChartPaneModel } from "./headless";
 import { setPairStudies } from "./studies";
 import { buildCustomChartPreset, buildIntradayPriceChartPreset } from "./presets";
 import { createTestHeadlessContext } from "../../../test-support/headless";
+import { resetFuturesPriceUnits } from "../../../market-data/futures-contract";
+import type { FuturesContractTermsPayload } from "../../../api-client/futures-curve";
 
 const history = ["2026-08-27", "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03"]
   .flatMap((date, day) => [0, 1].map((bar) => ({
@@ -52,10 +54,55 @@ test("an unavailable currency spread reaches headless errors even with normalize
     const result = await chartHeadless("chart-composer-pane").load({
       argument: "TARGET:NASDAQ,ACQUIRER:NASDAQ", rawArgument: "TARGET:NASDAQ,ACQUIRER:NASDAQ", symbols: ["TARGET:NASDAQ", "ACQUIRER:NASDAQ"], options: {},
     }, { ...fixture().context, marketData: provider, settings: { chartSpec: spec } });
-    expect(result.errors).toEqual([expect.stringContaining("pair:spread: spread cannot subtract")]);
+    expect(result.errors).toEqual(["pair:spread: TARGET has no known unit and ACQUIRER has no known unit: a spread needs both in one known unit."]);
     expect(result.unavailableSymbols).toEqual([]);
     expect(result.series.map(({ id }) => id)).toEqual([...spec.series.map(({ id }) => id), "pair:ratio"]);
     expect(result.series.every(({ points }) => points.length > 0)).toBe(true);
+  }
+});
+
+test("fn G 42*HO=F - CL=F charts the heating-oil crack per barrel, in the units the contracts trade in", async () => {
+  resetFuturesPriceUnits();
+  const closes: Record<string, number[]> = { "HO=F": [2.5, 2.6, 2.4], "CL=F": [70, 71, 72] };
+  const days = ["2026-09-01", "2026-09-02", "2026-09-03"];
+  const bars = (symbol: string) => days.map((day, index) => {
+    const close = closes[symbol]![index]!;
+    return { date: new Date(`${day}T00:00:00Z`), open: close, high: close, low: close, close, volume: 10 };
+  });
+  const quote = (symbol: string) => ({ symbol, price: closes[symbol]!.at(-1)!, change: 0, changePercent: 0, currency: "USD",
+    instrumentType: "FUTURE" as const, lastUpdated: Date.parse("2026-09-03T20:00:00Z") });
+  const terms = (symbol: string): FuturesContractTermsPayload => ({
+    symbol, root: symbol.slice(0, 2), name: symbol, contract: null, contractSymbol: null, deliveryMonth: null,
+    spec: { unit: symbol === "HO=F" ? "USD / gallon" : "USD / barrel", size: "", pointValue: 1, tick: 0.01, tickValue: 0.01, settlement: "physical" },
+    lastTrade: null, firstNotice: null, inDelivery: false, settlement: null,
+  });
+  const marketData = createTestDataProvider({
+    getTickerFinancials: async (symbol) => ({ quote: quote(symbol), annualStatements: [], quarterlyStatements: [], priceHistory: [] }),
+    getQuote: async (symbol) => quote(symbol),
+    getQuoteMetadata: async (symbol) => ({ symbol, currency: "USD", instrumentType: "FUTURE", source: {} }),
+    getDetailedPriceHistory: async (symbol) => bars(symbol),
+    getPriceHistoryForResolution: async (symbol) => bars(symbol),
+  });
+  // The chart G opens for the argument.
+  const chartSpec = buildCustomChartPreset("42*HO=F - CL=F");
+  chartSpec.viewport.dateWindow = { start: "2026-09-01", end: "2026-09-04" };
+  try {
+    const result = await chartHeadless("chart-composer-pane").load({
+      argument: "42*HO=F - CL=F", rawArgument: "42*HO=F - CL=F", symbols: [], options: {},
+    }, createTestHeadlessContext({
+      marketData,
+      apiClient: { getCloudFuturesContract: async (symbol: string) => terms(symbol) } as never,
+      settings: { chartSpec },
+    })) as ChartPaneModel;
+    expect(result.errors).toEqual([]);
+    expect(result.series.map(({ label, unit }) => [label, unit])).toEqual([
+      [expect.stringContaining("HO=F"), "USD / gallon"],
+      [expect.stringContaining("CL=F"), "USD / barrel"],
+      ["42×HO=F - CL=F", "USD / barrel"],
+    ]);
+    expect(result.series[2]!.points.map(({ value }) => value)).toEqual([35, 38.2, 28.8]);
+  } finally {
+    resetFuturesPriceUnits();
   }
 });
 
@@ -83,6 +130,55 @@ test("a bar size the source does not serve for the range warns what came back an
   // Without a support list the source's answer is the reason.
   expect(chartResolutionDrop("1d", { range: "ALL" }, [{ historyResolution: "1wk", symbol: "USDNGN=X" }], [])?.warning)
     .toBe("1d is not available for ALL on USDNGN=X (the source returned 1wk bars); returning 1wk bars.");
+});
+
+test("a chart of monthly bars dates the report by how far its newest month has run, not by the 1st", async () => {
+  const { applyChartComposerCapabilityOptions } = await import("./cli-options");
+  const monthly = ["2026-08-01", "2026-09-01", "2026-10-01"].map((date) => ({ date: new Date(`${date}T00:00:00Z`), open: 16, high: 17, low: 15, close: 16.5 }));
+  const provider = createTestDataProvider({
+    getTickerFinancials: async () => ({ annualStatements: [], quarterlyStatements: [], priceHistory: [] }),
+    getChartResolutionSupport: () => [{ resolution: "1mo", maxRange: "ALL" }],
+    getPriceHistoryForResolution: async () => monthly,
+  });
+  const spec = applyChartComposerCapabilityOptions(buildCustomChartPreset("USDZAR=X"), "chart-composer", { rangePreset: "ALL", chartResolution: "1mo" });
+  const load = async () => await chartHeadless("chart-composer-pane").load(
+    { argument: "USDZAR=X", rawArgument: "USDZAR=X", symbols: [], options: {} },
+    { ...fixture().context, marketData: provider, settings: { chartSpec: spec } },
+  );
+  try {
+    // Fri 16 Oct 2026: October's bar is still forming. Once the month has ended it is complete.
+    setSystemTime(new Date("2026-10-16T08:14:00Z"));
+    expect((await load()).freshness).toMatchObject({ basis: "monthly bars", periodToDate: { period: "month" } });
+    setSystemTime(new Date("2026-11-03T08:14:00Z"));
+    expect((await load()).freshness).not.toHaveProperty("periodToDate");
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("a chart of weekly bars dates its latest close and the report by the week's last session, not its Monday", async () => {
+  const { applyChartComposerCapabilityOptions } = await import("./cli-options");
+  const { renderHeadlessPaneText } = await import("../../../cli/pane-functions/headless");
+  const weekly = ["2026-10-05", "2026-10-12"].map((date, index) => ({ date: new Date(`${date}T00:00:00Z`), open: 760, high: 780, low: 750, close: 770 - index * 7 }));
+  const provider = createTestDataProvider({
+    getTickerFinancials: async () => ({ annualStatements: [], quarterlyStatements: [], priceHistory: [] }),
+    getChartResolutionSupport: () => [{ resolution: "1wk", maxRange: "ALL" }],
+    getPriceHistoryForResolution: async () => weekly,
+  });
+  const spec = applyChartComposerCapabilityOptions(buildCustomChartPreset("SPY:NYSE"), "chart-composer", { rangePreset: "5Y", chartResolution: "1wk" });
+  const definition = chartHeadless("chart-composer-pane");
+  const args = { argument: "SPY:NYSE", rawArgument: "SPY:NYSE", symbols: [], options: {} };
+  try {
+    // Sun 18 Oct 2026: the week of Mon 12 Oct closed on Friday the 16th.
+    setSystemTime(new Date("2026-10-18T05:36:00Z"));
+    const result = await definition.load(args, { ...fixture().context, marketData: provider, settings: { chartSpec: spec } });
+    expect(result.freshness).toMatchObject({ basis: "weekly bars", asOf: "2026-10-16" });
+    const text = renderHeadlessPaneText(definition, result, args, "Custom Chart");
+    expect(text).toMatch(/SPY:XNYS Price\s+2026-10-16\s+763/);
+    expect(text).toContain("Fri 16 Oct 2026 · not a live feed (weekly bars)");
+  } finally {
+    setSystemTime();
+  }
 });
 
 describe("GIP headless sessions", () => {
@@ -146,6 +242,28 @@ test("chart reports retain raw comparison endpoints and growth preceding a finan
   expect(financial.series[0]!.points[0]).toMatchObject({ value: 150, growth: 0.5 });
 });
 
+test("a company that reports no quarterly figures says so, where it would otherwise read as not covered", async () => {
+  const { buildFundamentalChartPreset } = await import("./presets");
+  const { applyChartComposerCapabilityOptions } = await import("./cli-options");
+  // A semi-annual reporter: its quarterly rows carry balance-sheet lines, no revenue.
+  const provider = createTestDataProvider({
+    getTickerFinancials: async () => ({
+      annualStatements: [{ date: "2024-12-31", totalRevenue: 90 }, { date: "2025-12-31", totalRevenue: 100 }],
+      quarterlyStatements: [{ date: "2026-06-30", shareIssued: 5 }], priceHistory: [],
+    }),
+  });
+  const args = { argument: ["NESN:XSWX"], rawArgument: "NESN:XSWX", symbols: ["NESN:XSWX"], options: {} };
+  const load = (period: string) => chartHeadless("fundamental-graph-pane").load(args, { ...fixture().context, marketData: provider, settings: {
+    chartSpec: applyChartComposerCapabilityOptions(buildFundamentalChartPreset(["NESN:XSWX"]), "fundamental-series", { metric: "totalRevenue", period }),
+  } }) as Promise<ChartPaneModel>;
+  const quarterly = await load("quarterly");
+  expect(quarterly.errors).toEqual([expect.stringMatching(/Revenue: no quarterly figures are reported; use --period annual\.$/)]);
+  expect(quarterly.unavailableSymbols).toEqual(["NESN:XSWX"]);
+  const annual = await load("annual");
+  expect(annual.errors).toEqual([]);
+  expect(annual.series[0]!.points.map((point) => point.fiscalPeriod)).toEqual(["FY2024", "FY2025"]);
+});
+
 test("explicit financial periods replay available SEC history and expose actual cloud depth deficits", async () => {
   const actual = await import("./financial-periods.fixture.json");
   const { buildFundamentalChartPreset } = await import("./presets");
@@ -189,13 +307,15 @@ test("an economic chart is dated by its observations' day, and by their period w
   const days = ["2026-10-07", "2026-10-08", "2026-10-09"].map((date) => ({ date: `${date}T00:00:00.000Z`, value: 4 }));
   const fred = (...ids: string[]) => ({ series: ids.map((seriesId) => ({ source: { kind: "economic" as const, provider: "fred" as const, seriesId } })) }) as never;
   const cpi = { id: "cpi", label: "CPI", points: [...months(24, "2026-08-01"), { date: "2026-09-01T00:00:00.000Z", value: null }] };
-  expect(economicChartDates([cpi], fred("CPIAUCSL"))).toEqual({ asOf: "2026-08-01", periodicity: "monthly" });
+  expect(periodChartDates([cpi], fred("CPIAUCSL"))).toEqual({ asOf: "2026-08-01", periodicity: "monthly" });
   const gdp = { id: "gdp", label: "GDP", points: ["2025-04-01", "2025-07-01", "2025-10-01", "2026-01-01", "2026-04-01"].map((date) => ({ date, value: 1 })) };
-  expect(economicChartDates([gdp], fred("GDP"))).toEqual({ asOf: "2026-04-01", periodicity: "quarterly" });
+  expect(periodChartDates([gdp], fred("GDP"))).toEqual({ asOf: "2026-04-01", periodicity: "quarterly" });
   // A daily series is dated by its day; series that end apart name the oldest, and mixed periods name none.
-  expect(economicChartDates([cpi, { id: "dgs10", label: "10Y", points: days }], fred("CPIAUCSL", "DGS10")))
+  expect(periodChartDates([cpi, { id: "dgs10", label: "10Y", points: days }], fred("CPIAUCSL", "DGS10")))
     .toEqual({ asOf: "2026-10-09", oldest: "2026-08-01" });
-  // An observation time, or any series that is not economic, keeps the chart's own dating.
-  expect(economicChartDates([{ id: "x", label: "x", points: [{ date: "2026-10-09T20:00:00.000Z", value: 1 }] }], fred("X"))).toEqual({});
-  expect(economicChartDates([cpi], { series: [{ source: { kind: "capability", capabilityId: "c", seriesId: "s" } }] } as never)).toEqual({});
+  // An observation time, or a price series, keeps the chart's own dating; a catalog series of days is dated as FRED's are.
+  expect(periodChartDates([{ id: "x", label: "x", points: [{ date: "2026-10-09T20:00:00.000Z", value: 1 }] }], fred("X"))).toEqual({});
+  const catalog = (seriesId: string) => ({ source: { kind: "capability" as const, capabilityId: "c", seriesId } });
+  expect(periodChartDates([{ id: "ratio", label: "VIX 3M / VIX", points: days }], { series: [catalog("ratio")] } as never)).toEqual({ asOf: "2026-10-09" });
+  expect(periodChartDates([cpi], { series: [catalog("s"), { source: { kind: "security" } }] } as never)).toEqual({});
 });

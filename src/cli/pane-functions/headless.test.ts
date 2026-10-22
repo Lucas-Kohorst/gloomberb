@@ -62,7 +62,23 @@ describe("headless pane printer", () => {
     });
   });
 
-  test("--width wraps the notes, errors and source line under a table, and a column marked whole is never cut", () => {
+  test("a series counts its observations as points, not the gaps kept to break its line", async () => {
+    // GE AAPL's quarterly P/E as it was served with gaps across fiscal year ends.
+    const definition: HeadlessPaneDefinition<"series"> = {
+      shape: "series", argument: { kind: "none" }, options: [],
+      load: () => ({ series: [{ id: "pe", label: "AAPL P/E", points: [
+        { date: "2024-11-01", value: null }, { date: "2025-08-01", value: null },
+        { date: "2025-10-31", value: 36.2 }, { date: "2026-07-31", value: 35.4 },
+      ] }] }),
+    };
+    const report = await buildHeadlessFunctionReport({
+      headless: definition, token: "GE", label: "Valuation Graph", options: {}, instance: {}, capability: { id: "valuation-series" },
+    } as ResolvedPaneFunction, { config: createDefaultConfig("/tmp/gloomberb-headless-points") } as MarketContext, "");
+    expect(report.data).toMatchObject({ rowCount: 2, empty: false });
+    expect(report.text.split("\n").find((line) => line.startsWith("AAPL P/E"))?.trimEnd()).toMatch(/ 2$/);
+  });
+
+  test("--width wraps the notes, errors and source line under a table, and never cuts a cell", () => {
     const definition: HeadlessPaneDefinition<"rows"> = {
       shape: "rows", argument: { kind: "none" }, options: [],
       freshness: { source: "SEC EDGAR", status: "not-a-feed", basis: "filed data" },
@@ -78,7 +94,9 @@ describe("headless pane printer", () => {
     try {
       const lines = renderHeadlessPaneText(definition, result, args, "Board").split("\n");
       expect(lines.every((line) => line.length <= 40)).toBe(true);
-      expect(lines.find((line) => line.startsWith("A long"))).toMatch(/…\s+2026-10-09 20:15 UTC$/);
+      // The name wraps in its cell rather than lose its end; the time beside it stays whole.
+      expect(lines.find((line) => line.startsWith("A long"))).toMatch(/^A long index name\s+2026-10-09 20:15 UTC$/);
+      expect(lines.join("\n")).not.toContain("…");
       expect(lines.filter((line) => line.startsWith("Notes:") || line.includes("terminal is only"))).toHaveLength(2);
     } finally {
       setCliWidthOverride(null);
@@ -265,7 +283,7 @@ describe("headless pane arguments and options", () => {
       symbols: ["AAPL", "MSFT"],
     });
     expect(() => buildHeadlessPaneLoadArgs(definition, "CMP", "AAPL", {}))
-      .toThrow("CMP requires at least 2 symbols");
+      .toThrow("CMP needs two or more tickers: fn CMP AAPL,SPY");
   });
 
   test("derives ready catalog capability and validates enum values", () => {
@@ -381,7 +399,11 @@ test("a report with nothing in it says once whether the free view left it empty 
 
   expect(text({ sections }, "KPIS")).toContain("Company KPIs | DUOL\n\nNo data for DUOL: not covered by KPIS.\n");
   expect(text({ sections }, "KPIS")).not.toContain("Latest");
-  expect(text({ sections, errors: ["Free shows 3 of 6 rows. Gloom Pro adds the other 3."] })).toContain("\nLocked: Gloom Pro\n");
+  // The free view left it empty: its one Pro line is the report.
+  const locked = text({ sections, errors: ["Free shows 3 of 6 rows. Gloom Pro adds the other 3."] });
+  expect(locked).toContain("Company KPIs | DUOL\n\nPro: Free shows 3 of 6 rows. Gloom Pro adds the other 3 · gloom.sh/cloud\n");
+  expect(locked.match(/Pro:/g)).toHaveLength(1);
+  expect(locked).not.toContain("Locked");
   // The pane's own reason, and a failure that explains the gap, stay as they were.
   expect(text({ sections: [{ title: "Latest", rows: [], empty: "No KPI named arr." }] })).toContain("Latest\nNo KPI named arr.");
   expect(text({ sections, errors: ["The source did not answer."] })).toContain("Latest\nNo data.");
@@ -390,6 +412,30 @@ test("a report with nothing in it says once whether the free view left it empty 
     .toContain("No data for DUOL with these options.");
   // A board that was asked for no symbol claims nothing about coverage.
   expect(renderHeadlessPaneText(bundle, { sections }, { ...asked, symbols: [] }, "Board")).toContain("Latest\nNo data.");
+  // One reason the bundle gives for all its tables is said once in their place.
+  expect(text({ sections, empty: "DUOL has no mapped apps." })).toContain("Company KPIs | DUOL\n\nDUOL has no mapped apps.\n");
+});
+
+test("a report's locks fold into one Pro line, and tables the free view held back are named there, not under their headings", () => {
+  const bundle: HeadlessPaneDefinition<"bundle"> = { shape: "bundle", argument: { kind: "free-text", optional: true }, options: [], load: () => ({ sections: [] }) };
+  const asked = { symbols: [], options: {}, argument: "BTC", rawArgument: "BTC" };
+  const latest = { title: "Latest market", rows: [{ value: 1 }] };
+  const held = [{ title: "Paid funding", rows: [], locked: true }, { title: "Hourly candles", rows: [], locked: true }];
+  const render = (result: HeadlessBundleResult) => renderHeadlessPaneText(bundle, result, asked, "Perpetuals | BTC");
+
+  // Several Pro lines read as one, ending where to get Pro; locked tables leave no heading or "No data." behind.
+  const folded = render({ sections: [latest, ...held], errors: ["Free shows the latest funding. Gloom Pro adds its history.", "Rankings require Gloom Pro."] });
+  expect(folded.match(/Pro:/g)).toHaveLength(1);
+  expect(folded).toContain("Pro: Free shows the latest funding. Gloom Pro adds its history. Rankings require Gloom Pro · gloom.sh/cloud");
+  expect(folded).not.toContain("Paid funding");
+  expect(folded).not.toContain("No data.");
+  expect(folded).not.toContain("Locked");
+  // Without a Pro line of its own, the line names the tables it held back.
+  expect(render({ sections: [latest, ...held] })).toContain("Pro: Paid funding and Hourly candles need Gloom Pro · gloom.sh/cloud");
+  // A locked table that has rows (Pro sees them) prints as any other, and nothing is gated.
+  const open = render({ sections: [latest, { ...held[0]!, rows: [{ value: 2 }] }] });
+  expect(open).toContain("Paid funding");
+  expect(open).not.toContain("Pro:");
 });
 
 test("a report's caveats print as Notes, what Pro unlocks under Pro, the failures under Errors, and JSON carries all three", async () => {
@@ -409,8 +455,8 @@ test("a report's caveats print as Notes, what Pro unlocks under Pro, the failure
   expect(lines).toContain("  ETH-USD is excluded from the risk estimate.");
   expect(lines).toContain("  1 holding had no current quote; weighted at the latest completed close.");
   expect(lines).toContain("Errors: Treasury yield: Internal server error");
-  expect(lines).toContain("Pro: Full history requires Gloom Pro");
-  expect(report.tables.footer).toEqual(expect.arrayContaining(["pro: Full history requires Gloom Pro", "error: Treasury yield: Internal server error"]));
+  expect(lines).toContain("Pro: Full history requires Gloom Pro · gloom.sh/cloud");
+  expect(report.tables.footer).toEqual(expect.arrayContaining(["pro: Full history requires Gloom Pro · gloom.sh/cloud", "error: Treasury yield: Internal server error"]));
   expect(report.data).toMatchObject({
     complete: false, errors: ["Treasury yield: Internal server error", "Full history requires Gloom Pro"],
     notes: ["ETH-USD is excluded from the risk estimate.", "1 holding had no current quote; weighted at the latest completed close."],
@@ -424,12 +470,14 @@ test("a report's caveats print as Notes, what Pro unlocks under Pro, the failure
   expect(noted.text).not.toContain("Errors");
 });
 
-test("series text distinguishes explicit percent, basis-point and index units without scaling exports", () => {
+test("series text distinguishes explicit percent, basis-point, multiple and index units without scaling exports", () => {
   const definition: HeadlessPaneDefinition<"series"> = { shape: "series", argument: { kind: "none" }, options: [], load: () => ({ series: [] }) };
   const result: HeadlessSeriesResult = { series: [
     { id: "percent", label: "Credit percent", unit: "%", points: [{ date: "2026-09-10", value: 2.7 }] },
     { id: "bp", label: "Credit basis points", unit: "bp", points: [{ date: "2026-09-10", value: 270 }] },
     { id: "index", label: "Indexed value", unit: "index", points: [{ date: "2026-09-10", value: 102.5 }] },
+    { id: "pe", label: "Trailing P/E", unit: "x", points: [{ date: "2026-09-10", value: 38.3292383292 }] },
+    { id: "ratio", label: "ETH over BTC", unit: "x", points: [{ date: "2026-09-10", value: 0.0307017 }] },
     { id: "missing", label: "Unknown unit", points: [{ date: "2026-09-10", value: 0 }] },
     { id: "empty", label: "Missing value", unit: "%", points: [] },
   ] };
@@ -438,6 +486,9 @@ test("series text distinguishes explicit percent, basis-point and index units wi
   expect(text.split("\n").find(line => line.includes("Credit percent"))).toMatch(/2\.70\s+%/);
   expect(text.split("\n").find(line => line.includes("Credit basis points"))).toMatch(/270\s+bp/);
   expect(text.split("\n").find(line => line.includes("Indexed value"))).toMatch(/102\.5\s+index/);
+  // A multiple prints to two decimals, or three significant digits where two would flatten it; the export keeps every digit.
+  expect(text.split("\n").find(line => line.includes("Trailing P/E"))).toMatch(/38\.33\s+x/);
+  expect(text.split("\n").find(line => line.includes("ETH over BTC"))).toMatch(/0\.0307\s+x/);
   expect(text.split("\n").find(line => line.includes("Unknown unit"))).toMatch(/0\s+-/);
   expect(text.split("\n").find(line => line.includes("Missing value"))).toMatch(/-\s+%/);
   expect(jsonData(definition, result)).toMatchObject({ data: { series: result.series } });
@@ -447,7 +498,27 @@ test("series text distinguishes explicit percent, basis-point and index units wi
   const identity = "symbol_or_series,currency_or_unit,interval,source,as_of";
   expect(csv).toContain(`# section: Credit percent\nDate,Value,${identity}\n2026-09-10,2.7,,%,,Gloom Cloud,2026-09-10\n`);
   expect(csv).toContain(`# section: Credit basis points\nDate,Value,${identity}\n2026-09-10,270,,bp,,Gloom Cloud,2026-09-10\n`);
-  expect(renderHeadlessPaneText(definition, { series: [result.series[3]!] }, args, "Unknown")).not.toContain("Unit");
+  expect(csv).toContain(`# section: Trailing P/E\nDate,Value,${identity}\n2026-09-10,38.3292383292,,x,,Gloom Cloud,2026-09-10\n`);
+  expect(renderHeadlessPaneText(definition, { series: [result.series.find(({ id }) => id === "missing")!] }, args, "Unknown")).not.toContain("Unit");
+});
+
+test("a series observed by the day is dated without a time in text and CSV, one read at a time of day keeps it, and ratios and scores print rounded", () => {
+  const definition: HeadlessPaneDefinition<"series"> = { shape: "series", argument: { kind: "none" }, options: [], load: () => ({ series: [] }) };
+  const result: HeadlessSeriesResult = { series: [
+    { id: "ratio", label: "VIX 3M / VIX ratio", unit: "ratio", interval: "daily", points: [
+      { date: Date.parse("2026-10-15T00:00:00Z"), value: 1.12332928311 }, { date: Date.parse("2026-10-16T00:00:00Z"), value: 1.02551275638 }] },
+    { id: "score", label: "Fear & Greed index", unit: "score", interval: "daily", points: [
+      { date: Date.parse("2026-10-15T00:00:00Z"), value: 31.5428571428 }, { date: Date.parse("2026-10-16T23:59:49Z"), value: 17.9383219955 }] },
+  ] };
+  const lines = renderHeadlessPaneText(definition, result, args, "Custom Chart").split("\n");
+  expect(lines.find((line) => line.startsWith("VIX 3M / VIX ratio"))).toMatch(/ 2026-10-16 +1\.03 +ratio /);
+  expect(lines.find((line) => line.startsWith("Fear & Greed index"))).toMatch(/ 2026-10-16 23:59 UTC +17\.9 +score /);
+  // The export keeps every digit, dated as the text is.
+  const freshness = deriveHeadlessFreshness(definition, result);
+  const csv = renderReportCsv(headlessReportTables(definition, result, args, "Custom Chart", freshness, { complete: true, unavailableSymbols: [] }), freshness);
+  expect(csv).toContain("\n2026-10-15,1.12332928311,");
+  expect(csv).toContain("\n2026-10-16,1.02551275638,");
+  expect(csv).toContain("\n2026-10-16T23:59:49Z,17.9383219955,");
 });
 
 async function reportOf(definition: HeadlessPaneDefinition, rawArgument = "") {
@@ -487,12 +558,12 @@ describe("fn --csv", () => {
     });
     expect(csvOf(report)).toEqual([
       "# section: Americas",
-      "Index,Last",
-      "SPX,7812.71",
+      "Index,Last,status",
+      "SPX,7812.71,",
       "",
       "# section: Asia-Pacific",
-      "Index,Last",
-      "KOSPI,",
+      "Index,Last,status",
+      "KOSPI,,",
       "",
       "# section: Summary",
       "Metric,Value",
@@ -515,7 +586,7 @@ describe("fn --csv", () => {
     ]);
     // --section writes that one table alone, with the closing lines.
     expect(csvOf(report, "summary").slice(0, 4)).toEqual(["Metric,Value", "Breadth (%),61.5", "Leaders,SPX; DAX", ""]);
-    expect(csvOf(report, "2").slice(0, 2)).toEqual(["Index,Last", "KOSPI,"]);
+    expect(csvOf(report, "2").slice(0, 2)).toEqual(["Index,Last,status", "KOSPI,,"]);
     expect(() => csvOf(report, "Europe")).toThrow("No section \"Europe\". Sections: Americas, Asia-Pacific, Summary, Rates, or a number from 1 to 4.");
   });
 
@@ -538,9 +609,9 @@ describe("fn --csv", () => {
       }),
     }, "HP SBK.JO XYZ");
     expect(csvOf(report)).toEqual([
-      "Symbol,Date,Volume",
-      "HP,2026-10-01,37614444",
-      "SBK.JO,2026-10-01,1838873",
+      "Symbol,Date,Volume,status",
+      "HP,2026-10-01,37614444,",
+      "SBK.JO,2026-10-01,1838873,",
       "",
       "# Source: SEC EDGAR · Thu 1 Oct 2026 00:00 UTC · not a live feed (filed data)",
       "# Publisher: U.S. Securities and Exchange Commission",

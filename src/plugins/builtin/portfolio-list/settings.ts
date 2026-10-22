@@ -2,6 +2,7 @@ import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "..
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
 import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
 import { t } from "../../../i18n";
+import type { SinceLastSeenAfter } from "./since-last-seen";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 export type PortfolioViewMode = "table" | "grid";
@@ -15,6 +16,8 @@ export interface PortfolioPaneSettings {
   hideCash: boolean;
   /** Value a portfolio at the regular close rather than the latest print (`fn PF --close`). */
   valueAtClose: boolean;
+  /** How long the pane is out of sight before coming back tints LAST by each row's move since then. */
+  sinceLastSeen: SinceLastSeenAfter;
 }
 
 export interface CollectionEntry {
@@ -127,6 +130,17 @@ const VIEW_MODE_OPTIONS: PaneSettingOption[] = [
   },
 ];
 
+const SINCE_LAST_SEEN_OPTIONS: PaneSettingOption[] = [
+  { value: "off", label: "Off" },
+  { value: "30s", label: "After 30 Seconds" },
+  { value: "2m", label: "After 2 Minutes" },
+  { value: "10m", label: "After 10 Minutes" },
+];
+
+function isSinceLastSeenAfter(value: unknown): value is SinceLastSeenAfter {
+  return SINCE_LAST_SEEN_OPTIONS.some((option) => option.value === value);
+}
+
 function isCollectionScope(value: unknown): value is CollectionScope {
   return value === "all" || value === "portfolios" || value === "watchlists" || value === "custom";
 }
@@ -181,6 +195,7 @@ function describeColumnOption(column: ColumnConfig): string {
   if (column.id === "perp_premium") return "Premium of the stock's perpetual to its last price.";
   if (column.id === "perp_funding") return "Funding of the stock's perpetual, per 8 hours.";
   if (column.id === "as_of") return "When each row's price is from: its last print, or the regular close.";
+  if (column.id === "currency") return "The currency each row is priced in; shown by default once a row is in another currency than the totals.";
   return PORTFOLIO_ONLY_COLUMN_IDS.has(column.id)
     ? "Visible only when this pane is showing a portfolio."
     : "Visible for watchlists and portfolios.";
@@ -202,6 +217,7 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
     valueAtClose: settings?.valueAtClose === true,
+    sinceLastSeen: isSinceLastSeenAfter(settings?.sinceLastSeen) ? settings.sinceLastSeen : "2m",
   };
 }
 
@@ -260,12 +276,29 @@ export function resolvePortfolioPaneCollectionId(
   return resolveActiveCollectionId(currentCollectionId, visibleCollections);
 }
 
+/**
+ * A collection holding listings in another currency than its totals shows
+ * CCY after LAST, so RY's 278.08 reads as Canadian dollars beside JNJ's US
+ * ones, unless the pane's columns already place CCY.
+ */
+function withCurrencyColumn(columnIds: string[]): string[] {
+  if (columnIds.includes("currency")) return columnIds;
+  const price = columnIds.indexOf("price");
+  const at = price >= 0 ? price + 1 : Math.min(1, columnIds.length);
+  return [...columnIds.slice(0, at), "currency", ...columnIds.slice(at)];
+}
+
 export function resolveVisibleColumns(
   columnIds: string[],
   isPortfolioTab: boolean,
-  { targetWeights = false }: { targetWeights?: boolean } = {},
+  { targetWeights = false, otherCurrencies = false }: {
+    targetWeights?: boolean;
+    /** A row is in another currency than the totals (`holdsOtherCurrencies`): CCY shows. */
+    otherCurrencies?: boolean;
+  } = {},
 ): ColumnConfig[] {
-  const resolved = (isPortfolioTab && targetWeights ? withTargetColumns(columnIds) : columnIds)
+  const withTargets = isPortfolioTab && targetWeights ? withTargetColumns(columnIds) : columnIds;
+  const resolved = (otherCurrencies ? withCurrencyColumn(withTargets) : withTargets)
     .map((columnId) => PORTFOLIO_COLUMNS_BY_ID.get(columnId))
     .filter((column): column is ColumnConfig => column != null)
     .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
@@ -334,6 +367,13 @@ export function buildPortfolioPaneSettingsDef(
     });
   }
 
+  fields.push({
+    key: "sinceLastSeen",
+    label: "Moves Since Last Seen",
+    description: "Back after this long out of sight, LAST is tinted green or red for a few seconds on rows that moved since you left.",
+    type: "select",
+    options: SINCE_LAST_SEEN_OPTIONS,
+  });
   fields.push({
     key: "hideHeader",
     label: "Hide Header Bar",

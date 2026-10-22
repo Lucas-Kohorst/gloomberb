@@ -1,11 +1,14 @@
+import { logFailure } from "../../utils/log-failure";
+import { isNoSourceAnswer } from "../../sources/provider-errors";
 import { fetchTape } from "../../plugins/builtin/time-sales/client";
+import { captureScannerEvent, SCANNER_PANE_KINDS, type ScannerCapture } from "../../plugins/builtin/shared/scanner-capture";
 import { isOptionsUnavailableError } from "../../market-data/options-alternatives";
 import type { TapeCapture } from "../../plugins/builtin/time-sales/snapshot-client";
 import { apiClient } from "../../api-client";
 import { snapshotInstrumentKey, type SnapshotMarketData } from "../../market-data/snapshot-provider";
 import { toMarketDataContext } from "../../market-data/selectors";
 import type { ChartPaneModel } from "../../plugins/builtin/chart-composer/headless";
-import { loadResolvedHeadlessPaneModel, reportCoverage, reportGaps, type LoadedHeadlessPaneModel } from "./headless";
+import { buildHeadlessPaneLoadArgs, loadResolvedHeadlessPaneModel, reportCoverage, reportGaps, type LoadedHeadlessPaneModel } from "./headless";
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
@@ -34,7 +37,7 @@ import {
 import { optionPaneState, SHOT_SIZE_LIMITS, type ShotSizeClamp } from "./options";
 import type { ResolvedPaneFunction } from "./resolver";
 import type { MarketContext } from "../types";
-import { capabilityPluginState } from "./capabilities";
+import { capabilityPluginState, findCapabilityOption } from "./capabilities";
 import { resolvePersistedCloudSessionToken } from "./cloud-session";
 import type { RemoteUiNodeSnapshot } from "../../remote/types";
 import {
@@ -73,6 +76,8 @@ import { getCloudApiBaseUrl } from "../../api-client/request";
 import { collectExternalPluginBundles } from "../../renderers/electrobun/bun/external-plugins";
 import type { ResolvedSeries } from "../../time-series/types";
 import { getQuoteMonitorPaneSettings } from "../../plugins/builtin/ticker-detail/settings";
+import { isNotATickerMessage } from "../not-a-ticker";
+import { HISTORY_DEFAULT_RANGE } from "../../plugins/builtin/ticker-detail/data-panes/history-bars";
 import { accessGateSentence, accessGateStatus } from "./access-gate";
 import { findCollection } from "../../plugins/builtin/portfolio-list/cli/render";
 import { peekCachedBrokerAccounts } from "../../plugins/builtin/portfolio-list/cached-account";
@@ -88,6 +93,7 @@ import {
   createFallbackTicker,
   fetchTickerFinancials,
   loadBrokerMarkedHolding,
+  loadStoredShotTicker,
   isFinancialAnalysisFunction,
   readsDailyReturns,
   withShotDailyReturns,
@@ -96,8 +102,8 @@ import {
   withShotReturnHistory,
   withShotSeasonalityHistory,
 } from "./data";
-import { renderedReportFreshness, renderedReportNotices, renderedReportObservations } from "./report-notices";
-import { captureStatusLine, deriveHeadlessFreshness, deriveRenderedFreshness, type CaptureStatusLine, type ReportFreshness } from "./freshness";
+import { declaredReportFreshness, renderedReportFreshness, renderedReportNotices, renderedReportObservations } from "./report-notices";
+import { captureStatusLine, deriveCaptureReport, deriveHeadlessFreshness, deriveRenderedFreshness, type CaptureReport, type CaptureStatusLine, type ReportFreshness } from "./freshness";
 import { quotesFreshness } from "../freshness";
 import {
   financialRatioRenderMismatches,
@@ -263,7 +269,8 @@ async function collectShotStatSeries(
       const result = await defaultStatLoader(def);
       const observations = Array.isArray(result) ? result : result.observations;
       return [def.seriesId, observations] as [string, DatedObservation[]];
-    } catch {
+    } catch (error) {
+      logFailure("cli.screenshot", "Read screenshot statistics series failed")(error);
       return null;
     }
   }));
@@ -282,7 +289,8 @@ async function collectShotValuationSeries(
     try {
       const series = await defaultValuationSeriesLoader(def);
       return [def.key, series.observations] as [string, DatedObservation[]];
-    } catch {
+    } catch (error) {
+      logFailure("cli.screenshot", "Read screenshot valuation series failed")(error);
       return null;
     }
   }));
@@ -434,6 +442,12 @@ export interface PaneScreenshotResult {
   dataEvidence: PaneScreenshotDataEvidence | null;
   /** What the pane says its view leaves out, such as OMON's "21 of 145 strikes". */
   notices?: string[];
+  /**
+   * For a pane that grows to show every row (FUT): how many of the rows its
+   * table reports the image shows, section headers left out. `shown` is less
+   * than `total` when the height limit or `--height` cut the board.
+   */
+  tableRows?: { shown: number; total: number };
   /** What the pane's report leaves out when it is not complete, as `fn` words it: `2 stale`. */
   gaps?: string;
   /** How current the captured data is, as the capture's status line says it; absent with `--no-status`. */
@@ -467,6 +481,12 @@ function shotImagePixels(widthPx: number, heightPx: number, scale = 1): { width:
   };
 }
 
+/** Whether a capture of this pane, on the tab it opens, grows to show every row (PaneDef.shotFitsRows). */
+function paneFitsRows(resolved: Pick<ResolvedPaneFunction, "pane" | "instance">): boolean {
+  const fits = resolved.pane.shotFitsRows;
+  return typeof fits === "function" ? fits(resolved.instance) : fits === true;
+}
+
 /** The tallest layout, in cells, a capture may grow to at this scale: the `--height` limit. */
 function shotMaxHeightCells(scale: number): number {
   return Math.max(1, Math.floor(SHOT_SIZE_LIMITS.height.max / scale / DESKTOP_CELL_HEIGHT_PX));
@@ -487,6 +507,11 @@ export function shotSizeWarnings(
   });
 }
 
+/** The options typed, by their key: an alias or another spelling (`--min-amount`) reads as the option it names. */
+function givenOptionKeys(capability: ResolvedPaneFunction["capability"], options: Record<string, string | true>): ReadonlySet<string> {
+  return new Set(Object.keys(options).flatMap((key) => findCapabilityOption(capability, key)?.key ?? []));
+}
+
 export async function buildDesktopShotPayload(
   resolved: ResolvedPaneFunction,
   context: MarketContext,
@@ -498,6 +523,7 @@ export async function buildDesktopShotPayload(
   scale: number,
   watermark: string | null,
   loadModel: () => Promise<LoadedHeadlessPaneModel> = () => loadResolvedHeadlessPaneModel(resolved, context, rawArg),
+  scannerFeed: Pick<typeof apiClient, "subscribeScanner"> = apiClient,
 ): Promise<DesktopPaneShotPayload> {
   // The requested size is the output size. Scale shrinks the CSS viewport and
   // raises the device scale factor by the same factor, so a 1200px wide shot at
@@ -520,10 +546,26 @@ export async function buildDesktopShotPayload(
   if (isFinancialAnalysisFunction(resolved) && !initialPaneState.activeTabId) {
     initialPaneState.activeTabId = "financials";
   }
+  // The pane opens on what the report found (13F: the fund a name resolved to, on its view's tab).
+  const opened = resolved.headless?.shotState
+    ? await resolved.headless.shotState(
+      buildHeadlessPaneLoadArgs(resolved.headless, resolved.token, rawArg, resolved.options),
+      async () => (await loadModel()).result as never,
+      givenOptionKeys(resolved.capability, options),
+    )
+    : null;
+  for (const [pluginId, state] of Object.entries(opened?.pluginState ?? {})) {
+    initialPaneState.pluginState = {
+      ...(initialPaneState.pluginState ?? {}),
+      [pluginId]: { ...(initialPaneState.pluginState?.[pluginId] ?? {}), ...state },
+    };
+  }
   const paneState = stripDesktopShotCredentials<Record<string, PaneRuntimeState>>({
     [resolved.instance.instanceId]: initialPaneState,
   });
-  let shotInstance = stripDesktopShotCredentials<typeof resolved.instance>(resolved.instance);
+  let shotInstance = stripDesktopShotCredentials<typeof resolved.instance>(
+    opened?.settings ? { ...resolved.instance, settings: { ...resolved.instance.settings, ...opened.settings } } : resolved.instance,
+  );
   const layout = {
     dockRoot: null,
     instances: [shotInstance],
@@ -606,11 +648,25 @@ export async function buildDesktopShotPayload(
     try {
       entry = await fetchTickerFinancials(context, symbol);
     } catch (error) {
+      // A report that reads its own argument (CDS's issuer name) renders it with no ticker data, as `fn` does.
+      if (resolved.headless?.argument.kind === "free-text" && isNotATickerMessage(error instanceof Error ? error.message : null)) continue;
+      if (!COLLECTION_PANE_IDS.has(resolved.pane.id)) throw error;
       // The pane values a holding no quote covers, such as an option contract,
       // at the broker's mark. It has no financials to capture.
-      const holding = COLLECTION_PANE_IDS.has(resolved.pane.id) ? await loadBrokerMarkedHolding(context, symbol) : null;
-      if (!holding) throw error;
-      tickers.push(holding);
+      const holding = await loadBrokerMarkedHolding(context, symbol);
+      if (holding) {
+        tickers.push(holding);
+        continue;
+      }
+      // Any other holding no source quotes (an over-the-counter name none
+      // carries) is still a row of the list: it shows without a price, and the
+      // capture names it under "No data for" rather than failing. A read that
+      // was refused, rate limited or timed out fails the capture, to be taken again.
+      if (!isNoSourceAnswer(error)) throw error;
+      const stored = await loadStoredShotTicker(context, symbol);
+      if (!stored) throw error;
+      tickers.push(stored);
+      financials.push([symbol, { annualStatements: [], quarterlyStatements: [], priceHistory: [] }]);
       continue;
     }
     const requestedRange = shotPriceHistoryRange(resolved);
@@ -674,6 +730,11 @@ export async function buildDesktopShotPayload(
       if (chain) optionsChains.push([symbol, chain]);
     }
   }
+  // A scanner pane reads one answer from the capture's own session: the page's socket is refused (see createSnapshotScannerClient).
+  const scannerKind = SCANNER_PANE_KINDS[resolved.pane.id];
+  const scannerSnapshots: ScannerCapture[] = scannerKind
+    ? [[scannerKind, await captureScannerEvent(scannerFeed, scannerKind, new AbortController().signal)]]
+    : [];
   layout.instances[0] = shotInstance;
   config.layout.instances[0] = shotInstance;
   if (config.layouts[0]) config.layouts[0].layout.instances[0] = shotInstance;
@@ -698,6 +759,7 @@ export async function buildDesktopShotPayload(
     intradayHistories,
     optionsChains,
     ...(tapeSnapshots.length ? { tapeSnapshots } : {}),
+    ...(scannerSnapshots.length ? { scannerSnapshots } : {}),
     valuationSeries,
     statSeries,
     paneState,
@@ -736,6 +798,7 @@ function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null
     case "return-correlation":
       return (resolved.options.rangePreset ?? "1Y") as TimeRange;
     case "historical-prices":
+      return (resolved.options.range ?? HISTORY_DEFAULT_RANGE) as TimeRange;
     case "security-relationship":
       return (resolved.options.range ?? "1Y") as TimeRange;
     default:
@@ -767,21 +830,25 @@ function recordBridgedQuotes(bridge: DesktopPaneShotBridge): { bridge: DesktopPa
 
 /**
  * How current a capture's data is (`captureStatusLine`). A pane that dates its
- * view itself (the news wire's delay, FXC's rates) is taken at its word, and a
- * pane that declares a status is never dated by the quotes it shows; otherwise
- * those quotes date it, with their delay and where their markets stand. Then
- * the pane's report, as `fn` ends; then what the rendered view carries.
+ * view itself (the news wire's delay, FXC's rates) is taken at its word, and so
+ * is a report that says what its data is (EE's estimates, MDAY's study): the
+ * quotes the page loaded beside them do not date them. A pane that declares a
+ * status is never dated by the quotes it shows; otherwise those quotes date it,
+ * with their delay and where their markets stand. Then the pane's report, as
+ * `fn` ends; then what the rendered view carries. A function that opens one
+ * view of a pane hosting several declares it on its template (DDIS in Fixed
+ * Income), so its filings, not the issuer's stock quote, date the capture.
  */
-function shotFreshness(
-  resolved: Pick<ResolvedPaneFunction, "pane">,
+export function shotFreshness(
+  resolved: Pick<ResolvedPaneFunction, "pane" | "template">,
   payload: Pick<DesktopPaneShotPayload, "financials" | "instrumentFinancials">,
   render: Pick<DesktopPaneShotRenderResult, "semanticUi" | "footerText" | "rows">,
   bridgedQuotes: readonly Quote[],
-  report: ReportFreshness | undefined,
+  report: CaptureReport | undefined,
   now = Date.now(),
 ): CaptureStatusLine {
   const published = renderedReportFreshness(render.semanticUi ?? []);
-  const declared = { ...resolved.pane.reportFreshness, ...published };
+  const declared = { ...declaredReportFreshness(resolved), ...published };
   const quotes = [
     ...payload.financials.map(([, financials]) => financials.quote),
     ...(payload.instrumentFinancials ?? []).map(({ financials }) => financials.quote),
@@ -813,12 +880,13 @@ async function reportShotFreshness(
   resolved: Pick<ResolvedPaneFunction, "headless">,
   loadModel: () => Promise<LoadedHeadlessPaneModel>,
   now = Date.now(),
-): Promise<ReportFreshness | undefined> {
+): Promise<CaptureReport | undefined> {
   if (!resolved.headless) return undefined;
   try {
     const loaded = await loadModel();
-    return deriveHeadlessFreshness(loaded.definition, loaded.result, now);
-  } catch {
+    return deriveCaptureReport(loaded.definition, loaded.result, now);
+  } catch (error) {
+    logFailure("cli.screenshot", "Read screenshot report freshness failed")(error);
     return undefined;
   }
 }
@@ -845,7 +913,8 @@ export async function reportShotCoverage(
     const { complete, unavailableSymbols } = reportCoverage(loaded);
     const gaps = reportGaps(loaded, deriveHeadlessFreshness(loaded.definition, loaded.result));
     return { complete, unavailableSymbols, ...(gaps ? { gaps } : {}) };
-  } catch {
+  } catch (error) {
+    logFailure("cli.screenshot", "Read screenshot report coverage failed")(error);
     return undefined;
   }
 }
@@ -1006,7 +1075,7 @@ export async function renderDesktopShot({
     );
     if (statusLine && captureImage) payload.statusLine = true;
     const fitRoles = [
-      ...(fitRows && resolved.pane.shotFitsRows ? ["data-table-body-scroll"] : []),
+      ...(fitRows && paneFitsRows(resolved) ? ["data-table-body-scroll"] : []),
       ...(fitReader && resolved.pane.shotFitsReader ? ["detail-scroll-body"] : []),
     ];
     if (fitRoles.length > 0) {
@@ -1040,6 +1109,23 @@ export async function renderDesktopShot({
   if (renderedInstance) resolved = { ...resolved, instance: renderedInstance };
   const assessed = withReportCoverage(assessPaneScreenshot(resolved, payload, render, rawArg, outputPath), covered);
   return freshness ? { ...assessed, freshness } : assessed;
+}
+
+/**
+ * For a pane that grows to fit its rows, the rows its table reports (every
+ * one, `reportEveryRow`) and how many of them the image shows, by key;
+ * section headers count in neither. Null for any other pane, or a table that
+ * reports only what is drawn.
+ */
+export function shotTableRows(
+  resolved: Pick<ResolvedPaneFunction, "pane" | "instance">,
+  render: Pick<DesktopPaneShotRenderResult, "rows" | "reportRows">,
+): { shown: number; total: number } | null {
+  if (!paneFitsRows(resolved) || !render.reportRows?.length) return null;
+  const reported = render.reportRows.filter((row) => !row.section && row.key);
+  if (reported.length === 0) return null;
+  const drawn = new Set(render.rows.flatMap((row) => row.key ? [`${row.tableIndex}:${row.key}`] : []));
+  return { shown: reported.filter((row) => drawn.has(`${row.tableIndex}:${row.key}`)).length, total: reported.length };
 }
 
 /** What a rendered capture shows, and whether it is fit to use. */
@@ -1104,8 +1190,10 @@ export function assessPaneScreenshot(
   const unusableReason = usable
     ? null
     : shotUnusableReasonFor(resolved, payload, render, unavailableSymbols, semanticMismatch);
+  const tableRows = shotTableRows(resolved, render);
   const notices = [
     ...renderedReportNotices(render.semanticUi ?? []).notices,
+    ...unquotedHoldingsNotice(resolved, payload),
     ...(render.surfaces?.some((surface) => surface.renderer === "software")
       ? ["The 3D surface was drawn by the software renderer: this browser has no WebGL."] : []),
   ];
@@ -1130,6 +1218,7 @@ export function assessPaneScreenshot(
     unusableReason,
     dataEvidence,
     ...(notices.length > 0 ? { notices } : {}),
+    ...(tableRows ? { tableRows } : {}),
     outputPath,
     render: {
       ...stripDesktopShotCredentials(render),
@@ -1141,6 +1230,20 @@ export function assessPaneScreenshot(
       chartEvidenceMismatches,
     },
   };
+}
+
+/**
+ * The holdings of a portfolio or watchlist capture no source quoted (an
+ * over-the-counter name none carries), whose rows show no price: "No quote
+ * for KISB; its row shows no price."
+ */
+function unquotedHoldingsNotice(resolved: ResolvedPaneFunction, payload: DesktopPaneShotPayload): string[] {
+  if (!COLLECTION_PANE_IDS.has(resolved.pane.id)) return [];
+  const unquoted = payload.financials.flatMap(([symbol, financials]) => (
+    !financials.quote && financials.priceHistory.length === 0 && financials.annualStatements.length === 0 ? [symbol] : []
+  ));
+  if (unquoted.length === 0) return [];
+  return [`No quote for ${unquoted.join(", ")}; ${unquoted.length === 1 ? "its row shows" : "their rows show"} no price.`];
 }
 
 function requiresStructuredDataEvidence(resolved: ResolvedPaneFunction): boolean {

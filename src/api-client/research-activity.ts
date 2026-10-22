@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import { apiClient } from "./index";
 import { getCurrentPluginTarget } from "../plugins/current-target";
 import type { DesktopDeepLinkBridge } from "../types/desktop-deeplink";
@@ -28,7 +29,10 @@ export type ResearchActivity =
   | "onboarding_signed_in"
   | "onboarding_pro_viewed"
   | "onboarding_completed"
-  | "onboarding_skipped";
+  | "onboarding_skipped"
+  // The first action of a web visitor counted in the first-screen experiment,
+  // in that first session. Keep in sync with the server's list.
+  | "first_screen_engaged";
 export type ResearchFeature =
   | "overview"
   | "chart"
@@ -96,6 +100,7 @@ function cleanUrlValue(value: unknown): string | undefined {
     new URL(cleaned);
     return cleaned;
   } catch {
+    // Intentional ignore: Malformed attribution URLs are excluded from the payload.
     return undefined;
   }
 }
@@ -119,7 +124,7 @@ export function readStoredAttribution(stored: string | null, now = Date.now()): 
     const parsed: unknown = JSON.parse(stored ?? "{}");
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) saved = parsed as Record<string, unknown>;
   } catch {
-    /* Corrupt storage is the same as no storage. */
+    // Intentional ignore: Corrupt optional attribution is treated as absent.
   }
 
   const next: Record<string, string> = {};
@@ -167,6 +172,7 @@ export function carriesHandoff(href: string): boolean {
       FIRST_TOUCH_KEYS.some((key) => params.has(key))
     );
   } catch {
+    // Intentional ignore: Malformed links carry no usable attribution handoff.
     return false;
   }
 }
@@ -255,7 +261,7 @@ export function initializeBrowserResearchActivity(): void {
     stripHandoffParams(url);
     history.replaceState(history.state, "", url.href);
   } catch {
-    /* Private browsing must still work. */
+    // Intentional ignore: Private browsing may deny optional attribution storage.
   }
 }
 
@@ -272,7 +278,7 @@ export function initializeDesktopResearchActivity(storage: StorageLike = localSt
     anonymousId = stored && ANONYMOUS_ID.test(stored) ? stored : undefined;
     attribution = readStoredAttribution(storage.getItem(ATTRIBUTION_STORAGE_KEY));
   } catch {
-    /* A read-only profile still runs the app. */
+    // Intentional ignore: A read-only profile may deny optional attribution storage.
   }
 }
 
@@ -294,6 +300,7 @@ export function adoptDesktopHandoff(href: string, storage: StorageLike = localSt
     storage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(attribution));
     return true;
   } catch {
+    // Intentional ignore: Optional attribution storage may be unavailable; the deep link still opens.
     return false;
   }
 }
@@ -403,9 +410,10 @@ export function recordResearchActivity(
       if (!wallEvent) return;
       const views = wallSessionViews();
       views.add(key);
-      try { sessionStorage.setItem(WALL_VIEWS_SESSION_KEY, JSON.stringify([...views])); } catch { /* Native sessions use the in-memory set. */ }
+      try { sessionStorage.setItem(WALL_VIEWS_SESSION_KEY, JSON.stringify([...views])); } catch { /* Intentional ignore: Native sessions retain wall views in the in-memory set. */ }
     })
-    .catch(() => {
+    .catch((error) => {
+      logFailure("cloud-telemetry", "Research activity request failed")(error);
       sent.delete(key);
     });
 }
@@ -429,7 +437,8 @@ export function recordResearchTabView(tabId: string, fromExternalPlugin: boolean
 export function identifyResearchUser(): void {
   try {
     recordResearchActivity("workspace_opened");
-  } catch {
+  } catch (error) {
+    logFailure("cloud-telemetry", "Research identity reporting failed")(error);
     /* Analytics never blocks sign-in. */
   }
 }
@@ -441,6 +450,7 @@ function webExperimentAttribution(): { experiments?: string } {
     const experiments = storedExperimentAssignments(localStorage);
     return experiments ? { experiments } : {};
   } catch {
+    // Intentional ignore: Unavailable optional storage contributes no experiment attribution.
     return {};
   }
 }
@@ -451,7 +461,10 @@ function webExperimentAttribution(): { experiments?: string } {
  * visitors on term.gloom.sh with an analytics id (no Do Not Track or Global
  * Privacy Control) and not driven by automation are asked. See web-experiments.ts.
  */
-export function exposeWebExperiment(experiment: string): Promise<string | null> {
+export function exposeWebExperiment(
+  experiment: string,
+  { placement, signal }: { placement?: string; signal?: AbortSignal } = {},
+): Promise<string | null> {
   if (!researchTelemetryAllowed()) return Promise.resolve(null);
   if (getCurrentPluginTarget() !== "web") return Promise.resolve(null);
   try {
@@ -468,7 +481,8 @@ export function exposeWebExperiment(experiment: string): Promise<string | null> 
         attribution: attributionPayload(),
         experiment: key,
         variant,
-      }),
+        ...(placement && ACTIVITY_ID.test(placement) ? { placement } : {}),
+      }, signal),
     });
   } catch {
     return Promise.resolve(null);
@@ -492,7 +506,7 @@ function wallExperimentContext(): WallExperimentContext {
   try {
     if (surface === "web") local = localStorage;
     if (surface === "web" || surface === "desktop") session = sessionStorage;
-  } catch { /* Native and private sessions keep their answer in memory. */ }
+  } catch { /* Intentional ignore: Native and private sessions keep experiment answers in memory. */ }
   return {
     surface,
     accountId: user?.id,
@@ -509,7 +523,7 @@ function wallSessionViews(): Set<string> {
   try {
     const saved: unknown = JSON.parse(sessionStorage.getItem(WALL_VIEWS_SESSION_KEY) ?? "[]");
     if (Array.isArray(saved)) return new Set(saved.filter((value): value is string => typeof value === "string"));
-  } catch { /* Native sessions use the in-memory set. */ }
+  } catch { /* Intentional ignore: Native sessions retain wall views in the in-memory set. */ }
   return new Set();
 }
 

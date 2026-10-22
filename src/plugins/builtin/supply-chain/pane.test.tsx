@@ -110,6 +110,25 @@ test("reverse table labels the percentage denominator and diagram pages a crowde
 
 
 
+test("a share never shows without what it is a share of, at any pane width", async () => {
+  // A tagged fact's context and a prose denominator are too long for a narrow column; a reverse share names its reporter.
+  const says = [
+    supplyRow("Tagged vendor", { role: "supplier", sourceKind: "xbrl", pctOfRevenue: 47, pctBasis: "receivables", pctScope: "Vendor non-trade receivables", quote: "ConcentrationRiskByType=SupplierConcentrationRisk;" }),
+    supplyRow("Prose vendor", { role: "supplier", pctOfRevenue: 33, pctBasis: "receivables", pctScope: "Vendor non-trade receivables" }),
+  ];
+  const data = supplyPayload({ says, totalRows: says.length });
+  data.counts.says.customer = 0; data.counts.says.supplier = 2;
+  setCloudApiFetchTransport(async () => Response.json(data));
+  for (const width of [70, 80, 110, 160]) {
+    await mount(width, 20);
+    const frame = await tui.waitForFrameToContain("33%");
+    const line = (figure: string) => frame.split("\n").find((entry) => entry.includes(figure)) ?? "";
+    expect(line("47%")).toMatch(/47%\s+receiv/);
+    expect(line("33%")).toMatch(/33%\s+(of\s+)?receiv/);
+    await tui.destroy();
+  }
+});
+
 test("narrow evidence wraps original quotes and glosses and scrolls to their ends", async () => {
   const row = supplyRow("Korean disclosure", { quoteLanguage: "ko", pctOfRevenue: null, pctBasis: null,
     quote: "2025년 당사의 주요 매출처는 Alphabet, Apple, Deutsche Telekom, Hong Kong Techtronics, Supreme Electronics 등(알파벳순) 입니다. 당사의 주요 5대 매출처에 대한 매출비중은 전체 매출액 대비 약 15% 수준입니다.",
@@ -249,4 +268,24 @@ test("a narrow graph reveals keyboard-selected nodes outside its initial horizon
   await tui.emitKeypress({ name: "j" });
   await tui.emitKeypress({ name: "k" });
   expect(await tui.waitForFrameToContain("LEFTMOST")).toContain("2H · supplier");
+});
+
+
+test("receivables chart keeps earlier shares beside their basis and their evidence reachable", async () => {
+  const ar = (id: string, period: string, pct: number) => supplyRow(id, { period, asOf: period, pctOfRevenue: pct, pctBasis: "receivables" });
+  const latest = ar("Current buyer", "2026-07-31", 22);
+  const earlier = [ar("Previous buyer", "2026-01-31", 25), ar("Oldest buyer", "2025-07-31", 12)];
+  setCloudApiFetchTransport(async () => Response.json(supplyPayload({ says: [latest], earlier: { says: earlier, names: [] }, earlierCounts: { says: { ...supplyPayload().counts.says, customer: 2 }, names: supplyPayload().counts.names } })));
+  for (const width of [70, 80, 110, 160]) {
+    await mount(width, 40);
+    await tui.waitForFrameToContain("Largest disclosed customer");
+    const frame = await tui.waitForFrameToContain("Earlier periods");
+    for (const share of [22, 25, 12]) {
+      expect(frame).toMatch(new RegExp(`${share}%\\s+(of\\s+)?receivables`));
+    }
+    if (width !== 160) await tui.destroy();
+  }
+  await act(async () => { await tui.clickFrameText("Previous buyer"); });
+  await tui.emitKeypress({ name: "e" });
+  expect(await tui.waitForFrameToContain("Previous buyer")).toContain("2026-01-31");
 });

@@ -59,6 +59,30 @@ export interface KeyboardToolDrag {
   end: ChartDrawingPoint;
 }
 
+/** The chart's own layout: its tool bar, its legend and its panels' heights. */
+export interface CompositeChartLayoutControls {
+  toolbarHidden: boolean;
+  toggleToolbar: () => void;
+  /** The legend has more than one series, so it can fold to its first. */
+  legendCollapsible: boolean;
+  legendCollapsed: boolean;
+  toggleLegend: () => void;
+  /** Two or more panels share the plot, so the keys can move the line between them. */
+  panelsResizable: boolean;
+  stepTopPanel: (direction: 1 | -1) => void;
+  /** Heights were set by hand. */
+  panelHeightsSet: boolean;
+  resetPanelHeights: () => void;
+  /** A panel has the whole plot. */
+  panelMaximized: boolean;
+  restorePanels: () => void;
+}
+
+/** Shift with one of the arrows, and no other modifier. */
+function isShiftedArrow(event: { name?: string; shift?: boolean; ctrl?: boolean; meta?: boolean; alt?: boolean }, ...names: string[]): boolean {
+  return event.shift === true && !event.ctrl && !event.meta && !event.alt && names.includes(event.name ?? "");
+}
+
 /** Shift and a letter, whether or not the terminal reports the shift itself. */
 function isShiftedLetter(event: { name?: string; shift?: boolean; ctrl?: boolean; meta?: boolean; alt?: boolean }, letter: string): boolean {
   if (event.ctrl || event.meta || event.alt) return false;
@@ -73,6 +97,7 @@ export function useCompositeChartKeyboard({
   scene,
   cursorDate,
   updateCursor,
+  pin,
   onActivate,
   timePick,
   levels,
@@ -82,6 +107,7 @@ export function useCompositeChartKeyboard({
   isSeriesToggleable,
   navigationFrame,
   activeUserViewport,
+  scaledByHand,
   panViewportByRatio,
   zoomViewport,
   setViewportRange,
@@ -93,6 +119,7 @@ export function useCompositeChartKeyboard({
   addDrawing,
   removeDrawing,
   pickDrawColor,
+  layout,
 }: {
   focused: boolean;
   interactive: boolean;
@@ -101,6 +128,8 @@ export function useCompositeChartKeyboard({
   scene: CompositeChartScene | null;
   cursorDate: CompositeChartProps["cursorDate"];
   updateCursor: (date: Date | null) => void;
+  /** The tab's crosshair pin, when there is a cursor to pin or a pin to lift. */
+  pin: { pinned: boolean; toggle: () => void } | null;
   onActivate: CompositeChartProps["onActivate"];
   timePick: CompositeChartProps["timePick"];
   levels: CompositeChartProps["levels"];
@@ -110,6 +139,8 @@ export function useCompositeChartKeyboard({
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
   navigationFrame: CompositeNavigationFrame | null;
   activeUserViewport: CompositeViewportRange | null;
+  /** A value axis was stretched or squeezed by hand, which `resetViewport` also fits again. */
+  scaledByHand: boolean;
   panViewportByRatio: (shiftRatio: number) => void;
   zoomViewport: (zoomFactor: number, anchorRatio?: number) => void;
   setViewportRange: (range: CompositeViewportRange) => void;
@@ -121,6 +152,7 @@ export function useCompositeChartKeyboard({
   addDrawing: (drawing: ChartDrawing) => void;
   removeDrawing: () => void;
   pickDrawColor: (color: string) => void;
+  layout: CompositeChartLayoutControls;
 }) {
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
   const [armedTool, setArmedTool] = useState<ChartToolKind | null>(null);
@@ -217,7 +249,8 @@ export function useCompositeChartKeyboard({
   const leaveChart = () => {
     setEntered(false);
     setLegendKeyboardIndex(null);
-    if (!clearableCursor) return;
+    // Stepping out to the strip leaves a pinned crosshair where it is.
+    if (!clearableCursor || pin?.pinned) return;
     keyboardCursorDateRef.current = null;
     updateCursor(null);
   };
@@ -283,6 +316,8 @@ export function useCompositeChartKeyboard({
   };
   const stepLegend = (direction: -1 | 1) => {
     onActivate?.();
+    // The series stepped to must be on screen.
+    if (layout.legendCollapsed) layout.toggleLegend();
     setLegendKeyboardIndex((current) => (
       current === null
         ? direction > 0 ? 0 : visibleLegendSeries.length - 1
@@ -420,7 +455,7 @@ export function useCompositeChartKeyboard({
       stepLevel(event.name === "[" ? -1 : 1);
       return;
     }
-    if (toolsActive && selectedLevel?.editable && levelsEditable && isPlainKey(event, "backspace")) {
+    if (toolsActive && selectedLevel?.editable && levelsEditable && isPlainKey(event, "backspace", "delete")) {
       consume();
       removeSelectedLevel();
       return;
@@ -449,6 +484,21 @@ export function useCompositeChartKeyboard({
       setKeyboardPlacement((current) => current && moveKeyboardPlacement(current, { level }));
       return;
     }
+    if (toolsActive && isShiftedLetter(event, "t")) {
+      consume();
+      layout.toggleToolbar();
+      return;
+    }
+    if (legendKeysActive && layout.legendCollapsible && isShiftedLetter(event, "l")) {
+      consume();
+      layout.toggleLegend();
+      return;
+    }
+    if (toolsActive && layout.panelsResizable && isShiftedArrow(event, "up", "down")) {
+      consume();
+      layout.stepTopPanel(event.name === "up" ? 1 : -1);
+      return;
+    }
     if (isPlainKey(event, "[", "]") && (drawingKeysActive || legendKeysActive)) {
       consume();
       const direction = event.name === "[" ? -1 : 1;
@@ -471,6 +521,14 @@ export function useCompositeChartKeyboard({
     if (isPlainKey(event, "escape") && legendKeysActive && legendKeyboardIndex !== null && !clearableCursor) {
       consume();
       setLegendKeyboardIndex(null);
+      return;
+    }
+    // Then Esc lifts a pin, whether or not the pinned moment is on this
+    // chart's bars, and before an owner that holds the cursor (a pane's
+    // selected date) gets it: the pin shows over that cursor until it goes.
+    if (pin?.pinned && isPlainKey(event, "escape")) {
+      consume();
+      pin.toggle();
       return;
     }
     // Whatever a tool or a pick held is gone by now, so Esc steps out to the
@@ -583,6 +641,8 @@ export function useCompositeChartKeyboard({
       armTool(tool);
     },
     leave: leaveChart,
+    togglePin: () => pin?.toggle(),
+    layout,
   };
   const chartActionsRef = useRef(chartActions);
   chartActionsRef.current = chartActions;
@@ -595,11 +655,20 @@ export function useCompositeChartKeyboard({
   const armedHints = armedTool ? KEYBOARD_TOOL_HINTS[armedTool] : null;
   const placing = !!keyboardPlacement;
   const legendEntryVisible = !!legendEntry && visibleSeriesIds.has(legendEntry.id);
-  const resettable = !!activeUserViewport;
+  const resettable = !!activeUserViewport || scaledByHand;
   const timePickLabel = timePick?.label ?? null;
   const levelActionHint = selectedLevel?.actionable && levels?.action ? levels.action : null;
   const levelToolKeys = toolsActive && armedTool === "level" && levelsEditable;
   const canDeleteLevel = toolsActive && levelsEditable && !!selectedLevel?.editable;
+  const pinState = pin ? pin.pinned : null;
+  const {
+    toolbarHidden,
+    legendCollapsible,
+    legendCollapsed,
+    panelsResizable,
+    panelHeightsSet,
+    panelMaximized,
+  } = layout;
   usePaneFooter(keyboardId, () => {
     if (!keyboardActive || !scene) return null;
     const hints: PaneHint[] = [];
@@ -617,6 +686,18 @@ export function useCompositeChartKeyboard({
         label: levelActionHint.label,
         title: levelActionHint.title,
         onPress: () => chartActionsRef.current.levelAction(),
+      });
+    }
+    if (pinState !== null) {
+      hints.push({
+        id: "chart-pin",
+        key: "p",
+        // "[p]in", and "[p] unpin" for the word that does not start with its key.
+        label: pinState ? " unpin" : "in",
+        title: pinState ? "Unpin Crosshair" : "Pin Crosshair",
+        // A pane whose own `p` means something else keeps it.
+        yieldsKey: true,
+        onPress: () => chartActionsRef.current.togglePin(),
       });
     }
     if (legendKeysActive && legendEntryToggleable) {
@@ -660,6 +741,29 @@ export function useCompositeChartKeyboard({
         });
       }
       if (resettable) menu.push({ id: "chart-reset", label: "Reset Zoom", accelerator: "0", onSelect: () => chartActionsRef.current.reset() });
+      menu.push({
+        id: "chart-toolbar",
+        label: toolbarHidden ? "Show Drawing Tools" : "Hide Drawing Tools",
+        accelerator: "Shift+T",
+        onSelect: () => chartActionsRef.current.layout.toggleToolbar(),
+      });
+      if (panelsResizable) {
+        menu.push({ id: "chart-panel-taller", label: "Taller Top Panel", accelerator: "Shift+Up", onSelect: () => chartActionsRef.current.layout.stepTopPanel(1) });
+        menu.push({ id: "chart-panel-shorter", label: "Shorter Top Panel", accelerator: "Shift+Down", onSelect: () => chartActionsRef.current.layout.stepTopPanel(-1) });
+      }
+      if (panelMaximized) {
+        menu.push({ id: "chart-panels-restore", label: "Show All Panels", onSelect: () => chartActionsRef.current.layout.restorePanels() });
+      } else if (panelHeightsSet) {
+        menu.push({ id: "chart-panels-reset", label: "Reset Panel Heights", onSelect: () => chartActionsRef.current.layout.resetPanelHeights() });
+      }
+    }
+    if (legendKeysActive && legendCollapsible) {
+      menu.push({
+        id: "chart-legend",
+        label: legendCollapsed ? "Expand Legend" : "Collapse Legend",
+        accelerator: "Shift+L",
+        onSelect: () => chartActionsRef.current.layout.toggleLegend(),
+      });
     }
     if (legendKeysActive && anyLegendToggleable && !drawingKeysActive) {
       menu.push({ id: "chart-series-next", label: "Next Series", accelerator: "]", onSelect: () => chartActionsRef.current.stepLegend(1) });
@@ -686,6 +790,13 @@ export function useCompositeChartKeyboard({
     canDeleteLevel,
     levelsEditable,
     toolsActive,
+    pinState,
+    toolbarHidden,
+    legendCollapsible,
+    legendCollapsed,
+    panelsResizable,
+    panelHeightsSet,
+    panelMaximized,
   ]);
 
   return {

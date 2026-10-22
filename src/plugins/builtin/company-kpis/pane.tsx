@@ -9,6 +9,8 @@ import { usePaneRefreshKey } from "../../../components/data-table/table-pane";
 import { useAsyncResource, useAutoRefresh, usePaneSettingValue, usePluginAppActions, usePluginPaneState } from "../../../public/react";
 import { usePaneTickerIdentity } from "../../../state/hooks/pane-ticker";
 import { useThemeColors } from "../../../theme/theme-context";
+import { quoteBlockStyle } from "../../../components/ui/quote";
+import { ClippedText } from "../../../components/ui/display";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, useRendererHost, useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { SignInWall } from "../cloud/auth-actions";
@@ -19,8 +21,8 @@ import { isCloudSessionRequired, useResearchCloudSession } from "../shared/resea
 import { cachedCompanyData, loadCompanyData, KPI_UNAVAILABLE, validateCompanyData, type CompanyDataset, type CompanyMode } from "./client";
 import { useCompanyEvidence } from "./screenshot-evidence";
 import { allGuidance, allObservations, basisLabel, changeText, changeTone, companyCellText, companyColumns, dimensionLabel, directionLabel, directionTone, guideGroupKey, guidanceSeries, fiscalLabel,
-  isGuidance, exactObservation, observationValue, observationChange, observationChart, periodOrder, outcomeLabel, QUIET_COLUMNS, rangeText, seriesLabel, unitLabel, valueText, companyPreviewNote,
-  type CompanyRow } from "./model";
+  isGuidance, exactObservation, observationValue, observationChange, observationChart, periodOrder, outcomeLabel, QUIET_COLUMNS, rangeText, scopeWords, seriesDetail, seriesLabel, seriesLabels, seriesName,
+  seriesOrder, unitLabel, valueText, companyPreviewNote, type CompanyRow } from "./model";
 import { PriceSparkline } from "../../../components/price-sparkline/view";
 import type { PricePoint } from "../../../types/financials";
 import { toneColor, withoutQuietColumns } from "../shared/research-cells";
@@ -31,14 +33,16 @@ const getId = (item: Item) => item.id;
 const isNote = (item: Item) => "note" in item && !!item.note;
 function DisclosureEvidence({ row, sourceId, onSource, width }: { row: CompanyRow; sourceId: string | null; onSource: (id: string) => void; width: number }) {
   const colors = useThemeColors();
+  const desktop = useUiCapabilities().nativePaneChrome === true;
   const evidence = row.evidence.find((entry) => entry.id === sourceId) ?? row.evidence[0]!;
-  return <Box flexDirection="column" paddingX={1}>
+  // The desktop's detail body already holds the pane's inset.
+  return <Box flexDirection="column" paddingX={desktop ? 0 : 1}>
     {row.evidence.length > 1 ? <QueryBar width={Math.max(1, width - 4)} filters={[{ id: "source", label: "Document", value: evidence.id,
       options: row.evidence.map((entry) => ({ value: entry.id, label: `${entry.publishedAt.slice(0, 10)} · ${entry.title}` })), onChange: onSource }]} /> : null}
     <KeyValueRow label="Value" value={isGuidance(row) ? rangeText(row) : observationValue(row)} detail={row.currency || row.unit === "volume" || row.unit === "count" ? unitLabel(row) : undefined} labelWidth={18} />
     <KeyValueRow label="Fiscal period" value={row.period.label} detail={row.period.end ? row.period.start ? `${row.period.start} to ${row.period.end}` : `${row.period.kind === "instant" ? "As of" : "Ended"} ${row.period.end}` : "Calendar dates unavailable"} labelWidth={18} />
     <KeyValueRow label="Basis" value={basisLabel(row.basis)} labelWidth={18} />
-    <KeyValueRow label="Scope" value={dimensionLabel(row.dimensions) || "Consolidated"} labelWidth={18} />
+    <KeyValueRow label="Scope" value={(desktop ? scopeWords(seriesLabels(row)) : dimensionLabel(row.dimensions)) || "Consolidated"} labelWidth={18} />
     <KeyValueRow label="Definition" value={row.metric.definition} labelWidth={18} />
     <KeyValueRow label="Revision" value={`${row.revision}${row.current ? " · current" : " · superseded"}${!isGuidance(row) && (row.conflict || row.contested) ? " · conflicting disclosures" : ""}`} labelWidth={18} />
     {row.revisionReason ? <KeyValueRow label="Correction" value={row.revisionReason} labelWidth={18} /> : null}
@@ -53,7 +57,10 @@ function DisclosureEvidence({ row, sourceId, onSource, width }: { row: CompanyRo
       <KeyValueRow label="Document" value={evidence.title} labelWidth={18} />
       <KeyValueRow label="Published" value={evidence.publishedAt.slice(0, 10)} detail={`${evidence.country} · ${evidence.language}`} labelWidth={18} />
       <KeyValueRow label="Confidence" value={`${Math.round(evidence.confidence * 100)}%`} detail={evidence.quoteMatchMode === "exact" ? "Exact text match" : "Normalized text match"} labelWidth={18} />
-      <Box paddingY={1}><Text fg={colors.textBright}>{evidence.quote}</Text></Box>
+      {/* The filing's own words: on the desktop, the quote block. */}
+      {desktop
+        ? <Box marginY={1} style={quoteBlockStyle()}><Text fg={colors.textBright} wrapText>{evidence.quote}</Text></Box>
+        : <Box paddingY={1}><Text fg={colors.textBright}>{evidence.quote}</Text></Box>}
       <Text fg={colors.textDim}>{evidence.url}</Text>
     </Box>
   </Box>;
@@ -93,22 +100,24 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
   const guidance = data && "guidance" in data ? data : null;
   const [openingTab] = usePaneSettingValue("tab", "table");
   const [tabValue, setTab] = usePluginPaneState<string>("company:tab", openingTab);
-  const tab = ["table", "chart", "evidence", ...(guidance ? ["history"] : [])].includes(tabValue) ? tabValue : "table";
+  const tab = ["table", "chart", "evidence", ...(mode === "guidance" ? ["history"] : [])].includes(tabValue) ? tabValue : "table";
   const [openingMetric] = usePaneSettingValue("metric", "all");
   const [metric, setMetric] = usePluginPaneState<string>("company:metric", openingMetric);
   const [plotKey, setPlotKey] = usePluginPaneState<string>("company:plot", "");
   const [selectedId, setSelected] = usePluginPaneState<string | null>(`company:selected:${tab}`, null);
   const [openId, setOpen] = usePluginPaneState<string | null>("company:open", null);
   const [sourceId, setSource] = usePluginPaneState<string | null>("company:source", null);
-  const [sort, setSort] = usePluginPaneState<{ column: string; direction: "asc" | "desc" }>("company:sort", { column: "period", direction: "desc" });
+  // The desktop lists KPIs by metric, each series named in plain words (GLO-1046); the terminal keeps its frames.
+  const [sort, setSort] = usePluginPaneState<{ column: string; direction: "asc" | "desc" }>("company:sort",
+    desktop && mode === "kpis" ? { column: "metric", direction: "asc" } : { column: "period", direction: "desc" });
   const detailScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const observations = useMemo(() => kpis ? allObservations(kpis) : [], [kpis]);
   const guides = useMemo(() => guidance ? allGuidance(guidance) : [], [guidance]);
   const allRows = useMemo<CompanyRow[]>(() => [...observations, ...guides], [observations, guides]);
   const eligible = useMemo(() => allRows.filter((row) => metric === "all" || row.metricId === metric), [allRows, metric]);
   const plotOptions = useMemo(() => mode === "kpis"
-    ? [...new Map(eligible.filter((row) => !isGuidance(row)).map((row) => [`${row.seriesKey}:${row.period.kind}`, { value: `${row.seriesKey}:${row.period.kind}`, label: `${seriesLabel(row)} · ${row.period.kind}` }])).values()]
-    : [...new Map(eligible.filter(isGuidance).map((row) => [guideGroupKey(row), { value: guideGroupKey(row), label: `${seriesLabel(row)} · ${row.period.label}` }])).values()], [eligible, mode]);
+    ? [...new Map(eligible.filter((row) => !isGuidance(row)).map((row) => [`${row.seriesKey}:${row.period.kind}`, { value: `${row.seriesKey}:${row.period.kind}`, label: `${desktop ? seriesName(row) : seriesLabel(row)} · ${row.period.kind}` }])).values()]
+    : [...new Map(eligible.filter(isGuidance).map((row) => [guideGroupKey(row), { value: guideGroupKey(row), label: `${desktop ? seriesName(row) : seriesLabel(row)} · ${row.period.label}` }])).values()], [eligible, mode, desktop]);
   const activePlot = plotOptions.some((option) => option.value === plotKey) ? plotKey : plotOptions[0]?.value ?? "";
   const rows = useMemo(() => {
     const values = eligible.filter((row) => tab === "chart" ? (isGuidance(row) ? guideGroupKey(row) : `${row.seriesKey}:${row.period.kind}`) === activePlot
@@ -124,11 +133,13 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
         : sort.column === "quote" ? row.evidence[0]!.quote : sort.column === "change" ? guide ? guide.direction : observationChange(row as KpiObservation, observations).value
         : periodOrder(row);
     };
+    const direction = sort.direction === "asc" ? 1 : -1;
+    if (desktop && sort.column === "metric") return [...values].sort((a, b) => (seriesOrder(a, b) || periodOrder(b).localeCompare(periodOrder(a)) || a.id.localeCompare(b.id)) * direction);
     return [...values].sort((a, b) => { const x = key(a), y = key(b);
       return x === null || y === null ? x === y ? a.id.localeCompare(b.id) : x === null ? 1 : -1
-        : (x < y ? -1 : x > y ? 1 : a.metric.name.localeCompare(b.metric.name) || dimensionLabel(a.dimensions).localeCompare(dimensionLabel(b.dimensions)) || a.id.localeCompare(b.id)) * (sort.direction === "asc" ? 1 : -1);
+        : (x < y ? -1 : x > y ? 1 : a.metric.name.localeCompare(b.metric.name) || dimensionLabel(a.dimensions).localeCompare(dimensionLabel(b.dimensions)) || a.id.localeCompare(b.id)) * direction;
     });
-  }, [eligible, tab, activePlot, guidance, kpis, sort, observations]);
+  }, [eligible, tab, activePlot, guidance, kpis, sort, observations, desktop]);
   const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
   const openRow = allRows.find((row) => row.id === openId);
   const activeRow = openRow ?? selected;
@@ -147,15 +158,16 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
     }
     return map;
   }, [kpis]);
-  const columns = useMemo(() => withoutQuietColumns(companyColumns(mode === "guidance", tab === "evidence", tab === "history", mode === "kpis" && tab === "table" && trends.size > 0 && width >= 100),
-    rows, (row, id) => id === "basis" ? basisLabel(row.basis) : id === "scope" ? dimensionLabel(row.dimensions) || "Consolidated" : "", QUIET_COLUMNS), [mode, tab, trends, rows, width]);
+  const columns = useMemo(() => withoutQuietColumns(companyColumns(mode === "guidance", tab === "evidence", tab === "history", mode === "kpis" && tab === "table" && trends.size > 0 && width >= 100, desktop),
+    rows, (row, id) => id === "basis" ? basisLabel(row.basis) : id === "scope" ? dimensionLabel(row.dimensions) || "Consolidated" : "", QUIET_COLUMNS), [mode, tab, trends, rows, width, desktop]);
   const metricOptions = useMemo(() => [{ value: "all", label: "All metrics" }, ...[...new Map(allRows.map((row) => [row.metricId, { value: row.metricId, label: row.metric.name }])).values()]], [allRows]);
   const kpiChart = useMemo(() => observationChart(rows.filter((row): row is KpiObservation => !isGuidance(row)), colors.warning), [rows, colors.warning]);
   const series = useMemo(() => tab !== "chart" ? [] : mode === "kpis" ? kpiChart.series
     : guidanceSeries(guides, selected && isGuidance(selected) ? selected : undefined, { low: colors.textMuted, high: colors.warning, actual: colors.positive }), [tab, mode, kpiChart, guides, selected, colors]);
   const link = useChartTableSelection({ rows, getId: (row) => row.id, getDate: (row) => isGuidance(row) ? new Date(row.issuedDate) : kpiChart.dates.get(row.id) ?? null,
     selectedId: selected?.id ?? null, onSelect: setSelected, focused: focused && !openRow, enabled: tab === "chart" });
-  const { strip, rows: tabRows } = usePaneTabs(data ? { tabs: [{ value: "table", label: mode === "guidance" ? "Tracker" : "Table" }, { value: "chart", label: "Chart" },
+  const signInWall = !data && isCloudSessionRequired(resource.error);
+  const { strip, rows: tabRows } = usePaneTabs(symbol && !signInWall ? { tabs: [{ value: "table", label: mode === "guidance" ? "Tracker" : "Table" }, { value: "chart", label: "Chart" },
     ...(mode === "guidance" ? [{ value: "history", label: "History" }] : []), { value: "evidence", label: "Evidence" }], activeValue: tab,
     onSelect: (value) => { setTab(value); setOpen(null); }, focused, dense: true } : null);
   useAutoRefresh(resource.updatedAt, resource.load);
@@ -179,12 +191,12 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
     data?.truncated && data.access === "full" ? "The response reached its stored-record limit. Narrow the metric or date range in a CLI or REST query." : null,
     data?.coverage.conflicts ? "Conflicting disclosures are retained in Evidence and excluded from comparable trends." : null].filter((value): value is string => !!value) });
   if (!symbol) return <EmptyState title="Select a ticker." />;
-  if (!data && isCloudSessionRequired(resource.error)) return <SignInWall placement="company-kpis-signin" action="view company KPIs and guidance" needsVerification={session.needsVerification} />;
+  if (signInWall) return <SignInWall placement="company-kpis-signin" action={mode === "guidance" ? "view company guidance" : "view company KPIs"} needsVerification={session.needsVerification} />;
   const bodyHeight = Math.max(3, height - tabRows);
   const query = <QueryBar width={width} filters={[{ id: "metric", label: "Metric", value: metric, defaultValue: "all", options: metricOptions,
     onChange: (value: string) => { setMetric(value); setSelected(null); setOpen(null); } }, ...(tab === "chart" && plotOptions.length ? [{ id: "series", label: "Series", value: activePlot,
       options: plotOptions, onChange: (value: string) => { setPlotKey(value); setSelected(null); } }] : [])]} />;
-  const renderCell = (item: Item, column: (typeof columns)[number]): DataTableCell => {
+  const renderCell = (item: Item, column: (typeof columns)[number], _index: number, state: { selected: boolean }): DataTableCell => {
     const row = item.row;
     if (!row) {
       if (isNote(item)) return { text: "" };
@@ -204,6 +216,15 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
       const change = observationChange(row as KpiObservation, observations);
       return { text: changeText(change), value: change.value, color: toneColor(changeTone(row as KpiObservation, change.value), colors) };
     }
+    if (desktop && column.id === "metric") {
+      // The series in plain words: the metric bright, what tells it apart dim. The detail starts from no width and takes
+      // what the name leaves, so it gives way first and the name is cut only when it alone does not fit.
+      const detail = seriesDetail(row);
+      return { text: detail ? `${row.metric.name}  ${detail}` : row.metric.name, content: <Box flexDirection="row" height={1} overflow="hidden" flexShrink={1} minWidth={0}>
+        <ClippedText fg={state.selected ? colors.selectedText : colors.textBright} text={row.metric.name} width={column.width} />
+        {detail ? <ClippedText fg={state.selected ? colors.selectedText : colors.textDim} lead="  " text={detail} width={column.width} flex="1 1 0%" /> : null}
+      </Box> };
+    }
     const text = companyCellText(row, column.id, observations);
     return { text, ...(column.id === "value" && !guide ? { value: exactObservation(row as KpiObservation) ? (row as KpiObservation).value : observationValue(row as KpiObservation) } : column.id === "actual" ? { value: guide?.actual?.value } : {}),
       color: column.id === "metric" ? colors.textBright : column.id === "value" || column.id === "actual" ? colors.textBright
@@ -219,7 +240,7 @@ function CompanyView({ symbol, exchange, name, mode, width, height, focused }: P
         selection={{ kind: "id", selectedId: selected?.id ?? null, getId, onChange: setSelected }}
         onActivate={(item) => item.row ? setOpen(item.row.id) : isNote(item) ? undefined : openUpgrade()} renderCell={renderCell}
         isNavigable={(item) => !isNote(item)} renderSectionHeader={(item) => "note" in item && item.note ? { text: item.note } : null} freezeFirstColumn selectedTextOverridesCellColor showHorizontalScrollbar
-        detailOpen={!!openRow} onBack={() => setOpen(null)} detailTitle={openRow ? `${openRow.metric.name} · ${fiscalLabel(openRow)}` : undefined}
+        detailOpen={!!openRow} onBack={() => setOpen(null)} detailTitle={openRow ? `${desktop ? seriesName(openRow) : openRow.metric.name} · ${fiscalLabel(openRow)}` : undefined}
         detailScrollRef={detailScrollRef} detailContent={openRow ? <DetailScrollBody ref={detailScrollRef} resetScrollKey={openRow.id}><DisclosureEvidence row={openRow} sourceId={sourceId} onSource={setSource} width={width} /></DetailScrollBody> : null}
         sortColumnId={sort.column} sortDirection={sort.direction} onHeaderClick={(column) => setSort((previous) => ({ column, direction: previous.column === column && previous.direction === "desc" ? "asc" : "desc" }))}
         resetScrollKey={`${mode}:${symbol}:${tab}:${metric}:${activePlot}`}

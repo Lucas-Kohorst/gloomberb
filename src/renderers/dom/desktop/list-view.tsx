@@ -3,7 +3,8 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import type { ListRowState, ListViewItem, ListViewProps } from "../../../components/ui/list-view";
-import { blendHex, hoverBg, type ThemeColors } from "../../../theme/colors";
+import { ListRowLines } from "../../../components/ui/list-row-lines";
+import { hoverBg, type ThemeColors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { WEB_CELL_HEIGHT } from "../../../theme/font-scale";
 import { isInsideDialogSurface } from "../host/focus-scope";
@@ -18,9 +19,12 @@ import {
 function DefaultDesktopRow({
   item,
   selected,
+  stacked,
 }: {
   item: ListViewItem;
   selected: boolean;
+  /** The description on a second line under the label (`rowDescriptions`). */
+  stacked: boolean;
 }) {
   const colors = useThemeColors();
   return (
@@ -28,28 +32,52 @@ function DefaultDesktopRow({
       flexDirection="row"
       justifyContent="space-between"
       width="100%"
+      // A two-line row is taller than its lines: they sit in its middle.
+      height={stacked ? "100%" : undefined}
       minWidth={0}
       alignItems="center"
       style={{ boxSizing: "border-box" }}
     >
-      <Box flexDirection="row" alignItems="center" minWidth={0} flexShrink={1} overflow="hidden">
-        <Text
-          fg={item.color ?? (selected ? colors.text : colors.textDim)}
-          attributes={selected ? TextAttributes.BOLD : 0}
-          style={{
-            // The base text style pins flexShrink to 0, which lets a long
-            // label run under the detail instead of shrinking to an ellipsis.
-            flexShrink: 1,
-            minWidth: 0,
-            maxWidth: "100%",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+      {stacked ? (
+        <ListRowLines
+          label={item.label}
+          description={item.description}
+          leading={item.leading}
+          labelColor={item.color}
+          labelBold={selected}
+        />
+      ) : (
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          minWidth={0}
+          flexShrink={1}
+          overflow="hidden"
+          style={item.leading !== undefined ? { gap: "var(--gloom-space-sm)" } : undefined}
         >
-          {item.label}
-        </Text>
-      </Box>
+          {item.leading !== undefined && (
+            <Box flexShrink={0} alignItems="center" aria-hidden="true" data-gloom-role="list-row-leading">
+              {item.leading}
+            </Box>
+          )}
+          <Text
+            fg={item.color ?? (selected ? colors.text : colors.textDim)}
+            attributes={selected ? TextAttributes.BOLD : 0}
+            style={{
+              // The base text style pins flexShrink to 0, which lets a long
+              // label run under the detail instead of shrinking to an ellipsis.
+              flexShrink: 1,
+              minWidth: 0,
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.label}
+          </Text>
+        </Box>
+      )}
       {item.detail && (
         <Text fg={colors.textMuted} style={{ flexShrink: 0, marginLeft: 12 }}>
           {item.detail}
@@ -59,20 +87,22 @@ function DefaultDesktopRow({
   );
 }
 
+/** A row with its description under its label: the two lines and a quarter row above and below them. */
+const STACKED_ROW_HEIGHT = 2.5;
+
 const FRAMED_LIST_PADDING_PX = 4;
 /** What a framed list adds above and below its rows: padding and a 1px border on each side. */
 const FRAMED_LIST_CHROME_PX = 2 * (FRAMED_LIST_PADDING_PX + 1);
 
-function listRowStyle(selected: boolean, disabled: boolean, colors: ThemeColors): CSSProperties {
+function listRowStyle(selected: boolean, disabled: boolean, colors: ThemeColors, framed: boolean): CSSProperties {
   return {
     borderRadius: CONTROL_RADIUS,
-    border: `1px solid ${selected ? colors.borderFocused : "transparent"}`,
-    boxShadow: selected ? `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}` : undefined,
+    border: `1px solid ${selected && framed ? colors.borderFocused : "transparent"}`,
     boxSizing: "border-box",
     cursor: disabled ? "default" : "pointer",
     maxWidth: "100%",
     minWidth: 0,
-    paddingInline: 10,
+    paddingInline: "var(--gloom-space-sm)",
   };
 }
 
@@ -85,13 +115,15 @@ export function WebListView({
   renderRow,
   getRowBackgroundColor,
   showSelectedDescription = false,
+  rowDescriptions = false,
   emptyMessage = "Nothing to show.",
   bgColor,
   selectedBgColor,
   hoverBgColor,
   rowGap = 1,
-  rowHeight = 1,
+  rowHeight = rowDescriptions ? STACKED_ROW_HEIGHT : 1,
   surface,
+  selection = "frame",
   height,
   flexGrow,
   scrollable = false,
@@ -238,11 +270,11 @@ export function WebListView({
             const rows = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]');
             rows?.[nextIndex]?.focus();
           }}
-          style={listRowStyle(selected, disabled, colors)}
+          style={listRowStyle(selected, disabled, colors, selection === "frame")}
         >
           {renderRow
             ? renderRow(item, state, index)
-            : <DefaultDesktopRow item={item} selected={selected} />}
+            : <DefaultDesktopRow item={item} selected={selected} stacked={rowDescriptions} />}
         </Box>
       );
     });

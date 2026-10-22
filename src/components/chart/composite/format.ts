@@ -1,4 +1,5 @@
 import { formatMarketPrice, formatMarketPriceWithCurrency, stablePriceFractionDigits, type MarketFormatOptions } from "../../../market-data/market/format";
+import { INDEX_POINTS_UNIT } from "../../../market-data/market/index-level";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import type { CompositeAxisDomain, CompositePanelScene } from "./types";
 import { timeZoneLabel, zonedWallClockMs } from "../../../utils/zoned-date-time";
@@ -39,12 +40,14 @@ function currencyPrefix(unit: string): string {
   return currency ? CURRENCY_SYMBOLS[currency] ?? "" : "";
 }
 
+/** A price in full, as the crosshair tag and a live label read it: $343.46 in a currency, 7,805.45 in index points. */
 function formatFullCurrencyValue(
   value: number,
   unit: string,
   assetCategory?: string,
   options: MarketFormatOptions = {},
 ): string | null {
+  if (unit.trim() === INDEX_POINTS_UNIT) return formatMarketPrice(value, { ...options, assetCategory, priceBasis: "points" });
   const currency = unitCurrencyCode(unit);
   return currency ? formatMarketPriceWithCurrency(value, currency, { ...options, assetCategory }) : null;
 }
@@ -241,6 +244,16 @@ export function formatCompositeSeriesValue(
   series: ResolvedSeries,
   referencePrice = seriesPriceReference(series),
 ): string {
+  if (series.statedUnit) {
+    // The number alone: the legend prints the unit beside it, as FUT prints
+    // a price beside its unit (4.6242 USD / gallon, not $4.6242).
+    const currency = unitCurrencyCode(series.unit) ?? undefined;
+    return formatMarketPrice(value, {
+      assetCategory: series.priceAssetCategory,
+      ...(currency ? { currency } : {}),
+      ...stablePriceOptions(series.unit, series.priceAssetCategory, referencePrice),
+    });
+  }
   return formatChartLegendValue(value, series.unit, series.unitGroup, series.priceAssetCategory, referencePrice);
 }
 
@@ -285,6 +298,14 @@ export function formatChartLegendValue(
   return trimmed && trimmed.length <= 6 ? `${compact}${trimmed.startsWith("/") ? "" : " "}${trimmed}` : compact;
 }
 
+/** compactNumber's scale, with the decimals a tick gap needs at that scale. */
+function preciseCompactNumber(value: number, gap: number): string {
+  const absolute = Math.abs(value);
+  const [divisor, suffix] = ([[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]] as const).find(([scale]) => absolute >= scale) ?? [1, ""];
+  const digits = Math.min(12, Math.max(0, Math.ceil(-Math.log10(gap / divisor) - 1e-9)));
+  return `${(value / divisor).toFixed(digits)}${suffix}`;
+}
+
 const COMPACT_LABEL = /^(-?\d+)(?:\.(\d+))?([KMBT]?)$/;
 
 function trimmedDecimals(label: string): number {
@@ -319,13 +340,17 @@ export function formatCompositeAxisValue(value: number, domain: CompositeAxisDom
   // Where that happens the axis spends the digits needed to tell them apart,
   // shared across every tick so the column reads as one scale.
   const gap = narrowestAxisTickGap(domain);
+  const prefix = currencyPrefix(domain.unit);
   if (gap !== null && gap < compactResolution(value)) {
     const resolved = formatAxisPriceValue(value, domain, {
       fixedFractionDigits: Math.max(0, Math.ceil(-Math.log10(gap))),
     });
     if (resolved) return resolved;
+    // No currency to format with, such as a price whose quote has not
+    // arrived: the same digits still keep the ticks apart.
+    const precise = preciseCompactNumber(value, gap);
+    return prefix && precise.startsWith("-") ? `-${prefix}${precise.slice(1)}` : `${prefix}${precise}`;
   }
-  const prefix = currencyPrefix(domain.unit);
   return prefix && compact.startsWith("-") ? `-${prefix}${compact.slice(1)}` : `${prefix}${compact}`;
 }
 
@@ -499,6 +524,13 @@ export function formatCompositeCursorAxisDate(
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** A dataset observation's day as the axis words it, `Oct 4`, with the year when the chart ends in another. */
+export function formatCompositeDatasetDate(date: Date, endTime: number | undefined): string {
+  const text = `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}`;
+  const endYear = endTime === undefined ? null : new Date(endTime).getUTCFullYear();
+  return endYear === null || endYear === date.getUTCFullYear() ? text : `${text} ${date.getUTCFullYear()}`;
+}
 
 /**
  * When a value carried under the cursor was observed: its time when it is

@@ -5,6 +5,30 @@ body {
   --cell-w: 8px;
   --cell-h: 18px;
   --chrome-h: 20px;
+  /* Design tokens (src/theme/ui-tokens.ts, docs/pane-conventions.md "Tokens").
+     FONT+ sets --gloom-font-scale with the cell size. */
+  --gloom-font-scale: 1;
+  --gloom-type-caption: calc(10px * var(--gloom-font-scale));
+  --gloom-type-ui: calc(12px * var(--gloom-font-scale));
+  --gloom-type-body: calc(14px * var(--gloom-font-scale));
+  --gloom-type-heading: calc(16px * var(--gloom-font-scale));
+  --gloom-type-title: calc(20px * var(--gloom-font-scale));
+  --gloom-weight-regular: 400;
+  --gloom-weight-bold: 700;
+  --gloom-space-xs: 4px;
+  --gloom-space-sm: 8px;
+  --gloom-space-md: 12px;
+  --gloom-space-lg: 16px;
+  --gloom-space-xl: 24px;
+  --gloom-inset: var(--cell-w);
+  --gloom-radius-sm: 3px;
+  --gloom-radius-md: 6px;
+  --gloom-radius-lg: 8px;
+  --gloom-radius-full: 999px;
+  --gloom-hairline: color-mix(in srgb, var(--gloom-text) 14%, transparent);
+  --gloom-hover-fill: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
+  --gloom-band: color-mix(in srgb, var(--gloom-text-bright) 3.5%, transparent);
+  --gloom-elevation: 0 12px 32px color-mix(in srgb, var(--gloom-bg) 48%, transparent);
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
@@ -39,17 +63,16 @@ input, textarea { cursor: text; }
   user-select: text;
 }
 button, [data-gloom-interactive="true"] { cursor: pointer; }
-/* `plain` buttons drop the border, so hover is the only thing left that says
-   the row or chip is clickable. A translucent wash reads the same on the
-   sidebar, a pane body and the status bar. */
-[data-gloom-role="desktop-button"][data-gloom-variant="plain"]:not(:disabled):hover {
-  background-color: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
+/* Ghost and secondary buttons are clear and take the hover fill, a translucent
+   wash that reads the same on the sidebar, a pane body and the status bar;
+   filled ones keep their fill (control-styles.ts, buttonPalette). */
+[data-gloom-role="desktop-button"] { background-color: transparent; }
+[data-gloom-role="desktop-button"]:is([data-gloom-variant="plain"], [data-gloom-variant="ghost"], [data-gloom-variant="secondary"]):not(:disabled):not([aria-pressed="true"]):hover {
+  background-color: var(--gloom-hover-fill);
 }
-/* A raised button sinks while it is held: its light flips and its shadow goes
-   (control-styles.ts, buttonRelief). */
-[data-gloom-raised="true"]:not(:disabled):active {
-  background-image: var(--gloom-pressed-image) !important;
-  box-shadow: var(--gloom-pressed-shadow) !important;
+/* Quiet quick actions take the same wash, over a chosen one's fill too. */
+[data-gloom-role="desktop-button"][data-gloom-variant="quiet"]:not(:disabled):hover {
+  background-color: var(--gloom-hover-fill) !important;
 }
 [data-gloom-hover-bg="true"]:hover {
   background-color: var(--gloom-box-hover-bg) !important;
@@ -125,9 +148,10 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 }
 [data-gloom-role="pane-window"][data-floating="true"] {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--gloom-radius-md);
   overflow: hidden;
-  box-shadow: 0 18px 38px color-mix(in srgb, var(--gloom-bg) 46%, transparent);
+  /* A floating pane is a floating surface: the one elevation. */
+  box-shadow: var(--gloom-elevation);
 }
 [data-gloom-role="pane-window"][data-floating="true"]::after {
   content: "";
@@ -138,12 +162,9 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   pointer-events: none;
   z-index: 100;
 }
-[data-gloom-role="pane-window"][data-floating="true"][data-focused="true"] {
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--gloom-bg) 50%, transparent);
-}
 [data-gloom-role="pane-window"][data-floating="true"][data-window-mode-selected="true"] {
   box-shadow:
-    0 18px 40px color-mix(in srgb, var(--gloom-bg) 50%, transparent),
+    var(--gloom-elevation),
     0 0 0 2px var(--gloom-border-focused),
     0 0 0 5px color-mix(in srgb, var(--gloom-border-focused) 28%, transparent);
 }
@@ -232,13 +253,14 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   opacity: 1;
   pointer-events: auto;
 }
-/* The message a notification pointed at: marked, then fading out. */
+/* The message a notification pointed at: marked, then fading out to its own
+   background (an announcement's band, or none). */
 [data-gloom-role="chat-message"][data-highlighted="true"] [data-gloom-role="chat-message-row"] {
   animation: gloom-chat-highlight 2s ease-out forwards;
 }
 @keyframes gloom-chat-highlight {
   from { background-color: var(--chat-highlight-bg); }
-  to { background-color: transparent; }
+  to { background-color: var(--chat-highlight-rest, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   [data-gloom-role="chat-message"][data-highlighted="true"] [data-gloom-role="chat-message-row"] {
@@ -272,8 +294,8 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   flex: none;
   height: var(--cell-h);
   align-items: center;
-  border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
-  font-size: 11.5px;
+  border-top: 1px solid var(--gloom-hairline);
+  font-size: var(--gloom-type-ui);
 }
 [data-gloom-role="status-bar"] span {
   line-height: var(--cell-h);
@@ -330,8 +352,8 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   min-height: var(--chrome-h);
   max-height: var(--chrome-h);
   align-items: center;
-  border-top: 1px solid color-mix(in srgb, var(--pane-footer-border-color, var(--gloom-border)) 72%, transparent);
-  font-size: 11.5px;
+  border-top: 1px solid var(--pane-footer-border-color, var(--gloom-hairline));
+  font-size: var(--gloom-type-ui);
   overflow: hidden;
 }
 [data-gloom-role="pane-footer"][data-empty="true"] {
@@ -343,10 +365,10 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 }
 [data-gloom-role="pane-hint"] {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--gloom-radius-md);
 }
 [data-gloom-role="pane-hint"]:hover {
-  background: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
+  background: var(--gloom-hover-fill);
 }
 [data-gloom-role="resize-handle"] {
   cursor: nwse-resize;
@@ -370,21 +392,21 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 }
 [data-gloom-role="window-mode-status"] {
   border: 1px solid color-mix(in srgb, var(--gloom-border-focused) 76%, transparent);
-  border-radius: 8px;
+  border-radius: var(--gloom-radius-lg);
   background:
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--gloom-border-focused) 95%, var(--gloom-bg) 5%),
       color-mix(in srgb, var(--gloom-border-focused) 82%, var(--gloom-bg) 18%)
     ) !important;
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--gloom-bg) 55%, transparent);
+  box-shadow: var(--gloom-elevation);
   overflow: hidden;
 }
 [data-gloom-role="window-mode-status"] span {
   line-height: var(--cell-h);
 }
 [data-gloom-role="window-mode-corner"] {
-  border-radius: 4px;
+  border-radius: var(--gloom-radius-sm);
   box-shadow:
     0 0 0 1px var(--gloom-bg),
     0 0 0 4px color-mix(in srgb, var(--gloom-border-focused) 28%, transparent);
@@ -438,24 +460,117 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
     --tab-reorder-duration: 0ms;
   }
 }
-[data-gloom-role="tab-button"]:focus-visible {
-  outline: 1px solid var(--tab-hover-underline);
-  outline-offset: -1px;
+/* One tab everywhere: title-bar tabs, sub-tabs, segmented choices and the
+   query bar's inline choices. Text only, no box: inactive dim, hovered the
+   text colour with a faint underline, active bright and bold on a 2px accent
+   underline. Keyboard focus is the hover look. */
+[data-gloom-role="tab-button"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gloom-space-xs);
+  height: 100%;
+  padding: 0 var(--gloom-space-sm);
+  font-size: var(--gloom-type-ui);
+  font-weight: var(--gloom-weight-regular);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--tab-fg, var(--gloom-text-dim));
+  background: transparent;
+  border-radius: 0;
+  transition: color 110ms ease;
 }
-/* Title-bar tabs open into the pane body, so a ring would draw a line under the
-   active tab's label. Keyboard focus shows as the hover fill instead. */
-[data-gloom-role="pane-header-tabs"] [data-gloom-role="tab-button"]:focus-visible {
-  outline: none;
+[data-gloom-role="tab-button"]::after {
+  content: "";
+  position: absolute;
+  left: var(--gloom-space-sm);
+  right: var(--gloom-space-sm);
+  bottom: 0;
+  height: 2px;
+  background: var(--gloom-accent);
+  opacity: 0;
+  transition: opacity 110ms ease;
 }
-[data-gloom-role="pane-header-tabs"] [data-gloom-role="tab-button"]:not([data-active="true"]):focus-visible {
-  background: var(--pane-tab-hover-bg) !important;
-  color: var(--tab-hover-fg) !important;
+[data-gloom-role="tab-button"][data-dense="true"] { padding: 0 var(--gloom-space-xs); }
+[data-gloom-role="tab-button"][data-dense="true"]::after { left: var(--gloom-space-xs); right: var(--gloom-space-xs); }
+[data-gloom-role="tab-button"]:not([data-active="true"]):not(:disabled):is(:hover, :focus-visible) {
+  color: var(--gloom-text);
 }
+[data-gloom-role="tab-button"]:not([data-active="true"]):not(:disabled):is(:hover, :focus-visible)::after {
+  opacity: 0.35;
+}
+[data-gloom-role="tab-button"][data-active="true"] {
+  color: var(--tab-active-fg, var(--gloom-text-bright));
+  font-weight: var(--gloom-weight-bold);
+}
+[data-gloom-role="tab-button"][data-active="true"]::after { opacity: 1; }
+[data-gloom-role="tab-button"]:disabled { color: var(--gloom-text-muted); cursor: default; }
+[data-gloom-role="tab-button"]:focus-visible { outline: none; }
+/* Title-bar tabs: the same text, sizes and colours, drawn as raised boxes
+   instead of underlines. The active tab is a box with rounded top corners,
+   open at the bottom: its top and sides in the header rule's colour (the
+   accent while the pane is focused), its fill the surface under it, laid over
+   the rule so it opens into the pane. An inactive tab takes the hover fill in
+   the same shape. The pane header sets the colours (pane/header.tsx). */
+[data-gloom-role="tab-list"][data-gloom-variant="header"] {
+  /* Header colour left above a box, and the box's line: the header rule's width. */
+  --pane-tab-top-gap: 2px;
+  --pane-tab-rule: 1px;
+}
+[data-gloom-role="tab-list"][data-gloom-variant="header"] > [data-gloom-role="tab-button"] {
+  height: calc(100% - var(--pane-tab-top-gap));
+  /* The sides take their line from the padding, so a label sits where it
+     would without the box. The gap and the top line push the label down; the
+     bottom padding lifts it back onto the header's centre line, halfway
+     between its top rule (a divider or a floating border, when there is one)
+     and its bottom rule, where the title sits. */
+  padding: 0 calc(var(--gloom-space-sm) - var(--pane-tab-rule)) calc(var(--pane-tab-top-gap) + 2 * var(--pane-tab-rule) - var(--pane-tab-top-inset, 0px));
+  border: var(--pane-tab-rule) solid transparent;
+  border-bottom: 0;
+  border-radius: var(--gloom-radius-md) var(--gloom-radius-md) 0 0;
+  /* The line lies on the bar, as the rule does, so a translucent hairline is
+     the same colour on both. */
+  background-clip: padding-box;
+}
+[data-gloom-role="tab-list"][data-gloom-variant="header"] > [data-gloom-role="tab-button"]::after { content: none; }
+[data-gloom-role="tab-list"][data-gloom-variant="header"] > [data-gloom-role="tab-button"][data-active="true"] {
+  background-color: var(--pane-tab-active-bg, var(--gloom-bg));
+  border-color: var(--pane-tab-border, var(--gloom-hairline));
+}
+[data-gloom-role="tab-list"][data-gloom-variant="header"] > [data-gloom-role="tab-button"]:not([data-active="true"]):not(:disabled):is(:hover, :focus-visible, [data-drag-target="true"]) {
+  background-color: var(--gloom-hover-fill);
+}
+/* A tab's close mark stays inside the box: in a 20px title bar the box is
+   shorter than the icon button, whose fill would cover the box's top line. */
+[data-gloom-role="tab-list"][data-gloom-variant="header"] [data-gloom-role="tab-close"] {
+  max-height: 100%;
+}
+/* A tab's close mark and a strip's plus are the icon button: 20 by 18, the control radius, the hover fill. */
+[data-gloom-role="tab-add"] {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  margin-inline-start: var(--gloom-space-xs);
+}
+[data-gloom-role="tab-add"]:focus-visible { outline: none; background: var(--gloom-hover-fill); }
+[data-gloom-role="tab-add"],
 [data-gloom-role="tab-close"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 var(--gloom-space-xs);
+  box-sizing: border-box;
   cursor: pointer;
+  border-radius: var(--gloom-radius-md);
+  color: var(--gloom-text-muted);
 }
+[data-gloom-role="tab-add"]:hover,
 [data-gloom-role="tab-close"]:hover {
-  background: color-mix(in srgb, var(--gloom-text-bright) 10%, transparent);
+  background: var(--gloom-hover-fill);
+  color: var(--gloom-text-bright);
 }
 [data-gloom-scrollbar-x],
 [data-gloom-scrollbar-y] {
@@ -480,7 +595,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   min-width: 24px;
   min-height: 24px;
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--gloom-radius-full);
   background: transparent;
   background-clip: content-box;
 }
@@ -520,6 +635,30 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
   opacity: .7;
+}
+/* Controls a surface shows only while the pointer is over it or the keyboard
+   is in it (a chart legend's fold, its tool bar's), so at rest it draws as it
+   always has. */
+[data-gloom-reveal-scope]:not(:hover):not(:focus-within) [data-gloom-reveal="hover"] {
+  display: none !important;
+}
+/* The line between two chart panels: drawn while the pointer is on it or
+   drags it, in the accent a pane sidebar's divider takes. */
+[data-gloom-role="composite-chart-panel-divider"] {
+  cursor: row-resize;
+}
+[data-gloom-role="composite-chart-panel-divider"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--gloom-accent);
+  opacity: 0;
+}
+[data-gloom-role="composite-chart-panel-divider"]:is(:hover, [data-active="true"])::before {
+  opacity: 1;
 }
 [data-gloom-role="dock-divider"] {
   background: transparent !important;
@@ -602,7 +741,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   display: flex;
   width: min(380px, calc(100vw - 32px));
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gloom-space-sm);
   pointer-events: none;
   z-index: 10000;
 }
@@ -613,13 +752,13 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   gap: 2px 10px;
   align-items: start;
   width: 100%;
-  padding: 11px 10px 11px 12px;
+  padding: var(--gloom-space-md);
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--gloom-toast-accent) 54%, var(--gloom-border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--gloom-panel) 94%, var(--gloom-bg));
+  border: 1px solid color-mix(in srgb, var(--gloom-toast-accent) 54%, var(--gloom-control-border));
+  border-radius: var(--gloom-radius-lg);
+  background: var(--gloom-surface-raised);
   color: var(--gloom-text);
-  box-shadow: 0 14px 32px color-mix(in srgb, var(--gloom-bg) 42%, transparent);
+  box-shadow: var(--gloom-elevation);
   pointer-events: auto;
 }
 .gloom-toast[data-type="success"] { --gloom-toast-accent: var(--gloom-positive); }
@@ -636,7 +775,6 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   margin-top: 5px;
   border-radius: 50%;
   background: var(--gloom-toast-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gloom-toast-accent) 14%, transparent);
 }
 .gloom-toast-heading {
   grid-area: 1 / 2;
@@ -657,7 +795,6 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 .gloom-toast-subtitle {
   overflow: hidden;
   color: var(--gloom-text-dim);
-  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -674,12 +811,12 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   grid-area: 1 / 3;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--gloom-space-xs);
 }
 @media (hover: hover) and (pointer: fine) {
   .gloom-toast[data-actionable="true"]:hover {
     border-color: var(--gloom-toast-accent);
-    background: color-mix(in srgb, var(--gloom-panel) 88%, var(--gloom-toast-accent));
+    background: color-mix(in srgb, var(--gloom-surface-raised) 88%, var(--gloom-toast-accent));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -703,14 +840,12 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   max-width: min(920px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   overflow: auto;
-  border: 1px solid var(--gloom-border);
-  border-radius: 6px;
-  background: var(--gloom-panel);
+  border: 1px solid var(--gloom-control-border);
+  border-radius: var(--gloom-radius-lg);
+  background: var(--gloom-surface-raised);
   color: var(--gloom-text);
   padding: 0;
-  box-shadow:
-    0 18px 48px color-mix(in srgb, var(--gloom-bg) 46%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--gloom-text-bright) 5%, transparent);
+  box-shadow: var(--gloom-elevation);
 }
 .gloom-popover-anchor {
   display: inline-flex;
@@ -722,13 +857,12 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   z-index: 10001;
   max-height: min(420px, calc(100vh - 20px));
   overflow: auto;
-  border: 1px solid;
-  border-radius: 8px;
-  padding: 8px;
+  border: 1px solid var(--gloom-control-border);
+  border-radius: var(--gloom-radius-lg);
+  padding: var(--gloom-space-sm);
   outline: none;
-  box-shadow:
-    0 14px 34px color-mix(in srgb, var(--gloom-bg) 42%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--gloom-text-bright) 5%, transparent);
+  background: var(--gloom-surface-raised);
+  box-shadow: var(--gloom-elevation);
 }
 /* Chart screenshot watermark: mounted by every chart, revealed together by
    html[data-gloom-screenshot] (pane capture, OS screenshot chords, CLI shots). */
@@ -746,8 +880,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
    tinted with an accent base line. The row scrolls sideways when the pane is
    narrower than its controls. */
 .gloom-qb {
-  --qb-hairline: color-mix(in srgb, var(--gloom-text) 14%, transparent);
-  --qb-fill: color-mix(in srgb, var(--gloom-text-bright) 6%, transparent);
+  --qb-hairline: var(--gloom-hairline);
+  --qb-fill: var(--gloom-hover-fill);
   --qb-accent-fill: color-mix(in srgb, var(--gloom-border-focused) 18%, transparent);
   --qb-label: color-mix(in srgb, var(--gloom-text) 58%, transparent);
   /* 20px at the default font size, whole pixels at every size. The bottom
@@ -757,9 +891,9 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   padding-bottom: 1px;
   flex-shrink: 0;
   min-width: 0;
-  background: color-mix(in srgb, var(--gloom-text-bright) 3.5%, transparent);
+  background: var(--gloom-band);
   box-shadow: inset 0 -1px 0 var(--qb-hairline);
-  font-size: 12px;
+  font-size: var(--gloom-type-ui);
 }
 .gloom-qb button { font: inherit; border: 0; margin: 0; }
 .gloom-qb-scroll {
@@ -779,8 +913,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   display: inline-flex;
   align-items: center;
   flex: none;
-  gap: 6px;
-  padding: 0 10px;
+  gap: var(--gloom-space-xs);
+  padding: 0 var(--gloom-space-sm);
   border-radius: 0;
   background: transparent;
   color: var(--gloom-text);
@@ -795,6 +929,13 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   cursor: text;
 }
 .gloom-qb-search:hover { background: var(--qb-fill); }
+/* A search field standing on its own (input-search-bar.tsx) takes the query
+   bar's search look: the hover fill, and the accent under it while typing. */
+[data-gloom-role="search-strip"]:hover { background: var(--gloom-hover-fill) !important; }
+[data-gloom-role="search-strip"][data-active="true"] {
+  background: var(--gloom-hover-fill) !important;
+  box-shadow: inset 0 -2px 0 var(--gloom-border-focused) !important;
+}
 .gloom-qb-search[data-active="true"] {
   background: var(--qb-fill);
   color: var(--gloom-text);
@@ -804,38 +945,51 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 .gloom-qb-search[data-active="true"] .gloom-qb-search-icon { color: var(--gloom-border-focused); }
 .gloom-qb-search-input { flex: 1; min-width: 0; display: flex; align-items: center; }
 .gloom-qb-search-input input::placeholder { color: var(--gloom-text-muted); }
-.gloom-qb-kbd {
+/* The one key cap (dialog-actions.tsx WebKeycap): mixed from the text colour it
+   sits with, so it reads on a filled button, a plain one and in every theme. */
+.gloom-qb-kbd,
+.gloom-keycap {
   flex: none;
-  min-width: 15px;
-  height: 15px;
-  line-height: 15px;
-  text-align: center;
-  font-size: 10px;
-  border-radius: 3px;
-  background: var(--qb-fill);
-  color: var(--gloom-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 var(--gloom-space-xs);
+  font-size: var(--gloom-type-caption);
+  font-weight: var(--gloom-weight-regular);
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  border-radius: var(--gloom-radius-sm);
+  font-family: inherit;
+  color: color-mix(in srgb, currentColor 80%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
 }
 .gloom-qb-filters { display: flex; align-items: stretch; flex: none; }
 .gloom-qb-filters .gloom-popover-anchor { display: flex; align-items: stretch; }
 .gloom-qb-chip { cursor: pointer; }
 .gloom-qb-chip:hover, .gloom-qb-chip[data-open="true"] { background: var(--qb-fill); }
 .gloom-qb-label { color: var(--qb-label); }
-.gloom-qb-chevron { width: 9px; height: 9px; color: var(--gloom-text-muted); margin-right: -2px; }
+.gloom-qb-chevron { width: 9px; height: 9px; color: var(--gloom-text-muted); }
 .gloom-qb-chip[data-narrowing="true"],
 .gloom-qb-chip[data-narrowing="true"]:hover {
   background: var(--qb-accent-fill);
   box-shadow: inset -1px 0 0 var(--qb-hairline), inset 0 -2px 0 var(--gloom-border-focused);
 }
 .gloom-qb-chip[data-narrowing="true"] .gloom-qb-label { color: color-mix(in srgb, var(--gloom-border-focused) 80%, var(--gloom-text)); }
-.gloom-qb-chip[data-narrowing="true"] .gloom-qb-value { color: var(--gloom-text-bright); font-weight: 600; }
+.gloom-qb-chip[data-narrowing="true"] .gloom-qb-value { color: var(--gloom-text-bright); font-weight: var(--gloom-weight-bold); }
+/* A chip's reset is the icon button (20 by 18, the hover fill), at the chip's end. */
 .gloom-qb-reset {
-  width: 14px;
-  height: 14px;
-  margin-right: -4px;
+  width: 20px;
+  height: 18px;
+  margin-right: calc(-1 * var(--gloom-space-sm));
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: var(--gloom-radius-md);
   color: var(--gloom-text-muted);
   cursor: pointer;
 }
@@ -843,8 +997,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 .gloom-qb-reset:hover { background: var(--qb-fill); color: var(--gloom-text-bright); }
 .gloom-qb-clear { color: var(--gloom-text-muted); cursor: pointer; box-shadow: none; }
 .gloom-qb-clear:hover { color: var(--gloom-text); background: var(--qb-fill); }
-.gloom-qb-inline { gap: 2px; padding-right: 0; }
-.gloom-qb-inline .gloom-qb-label { padding-right: 4px; color: var(--gloom-text-muted); }
+.gloom-qb-inline { gap: 0; padding-right: 0; }
+.gloom-qb-inline .gloom-qb-label { padding-right: var(--gloom-space-xs); color: var(--gloom-text-muted); }
 .gloom-qb-view {
   margin-left: auto;
   display: flex;
@@ -854,35 +1008,37 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 }
 .gloom-qb-inline .gloom-qb-view { margin-left: 0; box-shadow: none; align-self: stretch; }
 /* A long inline choice (an expiry strip) scrolls by itself, as the terminal's
-   does, so its label and the controls beside it stay in view. */
+   does, so its label and the controls beside it stay in view. It narrows with
+   its group and has no floor of its own: a floor wider than the room the bar
+   gives it drew its next choice under the control beside it. */
 .gloom-qb-filters[data-strip="true"],
 .gloom-qb-inline[data-strip="true"] { flex: 0 1 auto; min-width: 0; }
 .gloom-qb-inline[data-strip="true"] .gloom-qb-segments {
   flex: 0 1 auto;
-  min-width: 12ch;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .gloom-qb-inline[data-strip="true"] .gloom-qb-segments::-webkit-scrollbar { display: none; }
 .gloom-qb-inline[data-strip="true"] .gloom-qb-segments > button { flex: none; white-space: nowrap; }
 .gloom-qb-filters[data-strip="true"] > :not([data-strip="true"]) { flex: none; }
+/* Inline choices are tabs (the tab rule above): text only, the active one
+   bright and bold on the accent underline. */
 .gloom-qb-view button {
   height: 100%;
-  padding: 0 8px;
+  padding: 0 var(--gloom-space-sm);
   border-radius: 0;
   background: transparent;
-  /* Options read as values (like a chip's value); the label beside an inline
-     group stays the muted one. */
-  color: color-mix(in srgb, var(--gloom-text) 82%, transparent);
+  color: var(--gloom-text-dim);
+  font-weight: var(--gloom-weight-regular);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: color 120ms ease, box-shadow 120ms ease;
 }
-.gloom-qb-view button:hover { color: var(--gloom-text); }
+.gloom-qb-view button:hover { color: var(--gloom-text); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--gloom-accent) 35%, transparent); }
 .gloom-qb-view button[data-active="true"] {
-  background: var(--qb-fill);
   color: var(--gloom-text-bright);
-  font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--gloom-border-focused);
+  font-weight: var(--gloom-weight-bold);
+  box-shadow: inset 0 -2px 0 var(--gloom-accent);
 }
 /* Context gives way first when the pane is narrow. */
 .gloom-qb-meta {
@@ -890,7 +1046,7 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   align-self: center;
   flex: 0 1000 auto;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 var(--gloom-space-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -904,7 +1060,112 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   display: flex;
   align-items: center;
   align-self: stretch;
-  padding: 0 4px 0 8px;
+  padding: 0 var(--gloom-space-xs) 0 var(--gloom-inset);
+}
+
+/* Audio player: the query bar's band at the foot of what it plays, so its
+   hairline is on top. Play, the elapsed time, the track, the length and the
+   speed sit flush like the bar's controls; the speed is the bar's inline
+   choice. */
+.gloom-player {
+  --player-rail: color-mix(in srgb, var(--gloom-text) 22%, transparent);
+  padding-bottom: 0;
+  padding-top: 1px;
+  box-shadow: inset 0 1px 0 var(--qb-hairline);
+}
+.gloom-player-toggle {
+  height: 100%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--gloom-space-sm);
+  background: transparent;
+  color: var(--gloom-text-bright);
+  cursor: pointer;
+  box-shadow: inset -1px 0 0 var(--qb-hairline);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.gloom-player-toggle:hover { background: var(--qb-fill); }
+.gloom-player-toggle:focus-visible {
+  outline: none;
+  background: var(--qb-fill);
+  box-shadow: inset -1px 0 0 var(--qb-hairline), inset 0 -2px 0 var(--gloom-border-focused);
+}
+.gloom-player-time {
+  flex: none;
+  align-self: center;
+  padding: 0 var(--gloom-space-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--gloom-text);
+  white-space: nowrap;
+  text-box: trim-both cap alphabetic;
+}
+.gloom-player-time[data-gloom-role="audio-total"] { color: var(--gloom-text-muted); }
+/* The track is the whole height of the band, so it is easy to hit; the rail
+   is drawn thin in its middle and the thumb shows under the pointer. */
+.gloom-player-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 48px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.gloom-player-rail {
+  width: 100%;
+  height: 3px;
+  border-radius: var(--gloom-radius-full);
+  background: var(--player-rail);
+  overflow: hidden;
+}
+.gloom-player-fill { height: 100%; background: var(--gloom-border-focused); }
+.gloom-player-thumb {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--gloom-text-bright);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.gloom-player-track:hover .gloom-player-thumb,
+.gloom-player-track[data-scrubbing="true"] .gloom-player-thumb { opacity: 1; }
+.gloom-player .gloom-qb-inline {
+  margin-left: var(--gloom-space-sm);
+  box-shadow: inset 1px 0 0 var(--qb-hairline);
+}
+
+/* A passage of a transcript that plays from where it starts. The one being
+   heard is marked like the row under a table's cursor, with the accent's bar
+   at its edge so it reads in themes whose cursor row is faint; the pointer
+   shows the hover fill and no bar. The mark reaches a little past the text
+   without moving it. */
+.gloom-playback-line {
+  --line-bg: transparent;
+  position: relative;
+  border-radius: var(--gloom-radius-sm);
+  cursor: pointer;
+  background-color: var(--line-bg);
+  box-shadow: 0 0 0 2px var(--line-bg), -3px 0 0 2px var(--line-bg), 3px 0 0 2px var(--line-bg);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.gloom-playback-line:hover { --line-bg: var(--gloom-hover-bg); }
+.gloom-playback-line[data-current="true"] { --line-bg: var(--gloom-selected); }
+.gloom-playback-line[data-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  border-radius: var(--gloom-radius-sm) 0 0 var(--gloom-radius-sm);
+  background: var(--gloom-border-focused);
 }
 
 
@@ -912,23 +1173,23 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
    Back and the item title read as the pane's toolbar. Grows when a long title
    wraps rather than hiding it. */
 .gloom-stack-bar {
-  --qb-hairline: color-mix(in srgb, var(--gloom-text) 14%, transparent);
-  --qb-fill: color-mix(in srgb, var(--gloom-text-bright) 6%, transparent);
+  --qb-hairline: var(--gloom-hairline);
+  --qb-fill: var(--gloom-hover-fill);
   display: flex;
   align-items: stretch;
   min-height: var(--chrome-h);
   padding-bottom: 1px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--gloom-text-bright) 3.5%, transparent);
+  background: var(--gloom-band);
   box-shadow: inset 0 -1px 0 var(--qb-hairline);
-  font-size: 12px;
+  font-size: var(--gloom-type-ui);
 }
 .gloom-stack-back {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: var(--gloom-space-xs);
+  padding: 0 var(--gloom-space-sm);
   border: 0;
   margin: 0;
   font: inherit;
@@ -945,13 +1206,13 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   flex: 1;
   min-width: 0;
   align-self: center;
-  padding: 5px 10px;
-  line-height: 18px;
-  font-weight: 700;
+  padding: 1px var(--gloom-space-sm);
+  line-height: var(--cell-h);
+  font-weight: var(--gloom-weight-bold);
   color: var(--gloom-text-bright);
   overflow-wrap: break-word;
 }
-.gloom-stack-hint { flex: none; align-self: center; padding: 0 10px; color: var(--gloom-text-muted); white-space: nowrap; }
+.gloom-stack-hint { flex: none; align-self: center; padding: 0 var(--gloom-space-sm); color: var(--gloom-text-muted); white-space: nowrap; }
 /* Back and the title when a detail's query bar has taken the stack header. */
 .gloom-qb .gloom-stack-back { height: 100%; }
 .gloom-qb-title {
@@ -959,11 +1220,11 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   max-width: 40ch;
   display: inline-flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 var(--gloom-space-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 700;
+  font-weight: var(--gloom-weight-bold);
   color: var(--gloom-text-bright);
   box-shadow: inset -1px 0 0 var(--qb-hairline);
 }
@@ -987,8 +1248,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 [data-gloom-role="pane-header-tabs"] [data-gloom-role="tab-label"],
 .gloom-qb-title,
 .gloom-qb-meta {
-  padding-block: 4px;
-  margin-block: -4px;
+  padding-block: var(--gloom-space-xs);
+  margin-block: calc(-1 * var(--gloom-space-xs));
 }
 .gloom-qb-view button { display: inline-flex; align-items: center; }
 
@@ -1003,40 +1264,46 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   min-height: 0 !important;
   max-height: none !important;
 }
+/* Except a query bar the detail opens with (OSA's contract choice): it is the
+   detail's chrome, one row high, and filling would split the pane with the
+   content under it, Back and all. */
+.gloom-stack-detail > .gloom-qb {
+  flex: none !important;
+  height: var(--chrome-h) !important;
+}
 
 /* Popovers take focus so their keys work; the focus ring is noise on a
    surface that is plainly the active one. */
 .gloom-popover:focus, .gloom-popover:focus-visible { outline: none; }
-.gloom-popover[data-density="menu"] { padding: 4px; border-radius: 7px; }
+.gloom-popover[data-density="menu"] { padding: var(--gloom-space-xs); }
 
 /* Menu: the one list of choices every popover menu renders (filter menus,
    selects, multi-selects, the pane menu). */
-.gloom-menu { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 12px; }
+.gloom-menu { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: var(--gloom-type-ui); }
 .gloom-menu-title {
-  padding: 4px 8px 3px;
+  padding: var(--gloom-space-xs) var(--gloom-space-sm);
   color: var(--gloom-text-muted);
-  font-size: 11px;
   white-space: nowrap;
 }
-.gloom-menu-divider { height: 1px; margin: 3px 4px; background: color-mix(in srgb, var(--gloom-text) 12%, transparent); }
+.gloom-menu-divider { height: 1px; margin: var(--gloom-space-xs); background: var(--gloom-hairline); }
 .gloom-menu-item {
   min-height: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 8px;
-  border-radius: 5px;
+  gap: var(--gloom-space-sm);
+  padding: var(--gloom-space-xs) var(--gloom-space-sm);
+  border-radius: var(--gloom-radius-md);
   cursor: pointer;
   color: var(--gloom-text);
   white-space: nowrap;
 }
 .gloom-menu-item[aria-disabled="true"] { color: var(--gloom-text-muted); cursor: default; }
-.gloom-menu-item[data-highlighted="true"] { background: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent); color: var(--gloom-text-bright); }
-.gloom-menu-item[data-selected="true"] { font-weight: 600; }
+.gloom-menu-item[data-highlighted="true"] { background: var(--gloom-hover-fill); color: var(--gloom-text-bright); }
+.gloom-menu-item[data-selected="true"] { font-weight: var(--gloom-weight-bold); }
 .gloom-menu-label { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .gloom-menu-text { overflow: hidden; text-overflow: ellipsis; }
-.gloom-menu-description { color: var(--gloom-text-muted); font-weight: 400; font-size: 11px; white-space: normal; }
-.gloom-menu-hint { flex: none; padding-left: 16px; color: var(--gloom-text-muted); font-weight: 400; }
+.gloom-menu-description { color: var(--gloom-text-muted); font-weight: var(--gloom-weight-regular); white-space: normal; }
+.gloom-menu-hint { flex: none; padding-left: var(--gloom-space-lg); color: var(--gloom-text-muted); font-weight: var(--gloom-weight-regular); }
 .gloom-menu-check { flex: none; color: var(--gloom-border-focused); display: inline-flex; }
 .gloom-menu-check svg { width: 11px; height: 11px; }
 
@@ -1049,9 +1316,9 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
    band surface and hairlines; each cell is label, value, unit. The cell being
    edited takes the accent base line the active search field uses. */
 [data-gloom-role="field-grid"] {
-  --fg-hairline: color-mix(in srgb, var(--gloom-text) 12%, transparent);
-  --fg-fill: color-mix(in srgb, var(--gloom-text-bright) 6%, transparent);
-  background: color-mix(in srgb, var(--gloom-text-bright) 2%, transparent);
+  --fg-hairline: var(--gloom-hairline);
+  --fg-fill: var(--gloom-hover-fill);
+  background: var(--gloom-band);
   box-shadow: inset 0 -1px 0 var(--fg-hairline);
 }
 /* Every row is the same column grid, so a short last row stays aligned. */
@@ -1059,17 +1326,14 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   display: grid !important;
   grid-template-columns: repeat(var(--field-columns, 3), minmax(0, 1fr));
 }
-[data-gloom-role="field-grid-row"] + [data-gloom-role="field-grid-row"] {
-  box-shadow: inset 0 1px 0 var(--fg-hairline);
-}
 [data-gloom-role="field-grid-cell"] {
   /* Cells share the row, so the sheet spans the pane; the value keeps its
      own width beside the label, so a unit never drifts from its number. */
   width: auto !important;
   min-width: 0;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  gap: var(--gloom-space-sm);
+  padding: 0 var(--gloom-space-sm);
   box-sizing: border-box;
   box-shadow: inset -1px 0 0 var(--fg-hairline);
   cursor: text;
@@ -1096,33 +1360,31 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 [data-gloom-role="field-grid-value"] { flex: 0 0 auto; width: 12ch !important; justify-content: flex-end; min-width: 0; }
 [data-gloom-role="field-grid-value"] > * { width: 100% !important; }
 [data-gloom-role="field-grid-cell"][data-kind="text"] [data-gloom-role="field-grid-value"] { flex: 1 1 auto; width: auto !important; justify-content: flex-start; }
-[data-gloom-role="field-grid-value"] button { justify-content: flex-end; color: var(--gloom-text-bright) !important; font-weight: 600; }
-[data-gloom-role="field-grid-value"] input { text-align: right; color: var(--gloom-text-bright); font-weight: 600; }
-[data-gloom-role="field-grid-cell"][data-kind="text"] [data-gloom-role="field-grid-value"] input { text-align: left; font-weight: 400; }
+[data-gloom-role="field-grid-value"] button { justify-content: flex-end; color: var(--gloom-text-bright) !important; font-weight: var(--gloom-weight-bold); }
+[data-gloom-role="field-grid-value"] input { text-align: right; color: var(--gloom-text-bright); font-weight: var(--gloom-weight-bold); }
+[data-gloom-role="field-grid-cell"][data-kind="text"] [data-gloom-role="field-grid-value"] input { text-align: left; font-weight: var(--gloom-weight-regular); }
 [data-gloom-role="field-grid-unit"] { flex: none; color: var(--gloom-text-muted); }
 
 /* Stat grid: the read-only sibling of the field grid. A pane's summary figures
    sit in the same band of hairline-split cells, so the header zone (title-bar
    tab, query bar, figures) reads as one surface. Cells are not editable: no
    hover, no text cursor. Each cell is label, value, muted context. */
+/* Key-value rows carry no rule between them: alignment and the band are enough. */
 [data-gloom-role="stat-grid"] {
-  --sg-hairline: color-mix(in srgb, var(--gloom-text) 12%, transparent);
-  background: color-mix(in srgb, var(--gloom-text-bright) 2%, transparent);
+  --sg-hairline: var(--gloom-hairline);
+  background: var(--gloom-band);
   box-shadow: inset 0 -1px 0 var(--sg-hairline);
 }
 [data-gloom-role="stat-grid-row"] {
   display: grid !important;
   grid-template-columns: repeat(var(--stat-columns, 3), minmax(0, 1fr));
 }
-[data-gloom-role="stat-grid-row"] + [data-gloom-role="stat-grid-row"] {
-  box-shadow: inset 0 1px 0 var(--sg-hairline);
-}
 [data-gloom-role="stat-grid-cell"] {
   width: auto !important;
   min-width: 0;
   align-items: center;
-  gap: 8px;
-  padding: 0 var(--cell-w);
+  gap: var(--gloom-space-sm);
+  padding: 0 var(--gloom-inset);
   box-sizing: border-box;
   box-shadow: inset -1px 0 0 var(--sg-hairline);
 }
@@ -1151,7 +1413,7 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-[data-gloom-role="stat-grid-value"] { flex: none; white-space: nowrap; font-weight: 600; }
+[data-gloom-role="stat-grid-value"] { flex: none; white-space: nowrap; font-weight: var(--gloom-weight-bold); }
 [data-gloom-role="stat-grid-detail"] {
   flex: 1 1 auto;
   min-width: 0;
@@ -1161,26 +1423,27 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   white-space: nowrap;
 }
 
-/* Icon-only button: pane header, footer, dialog close, window controls. */
-.gloom-icon-button {
+/* Icon-only button: pane header, footer, dialog close, window controls. A
+   footer status icon (a delayed source's clock) takes the same box. */
+.gloom-icon-button, [data-gloom-role="pane-footer-icon"] {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 20px;
   height: 18px;
-  padding: 0 4px;
+  padding: 0 var(--gloom-space-xs);
   margin: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--gloom-radius-md);
   background: transparent;
   color: var(--gloom-text-dim);
   font: inherit;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
-.gloom-icon-button:disabled { cursor: default; }
-.gloom-icon-button:not(:disabled):hover { background: color-mix(in srgb, var(--gloom-text-bright) 9%, transparent); color: var(--gloom-text-bright); }
+.gloom-icon-button:disabled, [data-gloom-role="pane-footer-icon"] { cursor: default; }
+.gloom-icon-button:not(:disabled):hover { background: var(--gloom-hover-fill); color: var(--gloom-text-bright); }
 .gloom-icon-button[aria-pressed="true"] { color: var(--gloom-warning); }
 .gloom-qb-view button:disabled { color: var(--gloom-text-muted); opacity: 0.55; cursor: default; }
 [data-gloom-role="field-grid-value"] button,
@@ -1204,8 +1467,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 .gloom-qb[data-search-only="true"] .gloom-qb-search { flex: 1 1 260px; max-width: 480px; }
 
 /* Band text starts one cell in, on the same edge as the table columns and
-   body text below it; segments after the first keep their 10px. */
-.gloom-qb-scroll > :is(.gloom-stack-back, .gloom-qb-search):first-child,
+   body text below it; segments after the first keep their 8px (--gloom-space-sm). */
+.gloom-qb-scroll > :is(.gloom-stack-back, .gloom-qb-search, .gloom-player-toggle):first-child,
 .gloom-qb-scroll > .gloom-qb-filters:first-child > :first-child:not(.gloom-popover-anchor),
 .gloom-qb-scroll > .gloom-qb-filters:first-child > .gloom-popover-anchor:first-child > *,
 .gloom-stack-bar > .gloom-stack-back,
@@ -1216,19 +1479,19 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
 /* Inline quick add across a pane (a watchlist's ticker field): the query bar's
    band at the foot of the list, the field as its leading segment. */
 [data-gloom-role="inline-quick-add"][data-band="true"] {
-  --qb-hairline: color-mix(in srgb, var(--gloom-text) 14%, transparent);
-  --qb-fill: color-mix(in srgb, var(--gloom-text-bright) 6%, transparent);
+  --qb-hairline: var(--gloom-hairline);
+  --qb-fill: var(--gloom-hover-fill);
   height: var(--chrome-h);
   padding-top: 1px;
   align-items: stretch;
-  background: color-mix(in srgb, var(--gloom-text-bright) 3.5%, transparent);
+  background: var(--gloom-band);
   box-shadow: inset 0 1px 0 var(--qb-hairline);
-  font-size: 12px;
+  font-size: var(--gloom-type-ui);
   cursor: text;
 }
 [data-gloom-role="inline-quick-add"][data-band="true"] [data-gloom-role="inline-quick-add-field"] {
-  gap: 6px;
-  padding: 0 10px 0 var(--cell-w);
+  gap: var(--gloom-space-xs);
+  padding: 0 var(--gloom-space-sm) 0 var(--gloom-inset);
   box-shadow: inset -1px 0 0 var(--qb-hairline);
   transition: background-color 120ms ease;
 }
@@ -1238,7 +1501,7 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   box-shadow: inset -1px 0 0 var(--qb-hairline), inset 0 -2px 0 var(--gloom-border-focused);
 }
 [data-gloom-role="inline-quick-add"][data-band="true"] [data-gloom-role="inline-quick-add-field"] input::placeholder { color: var(--gloom-text-muted); }
-[data-gloom-role="inline-quick-add"][data-band="true"] [data-gloom-role="inline-quick-add-preview"] { padding: 0 10px; }
+[data-gloom-role="inline-quick-add"][data-band="true"] [data-gloom-role="inline-quick-add-preview"] { padding: 0 var(--gloom-space-sm); }
 
 /* ===== Data table: sortable headers ===== */
 
@@ -1248,21 +1511,21 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   margin-left: auto;
   flex: none;
   height: var(--cell-h);
-  padding: 0 6px;
+  padding: 0 var(--gloom-space-xs);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--gloom-radius-md);
   background: transparent;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-weight: 400;
+  gap: var(--gloom-space-xs);
+  font-weight: var(--gloom-weight-regular);
   white-space: nowrap;
   transition: background-color 120ms ease, color 120ms ease;
 }
 [data-gloom-role="data-table-section-action"] svg { color: var(--gloom-text-muted); }
 [data-gloom-role="data-table-section-action"]:hover {
   color: var(--gloom-text-bright) !important;
-  background-color: color-mix(in srgb, var(--gloom-text-bright) 8%, transparent);
+  background-color: var(--gloom-hover-fill);
 }
 
 /* A header that sorts brightens under the pointer; plain headers (no
@@ -1272,10 +1535,14 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
   color: var(--gloom-text) !important;
 }
 
+/* A link is the text around it, underlined (external-link.tsx); the pointer or keyboard focus brightens it. */
+[data-gloom-link="true"] { text-underline-offset: 2px; }
+[data-gloom-link="true"]:is(:hover, :focus-visible) { color: var(--gloom-link-hover) !important; }
+
 /* Keyboard focus. Tab walks the controls of an open dialog, and a focused
    control shows where Enter and Space will land. Pointer focus draws nothing. */
 :where(button, a[href], summary, [role="button"], [role="radio"], [role="option"], input[type="checkbox"]):focus-visible {
-  outline: 2px solid var(--gloom-border-focused);
+  outline: 2px solid var(--gloom-accent);
   outline-offset: 1px;
 }
 
@@ -1290,7 +1557,8 @@ html[data-gloom-screenshot="true"] [data-gloom-role="chart-watermark"] {
    (14px), or 1.1em (13.2px) under 480px. The rest of the reader's scale is in
    em of it (reader-text.tsx). */
 [data-gloom-ui="article-reader"],
-[data-gloom-ui="detail-reader"] {
+[data-gloom-ui="detail-reader"],
+[data-gloom-ui="docs-reader"] {
   container-type: inline-size;
 }
 @container (max-width: 480px) {

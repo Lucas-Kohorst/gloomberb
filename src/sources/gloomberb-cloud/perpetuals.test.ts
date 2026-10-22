@@ -5,7 +5,7 @@ import { perpetualListing } from "../../tickers/perpetual-listing";
 import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import { AssetDataRouter } from "../provider-router";
 import { GloomberbCloudProvider } from "./index";
-import { getPerpetualHistory, PERPETUAL_HISTORY_LOCKED, perpetualQuote, searchPerpetualMarkets } from "./perpetuals";
+import { getPerpetualHistory, PERPETUAL_HISTORY_LOCKED, perpetualQuote, searchPerpetualMarkets, streamedPerpetualQuote } from "./perpetuals";
 
 /** Hyperliquid's Brent contract on its xyz dex, as Gloom Cloud served it on 2026-10-12. */
 function brent(patch: Partial<PerpBoardRow> = {}): PerpBoardRow {
@@ -107,8 +107,37 @@ afterEach(() => {
   for (const [target, key, value] of patched.splice(0).reverse()) (target as Record<string, unknown>)[key] = value;
 });
 
+test("a batched search's perpetual markets are the ones each query's own search finds, read from the board once", async () => {
+  const client = fakeClient();
+  patch(apiClient, "getCloudPerpsBoard", client.getCloudPerpsBoard as typeof apiClient.getCloudPerpsBoard);
+  patch(apiClient, "getCloudPerpsMarket", client.getCloudPerpsMarket as typeof apiClient.getCloudPerpsMarket);
+  // Every query has a listing of its own; NONE has none, and is searched again alone.
+  const listing = (query: string) => ({ providerId: "gloomberb-cloud", symbol: query, name: `${query} Fund`, exchange: "NYSE", type: "ETF" });
+  const listings = (query: string) => query === "NONE" ? [] : [listing(query)];
+  patch(apiClient, "searchInstruments", (async (query: string) => listings(query)) as typeof apiClient.searchInstruments);
+  patch(apiClient, "searchInstrumentsBatch", (async (queries: readonly string[]) =>
+    new Map(queries.map((query) => [query, listings(query)]))) as unknown as typeof apiClient.searchInstrumentsBatch);
+  const provider = new GloomberbCloudProvider();
+  const queries = ["BRENT", "BZ", "XOM", "NONE"];
+  const batched = await provider.searchBatch(queries);
+  const searchesOfTheBoard = client.boards.length;
+  for (const query of queries.slice(0, 3)) expect(batched?.get(query)).toEqual(await provider.search(query));
+  expect(batched?.get("BRENT")?.map((row) => row.symbol)).toEqual(["BZUSDT:BINANCE", "XYZ-BRENTOIL:HYPERLIQUID", "BRENT"]);
+  expect(batched?.get("NONE")).toEqual([]);
+  expect(searchesOfTheBoard).toBe(1);
+});
+
+test("a streamed row that leaves out a figure it does not have still quotes, the figure read as none", () => {
+  const listing = perpetualListing("XYZ-BRENTOIL:HYPERLIQUID")!;
+  const { premium: _premium, fundingRate8h: _funding, ...partial } = brent();
+  const quote = streamedPerpetualQuote({ perpetual: partial, dataSource: "live", delivery: "stream", stale: false }, listing);
+  expect(quote).toMatchObject({ price: 101.43, dataSource: "live", perpetual: { premium: null, fundingRate8h: null } });
+  // A figure that is there but not a number is still refused.
+  expect(streamedPerpetualQuote({ perpetual: brent({ premium: "0.1" as unknown as number }), dataSource: "live" }, listing)).toBeNull();
+});
+
 describe("the quote path", () => {
-  test("perpetuals go to the PERP dataset and every other listing to the quote service, in one batch and in the stream", async () => {
+  test("a batch reads perpetuals from the PERP dataset and the rest from the quote service; the stream carries both", async () => {
     // Read a minute ago: a current price for a market that never closes.
     const observedAt = new Date(Date.now() - 60_000).toISOString();
     const client = fakeClient(undefined, [brent({ observedAt }), bz({ observedAt })]);
@@ -120,9 +149,11 @@ describe("the quote path", () => {
         data: { symbol: item.symbol, price: 168.94, currency: "USD", change: 0.44, changePercent: 0.26, lastUpdated: Date.now(), exchangeName: "NYSE" } })) } };
     }) as unknown as typeof apiClient.getCloudQuotesBatch);
     const streamed: string[] = [];
+    let deliver: (target: { symbol: string; exchange: string }, quote: unknown) => void = () => {};
     patch(apiClient, "ensureVerifiedSession", (async () => null) as unknown as typeof apiClient.ensureVerifiedSession);
-    patch(apiClient, "subscribeQuotes", ((targets: Array<{ symbol: string }>) => {
-      streamed.push(...targets.map((target) => target.symbol));
+    patch(apiClient, "subscribeQuotes", ((targets: Array<{ symbol: string; exchange: string }>, onQuote: typeof deliver) => {
+      streamed.push(...targets.map((target) => `${target.symbol}:${target.exchange}`));
+      deliver = onQuote;
       return () => {};
     }) as unknown as typeof apiClient.subscribeQuotes);
 
@@ -140,7 +171,16 @@ describe("the quote path", () => {
       ["XOM", "listing"],
       ["BZUSDT:BINANCE", 101.48],
     ]);
-    new GloomberbCloudProvider().subscribeQuotes(targets, () => {})();
-    expect(streamed).toEqual(["XOM"]);
+    // The stream carries a contract as its listing on its venue, and answers with the market's row.
+    const quotes: Array<[string, unknown]> = [];
+    new GloomberbCloudProvider().subscribeQuotes(targets, (target, quote) => quotes.push([target.symbol, quote]))();
+    expect(streamed).toEqual(["XOM:NYSE", "XYZ-BRENTOIL:HYPERLIQUID", "BZUSDT:BINANCE"]);
+    const live = bz({ observedAt: new Date().toISOString(), markPrice: 102.01, fundingRate8h: 0.0002 });
+    deliver({ symbol: "BZUSDT", exchange: "BINANCE" }, { symbol: "BZUSDT", price: 102.01, delivery: "stream", dataSource: "live", perpetual: live });
+    // A frame whose row is another market's is not this contract's quote.
+    deliver({ symbol: "XYZ-BRENTOIL", exchange: "HYPERLIQUID" }, { symbol: "XYZ-BRENTOIL", price: 1, delivery: "stream", perpetual: live });
+    expect(quotes).toEqual([["BZUSDT:BINANCE", {
+      ...perpetualQuote(live, perpetualListing("BZUSDT:BINANCE")!), dataSource: "live", delivery: "stream", perpetual: live,
+    }]]);
   });
 });

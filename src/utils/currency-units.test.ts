@@ -1,12 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import {
+  currencyCodeLabel,
+  currencyUnitLabel,
+  fxRateCurrencies,
   hasLikelyQuoteUnitMismatch,
+  minorUnitSign,
   resolveCurrencyUnit,
   resolveExchangeSubUnitCurrencyUnit,
   resolvePriceHistoryCurrencyUnit,
 } from "./currency-units";
 
 describe("currency unit helpers", () => {
+  test("names a minor unit's sign and shows US cents as US¢, a major currency as its code", () => {
+    expect([minorUnitSign("USX"), minorUnitSign("GBp"), minorUnitSign("GBX"), minorUnitSign("ZAc")]).toEqual(["¢", "p", "p", "c"]);
+    // GBP is pounds, not pence; agorot have no sign in common use.
+    expect([minorUnitSign("GBP"), minorUnitSign("USD"), minorUnitSign("ILA"), minorUnitSign(null)]).toEqual([null, null, null, null]);
+    expect([currencyCodeLabel("USX"), currencyCodeLabel("GBp"), currencyCodeLabel("USD")]).toEqual(["US¢", "GBp", "USD"]);
+    expect(currencyUnitLabel("USX", { ofMajor: true })).toBe("US¢ (US cents, 1/100 USD)");
+  });
+
   test("normalizes known sub-unit currencies to their main currency", () => {
     expect(resolveCurrencyUnit("GBp")).toEqual({ currency: "GBP", divisor: 100 });
     expect(resolveCurrencyUnit("GBP")).toEqual({ currency: "GBP", divisor: 1 });
@@ -63,4 +75,8 @@ describe("currency unit helpers", () => {
       { price: 0.231, currency: "USD" },
     )).toBe(false);
   });
+});
+
+test("the rates converting a minor unit include its major currency's, which GBX and ILA have none without", () => {
+  expect(fxRateCurrencies(["GBX", "ZAc", "ILA", "GBp", "usd", "USX", " ", null, undefined])).toEqual(["GBP", "GBX", "ILA", "ILS", "USD", "USX", "ZAC", "ZAR"]);
 });

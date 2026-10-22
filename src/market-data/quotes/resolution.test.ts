@@ -23,6 +23,16 @@ describe("quote-resolution", () => {
     delete contributions.ibkr!.lastTradePrice;
     expect(resolveCanonicalQuote(contributions, now).quote?.lastTradePrice).toBeUndefined();
   });
+  test("a listing that no longer trades stays so through merging and resolution, and drops it when it trades again", () => {
+    const now = Date.parse("2026-10-20T15:00:00Z");
+    const delisting = { status: "delisted" as const, lastTradeDate: "2022-10-27", historyStart: "2016-01-04" };
+    const last = { symbol: "TWTR", providerId: "gloomberb-cloud", dataSource: "delayed" as const, price: 53.86,
+      currency: "USD", change: 0.51, changePercent: 0.96, lastUpdated: Date.parse("2022-10-28T12:00:00Z") };
+    const merged = mergeQuoteContribution(normalizeQuoteContribution({ ...last, delisting })!, { ...last, delisting });
+    expect(resolveCanonicalQuote({ "gloomberb-cloud": merged }, now).quote?.delisting).toEqual(delisting);
+    const tradingAgain = mergeQuoteContribution(merged, { ...last, price: 12, lastUpdated: now });
+    expect(resolveCanonicalQuote({ "gloomberb-cloud": tradingAgain }, now).quote?.delisting).toBeUndefined();
+  });
   test("resolves price, session, listing venue, and route from separate providers", () => {
     const now = Date.parse("2026-04-08T11:00:00Z");
     const contributions: QuoteContributionMap = {
@@ -655,6 +665,34 @@ test("canonical quote preserves unavailable day changes while retaining zero and
   expect(missing.changePercent).toBeNaN();
   expect(resolveCanonicalQuote({ quote: { ...base, change: 0, changePercent: 0 } }).quote).toMatchObject({ change: 0, changePercent: 0 });
   expect(resolveCanonicalQuote({ quote: { ...base, previousClose: 10 } }).quote).toMatchObject({ change: 2, changePercent: 20 });
+});
+
+// Linear: GLO-1089. Toncoin as Gloom Cloud served it on 18 Oct 2026: its
+// reported close was weeks old, so the move ran over the board's 24 hours.
+test("a coin's 24-hour move keeps its basis through merging and resolution, and loses it with its next close", () => {
+  const now = Date.parse("2026-10-18T13:50:00Z");
+  const base = { symbol: "TON-USD", providerId: "gloomberb-cloud", dataSource: "delayed" as const,
+    instrumentType: "CRYPTOCURRENCY", listingExchangeName: "CCC", currency: "USD", lastUpdated: now };
+  const closeDay = { ...base, price: 1.34, previousClose: 1.753636, change: -0.413636, changePercent: -23.59 };
+  const day = { ...base, price: 1.3395, change: -0.0018, changePercent: -0.134, changeBasis: "24h" as const };
+  const resolved = resolveTickerFinancialsQuoteState(null, day)!.quote!;
+  expect(resolved).toMatchObject({ change: -0.0018, changePercent: -0.134, changeBasis: "24h", previousClose: undefined });
+
+  // A 24-hour quote replaces the stale close it no longer moves from, so the close cannot restate its move.
+  const merged = mergeQuoteContribution(normalizeQuoteContribution(closeDay)!, day);
+  expect(merged.changeBasis).toBe("24h");
+  expect(merged.previousClose).toBeUndefined();
+  expect(resolveCanonicalQuote({ cloud: merged }, now).quote).toMatchObject({ changePercent: -0.134, changeBasis: "24h" });
+  // A later quote back on a dated close drops the "24h".
+  const back = mergeQuoteContribution(merged, { ...closeDay, previousClose: 1.341, change: -0.001, changePercent: -0.0746 });
+  expect(back.changeBasis).toBeUndefined();
+  const backQuote = resolveCanonicalQuote({ cloud: back }, now).quote!;
+  expect(backQuote.previousClose).toBe(1.341);
+  expect(backQuote.changeBasis).toBeUndefined();
+  // A coin with no move says so.
+  const none = resolveTickerFinancialsQuoteState(null, { ...day, change: Number.NaN, changePercent: Number.NaN, changeBasis: "none" })!.quote!;
+  expect(none.changeBasis).toBe("none");
+  expect(none.changePercent).toBeNaN();
 });
 
 test("crypto stays open when the tape omits the session or copies an equity close", () => {

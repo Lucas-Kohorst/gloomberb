@@ -1,5 +1,6 @@
 import { nextResponseSequence } from "../../data/response-sequence";
 import { exchangeRateMetadata, isUsableCachedExchangeRate } from "../../utils/exchange-rate-snapshot";
+import { fixedUsdRate } from "../../utils/currency-units";
 import type { DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
 import type { OptionsChain } from "../../types/financials";
 import type { OptionsRequest, SecFilingsRequest } from "../request-types";
@@ -65,11 +66,13 @@ export function loadOptionsEntry(options: {
         const attempt = createAttempt(dataProvider.id, startedAt, "unsupported", "UNSUPPORTED_RANGE", "Options are not available");
         return store.update(key, (current) => errorEntry(current, attempt));
       }
+      // This path has no handle on the provider's cache, so a refresh it asks for must reach the source, and a
+      // stored chain past its stale time (kept for two days) is refetched rather than shown as current.
       const data = await dataProvider.getOptionsChain(
         request.instrument.symbol,
         request.instrument.exchange ?? "",
         request.expirationDate,
-        toMarketDataContext(request.instrument),
+        { ...toMarketDataContext(request.instrument), cacheMode: forceRefresh ? "refresh" : "current" },
       );
       const attempts = [createAttempt(dataProvider.id, startedAt, data.expirationDates.length > 0 ? "success" : "empty", data.expirationDates.length === 0 ? "NO_DATA" : undefined)];
       return store.update(key, (current) => ({
@@ -213,10 +216,12 @@ export function loadFxRateEntry(options: {
     && (current.staleAt == null || current.staleAt > Date.now())) {
     return Promise.resolve(current);
   }
-  if (normalizedCurrency === "USD") {
+  // The dollar, and US cents at a hundredth of it, are fixed: nothing to ask a source for.
+  const fixedRate = fixedUsdRate(normalizedCurrency);
+  if (fixedRate !== undefined) {
     const startedAt = Date.now();
     const attempts = [createAttempt("static", startedAt, "success")];
-    return Promise.resolve(store.update(key, (current) => readyEntry(current, 1, "static", attempts, { keepLastGoodOnEmpty: true })));
+    return Promise.resolve(store.update(key, (current) => readyEntry(current, fixedRate, "static", attempts, { keepLastGoodOnEmpty: true })));
   }
   return runSingleFlight(key, async () => {
     store.update(key, loadingEntry);

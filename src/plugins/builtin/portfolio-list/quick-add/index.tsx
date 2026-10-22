@@ -15,7 +15,7 @@ import { formatPercentRaw } from "../../../../utils/format";
 import { formatMarketPrice } from "../../../../market-data/market/format";
 import { listingChoiceQuery, upsertTickerFromSearchResult } from "../../../../tickers/search";
 import type { TickerRecord } from "../../../../types/ticker";
-import { addTickerToPortfolio, addTickerToWatchlist } from "../mutations";
+import { addTickerToPortfolio, addTickerToWatchlist } from "../../../../portfolio/mutations";
 import { captureAttentionAction } from "../../../../telemetry/attention-counts";
 import { publicTickerKey } from "../../../../utils/exchanges";
 import { tickerChangeLine } from "../../../../tickers/ticker-changes";
@@ -40,10 +40,13 @@ function QuickAddPreview({
   validation,
   collectionKind,
   submitting,
+  cleared,
 }: {
   validation: QuickAddValidation;
   collectionKind: QuickAddCollectionKind;
   submitting: boolean;
+  /** The field was emptied after the add failed: the line names what was typed. */
+  cleared: boolean;
 }) {
   if (submitting) {
     return <Text fg={colors.textDim}>{t("adding...")}</Text>;
@@ -58,7 +61,7 @@ function QuickAddPreview({
   }
 
   if (validation.status === "missing" || validation.status === "error") {
-    return <Text fg={colors.textMuted}>{t(validation.message)}</Text>;
+    return <Text fg={colors.textMuted}>{cleared ? `${validation.query}  ${t(validation.message)}` : t(validation.message)}</Text>;
   }
 
   if (validation.status === "choose") {
@@ -154,9 +157,24 @@ export function QuickAddTickerInput({
     focusInput();
   }, [focusInput, focusRequest, focused]);
 
+  // A symbol with no listing leaves the field, so the next one typed replaces
+  // it instead of running on (OMV.VIREP.MC); the line under it still says what
+  // failed until something is typed.
+  const keepFailureRef = useRef(false);
   const resetInput = useCallback(() => {
+    keepFailureRef.current = false;
     setInputValue("");
     setValidation(IDLE_VALIDATION);
+  }, []);
+
+  const clearFailedInput = useCallback((failure: QuickAddValidation) => {
+    keepFailureRef.current = true;
+    validationSeqRef.current += 1;
+    setInputValue("");
+    // The focused field keeps its own text and cursor until told, as the chart composer's add field is.
+    inputRef.current?.editBuffer?.setText?.("");
+    inputRef.current?.setCursorOffset?.(0);
+    setValidation(failure);
   }, []);
 
   // `NET:` is the command bar's venue dropdown. Choosing a row adds it here.
@@ -184,15 +202,20 @@ export function QuickAddTickerInput({
     }
   }, [blurInput, focused, inputFocused]);
 
+  // Read when a lookup runs, so a quote tick does not look the typed symbol up again.
+  const tickersRef = useRef(tickers);
+  tickersRef.current = tickers;
+  const financialsRef = useRef(financials);
+  financialsRef.current = financials;
   const validateQuery = useCallback((query: string): Promise<QuickAddValidation> => {
     return resolveQuickAddValidation({
       query,
       collectionId,
       collectionKind,
-      tickers,
-      financials,
+      tickers: tickersRef.current,
+      financials: financialsRef.current,
     });
-  }, [collectionId, collectionKind, financials, tickers]);
+  }, [collectionId, collectionKind]);
 
   useEffect(() => {
     const query = normalizeQuickAddQuery(inputValue);
@@ -200,9 +223,10 @@ export function QuickAddTickerInput({
     const seq = validationSeqRef.current;
 
     if (!query) {
-      setValidation(IDLE_VALIDATION);
+      if (!keepFailureRef.current) setValidation(IDLE_VALIDATION);
       return;
     }
+    keepFailureRef.current = false;
 
     if (listingChoiceQuery(query)) {
       setValidation(IDLE_VALIDATION);
@@ -261,6 +285,7 @@ export function QuickAddTickerInput({
             collection: collectionName,
           }),
         });
+        resetInput();
         return;
       }
       if (currentValidation.status !== "ready") {
@@ -270,6 +295,8 @@ export function QuickAddTickerInput({
             ? "Ticker lookup is still in progress."
             : currentValidation.message;
         notify({ type: "error", body });
+        // Only a symbol nothing lists leaves the field. A lookup that failed (offline) keeps what was typed, to try again.
+        if (currentValidation.status === "missing") clearFailedInput(currentValidation);
         return;
       }
 
@@ -321,8 +348,9 @@ export function QuickAddTickerInput({
         symbol: result.ticker.metadata.ticker,
         collection: collectionName,
       });
-      // As `watchlist add` prints it: FB now lists another security, Meta trades as META.
-      const change = tickerChangeLine(currentValidation.change);
+      // As `watchlist add` prints it: FB now lists another security, Meta trades as META;
+      // GOGL was Golden Ocean, now CMB.Tech's CMBT.
+      const change = tickerChangeLine(currentValidation.change) ?? currentValidation.formerIssuer?.note;
       notify({ type: "success", body: change ? `${added} ${change}.` : added });
       resetInput();
       queueMicrotask(() => inputRef.current?.focus?.());
@@ -333,6 +361,7 @@ export function QuickAddTickerInput({
       setSubmitting(false);
     }
   }, [
+    clearFailedInput,
     collectionId,
     collectionKind,
     collectionName,
@@ -398,6 +427,7 @@ export function QuickAddTickerInput({
           validation={validation}
           collectionKind={collectionKind}
           submitting={submitting}
+          cleared={!inputValue}
         />
       )}
     />

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { CompositeChartLevels } from "./levels";
 import type { SeriesLineCue } from "./series-cues";
+import type { CompositeValueScales } from "./value-scale";
 import type {
   ChartPanelSpec,
   PanelScale,
@@ -38,6 +39,10 @@ export interface CompositeAxisDomain {
   /** Rows the labels snap to, one per row, in the terminal. Unset where labels
    * sit at their exact heights. */
   tickRows?: number;
+  /** What the axis plots, which a range set by hand holds to (see `valueScaleKey`). */
+  scaleKey?: string;
+  /** The range was stretched or squeezed by hand instead of fitted to the data. */
+  manual?: boolean;
 }
 
 export interface CompositeProjectedPoint {
@@ -181,6 +186,8 @@ export interface CompositeChartScene {
   cursorPanels?: CompositePanelScene[];
   /** IANA zone the time axis and cursor read in: the venue's for intraday market bars, else UTC. */
   timeZone?: string;
+  /** The newest observation's time, in view or not. */
+  newestTime?: number;
 }
 
 export interface BuildCompositeChartSceneOptions {
@@ -201,6 +208,8 @@ export interface BuildCompositeChartSceneOptions {
    * is not time, where the last observation belongs at the right edge.
    */
   rightOffsetRatio?: number;
+  /** Value axes stretched or squeezed by hand, in place of fitting them to the data. */
+  valueScales?: CompositeValueScales;
 }
 
 export interface CompositeChartXMarker {
@@ -220,6 +229,31 @@ export interface CompositeChartXAxis {
   /** Vertical guide lines through the plot, captioned below the axis. */
   markers?: readonly CompositeChartXMarker[];
   formatCursor?: (xRatio: number) => string;
+}
+
+/**
+ * A crosshair shared between charts, as the last instant of the bar it is
+ * on. The chart subscribes itself, so a move re-renders the charts and not
+ * the panes around them.
+ */
+interface CompositeCursorLink {
+  subscribe(listener: () => void): () => void;
+  /**
+   * Another chart's cursor, shown in place of this chart's own: on the last
+   * bar at or before it, and not at all outside the view. Null while this
+   * chart's cursor is the shared one, or there is none.
+   */
+  time(): number | null;
+  /** Whether this chart's cursor is the shared one. */
+  held(): boolean;
+  /** Reports this chart's cursor, or null when it leaves. */
+  publish(time: number | null): void;
+  /** Clears the shared cursor wherever it is, as Esc on a chart showing it does. */
+  clear(): void;
+  /** Whether the shared cursor is pinned; a link without pins never is. */
+  pinned?(): boolean;
+  /** Pins the shared cursor at a time no pointer moves, or unpins it with null. */
+  pin?(time: number | null): void;
 }
 
 export interface CompositeChartProps {
@@ -247,7 +281,16 @@ export interface CompositeChartProps {
   remoteKind?: string;
   /** Permit panning into an older unloaded window so the owner can backfill it. */
   allowHistoricalBackfill?: boolean;
+  /**
+   * The owner's cursor. With `onCursorDateChange` the owner moves it; without,
+   * the cursor rests there while no pointer is on the plot.
+   */
   cursorDate?: Date | null;
+  /**
+   * A crosshair shared with other charts. By default an interactive chart
+   * with a time axis in a pane shares its layout tab's; null keeps it out.
+   */
+  cursorLink?: CompositeCursorLink | null;
   viewport?: {
     start: Date;
     end: Date;
@@ -269,6 +312,8 @@ export interface CompositeChartProps {
   legendAccessoryWidth?: number;
   showTimeAxis?: boolean;
   emptyMessage?: string;
+  /** A second, quieter line under `emptyMessage`: what to do about it. */
+  emptyDetail?: string;
   formatValue?: (value: number, series: ResolvedSeries) => string;
   onCursorDateChange?: (date: Date | null) => void;
   /** Reports a user-created viewport, or null when the user resets to the authored viewport. */
@@ -277,6 +322,12 @@ export interface CompositeChartProps {
     interaction: "pan" | "reset" | "zoom",
   ) => void;
   onActivate?: () => void;
+  /**
+   * A press on the chart itself (plot, legend or tool bar), not a wheel turn.
+   * The chart consumes the press, so an owner that shares the pane with a
+   * field that takes typed keys hears it here to hand the keyboard back.
+   */
+  onPress?: () => void;
   onToggleSeries?: (seriesId: string) => void;
   isSeriesToggleable?: (series: ResolvedSeries) => boolean;
   /**

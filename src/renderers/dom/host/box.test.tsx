@@ -206,9 +206,9 @@ test("desktop tabs reorder through mouse dragging", async () => {
   });
 
   expect(buttons[0]?.style.transform).toBe("translateX(200px) scale(1.03)");
-  expect(buttons[1]?.style.transform).toBe("translateX(-84px)");
+  expect(buttons[1]?.style.transform).toBe("translateX(-80px)");
   expect(buttons[1]?.style.transition).toContain("transform var(--tab-reorder-duration, 160ms)");
-  expect(buttons[2]?.style.transform).toBe("translateX(-84px)");
+  expect(buttons[2]?.style.transform).toBe("translateX(-80px)");
 
   await act(async () => {
     mouse("mouseup", testWindow.document as never, 220);
@@ -284,4 +284,40 @@ test("a header tab click selects, and a drag moves the window instead", async ()
   });
   expect(drags).toBe(1);
   expect(selected).toEqual(["main"]);
+});
+
+test("a WebKit pinch over a chart arrives as the Ctrl+wheel Chromium sends for it, once", async () => {
+  const scrolls: Array<{ ctrl: boolean; deltaY?: number; pixelX: number }> = [];
+  const container = await renderDom(
+    <WebChartSurface
+      width={40}
+      height={10}
+      onMouseScroll={(event: { modifiers: { ctrl: boolean }; scroll: { deltaY?: number }; pixelX: number }) => {
+        scrolls.push({ ctrl: event.modifiers.ctrl, deltaY: event.scroll.deltaY, pixelX: event.pixelX });
+      }}
+    />,
+  );
+  const surface = container.firstElementChild as unknown as HTMLElement;
+  const gesture = (type: string, scale: number) => {
+    const event = new testWindow.Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, { scale, clientX: 120, clientY: 30 });
+    surface.dispatchEvent(event as never);
+    return event.defaultPrevented;
+  };
+  await act(async () => {
+    expect(gesture("gesturestart", 1)).toBe(true);
+    expect(gesture("gesturechange", 1.25)).toBe(true);
+    // A newer WebKit also sends wheels for the same pinch: they must not zoom it twice.
+    const wheel = new testWindow.Event("wheel", { bubbles: true, cancelable: true });
+    Object.assign(wheel, { ctrlKey: true, deltaX: 0, deltaY: -10, deltaMode: 0, clientX: 120, clientY: 30 });
+    surface.dispatchEvent(wheel as never);
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(gesture("gesturechange", 1)).toBe(true);
+    expect(gesture("gestureend", 1)).toBe(true);
+  });
+
+  expect(scrolls.map(({ ctrl, pixelX }) => ({ ctrl, pixelX }))).toEqual([{ ctrl: true, pixelX: 120 }, { ctrl: true, pixelX: 120 }]);
+  // Out by a quarter, then back to where it began: the chart reads the same scale steps.
+  expect(Math.exp(-scrolls[0]!.deltaY! / 100)).toBeCloseTo(1.25, 9);
+  expect(Math.exp(-scrolls[1]!.deltaY! / 100)).toBeCloseTo(0.8, 9);
 });

@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import {
   publishableMarketplacePane,
 } from "./portable-layout";
@@ -12,6 +13,7 @@ export function buildPaneSharePayload(
   paneState: Record<string, unknown> = {},
   resolvedTicker?: string | null,
   tickers?: ReadonlyMap<string, TickerRecord>,
+  pinnedTime?: number | null,
 ): Extract<SharePayload, { kind: "pane" }> | null {
   const def = pluginRegistry.panes.get(pane.paneId);
   if (!def) return null;
@@ -21,7 +23,7 @@ export function buildPaneSharePayload(
       paneState,
       pluginRegistry.panes,
       resolvedTicker,
-      { tickers },
+      { tickers, pinnedTime },
     );
     const instance = layout.layout.instances[0]!;
     const description = [...pluginRegistry.paneTemplates.values()]
@@ -36,7 +38,8 @@ export function buildPaneSharePayload(
       },
     });
     return payload?.kind === "pane" ? payload : null;
-  } catch {
+  } catch (error) {
+    logFailure("shares.pane", "Building a pane share failed")(error);
     return null;
   }
 }

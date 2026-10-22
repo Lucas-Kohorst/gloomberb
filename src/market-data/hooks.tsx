@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { logFailure } from "../utils/log-failure";
+import { fxRateCurrencies } from "../utils/currency-units";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { SecFilingDocument, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
@@ -9,6 +11,7 @@ import {
   getSharedMarketDataCoordinator,
   resolveEntryValue,
 } from "./coordinator";
+import { resolveEntryData } from "./selectors";
 import type { QueryEntry } from "./result-types";
 import {
   buildArticleSummaryKey,
@@ -23,6 +26,9 @@ import {
 } from "./selectors";
 import { instrumentIdentityKey } from "../utils/instrument-identity";
 import { createBaselineChartRequest } from "./coordinator/chart";
+import { fateListing, LATE_CHANGE_WAIT_MS, listingFateGate, type ListingFateGate } from "../tickers/listing-fate";
+import type { TickerChangeLookup } from "../tickers/ticker-changes";
+import type { TickerChanges } from "../types/ticker-changes";
 
 const TICKER_FINANCIALS_LOAD_DELAY_MS = 250;
 export const DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS = 60_000;
@@ -44,7 +50,7 @@ function loadChartRequests(
   options: { forceRefresh?: boolean } = {},
 ): void {
   for (const request of requests) {
-    void coordinator.loadChart(request, options).catch(() => {});
+    void coordinator.loadChart(request, options).catch(logFailure("market-data.hooks", "Loading chart data failed"));
   }
 }
 
@@ -72,13 +78,7 @@ function useCoordinatorKeysVersion(keys: readonly string[]): number {
   return useSyncExternalStore(subscribe, getSnapshot, () => 0);
 }
 
-function stableCurrencyList(currencies: Array<string | null | undefined>): string[] {
-  return [...new Set(
-    currencies
-      .map((currency) => currency?.trim().toUpperCase() ?? "")
-      .filter(Boolean),
-  )].sort((left, right) => left.localeCompare(right));
-}
+
 
 function buildTickerFinancialsMapKey(tickers: TickerRecord[], options: TickerInstrumentOptions = {}): string {
   return tickers.map((ticker) => {
@@ -113,7 +113,7 @@ export function useTickerFinancials(symbol: string | null | undefined, ticker: T
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument) return;
     const timeoutId = setTimeout(() => {
-      void coordinator.loadSnapshot(instrument).catch(() => {});
+      void coordinator.loadSnapshot(instrument).catch(logFailure("market-data.hooks", "Loading a financial snapshot failed"));
     }, TICKER_FINANCIALS_LOAD_DELAY_MS);
     return () => clearTimeout(timeoutId);
   }, [instrumentKey]);
@@ -135,6 +135,125 @@ function buildTickerFinancialsKeys(tickers: TickerRecord[], options: TickerInstr
   return keys;
 }
 
+/**
+ * A new object so memo dependencies move, over the map that already holds
+ * every unchanged entry. Copying that map would visit every instrument.
+ */
+class RetainedMapView<K, V> extends Map<K, V> {
+  constructor(private readonly backing: Map<K, V>) {
+    super();
+  }
+
+  override get size(): number {
+    return this.backing.size;
+  }
+
+  override get(key: K): V | undefined {
+    return this.backing.get(key);
+  }
+
+  override has(key: K): boolean {
+    return this.backing.has(key);
+  }
+
+  override forEach(callback: (value: V, key: K, map: Map<K, V>) => void, thisArg?: unknown): void {
+    this.backing.forEach((value, key) => {
+      callback.call(thisArg, value, key, this);
+    });
+  }
+
+  override keys(): MapIterator<K> {
+    return this.backing.keys();
+  }
+
+  override values(): MapIterator<V> {
+    return this.backing.values();
+  }
+
+  override entries(): MapIterator<[K, V]> {
+    return this.backing.entries();
+  }
+
+  override [Symbol.iterator](): MapIterator<[K, V]> {
+    return this.backing[Symbol.iterator]();
+  }
+}
+
+interface PatchedMapSlot<K, V> {
+  key: K;
+  versionKeys: readonly string[];
+  read: () => V | null | undefined;
+}
+
+interface PatchedMapState<K, V> {
+  signature: string;
+  coordinator: SharedCoordinator | null;
+  slots: Array<PatchedMapSlot<K, V>>;
+  versions: number[];
+  backing: Map<K, V>;
+  view: Map<K, V>;
+}
+
+function slotVersion(
+  slot: PatchedMapSlot<unknown, unknown>,
+  versionOf: ((key: string) => number) | null,
+  aggregate: number,
+): number {
+  if (!versionOf) return aggregate;
+  let version = 0;
+  for (const key of slot.versionKeys) version += versionOf(key);
+  return version;
+}
+
+function usePatchedMap<K, V>(
+  signature: string,
+  coordinator: SharedCoordinator | null,
+  aggregateVersion: number,
+  versionOf: ((key: string) => number) | null,
+  createSlots: () => Array<PatchedMapSlot<K, V>>,
+): Map<K, V> {
+  const stateRef = useRef<PatchedMapState<K, V> | null>(null);
+  let state = stateRef.current;
+  if (!state || state.signature !== signature || state.coordinator !== coordinator) {
+    const slots = createSlots();
+    const backing = new Map<K, V>();
+    const versions: number[] = [];
+    for (const slot of slots) {
+      const value = slot.read();
+      if (value != null) backing.set(slot.key, value);
+      versions.push(slotVersion(slot, versionOf, aggregateVersion));
+    }
+    const view = new RetainedMapView(backing);
+    state = { signature, coordinator, slots, versions, backing, view };
+    stateRef.current = state;
+    return view;
+  }
+
+  let changed = false;
+  for (let index = 0; index < state.slots.length; index += 1) {
+    const slot = state.slots[index]!;
+    const version = slotVersion(slot, versionOf, aggregateVersion);
+    if (version === state.versions[index]) continue;
+    state.versions[index] = version;
+    const value = slot.read();
+    if (value == null) {
+      if (state.backing.delete(slot.key)) changed = true;
+    } else if (state.backing.get(slot.key) !== value) {
+      state.backing.set(slot.key, value);
+      changed = true;
+    }
+  }
+  if (!changed) return state.view;
+  const view = new RetainedMapView(state.backing);
+  state.view = view;
+  return view;
+}
+
+function versionOfCoordinator(coordinator: SharedCoordinator | null): ((key: string) => number) | null {
+  if (!coordinator || typeof coordinator.getKeyVersion !== "function") return null;
+  return (key) => coordinator.getKeyVersion(key);
+}
+
 export function useTickerFinancialsMap(
   tickers: TickerRecord[],
   options: TickerInstrumentOptions = {},
@@ -145,19 +264,30 @@ export function useTickerFinancialsMap(
   const subscriptionKeys = useMemo(() => buildTickerFinancialsKeys(tickers, options), [optionsKey, tickerKey]);
   const keysVersion = useCoordinatorKeysVersion(subscriptionKeys);
 
-  return useMemo(() => {
-    if (!coordinator) return new Map<string, TickerFinancials>();
-    const result = new Map<string, TickerFinancials>();
-    for (const ticker of tickers) {
-      const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
-      if (!instrument) continue;
-      const financials = coordinator.getTickerFinancialsSync(instrument);
-      if (financials) {
-        result.set(ticker.metadata.ticker, financials);
+  return usePatchedMap(
+    `${tickerKey}\0${optionsKey}`,
+    coordinator,
+    keysVersion,
+    versionOfCoordinator(coordinator),
+    () => {
+      if (!coordinator) return [];
+      const slots: Array<PatchedMapSlot<string, TickerFinancials>> = [];
+      for (const ticker of tickers) {
+        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
+        if (!instrument) continue;
+        slots.push({
+          key: ticker.metadata.ticker,
+          versionKeys: [
+            buildSnapshotKey(instrument),
+            buildQuoteKey(instrument),
+            buildChartKey(createBaselineChartRequest(instrument)),
+          ],
+          read: () => coordinator.getTickerFinancialsSync(instrument),
+        });
       }
-    }
-    return result;
-  }, [coordinator, keysVersion, optionsKey, tickerKey, subscriptionKeys]);
+      return slots;
+    },
+  );
 }
 
 export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): QueryEntry<Quote> | null {
@@ -174,10 +304,62 @@ export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerR
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument) return;
-    void coordinator.loadQuote(instrument).catch(() => {});
+    void coordinator.loadQuote(instrument).catch(logFailure("market-data.hooks", "Loading a quote failed"));
   }, [instrumentKey]);
 
   return entry;
+}
+
+const SERVE_GATE: ListingFateGate = { kind: "serve" };
+
+/** A quote entry as the fate reads it: undefined while it loads, null when the listing has none. */
+function fateQuote(entry: QueryEntry<Quote> | null): Quote | null | undefined {
+  const quote = resolveEntryData(entry);
+  if (quote) return quote;
+  return entry && (entry.phase === "error" || entry.phase === "ready") ? null : undefined;
+}
+
+/**
+ * Whether a pane shows a symbol's own data (`listingFateGate`): a symbol
+ * whose company moved, with nothing new listed under it, has none. It reads
+ * the symbol's quote and change lookup as `quote` does. A symbol is served
+ * at once, whatever is still loading, unless what is known says nothing
+ * trades under it (a line that ended, a company that left); only then does
+ * the pane wait for the rest, never longer than LATE_CHANGE_WAIT_MS. The
+ * quote is watched only while the answer can turn on it, so a symbol with no
+ * change on record costs no re-render per tick.
+ */
+export function useListingFateGate(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): ListingFateGate {
+  const coordinator = getSharedMarketDataCoordinator();
+  const instrument = useTickerInstrument(symbol, ticker);
+  const instrumentKey = instrument ? instrumentIdentityKey(instrument) : null;
+  const listing = useMemo(() => (instrument ? fateListing(instrument) : null), [instrumentKey]);
+  const lookup = useMemo(
+    () => (coordinator && instrument && listing ? coordinator.lookupTickerChanges(instrument) : null),
+    [coordinator, instrumentKey],
+  );
+  const [answer, setAnswer] = useState<{ lookup: TickerChangeLookup; changes: TickerChanges | null } | null>(null);
+  const changes = !lookup ? null : answer?.lookup === lookup ? answer.changes : lookup.peek();
+  useEffect(() => {
+    if (!lookup || lookup.peek() !== undefined) return;
+    let current = true;
+    void lookup.settle(LATE_CHANGE_WAIT_MS).then((value) => {
+      if (current) setAnswer({ lookup, changes: value });
+    });
+    return () => { current = false; };
+  }, [lookup]);
+  const watchQuote = !!listing && (changes === undefined || !!changes?.moved);
+  const quoteEntry = useQuoteEntry(watchQuote ? symbol : null, watchQuote ? ticker : null);
+  const gate = listing && watchQuote ? listingFateGate(listing, { quote: fateQuote(quoteEntry), changes }) : SERVE_GATE;
+  // A wait never holds a pane longer than the commands wait for a fate.
+  const [expired, setExpired] = useState<string | null>(null);
+  const waiting = gate.kind === "wait";
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setExpired(instrumentKey), LATE_CHANGE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [instrumentKey, waiting]);
+  return waiting && expired === instrumentKey ? SERVE_GATE : gate;
 }
 
 /**
@@ -197,15 +379,23 @@ export function useQuoteEntries(
   const keysVersion = useCoordinatorKeysVersion(keys);
   const coordinator = getSharedMarketDataCoordinator();
 
-  return useMemo(() => {
-    if (!coordinator) return new Map<string, QueryEntry<Quote>>();
-    return new Map(
-      instruments.map((instrument) => [
-        buildQuoteKey(instrument),
-        coordinator.getQuoteEntry(instrument),
-      ]),
-    );
-  }, [coordinator, instrumentKey, keysVersion]);
+  return usePatchedMap(
+    instrumentKey,
+    coordinator,
+    keysVersion,
+    versionOfCoordinator(coordinator),
+    () => {
+      if (!coordinator) return [];
+      return instruments.map((instrument) => {
+        const key = buildQuoteKey(instrument);
+        return {
+          key,
+          versionKeys: [key],
+          read: () => coordinator.getQuoteEntry(instrument),
+        };
+      });
+    },
+  );
 }
 
 export function useChartQueries(
@@ -219,7 +409,8 @@ export function useChartQueries(
   const keysVersion = useCoordinatorKeysVersion(keys);
   const coordinator = getSharedMarketDataCoordinator();
   const appActive = useAppVisible();
-  const wasActiveRef = useRef(appActive);
+  const paneVisible = usePaneVisible();
+  const wasPaneVisibleRef = useRef(paneVisible);
   const entries = useMemo(() => (
     coordinator
       ? requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
@@ -229,15 +420,15 @@ export function useChartQueries(
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator) {
-      wasActiveRef.current = appActive;
+      wasPaneVisibleRef.current = paneVisible;
       return;
     }
     if (!appActive) {
-      wasActiveRef.current = false;
+      wasPaneVisibleRef.current = false;
       return;
     }
-    const forceRefresh = refreshIntervalMs > 0 && !wasActiveRef.current;
-    wasActiveRef.current = true;
+    const forceRefresh = refreshIntervalMs > 0 && paneVisible && !wasPaneVisibleRef.current;
+    wasPaneVisibleRef.current = paneVisible;
     const loadRequests = () => {
       loadChartRequests(coordinator, requests, { forceRefresh });
     };
@@ -247,17 +438,17 @@ export function useChartQueries(
     }
     const timeout = setTimeout(loadRequests, debounceMs);
     return () => clearTimeout(timeout);
-  }, [appActive, debounceMs, refreshIntervalMs, requestKey]);
+  }, [appActive, debounceMs, paneVisible, refreshIntervalMs, requestKey]);
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
-    if (!coordinator || !appActive || refreshIntervalMs <= 0 || requests.length === 0) return;
+    if (!coordinator || !paneVisible || refreshIntervalMs <= 0 || requests.length === 0) return;
 
     const interval = setInterval(() => {
       loadChartRequests(coordinator, requests, { forceRefresh: true });
     }, refreshIntervalMs);
     return () => clearInterval(interval);
-  }, [appActive, refreshIntervalMs, requestKey]);
+  }, [paneVisible, refreshIntervalMs, requestKey]);
 
   return useMemo(() => new Map(entries), [entries]);
 }
@@ -280,7 +471,7 @@ export function useOptionsQuery(
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
-    void coordinator.loadOptions(request).catch(() => {});
+    void coordinator.loadOptions(request).catch(logFailure("market-data.hooks", "Loading options failed"));
   }, [requestKey]);
 
   useEffect(() => {
@@ -288,7 +479,7 @@ export function useOptionsQuery(
     if (!coordinator || !request || !visible || refreshIntervalMs <= 0) return;
     const refresh = () => {
       lastRefreshRef.current = { key: requestKey, at: Date.now() };
-      void coordinator.loadOptions(request, { forceRefresh: true }).catch(() => {});
+      void coordinator.loadOptions(request, { forceRefresh: true }).catch(logFailure("market-data.hooks", "Loading options failed"));
     };
     if (Date.now() - lastRefreshRef.current.at >= refreshIntervalMs) refresh();
     const interval = setInterval(refresh, refreshIntervalMs);
@@ -300,14 +491,22 @@ export function useOptionsQuery(
 
 export function useSecFilingsQuery(request: SecFilingsRequest | null | undefined): QueryEntry<SecFilingItem[]> | null {
   const requestKey = request ? buildSecFilingsKey(request) : null;
-  useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
+  const version = useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
   const coordinator = getSharedMarketDataCoordinator();
-  const entry = coordinator && request ? coordinator.getSecFilingsEntry(request) : null;
+  // Read at the version React holds, as useSecFilingContent does. A pane
+  // opened from another (INS from its ranking) can render between the store
+  // write and its announcement; read early, the list is thrown away with that
+  // render, and the filing queue after it stays on "loading".
+  // The key stands for the request: a new object for the same filings reads the same entry.
+  const entry = useMemo(
+    () => coordinator && request ? coordinator.getSecFilingsEntry(request) : null,
+    [coordinator, requestKey, version],
+  );
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
-    void coordinator.loadSecFilings(request).catch(() => {});
+    void coordinator.loadSecFilings(request).catch(logFailure("market-data.hooks", "Loading filings failed"));
   }, [requestKey]);
 
   return entry;
@@ -330,7 +529,7 @@ export function useSecFilingContent(filing: SecFilingItem | null | undefined): Q
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !filing) return;
-    void coordinator.loadSecFilingContent(filing).catch(() => {});
+    void coordinator.loadSecFilingContent(filing).catch(logFailure("market-data.hooks", "Loading filing content failed"));
   }, [key]);
 
   return entry;
@@ -345,7 +544,7 @@ export function useSecFilingDocuments(filing: SecFilingItem | null | undefined):
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !filing) return;
-    void coordinator.loadSecFilingDocuments(filing).catch(() => {});
+    void coordinator.loadSecFilingDocuments(filing).catch(logFailure("market-data.hooks", "Loading filing documents failed"));
   }, [key]);
 
   return entry;
@@ -360,7 +559,7 @@ export function useArticleSummary(url: string | null | undefined): QueryEntry<st
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !url) return;
-    void coordinator.loadArticleSummary(url).catch(() => {});
+    void coordinator.loadArticleSummary(url).catch(logFailure("market-data.hooks", "Loading an article summary failed"));
   }, [url]);
 
   return entry;
@@ -368,7 +567,8 @@ export function useArticleSummary(url: string | null | undefined): QueryEntry<st
 
 export function useFxRatesMap(currencies: Array<string | null | undefined>): Map<string, number> {
   const coordinator = getSharedMarketDataCoordinator();
-  const normalizedCurrencyKey = stableCurrencyList(currencies).join("|");
+  // A minor unit's major currency is loaded too: GBX and ILA have no rate of their own.
+  const normalizedCurrencyKey = fxRateCurrencies(currencies).join("|");
   const normalizedCurrencies = useMemo(
     () => (normalizedCurrencyKey ? normalizedCurrencyKey.split("|") : []),
     [normalizedCurrencyKey],

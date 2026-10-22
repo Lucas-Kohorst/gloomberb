@@ -43,7 +43,9 @@ import type {
   TickerResearchTabDef,
 } from "../../types/plugin";
 import { debugLog } from "../../utils/debug-log";
+import { logFailure } from "../../utils/log-failure";
 import { EventBus, type HostEvents } from "../event-bus";
+import { externalPluginIcon } from "../external-runtime";
 import { isReservedBuiltinPluginId } from "../ownership";
 import { createPluginPersistence } from "../plugin-persistence";
 import { createPluginTeamState } from "../team-state";
@@ -531,6 +533,12 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.contributions.brokersMap.owners.get(brokerType);
   }
 
+  /** The logo of the plugin that registered `brokerType` (its gloom.json `icon`), for lists of brokers. */
+  getBrokerLogo = (brokerType: string): string | null => {
+    const owner = this.getBrokerPluginId(brokerType);
+    return owner ? externalPluginIcon(owner) : null;
+  };
+
   getShortcutPluginId(shortcutId: string): string | undefined {
     return this.contributions.shortcutsMap.owners.get(shortcutId);
   }
@@ -544,7 +552,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     try {
       const target = this.resolvePaneTarget(paneId);
       return !!target && this.getLayout().floating.some((entry) => entry.instanceId === target);
-    } catch {
+    } catch (error) {
+      logFailure("plugin-registry", "Floating pane query failed")(error);
       return false;
     }
   }
@@ -617,6 +626,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getData: (ticker) => this.getData(ticker),
       getTicker: (symbol) => this.getTicker(symbol),
       getConfig: () => this.getConfig(),
+      getBrokerAdapter: this.getBrokerAdapter,
       getPaneDef: (paneId) => contributions.panesMap.get(paneId),
       marketData: this.marketData,
       connectionHealth: this.connectionHealth,
@@ -628,7 +638,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
         updateLayout: (layout) => this.updateLayout(layout),
         resolvePaneTarget: (paneId) => this.resolvePaneTarget(paneId),
       }),
-      createBrokerInstance: (brokerType, label, values) => this.createBrokerInstance(brokerType, label, values),
+      createBrokerInstance: (brokerType, label, values, options) => this.createBrokerInstance(brokerType, label, values, options),
       updateBrokerInstance: this.updateBrokerInstance,
       syncBrokerInstance: this.syncBrokerInstance,
       removeBrokerInstance: this.removeBrokerInstance,

@@ -12,7 +12,9 @@ import {
   issuerNameOf,
   normalizeCdsTrades,
   spreadLevelsOf,
+  type CdsNoLevelReason,
   type CdsSpreadLevels,
+  type CdsSpreadLine,
   type CdsTrade,
 } from "./model";
 
@@ -107,10 +109,15 @@ export async function loadCdsActivity(
 /** Two years: what DTCC keeps readable, so the backend holds no more. */
 const CDS_SPREAD_HISTORY_DAYS = 730;
 
-export interface CdsSpreadHistory {
+export interface CdsSpreadHistory extends CdsSpreadLine {
   issuer: string | null;
   points: CloudCdsHistoryPointPayload[];
+  /** Why the line has no level in the month to its newest print, when the server can say. */
+  noLevelReason: CdsNoLevelReason | null;
 }
+
+const finiteOrNull = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const NO_UPFRONT_LINE = { quote: "spread", couponBp: null, upfrontPts: null, change1WPts: null, change1MPts: null } as const;
 
 export type CdsSpreadHistoryLoader = (issuer: string) => Promise<CdsSpreadHistory>;
 export type CdsHistoryFetch = (params: CloudCdsHistoryParams) => Promise<CloudCdsHistoryResponse>;
@@ -127,16 +134,32 @@ export async function loadCdsSpreadHistory(
   const points = (response.points ?? [])
     .filter((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.date) && Number.isFinite(point.spreadBp))
     .toSorted((left, right) => left.date.localeCompare(right.date));
-  return { issuer: response.issuer, points };
+  const upfrontPts = finiteOrNull(response.upfrontPts);
+  return {
+    issuer: response.issuer,
+    points,
+    change1W: finiteOrNull(response.change1W),
+    change1M: finiteOrNull(response.change1M),
+    // A server before points upfront, or a level it could not convert, stays in bp.
+    ...(response.quote === "upfront" && upfrontPts != null ? {
+      quote: "upfront" as const,
+      couponBp: finiteOrNull(response.couponBp),
+      upfrontPts,
+      change1WPts: finiteOrNull(response.change1WPts),
+      change1MPts: finiteOrNull(response.change1MPts),
+    } : NO_UPFRONT_LINE),
+    noLevelReason: response.noLevelReason === "upfront-side-unknown" ? response.noLevelReason : null,
+  };
 }
 
 export type CdsLevelsFetch = () => Promise<CloudCdsLevelsResponse>;
 export type CdsSpreadLevelsLoader = () => Promise<CdsSpreadLevels>;
 
 /**
- * Every listed issuer's latest 5Y level, in one request: the last point of
- * each name's line over the last month, the line the pane charts, so the list
- * can be ranked by it. A name without one is not in the response.
+ * Every listed issuer's latest 5Y level and its 1W and 1M moves, in one
+ * request: the last point of each name's line in the last month, the line
+ * the pane charts, so the list can be ranked by them. A name without one is
+ * not in the response.
  */
 export async function loadCdsSpreadLevels(
   fetchLevels: CdsLevelsFetch = () => apiClient.getCloudCdsLevels(),

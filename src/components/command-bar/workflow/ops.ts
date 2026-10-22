@@ -3,11 +3,12 @@ import type { PaneSettingField, PaneTemplateContext, PaneTemplateCreateOptions, 
 import { getFocusedCollectionId, getFocusedTickerSymbol } from "../../../state/app/context";
 import { commandPromptTicker } from "../../../layout/selected-ticker";
 import { resolveInstrumentForPane, resolveListingForPane } from "../../../core/state/app/instrument";
-import { resolveTickerOpenTarget } from "../../../tickers/open-target";
+import { resolveTickerOpenTarget, tickerOpenFailureMessage } from "../../../tickers/open-target";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { scopedBrokerContractIdentityKey } from "../../../utils/instrument-identity";
 import { tickerSelectionFromSearchResult } from "../../../tickers/selection";
 import { tickerInstrumentLabel } from "../../../tickers/instrument-label";
+import { knownInstrumentOfTicker, uncoveredInstrumentKind, uncoveredInstrumentMessage } from "../../../tickers/instrument-coverage";
 import type { PluginRegistry } from "../../../plugins/registry";
 import { PluginOffError } from "../../../plugins/plugin-off";
 import { formatTickerListInput } from "../../../tickers/list";
@@ -123,14 +124,17 @@ async function resolvePaneTemplateOptions(
   // nothing was named, so they must not resolve a ticker at all: there is no
   // input to match, and silently falling back to the active ticker would bind a
   // pane the caller deliberately left unbound.
+  // INS opens its own view without one (the market's insider buying) when
+  // nothing is named and no ticker is active; with one active it opens on it.
   const tickerNamed = !!(resolvedOptions?.symbol?.trim() || resolvedOptions?.arg?.trim() || resolvedOptions?.ticker);
-  const resolvesTicker = template.shortcut?.argPlaceholder === "ticker"
-    && (tickerNamed || !template.shortcut.argOptional);
+  const opensWithoutTicker = !!template.shortcut?.argOptional || (!!template.shortcut?.openWithoutArg && !baseContext.activeTicker);
+  const resolvesTicker = template.shortcut?.argPlaceholder === "ticker" && (tickerNamed || !opensWithoutTicker);
   if (resolvesTicker) {
     if (resolvedOptions?.instrument === null && !resolvedOptions.ticker) {
-      const publicTarget = await resolveTickerOpenTarget({ query: resolvedOptions.symbol ?? resolvedOptions.arg ?? baseContext.activeTicker ?? "",
+      const publicQuery = resolvedOptions.symbol ?? resolvedOptions.arg ?? baseContext.activeTicker ?? "";
+      const publicTarget = await resolveTickerOpenTarget({ query: publicQuery,
         tickers: state.tickers, tickerRepository: deps.tickerRepository, dataProvider: deps.dataProvider, publicOnly: true });
-      if (!publicTarget) throw new Error("Could not resolve the selected public listing.");
+      if (!publicTarget) throw new Error(tickerOpenFailureMessage(publicQuery.trim().toUpperCase()));
       deps.dispatch({ type: "UPDATE_TICKER", ticker: publicTarget.ticker });
       if (publicTarget.created) deps.pluginRegistry.events.emit("ticker:added", { symbol: publicTarget.symbol, ticker: publicTarget.ticker });
       resolvedOptions = { ...resolvedOptions, symbol: publicTarget.symbol, ticker: publicTarget.ticker, listing: resolvedOptions.listing ?? publicTarget.listing };
@@ -189,6 +193,24 @@ async function resolvePaneTemplateOptions(
   };
 }
 
+/**
+ * Why a function with company data refused a ticker it has none for, as `fn`
+ * says it: "INS covers companies only, and ^VIX is an index." Null for any
+ * other refusal.
+ */
+function uncoveredTemplateMessage(
+  template: PaneTemplateDef,
+  registry: Pick<PluginRegistry, "panes">,
+  options: PaneTemplateCreateOptions | undefined,
+): string | null {
+  const covered = registry.panes.get(template.paneId)?.instruments;
+  const symbol = options?.ticker?.metadata.ticker ?? options?.symbol;
+  if (!covered?.length || !symbol) return null;
+  const instrument = knownInstrumentOfTicker(symbol, options?.ticker);
+  if (!instrument || !uncoveredInstrumentKind(covered, instrument.kind)) return null;
+  return uncoveredInstrumentMessage(template.shortcut?.prefix ?? getPaneTemplateDisplayLabel(template), covered, instrument);
+}
+
 export async function createPaneTemplateOrThrow(
   templateId: string,
   options: PaneTemplateCreateOptions | undefined,
@@ -213,7 +235,8 @@ export async function createPaneTemplateOrThrow(
   const { context, resolvedOptions } = await resolvePaneTemplateOptions(template, options, deps);
 
   if (template.canCreate && !template.canCreate(context, resolvedOptions)) {
-    throw new Error(`Can't create ${getPaneTemplateDisplayLabel(template).toLowerCase()} right now.`);
+    throw new Error(uncoveredTemplateMessage(template, deps.pluginRegistry, resolvedOptions)
+      ?? `Can't create ${getPaneTemplateDisplayLabel(template).toLowerCase()} right now.`);
   }
 
   const createInstanceResult = await template.createInstance?.(context, resolvedOptions);

@@ -2,16 +2,18 @@ import { withConfigData, withMarketData } from "../../../cli/scoped-context";
 import { CLI_COMMAND_GROUPS } from "../../../cli/help";
 import { dryRunNote } from "../../../cli/helpers";
 import { requireArg, takeOption } from "../../../cli/commands/command-utils";
+import { requireQuotedListing } from "../../../cli/quote-answer";
 import { EXCHANGE_OPTION, listingReadNotes, requireListingArg } from "../../../cli/listing-arg";
 import { saveConfig } from "../../../data/config/store";
-import type { AppConfig } from "../../../types/config";
 import type { CliCommandDef } from "../../../types/plugin";
+import type { Quote } from "../../../types/financials";
+import { getActiveQuoteDisplay } from "../../../market-data/market/status";
 import { cliStyles } from "../../../utils/cli-output";
-import { ambiguousNumberMessage, parsePastedNumber } from "../../../utils/decimal-comma";
+import { ambiguousNumberMessage, meantThousandsDot, parsePastedNumber, thousandsDotReadings, type ThousandsDotReadings } from "../../../utils/decimal-comma";
 import { newYorkToday } from "../earnings/board-model";
-import { createAlert, deserializeAlerts, rearmAlert, serializeAlerts } from "./alert-engine";
-import { ALERTS_KEY } from "./constants";
-import { EVENT_ALERTS_KEY, MAX_EVENT_ALERTS, eventAlertTarget, readEventAlerts, toggleEventAlert, type EventAlertRule } from "./events";
+import { createAlert, rearmAlert, serializeAlerts } from "./alert-engine";
+import { ALERTS_KEY, ALERTS_PLUGIN_ID } from "./constants";
+import { EVENT_ALERTS_KEY, MAX_EVENT_ALERTS, eventAlertTarget, toggleEventAlert, type EventAlertRule } from "./events";
 import { alertKindLabel } from "./history";
 import { MAX_LEAD_DAYS, type MacroAlertEvent } from "./research-rules";
 import {
@@ -34,29 +36,45 @@ import {
   type ScheduledEventTarget,
 } from "./scheduled";
 import { scheduledEventSources } from "./scheduled-sources";
+import { readAlertStores } from "./storage";
 import type { AlertCondition, AlertRule } from "./types";
 
-const ALERTS_PLUGIN_ID = "alerts";
+/**
+ * What delivers a price alert, as docs/usage.md states it: the app checks it on
+ * every tick while it runs. Signed in with Cloud sync on, Gloom Cloud also
+ * pushes the trigger to a registered phone, and emails it once no app has
+ * synced the account for a while, so a rule the app has synced reaches you
+ * with the app closed. Signed out, only the running app does.
+ */
+const PRICE_DELIVERY = "the app alerts while it is running; sign in with Cloud sync for email or phone alerts when it is closed";
 
 const ADD_USAGE = "Usage: gloomberb alerts add <symbol> <above|below|crosses> <price>, alerts add <symbol> earnings [--days <n>], or alerts add <CPI|FOMC> [--days <n>]";
 const DAYS_RULE = `--days takes a whole number of days from 1 to ${MAX_LEAD_DAYS}; without it the alert goes off 1 day before.`;
 
 /** What `alerts add` was asked for, before any listing or date is looked up. */
 export type AlertAddRequest =
-  | { kind: "price"; symbol: string; condition: AlertCondition; price: number }
+  | {
+    kind: "price"; symbol: string; condition: AlertCondition; price: number;
+    /** A price typed as 81.000, which the last price may show was 81000 with a dot between thousands. */
+    thousandsDot?: ThousandsDotReadings & { text: string };
+  }
   | { kind: "earnings"; symbol: string; leadDays: number }
   | { kind: "macro"; event: MacroAlertEvent; leadDays: number };
 
 const CONDITIONS: readonly AlertCondition[] = ["above", "below", "crosses"];
 
+/** The first word of a price typed with a space between thousands and no quotes (`81 000`): one to three digits. */
+const LEADING_GROUP = /^[+-]?\d{1,3}$/;
+
 /**
  * Reads `alerts add` arguments: `<symbol> above 250`, `<symbol> earnings`, or
  * `CPI` / `FOMC`, with `--days` (already taken out of `args`, `null` when the
- * flag came without a value) for the event forms only. Throws a message that
- * names what the command takes.
+ * flag came without a value) for the event forms only, and `--exchange`, which
+ * a command to type again keeps. Throws a message that names what the command
+ * takes.
  */
-export function parseAlertAddArgs(args: readonly string[], days: string | null | undefined): AlertAddRequest {
-  const [first, second, third] = args;
+export function parseAlertAddArgs(args: readonly string[], days: string | null | undefined, exchange?: string | null): AlertAddRequest {
+  const [first, second, third, ...rest] = args;
   if (!first) throw new Error(ADD_USAGE);
   const leadDays = () => {
     const parsed = days === null ? null : parseLeadDays(days);
@@ -83,11 +101,51 @@ export function parseAlertAddArgs(args: readonly string[], days: string | null |
   }
   if (days !== undefined) throw new Error("--days is for earnings and CPI or FOMC alerts, not price alerts.");
   if (third === undefined) throw new Error(ADD_USAGE);
+  const retype = (price: number) => retypeCommand(first, condition, price, exchange);
+  // `81 000` without quotes arrives as 81 and a stray 000; neither reading is taken for granted.
+  const spaced = rest.length > 0 && LEADING_GROUP.test(third) ? parsePastedNumber([third, ...rest].join(" ")) : null;
+  if (spaced?.kind === "number") {
+    const typed = Number(third);
+    throw new Error(`${[third, ...rest].join(" ")} could be ${spaced.value} (thousands) or ${typed} and a stray ${rest.join(" ")}; type ${retype(spaced.value)} or ${retype(typed)}`);
+  }
   // A price pasted from a sheet (1.350,5, 1,350.5, 1 350,5) reads as it is written; `1,350` could be either, so it asks.
   const pasted = parsePastedNumber(third);
   if (pasted.kind === "ambiguous") throw new Error(ambiguousNumberMessage(third, pasted));
   if (pasted.kind === "invalid") throw new Error("Alert price must be a finite number.");
-  return { kind: "price", symbol: first, condition, price: pasted.value };
+  if (rest.length > 0) throw new Error(`A price alert takes one price, not "${rest.join(" ")}" after ${third}; type ${retype(pasted.value)}`);
+  const thousandsDot = thousandsDotReadings(third);
+  return { kind: "price", symbol: first, condition, price: pasted.value, ...(thousandsDot ? { thousandsDot: { ...thousandsDot, text: third.trim() } } : {}) };
+}
+
+/** `alerts add` as typed, with another price: what an error tells someone to type. */
+function retypeCommand(symbol: string, condition: AlertCondition, price: number, exchange: string | null | undefined): string {
+  return `gloomberb alerts add ${symbol} ${condition} ${price}${exchange ? ` --exchange ${exchange}` : ""}`;
+}
+
+/**
+ * The listing's last price, as the alert will check it, for telling 81.000
+ * typed for 81000 from 81; null when there is none, and the price is then
+ * read as written.
+ */
+function lastPrice(quote: Quote): number | null {
+  const price = getActiveQuoteDisplay(quote)?.price ?? quote.price;
+  return price != null && Number.isFinite(price) && price !== 0 ? price : null;
+}
+
+/**
+ * Asks which price `81.000` meant when the last price shows it was a dot
+ * between thousands: both readings, and the command to type for each.
+ */
+export function thousandsDotMessage(
+  request: Extract<AlertAddRequest, { kind: "price" }>,
+  listing: string,
+  last: number | null,
+  exchange?: string | null,
+): string | null {
+  const dot = request.thousandsDot;
+  if (!dot || !meantThousandsDot(dot, last)) return null;
+  const retype = (price: number) => retypeCommand(request.symbol, request.condition, price, exchange);
+  return `${dot.text} could be ${dot.thousands} (thousands) or ${dot.decimal} (decimal point), and ${listing.toUpperCase()} last traded at ${Number(last!.toFixed(2))}; type ${retype(dot.thousands)} or ${retype(dot.decimal)}`;
 }
 
 /** One row of `alerts list`: a price alert as stored, or an event alert with its next date. */
@@ -174,17 +232,6 @@ async function requireEventDate(
   return lookup.date;
 }
 
-function readAlertStores(config: AppConfig) {
-  const pluginState = config.pluginConfig[ALERTS_PLUGIN_ID] ?? {};
-  const rawPrice = pluginState[ALERTS_KEY];
-  const rawEvents = pluginState[EVENT_ALERTS_KEY];
-  return {
-    pluginState,
-    alerts: deserializeAlerts(typeof rawPrice === "string" ? rawPrice : "[]"),
-    events: readEventAlerts(typeof rawEvents === "string" ? rawEvents : "[]"),
-  };
-}
-
 export const alertsCliCommand: CliCommandDef = {
   name: "alerts",
   aliases: ["alert"],
@@ -222,15 +269,23 @@ export const alertsCliCommand: CliCommandDef = {
 
     const parseAdd = (): AlertAddRequest => {
       try {
-        return parseAlertAddArgs(args.slice(1), days);
+        return parseAlertAddArgs(args.slice(1), days, exchangeOption);
       } catch (error) {
         return ctx.fail(error instanceof Error ? error.message : String(error));
       }
     };
     const request = action === "add" ? parseAdd() : null;
-    const priceListing = request?.kind === "price" ? await requireListingArg(request.symbol, exchangeOption, ctx) : null;
-    // What a typed listing was read as (7203:TSE as 7203:JPX), said beside what was added.
-    let read = priceListing ? listingReadNotes(priceListing) : [];
+    // A price alert is kept for the listing `quote` prints for the symbol, and for no symbol that quotes nothing.
+    const priced = request?.kind === "price"
+      ? await withMarketData(ctx, (market) => requireQuotedListing(request.symbol, exchangeOption, market, ctx, "alerts add"))
+      : null;
+    const priceListing = priced?.listing ?? null;
+    if (request?.kind === "price" && request.thousandsDot && priced) {
+      const question = thousandsDotMessage(request, priced.listing.key, lastPrice(priced.quote), exchangeOption);
+      if (question) ctx.fail(question);
+    }
+    // What a typed listing was read as (7203:TSE as 7203:JPX, MXN as MXN:FWB2), said beside what was added.
+    let read = priced?.notes ?? [];
     let newEventRule: EventAlertRule | null = null;
     if (request && request.kind !== "price") {
       const target: ScheduledEventTarget = request.kind === "macro"
@@ -253,7 +308,7 @@ export const alertsCliCommand: CliCommandDef = {
     }
 
     if (action === "list") {
-      const { alerts, events } = await withConfigData(ctx, (config) => readAlertStores(config.config));
+      const { alerts, alertsError, events } = await withConfigData(ctx, (config) => readAlertStores(config.config));
       // Earnings dates come through market data; CPI and FOMC dates do not need it.
       const lookup = (targets: ScheduledEventTarget[]) => targets.some((target) => target.kind === "earnings")
         ? withMarketData(ctx, (market) => lookupScheduledDates(targets, scheduledEventSources(market.dataProvider), today))
@@ -263,7 +318,7 @@ export const alertsCliCommand: CliCommandDef = {
         ...alerts.map(priceRow),
         ...events.rules.map((rule) => eventRow(rule, today, dates.has(rule.id) ? dates.get(rule.id) : rule.eventDate)),
       ];
-      const allWarnings = [...(events.error ? [events.error] : []), ...warnings];
+      const allWarnings = [...(alertsError ? [alertsError] : []), ...(events.error ? [events.error] : []), ...warnings];
       ctx.printResult({ data: rows, ...(allWarnings.length ? { warnings: allWarnings } : {}) }, {
         rows: (data) => data.map(textRow),
         textColumns: [
@@ -282,8 +337,9 @@ export const alertsCliCommand: CliCommandDef = {
     }
 
     await withConfigData(ctx, async (config) => {
-      const { pluginState, alerts, events } = readAlertStores(config.config);
+      const { pluginState, alerts, alertsError, events } = readAlertStores(config.config);
       const save = async (next: { alerts?: AlertRule[]; events?: EventAlertRule[] }) => {
+        if (next.alerts && alertsError) ctx.fail(alertsError);
         const nextConfig = {
           ...config.config,
           pluginConfig: {
@@ -309,7 +365,8 @@ export const alertsCliCommand: CliCommandDef = {
         const alert = createAlert(symbol, condition, price, priceListing?.exchange);
         await save({ alerts: [...alerts, alert] });
         ctx.printResult({ data: { changed: !ctx.cliOptions.dryRun, dryRun: ctx.cliOptions.dryRun, alert }, ...(read.length > 0 ? { warnings: read } : {}) }, {
-          text: (data) => `Added alert ${data.alert.id}: ${symbol} ${condition} ${price}.${dryRunNote(data.dryRun)}`,
+          // The delivery, as docs/usage.md states it, before any full stop, which after the price would read as part of it (below 81.).
+          text: (data) => `Added alert ${data.alert.id}: ${symbol} ${condition} ${price} (${PRICE_DELIVERY}).${dryRunNote(data.dryRun)}`,
         });
         return;
       }
@@ -324,10 +381,12 @@ export const alertsCliCommand: CliCommandDef = {
         await save({ events: [...rules, rule] });
         const eventDate = rule.eventDate!;
         const due = scheduledPhase(eventDate, scheduled.leadDays, undefined, today) === "due";
+        const delivery = scheduled.target.kind === "macro" ? ", only while it is running" : " while it is running, or on your phone with Cloud sync";
         ctx.printResult({ data: { changed: !ctx.cliOptions.dryRun, dryRun: ctx.cliOptions.dryRun, alert: rule }, ...(read.length > 0 ? { warnings: read } : {}) }, {
+          // Delivery, as docs/usage.md states it: CPI and FOMC notify in the running app only; earnings also reach the phone.
           text: (data) => `Added alert ${data.alert.id}: ${name} on ${eventDate}, ${plural(scheduled.leadDays, "day")} before (${due
             ? "already reached, so the app alerts at its next check"
-            : `the app alerts on ${leadStartDate(eventDate, scheduled.leadDays)}`}).${dryRunNote(data.dryRun)}`,
+            : `the app alerts on ${leadStartDate(eventDate, scheduled.leadDays)}`}${delivery}).${dryRunNote(data.dryRun)}`,
         });
         return;
       }
@@ -335,6 +394,7 @@ export const alertsCliCommand: CliCommandDef = {
         const id = requireArg(args[1], "Usage: gloomberb alerts delete <id>", ctx);
         const isPrice = alerts.some((alert) => alert.id === id);
         const isEvent = !isPrice && events.rules.some((rule) => rule.id === id);
+        if (!isPrice && !isEvent && alertsError) ctx.fail(alertsError);
         if (isPrice) await save({ alerts: alerts.filter((alert) => alert.id !== id) });
         if (isEvent) await save({ events: requireEvents().filter((rule) => rule.id !== id) });
         const changed = isPrice || isEvent;
@@ -349,6 +409,7 @@ export const alertsCliCommand: CliCommandDef = {
         const id = requireArg(args[1], "Usage: gloomberb alerts rearm <id>", ctx);
         const isPrice = alerts.some((alert) => alert.id === id);
         const rule = isPrice ? null : events.rules.find((entry) => entry.id === id) ?? null;
+        if (!isPrice && !rule && alertsError) ctx.fail(alertsError);
         if (isPrice) await save({ alerts: alerts.map((alert) => alert.id === id ? rearmAlert(alert) : alert) });
         if (rule) {
           // A scheduled alert alerts again for its coming event; any other event alert resumes.

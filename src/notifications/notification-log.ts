@@ -1,3 +1,4 @@
+import { logFailure } from "../utils/log-failure";
 import type { AppPluginStateStorePort } from "../core/app-service-ports";
 import type { AppNotificationRequest } from "../types/plugin";
 
@@ -5,20 +6,22 @@ export const NOTIFICATION_LOG_LIMIT = 300;
 
 /**
  * The notices worth finding again after their toast is gone: a price alert or
- * a catalyst that fired, and a team card. Chat keeps its own unread state on
- * the account, and plain info, success and error toasts are not logged.
+ * a catalyst that fired, a high-impact economic print, and a team card. Chat
+ * keeps its own unread state on the account, and plain info, success and
+ * error toasts are not logged.
  */
-export type MissedNoticeKind = "price" | "catalyst" | "team";
+export type MissedNoticeKind = "price" | "catalyst" | "econ" | "team";
 
 const KIND_PREFIXES: ReadonlyArray<readonly [MissedNoticeKind, string]> = [
   ["price", "price:"],
   ["catalyst", "catalyst:"],
+  ["econ", "econ:"],
   ["team", "team:"],
 ];
 
 export interface NotificationLogEntry {
   id: string;
-  /** `price:<alertId>`, `catalyst:<eventId>` or `team:<cardId>`. A later notice with the same ref updates this row. */
+  /** `price:<alertId>`, `catalyst:<eventId>`, `econ:<eventId>` or `team:<cardId>`. A later notice with the same ref updates this row. */
   refId: string;
   title?: string;
   body: string;
@@ -73,8 +76,8 @@ function commit(next: NotificationLogEntry[]): void {
   entries = next;
   try {
     store?.set(entries);
-  } catch {
-    // The rows stay in memory; the next change tries the write again.
+  } catch (error) {
+    logFailure("notifications.notification-log", "Saving notification history failed")(error);
   }
   for (const listener of listeners) listener();
 }
@@ -88,7 +91,8 @@ function configureNotificationLog(nextStore: NotificationLogStore | null): void 
   let saved: readonly unknown[] = [];
   try {
     saved = nextStore?.get() ?? [];
-  } catch {
+  } catch (error) {
+    logFailure("notifications.notification-log", "Loading notification history failed")(error);
     saved = [];
   }
   const loaded = saved.map(normalizeEntry).filter((entry): entry is NotificationLogEntry => !!entry);
@@ -132,8 +136,8 @@ export function unreadNotificationLogCount(log: readonly NotificationLogEntry[] 
 }
 
 /**
- * Records a notice whose `refId` names a price alert, a catalyst or a team
- * card; anything else returns null and is not kept. The same ref replaces its
+ * Records a notice whose `refId` names a price alert, a catalyst, an economic
+ * release or a team card; anything else returns null and is not kept. The same ref replaces its
  * row: a price alert that fires again is new and unread again.
  */
 export function appendNotificationLog(

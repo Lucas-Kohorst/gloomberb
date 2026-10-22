@@ -114,6 +114,7 @@ import {
   UNDO_KEY,
 } from "./tool-timeline";
 import { ClippedText } from "../../../../components/ui/display";
+import { logFailure } from "../../../../utils/log-failure";
 
 export const ASKG_PANE_ID = "askg";
 
@@ -123,6 +124,8 @@ const MIN_DETAIL_HEIGHT = 8;
 const MAX_COMPOSER_LINES = 6;
 /** The daily allowance is news only once it runs low. */
 const LOW_QUOTA = 20;
+/** What unlocks Ask Gloom: a free account with a verified email; a paid plan only changes the model. */
+const ASKG_WALL_HINT = "Free with a verified Gloom account.";
 
 function clientKind(): "tui" | "desktop" | "web" {
   const target = getCurrentPluginTarget();
@@ -893,7 +896,7 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
       // A pane asked about meanwhile has the pane to itself.
       if (!conversation || current.turns.length > 0 || current.conversationId || attachedRef.current || queuedPaneRef.current) return;
       controller.openConversation(conversation);
-    }).catch(() => {});
+    }).catch(logFailure("cloud.askg.pane", "Restore the last open conversation failed"));
   }, [controller, planAccess.emailVerified]);
 
   useEffect(() => {
@@ -1102,7 +1105,7 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
           }))}
         />
       ),
-    }).catch(() => undefined);
+    }).catch(logFailure("cloud.askg.pane", "The answer tickers prompt failed"));
     if (symbol) openTicker(symbol);
   }, [answerTickers, catalog, dialog, openTicker]);
 
@@ -1570,6 +1573,7 @@ export function ASKGPane({ paneId, focused, width, height }: PaneProps) {
         placement="gp-signin"
         action="ask questions about anything on screen"
         needsVerification={planAccess.signedIn}
+        hint={ASKG_WALL_HINT}
       />
     );
   }

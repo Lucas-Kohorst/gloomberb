@@ -44,10 +44,12 @@ export const estimateRevisionsHeadless: HeadlessPaneDefinition<"bundle"> = {
       instrument?.symbol ?? symbol,
       instrument?.exchange ?? "",
       ctx.apiClient,
-    ).catch((error: unknown) => {
-      throw explainRefusal(error, estimateRevisionsLockNote, {
+      ctx.marketData,
+    ).catch(async (error: unknown) => {
+      throw await explainRefusal(error, estimateRevisionsLockNote, {
         symbol: args.symbols[0] ?? null,
         token: ctx.settings?.tab === "guidance" ? "GUID" : "EM",
+        context: ctx,
       });
     });
     const periods = pinnedEstimatePeriods(

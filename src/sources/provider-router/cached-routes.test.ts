@@ -44,6 +44,25 @@ describe("shared cached market queries", () => {
       expect(actionCalls).toBe(2);
     } finally { persistence.close(); }
   });
+  test("a sub-unit cash history reaches every reader in the major unit, divided once", async () => {
+    const persistence = new AppPersistence(":memory:");
+    let calls = 0;
+    // SBK as its source states it: ZAc, with single-precision noise.
+    const provider = createTestDataProvider({ id: "jse", getCorporateActions: async () => {
+      calls++;
+      return { symbol: "SBK", currency: "ZAc", coverage: { dividends: "available" as const, splits: "available" as const, earnings: "available" as const },
+        dividends: [{ exDate: "2026-09-09", amount: 902.00006 }], declaredDividends: [{ exDate: "2027-04-14", amount: 950.00006 }],
+        splits: [], earnings: [] };
+    } });
+    try {
+      const fresh = await new AssetDataRouter(provider, [], persistence.resources).getCorporateActions("SBK", "JSE");
+      expect(fresh).toMatchObject({ currency: "ZAR", dividends: [{ amount: 9.02 }], declaredDividends: [{ amount: 9.5 }] });
+      // Read back from the cache, it is the same figure, not divided again.
+      const cached = await new AssetDataRouter(provider, [], persistence.resources).getCorporateActions("SBK", "JSE");
+      expect(cached).toMatchObject({ currency: "ZAR", dividends: [{ amount: 9.02 }] });
+      expect(calls).toBe(1);
+    } finally { persistence.close(); }
+  });
   test("preserves stale FX age, shares refreshes, notifies consumers, and unsubscribes on destroy", async () => {
     // FX quotes stay fresh while the market is closed, so a weekend run would
     // never see this two-hour-old rate as stale. Pin a Wednesday afternoon.
@@ -165,6 +184,30 @@ describe("shared cached market queries", () => {
         { rate: 0 }, { schemaVersion: MARKET_METADATA_SCHEMA_VERSION, cachePolicy: { staleMs: 60_000, expireMs: 120_000 } });
       expect(await router.getExchangeRate("EUR")).toBe(1.15);
     } finally { persistence.close(); }
+  });
+
+  test("a caller that cannot see a background refresh is not handed a stale stored chain as current", async () => {
+    let online = true;
+    const provider = createTestDataProvider({ id: "provider",
+      getOptionsChain: async () => {
+        if (!online) throw new Error("offline");
+        return { underlyingSymbol: "AAPL", expirationDates: [2], calls: [], puts: [] };
+      },
+    });
+    // A chain stored two hours ago, as a previous session leaves it.
+    const read = async (cacheMode?: "current") => {
+      const persistence = new AppPersistence(":memory:");
+      persistence.resources.set({ namespace: "market", kind: "options-chain", entityKey: "AAPL", sourceKey: "provider:provider" },
+        { underlyingSymbol: "AAPL", expirationDates: [1], calls: [], puts: [] },
+        { schemaVersion: MARKET_METADATA_SCHEMA_VERSION, fetchedAt: Date.now() - 2 * 60 * 60_000, cachePolicy: { staleMs: 5 * 60_000, expireMs: 2 * 86400000 } });
+      try { return (await new AssetDataRouter(provider, [], persistence.resources).getOptionsChain("AAPL", undefined, undefined, cacheMode ? { cacheMode } : undefined)).expirationDates; }
+      finally { await tick(); persistence.close(); }
+    };
+    expect(await read()).toEqual([1]);
+    expect(await read("current")).toEqual([2]);
+    online = false;
+    // The stored chain is still the answer when the source cannot be reached.
+    expect(await read("current")).toEqual([1]);
   });
 
   test("FX source observation and retrieval times survive cache reload and failed refresh", async () => {

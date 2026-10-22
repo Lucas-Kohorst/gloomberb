@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fitPaneFooterInfo, layoutPaneFooterHintRow, type CombinedPaneFooter, type PaneFooterSegment, type PaneHint } from "./model";
+import { combinePaneFooterRegistrations, fitPaneFooterInfo, layoutPaneFooterHintRow, splitDelayedStatus, type CombinedPaneFooter, type PaneFooterRegistration, type PaneFooterSegment, type PaneHint } from "./model";
 
 const hints: PaneHint[] = [
   { id: "search", key: "/", label: "search" },
@@ -41,6 +41,19 @@ describe("footer hint row", () => {
     expect(narrow[0]!.title).toBe(full);
   });
 
+  test("a trailing status that cannot fit is cut behind an ellipsis, or left out, rather than cut against the hints", () => {
+    const contract: PaneFooterSegment = { id: "contract", parts: [{ text: "AAPL261026C00342500" }] };
+    const quote: PaneFooterSegment = { id: "quote", parts: [{ text: "quote" }, { text: "12h" }] };
+    const trade: PaneFooterSegment = { id: "trade", parts: [{ text: "trade" }, { text: "12h" }] };
+    expect(fitPaneFooterInfo([contract, quote, trade], 32).map((segment) => segment.id)).toEqual(["contract", "quote"]);
+    const line: PaneFooterSegment = { id: "line", parts: [{ text: "Fri 9 Oct close" }, { text: "· 15 min delayed", tone: "muted" }] };
+    const cut = fitPaneFooterInfo([contract, line], 46).at(-1)!;
+    expect(cut.parts).toEqual([{ text: "Fri 9 Oct close" }, { text: "· 15 min…", tone: "muted" }]);
+    expect(cut.title).toBe("Fri 9 Oct close · 15 min delayed");
+    const stale: PaneFooterSegment = { id: "stale", parts: [{ text: "stale", tone: "warning" }] };
+    expect(fitPaneFooterInfo([contract, stale], 20).map((segment) => segment.id)).toEqual(["contract", "stale"]);
+  });
+
   test("a failure keeps more of its sentence than a status word does", () => {
     const failure = "Cloud chart data is unavailable for AAPL";
     const row = layoutPaneFooterHintRow(footer([{ id: "error", parts: [{ text: failure, tone: "warning" }] }]), 64);
@@ -52,5 +65,40 @@ describe("footer hint row", () => {
     const row = layoutPaneFooterHintRow(footer([{ id: "loading", parts: [{ text: "loading" }] }]), 120);
     expect(row.overflow).toEqual([]);
     expect(row.hints.map((hint) => hint.id)).toEqual(hints.map((hint) => hint.id));
+  });
+});
+
+describe("combining footer registrations", () => {
+  // A chart's `p` pin joins every pane that hosts a chart, so a pane's own
+  // `p`, drawn or only bound, keeps the key and the pin moves to the menu,
+  // unless the pane's `p` is turned off.
+  test("a hint that yields its key gives it up to the pane's own hint or key", () => {
+    const pin: PaneHint = { id: "chart-pin", key: "p", label: "in", title: "Pin Crosshair", yieldsKey: true, onPress: () => {} };
+    const combine = (pane: PaneFooterRegistration) => combinePaneFooterRegistrations(new Map([
+      ["chart", { order: 10, hints: [pin] }],
+      ["pane", pane],
+    ]));
+    expect(combine({ hints: [{ id: "open", key: "o", label: "pen" }] }).hints.map((hint) => hint.id)).toEqual(["open", "chart-pin"]);
+    expect(combine({ hints: [{ id: "pop-out", key: "p", label: "op out" }] }).hints.map((hint) => hint.id)).toEqual(["pop-out"]);
+    // A `p` the pane has turned off does nothing, so the pin keeps it.
+    expect(combine({ hints: [{ id: "portfolio", key: "p", label: "ortfolio", disabled: true }] }).hints.map((hint) => hint.id)).toEqual(["portfolio", "chart-pin"]);
+    const bound = combine({ keys: [{ id: "window", key: "p", label: "eriod" }] });
+    expect(bound.hints).toEqual([]);
+    expect(bound.menu.map((item) => item.type === "divider" ? null : [item.label, item.accelerator ?? null])).toEqual([["Pin Crosshair", null]]);
+  });
+});
+
+describe("a delayed status", () => {
+  test("its lead becomes the clock, the delay in the terminal's cells and the words in its tooltip, and the rest stays text", () => {
+    const [clock, rest, ...more] = splitDelayedStatus({ id: "feed", quoteStatus: true, parts: [{ text: "15m delayed · 14:47 UTC", tone: "muted" }, { text: "tape", tone: "label" }] });
+    expect(more).toEqual([]);
+    expect(clock).toMatchObject({ id: "feed-delay", icon: "clock", title: "15m delayed", quoteStatus: true, parts: [{ text: "◷15m", tone: "warning" }] });
+    expect(rest).toEqual({ id: "feed", quoteStatus: true, parts: [{ text: "14:47 UTC", tone: "muted" }, { text: "tape", tone: "label" }] });
+    // A delay with no figure is the clock alone; a status that only mentions a delay later is left as it is.
+    expect(splitDelayedStatus({ id: "s", parts: [{ text: "mixed real-time and delayed · as of 15:00:00 UTC" }] })[0]).toMatchObject({ title: "mixed real-time and delayed", parts: [{ text: "◷" }] });
+    expect(splitDelayedStatus({ id: "s", parts: [{ text: "delayed" }] })).toHaveLength(1);
+    const plain = { id: "s", parts: [{ text: "real-time · 14:47 UTC" }] };
+    expect(splitDelayedStatus(plain)).toEqual([plain]);
+    expect(splitDelayedStatus({ id: "s", parts: [{ text: "settlement · 15m delayed" }] })[0]?.icon).toBeUndefined();
   });
 });

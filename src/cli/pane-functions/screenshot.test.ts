@@ -13,13 +13,17 @@ import {
   shotDataEvidenceFor,
   shotExpectedText,
   shotSemanticRowCount,
+  shotTableRows,
   shotUnavailableSymbols,
+  shotFreshness,
   shownReportTab,
   stripDesktopShotCredentials,
   type PaneScreenshotExpectedChartEvidence,
   type PaneScreenshotExpectedSelection,
 } from "./screenshot";
 import { paneEvidenceMismatches } from "./screenshot-evidence";
+import { shotRowsText } from "./index";
+import { commoditiesEnergyModule } from "../../plugins/builtin/commodities-energy";
 import { realizedVolSemanticEvidence } from "../../plugins/builtin/realized-vol/evidence";
 import { coneChartSeries, realizedChartSeries } from "../../plugins/builtin/realized-vol/chart-model";
 import { collectShotSymbols } from "./data";
@@ -40,7 +44,14 @@ import { optionsCalculatorHeadless } from "../../plugins/builtin/options-calcula
 import { valueOption, solveImpliedVolatility } from "../../plugins/builtin/shared/volatility";
 import { loadSeasonalityHistory } from "../../plugins/builtin/seasonality/client";
 import { createTestDataProvider, createTestFinancials, createTestQuote } from "../../test-support/data-provider";
+import { debtMaturitiesModule } from "../../plugins/builtin/debt-maturities";
+import { debtMaturitiesHeadless } from "../../plugins/builtin/debt-maturities/headless";
+import { traceBondsModule } from "../../plugins/builtin/trace-bonds";
+import { traceBondsHeadless } from "../../plugins/builtin/trace-bonds/headless";
+import { deriveCaptureReport } from "./freshness";
 import { MARGIN_PORTFOLIO, MARGIN_TICKERS, marginQuotes } from "../../test-support/margin-account";
+import { noProviderError } from "../../sources/provider-errors";
+import { ApiRequestError } from "../../api-client/errors";
 import type { FinancialStatement, PricePoint, TickerFinancials } from "../../types/financials";
 import { loadPeriodEndHistory } from "../../plugins/builtin/ticker-detail/financials/period-end-history";
 import {
@@ -64,6 +75,20 @@ test("calculator screenshots freeze percent inputs without market requests, incl
   });
   expect(shot.financials).toEqual([]);
   expect(shot.optionsChains).toEqual([]);
+});
+
+test("a scanner pane's screenshot carries what its feed answered the capture, a refusal included", async () => {
+  const request = { pane: { id: "scanner-flow" }, capability: { id: "scanner-flow-pane", options: [] },
+    instance: { instanceId: "flow:test", paneId: "scanner-flow", binding: { kind: "none" }, settings: {} }, options: {},
+  } as unknown as ResolvedPaneFunction;
+  const context = { config: createDefaultConfig("/tmp/scanner-shot-test"), store: { loadTicker: async () => null },
+    dataProvider: { id: "offline" } } as unknown as MarketContext;
+  const asked: string[] = [];
+  const shot = await buildDesktopShotPayload(request, context, "", {}, 800, 600, null, 1, null, undefined, {
+    subscribeScanner(scanner, listener) { asked.push(scanner); listener({ type: "denied", reason: "auth_required" }); return () => {}; },
+  });
+  expect(asked).toEqual(["flow"]);
+  expect(shot.scannerSnapshots).toEqual([["flow", { type: "denied", reason: "auth_required" }]]);
 });
 
 test("calculator screenshot evidence must match the requested inputs, not just a self-consistent default price", () => {
@@ -447,7 +472,7 @@ describe("realized volatility screenshot evidence", () => {
     currentIv: { value: 22, date: "2026-09-22T14:30:00.000Z", label: "ATM IV 24d", source: "test", expiration: 1_800_000_000 } };
   const dates = [new Date("2026-09-21"), new Date("2026-09-22")];
   const series = realizedChartSeries({ history: dates.map((date) => ({ date, close: 100 })),
-    rolling: dates.map((date, index) => ({ date, values: { 10: index ? 0.2 : null } })), windows: [10], currency: "USD",
+    rolling: dates.map((date, index) => ({ date, values: { 10: index ? 0.2 : null } })), windows: [10], priceUnit: "USD",
     iv: { value: 0.22, date: new Date(status.currentIv.date), label: status.currentIv.label } }, ["green"], "white");
   const evidence = realizedVolSemanticEvidence(series, status);
   const request = { ...resolved("realized-vol-graph-pane", { tab: "graph", windows: "10", showIv: true }),
@@ -1125,6 +1150,44 @@ test("screenshot bridge fetches tape through Bun with the exact listing identity
   await expect(bridge.marketData("getCloudTape",["AAPL"])).rejects.toThrow("listing exchange");
 });
 
+describe("screenshot arguments", () => {
+  const pane = (fields: object) => ({
+    pane: { id: "argument-pane" }, capability: { id: "argument-pane", options: [] }, options: {},
+    instance: { instanceId: "argument-pane:cli", paneId: "argument-pane", binding: { kind: "none" }, settings: {} }, ...fields,
+  }) as unknown as ResolvedPaneFunction;
+  const asked: string[] = [];
+  const capture = (request: ResolvedPaneFunction, rawArg: string) => buildDesktopShotPayload(request, {
+    config: createDefaultConfig("/tmp/argument-shot-test"), store: { loadTicker: async () => null },
+    dataProvider: createTestDataProvider({
+      getTickerFinancials: async (symbol) => {
+        asked.push(symbol);
+        if (symbol !== "F") throw new Error(`Not a ticker: ${symbol}.`);
+        return createTestFinancials({ quote: createTestQuote({ symbol: "F", listingExchangeName: "NYSE" }) });
+      },
+    }),
+  } as unknown as MarketContext, rawArg, {}, 800, 600, null, 1, null);
+
+  test("an argument the function's report reads (AUCT 10Y, a CUSIP, a date) is never looked up as a ticker, as fn never does", async () => {
+    asked.length = 0;
+    for (const arg of ["10Y", "91282CRF0", "2026-10-07"]) {
+      const shot = await capture(pane({ headless: { argument: { kind: "free-text" } }, template: { shortcut: { prefix: "AUCT" } }, createOptions: { arg } }), arg);
+      expect(shot.financials).toEqual([]);
+    }
+    expect(asked).toEqual([]);
+  });
+
+  test("a report that takes a ticker or a name (CDS) captures a ticker's data and renders a name without it", async () => {
+    const cds = (arg: string) => pane({ headless: { argument: { kind: "free-text" } }, template: { shortcut: { prefix: "CDS", argKind: "ticker" } },
+      createOptions: { arg, symbol: arg.toUpperCase() } });
+    expect((await capture(cds("Ford Motor"), "Ford Motor")).financials).toEqual([]);
+    expect((await capture(cds("F"), "F")).financials.map(([symbol]) => symbol)).toEqual(["F"]);
+  });
+
+  test("a function whose argument is a ticker still fails on one that is not", async () => {
+    await expect(capture(pane({ createOptions: { arg: "10Y" } }), "10Y")).rejects.toThrow("Not a ticker: 10Y.");
+  });
+});
+
 describe("portfolio screenshot members", () => {
   const request = {
     pane: { id: "portfolio-list" }, capability: { id: "portfolio-list-pane", options: [] },
@@ -1155,14 +1218,90 @@ describe("portfolio screenshot members", () => {
     expect(shot.tickers.at(-1)!.metadata.positions[0]).toMatchObject({ markPrice: 100, multiplier: 100 });
   });
 
-  test("still fails for a holding the broker never marked", async () => {
+  test("a holding no source quotes and the broker never marked is a row without a price, not a failed capture", async () => {
     const [stock] = MARGIN_TICKERS;
     const unmarked = { metadata: { ...stock!.metadata, positions: [{ ...stock!.metadata.positions[0]!, markPrice: undefined, marketValue: undefined }] } };
+    const shot = await capture({
+      getTickerFinancials: async (symbol) => {
+        const financials = symbol === "AAA" ? undefined : quotes.get(symbol);
+        if (!financials) throw new Error(`No provider available for ${symbol}`);
+        return financials;
+      },
+    }, [unmarked, ...MARGIN_TICKERS.slice(1)]);
+    expect(shot.tickers.map(({ metadata }) => metadata.ticker)).toEqual(["AAA", "BBB", option.metadata.ticker]);
+    // Captured with nothing, so the page shows the row unpriced rather than fetching it.
+    expect(shot.financials.find(([symbol]) => symbol === "AAA")?.[1]).toMatchObject({ priceHistory: [], annualStatements: [] });
+    expect(shot.financials.find(([symbol]) => symbol === "AAA")?.[1].quote).toBeUndefined();
+    // A read the service rate limited may answer when taken again: the capture fails rather than show the row unpriced.
     await expect(capture({
       getTickerFinancials: async (symbol) => {
-        if (symbol === "AAA") throw new Error("Cloud financials are unavailable for AAA");
+        if (symbol === "AAA") throw noProviderError("No provider available for AAA", { failure: new ApiRequestError("Too many requests", 429) }, "AAA");
         return quotes.get(symbol)!;
       },
-    }, [unmarked, ...MARGIN_TICKERS.slice(1)])).rejects.toThrow("unavailable for AAA");
+    }, [unmarked, ...MARGIN_TICKERS.slice(1)])).rejects.toThrow("No provider available for AAA");
+  });
+});
+
+test("an Issuer Debt or TRACE capture is dated by its own data, never by the issuer's stock session", () => {
+  const NOW = Date.parse("2026-10-16T20:12:00Z");
+  const template = debtMaturitiesModule.paneTemplates![0]!;
+  // Fixed Income hosts the view and declares nothing of its own; WHR's delayed quote is on the page.
+  const pane = { reportFreshness: undefined } as ResolvedPaneFunction["pane"];
+  const quote = createTestQuote({ symbol: "WHR", dataSource: "delayed", delayMinutes: 15, lastUpdated: NOW - 60_000,
+    sessionExchange: "NYSE", marketState: "POST" } as never);
+  const payload = { financials: [["WHR", createTestFinancials({ quote })]] } as unknown as Pick<DesktopPaneShotPayload, "financials">;
+  const render = { semanticUi: [], footerText: "", rows: [] };
+  const report = deriveCaptureReport(debtMaturitiesHeadless, { sections: [], freshness: { asOf: "2026-06-30" } }, NOW);
+  const line = shotFreshness({ pane, template }, { ...payload, instrumentFinancials: [] }, render, [], report, NOW);
+  expect(line.variants[0]).toBe("Source: SEC EDGAR · Tue 30 Jun 2026 · not a live feed (filed data)");
+  expect(line.dates).toBe("data");
+  // A view that declares nothing itself is dated by its report all the same: the report says what its data is.
+  const undeclared = shotFreshness({ pane, template: { ...template, reportFreshness: undefined } }, { ...payload, instrumentFinancials: [] }, render, [], report, NOW);
+  expect(undeclared.variants[0]).toBe(line.variants[0]);
+  // TRACE given a ticker shows its quote's company's bonds, dated by their last sale.
+  const sales = deriveCaptureReport(traceBondsHeadless, {
+    sections: [{ title: "", columns: [], rows: [{ id: "23110AAB2", lastTradeDate: "2026-07-27" }] }], freshness: { oldest: null },
+  }, NOW);
+  const trace = shotFreshness({ pane, template: traceBondsModule.paneTemplates![0]! }, { ...payload, instrumentFinancials: [] }, render, [], sales, NOW);
+  expect(trace.variants[0]).toBe("Source: FINRA · Mon 27 Jul 2026 · not a live feed (last sales)");
+});
+
+describe("a board that grows to show every row (FUT)", () => {
+  const row = (key: string, tableIndex = 0, section?: true) =>
+    ({ tableIndex, rowIndex: 0, key, selected: false, ...(section ? { section } : {}), cells: [{ columnLabel: "Row", text: key }] });
+  const board = (keys: string[]) => [row("header-energy", 0, true), ...keys.map((key) => row(key))];
+  const symbols = Array.from({ length: 72 }, (_, index) => `F${index}=F`);
+  const fut = { pane: { id: "commodities-energy", shotFitsRows: (pane: { params?: Record<string, string> }) => pane.params?.tab === "markets" },
+    instance: { params: { tab: "markets" } } } as unknown as Pick<ResolvedPaneFunction, "pane" | "instance">;
+
+  test("counts the rows its table reports and how many the image holds, leaving out section headers", () => {
+    // The height limit cut the board at 37 contracts: the shot says so instead of "Rows 37".
+    expect(shotTableRows(fut, { rows: board(symbols.slice(0, 37)), reportRows: board(symbols) })).toEqual({ shown: 37, total: 72 });
+    expect(shotRowsText({ shown: 37, total: 72 })).toBe("37 of 72 rows");
+    // Grown to fit, every contract is in the image.
+    expect(shotTableRows(fut, { rows: board(symbols), reportRows: board(symbols) })).toEqual({ shown: 72, total: 72 });
+    expect(shotRowsText({ shown: 72, total: 72 })).toBe("72");
+    // A row of another table with the same key is not this one.
+    expect(shotTableRows(fut, { rows: [row(symbols[0]!, 1)], reportRows: board(symbols) })).toEqual({ shown: 0, total: 72 });
+  });
+
+  test("only on the tab whose board fits its rows, and never for a pane that keeps its height", () => {
+    const curve = { ...fut, instance: { params: { tab: "curve" } } } as unknown as typeof fut;
+    expect(shotTableRows(curve, { rows: board(symbols.slice(0, 37)), reportRows: board(symbols) })).toBeNull();
+    const chain = { pane: { id: "options" }, instance: {} } as unknown as typeof fut;
+    expect(shotTableRows(chain, { rows: board(symbols.slice(0, 21)), reportRows: board(symbols) })).toBeNull();
+    // A table that reports only what it draws has no count to give.
+    expect(shotTableRows(fut, { rows: board(symbols.slice(0, 37)) })).toBeNull();
+  });
+
+  test("the Commodities & Energy workspace grows on its Markets tab (FUT) and keeps its height on the others", () => {
+    const fits = commoditiesEnergyModule.panes![0]!.shotFitsRows;
+    expect(typeof fits).toBe("function");
+    const on = (params: Record<string, string>, settings?: Record<string, unknown>) =>
+      (fits as (pane: unknown) => boolean)({ instanceId: "x", paneId: "commodities-energy", params, ...(settings ? { settings } : {}) });
+    expect(on({ tab: "markets" })).toBe(true);
+    expect(on({})).toBe(true);
+    expect(on({ tab: "curve" })).toBe(false);
+    expect(on({ tab: "markets" }, { workspaceTab: "positioning" })).toBe(false);
   });
 });

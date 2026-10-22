@@ -114,14 +114,15 @@ function aggregateOhlcProjectedBucket(
   const last = bucket[bucket.length - 1]!;
   let high = sourceValue(first, "high");
   let low = sourceValue(first, "low");
-  let volume = isFiniteNumber(first.point.volume) ? first.point.volume : 0;
+  // A bucket whose bars all lack volume has none, not 0.
+  let volume = isFiniteNumber(first.point.volume) ? first.point.volume : undefined;
   let breakBefore = first.breakBefore;
 
   for (let index = 1; index < bucket.length; index += 1) {
     const point = bucket[index]!;
     high = Math.max(high, sourceValue(point, "high"));
     low = Math.min(low, sourceValue(point, "low"));
-    if (isFiniteNumber(point.point.volume)) volume += point.point.volume;
+    if (isFiniteNumber(point.point.volume)) volume = (volume ?? 0) + point.point.volume;
     if (point.breakBefore) breakBefore = true;
   }
 
@@ -175,10 +176,25 @@ function downsampleProjectedSeries(
   return points === series.points ? series : { ...series, points };
 }
 
+/**
+ * The dates every stacked layer keeps: those the top layer keeps. Each layer
+ * is drawn from the one below it, so layers sampled apart would leave slivers
+ * and overlaps between their edges.
+ */
+function stackedSampleDates(panel: CompositePanelScene, pixelWidth: number): ReadonlySet<number> | null {
+  const top = panel.series.findLast((entry) => entry.source.stacked);
+  if (!top) return null;
+  const sampled = downsampleProjectedSeries(top, pixelWidth);
+  return sampled === top ? null : new Set(sampled.points.map((point) => point.timestamp));
+}
+
 function downsamplePanel(panel: CompositePanelScene, pixelWidth: number): CompositePanelScene {
   let changed = false;
+  const stackedDates = stackedSampleDates(panel, pixelWidth);
   const series = panel.series.map((entry) => {
-    const next = downsampleProjectedSeries(entry, pixelWidth);
+    const next = entry.source.stacked
+      ? stackedDates ? { ...entry, points: entry.points.filter((point) => stackedDates.has(point.timestamp)) } : entry
+      : downsampleProjectedSeries(entry, pixelWidth);
     if (next !== entry) changed = true;
     return next;
   });

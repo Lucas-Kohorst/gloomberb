@@ -1,8 +1,11 @@
 import { apiClient } from "../../../api-client";
-import type { CloudCurvePoint, CloudCurveId, CloudCurveView } from "../../../api-client/yield-curves";
+import type { CloudCurveMove, CloudCurvePoint, CloudCurveId, CloudCurveView } from "../../../api-client/yield-curves";
+import { TREASURY_CURVE_CUTOFF } from "../shared/treasury-cutoffs";
+import type { MoveHorizon } from "../shared/move-rank";
 import type { CurveBasis } from "./forward";
 import { yieldSpreads, type YieldLookbackCurves } from "./chart";
 import { completeYieldCurve, loadHistoricalYieldCurve, yieldCurveDate } from "./history";
+import { DATE_OPTION_FORMATS, readCalendarDate } from "../../../utils/calendar-date";
 import { isYieldObservationDate, loadYieldCurve, type YieldPoint } from "./treasury-data";
 
 export type CurveId = CloudCurveId;
@@ -54,6 +57,20 @@ export function parseCurveArgument(value: unknown, now = new Date()): { curve: C
   return { curve, date: yieldCurveDate(rest.join(" ") || null, now) };
 }
 
+/**
+ * When in the day a curve's yields are taken, for the curves where two
+ * numbers for one day are easily confused: Treasury's, which ^TNX quotes at
+ * an earlier close. Null for the others, which name only their date.
+ */
+export function curveCutoff(curve: CurveId): string | null {
+  return curve === "us" || curve === "us-real" || curve === "us-breakeven" ? TREASURY_CURVE_CUTOFF : null;
+}
+
+/** A tenor's ranked move over a horizon, when the curve brought one. */
+export function curveTenorMove(data: CurveData | null, tenor: string, horizon: MoveHorizon): CloudCurveMove | null {
+  return data?.moves?.find((move) => move.tenor === tenor && move.horizon === horizon && move.change != null) ?? null;
+}
+
 export interface CurveSpreadFigure {
   id: string;
   /** Long minus short, percentage points. */
@@ -73,6 +90,24 @@ export interface CurveData {
   lookbacks: YieldLookbackCurves | null;
   /** Null for the FRED fallback: its spreads follow from the points and look-backs. */
   spreads: CurveSpreadFigure[] | null;
+  /**
+   * Each tenor's 1D and 1W move ranked against its whole history, as Gloom
+   * Cloud ranks the stored curve. Null for the FRED fallback and older servers.
+   */
+  moves?: CloudCurveMove[] | null;
+  /**
+   * FRED `info.source` when these points are the constant-maturity fallback.
+   * Null when that fallback came back without series info. Absent on a stored curve.
+   */
+  seriesSource?: string | null;
+}
+
+function fredSeriesSource(points: readonly YieldPoint[]): string | null {
+  const sources = [...new Set(points.flatMap((point) => {
+    const source = point.source?.trim();
+    return source ? [source] : [];
+  }))];
+  return sources.length ? sources.join(", ") : null;
 }
 
 type CurveClient = Pick<typeof apiClient, "getCloudCurve" | "getCloudYieldCurve" | "getCloudFredSeries">;
@@ -94,6 +129,7 @@ function curveDataFromView(view: CloudCurveView, requestedDate: string): CurveDa
     lookbacks: Object.fromEntries(view.lookbacks.map((lookback) => [lookback.id,
       lookback.points ? pointsAt(lookback.points, lookback.asOf) : null])),
     spreads: view.spreads.map(({ id, value, change1d, percentile1y }) => ({ id, value, change1d, percentile1y })),
+    moves: view.moves ?? null,
   };
 }
 
@@ -105,7 +141,8 @@ async function loadFredCurve(requestedDate: string, client: CurveClient): Promis
   const points = completeYieldCurve(requestedDate
     ? await loadHistoricalYieldCurve(requestedDate, (id, options) => client.getCloudFredSeries(id, options))
     : await loadYieldCurve(() => client.getCloudYieldCurve()));
-  return { curve: "us", requestedDate, basis: "par", couponsPerYear: 2, points, lookbacks: null, spreads: null };
+  return { curve: "us", requestedDate, basis: "par", couponsPerYear: 2, points, lookbacks: null, spreads: null, moves: null,
+    seriesSource: fredSeriesSource(points) };
 }
 
 /** The spreads GC shows: the stored curve's, or for FRED's curve its own with no percentile. */
@@ -141,7 +178,7 @@ export async function loadComparePoints(curve: CurveId, date: string, client: Cu
 }
 
 const RELATIVE = /^(\d{1,2})([DWMY])$/i;
-const COMPARE_HELP = "Compare with a date in YYYY-MM-DD format or a span such as 1D, 1W, 3M or 1Y.";
+const COMPARE_HELP = `Compare with a date as ${DATE_OPTION_FORMATS}, or a span such as 1D, 1W, 3M or 1Y.`;
 
 /** A span back from the session (1D, 1W, 3M, 1Y): what the compare field takes besides a date. */
 export function isCompareSpan(value: string): boolean {
@@ -158,8 +195,9 @@ export function parseCompareInput(value: string, now = new Date()): string {
   const text = value.trim();
   if (!text) return "";
   if (isCompareSpan(text)) return text.toUpperCase();
-  if (!isYieldObservationDate(text)) throw new Error(COMPARE_HELP);
-  return yieldCurveDate(text, now);
+  const date = readCalendarDate(text);
+  if (!date) throw new Error(COMPARE_HELP);
+  return yieldCurveDate(date, now);
 }
 
 /**

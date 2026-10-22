@@ -16,18 +16,32 @@ import { connectSignedInBrokerProfile } from "../../../brokers/signed-in/connect
 import {
   addTickerToPortfolio,
   adoptFirstPositionCurrency,
+  LotCostFxMergeError,
   createManualPortfolio as createManualPortfolioConfig,
   deleteManualPortfolio,
   deleteWatchlist as deleteWatchlistConfig,
   hasOpenPortfolioPositions,
   isManualPortfolio,
   resolveManualPositionCurrency,
+  positionQuantityLabel,
   setManualPortfolioPosition,
-} from "../../../plugins/builtin/portfolio-list/mutations";
+  validatePositionShares,
+} from "../../../portfolio/mutations";
+import { loadFuturesEntrySize } from "../../../portfolio/futures-terms";
+import {
+  FORM_COST_FX_WORDING, PositionCostFxError, readCostFxRate, readPurchaseDate, resolvePositionCostFx,
+} from "../../../portfolio/cost-fx";
+import { getManualPortfolioPositionPrefill } from "../../../portfolio/manual-lots";
+import { resolvePortfolioTotalsCurrency } from "../../../portfolio/totals-currency";
+import { createBaseConverter } from "../../../cli/base-converter";
+import { heldCurrencyUnit } from "../../../utils/currency-units";
+import { positionCostTermsPrefill } from "./portfolio-position";
+import { wholeUnitQuantityProblem } from "../../../portfolio/position-quantity";
 import type { CommandBarFieldValue } from "./types";
 import type { WorkflowStringValues } from "./broker";
 import { coerceFieldString } from "../helpers";
 import { slugifyName } from "../../../utils/slugify";
+import { readTypedNumber } from "../../../utils/decimal-comma";
 import { resolveTickerInputOrThrow } from "./ops";
 import { resolveCollectionTicker } from "./collection-ticker";
 
@@ -232,17 +246,6 @@ export function createCommandBarCollectionWorkflowActions(options: {
         throw new Error("Choose a manual portfolio.");
       }
 
-      const shares = Number(coerceFieldString(values.shares));
-      if (!Number.isFinite(shares) || shares <= 0) {
-        throw new Error("Shares must be greater than 0.");
-      }
-
-      const rawAvgCost = coerceFieldString(values.avgCost).trim();
-      const avgCost = Number(rawAvgCost);
-      if (!rawAvgCost || !Number.isFinite(avgCost)) {
-        throw new Error("Avg Cost must be a valid number.");
-      }
-
       const resolvedTicker = await resolveTickerInputOrThrow(
         coerceFieldString(values.ticker),
         activeTickerSymbol,
@@ -251,22 +254,71 @@ export function createCommandBarCollectionWorkflowActions(options: {
       );
       const ticker = resolveCollectionTicker(resolvedTicker.ticker, getState().tickers, "portfolio", portfolio.id);
 
+      // 18,50, 1.234,5 and 123.456 read as typed; 1,234 could be either reading and fails naming both.
+      // Negative for a short; zero is no position. A future counts contracts, and the messages say so.
+      const quantityLabel = positionQuantityLabel(ticker);
+      const shares = readTypedNumber(coerceFieldString(values.shares), quantityLabel);
+      // 1.250 on a listing held in whole lots could be 1,250 as well, and asks the same way.
+      const lots = wholeUnitQuantityProblem(coerceFieldString(values.shares).trim(), ticker, { label: quantityLabel });
+      if (lots) throw new Error(lots);
+      const sharesError = validatePositionShares(shares, quantityLabel);
+      if (sharesError) {
+        throw new Error(t(sharesError));
+      }
+
+      const avgCost = readTypedNumber(coerceFieldString(values.avgCost), "Avg Cost");
+      if (!Number.isFinite(avgCost)) {
+        throw new Error("Avg Cost must be a valid number.");
+      }
+
+      // A future is entered in contracts, sized by its terms; a cost typed as corn is quoted counts cents.
+      const size = await loadFuturesEntrySize(ticker);
       const currency = resolveManualPositionCurrency(
         coerceFieldString(values.currency),
         ticker,
         portfolio,
         currentState.config.baseCurrency,
+        size?.currency,
       );
-
-      const result = setManualPortfolioPosition(ticker, portfolio.id, {
-        shares,
-        avgCost,
-        currency,
-      });
+      // Purchase Date and Cost FX behave as `position set --date/--cost-fx`. A field left as it opened keeps
+      // what the lots have; one emptied clears it; a new date reads that day's FX close unless a rate is typed.
       const firstPosition = !hasOpenPortfolioPositions(portfolio.id, getState().tickers.values());
+      const adopted = firstPosition ? adoptFirstPositionCurrency(getState().config, portfolio.id, currency) : null;
+      const valued = adopted ?? getState().config;
+      const portfolioCurrency = resolvePortfolioTotalsCurrency(
+        valued.portfolios.find((entry) => entry.id === portfolio.id) ?? portfolio, valued.baseCurrency);
+      const opened = positionCostTermsPrefill(getManualPortfolioPositionPrefill(ticker, portfolio.id).position, portfolioCurrency);
+      const dateText = coerceFieldString(values.dateAcquired).trim();
+      const rateText = coerceFieldString(values.costFx).trim();
+      const dateAcquired = dateText === opened.dateAcquired ? undefined : dateText ? readPurchaseDate(dateText, FORM_COST_FX_WORDING) : null;
+      const typedRate = rateText && rateText !== opened.costFx ? readCostFxRate(rateText, FORM_COST_FX_WORDING) : undefined;
+      const toPortfolio = createBaseConverter(dataProvider, heldCurrencyUnit(portfolioCurrency).currency);
+      let result: ReturnType<typeof setManualPortfolioPosition>;
+      try {
+        const bought = await resolvePositionCostFx({
+          date: dateAcquired ?? undefined, costFx: typedRate, history: apiClient,
+          currency, portfolioCurrency, listing: ticker.metadata.ticker, wording: FORM_COST_FX_WORDING,
+          // Today's rate, in the units the lot is held in: what a typed rate is checked against.
+          todaysRate: async () => (await toPortfolio(1, heldCurrencyUnit(currency).currency))
+            / heldCurrencyUnit(currency).divisor * heldCurrencyUnit(portfolioCurrency).divisor,
+        });
+        const costFx = bought ? bought.costFx : !rateText && opened.costFx ? null : undefined;
+        result = setManualPortfolioPosition(ticker, portfolio.id, {
+          shares,
+          avgCost,
+          currency,
+          ...(size ? { multiplier: size.multiplier } : {}),
+          ...(dateAcquired !== undefined ? { dateAcquired } : {}),
+          ...(costFx !== undefined ? { costFx } : {}),
+        });
+      } catch (error) {
+        // The form shows one message: what is wrong, then what to give instead.
+        if (error instanceof PositionCostFxError && error.details) throw new Error(`${error.message} ${error.details}`);
+        if (error instanceof LotCostFxMergeError) throw new Error(`${error.message} Give its Cost FX or Purchase Date.`);
+        throw error;
+      }
       await tickerRepository.saveTicker(result.ticker);
       dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
-      const adopted = firstPosition ? adoptFirstPositionCurrency(getState().config, portfolio.id, currency) : null;
       if (adopted) {
         dispatch({ type: "SET_CONFIG", config: adopted });
         persistConfig(adopted);

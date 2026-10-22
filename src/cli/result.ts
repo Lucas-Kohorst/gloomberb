@@ -46,6 +46,12 @@ export interface CliResult<T = unknown> {
    * `fear-greed` prints its row alone.
    */
   exportFreshness?: ReportFreshness;
+  /**
+   * Why a result that still prints counts as a failure (a report with no
+   * data): the command exits 1, and JSON says `ok: false` with this as
+   * `error` beside the data, so the envelope and the exit status agree.
+   */
+  failure?: CliErrorObject;
 }
 
 export interface CliErrorObject {
@@ -53,6 +59,8 @@ export interface CliErrorObject {
   message: string;
   details?: unknown;
   retryable?: boolean;
+  /** What the failure says beside its message, such as the `tickerChange` of a symbol whose company moved. */
+  [field: string]: unknown;
 }
 
 export interface CliResultColumn<Row = Record<string, unknown>> extends CliTableColumn {
@@ -108,8 +116,9 @@ export interface CliResultRenderOptions<T = unknown, Row = Record<string, unknow
   exportNotes?: readonly string[];
 }
 
-interface CliResultJsonEnvelope<T> extends Omit<CliResult<T>, "freshness" | "exportFreshness"> {
-  ok: true;
+interface CliResultJsonEnvelope<T> extends Omit<CliResult<T>, "freshness" | "exportFreshness" | "failure"> {
+  ok: boolean;
+  error?: CliErrorObject;
   /** Where the data comes from, as CSV's closing `#` lines say it. */
   source?: ExportSource;
   columns?: Array<Pick<CliResultColumn, "key" | "header" | "align" | "width">>;
@@ -396,14 +405,15 @@ export function serializeCliResult<T, Row extends Record<string, unknown> = Reco
   options: CliGlobalOptions,
   renderOptions: CliResultRenderOptions<T, Row> = {},
 ): string {
-  const { freshness, exportFreshness, ...rest } = result;
+  const { freshness, exportFreshness, failure, ...rest } = result;
   const cited = freshness ?? exportFreshness;
   if (options.format === "json") {
     const columns = serializeColumns(renderOptions.columns);
     const window = Array.isArray(result.data) ? windowed(result.data as unknown[], options, renderOptions) : null;
     const cut = window ? cutMetadata(window) : null;
     const envelope: CliResultJsonEnvelope<T> = {
-      ok: true,
+      ok: !failure,
+      ...(failure ? { error: failure } : {}),
       ...rest,
       ...(freshness || cut ? { metadata: { ...rest.metadata, ...(freshness ? { freshness } : {}), ...(cut ? { rows: cut } : {}) } } : {}),
       data: window ? window.rows as T : result.data,

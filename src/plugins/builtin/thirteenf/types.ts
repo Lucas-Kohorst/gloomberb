@@ -97,6 +97,51 @@ export interface FundDetailData {
   latestReport?: ThirteenFPeriodReport;
   previousReport?: ThirteenFPeriodReport;
   warnings?: string[];
+  /** Set when the latest report predates the newest quarter past its deadline. */
+  filingGap?: ThirteenFFilingGap | null;
+}
+
+/** A manager a 13F-NT names as reporting its holdings. */
+export interface ThirteenFOtherManager {
+  /** Null on a cover page that gives only the 028- file number. */
+  cik: string | null;
+  name: string;
+  fileNumber: string | null;
+}
+
+/** One 13F filing as EDGAR lists it, notices included. */
+export interface ThirteenFEdgarFiling {
+  /** 13F-HR, 13F-HR/A, 13F-NT or 13F-NT/A. */
+  form: string;
+  period: string;
+  filed: string;
+  accession: string;
+  url: string;
+  otherManagers?: ThirteenFOtherManager[];
+}
+
+/** A filer's 13F filings from EDGAR, newest first. */
+export interface ThirteenFFilerStatus {
+  cik: string;
+  name: string;
+  source: string;
+  filings: ThirteenFEdgarFiling[];
+}
+
+/**
+ * What a fund filed for the newest quarter past its deadline when no holdings
+ * report for it is loaded: a 13F-NT (another manager reported the holdings), a
+ * report EDGAR has that is not loaded yet, or nothing EDGAR shows.
+ */
+export interface ThirteenFFilingGap {
+  /** The quarter end, YYYY-MM-DD. */
+  period: string;
+  /** The day the 13F was due, YYYY-MM-DD. */
+  due: string;
+  /** The fund's own filing for that quarter, when EDGAR lists one. */
+  filing: ThirteenFEdgarFiling | null;
+  /** False when EDGAR could not be asked; a missing filing is then as far as the loaded reports know. */
+  checked: boolean;
 }
 
 /** The public report for one period, after applying known amendment types. */
@@ -126,6 +171,10 @@ export interface FundHoldingRow {
   previousShares: number | null;
   valueChange: number | null;
   estimatedPnl: number | null;
+  /** New shares per old (10 for 10:1) when the filings straddle a split its corporate actions show: Est P&L is priced, and sharesChange, sharesChangePercent and action measured, on the previous shares carried across it. */
+  splitRatio?: number;
+  /** The line moved as across a split and its corporate actions could not be read to tell: Est P&L is left empty, not priced as a crash or a surge, and its share change stays as filed. */
+  splitUnread?: boolean;
   sharesChange: number | null;
   sharesChangePercent: number | null;
   action: HoldingAction;

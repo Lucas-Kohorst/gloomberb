@@ -1,6 +1,7 @@
 import type { CommandBarResultLine } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerContractRef, TickerListingRef } from "../../../types/instrument";
+import type { InstrumentRef } from "../../../market-data/request-types";
 import {
   buildSections,
   type CommandBarCategoryPriorities,
@@ -39,8 +40,19 @@ export interface ResultItem {
   listing?: TickerListingRef;
   /** Materialize this exact listing when another command consumes the row. */
   resolveTicker?: () => Promise<TickerRecord>;
+  /**
+   * What the pane this row opens will load, so the bar can warm it while the
+   * row is the pick. Unset when only opening can tell (a broker contract, a
+   * saved ticker with several).
+   */
+  prefetchInstrument?: InstrumentRef;
   shortcutQuery?: string;
   searchText?: string;
+  /**
+   * Draws the shortcut in the right column instead of the badge column, for a
+   * row that leads with what it does in plain words.
+   */
+  shortcutOnRight?: boolean;
   /** Tints the trailing marker and the section heading with the AI accent. */
   accent?: boolean;
   /**

@@ -39,6 +39,34 @@ test("history CSV keeps the price columns first, every row ends with its flag, w
   });
 });
 
+test("YTD, in any case, starts at the prior year's last close: LMT from 31 Dec, never the year's first session", async () => {
+  setSystemTime(new Date("2026-10-17T12:00:00Z"));
+  try {
+    const ranges: string[] = [];
+    const bar = (date: string, close: number) => ({ date: new Date(date), open: close, high: close, low: close, close, volume: 1000 });
+    const cli = createTestCliContext({
+      config: createDefaultConfig("/tmp/gloom-history-command-fixture"),
+      dataProvider: createTestDataProvider({
+        getQuote: async () => createTestQuote({ symbol: "LMT", currency: "USD" }),
+        getPriceHistoryWithMetadata: async (_symbol, _exchange, range) => {
+          ranges.push(range);
+          return { resolution: "1d", points: [bar("2025-12-30", 488), bar("2025-12-31", 483.67), bar("2026-01-02", 497.07), bar("2026-10-16", 548.23)] };
+        },
+      }),
+    }, { format: "csv" });
+    await history.execute(["LMT", "--range", "ytd"], cli.context);
+    const [{ result }] = cli.printed;
+    expect(ranges).toEqual(["1Y"]);
+    expect((result.data as Array<{ date: string; close: number }>).map((row) => [row.date, row.close])).toEqual([
+      ["2025-12-31", 483.67], ["2026-01-02", 497.07], ["2026-10-16", 548.23],
+    ]);
+    expect(result.metadata).toMatchObject({ requestedRange: "YTD", firstDate: "2025-12-31", bars: 3 });
+    expect(result.warnings?.filter((warning) => warning.startsWith("Asked"))).toEqual([]);
+  } finally {
+    setSystemTime();
+  }
+});
+
 test("a venue's daily bars are dated by its own trading days, not New York's", async () => {
   // Saturday 10 Oct 2026: EGX last traded Wednesday (Thursday was a holiday,
   // its week ends Thursday); New York traded Thursday and Friday since.
@@ -101,6 +129,49 @@ test("a coin's partial and filled days say so, its volume is labelled in its quo
   }
 });
 
+test("history shows today's session from the quote in every range, partial, whether the source's copy has a snapshot of it or none", async () => {
+  // Fri 16 Oct 2026, 15:14 in New York. Gloom Cloud's 3M copy holds a snapshot of the opening minutes; its 1M copy has no bar for today.
+  setSystemTime(new Date("2026-10-16T19:14:30Z"));
+  try {
+    const finished = [
+      { date: new Date("2026-10-14"), open: 344.61, high: 347.09, low: 341.72, close: 342.96, volume: 50_061_100 },
+      { date: new Date("2026-10-15"), open: 346.95, high: 347.85, low: 341.6, close: 342, volume: 39_678_300 },
+    ];
+    const snapshot = { date: new Date("2026-10-16"), open: 346.085, high: 347.8, low: 341.12, close: 341.995, volume: 1_096_219 };
+    const run = async (points: typeof finished, quote = {}) => {
+      const cli = createTestCliContext({
+        config: createDefaultConfig("/tmp/gloom-history-command-fixture"),
+        dataProvider: createTestDataProvider({
+          getQuote: async () => createTestQuote({
+            symbol: "AAPL", price: 340.91, previousClose: 342, open: 346.085, high: 347.82, low: 340.46, volume: 39_269_651, marketState: "REGULAR",
+            changeSessionDate: "2026-10-16", listingExchangeName: "NASDAQ", instrumentType: "Common Stock", lastUpdated: Date.now() - 15 * 60_000, ...quote,
+          }),
+          getPriceHistoryWithMetadata: async () => ({ resolution: "1d", points }),
+        }),
+      });
+      await history.execute(["AAPL", "--range", "3M"], cli.context);
+      const [{ result, options }] = cli.printed;
+      return { result, text: serializeCliResult(result, DEFAULT_CLI_OPTIONS, options).split("\n") };
+    };
+    for (const points of [[...finished, snapshot], finished]) {
+      const { result, text } = await run(points);
+      expect(result.data.at(-1)).toMatchObject({ date: "2026-10-16", open: 346.085, high: 347.82, low: 340.46, close: 340.91, volume: 39_269_651, partial: true });
+      expect(result.data.slice(0, -1).some((row: Record<string, unknown>) => row.partial)).toBe(false);
+      expect(result.warnings).toContain("2026-10-16 is still forming (partial)");
+      expect(text.find((line) => line.startsWith("2026-10-16"))).toMatch(/partial$/);
+      expect(text.find((line) => line.startsWith("Source:"))).toContain("(daily bars) \u00b7 the newest bar is today so far");
+      expect(result.freshness).toMatchObject({ basis: "daily bars", asOf: "2026-10-16T18:59:30.000Z" });
+    }
+    // Without a current quote the snapshot is not today's row, and a source with no bar for today shows none.
+    for (const points of [[...finished, snapshot], finished]) {
+      const { result } = await run(points, { stale: true });
+      expect(result.data.map((row: Record<string, unknown>) => row.date)).toEqual(["2026-10-14", "2026-10-15"]);
+    }
+  } finally {
+    setSystemTime();
+  }
+});
+
 test("a stock's history keeps its export columns, with no volume unit it cannot vouch for", async () => {
   const cli = createTestCliContext({
     config: createDefaultConfig("/tmp/gloom-history-command-fixture"),
@@ -148,6 +219,7 @@ test("a break in the series is flagged on the bar after it in every export, and 
     date: new Date(Date.UTC(1977, 9 + month, 1)), close: Number((0.0015 + month * 0.0034 / 33).toFixed(4)),
   }));
   const shekels = [2.763, 2.762].map((close, month) => ({ date: new Date(Date.UTC(1992, 11 + month, 1)), close }));
+  setSystemTime(new Date("2026-10-21T12:00:00Z"));
   const run = async (format: "json" | "csv" | "text", served: Omit<PriceHistoryResult, "resolution">) => {
     const cli = createTestCliContext({
       config: createDefaultConfig("/tmp/gloom-history-command-fixture"),
@@ -160,21 +232,28 @@ test("a break in the series is flagged on the bar after it in every export, and 
     const [{ result, options }] = cli.printed;
     return { result, text: serializeCliResult(result, { ...DEFAULT_CLI_OPTIONS, format }, options) };
   };
-  const warnings = ["No bars for 1980-08 to 1992-11 (148 months)", "Close rises 564x from 0.0049 on 1980-07-01 to 2.763 on 1992-12-01"];
-  const json = JSON.parse((await run("json", { points: [...old, ...shekels] })).text);
-  expect(json.warnings).toEqual(warnings);
-  expect(json.metadata).toMatchObject({ firstDate: "1977-10-01", unbrokenFrom: "1992-12-01", bars: 36 });
-  expect(json.data[34]).toMatchObject({ date: "1992-12-01", close: 2.763, flag: "gap,jump" });
-  const csv = await run("csv", { points: [...old, ...shekels] });
-  expect(csv.result.warnings).toEqual(warnings);
-  expect(csv.text.split("\n").filter((line) => /gap|jump/.test(line))).toEqual(["1992-12-01,,,,2.763,,\"gap,jump\",USDILS=X,ILS,1mo,Gloom Cloud,1993-01-01"]);
-  const text = await run("text", { points: [...old, ...shekels] });
-  expect(text.text).toContain("ILS per USD  \u00b7  monthly bars  \u00b7  1977-10-01 to 1993-01-01  \u00b7  36 bars  \u00b7  unbroken from 1992-12-01");
-  // Gloom Cloud clips the pair at the new shekel and says why; the bars it serves have no break.
-  const clipped = JSON.parse((await run("json", {
-    points: shekels, coverageStart: "1992-12-01", coverageNote: "old-shekel quotes before 1992 are not served",
-  })).text);
-  expect(clipped.warnings).toEqual(["Price history starts 1992-12-01; old-shekel quotes before 1992 are not served."]);
-  expect(clipped.metadata.unbrokenFrom).toBe("1992-12-01");
-  expect(clipped.data.map((row: { flag: string | null }) => row.flag)).toEqual([null, null]);
+  // ALL reaches back to 1976-10; the source's first bar is from a year later.
+  const warnings = ["ALL starts 1977-10; the source has no earlier bar", "No bars for 1980-08 to 1992-11 (148 months)",
+    "Close rises 564x from 0.0049 on 1980-07-01 to 2.763 on 1992-12-01"];
+  try {
+    const json = JSON.parse((await run("json", { points: [...old, ...shekels] })).text);
+    expect(json.warnings).toEqual(warnings);
+    expect(json.metadata).toMatchObject({ firstDate: "1977-10-01", unbrokenFrom: "1992-12-01", bars: 36 });
+    expect(json.data[34]).toMatchObject({ date: "1992-12-01", close: 2.763, flag: "gap,jump" });
+    const csv = await run("csv", { points: [...old, ...shekels] });
+    expect(csv.result.warnings).toEqual(warnings);
+    // Dated by the January bar's last session, not the day it opens.
+    expect(csv.text.split("\n").filter((line) => /gap|jump/.test(line))).toEqual(["1992-12-01,,,,2.763,,\"gap,jump\",USDILS=X,ILS,1mo,Gloom Cloud,1993-01-29"]);
+    const text = await run("text", { points: [...old, ...shekels] });
+    expect(text.text).toContain("ILS per USD  \u00b7  monthly bars  \u00b7  1977-10-01 to 1993-01-01  \u00b7  36 bars  \u00b7  unbroken from 1992-12-01");
+    // Gloom Cloud clips the pair at the new shekel and says why; the bars it serves have no break.
+    const clipped = JSON.parse((await run("json", {
+      points: shekels, coverageStart: "1992-12-01", coverageNote: "old-shekel quotes before 1992 are not served",
+    })).text);
+    expect(clipped.warnings).toEqual(["Price history starts 1992-12-01; old-shekel quotes before 1992 are not served."]);
+    expect(clipped.metadata.unbrokenFrom).toBe("1992-12-01");
+    expect(clipped.data.map((row: { flag: string | null }) => row.flag)).toEqual([null, null]);
+  } finally {
+    setSystemTime();
+  }
 });

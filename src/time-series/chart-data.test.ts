@@ -46,24 +46,81 @@ describe("appendLiveQuotePoint", () => {
     }
   });
 
-  test("does not merge the next premarket into yesterday's daily bar within 24 hours", () => {
+  test("a pre-market print neither moves yesterday's daily bar nor opens today's", () => {
     const now = Date.parse("2026-09-11T12:00:00Z");
     const history = [{ date: new Date("2026-09-10T13:30:00Z"), close: 100 }];
-    const updated = appendLiveQuotePoint(history, quoteFixture({
-      price: 100, preMarketPrice: 105, marketState: "PRE", lastUpdated: now,
-    }), { now, mode: "ohlc", resolution: "1d" });
-    expect(updated).toHaveLength(2);
-    expect(updated[0]?.close).toBe(100);
-    expect(updated[1]?.close).toBe(105);
+    const preMarket = quoteFixture({ price: 100, preMarketPrice: 105, marketState: "PRE", lastUpdated: now });
+    expect(appendLiveQuotePoint(history, preMarket, { now, mode: "ohlc", resolution: "1d" })).toBe(history);
+    // Nor does the last session's close the quote carries: that bar is the history's.
+    const withClose = { ...preMarket, regularClose: 101, regularCloseSessionDate: "2026-09-10", regularChange: 1,
+      changeSessionDate: "2026-09-11" };
+    expect(appendLiveQuotePoint(history, withClose, { now, mode: "ohlc", resolution: "1d" })).toBe(history);
   });
 
-  test("keeps an after-hours quote in its exchange session across UTC midnight", () => {
+  test("keeps an after-hours quote in its exchange session across UTC midnight, at the regular close", () => {
     const now = Date.parse("2026-09-11T00:01:00Z");
     const updated = appendLiveQuotePoint([{ date: new Date("2026-09-10T00:00:00Z"), close: 100 }],
-      quoteFixture({ price: 100, postMarketPrice: 105, marketState: "POST", lastUpdated: now - 60_000 }),
+      quoteFixture({ price: 101, postMarketPrice: 105, marketState: "POST", lastUpdated: now - 60_000 }),
       { now, mode: "ohlc", resolution: "1d" });
     expect(updated).toHaveLength(1);
-    expect(updated[0]?.close).toBe(105);
+    expect(updated[0]?.close).toBe(101);
+  });
+
+  test("a closed market's daily bar is its regular close, while intraday points keep the after-hours print", () => {
+    // CRWV after Thursday's after-hours session: closed at 69.69, last printed 68.10 after hours.
+    const now = Date.parse("2026-10-16T03:45:00Z");
+    const closed = quoteFixture({
+      symbol: "CRWV", price: 68.1, previousClose: 65.78, marketState: "POSTPOST", changeSessionDate: "2026-10-15",
+      regularClose: 69.69, regularCloseSessionDate: "2026-10-15", regularChange: 3.91, regularChangePercent: 5.944,
+      lastUpdated: Date.parse("2026-10-15T23:59:59Z"),
+    });
+    const daily: PricePoint[] = [
+      { date: new Date("2026-10-14T00:00:00Z"), open: 71.74, high: 72.52, low: 64.41, close: 65.78 },
+      { date: new Date("2026-10-15T00:00:00Z"), open: 61.43, high: 69.76, low: 59.51, close: 69.69 },
+    ];
+    for (const resolution of ["1d", "1wk"] as const) {
+      expect(appendLiveQuotePoint(daily, closed, { now, mode: "ohlc", resolution }).at(-1)).toMatchObject({ close: 69.69, low: 59.51 });
+    }
+    expect(appendLiveQuotePoint(daily.map(({ date, close }) => ({ date, close })), closed, { now }).at(-1)?.close).toBe(69.69);
+    const intraday: PricePoint[] = [
+      { date: new Date("2026-10-15T23:57:00Z"), close: 68.2 },
+      { date: new Date("2026-10-15T23:58:00Z"), close: 68.15 },
+    ];
+    expect(appendLiveQuotePoint(intraday, closed, { now: Date.parse("2026-10-16T00:00:30Z") }).at(-1)?.close).toBe(68.1);
+    // While the session trades, the daily bar follows the live price.
+    const open = { ...closed, price: 68.5, marketState: "REGULAR" as const, lastUpdated: Date.parse("2026-10-15T19:30:00Z") };
+    expect(appendLiveQuotePoint(daily, open, { now: Date.parse("2026-10-15T19:31:00Z"), mode: "ohlc", resolution: "1d" }).at(-1)?.close).toBe(68.5);
+  });
+
+  test("a daily bar formed from the quote takes the session's open, high and low; intraday bars still open at the print", () => {
+    const history: PricePoint[] = [{ date: new Date("2026-10-15T00:00:00Z"), open: 346.95, high: 347.85, low: 341.6, close: 342, volume: 39_678_300 }];
+    const session = { open: 346.085, high: 347.82, low: 340.46, volume: 60_000_000 };
+    // Mid-session, then inside the settle window after the close with an after-hours print under the day's low.
+    const trading = quoteFixture({ symbol: "AAPL", price: 345, ...session, lastUpdated: Date.parse("2026-10-16T17:00:00Z") });
+    expect(appendLiveQuotePoint(history, trading, { now: trading.lastUpdated, mode: "ohlc", resolution: "1d", exchange: "NASDAQ" }).at(-1))
+      .toEqual({ date: new Date(trading.lastUpdated), open: 346.085, high: 347.82, low: 340.46, close: 345 });
+    const closed = quoteFixture({
+      symbol: "AAPL", price: 340, ...session, marketState: "POST", postMarketPrice: 340, changeSessionDate: "2026-10-16",
+      regularClose: 343.46, regularCloseSessionDate: "2026-10-16", regularChange: 1.46, lastUpdated: Date.parse("2026-10-16T20:10:00Z"),
+    });
+    expect(appendLiveQuotePoint(history, closed, { now: closed.lastUpdated, mode: "ohlc", resolution: "1d", exchange: "NASDAQ" }).at(-1))
+      .toMatchObject({ open: 346.085, high: 347.82, low: 340.46, close: 343.46 });
+    // Without the session's range the bar opens at the print, as before.
+    const bare = { ...trading, open: undefined, high: undefined, low: undefined };
+    expect(appendLiveQuotePoint(history, bare, { now: trading.lastUpdated, mode: "ohlc", resolution: "1d", exchange: "NASDAQ" }).at(-1))
+      .toMatchObject({ open: 345, high: 345, low: 345, close: 345 });
+    // A five-minute bar is the print's.
+    const minutes: PricePoint[] = [{ date: new Date("2026-10-16T16:50:00Z"), open: 344, high: 345, low: 343.5, close: 344.5 }];
+    expect(appendLiveQuotePoint(minutes, { ...trading, lastUpdated: Date.parse("2026-10-16T16:56:00Z") },
+      { now: Date.parse("2026-10-16T16:56:30Z"), mode: "ohlc", resolution: "5m", exchange: "NASDAQ" }).at(-1))
+      .toMatchObject({ open: 345, high: 345, low: 345, close: 345 });
+  });
+
+  test("a weekly bar already holding days of its week keeps its open and widens to the session's range", () => {
+    const weekly: PricePoint[] = [{ date: new Date("2026-10-12T00:00:00Z"), open: 340, high: 348, low: 338, close: 342 }];
+    const quote = quoteFixture({ symbol: "AAPL", price: 349, open: 345, high: 350, low: 344, lastUpdated: Date.parse("2026-10-16T17:00:00Z") });
+    expect(appendLiveQuotePoint(weekly, quote, { now: quote.lastUpdated, mode: "ohlc", resolution: "1wk", exchange: "NASDAQ" }).at(-1))
+      .toMatchObject({ open: 340, high: 350, low: 338, close: 349 });
   });
 
   test("merges a quote into a London-dated FX bar that opened at 23:00 UTC", () => {

@@ -1,11 +1,11 @@
 import { resolveCanonicalQuote } from "../../../market-data/quotes/resolution";
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import type { HeadlessPaneContext, HeadlessPaneLoadArgs } from "../../../types/headless";
-import { createTestDataProvider } from "../../../test-support/data-provider";
+import { createTestFinancials, createTestDataProvider } from "../../../test-support/data-provider";
 import { createTestHeadlessContext } from "../../../test-support/headless";
 import type { QuoteContribution } from "../../../types/financials";
 import { renderHeadlessPaneText } from "../../../cli/pane-functions/headless";
-import { financialStatementsHeadless, historicalPricesHeadless, quoteComparisonHeadless } from "./headless";
+import { financialStatementsHeadless, historicalPricesHeadless, quoteComparisonHeadless, returnsHeadless } from "./headless";
 
 function args(symbols: string[], options: HeadlessPaneLoadArgs["options"] = {}): HeadlessPaneLoadArgs {
   return { symbols, options, argument: symbols, rawArgument: symbols.join(",") };
@@ -163,6 +163,190 @@ test("historical prices use remembered exchanges and clip and sort the full OHLC
   expect(result.rows[1]).toEqual({ date: "2026-03-09T00:00:00.000Z", open: 20, high: 23, low: 19, close: 22, volume: 100 });
 });
 
+test("historical prices print the prices the source meant, at one decimal count, not the float32 it served", async () => {
+  // Gloom Cloud serves float32 prices: gold's 4013.4 arrives as 4013.39990234375, silver's 57.131 as 57.13000107.
+  const served = (rows: Array<[string, number, number, number, number]>) => createTestHeadlessContext({
+    marketData: createTestDataProvider({
+      getPriceHistory: async () => rows.map(([date, open, high, low, close]) => ({ date: new Date(date), open, high, low, close, volume: 100 })),
+    }),
+  });
+  const gold = served([
+    ["2026-07-21", 4013.39990234375, 4092.5, 4003.300048828125, 4076.39990234375],
+    ["2026-07-22", 4084.699951171875, 4171.39990234375, 4081, 4151.89990234375],
+  ]);
+  const goldArgs = args(["GC=F"]);
+  const goldResult = await historicalPricesHeadless.load(goldArgs, gold);
+  const goldText = renderHeadlessPaneText(historicalPricesHeadless, goldResult, goldArgs, "HP GC=F");
+  for (const price of ["4,013.40", "4,092.50", "4,003.30", "4,076.40", "4,171.40", "4,081.00"]) expect(goldText).toContain(price);
+  expect(goldText).not.toMatch(/\d,\d{3}\.\d{3,}/);
+  // The rows hold the decimal each price is, as `history` does.
+  expect(goldResult.rows[0]).toMatchObject({ open: 4013.4, low: 4003.3, close: 4076.4 });
+  // A price under a hundred keeps the digits its tick needs.
+  const silver = served([["2026-07-21", 56.33499908, 59.02500153, 56.33499908, 58.83499908]]);
+  const silverText = renderHeadlessPaneText(historicalPricesHeadless, await historicalPricesHeadless.load(args(["SI=F"]), silver), args(["SI=F"]), "HP SI=F");
+  expect(silverText).toContain("56.335");
+  expect(silverText).toContain("59.025");
+  expect(silverText).not.toContain("56.33499908");
+});
+
+test("historical prices mark a monthly bar whose month runs on and date it by the last session it covers", async () => {
+  // Fri 16 Oct 2026 08:14 UTC: New York has not opened; Thursday's session is the latest close.
+  setSystemTime(new Date("2026-10-16T08:14:00Z"));
+  try {
+    const monthly = ["2026-08-01", "2026-09-01", "2026-10-01"].map((date) => ({ date: new Date(date), close: 100 }));
+    // A bare symbol is read on its quote's venue.
+    const ctx = createTestHeadlessContext({
+      marketData: createTestDataProvider({
+        getPriceHistory: async () => monthly,
+        getQuote: async (symbol) => ({ symbol, price: 100, change: 0, changePercent: 0, currency: "USD", listingExchangeName: "NASDAQ", lastUpdated: Date.now() }),
+      }),
+    });
+    const result = await historicalPricesHeadless.load(args(["CSCO"], { range: "ALL" }), ctx);
+    expect(result.rows.map((row) => row.partial === true)).toEqual([false, false, true]);
+    expect(result.freshness).toMatchObject({ basis: "monthly bars", periodToDate: { period: "month", through: "2026-10-15" } });
+    const text = renderHeadlessPaneText(historicalPricesHeadless, result, args(["CSCO"], { range: "ALL" }), "HP CSCO");
+    expect(text).toContain("month to date, through Thu 15 Oct 2026");
+    // A month's bar reads as the month, and the one still running says so; the export keeps the day and adds a Partial column.
+    expect(text).toContain("2026-10 MTD");
+    expect(text).toMatch(/Month\s+Open/);
+    expect(text).not.toContain("2026-10-01");
+    expect(result.metadata).toMatchObject({ interval: "1mo" });
+    expect(result.columns!.map((column) => column.key)).toContain("partial");
+    expect(result.columns![0]!.format!(result.rows[2]!.date, result.rows[2]!)).toBe("2026-10-01");
+    // September's bar on its own is complete.
+    const september = createTestHeadlessContext({ marketData: createTestDataProvider({ getPriceHistory: async () => monthly.slice(0, 2) }) });
+    const complete = await historicalPricesHeadless.load(args(["CSCO:NASDAQ"], { range: "ALL" }), september);
+    expect(complete.rows.some((row) => row.partial)).toBe(false);
+    expect(complete.freshness).not.toHaveProperty("periodToDate");
+    // Dated by its last session, the day its close is from, not the 1st it is filed under.
+    expect(complete.freshness).toMatchObject({ asOf: "2026-09-30" });
+    expect(renderHeadlessPaneText(historicalPricesHeadless, complete, args(["CSCO:NASDAQ"], { range: "ALL" }), "HP CSCO")).toContain("Wed 30 Sep 2026");
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("historical prices open on 3M daily bars and date an intraday bar by its time", async () => {
+  const requests: unknown[] = [];
+  const hourly = ["13:30", "14:30", "15:30"].map((time) => ({ date: new Date(`2026-10-09T${time}:00Z`), close: 100 }));
+  const ctx = createTestHeadlessContext({
+    resolveInstrument: async () => ({ symbol: "ABC", exchange: "LSE" }),
+    marketData: createTestDataProvider({
+      async getPriceHistory(...request) {
+        requests.push(request);
+        return request[2] === "1W" ? hourly : [{ date: new Date("2026-10-08"), close: 99 }, { date: new Date("2026-10-09"), close: 100 }];
+      },
+    }),
+  });
+  const fresh = await historicalPricesHeadless.load(args(["ABC"]), ctx);
+  expect(requests).toEqual([["ABC", "LSE", "3M"]]);
+  expect(historicalPricesHeadless.options.find((option) => option.key === "range")?.defaultValue).toBe("3M");
+  expect(fresh.metadata).toMatchObject({ range: "3M", interval: "1d" });
+  expect(fresh.freshness).toMatchObject({ basis: "daily closes" });
+
+  const week = await historicalPricesHeadless.load(args(["ABC"], { range: "1W" }), ctx);
+  expect(week.metadata).toMatchObject({ interval: "1h" });
+  expect(week.freshness).toMatchObject({ basis: "intraday bars" });
+  const text = renderHeadlessPaneText(historicalPricesHeadless, week, args(["ABC"], { range: "1W" }), "HP ABC");
+  expect(text).toContain("Time (UTC)");
+  expect(text).toContain("2026-10-09 14:30");
+});
+
+test("historical prices take today's bar from the quote while the session trades, as a partial day, or leave it out with none", async () => {
+  // Fri 16 Oct 2026, 15:14 in New York. The source's copy of today's bar is a snapshot of the opening minutes.
+  setSystemTime(new Date("2026-10-16T19:14:30Z"));
+  try {
+    const served = [
+      { date: new Date("2026-10-14"), open: 344.61, high: 347.09, low: 341.72, close: 342.96, volume: 50_061_100 },
+      { date: new Date("2026-10-15"), open: 346.95, high: 347.85, low: 341.6, close: 342, volume: 39_678_300 },
+      { date: new Date("2026-10-16"), open: 346.085, high: 347.8, low: 341.12, close: 341.995, volume: 1_096_219 },
+    ];
+    const quote = (overrides: object = {}) => ({
+      symbol: "AAPL", price: 340.91, change: -1.09, changePercent: -0.32, currency: "USD", previousClose: 342, open: 346.085, high: 347.82,
+      low: 340.46, volume: 39_269_651, listingExchangeName: "NASDAQ", instrumentType: "Common Stock", marketState: "REGULAR" as const,
+      changeSessionDate: "2026-10-16", lastUpdated: Date.now() - 15 * 60_000, ...overrides,
+    });
+    const load = (getQuote: () => Promise<ReturnType<typeof quote>>, history = served) => historicalPricesHeadless.load(args(["AAPL"]), createTestHeadlessContext({
+      resolveInstrument: async () => ({ symbol: "AAPL", exchange: "" }),
+      marketData: createTestDataProvider({ getPriceHistory: async () => history, getQuote }),
+    }));
+
+    const result = await load(async () => quote());
+    expect(result.rows.at(-1)).toMatchObject({ date: "2026-10-16T00:00:00.000Z", open: 346.085, high: 347.82, low: 340.46, close: 340.91, volume: 39_269_651, partial: true });
+    expect(result.rows.slice(0, -1).some((row) => row.partial)).toBe(false);
+    expect(result.columns!.map((column) => column.key)).toContain("partial");
+    // Dated by the quote it was read from, and the line says the newest bar is not a close.
+    expect(result.freshness).toMatchObject({ basis: "daily bars", asOf: "2026-10-16T18:59:30.000Z", note: "the newest bar is today so far" });
+    const text = renderHeadlessPaneText(historicalPricesHeadless, result, args(["AAPL"]), "HP AAPL");
+    expect(text).toContain("2026-10-16 DTD");
+    expect(text).toContain("today so far");
+    expect(text).not.toContain("341.995");
+
+    // A range cut before the session opened gains the day.
+    expect((await load(async () => quote(), served.slice(0, 2))).rows.map((row) => [row.date, row.partial === true]))
+      .toEqual([["2026-10-14T00:00:00.000Z", false], ["2026-10-15T00:00:00.000Z", false], ["2026-10-16T00:00:00.000Z", true]]);
+    // No current quote: the snapshot is not today's row.
+    const stale = await load(async () => quote({ stale: true }));
+    expect(stale.rows.map((row) => String(row.date).slice(0, 10))).toEqual(["2026-10-14", "2026-10-15"]);
+    expect(stale.freshness).toMatchObject({ basis: "daily closes" });
+    expect(stale.freshness).not.toHaveProperty("note");
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("historical prices read daily bars across a holiday as daily, not as a week still forming", async () => {
+  // Golden Week closed Shanghai from 1 to 7 Oct 2026. On Thu 8 Oct, while it trades, the last two daily bars are 8 days apart.
+  setSystemTime(new Date("2026-10-08T03:00:00Z"));
+  try {
+    const days = ["2026-09-22", "2026-09-23", "2026-09-24", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-08"];
+    const ctx = createTestHeadlessContext({
+      resolveInstrument: async () => ({ symbol: "600519", exchange: "SSE" }),
+      marketData: createTestDataProvider({ getPriceHistory: async () => days.map((date) => ({ date: new Date(date), close: 1500 })) }),
+    });
+    const result = await historicalPricesHeadless.load(args(["600519:SSE"], { range: "1M" }), ctx);
+    expect(result.rows.some((row) => row.partial)).toBe(false);
+    expect(result.freshness).toMatchObject({ basis: "daily closes" });
+    expect(result.freshness).not.toHaveProperty("periodToDate");
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("returns mark a monthly bar whose month runs on, as historical prices do", async () => {
+  // Fri 16 Oct 2026 08:14 UTC: New York has not opened; Thursday's session is the latest close.
+  setSystemTime(new Date("2026-10-16T08:14:00Z"));
+  try {
+    const monthly = ["2026-08-01", "2026-09-01", "2026-10-01"].map((date, index) => ({ date: new Date(date), close: 100 + index }));
+    const ctx = createTestHeadlessContext({
+      resolveInstrument: async () => ({ symbol: "CSCO", exchange: "NASDAQ" }),
+      marketData: createTestDataProvider({
+        getDetailedPriceHistoryWithMetadata: async () => ({ points: monthly, resolution: "1mo" }),
+      }),
+    });
+    const input = args(["CSCO:NASDAQ"], { range: "ALL", interval: "1mo" });
+    const result = await returnsHeadless.load(input, ctx);
+    expect(result.rows.map((row) => row.partial === true)).toEqual([false, false, true]);
+    expect(result.freshness).toMatchObject({ basis: "monthly bars", periodToDate: { period: "month", through: "2026-10-15" } });
+    expect(result.columns!.map((column) => column.key)).toContain("partial");
+    const text = renderHeadlessPaneText(returnsHeadless, result, input, "RETURN CSCO");
+    expect(text).toContain("2026-10 MTD");
+    expect(text).toContain("2026-09");
+    expect(text).not.toContain("2026-10-01");
+    // Without October's bar, September's is complete and dated by its last session.
+    const september = createTestHeadlessContext({
+      resolveInstrument: async () => ({ symbol: "CSCO", exchange: "NASDAQ" }),
+      marketData: createTestDataProvider({ getDetailedPriceHistoryWithMetadata: async () => ({ points: monthly.slice(0, 2), resolution: "1mo" }) }),
+    });
+    const complete = await returnsHeadless.load(input, september);
+    expect(complete.freshness).toMatchObject({ asOf: "2026-09-30" });
+    expect(complete.freshness).not.toHaveProperty("periodToDate");
+    expect(renderHeadlessPaneText(returnsHeadless, complete, input, "RETURN CSCO")).toContain("Wed 30 Sep 2026");
+  } finally {
+    setSystemTime();
+  }
+});
+
 test("historical price exports preserve tiny OHLC values without changing raw data", async () => {
   const point = { date: new Date("2026-09-10"), open: 0.00000531, high: 0.00000542, low: 0.00000501, close: 0.00000532, volume: 123456 };
   const ctx = { marketData: createTestDataProvider({ getPriceHistory: async () => [point] }) } as HeadlessPaneContext;
@@ -209,4 +393,49 @@ test("canonical missing changes survive JSON roundtrip into default Quote Monito
   expect(text.split("\n").find(line => line.trim().startsWith("MISSING "))).not.toContain("0.00%");
   expect(text.split("\n").find(line => line.trim().startsWith("ZERO "))).toContain("0.00%");
   expect(text.split("\n").find(line => line.trim().startsWith("DERIVED "))).toContain("+20.00%");
+});
+
+test("historical prices count a coin's bars without volume as history does, not the latest trade its hourly bars end with", async () => {
+  const bar = (date: string, volume?: number) => ({ date: new Date(date), open: 81_000, high: 81_100, low: 80_900, close: 81_050, volume });
+  const latest = bar("2026-10-18T15:57:53Z");
+  const load = async (points: ReturnType<typeof bar>[]) => historicalPricesHeadless.load(args(["BTC-USD"], { range: "1W" }), createTestHeadlessContext({
+    resolveInstrument: async () => ({ symbol: "BTC-USD", exchange: "CCC" }),
+    marketData: createTestDataProvider({ getPriceHistory: async () => points }),
+  }));
+  const signedIn = await load([bar("2026-10-18T13:00:00Z", 61_200_000), bar("2026-10-18T14:00:00Z", 73_800_000),
+    bar("2026-10-18T15:00:00Z", 24_100_000), latest]);
+  expect(signedIn.rows.at(-1)).toMatchObject({ date: "2026-10-18T15:57:53.000Z", volume: null });
+  // Before: "1 of 4 bars has no reported volume (—)".
+  expect(signedIn.notes).toBeUndefined();
+  const hole = await load([bar("2026-10-18T13:00:00Z", 61_200_000), bar("2026-10-18T14:00:00Z"), bar("2026-10-18T15:00:00Z", 24_100_000), latest]);
+  expect(hole.notes).toEqual(["1 of 4 bars has no reported volume (\u2014)"]);
+});
+
+
+test("FA cash-only runway labels its actual input and caps only formatted values; financials omit runway", async () => {
+  const financials = createTestFinancials({
+    annualStatements: [], quarterlyStatements: [{ date: "2026-06-30", totalRevenue: 0, cashAndCashEquivalents: 32_000, operatingCashFlow: -1 }],
+  });
+  const ctx = createTestHeadlessContext({ marketData: createTestDataProvider({ getTickerFinancials: async () => financials }) });
+  const request = args(["TEST:XETRA"], { statement: "liquidity", period: "quarterly" });
+  const report = await financialStatementsHeadless.load(request, ctx);
+  expect(report.notes?.join(" ")).toContain("cash (no ST investments reported)");
+  expect(report.rows.find((row) => row.id === "runway-quarter:0")?.metric).toMatch(/^Cash \(.*\)$/);
+  expect(report.rows.find((row) => row.id === "runway-quarter")?.cells).toEqual([
+    expect.objectContaining({ value: 96_000, formatted: "> 120 mo" }),
+  ]);
+  expect(report.rows.find((row) => row.id === "runway-ttm")?.cells).toEqual([
+    expect.objectContaining({ gap: "< 4 quarters" }),
+  ]);
+  // A total outside the displayed quarterly columns still governs the input label and fallback.
+  financials.annualStatements = [{ date: "2025-12-31", cashCashEquivalentsAndShortTermInvestments: 50_000 }];
+  const sparse = await financialStatementsHeadless.load(request, ctx);
+  expect(sparse.rows.find((row) => row.id === "runway-quarter:0")?.metric).toContain("Cash + ST Inv");
+  expect(sparse.rows.find((row) => row.id === "runway-quarter")?.cells).toEqual([
+    expect.objectContaining({ gap: "not reported" }),
+  ]);
+  financials.profile = { sector: "Financial Services" };
+  const bank = await financialStatementsHeadless.load(request, ctx);
+  expect(bank.rows.some((row) => String(row.id).startsWith("runway-"))).toBe(false);
+  expect(bank.notes?.some((note) => note.startsWith("Runway:"))).toBe(false);
 });

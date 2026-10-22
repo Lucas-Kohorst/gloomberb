@@ -1,4 +1,5 @@
 import { startCatalystAlerts } from "./catalysts";
+import { logFailure } from "../../../utils/log-failure";
 import { RESEARCH_LABELS, researchWizardFields, createResearchAlert } from "./research-builder";
 import { newYorkToday } from "../earnings/board-model";
 import { checkScheduledEventAlertsNow, startScheduledEventAlerts } from "./scheduled-check";
@@ -27,6 +28,7 @@ import {
   parseAlertShortcutValues,
 } from "./command";
 import { POLL_INTERVAL_MS, POLL_SECONDS_KEY } from "./constants";
+import { alertHistoryLockNote, alertsHeadless } from "./headless";
 import { AlertsPane } from "./pane";
 import { alertsCliCommand } from "./cli";
 import {
@@ -59,7 +61,7 @@ export const alertsPlugin: GloomPlugin = {
   id: "alerts",
   name: "Alerts",
   version: "1.0.0",
-  description: "Price, market and filing event alerts",
+  description: "Price, earnings, filing, news and flow alerts",
   toggleable: true,
   cliCommands: [alertsCliCommand],
 
@@ -118,7 +120,7 @@ export const alertsPlugin: GloomPlugin = {
       }
       if (!persist && !(touched && now - lastStreamPersistAt >= STREAM_PERSIST_MS)) return;
       lastStreamPersistAt = now;
-      saveAlerts(ctx, alerts);
+      void saveAlerts(ctx, alerts).catch(logFailure("alerts.stream", "Save streamed price alerts failed"));
       if (persist) alertStream?.sync();
     };
     alertStream?.dispose();
@@ -174,7 +176,7 @@ export const alertsPlugin: GloomPlugin = {
         };
         const existing = loadAlerts(ctx);
         existing.push(alert);
-        saveAlerts(ctx, existing);
+        await saveAlerts(ctx, existing);
         alertStream?.sync();
 
         ctx.notify({
@@ -188,7 +190,11 @@ export const alertsPlugin: GloomPlugin = {
       id: "set-event-alert",
       label: "Add Event Alert",
       description: "Create an alert before earnings, CPI or FOMC, or for filings, news and market moves",
-      keywords: ["alert", "event", "congress", "13f", "fund", "member", "follow", "earnings", "cpi", "fomc", "days before"],
+      keywords: [
+        "alert", "event", "congress", "13f", "fund", "member", "follow", "earnings", "cpi", "fomc", "days before",
+        "filing", "filings", "sec", "8-k", "news", "keyword", "analyst", "52-week", "unusual volume", "volume",
+        "short interest", "insider", "catalyst", "implied volatility", "iv spike", "options flow", "perps", "funding",
+      ],
       category: "data",
       wizardLayout: "form",
       wizard: [
@@ -297,7 +303,7 @@ export const alertsPlugin: GloomPlugin = {
       }
 
       if (changed) {
-        saveAlerts(ctx, alerts);
+        await saveAlerts(ctx, alerts);
       }
     };
 
@@ -308,15 +314,16 @@ export const alertsPlugin: GloomPlugin = {
       const seconds = Number(ctx.paneSettings?.get<string>("alerts", POLL_SECONDS_KEY));
       const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : POLL_INTERVAL_MS;
       pollTimer = setTimeout(() => {
-        void poll().finally(scheduleNextPoll);
+        void poll().catch(logFailure("alerts.poll", "Check price alerts failed")).finally(scheduleNextPoll);
       }, delay);
     };
 
-    void poll().finally(scheduleNextPoll);
+    void poll().catch(logFailure("alerts.poll", "Check price alerts failed")).finally(scheduleNextPoll);
 
     ctx.registerPane({
       id: "alerts",
       reportFreshness: { source: "Your alerts", status: "not-a-feed", basis: "your alert rules" },
+      reportLockNote: alertHistoryLockNote,
       name: "Alerts",
       icon: "A",
       component: AlertsPane,
@@ -346,9 +353,15 @@ export const alertsPlugin: GloomPlugin = {
       id: "alerts-pane",
       paneId: "alerts",
       label: "Alerts",
-      description: "Price, market and filing event alerts",
-      keywords: ["alerts", "price", "trigger", "alarm", "watch", "notify"],
+      description: "Price, earnings, filing, news and flow alerts",
+      keywords: [
+        "alerts", "alert", "price", "trigger", "alarm", "watch", "notify", "notification",
+        "earnings", "cpi", "fomc", "filing", "filings", "sec", "8-k", "13f", "news", "keyword",
+        "analyst", "upgrade", "downgrade", "52-week", "unusual volume", "volume", "short interest",
+        "insider", "congress", "catalyst", "implied volatility", "iv spike", "options flow", "perps", "funding",
+      ],
       shortcut: { prefix: "ALRT" },
+      headless: alertsHeadless,
     });
   },
 

@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { CSSProperties } from "react";
 import type { UiHost } from "../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../theme/font-scale";
 import { detectPlatform } from "../../utils/platform";
 import { WebDataTable } from "./data-table";
+import { WebWindowedList } from "./windowed-list";
 import {
   WebButton,
   WebCheckbox,
@@ -14,7 +15,8 @@ import {
   WebSegmentedControl,
   WebTextField,
 } from "./desktop/controls";
-import { WebDialogActions, WebDialogHints } from "./desktop/dialog-actions";
+import { WebAudioPlayer } from "./desktop/audio-player";
+import { WebDialogActions } from "./desktop/dialog-actions";
 import { WebPopover } from "./desktop/popover";
 import { WebQueryBar } from "./desktop/query-bar";
 import { WebMenu } from "./desktop/menu";
@@ -24,9 +26,10 @@ import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
 import { WebSurface3D } from "./host/surface-3d";
 import { WebInput, WebTextarea } from "./host/input";
+import { WebImageSurface } from "./host/image-surface";
 import { WebMediaSurface } from "./host/media-surface";
 import { WebScrollBox } from "./host/scroll-box";
-import { cleanDomProps, commonStyle } from "./host/style";
+import { cleanDomProps } from "./host/style";
 import { WebAsciiText, WebSpan, WebStrong, WebText, WebUnderline } from "./host/text";
 import { WebTabs } from "./host/tabs";
 
@@ -89,40 +92,15 @@ export function createDomUiHost(
     SegmentedControl: WebSegmentedControl,
     DialogFrame: WebDialogFrame,
     DialogActions: WebDialogActions,
-    DialogHints: WebDialogHints,
     PageStackView: WebPageStackView,
     DataTable: WebDataTable,
+    WindowedList: WebWindowedList,
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
     Surface3D: WebSurface3D,
-    ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
-      const imageSrc = typeof src === "string" ? src.trim() : "";
-      const [failed, setFailed] = useState(false);
-      useEffect(() => setFailed(false), [imageSrc]);
-      const baseStyle = commonStyle(props);
-      return (
-        <div
-          {...cleanDomProps(props)}
-          style={{
-            ...baseStyle,
-            overflow: baseStyle.overflow ?? "hidden",
-            ...(props.style as CSSProperties | undefined),
-          }}
-        >
-          {imageSrc && !failed ? (
-            <img
-              key={imageSrc}
-              src={imageSrc}
-              alt={alt}
-              draggable={false}
-              onError={() => setFailed(true)}
-              style={{ width: "100%", height: "100%", display: "block", objectFit }}
-            />
-          ) : children as ReactNode}
-        </div>
-      );
-    },
+    ImageSurface: WebImageSurface,
     MediaSurface: WebMediaSurface,
+    AudioPlayer: WebAudioPlayer,
     SpinnerMark: ({ color, ...props }) => (
       <span
         {...cleanDomProps(props)}

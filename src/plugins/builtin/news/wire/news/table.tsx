@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../../../ui";
 import {
   DataTableStackView,
@@ -9,15 +9,17 @@ import {
   type DataTableColumn,
   type StackSortPreference,
 } from "../../../../../components";
-import { getTableWidth } from "../../../../../components/ui/table-layout";
+import { getTableWidth, tableColumnWidth } from "../../../../../components/ui/table-layout";
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { colors } from "../../../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { useLoadNewsStory } from "../../../../../news/hooks";
 import { formatFeedTime } from "../../../../../utils/datetime-format";
+import { logFailure } from "../../../../../utils/log-failure";
 import { nextHeaderSort } from "../../../../../utils/sort-values";
 import { formatNewsCategory } from "../categories";
 import { useOpenTickerChoice } from "../../../shared/ticker-choice";
+import { usePinnedMoment } from "../../../../../components/use-pinned-moment";
 
 export type NewsColumnId =
   | "rank"
@@ -134,6 +136,14 @@ const COLUMN_LABELS: Record<NewsColumnId, string> = {
   importance: "SCORE",
 };
 
+/** The words behind a short label, on hover on the desktop and the web. */
+const COLUMN_TITLES: Partial<Record<NewsColumnId, string>> = {
+  sentiment: "Sentiment",
+};
+const SPELLED_SENTIMENT = "SENTIMENT";
+/** A headline at least this wide still reads with SENTIMENT spelled out beside it. */
+const SPELLED_SENTIMENT_MIN_HEADLINE_WIDTH = 60;
+
 const columnAlign = (id: NewsColumnId): "left" | "right" =>
   id === "rank" || id === "importance" ? "right" : "left";
 
@@ -180,11 +190,23 @@ export function buildColumns(width: number, requestedIds: NewsColumnId[]): NewsT
       }
     }
   }
+  // SENTIMENT in full once the headline has room to spare for it.
+  let sentimentSpelled = false;
+  if (columnIds.includes("sentiment") && columnIds.includes("title")) {
+    // Measured as drawn: a header label sets the column's floor.
+    const spelledWidth = tableColumnWidth({ width: widths.sentiment, label: SPELLED_SENTIMENT });
+    const extra = spelledWidth - tableColumnWidth({ width: widths.sentiment, label: COLUMN_LABELS.sentiment });
+    if (headlineWidth() - extra >= SPELLED_SENTIMENT_MIN_HEADLINE_WIDTH) {
+      widths.sentiment = spelledWidth;
+      sentimentSpelled = true;
+    }
+  }
   const titleWidth = Math.max(16, headlineWidth());
 
   return columnIds.map((id) => ({
     id,
-    label: COLUMN_LABELS[id],
+    label: id === "sentiment" && sentimentSpelled ? SPELLED_SENTIMENT : COLUMN_LABELS[id],
+    ...(COLUMN_TITLES[id] && !(id === "sentiment" && sentimentSpelled) ? { title: COLUMN_TITLES[id] } : {}),
     width: id === "title" ? titleWidth : widths[id],
     align: columnAlign(id),
     flexGrow: id === "title" ? 1 : undefined,
@@ -249,8 +271,29 @@ export function NewsArticleStackView({
   const loadNewsStory = useLoadNewsStory();
   const prefetchStory = useCallback((article: MarketNewsItem) => {
     if ((article.items?.length ?? 0) > 0) return;
-    void loadNewsStory(article.id).catch(() => {});
+    void loadNewsStory(article.id).catch(logFailure("news.table", "Prefetch news story failed"));
   }, [loadNewsStory]);
+
+  // A crosshair pinned in the tab picks the newest story out by then, and
+  // mutes the ones published after it. The selection follows the pin when it
+  // moves, not when a story streams in, so a row the user picked stays put.
+  const pinnedAt = usePinnedMoment("news-table:pin", { enabled: !detailOpen });
+  const pinnedArticleId = useMemo(() => {
+    if (pinnedAt === null) return null;
+    let newest: MarketNewsItem | null = null;
+    for (const article of sortedArticles) {
+      const at = article.publishedAt.getTime();
+      if (at <= pinnedAt && (!newest || at > newest.publishedAt.getTime())) newest = article;
+    }
+    return newest?.id ?? null;
+  }, [pinnedAt, sortedArticles]);
+  const followedPinRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (pinnedAt === null) followedPinRef.current = null;
+    if (pinnedAt === null || pinnedArticleId === null || followedPinRef.current === pinnedAt) return;
+    followedPinRef.current = pinnedAt;
+    setSelectedArticleId(pinnedArticleId);
+  }, [pinnedAt, pinnedArticleId, setSelectedArticleId]);
 
   useEffect(() => {
     if (sortedArticles.length === 0) {
@@ -279,11 +322,15 @@ export function NewsArticleStackView({
     index: number,
     rowState: { selected: boolean },
   ): DataTableCell => {
+    // A story out after the pinned moment reads muted and plain throughout,
+    // as rows that no longer apply do elsewhere (an exited holder).
+    const later = pinnedAt !== null && item.publishedAt.getTime() > pinnedAt;
+    const tone = (color: string) => later ? colors.textMuted : color;
     switch (column.id) {
       case "rank":
-        return { text: String(index + 1), color: colors.textDim };
+        return { text: String(index + 1), color: tone(colors.textDim) };
       case "time":
-        return { text: formatFeedTime(item.publishedAt), value: item.publishedAt, color: colors.textDim };
+        return { text: formatFeedTime(item.publishedAt), value: item.publishedAt, color: tone(colors.textDim) };
       case "source":
         return { text: item.source, color: colors.textMuted };
       case "title":
@@ -291,8 +338,8 @@ export function NewsArticleStackView({
           // Unclipped: the table fits it to the width the column really gets,
           // which on desktop is wider than the width it was laid out at.
           text: titleForArticle?.(item) ?? item.title,
-          color: colors.text,
-          attributes: readArticleIds?.has(item.id)
+          color: tone(colors.text),
+          attributes: later || readArticleIds?.has(item.id)
             ? TextAttributes.NONE
             : TextAttributes.BOLD,
         };
@@ -313,13 +360,13 @@ export function NewsArticleStackView({
       case "categories":
         return {
           text: formatNewsCategory(item.categories[0]) || "-",
-          color: colors.textDim,
+          color: tone(colors.textDim),
         };
       case "sentiment": {
         const sentiment = item.sentiment;
         return {
           text: sentiment ? sentiment.slice(0, 3) : "-",
-          color: (
+          color: tone(
             sentiment === "positive"
               ? colors.positive
               : sentiment === "negative"
@@ -331,10 +378,10 @@ export function NewsArticleStackView({
       case "importance":
         return {
           text: String(item.importance),
-          color: item.importance >= 80 ? colors.positive : colors.textDim,
+          color: tone(item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
-  }, [readArticleIds, titleForArticle]);
+  }, [pinnedAt, readArticleIds, titleForArticle]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>

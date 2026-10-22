@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { KPI_FIELDS } from "../../../api-client/equity-screener";
+import { isProLock } from "../../../cli/pane-functions/access-gate";
 import { MAX_TOOL_RESULT_BYTES } from "../cloud/askg/protocol";
 import { equityScreenerHeadless } from "./headless";
 import { parseScreenDefinition } from "./model";
@@ -46,4 +48,43 @@ test("the catalog's example definition passes the real validator, and a bad one 
   expect(() => option.normalize!(JSON.stringify({ ...definition, criteria: [{ field: "industry", op: "eq", value: "Gold" }] })))
     .toThrow(/criteria\[0\] \(industry\): op "eq" is not supported: industry takes in, present, missing\. The example in gloomberb catalog EQS/);
   expect(() => option.normalize!('{"version":1}')).toThrow(/criteria is missing.*sort is missing.*currency is missing/);
+});
+
+test("a KPI the server holds back from Free says why once, in KPIS's words; a Pro KPI with gaps says what a gap is", async () => {
+  // The server leaves KPI and guidance fields out of every row for a caller without Gloom Pro.
+  const free = screenFixture();
+  for (const row of free.rows) for (const field of KPI_FIELDS) delete (row.metrics as Partial<typeof row.metrics>)[field];
+  const load = (data: typeof free) => equityScreenerHeadless.load({ argument: undefined, options: { metric: "kpiBacklog" } } as never,
+    { apiClient: { equityScreener: async () => structuredClone(data) } } as never);
+  const locked = await load(free);
+  expect(locked.errors).toEqual(["The free screener shows no KPI values; Gloom Pro shows each company's Backlog."]);
+  expect(isProLock(locked.errors![0]!)).toBe(true);
+  expect(locked.sections![0]!.rows![0]).toMatchObject({ value: "--", state: "locked" });
+  expect(locked.notes).toBeUndefined();
+
+  const pro = await load(screenFixture());
+  expect(pro.errors).toEqual([]);
+  expect(pro.sections![0]!.rows![0]).toMatchObject({ state: "unavailable" });
+  expect(pro.notes).toEqual(["1 of 1 row has no Backlog. Coverage follows available company disclosures; missing data is not zero."]);
+});
+
+test("a screen its currency emptied says the currency keeps only listings quoted in it, and gives the screen in USD", async () => {
+  // GLO-1105: a CAD screen of tobacco companies said "No data." though the USD one lists seven.
+  const tobacco = { ...screenFixture(), rows: [] };
+  tobacco.definition = { ...tobacco.definition, currency: "CAD", criteria: [{ field: "industry", op: "in", value: ["Tobacco"] }] };
+  tobacco.universe = { ...tobacco.universe, covered: 4287, matched: 0, currencies: ["USD", "CAD"] };
+  const load = async (data: typeof tobacco) => {
+    const result = await equityScreenerHeadless.load({ argument: undefined, options: { definition: JSON.stringify(data.definition) } } as never,
+      { apiClient: { equityScreener: async () => structuredClone(data) } } as never);
+    return (result.sections![0] as { empty?: string }).empty;
+  };
+  const empty = (await load(tobacco))!.split("\n");
+  expect(empty[0]).toBe("No listing quoted in CAD matches. Currency CAD keeps only the listings quoted in CAD and converts nothing.");
+  const base = JSON.parse(/--definition '(.+)'$/.exec(empty[1]!)![1]!);
+  expect(empty[1]).toStartWith("In the base currency, USD: gloomberb fn EQS --definition '");
+  expect(base).toEqual({ ...tobacco.definition, currency: "USD" });
+  // A currency no covered listing is quoted in says so; an empty screen in USD keeps the plain empty line.
+  const usdOnly = { ...tobacco, universe: { ...tobacco.universe, currencies: ["USD"] } };
+  expect(await load(usdOnly)).toStartWith("None of the 4,287 covered listings is quoted in CAD. Currency CAD keeps only the listings quoted in CAD and converts nothing; the covered listings are quoted in USD.");
+  expect(await load({ ...tobacco, definition: { ...tobacco.definition, currency: "USD" } })).toBeUndefined();
 });

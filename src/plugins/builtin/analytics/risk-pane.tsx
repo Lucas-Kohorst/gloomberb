@@ -52,12 +52,13 @@ import {
   HOLDINGS_SUMMARY_ROW_IDS,
   portfolioRiskRequests,
   portfolioRiskTickers,
+  riskCoverageHeadline,
   riskCoverageNotices,
   riskCoverageShortfall,
-  riskCoverageText,
   riskPercentile,
   riskAmountBase,
   riskEvidence,
+  riskReturnsCurrency,
   riskValue,
   RISK_VIEWS,
   type PortfolioRiskModel,
@@ -115,16 +116,17 @@ function holdingsSummaryItems(rows: RiskDisplayRow[]): StatItem[] {
   return rows.map((row) => ({
     id: row.id,
     label: HOLDINGS_SUMMARY_LABELS[row.id] ?? row.label,
-    value: row.value == null ? "--" : row.unit === "% basket" ? `${row.value.toFixed(2)}%` : row.value.toFixed(2),
-    // The same method note sits on both weights.
-    detail: row.unit === "% basket" ? "of basket" : row.detail,
+    value: row.value == null ? "--" : row.unit === "% value" ? `${row.value.toFixed(2)}%` : row.value.toFixed(2),
+    // The same note sits on both shares.
+    detail: row.unit === "% value" ? "of market value" : row.detail,
   }));
 }
 /**
- * Cumulative return of the current-weight basket and of its benchmark across
- * the window of paired sessions the return rows measure (the last 60, or those
- * since a 13F filing): the path behind the two rows, whose values the legend
- * ends on. The series take the rows' names.
+ * Cumulative return of the basket and of its benchmark across the window of
+ * paired sessions the return rows measure (the last 60 at current weights, or
+ * those since a 13F filing, bought and held unless current weights are
+ * chosen): the path behind the two rows, whose values the legend ends on. The
+ * series take the rows' names.
  */
 function basketReturnSeries(model: PortfolioRiskModel): ChartTableChart["series"] {
   // A snapshot saved before the window existed covers the trailing 60.
@@ -269,8 +271,12 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   const [equity] = usePaneSettingValue("equityShift", -10),
     [rates] = usePaneSettingValue("rateShift", 100),
     [volatility] = usePaneSettingValue("volShift", 10),
-    [since] = usePaneSettingValue("riskSince", "trailing");
-  const riskWindow = useMemo(() => (since === "filed" ? { since: "filed" as const } : {}), [since]);
+    [since] = usePaneSettingValue("riskSince", "trailing"),
+    [weights] = usePaneSettingValue("riskWeights", "13f");
+  const riskWindow = useMemo(
+    () => (since === "filed" ? { since: "filed" as const, weights: weights === "current" ? "current" as const : "13f" as const } : {}),
+    [since, weights],
+  );
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [selected, setSelected] = usePluginPaneState<string | null>(
     "risk:selected",
@@ -296,7 +302,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   const loader = useCallback(
     async (force: boolean) => {
       const [market, brokerOptions] = await Promise.all([
-        loadPortfolioRiskMarket(requests, force),
+        loadPortfolioRiskMarket(requests, force, portfolio!.currency),
         loadPortfolioOptionBook(localTickers, portfolio!),
       ]);
       return { ...market, brokerOptions };
@@ -458,9 +464,12 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     ...(derived.error ? [derived.error] : []),
     ...(resource.error ? [resource.error] : []),
   ];
-  // What the basket views cover, unless the body already says why they show nothing.
-  const coverageText = model && BASKET_VIEWS.has(view) && !basketBody ? riskCoverageText(model.coverage) : null;
+  // What the basket views leave out, unless the body already says why they show nothing.
+  const coverageText = model && BASKET_VIEWS.has(view) && !basketBody ? riskCoverageHeadline(model.coverage) : null;
   const asOfDate = model?.rows[view].find((row) => row.asOf)?.asOf?.slice(0, 10) ?? null;
+  // The views estimated from returns name the currency a non-USD account's returns were converted into.
+  const returnsCurrency = BASKET_VIEWS.has(view) && view !== "holdings" ? riskReturnsCurrency(model) : null;
+  const amountBase = rows.map(riskAmountBase).find(Boolean);
   // Dated evidence only when a row has a date; a missing date is not a claim about history.
   const asOfText = !model
     ? null
@@ -468,7 +477,9 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
         ...(basketBody ? [] : [
           ...(asOfDate && sharedEvidence ? [sharedEvidence] : []),
           // The value the tail losses in money are taken on names the currency too.
-          rows.map(riskAmountBase).find(Boolean) ?? model.portfolio.currency,
+          ...(amountBase
+            ? [amountBase, ...(returnsCurrency ? [returnsCurrency] : [])]
+            : [returnsCurrency ?? model.portfolio.currency]),
           ...(asOfDate ? [asOfDate] : []),
           ...(EVIDENCE_VIEWS.has(view) && model.evidence ? [model.evidence.source] : []),
         ]),
@@ -621,7 +632,7 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
   };
   // The view strip takes a row when it is not in the title bar; the portfolio
   // bar, the holdings summary and the chart sit on the root view only.
-  const { strip: tabStrip, rows: tabRows } = usePaneTabs(portfolio && model ? {
+  const { strip: tabStrip, rows: tabRows } = usePaneTabs(portfolio ? {
     tabs,
     activeValue: view,
     onSelect: selectView,
@@ -639,12 +650,15 @@ export function PortfolioRiskPane({ focused, width, height }: PaneProps) {
     );
   if (!model)
     return (
-      <PaneStatusBody
-        loading={resource.loading}
-        error={resource.error}
-        loadingLabel="Loading portfolio risk"
-        emptyTitle="Risk data unavailable"
-      />
+      <Box width={width} height={height} flexDirection="column">
+        {tabStrip}
+        <PaneStatusBody
+          loading={resource.loading}
+          error={resource.error}
+          loadingLabel="Loading portfolio risk"
+          emptyTitle="Risk data unavailable"
+        />
+      </Box>
     );
   return (
     <Box width={width} height={height} flexDirection="column">

@@ -5,9 +5,14 @@ import { MemoryPluginPersistence } from "../../../test-support/plugin-persistenc
 import type { HeadlessPaneContext } from "../../../types/plugin";
 import {
   attachEarningsCallsPersistence,
+  callAudioExpired,
+  loadCallAudioWithClient,
   loadEarningsCallsWithClient,
   loadTranscriptWithClient,
+  loadUpcomingCallsWithClient,
   resetEarningsCallsPersistence,
+  UPCOMING_LIMIT,
+  upcomingCutNotice,
 } from "./data";
 import { createEarningsCallsHeadless } from "./headless";
 
@@ -277,3 +282,96 @@ for (const status of [401, 402, 403, 503]) {
     else await expect(refresh).rejects.toThrow("Controlled failure");
   });
 }
+
+test("a call's recording address is reused until shortly before it expires, and a call without one is not asked again at once", async () => {
+  const now = Date.UTC(2026, 7, 2, 12);
+  const asked: string[] = [];
+  const client = {
+    getCloudEarningsCallAudio: async (id: string) => {
+      asked.push(id);
+      if (id === "silent") throw new ApiRequestError("No recording for this call.", 404);
+      return { kind: "recording" as const, url: `https://media.example.invalid/${asked.length}.mp3`, expiresAt: new Date(now + 3_600_000).toISOString(), durationSeconds: 600 };
+    },
+  };
+  const first = await loadCallAudioWithClient(client, "spoken", { now });
+  expect((await loadCallAudioWithClient(client, "spoken", { now: now + 50 * 60_000 }))?.url).toBe(first!.url);
+  // Inside the last minutes of its signature the address is asked for again,
+  // so a player is never handed one that runs out mid-call.
+  expect((await loadCallAudioWithClient(client, "spoken", { now: now + 56 * 60_000 }))?.url).not.toBe(first!.url);
+
+  expect(await loadCallAudioWithClient(client, "silent", { now })).toBeNull();
+  expect(await loadCallAudioWithClient(client, "silent", { now: now + 60_000 })).toBeNull();
+  expect(asked).toEqual(["spoken", "spoken", "silent"]);
+  await expect(loadCallAudioWithClient({ getCloudEarningsCallAudio: async () => { throw new ApiRequestError("Server error", 500); } }, "broken", { now }))
+    .rejects.toThrow("Server error");
+});
+
+test("a refused recording is no recording and is asked for again next time, a failing server throws, and an unreadable expiry is not an expired one", async () => {
+  const now = Date.UTC(2026, 7, 2, 12);
+  for (const status of [401, 402, 403]) {
+    let asked = 0;
+    const client = { getCloudEarningsCallAudio: async () => { asked += 1; throw new ApiRequestError("Refused", status); } };
+    expect(await loadCallAudioWithClient(client, `refused-${status}`, { now })).toBeNull();
+    expect(await loadCallAudioWithClient(client, `refused-${status}`, { now: now + 60_000 })).toBeNull();
+    expect(asked).toBe(2);
+  }
+  const audio = { kind: "recording" as const, url: "https://media.example.invalid/a.mp3", durationSeconds: 60 };
+  expect(callAudioExpired({ ...audio, expiresAt: new Date(now + 30_000).toISOString() }, now)).toBe(true);
+  expect(callAudioExpired({ ...audio, expiresAt: new Date(now + 600_000).toISOString() }, now)).toBe(false);
+  expect(callAudioExpired({ ...audio, expiresAt: "not a date" }, now)).toBe(false);
+});
+
+test("the calendar asks for its days, keeps only calls on them from a server without it, and a failed refresh keeps the cached days", async () => {
+  attachEarningsCallsPersistence(new MemoryPluginPersistence());
+  const days = { from: "2026-10-21", to: "2026-10-23" };
+  const on = (id: string, callAt: string, extra: Partial<CloudEarningsCallPayload> = {}): CloudEarningsCallPayload => ({
+    ...calls[0]!, id, callAt, status: "discovered", hasTranscript: false, ...extra,
+  });
+  const requests: unknown[] = [];
+  let answer: () => Promise<CloudEarningsCallListPayload> = async () => ({
+    // An older server answers the shelf: a published call from July and one past the week ride along.
+    calls: [
+      on("meta", "2026-10-21T20:30:00Z"),
+      on("ibm", "2026-10-23T00:00:00Z"),
+      on("late", "2026-10-24T01:30:00Z"),
+      on("july", "2026-07-30T21:00:00Z", { status: "published", hasTranscript: true }),
+      on("next-week", "2026-10-26T20:30:00Z"),
+    ],
+  });
+  const client = clientWith(async (params) => { requests.push(params); return answer(); });
+
+  const first = await loadUpcomingCallsWithClient(client, days);
+  expect(requests).toEqual([{ upcoming: days, limit: UPCOMING_LIMIT }]);
+  // 21:30 New York on Friday is still Friday's.
+  expect(first.calls.map((call) => call.id)).toEqual(["meta", "ibm", "late"]);
+  await loadUpcomingCallsWithClient(client, days);
+  expect(requests).toHaveLength(1);
+
+  answer = async () => { throw new ApiRequestError("Controlled outage", 503); };
+  const stale = await loadUpcomingCallsWithClient(client, days, { force: true });
+  expect(stale).toMatchObject({ stale: true, refreshError: "Controlled outage" });
+  expect(stale.calls.map((call) => call.id)).toEqual(["meta", "ibm", "late"]);
+  // Losing Pro gates the calendar rather than showing the cached days.
+  answer = async () => { throw new ApiRequestError("Upgrade", 402); };
+  await expect(loadUpcomingCallsWithClient(client, days, { force: true })).rejects.toThrow("Upgrade");
+});
+
+test("a calendar answered at the server's limit is cut, says so, and stays so from the cache", async () => {
+  attachEarningsCallsPersistence(new MemoryPluginPersistence());
+  const days = { from: "2026-10-21", to: "2026-10-23" };
+  const full = Array.from({ length: UPCOMING_LIMIT }, (_, index) => ({
+    ...calls[0]!, id: `full-${index}`, status: "discovered", hasTranscript: false,
+    callAt: new Date(Date.parse("2026-10-21T12:00:00Z") + index * 120_000).toISOString(),
+  }));
+  let answer: () => Promise<CloudEarningsCallListPayload> = async () => ({ calls: full });
+  const client = clientWith(async () => answer());
+  const cut = await loadUpcomingCallsWithClient(client, days);
+  expect(cut.truncated).toBe(true);
+  expect(upcomingCutNotice(cut.calls)).toBe("The calendar stops at 1,500 calls: later calls from Oct 23 on may be missing.");
+  expect((await loadUpcomingCallsWithClient(client, days)).truncated).toBe(true);
+  answer = async () => { throw new ApiRequestError("Controlled outage", 503); };
+  expect(await loadUpcomingCallsWithClient(client, days, { force: true })).toMatchObject({ stale: true, truncated: true });
+  // One call short of the limit is the whole of the days.
+  answer = async () => ({ calls: full.slice(1) });
+  expect((await loadUpcomingCallsWithClient(client, days, { force: true })).truncated).toBeUndefined();
+});

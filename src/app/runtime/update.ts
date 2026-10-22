@@ -1,3 +1,4 @@
+import { logFailure } from "../../utils/log-failure";
 import { useCallback, useEffect, useRef, type Dispatch } from "react";
 import type { PluginRegistry } from "../../plugins/registry";
 import { saveConfigImmediately } from "../../state/config-save-scheduler";
@@ -5,15 +6,22 @@ import type { AppAction, AppState } from "../../state/app/context";
 import {
   applyUpdate,
   canRestartToApply,
+  canRetryUpdate,
   canSelfUpdate,
   checkForUpdateDetailed,
+  discardStagedUpdate,
   performUpdate,
   type ReleaseInfo,
   type UpdateCheckResult,
   type UpdateProgress,
 } from "../../updater";
+import { resolveUpdateChannel, stagedUpdateFitsChannel } from "../../updater/channel";
+import { updateFailureReason } from "../../updater/failure";
+import { t, tf } from "../../i18n";
+import type { UpdateChannel } from "../../types/config";
 import { VERSION } from "../../version";
 import { debugLog } from "../../utils/debug-log";
+import { isPrereleaseVersion } from "../../utils/semver";
 import { reportCrash } from "../../telemetry/crash-reports";
 import { runAutomated } from "../../telemetry/usage-counts";
 
@@ -22,11 +30,14 @@ const UPDATE_CHECK_INTERVAL_MS = 60 * 60_000; // hourly
 const updateLog = debugLog.createLogger("update");
 
 /**
- * The header and the command bar show a failed update's message, and the header
- * cuts it to its room: the log keeps what the updater actually said.
+ * The header says why an update failed in a few words and the command bar
+ * shows the whole error: the log keeps what the updater actually said, with
+ * the step and the reason.
  */
 function logUpdateFailure(progress: UpdateProgress): void {
-  if (progress.phase === "error") updateLog.error("update failed", { error: progress.error });
+  if (progress.phase === "error") {
+    updateLog.error("update failed", { error: progress.error, phase: progress.failure?.phase, code: progress.failure?.code });
+  }
 }
 
 /** An update is being downloaded, applied, or is downloaded and waiting for a restart. */
@@ -41,6 +52,7 @@ export function useAppUpdateRuntime({
   pluginRegistry,
   stateRef,
   updateAvailable,
+  updateChannel = "stable",
   updateCheckInProgress,
   updateProgress,
 }: {
@@ -50,6 +62,8 @@ export function useAppUpdateRuntime({
   pluginRegistry: PluginRegistry;
   stateRef: { current: AppState };
   updateAvailable: ReleaseInfo | null;
+  /** The channel in effect (`resolveUpdateChannel`); a change checks again at once. */
+  updateChannel?: UpdateChannel;
   updateCheckInProgress: boolean;
   updateProgress: unknown;
 }): {
@@ -61,11 +75,24 @@ export function useAppUpdateRuntime({
   runUpdateCommand: () => void;
 } {
   const restartingRef = useRef(false);
+  /** The tag of a release whose download found nothing to take; the hourly check does not offer it again. */
+  const declinedTagRef = useRef<string | null>(null);
 
   const startUpdate = useCallback((release: ReleaseInfo) => {
     dispatch({ type: "SET_UPDATE_PROGRESS", progress: { phase: "downloading", percent: 0 } });
     void performUpdate(release, (progress) => {
       logUpdateFailure(progress);
+      if (progress.phase === "done") {
+        // The download had nothing to take (that build is the installed one):
+        // an answer like a check's, so it passes as a notice like one. The
+        // release goes before the progress, so the effect below never starts
+        // it again, and the hourly check does not offer it again.
+        declinedTagRef.current = release.tagName;
+        dispatch({ type: "SET_UPDATE_AVAILABLE", release: null });
+        dispatch({ type: "SET_UPDATE_PROGRESS", progress: null });
+        dispatch({ type: "SET_UPDATE_NOTICE", notice: progress.message ?? null });
+        return;
+      }
       dispatch({ type: "SET_UPDATE_PROGRESS", progress });
     });
   }, [dispatch]);
@@ -97,7 +124,8 @@ export function useAppUpdateRuntime({
     // failed check like any other: the hourly one must not end as an
     // unhandled rejection, and a manual one must clear its progress state.
     // The timeout is still reported, as it was when it went unhandled.
-    const result = await checkForUpdateDetailed(VERSION).catch((error: unknown): UpdateCheckResult => {
+    const channel = resolveUpdateChannel(stateRef.current.config);
+    const result = await checkForUpdateDetailed(VERSION, channel).catch((error: unknown): UpdateCheckResult => {
       const message = error instanceof Error ? error.message : "";
       if (message.startsWith("RPC request timed out")) {
         reportCrash(error, { kind: "unhandled-rejection" });
@@ -105,10 +133,12 @@ export function useAppUpdateRuntime({
       return { kind: "error", error: message || "Update check failed" };
     });
 
-    if (result.kind === "error") updateLog.warn("update check failed", { error: result.error });
+    if (result.kind === "error") {
+      updateLog.warn("update check failed", { error: result.error, code: result.failure?.code });
+    }
 
     if (!manual) {
-      if (result.kind === "available") {
+      if (result.kind === "available" && result.release.tagName !== declinedTagRef.current) {
         dispatch({ type: "SET_UPDATE_AVAILABLE", release: result.release });
       }
       return;
@@ -123,7 +153,7 @@ export function useAppUpdateRuntime({
 
     if (result.kind === "current") {
       dispatch({ type: "SET_UPDATE_AVAILABLE", release: null });
-      dispatch({ type: "SET_UPDATE_NOTICE", notice: `Already on v${VERSION}` });
+      dispatch({ type: "SET_UPDATE_NOTICE", notice: result.notice ?? `Already on v${VERSION}` });
       return;
     }
 
@@ -132,13 +162,25 @@ export function useAppUpdateRuntime({
       return;
     }
 
-    dispatch({ type: "SET_UPDATE_NOTICE", notice: `Update check failed: ${result.error}` });
+    // The reason in a few words, as the failed banner gives it; the log has the error.
+    const reason = result.failure ? t(updateFailureReason(result.failure)) : result.error;
+    dispatch({ type: "SET_UPDATE_NOTICE", notice: tf("Update check failed: {reason}", { reason }) });
   }, [dispatch, stateRef]);
 
   const runUpdateCommand = useCallback(() => {
-    if (canRestartToApply(stateRef.current.updateProgress)) restartToApplyUpdate();
-    else void runUpdateCheck(true);
-  }, [restartToApplyUpdate, runUpdateCheck, stateRef]);
+    const state = stateRef.current;
+    if (canRestartToApply(state.updateProgress)) {
+      restartToApplyUpdate();
+      return;
+    }
+    // After a failed download or install, the command tries again, as the key does.
+    if (canRetryUpdate(state)) {
+      startUpdate(state.updateAvailable!);
+      return;
+    }
+    if (state.updateProgress?.phase === "error") dispatch({ type: "SET_UPDATE_PROGRESS", progress: null });
+    void runUpdateCheck(true);
+  }, [dispatch, restartToApplyUpdate, runUpdateCheck, startUpdate, stateRef]);
 
   useEffect(() => {
     if (!enabled || isDetachedWindow) return;
@@ -146,6 +188,44 @@ export function useAppUpdateRuntime({
     const interval = setInterval(() => { void runUpdateCheck(false); }, UPDATE_CHECK_INTERVAL_MS);
     return () => { clearInterval(interval); };
   }, [enabled, isDetachedWindow, runUpdateCheck]);
+
+  // A channel switch checks again at once and says what it found: nightly
+  // starts on today's build, stable says when this nightly build stays. An
+  // update already downloading or waiting for a restart is left to the effect
+  // below, which takes it back once it is ready if the channel rules it out.
+  const checkedChannelRef = useRef(updateChannel);
+  useEffect(() => {
+    if (!enabled || isDetachedWindow || checkedChannelRef.current === updateChannel) return;
+    checkedChannelRef.current = updateChannel;
+    if (updateInFlight(stateRef.current.updateProgress)) return;
+    // What the other channel offered, or how its download failed, is not this one's answer.
+    if (stateRef.current.updateProgress) dispatch({ type: "SET_UPDATE_PROGRESS", progress: null });
+    dispatch({ type: "SET_UPDATE_AVAILABLE", release: null });
+    void runUpdateCheck(true);
+  }, [dispatch, enabled, isDetachedWindow, runUpdateCheck, stateRef, updateChannel]);
+
+  // A downloaded update the channel does not allow (a nightly build waiting
+  // for a restart after the switch back to stable, or one that finished
+  // downloading after it) is taken back rather than installed by the restart,
+  // and stable checks again.
+  const discardingRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || isDetachedWindow || discardingRef.current) return;
+    const { updateProgress: progress, updateAvailable: staged } = stateRef.current;
+    if (progress?.phase !== "ready" || stagedUpdateFitsChannel(staged, updateChannel)) return;
+    discardingRef.current = true;
+    void discardStagedUpdate().then((error) => {
+      discardingRef.current = false;
+      if (error) {
+        updateLog.warn("could not take back the staged update", { error, version: staged?.version });
+        dispatch({ type: "SET_UPDATE_NOTICE", notice: `Could not take back v${staged?.version ?? "?"}: ${error}` });
+        return;
+      }
+      dispatch({ type: "SET_UPDATE_PROGRESS", progress: null });
+      dispatch({ type: "SET_UPDATE_AVAILABLE", release: null });
+      void runUpdateCheck(true);
+    });
+  }, [dispatch, enabled, isDetachedWindow, runUpdateCheck, stateRef, updateAvailable, updateChannel, updateProgress]);
 
   // First launch on a new version: show that release's notes, then remember the version.
   useEffect(() => {
@@ -155,12 +235,13 @@ export function useAppUpdateRuntime({
     const isUpgrade = !!config.lastLaunchedVersion;
     const nextConfig = { ...config, lastLaunchedVersion: VERSION };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    void saveConfigImmediately(nextConfig).catch(() => {});
-    if (!isUpgrade) return;
+    void saveConfigImmediately(nextConfig).catch(logFailure("update", "Saving the last launched version failed"));
+    // Nightly builds come daily and the changelog lists stable releases only.
+    if (!isUpgrade || isPrereleaseVersion(VERSION)) return;
     // Opened by the app, not the user: usage counts leave it out.
     void runAutomated(() => pluginRegistry.createPaneFromTemplateAsync("changelog-pane", {
       values: { version: VERSION },
-    })).catch(() => {});
+    })).catch(logFailure("update", "Opening release notes failed"));
   }, [dispatch, enabled, isDetachedWindow, pluginRegistry, stateRef]);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import type { ColumnContext } from "./column-values";
+import type { ColumnContext } from "../../../portfolio/column-values";
 
 const DAY_MS = 86_400_000;
 
@@ -24,9 +24,14 @@ const ALLOCATION_COLUMN_IDS = new Set(["weight", "drift", "trade", "trade_value"
 const VALUATION_COLUMN_IDS = new Set([
   "mkt_value", "weight", "drift", "trade", "trade_value", "day_pnl", "pnl", "pnl_pct", "as_of",
 ]);
-const SUPPLEMENTAL_COLUMN_IDS = new Set(["target", "target_pct", "rating", "ex_div", "next_earn"]);
-const DAY_CLOCK_COLUMN_IDS = new Set(["held", "ex_div", "next_earn", "as_of"]);
+// DIV% reads the corporate actions to measure a trailing yield and to tell a dividend that stopped, which a day can change.
+const SUPPLEMENTAL_COLUMN_IDS = new Set(["target", "target_pct", "rating", "ex_div", "next_earn", "dividend_yield"]);
+const DAY_CLOCK_COLUMN_IDS = new Set(["held", "ex_div", "next_earn", "as_of", "dividend_yield"]);
 export const PERPETUAL_COLUMN_IDS: ReadonlySet<string> = new Set(["perp_premium", "perp_funding"]);
+/** Columns a future's contract size or settlement moves: its quantity, its value, and at the close its Last. */
+const FUTURES_TERMS_COLUMN_IDS = new Set([
+  ...VALUATION_COLUMN_IDS, "shares", "cost_basis", "avg_cost", "price", "change", "change_pct",
+]);
 
 const exchangeRateVersions = new WeakMap<ReadonlyMap<string, number>, string>();
 
@@ -57,11 +62,12 @@ function targetsVersion(targets: Readonly<Record<string, number>> | undefined): 
 export function columnContextVersion(columnId: string, ctx: ColumnContext): string {
   let version = `${ctx.activeTab ?? ""}|${ctx.baseCurrency}`;
   if (FX_COLUMN_IDS.has(columnId)) version += `|${exchangeRatesVersion(ctx.exchangeRates)}`;
-  if (ALLOCATION_COLUMN_IDS.has(columnId)) version += `|${ctx.portfolioTotalMarketValue ?? 0}`;
+  if (ALLOCATION_COLUMN_IDS.has(columnId)) version += `|${ctx.portfolioWeightBase ?? 0}`;
   if (VALUATION_COLUMN_IDS.has(columnId)) version += `|${ctx.valuationBasis ?? "latest-print"}`;
   if (ALLOCATION_COLUMN_IDS.has(columnId) || columnId === "target_weight") version += `|${targetsVersion(ctx.portfolioTargets)}`;
   if (SUPPLEMENTAL_COLUMN_IDS.has(columnId)) version += `|${ctx.supplementalVersion ?? 0}`;
   if (PERPETUAL_COLUMN_IDS.has(columnId)) version += `|${ctx.perpetualsVersion ?? 0}`;
+  if (FUTURES_TERMS_COLUMN_IDS.has(columnId)) version += `|${ctx.futuresTermsVersion ?? 0}`;
   if (columnId === "latency") version += `|${ctx.now}`;
   if (DAY_CLOCK_COLUMN_IDS.has(columnId)) version += `|${Math.floor(ctx.now / DAY_MS)}`;
   return version;

@@ -35,7 +35,7 @@ test("outside the regular session the report is as of the close with the snapsho
   expect(line).toBe("Source: Gloom Cloud · US trading day Fri 9 Oct 2026 close · 15 min delayed · markets closed until Mon · snapshot 12m ago");
   expect(result.metadata).toMatchObject({ asOf: "2026-10-09T20:00:00.000Z", snapshotAssembledAt: "2026-10-11T19:35:00.000Z", snapshotAgeMinutes: 12,
     regularSessionDate: "2026-10-09", snapshotId: "s", stale: false });
-  expect(result.columns?.map((column) => column.header)).toEqual(["Ticker", "Name", "Price $", "1D", "After Hours", "1W", "1M", "3M", "YTD"]);
+  expect(result.columns?.map((column) => column.header)).toEqual(["Ticker", "Name", "Price $", "1D", "After Hours", "1W", "1M", "3M", "YTD vs 31 Dec close"]);
   const after = result.columns!.find((column) => column.header === "After Hours")!;
   const [hii, row] = result.rows;
   expect(after.format!(row!.extendedPrice, row!)).toBe("510.19 +0.12%");
@@ -55,4 +55,15 @@ test("a snapshot over 30 minutes old, a trading session and an older server date
   setSystemTime(new Date("2026-10-12T15:47:00Z"));
   expect((await load({ session: "REGULAR", regularSessionDate: null, regularSessionClosedAt: null }, [member("LMT", 512)])).line)
     .toBe("Source: Gloom Cloud · Mon 12 Oct 2026 15:35 UTC · 15 min delayed");
+});
+
+test("the title names the basket shown, and the word that matched it when that is not the basket's name", async () => {
+  const title = async (argument: string) => {
+    const { result } = await load({}, [member("LMT", 510)], argument);
+    const args = { symbols: [], argument: [argument], rawArgument: argument, options: {} } as unknown as HeadlessPaneLoadArgs;
+    return typeof themesHeadless.describe === "function" ? themesHeadless.describe(args, result) : themesHeadless.describe;
+  };
+  expect(await title("defense")).toBe("Thematic baskets | Defense & aerospace");
+  // "lithium" opens Critical minerals: the title says so rather than claim a lithium basket.
+  expect(await title("aerospace")).toBe("Thematic baskets | Defense & aerospace (matched aerospace)");
 });
